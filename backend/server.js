@@ -40,7 +40,7 @@ app.post('/api/calendar-webhook', async (req, res) => {
       return res.status(200).send('OK');
     }
 
-    // 변경 감지 시 모든 룸 최근 3주 동기화
+    // 변경 감지 시 이번 주만 동기화
     if (resourceState === 'exists') {
       const now = Date.now();
       
@@ -51,10 +51,10 @@ app.post('/api/calendar-webhook', async (req, res) => {
       }
       
       lastSyncTime = now;
-      console.log('🔄 캘린더 변경 감지, 모든 룸 최근 3주 동기화...');
+      console.log('🔄 캘린더 변경 감지, 이번 주만 동기화...');
       
-      // 비동기로 모든 룸 동기화 (응답은 즉시)
-      syncAllCalendarsInitial().catch(error => {
+      // 비동기로 이번 주만 동기화 (응답은 즉시)
+      syncAllCalendarsInitial(true).catch(error => {
         console.error('❌ Webhook 동기화 실패:', error);
       });
     }

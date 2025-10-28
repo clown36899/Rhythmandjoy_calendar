@@ -321,16 +321,24 @@ async function syncAllCalendarsIncremental() {
 }
 
 /**
- * 전체 룸 초기 동기화 (최근 3주)
+ * 전체 룸 초기 동기화
+ * @param {boolean} weekOnly - true면 이번 주만, false면 최근 3주
  */
-async function syncAllCalendarsInitial() {
-  console.log('🚀 초기 동기화 시작 (최근 3주)...\n');
-  
+async function syncAllCalendarsInitial(weekOnly = false) {
   const now = new Date();
   const timeMin = new Date(now);
-  timeMin.setDate(timeMin.getDate() - 7); // 1주 전
   const timeMax = new Date(now);
-  timeMax.setDate(timeMax.getDate() + 14); // 2주 후
+  
+  if (weekOnly) {
+    // 이번 주만 (오늘 ~ +7일)
+    console.log('🚀 이번 주 동기화 시작...\n');
+    timeMax.setDate(timeMax.getDate() + 7);
+  } else {
+    // 최근 3주 (초기 로드용)
+    console.log('🚀 초기 동기화 시작 (최근 3주)...\n');
+    timeMin.setDate(timeMin.getDate() - 7);
+    timeMax.setDate(timeMax.getDate() + 14);
+  }
 
   const results = [];
   for (const room of rooms) {
@@ -338,7 +346,7 @@ async function syncAllCalendarsInitial() {
     results.push({ room: room.id, count });
   }
   
-  console.log('\n✅ 초기 동기화 완료!');
+  console.log('\n✅ 동기화 완료!');
   
   // 동기화 완료 신호 전송 (프론트엔드 새로고침용)
   try {
