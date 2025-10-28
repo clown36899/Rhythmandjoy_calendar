@@ -58,12 +58,41 @@ Preferred communication style: Simple, everyday language.
 - Google Tag Manager (GTM-KSDF78ZT)
 
 **Hosting & Deployment**
-- SFTP deployment to rhythmandjoy.cafe24.com
-- Cafe24 hosting service (Korean web hosting provider)
-- Credentials stored in .vscode/sftp.json for automated uploads
+- **현재 호스팅**: Cafe24 (rhythmandjoy.cafe24.com) via SFTP
+- **마이그레이션 계획**: Netlify + Supabase
+  - Frontend: Netlify (정적 사이트 호스팅)
+  - Database: Supabase PostgreSQL
+  - Realtime: Supabase Realtime (WebSocket)
+  - Backend: Replit (Google Calendar 동기화 서버, 포트 8080)
 
 **Revenue Calculation Module**
 - Standalone feature in google_month_settlement_amount/
 - Fetches events from all calendars for a given month
 - Calculates revenue based on time-based pricing rules
 - Different rates for each room type and time slots
+
+## Recent Changes (2025-10-28)
+
+**Supabase + Netlify 마이그레이션 구현**
+- Supabase PostgreSQL 데이터베이스 스키마 설계 (`supabase/schema.sql`)
+  - `rooms` 테이블: 5개 연습실 정보
+  - `booking_events` 테이블: 예약 이벤트 저장
+  - RLS (Row Level Security) 설정으로 읽기 권한 공개
+- Node.js 백엔드 서버 구축 (`backend/server.js`, 포트 8080)
+  - Google Calendar Webhook 수신 엔드포인트
+  - Supabase 연동 API
+- 초기 데이터 동기화 스크립트 (`backend/sync-calendar.js`)
+  - Google Calendar API → Supabase 데이터 이관
+- 프론트엔드 Supabase Realtime 연동
+  - `supabase-realtime.js`: Supabase 클라이언트 및 실시간 구독
+  - `fullcal-supabase-adapter.js`: FullCalendar 어댑터 (Google Calendar → Supabase)
+  - 데이터 변경 시 자동 캘린더 새로고침 (새로고침 없이 실시간 반영)
+- Netlify 배포 설정
+  - `netlify.toml`: 빌드 설정
+  - `www/build.sh`: 환경 변수 주입 스크립트
+  - `DEPLOYMENT.md`: 배포 가이드 문서
+
+**아키텍처 변경**
+- 기존: 정적 사이트 + Google Calendar API (클라이언트 직접 호출)
+- 신규: Netlify (정적) + Supabase (DB + Realtime) + Replit 백엔드 (동기화)
+  - 장점: 실시간 업데이트, 데이터베이스 기반 확장성, 오프라인 대응 가능
