@@ -68,30 +68,24 @@ export function convertToCalendarEvents(bookings) {
   });
 }
 
-// Realtime 구독 설정 (변경 감지 → 캘린더 새로고침만)
+// Realtime 구독 설정 (동기화 신호만 감지)
 export function subscribeToRealtimeUpdates(onUpdate) {
   const channel = supabase
-    .channel('booking_changes')
+    .channel('sync_signals')
     .on(
       'postgres_changes',
       {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
-        table: 'booking_events'
+        table: 'sync_signals'
       },
       (payload) => {
-        console.log('🔔 실시간 변경 감지:', payload.eventType);
-        
         if (typeof onUpdate === 'function') {
           onUpdate(payload);
         }
       }
     )
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('✅ Supabase Realtime 구독 성공');
-      }
-    });
+    .subscribe();
 
   return channel;
 }
