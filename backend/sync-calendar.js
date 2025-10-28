@@ -181,8 +181,11 @@ async function incrementalSync(room) {
 
       // 전체 이벤트 DB에 저장 (통계용으로 전체 필요)
       const validEvents = allEvents.filter(event => 
-        event.start && event.start.dateTime
+        event.start && event.start.dateTime && event.status !== 'cancelled'
       );
+
+      // Google에서 가져온 이벤트 ID 목록
+      const googleEventIds = new Set(validEvents.map(e => e.id));
 
       // DB에 전체 저장
       if (validEvents.length > 0) {
@@ -199,6 +202,29 @@ async function incrementalSync(room) {
         await supabase
           .from('booking_events')
           .upsert(eventsToUpsert, { onConflict: 'google_event_id' });
+      }
+
+      // 삭제 감지: DB에는 있지만 Google에는 없는 이벤트 삭제
+      const { data: dbEvents, error: fetchError } = await supabase
+        .from('booking_events')
+        .select('google_event_id')
+        .eq('room_id', room.id);
+
+      if (!fetchError && dbEvents) {
+        const eventsToDelete = dbEvents
+          .filter(dbEvent => !googleEventIds.has(dbEvent.google_event_id))
+          .map(dbEvent => dbEvent.google_event_id);
+
+        if (eventsToDelete.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('booking_events')
+            .delete()
+            .in('google_event_id', eventsToDelete);
+
+          if (!deleteError) {
+            console.log(`  🗑️ ${eventsToDelete.length}개 삭제된 이벤트 제거됨`);
+          }
+        }
       }
 
       // sync token 저장
