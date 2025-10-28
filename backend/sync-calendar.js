@@ -162,22 +162,14 @@ async function incrementalSync(room) {
 
       console.log(`  📌 초기 ${allEvents.length}개 이벤트 발견 (sync token 생성)`);
 
-      // 최근 3주 이벤트만 DB에 저장
-      const now = new Date();
-      const threeWeeksAgo = new Date(now);
-      threeWeeksAgo.setDate(threeWeeksAgo.getDate() - 7);
-      const twoWeeksLater = new Date(now);
-      twoWeeksLater.setDate(twoWeeksLater.getDate() + 14);
+      // 전체 이벤트 DB에 저장 (통계용으로 전체 필요)
+      const validEvents = allEvents.filter(event => 
+        event.start && event.start.dateTime
+      );
 
-      const recentEvents = allEvents.filter(event => {
-        if (!event.start || !event.start.dateTime) return false;
-        const startTime = new Date(event.start.dateTime);
-        return startTime >= threeWeeksAgo && startTime <= twoWeeksLater;
-      });
-
-      // DB에 저장
-      if (recentEvents.length > 0) {
-        const eventsToUpsert = recentEvents.map(event => ({
+      // DB에 전체 저장
+      if (validEvents.length > 0) {
+        const eventsToUpsert = validEvents.map(event => ({
           room_id: room.id,
           google_event_id: event.id,
           title: event.summary || '(제목 없음)',
@@ -206,11 +198,11 @@ async function incrementalSync(room) {
         if (error) {
           console.error(`  ❌ sync token 저장 실패:`, error.message);
         } else {
-          console.log(`  💾 sync token 저장 완료 (최근 3주 ${recentEvents.length}개만 저장)`);
+          console.log(`  💾 sync token 저장 완료 (전체 ${validEvents.length}개 저장)`);
         }
       }
 
-      return recentEvents.length;
+      return validEvents.length;
     }
 
     // sync token으로 변경분만 가져오기
