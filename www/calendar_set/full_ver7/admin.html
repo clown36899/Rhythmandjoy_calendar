@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>관리자 - Rhythmjoy</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Noto Sans KR', sans-serif;
+    }
+    .admin-container {
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      max-width: 400px;
+      width: 90%;
+      padding: 40px 30px;
+    }
+    .admin-title {
+      text-align: center;
+      font-weight: bold;
+      font-size: 24px;
+      margin-bottom: 30px;
+      color: #333;
+    }
+    .login-section {
+      display: block;
+    }
+    .admin-section {
+      display: none;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      width: 100%;
+      padding: 12px;
+      font-weight: bold;
+    }
+    .btn-danger {
+      width: 100%;
+      padding: 12px;
+      font-weight: bold;
+    }
+    .btn-secondary {
+      width: 100%;
+      padding: 10px;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+    .form-control:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+    }
+    .alert {
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+    .status-text {
+      text-align: center;
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="admin-container">
+    <div class="admin-title">🔒 관리자</div>
+    
+    <!-- 로그인 섹션 -->
+    <div class="login-section" id="loginSection">
+      <div class="mb-3">
+        <label for="password" class="form-label">비밀번호</label>
+        <input type="password" class="form-control" id="password" placeholder="비밀번호를 입력하세요">
+      </div>
+      <button class="btn btn-primary" onclick="login()">로그인</button>
+      <button class="btn btn-secondary" onclick="goBack()">돌아가기</button>
+      <div id="loginError" class="alert alert-danger mt-3" style="display: none;"></div>
+    </div>
+
+    <!-- 관리자 섹션 -->
+    <div class="admin-section" id="adminSection">
+      <div class="status-text">로그인 완료</div>
+      <button class="btn btn-danger" onclick="resetSync()">
+        🔄 수동 리셋 (전체 동기화)
+      </button>
+      <button class="btn btn-secondary" onclick="logout()">로그아웃</button>
+      <div id="adminMessage" class="alert mt-3" style="display: none;"></div>
+    </div>
+  </div>
+
+  <script>
+    let authToken = localStorage.getItem('adminToken');
+
+    // 페이지 로드 시 토큰 확인
+    if (authToken) {
+      showAdminSection();
+    }
+
+    function goBack() {
+      window.location.href = 'index.html';
+    }
+
+    async function login() {
+      const password = document.getElementById('password').value;
+      const errorDiv = document.getElementById('loginError');
+
+      if (!password) {
+        errorDiv.textContent = '비밀번호를 입력해주세요';
+        errorDiv.style.display = 'block';
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          authToken = data.token;
+          localStorage.setItem('adminToken', authToken);
+          showAdminSection();
+        } else {
+          errorDiv.textContent = data.error || '로그인 실패';
+          errorDiv.style.display = 'block';
+        }
+      } catch (error) {
+        errorDiv.textContent = '서버 연결 실패';
+        errorDiv.style.display = 'block';
+      }
+    }
+
+    async function logout() {
+      try {
+        await fetch('/api/admin/logout', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+      } catch (error) {
+        console.error('로그아웃 오류:', error);
+      }
+
+      localStorage.removeItem('adminToken');
+      authToken = null;
+      showLoginSection();
+    }
+
+    async function resetSync() {
+      const messageDiv = document.getElementById('adminMessage');
+      messageDiv.textContent = '⏳ 리셋 중... 잠시만 기다려주세요';
+      messageDiv.className = 'alert alert-info mt-3';
+      messageDiv.style.display = 'block';
+
+      try {
+        const response = await fetch('/api/reset-sync', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          messageDiv.textContent = '✅ ' + data.message;
+          messageDiv.className = 'alert alert-success mt-3';
+        } else {
+          if (response.status === 401) {
+            messageDiv.textContent = '❌ 인증 만료됨. 다시 로그인해주세요';
+            localStorage.removeItem('adminToken');
+            authToken = null;
+            setTimeout(() => showLoginSection(), 2000);
+          } else {
+            messageDiv.textContent = '❌ ' + (data.error || '리셋 실패');
+          }
+          messageDiv.className = 'alert alert-danger mt-3';
+        }
+      } catch (error) {
+        messageDiv.textContent = '❌ 서버 연결 실패';
+        messageDiv.className = 'alert alert-danger mt-3';
+      }
+    }
+
+    function showLoginSection() {
+      document.getElementById('loginSection').style.display = 'block';
+      document.getElementById('adminSection').style.display = 'none';
+      document.getElementById('password').value = '';
+      document.getElementById('loginError').style.display = 'none';
+    }
+
+    function showAdminSection() {
+      document.getElementById('loginSection').style.display = 'none';
+      document.getElementById('adminSection').style.display = 'block';
+      document.getElementById('adminMessage').style.display = 'none';
+    }
+
+    // Enter 키로 로그인
+    document.getElementById('password')?.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        login();
+      }
+    });
+  </script>
+</body>
+</html>
