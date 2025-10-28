@@ -15,15 +15,15 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "웹서버"
+args = "백엔드"
 
 [[workflows.workflow]]
-name = "웹서버"
+name = "백엔드"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 server.py"
+args = "cd backend && npm start"
 waitForPort = 5000
 
 [workflows.workflow.metadata]
