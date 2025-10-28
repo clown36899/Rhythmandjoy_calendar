@@ -246,7 +246,7 @@ app.post('/api/reset-sync', requireAuth, async (req, res) => {
     const { error: eventsDeleteError } = await supabase
       .from('booking_events')
       .delete()
-      .neq('id', 'impossible-value'); // 모든 행 삭제
+      .gte('id', '00000000-0000-0000-0000-000000000000'); // 모든 행 삭제 (UUID 최소값)
     
     if (eventsDeleteError) {
       console.error('❌ 예약 이벤트 삭제 실패:', eventsDeleteError.message);
