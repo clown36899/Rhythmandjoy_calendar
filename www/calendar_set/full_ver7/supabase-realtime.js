@@ -173,45 +173,11 @@ function updateCalendarEvent(payload) {
   }
 }
 
-// Debounce 타이머
-let updateDebounceTimer = null;
-let pendingUpdateCount = 0;
-
-// 자동 Realtime 구독 (debounce로 배칭 처리!)
+// 자동 Realtime 구독 (실시간 업데이트, 리로드 없음!)
 function autoSubscribeAndRefresh() {
   subscribeToRealtimeUpdates((payload) => {
-    const eventType = payload.eventType;
-    
-    // INSERT/DELETE는 즉시 처리
-    if (eventType === 'INSERT' || eventType === 'DELETE') {
-      console.log('🔔 실시간 변경 감지:', eventType);
-      updateCalendarEvent(payload);
-      return;
-    }
-    
-    // UPDATE는 배칭 (500ms 내 여러 변경을 한 번에!)
-    if (eventType === 'UPDATE') {
-      pendingUpdateCount++;
-      
-      if (updateDebounceTimer) {
-        clearTimeout(updateDebounceTimer);
-      }
-      
-      updateDebounceTimer = setTimeout(() => {
-        console.log(`🔄 ${pendingUpdateCount}개 이벤트 업데이트 감지 → 전체 새로고침`);
-        
-        // 모든 캘린더 인스턴스 refetch
-        const calendars = getAllCalendarInstances();
-        calendars.forEach(cal => {
-          if (typeof cal.refetchEvents === 'function') {
-            cal.refetchEvents();
-          }
-        });
-        
-        pendingUpdateCount = 0;
-        updateDebounceTimer = null;
-      }, 500); // 500ms 대기
-    }
+    console.log('🔔 실시간 변경 감지:', payload.eventType);
+    updateCalendarEvent(payload);
   });
 }
 
