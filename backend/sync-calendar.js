@@ -192,21 +192,21 @@ async function incrementalSync(room) {
           .upsert(eventsToUpsert, { onConflict: 'google_event_id' });
       }
 
-      // sync token 저장
+      // sync token 저장 (RLS 우회를 위해 직접 SQL 사용)
       if (nextSyncToken) {
-        const { data, error } = await supabase
-          .from('calendar_sync_state')
-          .upsert({
-            room_id: room.id,
-            sync_token: nextSyncToken,
-            last_synced_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'room_id' });
-        
-        if (error) {
-          console.error(`  ❌ sync token 저장 실패:`, error.message);
-        } else {
-          console.log(`  💾 sync token 저장 완료 (최근 3주 ${recentEvents.length}개만 저장)`);
+        try {
+          const { error } = await supabase.rpc('upsert_sync_token', {
+            p_room_id: room.id,
+            p_sync_token: nextSyncToken
+          });
+          
+          if (error) {
+            console.error(`  ❌ sync token 저장 실패:`, error.message);
+          } else {
+            console.log(`  💾 sync token 저장 완료 (최근 3주 ${recentEvents.length}개만 저장)`);
+          }
+        } catch (err) {
+          console.error(`  ❌ sync token 저장 실패:`, err.message);
         }
       }
 
@@ -267,19 +267,19 @@ async function incrementalSync(room) {
       }
     }
 
-    // 새 sync token 저장
+    // 새 sync token 저장 (RLS 우회를 위해 직접 SQL 사용)
     if (response.data.nextSyncToken) {
-      const { error: tokenError } = await supabase
-        .from('calendar_sync_state')
-        .upsert({
-          room_id: room.id,
-          sync_token: response.data.nextSyncToken,
-          last_synced_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'room_id' });
-      
-      if (tokenError) {
-        console.error(`  ❌ sync token 업데이트 실패:`, tokenError.message);
+      try {
+        const { error: tokenError } = await supabase.rpc('upsert_sync_token', {
+          p_room_id: room.id,
+          p_sync_token: response.data.nextSyncToken
+        });
+        
+        if (tokenError) {
+          console.error(`  ❌ sync token 업데이트 실패:`, tokenError.message);
+        }
+      } catch (err) {
+        console.error(`  ❌ sync token 업데이트 실패:`, err.message);
       }
     }
 
