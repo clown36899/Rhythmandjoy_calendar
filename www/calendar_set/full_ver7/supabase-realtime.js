@@ -14,36 +14,64 @@ const roomConfigs = {
   e: { name: "E홀", color: "#4c4c4c" }
 };
 
-// 📦 범위별 데이터 가져오기 (보이는 3주만!)
-export async function fetchBookingsFromSupabase(roomId = null, startTime = null, endTime = null) {
+// 🚀 전체 데이터 캐시 (서버 요청 최소화)
+let allBookingsCache = [];
+let cacheLoaded = false;
+
+// 전체 데이터 한 번만 로드 (초기화)
+async function loadAllBookingsOnce() {
+  if (cacheLoaded) return allBookingsCache;
+  
+  console.log('🔄 전체 예약 데이터 로드 중 (한 번만)...');
+  
   try {
-    let query = supabase
+    const { data, error } = await supabase
       .from('booking_events')
       .select('*')
       .order('start_time', { ascending: true });
-
-    if (roomId) {
-      query = query.eq('room_id', roomId);
-    }
-    if (startTime) {
-      query = query.gte('start_time', startTime);
-    }
-    if (endTime) {
-      query = query.lte('start_time', endTime);
-    }
-
-    const { data, error } = await query;
-
+    
     if (error) {
-      console.error('❌ Supabase 데이터 조회 오류:', error);
+      console.error('❌ 전체 데이터 로드 실패:', error);
       return [];
     }
-
-    return data || [];
+    
+    allBookingsCache = data || [];
+    cacheLoaded = true;
+    console.log(`✅ 전체 ${allBookingsCache.length}개 예약 캐시 완료 (이제 서버 요청 0)`);
+    
+    return allBookingsCache;
   } catch (error) {
-    console.error('❌ fetchBookingsFromSupabase 오류:', error);
+    console.error('❌ 캐시 로드 오류:', error);
     return [];
   }
+}
+
+// 캐시에서 범위별 필터링 (서버 요청 없음!)
+function getBookingsFromCache(roomId = null, startTime = null, endTime = null) {
+  let filtered = allBookingsCache;
+  
+  if (roomId) {
+    filtered = filtered.filter(b => b.room_id === roomId);
+  }
+  if (startTime) {
+    filtered = filtered.filter(b => b.start_time >= startTime);
+  }
+  if (endTime) {
+    filtered = filtered.filter(b => b.start_time <= endTime);
+  }
+  
+  return filtered;
+}
+
+// 📦 범위별 데이터 가져오기 (캐시 사용, 서버 요청 0!)
+export async function fetchBookingsFromSupabase(roomId = null, startTime = null, endTime = null) {
+  // 캐시가 없으면 초기 로드
+  if (!cacheLoaded) {
+    await loadAllBookingsOnce();
+  }
+  
+  // 캐시에서 필터링 (서버 요청 없음!)
+  return getBookingsFromCache(roomId, startTime, endTime);
 }
 
 // Supabase 데이터를 FullCalendar 이벤트 형식으로 변환
