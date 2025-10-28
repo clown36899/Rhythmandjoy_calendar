@@ -11,8 +11,8 @@ Preferred communication style: Simple, everyday language.
 ## Frontend Architecture
 
 **Single-Page Application (SPA) Design**
-- Pure client-side application with no backend server logic
-- Static HTML/CSS/JavaScript files served via simple Python HTTP server
+- Pure client-side application
+- Static HTML/CSS/JavaScript files
 - Mobile-first responsive design optimized for small screens
 - Bootstrap 5 for UI components and responsive grid system
 
@@ -22,6 +22,12 @@ Preferred communication style: Simple, everyday language.
 - Multiple calendar instances to display different practice rooms simultaneously
 - Korean localization (ko.js) for all calendar interfaces
 
+**Data Caching Strategy (New)**
+- All booking data (1,000+ events) loaded once on page load
+- Data cached in browser memory for instant navigation
+- No network requests when switching months/rooms
+- Supabase Realtime automatically refreshes cache on data changes
+
 **Room Management System**
 - Five separate practice rooms (A, B, C, D, E halls) each with distinct:
   - Google Calendar ID for event synchronization
@@ -30,13 +36,40 @@ Preferred communication style: Simple, everyday language.
 - Dynamic room filtering via checkboxes allowing users to show/hide specific rooms
 - State persistence across calendar navigation (month/week view switches)
 
+## Backend Architecture (Production)
+
+**Netlify Functions** (Serverless)
+- `sync-calendar`: Google Calendar → Supabase 전체 동기화
+- `google-webhook`: Google Calendar Webhook 수신 (실시간 업데이트)
+- No persistent server required
+- Functions triggered on-demand or via webhook
+
+**Environment Variables**
+- Development: Replit Secrets (테스트 전용)
+- Production: Netlify 환경 변수
+  - `GOOGLE_CALENDAR_API_KEY`: Google Calendar API 키
+  - `SUPABASE_URL`: Supabase 프로젝트 URL
+  - `SUPABASE_ANON_KEY`: 공개 키 (프론트엔드)
+  - `SUPABASE_SERVICE_ROLE_KEY`: 서비스 키 (백엔드 Functions)
+
 ## External Dependencies
 
 **Google Calendar API**
-- API Key: AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8
 - Five separate Google Calendar IDs for each practice room
 - Read-only access to display events and availability
-- No write operations - calendars managed externally
+- API key managed via environment variables (not hardcoded)
+
+**Supabase PostgreSQL Database**
+- `rooms` table: 5 practice rooms configuration
+- `booking_events` table: 1,000+ booking events (6 months past to 12 months future)
+- Row Level Security (RLS) for secure public read access
+- Realtime enabled for instant updates
+
+**Supabase Realtime**
+- WebSocket-based real-time updates
+- Listens to `booking_events` table changes
+- Automatically refreshes frontend cache on INSERT/UPDATE/DELETE
+- No page refresh required
 
 **Third-Party JavaScript Libraries**
 - jQuery 2.1.3 for DOM manipulation and event handling
@@ -47,52 +80,75 @@ Preferred communication style: Simple, everyday language.
 - Hammer.js for touch gesture recognition
 - Bootstrap 5.3 for responsive layout and components
 
-**Development Server**
+**Development Server (Replit Only)**
 - Python 3 built-in HTTP server (http.server module)
 - Serves static files from www/ directory on port 5000
 - Cache-control headers disabled for development
-- No database or server-side processing
+- **Not used in production**
 
 **Analytics & Tracking**
 - Google Analytics (G-T8EYR28L8V)
 - Google Tag Manager (GTM-KSDF78ZT)
 
-**Hosting & Deployment**
-- **현재 호스팅**: Cafe24 (rhythmandjoy.cafe24.com) via SFTP
-- **마이그레이션 계획**: Netlify + Supabase
-  - Frontend: Netlify (정적 사이트 호스팅)
-  - Database: Supabase PostgreSQL
-  - Realtime: Supabase Realtime (WebSocket)
-  - Backend: Replit (Google Calendar 동기화 서버, 포트 8080)
+## Hosting & Deployment
 
-**Revenue Calculation Module**
-- Standalone feature in google_month_settlement_amount/
-- Fetches events from all calendars for a given month
-- Calculates revenue based on time-based pricing rules
-- Different rates for each room type and time slots
+**Production Stack**
+- **Frontend**: Netlify (정적 사이트 호스팅)
+  - Auto-deploy from GitHub
+  - Custom domain: 리듬앤조이일정표.com
+  - CDN for fast global delivery
+- **Backend**: Netlify Functions (서버리스)
+  - Google Calendar 동기화 (`/sync-calendar`)
+  - Webhook 수신 (`/google-webhook`)
+- **Database**: Supabase PostgreSQL
+  - 1,000+ booking events
+  - Realtime subscriptions
+- **Development**: Replit (테스트 전용)
+  - Node.js backend server (포트 8080)
+  - Python static file server (포트 5000)
+
+**Previous Hosting**
+- Cafe24 (rhythmandjoy.cafe24.com) via SFTP - deprecated
 
 ## Recent Changes (2025-10-28)
 
-**Supabase + Netlify 마이그레이션 구현**
+**Netlify Functions 마이그레이션 완료**
+- Replit 백엔드를 Netlify Functions로 전환
+- `netlify/functions/sync-calendar.js`: 전체 데이터 동기화 (POST)
+- `netlify/functions/google-webhook.js`: Google Webhook 수신
+- `netlify.toml`: Functions 빌드 설정 추가
+- Google API 키: Netlify 환경 변수로 관리 (프로덕션)
+- Replit Secrets: 개발/테스트 전용
+
+**프론트엔드 캐싱 최적화**
+- 전체 데이터 한 번에 로드 (페이지 로드 시)
+- 메모리 캐싱으로 즉시 달력 이동 (네트워크 요청 없음)
+- `supabase-realtime.js`: 전체 데이터 캐싱 + 자동 갱신
+- `fullcal-supabase-adapter.js`: 캐시에서 데이터 제공
+- 성능: 달력 이동 시 0ms (기존: 100~300ms)
+
+**Supabase + Netlify 마이그레이션 구현 (이전 작업)**
 - Supabase PostgreSQL 데이터베이스 스키마 설계 (`supabase/schema.sql`)
   - `rooms` 테이블: 5개 연습실 정보
-  - `booking_events` 테이블: 예약 이벤트 저장
+  - `booking_events` 테이블: 예약 이벤트 저장 (1,069개)
   - RLS (Row Level Security) 설정으로 읽기 권한 공개
-- Node.js 백엔드 서버 구축 (`backend/server.js`, 포트 8080)
-  - Google Calendar Webhook 수신 엔드포인트
-  - Supabase 연동 API
-- 초기 데이터 동기화 스크립트 (`backend/sync-calendar.js`)
-  - Google Calendar API → Supabase 데이터 이관
+- 초기 데이터 동기화: 과거 6개월 ~ 미래 12개월 (18개월)
 - 프론트엔드 Supabase Realtime 연동
-  - `supabase-realtime.js`: Supabase 클라이언트 및 실시간 구독
-  - `fullcal-supabase-adapter.js`: FullCalendar 어댑터 (Google Calendar → Supabase)
+  - 실시간 구독으로 자동 업데이트
   - 데이터 변경 시 자동 캘린더 새로고침 (새로고침 없이 실시간 반영)
 - Netlify 배포 설정
-  - `netlify.toml`: 빌드 설정
+  - `netlify.toml`: 빌드 + Functions 설정
   - `www/build.sh`: 환경 변수 주입 스크립트
   - `DEPLOYMENT.md`: 배포 가이드 문서
 
 **아키텍처 변경**
-- 기존: 정적 사이트 + Google Calendar API (클라이언트 직접 호출)
-- 신규: Netlify (정적) + Supabase (DB + Realtime) + Replit 백엔드 (동기화)
-  - 장점: 실시간 업데이트, 데이터베이스 기반 확장성, 오프라인 대응 가능
+- **기존**: 정적 사이트 + Google Calendar API (클라이언트 직접 호출)
+- **신규**: Netlify (정적 + Functions) + Supabase (DB + Realtime)
+  - 장점: 서버리스, 실시간 업데이트, 데이터베이스 기반 확장성
+  - **Replit 서버 불필요** (개발/테스트만 사용)
+
+**보안 개선**
+- Google API 키 하드코딩 제거
+- 환경 변수로 비밀키 관리:
+  - 개발: Replit Secrets
+  - 프로덕션: Netlify 환경 변수

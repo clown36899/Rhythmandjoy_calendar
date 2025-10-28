@@ -1,169 +1,272 @@
-# Rhythmjoy Supabase + Netlify 배포 가이드
+# 🚀 Netlify + Supabase 배포 가이드
 
-## 📋 목차
-1. [Supabase 데이터베이스 설정](#supabase-데이터베이스-설정)
-2. [초기 데이터 동기화](#초기-데이터-동기화)
-3. [Netlify 배포](#netlify-배포)
-4. [환경 변수 설정](#환경-변수-설정)
+## 📋 개요
 
----
+이 프로젝트는 다음 구조로 배포됩니다:
 
-## 1. Supabase 데이터베이스 설정
-
-### 1-1. Supabase 대시보드 접속
-- URL: https://izcdhoozlvcmjcbnvwoe.supabase.co
-- Table Editor 또는 SQL Editor로 이동
-
-### 1-2. SQL 스키마 실행
-`supabase/schema.sql` 파일의 내용을 Supabase SQL Editor에 복사하여 실행:
-
-```sql
--- 전체 스키마 실행 (supabase/schema.sql 파일 내용)
+```
+Netlify (프론트엔드 + 백엔드 Functions)
+    ↓
+Supabase (데이터베이스 + Realtime)
+    ↓
+Google Calendar API (예약 데이터 동기화)
 ```
 
-실행 후 확인사항:
-- ✅ `rooms` 테이블 생성 (5개 연습실 데이터 포함)
-- ✅ `booking_events` 테이블 생성
-- ✅ 인덱스 및 RLS 정책 설정
-
-### 1-3. Realtime 활성화
-Supabase 대시보드에서:
-1. Database → Replication 메뉴
-2. `booking_events` 테이블에서 **Realtime** 활성화
+**⚠️ Replit은 개발/테스트 전용입니다. 프로덕션은 Netlify를 사용합니다.**
 
 ---
 
-## 2. 초기 데이터 동기화
+## 1️⃣ Supabase 설정
 
-### 2-1. Replit에서 동기화 실행
+### 데이터베이스 생성
+
+1. [Supabase](https://supabase.com) 로그인
+2. 새 프로젝트 생성
+3. `supabase/schema.sql` 파일 내용을 SQL Editor에서 실행
+
+### API 키 확인
+
+Supabase 대시보드에서 다음 정보 확인:
+- **SUPABASE_URL**: `https://your-project.supabase.co`
+- **SUPABASE_ANON_KEY**: 공개 키 (프론트엔드용)
+- **SUPABASE_SERVICE_ROLE_KEY**: 서비스 키 (백엔드용, 비공개!)
+
+---
+
+## 2️⃣ Netlify 배포
+
+### GitHub 연결
+
+1. [Netlify](https://netlify.com) 로그인
+2. **New site from Git** 클릭
+3. GitHub 리포지토리 선택
+4. 빌드 설정은 `netlify.toml`에서 자동으로 인식됨
+
+### 환경 변수 설정
+
+Netlify 대시보드 → **Site settings** → **Environment variables**
+
+**필수 환경 변수** (4개):
+
 ```bash
-cd backend
-npm run sync
+# Supabase (프론트엔드용)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Supabase (백엔드 Functions용)
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Google Calendar API
+GOOGLE_CALENDAR_API_KEY=AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8
 ```
-
-이 명령은:
-- Google Calendar API를 통해 최근 3개월 예약 데이터 가져오기
-- Supabase `booking_events` 테이블에 저장
-
-### 2-2. 동기화 확인
-Supabase Table Editor에서 `booking_events` 테이블 확인
-- A, B, C, D, E 각 홀의 예약 데이터가 들어있는지 확인
 
 ---
 
-## 3. Netlify 배포
+## 3️⃣ 초기 데이터 동기화
 
-### 3-1. GitHub 저장소 준비
+배포 후 **한 번만** 실행:
+
+```bash
+curl -X POST https://your-site.netlify.app/.netlify/functions/sync-calendar
+```
+
+**응답 예시**:
+```json
+{
+  "success": true,
+  "message": "전체 캘린더 동기화 완료",
+  "results": [
+    { "room": "a", "count": 388 },
+    { "room": "b", "count": 383 },
+    { "room": "c", "count": 72 },
+    { "room": "d", "count": 88 },
+    { "room": "e", "count": 138 }
+  ]
+}
+```
+
+---
+
+## 4️⃣ Netlify Functions 설명
+
+### `/sync-calendar` (POST)
+
+**용도**: Google Calendar → Supabase 전체 동기화
+
+**사용 시점**:
+- 초기 배포 후 1회
+- 수동 동기화가 필요할 때
+
+**실행 방법**:
+```bash
+curl -X POST https://your-site.netlify.app/.netlify/functions/sync-calendar
+```
+
+### `/google-webhook` (POST)
+
+**용도**: Google Calendar Webhook 수신 (실시간 업데이트용)
+
+**설정 방법**: Google Cloud Console에서 설정 필요 (선택사항)
+
+---
+
+## 5️⃣ 커스텀 도메인 연결
+
+### Netlify에서 도메인 추가
+
+1. Netlify 대시보드 → **Domain settings**
+2. **Add custom domain** 클릭
+3. `리듬앤조이일정표.com` 입력
+
+### DNS 설정 (Cafe24)
+
+Cafe24 도메인 관리에서 다음 레코드 추가:
+
+| 타입 | 이름 | 값 |
+|------|------|-----|
+| A | @ | 75.2.60.5 |
+| CNAME | www | your-site.netlify.app |
+
+**전파 시간**: 최대 48시간
+
+---
+
+## 6️⃣ 배포 확인
+
+### 프론트엔드 확인
+```
+https://your-site.netlify.app
+```
+
+브라우저 콘솔에서 확인:
+```
+🚀 전체 예약 데이터 로드 시작...
+✅ 전체 데이터 로드 완료 (548ms)
+   총합: 1000개
+✅ Supabase Realtime 구독 성공
+```
+
+### Functions 확인
+
+```bash
+# 동기화 함수 테스트
+curl -X POST https://your-site.netlify.app/.netlify/functions/sync-calendar
+
+# Webhook 함수 테스트
+curl https://your-site.netlify.app/.netlify/functions/google-webhook
+```
+
+Netlify 대시보드 → **Functions** 탭에서 로그 확인
+
+---
+
+## 🔄 업데이트 방법
+
+### 코드 변경 시
+
 ```bash
 git add .
-git commit -m "Supabase 실시간 연동 완료"
+git commit -m "업데이트"
 git push origin main
 ```
 
-### 3-2. Netlify 사이트 생성
-1. Netlify 대시보드 접속: https://app.netlify.com
-2. **Add new site** → **Import an existing project**
-3. GitHub 저장소 선택
+Netlify가 자동으로 재배포합니다.
 
-### 3-3. 빌드 설정
-- **Base directory**: `www`
-- **Build command**: (비워두기 - 정적 사이트)
-- **Publish directory**: `calendar_set/full_ver7`
+### 환경 변수 변경 시
 
-또는 root에 `netlify.toml` 파일 사용:
-```toml
-[build]
-  base = "www"
-  publish = "calendar_set/full_ver7"
+1. Netlify 대시보드 → **Environment variables**
+2. 변수 수정
+3. **Trigger deploy** 클릭
 
-[[redirects]]
-  from = "/*"
-  to = "/calendar_7.html"
-  status = 200
-```
+### 데이터 재동기화
 
-### 3-4. 환경 변수 설정
-Netlify → Site settings → Environment variables
-
-**필수 환경 변수:**
-```
-SUPABASE_URL=https://izcdhoozlvcmjcbnvwoe.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-```
-
----
-
-## 4. 프론트엔드 환경 변수 주입
-
-### 4-1. build 스크립트 생성
-`www/build.sh` 파일:
 ```bash
-#!/bin/bash
-cat > calendar_set/full_ver7/env.js << EOF
-window.SUPABASE_URL = '${SUPABASE_URL}';
-window.SUPABASE_ANON_KEY = '${SUPABASE_ANON_KEY}';
-EOF
-```
-
-### 4-2. Netlify 빌드 명령 업데이트
-```toml
-[build]
-  base = "www"
-  command = "bash build.sh"
-  publish = "calendar_set/full_ver7"
-```
-
-### 4-3. HTML에 env.js 추가
-`calendar_7.html`의 `<head>` 섹션에:
-```html
-<script src="env.js"></script>
-<script type="module" src="supabase-realtime.js"></script>
+curl -X POST https://your-site.netlify.app/.netlify/functions/sync-calendar
 ```
 
 ---
 
-## 5. 백엔드 서버 배포 (선택사항)
+## 🛠️ 문제 해결
 
-백엔드는 Google Calendar Webhook 수신용으로, Replit에서 계속 실행 가능:
-- **URL**: https://[your-repl-name].repl.co
-- **Webhook endpoint**: `/api/calendar-webhook`
+### 데이터가 안 보일 때
 
-또는 Netlify Functions로 마이그레이션 가능 (추후 구현)
+1. Netlify Functions 로그 확인:
+   - Netlify 대시보드 → **Functions** → 로그 확인
+
+2. 환경 변수 확인:
+   - `SUPABASE_URL`, `SUPABASE_ANON_KEY` 올바른지 확인
+
+3. 수동 동기화 실행:
+   ```bash
+   curl -X POST https://your-site.netlify.app/.netlify/functions/sync-calendar
+   ```
+
+### Realtime이 작동 안 할 때
+
+1. Supabase 대시보드 → **Database** → **Replication**
+2. `booking_events` 테이블의 **Realtime** 활성화 확인
+
+3. 브라우저 콘솔에서 확인:
+   ```javascript
+   window.SupabaseCalendar.supabase
+   ```
+
+### Functions 오류 발생 시
+
+1. Netlify Functions 로그 확인
+2. 환경 변수 누락 확인:
+   - `GOOGLE_CALENDAR_API_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
 
 ---
 
-## 6. 테스트
+## 📊 비용 안내
 
-### 6-1. Netlify 사이트 접속
-- 배포된 URL로 이동 (예: https://rhythmjoy.netlify.app)
-- 캘린더가 정상적으로 로드되는지 확인
+### Netlify (무료 플랜)
+- 대역폭: 100GB/월
+- Functions: 125,000 요청/월 ✅
+- 빌드 시간: 300분/월
 
-### 6-2. 실시간 동기화 테스트
-1. Google Calendar에서 예약 추가/수정
-2. Replit 백엔드에서 동기화 실행: `npm run sync`
-3. Netlify 사이트에서 자동으로 업데이트되는지 확인 (새로고침 없이)
+### Supabase (무료 플랜)
+- 데이터베이스: 500MB ✅
+- 대역폭: 5GB/월
+- Realtime 연결: 200개 동시
 
----
+### Google Calendar API (무료)
+- 100만 요청/일 ✅
 
-## 7. 도메인 설정 (선택사항)
-
-Netlify에서 커스텀 도메인 설정:
-1. Site settings → Domain management
-2. Add custom domain
-3. DNS 설정 업데이트
+**예상 사용량**: 무료 플랜으로 충분합니다!
 
 ---
 
-## 🔧 트러블슈팅
+## ✅ 배포 체크리스트
 
-### Realtime이 작동하지 않을 때
-- Supabase Realtime이 활성화되어 있는지 확인
-- 브라우저 콘솔에서 WebSocket 연결 확인
+- [ ] Supabase 프로젝트 생성
+- [ ] 데이터베이스 스키마 적용 (`supabase/schema.sql`)
+- [ ] GitHub 리포지토리 연결
+- [ ] Netlify 환경 변수 설정 (4개)
+- [ ] Netlify 자동 배포 확인
+- [ ] 초기 데이터 동기화 실행 (curl 명령)
+- [ ] 브라우저에서 캘린더 표시 확인
+- [ ] Realtime 구독 확인 (브라우저 콘솔)
+- [ ] 커스텀 도메인 연결 (선택)
 
-### 환경 변수가 로드되지 않을 때
-- Netlify 환경 변수가 올바르게 설정되었는지 확인
-- `env.js` 파일이 빌드 시 생성되는지 확인
+---
 
-### Google Calendar 데이터가 안 보일 때
-- `npm run sync` 명령으로 수동 동기화 실행
-- Supabase `booking_events` 테이블에 데이터가 있는지 확인
+## 🎯 완료!
+
+모든 설정이 완료되면:
+- ✅ 프론트엔드: Netlify 자동 배포
+- ✅ 백엔드: Netlify Functions (서버리스)
+- ✅ 데이터베이스: Supabase PostgreSQL
+- ✅ 실시간 업데이트: Supabase Realtime
+- ✅ **Replit 서버 불필요!** (개발/테스트만 사용)
+
+**배포 구조**:
+```
+GitHub → Netlify (자동 배포) → Supabase (데이터베이스)
+```
+
+**Google API 키 관리**:
+- 개발: Replit Secrets
+- 프로덕션: Netlify 환경 변수 🔒
