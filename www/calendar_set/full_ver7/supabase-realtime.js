@@ -81,6 +81,19 @@ export async function loadAllBookings() {
     console.log(`   총합: ${data.length}개`);
     console.log('   💡 이제 모든 달력 이동이 네트워크 요청 없이 즉시 처리됩니다!');
 
+    // 🔥 캘린더 자동 새로고침 (데이터 로드 완료 후)
+    setTimeout(() => {
+      if (typeof calendar !== 'undefined') {
+        const allCalendars = [calendar._prevCal, calendar._curCal, calendar._nextCal]
+          .filter(cal => cal && typeof cal.refetchEvents === 'function');
+        
+        if (allCalendars.length > 0) {
+          allCalendars.forEach(cal => cal.refetchEvents());
+          console.log('🔄 캘린더 자동 새로고침 완료 (데이터 로드 후)');
+        }
+      }
+    }, 500);
+
     return cachedEvents;
   } catch (error) {
     console.error('❌ loadAllBookings 오류:', error);
