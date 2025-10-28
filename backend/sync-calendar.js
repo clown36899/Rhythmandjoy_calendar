@@ -115,23 +115,182 @@ async function rangeSync(room, timeMin, timeMax) {
 }
 
 /**
- * 증분 동기화 (범위 기반, DB diff로 삭제 감지)
+ * 증분 동기화 (sync token 사용, 변경된 이벤트만!)
  * @param {Object} room - 룸 정보 { id, calendarId }
  */
 async function incrementalSync(room) {
   try {
-    console.log(`🔄 ${room.id}홀 증분 동기화 시작 (최근 3주)...`);
+    console.log(`🔄 ${room.id}홀 증분 동기화 시작...`);
 
-    // 최근 3주 범위 동기화 (DB diff로 삭제 자동 처리)
-    const now = new Date();
-    const timeMin = new Date(now);
-    timeMin.setDate(timeMin.getDate() - 7); // 1주 전
-    const timeMax = new Date(now);
-    timeMax.setDate(timeMax.getDate() + 14); // 2주 후
+    // DB에서 sync token 가져오기
+    let syncToken = null;
+    
+    try {
+      const { data: syncState } = await supabase
+        .from('calendar_sync_state')
+        .select('sync_token')
+        .eq('room_id', room.id)
+        .single();
+      
+      syncToken = syncState?.sync_token;
+    } catch (error) {
+      // 테이블 없으면 무시
+    }
 
-    const count = await rangeSync(room, timeMin, timeMax);
-    return count;
+    // sync token이 없으면 초기 설정 필요
+    if (!syncToken) {
+      console.log(`  ⚠️ sync token 없음, 전체 동기화로 초기 설정...`);
+      
+      // 전체 이벤트 가져오기 (sync token 생성용)
+      let allEvents = [];
+      let pageToken = null;
+      let nextSyncToken = null;
+
+      do {
+        const response = await calendar.events.list({
+          calendarId: room.calendarId,
+          maxResults: 500,
+          singleEvents: true,
+          pageToken: pageToken
+        });
+
+        const events = response.data.items || [];
+        allEvents = allEvents.concat(events);
+        pageToken = response.data.nextPageToken;
+        nextSyncToken = response.data.nextSyncToken;
+      } while (pageToken);
+
+      console.log(`  📌 초기 ${allEvents.length}개 이벤트 발견 (sync token 생성)`);
+
+      // 최근 3주 이벤트만 DB에 저장
+      const now = new Date();
+      const threeWeeksAgo = new Date(now);
+      threeWeeksAgo.setDate(threeWeeksAgo.getDate() - 7);
+      const twoWeeksLater = new Date(now);
+      twoWeeksLater.setDate(twoWeeksLater.getDate() + 14);
+
+      const recentEvents = allEvents.filter(event => {
+        if (!event.start || !event.start.dateTime) return false;
+        const startTime = new Date(event.start.dateTime);
+        return startTime >= threeWeeksAgo && startTime <= twoWeeksLater;
+      });
+
+      // DB에 저장
+      if (recentEvents.length > 0) {
+        const eventsToUpsert = recentEvents.map(event => ({
+          room_id: room.id,
+          google_event_id: event.id,
+          title: event.summary || '(제목 없음)',
+          start_time: event.start.dateTime,
+          end_time: event.end.dateTime,
+          description: event.description || null,
+          updated_at: new Date().toISOString()
+        }));
+
+        await supabase
+          .from('booking_events')
+          .upsert(eventsToUpsert, { onConflict: 'google_event_id' });
+      }
+
+      // sync token 저장
+      if (nextSyncToken) {
+        await supabase
+          .from('calendar_sync_state')
+          .upsert({
+            room_id: room.id,
+            sync_token: nextSyncToken,
+            last_synced_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'room_id' });
+        
+        console.log(`  💾 sync token 저장 완료 (최근 3주 ${recentEvents.length}개만 저장)`);
+      }
+
+      return recentEvents.length;
+    }
+
+    // sync token으로 변경분만 가져오기
+    console.log(`  🔄 sync token 사용 (변경분만 가져오기)...`);
+    
+    const response = await calendar.events.list({
+      calendarId: room.calendarId,
+      syncToken: syncToken,
+      maxResults: 100
+    });
+
+    const changes = response.data.items || [];
+    console.log(`  📌 ${changes.length}개 변경 발견`);
+
+    let added = 0, updated = 0, deleted = 0;
+
+    for (const event of changes) {
+      // 삭제된 이벤트
+      if (event.status === 'cancelled') {
+        const { error } = await supabase
+          .from('booking_events')
+          .delete()
+          .eq('google_event_id', event.id);
+        
+        if (!error) deleted++;
+        continue;
+      }
+
+      // 추가/수정된 이벤트
+      if (!event.start || !event.start.dateTime) continue;
+
+      const { error } = await supabase
+        .from('booking_events')
+        .upsert({
+          room_id: room.id,
+          google_event_id: event.id,
+          title: event.summary || '(제목 없음)',
+          start_time: event.start.dateTime,
+          end_time: event.end.dateTime,
+          description: event.description || null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'google_event_id' });
+
+      if (!error) {
+        // 기존 이벤트인지 확인
+        const { data: existing } = await supabase
+          .from('booking_events')
+          .select('id')
+          .eq('google_event_id', event.id)
+          .single();
+        
+        if (existing) updated++;
+        else added++;
+      }
+    }
+
+    // 새 sync token 저장
+    if (response.data.nextSyncToken) {
+      await supabase
+        .from('calendar_sync_state')
+        .upsert({
+          room_id: room.id,
+          sync_token: response.data.nextSyncToken,
+          last_synced_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'room_id' });
+    }
+
+    console.log(`  ✅ ${room.id}홀 증분 완료 (추가: ${added}, 수정: ${updated}, 삭제: ${deleted})`);
+    return added + updated + deleted;
   } catch (error) {
+    // sync token 만료 시
+    if (error.message && error.message.includes('Sync token')) {
+      console.log(`  ⚠️ sync token 만료, 재생성...`);
+      
+      // sync token 삭제 후 재시도
+      await supabase
+        .from('calendar_sync_state')
+        .delete()
+        .eq('room_id', room.id);
+      
+      return await incrementalSync(room);
+    }
+
     console.error(`❌ ${room.id}홀 증분 동기화 실패:`, error.message);
     return 0;
   }
