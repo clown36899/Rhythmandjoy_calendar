@@ -90,27 +90,93 @@ export function subscribeToRealtimeUpdates(onUpdate) {
   return channel;
 }
 
-// 자동 Realtime 구독 (변경 감지 시 페이지 새로고침)
-function autoSubscribeAndRefresh() {
-  let reloadTimeout = null;
-  let isFirstEvent = true;
+// FullCalendar 슬라이드 인스턴스 가져오기 (fullcal_02.js에서)
+function getAllCalendarInstances() {
+  if (typeof window.calendar === 'undefined') return [];
   
+  const candidates = [
+    window.calendar?._prevCal, 
+    window.calendar?._curCal, 
+    window.calendar?._nextCal
+  ];
+  
+  return candidates.filter(cal => cal && typeof cal.addEvent === 'function');
+}
+
+// 실시간 이벤트 업데이트 (페이지 리로드 없이!)
+function updateCalendarEvent(payload) {
+  const calendars = getAllCalendarInstances();
+  
+  if (calendars.length === 0) {
+    console.warn('⚠️ FullCalendar 인스턴스가 아직 준비되지 않음');
+    return;
+  }
+  
+  const eventType = payload.eventType;
+  
+  if (eventType === 'INSERT' && payload.new) {
+    // 새 이벤트 추가
+    const booking = payload.new;
+    const roomConfig = roomConfigs[booking.room_id] || {};
+    
+    const newEvent = {
+      id: booking.id,
+      title: booking.title,
+      start: booking.start_time,
+      end: booking.end_time,
+      color: roomConfig.color || '#ccc',
+      textColor: '#000',
+      extendedProps: {
+        roomKey: booking.room_id,
+        roomName: roomConfig.name || booking.room_id,
+        googleEventId: booking.google_event_id,
+        description: booking.description
+      }
+    };
+    
+    calendars.forEach(cal => {
+      cal.addEvent(newEvent);
+    });
+    
+    console.log('✅ 새 이벤트 추가:', booking.title);
+    
+  } else if (eventType === 'UPDATE' && payload.new) {
+    // 기존 이벤트 수정
+    const booking = payload.new;
+    const roomConfig = roomConfigs[booking.room_id] || {};
+    
+    calendars.forEach(cal => {
+      const existingEvent = cal.getEventById(booking.id);
+      if (existingEvent) {
+        existingEvent.setProp('title', booking.title);
+        existingEvent.setStart(booking.start_time);
+        existingEvent.setEnd(booking.end_time);
+        existingEvent.setProp('color', roomConfig.color);
+      }
+    });
+    
+    console.log('✅ 이벤트 수정:', booking.title);
+    
+  } else if (eventType === 'DELETE' && payload.old) {
+    // 이벤트 삭제
+    const bookingId = payload.old.id;
+    
+    calendars.forEach(cal => {
+      const existingEvent = cal.getEventById(bookingId);
+      if (existingEvent) {
+        existingEvent.remove();
+      }
+    });
+    
+    console.log('✅ 이벤트 삭제:', bookingId);
+  }
+}
+
+// 자동 Realtime 구독 (실시간 업데이트, 리로드 없음!)
+function autoSubscribeAndRefresh() {
   subscribeToRealtimeUpdates((payload) => {
-    // 첫 이벤트만 로그 출력
-    if (isFirstEvent) {
-      console.log('🔔 변경 감지 → 3초 후 자동 새로고침');
-      isFirstEvent = false;
-    }
-    
-    // 연속된 변경 시 마지막 변경 후 3초 뒤에 새로고침
-    if (reloadTimeout) {
-      clearTimeout(reloadTimeout);
-    }
-    
-    reloadTimeout = setTimeout(() => {
-      console.log('🔄 페이지 새로고침...');
-      location.reload();
-    }, 3000);
+    console.log('🔔 실시간 변경 감지:', payload.eventType);
+    updateCalendarEvent(payload);
   });
 }
 
