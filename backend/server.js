@@ -9,6 +9,12 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
+// 정적 파일 서빙 (www 폴더)
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.use(express.static(path.join(__dirname, '../www')));
+
 // Supabase 클라이언트 초기화
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -117,7 +123,7 @@ app.get('/api/bookings/:roomId', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 백엔드 서버 실행 중: http://0.0.0.0:${PORT}`);
 });
