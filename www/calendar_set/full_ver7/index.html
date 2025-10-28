@@ -117,7 +117,7 @@
       <div class="timelogo" style="text-align: center">
         <span id="clock" style="color: gray">clock</span>
         <span id="apm" style="color: gray"></span>
-        <a href="admin.html" style="color: #999; font-size: 10px; text-decoration: none; margin-left: 5px; opacity: 0.3;">•</a>
+        <i id="adminIcon" class="fa-solid fa-gear" style="color: gray; font-size: 14px; margin-left: 8px; cursor: pointer; opacity: 0.5; transition: opacity 0.2s;"></i>
       </div>
     </div>
   </modallogo>
@@ -954,6 +954,20 @@ function applyMonthViewWidth() {
   }
   clock();
   setInterval(clock, 1000); // 1초마다 실행
+
+  // 관리자 아이콘 클릭 이벤트
+  document.getElementById("adminIcon").addEventListener("click", function(e) {
+    e.stopPropagation(); // 로고 배경 클릭 이벤트와 충돌 방지
+    window.location.href = "admin.html";
+  });
+
+  // 마우스 오버 효과
+  document.getElementById("adminIcon").addEventListener("mouseenter", function() {
+    this.style.opacity = "1";
+  });
+  document.getElementById("adminIcon").addEventListener("mouseleave", function() {
+    this.style.opacity = "0.5";
+  });
 </script>
 <script>
   function copy() {

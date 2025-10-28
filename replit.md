@@ -223,3 +223,20 @@ FullCalendar.addEvent() / .refetchEvents() / .getEventById().remove()
   - `attached_assets/` 폴더 전체를 Git 히스토리에서 제거 (비밀키 포함)
   - `.gitignore`에 `attached_assets/` 추가
   - GitHub push 보안 차단 해결 완료
+
+**관리자 시스템 (2025-10-28 추가)**
+- 간단한 로그인 기반 관리자 페이지
+  - URL: `/calendar_set/full_ver7/admin.html`
+  - 비밀번호 인증 (ADMIN_PASSWORD 환경 변수)
+  - 토큰 기반 세션 관리 (localStorage)
+- 수동 리셋 기능
+  - Sync Token 전체 삭제 + 전체 재동기화
+  - 관리자 인증 필요 (requireAuth 미들웨어)
+- 숨겨진 접근 방법
+  - 메인 페이지 시간 표시 옆 작은 톱니바퀴 아이콘 ⚙️
+  - 마우스 오버 시 opacity 증가 (0.5 → 1.0)
+  - 로고 클릭 시 나타나는 시간 옆에 위치
+- 파일:
+  - `backend/server.js`: 로그인 API, 인증 미들웨어
+  - `www/calendar_set/full_ver7/admin.html`: 관리자 페이지
+  - `www/calendar_set/full_ver7/index.html`: 톱니바퀴 아이콘 추가
