@@ -2,7 +2,8 @@ import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { 
-  syncAllCalendarsInitial
+  syncAllCalendarsInitial,
+  syncAllCalendarsIncremental
 } from './sync-calendar.js';
 import { setupAllWatches } from './setup-watches.js';
 
@@ -40,7 +41,7 @@ app.post('/api/calendar-webhook', async (req, res) => {
       return res.status(200).send('OK');
     }
 
-    // 변경 감지 시 이번 주만 동기화
+    // 변경 감지 시 증분 동기화 (변경된 이벤트만!)
     if (resourceState === 'exists') {
       const now = Date.now();
       
@@ -51,11 +52,11 @@ app.post('/api/calendar-webhook', async (req, res) => {
       }
       
       lastSyncTime = now;
-      console.log('🔄 캘린더 변경 감지, 이번 주만 동기화...');
+      console.log('🚀 캘린더 변경 감지, 증분 동기화 실행...');
       
-      // 비동기로 이번 주만 동기화 (응답은 즉시)
-      syncAllCalendarsInitial(true).catch(error => {
-        console.error('❌ Webhook 동기화 실패:', error);
+      // 비동기로 증분 동기화 (변경분만 가져오기!)
+      syncAllCalendarsIncremental().catch(error => {
+        console.error('❌ Webhook 증분 동기화 실패:', error);
       });
     }
 
