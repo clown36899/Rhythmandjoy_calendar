@@ -353,7 +353,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export { 
-  syncAllCalendarsIncremental, 
-  syncAllCalendarsInitial,
-  incrementalSync
+  syncAllCalendarsInitial
 };
