@@ -25,7 +25,8 @@ async function setupWatch(room) {
   try {
     console.log(`🔄 ${room.id}홀 Watch 등록 중...`);
 
-    // 1. Access Token 가져오기
+    // 1. JWT 인증 및 Access Token 가져오기
+    await auth.authorize();
     const accessToken = await auth.getAccessToken();
     
     // 2. 초기 sync token 가져오기 (REST API)
