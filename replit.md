@@ -112,12 +112,27 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (2025-10-28)
 
+**Google Calendar 실시간 동기화 완료 (즉시 반영)**
+- Service Account OAuth 2.0 인증 방식 도입
+- Google Calendar Push Notifications (Webhook) 구현
+- 증분 동기화 (Sync Token) - 변경된 이벤트만 업데이트
+- 채널 자동 갱신 (Scheduled Function, 매일 오전 3시)
+- Supabase 테이블 추가:
+  - `calendar_channels`: 채널 메타데이터 관리
+  - `calendar_sync_state`: Sync Token 저장
+- 실시간 흐름:
+  1. Google Calendar 변경 → Webhook 즉시 호출 (1초 이내)
+  2. 증분 동기화로 변경 사항만 Supabase 업데이트
+  3. Supabase Realtime → 프론트엔드 자동 새로고침
+
 **Netlify Functions 마이그레이션 완료**
 - Replit 백엔드를 Netlify Functions로 전환
-- `netlify/functions/sync-calendar.js`: 전체 데이터 동기화 (POST)
-- `netlify/functions/google-webhook.js`: Google Webhook 수신
-- `netlify.toml`: Functions 빌드 설정 추가
-- Google API 키: Netlify 환경 변수로 관리 (프로덕션)
+- `netlify/functions/sync-calendar.js`: 수동 전체 동기화 (POST)
+- `netlify/functions/google-webhook.js`: Google Webhook 수신 + 증분 동기화
+- `netlify/functions/setup-watches.js`: 초기 채널 등록
+- `netlify/functions/renew-watches.js`: 채널 자동 갱신
+- `netlify/functions/lib/google-auth.js`: Service Account 인증
+- Service Account JSON: Netlify 환경 변수로 관리 (프로덕션)
 - Replit Secrets: 개발/테스트 전용
 
 **프론트엔드 캐싱 최적화**
@@ -142,9 +157,13 @@ Preferred communication style: Simple, everyday language.
   - `DEPLOYMENT.md`: 배포 가이드 문서
 
 **아키텍처 변경**
-- **기존**: 정적 사이트 + Google Calendar API (클라이언트 직접 호출)
-- **신규**: Netlify (정적 + Functions) + Supabase (DB + Realtime)
-  - 장점: 서버리스, 실시간 업데이트, 데이터베이스 기반 확장성
+- **기존**: 정적 사이트 + Google Calendar API (클라이언트 직접 호출, 폴링 방식)
+- **신규**: Netlify (정적 + Functions) + Supabase (DB + Realtime) + Google Push Notifications
+  - 장점:
+    - **진짜 실시간** (Google → Netlify Webhook → Supabase → 프론트엔드)
+    - 서버리스 아키텍처
+    - 증분 동기화로 API 호출 최소화
+    - 채널 자동 갱신으로 무한 실시간
   - **Replit 서버 불필요** (개발/테스트만 사용)
 
 **보안 개선**
