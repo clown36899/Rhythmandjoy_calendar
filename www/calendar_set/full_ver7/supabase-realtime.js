@@ -126,6 +126,7 @@ function updateCalendarEvent(payload) {
       end: booking.end_time,
       color: roomConfig.color || '#ccc',
       textColor: '#000',
+      className: booking.room_id,  // ✅ A홀=a, B홀=b... (CSS 위치 적용!)
       extendedProps: {
         roomKey: booking.room_id,
         roomName: roomConfig.name || booking.room_id,
