@@ -14,7 +14,7 @@ const roomConfigs = {
   e: { name: "E홀", color: "#4c4c4c" }
 };
 
-// 📦 범위별 데이터 가져오기 (필요한 범위만!)
+// 📦 범위별 데이터 가져오기 (보이는 3주만!)
 export async function fetchBookingsFromSupabase(roomId = null, startTime = null, endTime = null) {
   try {
     let query = supabase
@@ -68,7 +68,7 @@ export function convertToCalendarEvents(bookings) {
   });
 }
 
-// Realtime 구독 설정
+// Realtime 구독 설정 (변경 감지 → 캘린더 새로고침만)
 export function subscribeToRealtimeUpdates(onUpdate) {
   const channel = supabase
     .channel('booking_changes')
@@ -80,7 +80,7 @@ export function subscribeToRealtimeUpdates(onUpdate) {
         table: 'booking_events'
       },
       (payload) => {
-        console.log('🔔 실시간 변경 감지:', payload);
+        console.log('🔔 실시간 변경 감지:', payload.eventType);
         
         if (typeof onUpdate === 'function') {
           onUpdate(payload);
@@ -90,27 +90,26 @@ export function subscribeToRealtimeUpdates(onUpdate) {
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         console.log('✅ Supabase Realtime 구독 성공');
-      } else {
-        console.log('📡 Realtime 상태:', status);
       }
     });
 
   return channel;
 }
 
-// 자동 Realtime 구독 및 캘린더 새로고침
+// 자동 Realtime 구독 (변경 시 캘린더만 새로고침)
 function autoSubscribeAndRefresh() {
   subscribeToRealtimeUpdates((payload) => {
     console.log('🔄 데이터 변경 감지, 캘린더 새로고침 중...');
     
+    // 캘린더 새로고침만 (각 캘린더가 범위별로 다시 요청)
     if (typeof calendar !== 'undefined') {
       const allCalendars = [calendar._prevCal, calendar._curCal, calendar._nextCal]
         .filter(cal => cal && typeof cal.refetchEvents === 'function');
       
       allCalendars.forEach(cal => {
         cal.refetchEvents();
-        console.log('✅ 캘린더 이벤트 새로고침 완료');
       });
+      console.log('✅ 캘린더 새로고침 완료 (범위별 재요청)');
     }
   });
 }
