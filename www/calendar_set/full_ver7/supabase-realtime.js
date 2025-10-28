@@ -68,16 +68,16 @@ export function convertToCalendarEvents(bookings) {
   });
 }
 
-// Realtime 구독 설정 (동기화 신호만 감지)
+// Realtime 구독 설정 (booking_events 변경 감지)
 export function subscribeToRealtimeUpdates(onUpdate) {
   const channel = supabase
-    .channel('sync_signals')
+    .channel('booking_events_realtime')
     .on(
       'postgres_changes',
       {
-        event: 'INSERT',
+        event: '*',
         schema: 'public',
-        table: 'sync_signals'
+        table: 'booking_events'
       },
       (payload) => {
         if (typeof onUpdate === 'function') {
