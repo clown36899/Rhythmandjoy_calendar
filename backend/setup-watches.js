@@ -1,6 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
 import { google } from 'googleapis';
+import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -15,8 +18,8 @@ const rooms = [
   { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
 ];
 
-// Webhook URL (Netlify 배포 후 실제 URL로 변경 필요)
-const WEBHOOK_URL = process.env.WEBHOOK_URL || 'https://리듬앤조이일정표.com/.netlify/functions/google-webhook';
+// Replit Webhook URL
+const WEBHOOK_URL = `https://${process.env.REPLIT_DEV_DOMAIN}/api/calendar-webhook`;
 
 // Google Service Account 인증
 function getGoogleAuth() {
@@ -38,16 +41,15 @@ function getGoogleAuth() {
 
 // Watch 채널 등록
 async function setupWatch(room) {
+  const auth = getGoogleAuth();
+  
   try {
     console.log(`🔄 ${room.id}홀 Watch 등록 중...`);
 
-    //  1. JWT 인증 및 Access Token 가져오기
-    const auth = getGoogleAuth();
-    await auth.authorize();
-    const tokenInfo = await auth.getAccessToken();
-    const token = tokenInfo.token;
+    // 1. Access Token 가져오기
+    const { token } = await auth.getAccessToken();
     
-    // 2. 초기 sync token 가져오기 (REST API)
+    // 2. 초기 sync token 가져오기
     const listUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events?maxResults=1&singleEvents=true&key=${process.env.GOOGLE_CALENDAR_API_KEY}`;
     const listResponse = await fetch(listUrl, {
       headers: {
@@ -55,15 +57,20 @@ async function setupWatch(room) {
       }
     });
     const listData = await listResponse.json();
+    
+    if (listData.error) {
+      throw new Error(`List events 실패: ${listData.error.message}`);
+    }
+    
     const initialSyncToken = listData.nextSyncToken;
 
-    // 3. Watch 채널 등록 (REST API with API Key in URL)
+    // 3. Watch 채널 등록
     const channelId = uuidv4();
     const channel = {
       id: channelId,
       type: 'web_hook',
       address: WEBHOOK_URL,
-      token: room.id // 룸 ID를 토큰으로 사용
+      token: room.id
     };
 
     const watchUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events/watch?key=${process.env.GOOGLE_CALENDAR_API_KEY}`;
@@ -76,12 +83,12 @@ async function setupWatch(room) {
       body: JSON.stringify(channel)
     });
 
-    if (!watchResponse.ok) {
-      const errorData = await watchResponse.json();
-      throw new Error(errorData.error?.message || `HTTP ${watchResponse.status}`);
+    const watchData = await watchResponse.json();
+    
+    if (watchData.error) {
+      throw new Error(watchData.error.message);
     }
 
-    const watchData = await watchResponse.json();
     const { resourceId, expiration } = watchData;
 
     console.log(`  ✅ Watch 등록 성공`);
@@ -89,7 +96,7 @@ async function setupWatch(room) {
     console.log(`     Resource ID: ${resourceId}`);
     console.log(`     만료: ${new Date(parseInt(expiration)).toLocaleString('ko-KR')}`);
 
-    // 3. Supabase에 채널 정보 저장
+    // 4. Supabase에 채널 정보 저장
     await supabase
       .from('calendar_channels')
       .upsert({
@@ -102,7 +109,7 @@ async function setupWatch(room) {
         onConflict: 'room_id'
       });
 
-    // 4. Sync token 저장
+    // 5. Sync token 저장
     if (initialSyncToken) {
       await supabase
         .from('calendar_sync_state')
@@ -119,7 +126,8 @@ async function setupWatch(room) {
       room: room.id,
       channelId,
       resourceId,
-      expiration: new Date(parseInt(expiration))
+      expiration: new Date(parseInt(expiration)),
+      webhookUrl: WEBHOOK_URL
     };
 
   } catch (error) {
@@ -129,43 +137,24 @@ async function setupWatch(room) {
 }
 
 // 모든 룸의 Watch 등록
-export async function handler(event, context) {
-  try {
-    console.log('🚀 모든 캘린더 Watch 등록 시작...\n');
+export async function setupAllWatches() {
+  console.log('🚀 모든 캘린더 Watch 등록 시작...');
+  console.log(`📍 Webhook URL: ${WEBHOOK_URL}\n`);
 
-    const results = [];
-    
-    for (const room of rooms) {
-      try {
-        const result = await setupWatch(room);
-        results.push(result);
-      } catch (error) {
-        results.push({
-          room: room.id,
-          error: error.message
-        });
-      }
+  const results = [];
+  
+  for (const room of rooms) {
+    try {
+      const result = await setupWatch(room);
+      results.push(result);
+    } catch (error) {
+      results.push({
+        room: room.id,
+        error: error.message
+      });
     }
-
-    console.log('\n✅ Watch 등록 완료!');
-    console.log(JSON.stringify(results, null, 2));
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Watch 채널 등록 완료',
-        results
-      }, null, 2)
-    };
-
-  } catch (error) {
-    console.error('❌ Setup 실패:', error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        error: error.message,
-        stack: error.stack
-      })
-    };
   }
+
+  console.log('\n✅ Watch 등록 완료!');
+  return results;
 }

@@ -2,6 +2,7 @@ import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { syncAllCalendars, syncRoomCalendar } from './sync-calendar.js';
+import { setupAllWatches } from './setup-watches.js';
 
 dotenv.config();
 
@@ -65,6 +66,18 @@ app.post('/api/sync', async (req, res) => {
     res.json({ success: true, message: '동기화 완료' });
   } catch (error) {
     console.error('❌ 수동 동기화 실패:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Watch 채널 등록 엔드포인트 (테스트용)
+app.post('/api/setup-watches', async (req, res) => {
+  try {
+    console.log('🔔 Watch 채널 등록 요청 받음');
+    const results = await setupAllWatches();
+    res.json({ success: true, message: 'Watch 채널 등록 완료', results });
+  } catch (error) {
+    console.error('❌ Watch 등록 실패:', error);
     res.status(500).json({ error: error.message });
   }
 });
