@@ -20,21 +20,25 @@ const WEBHOOK_URL = process.env.WEBHOOK_URL || 'https://리듬앤조이일정표
 
 // Watch 채널 등록
 async function setupWatch(room) {
-  const calendar = getCalendarClient();
+  const auth = getGoogleAuth();
   
   try {
     console.log(`🔄 ${room.id}홀 Watch 등록 중...`);
 
-    // 1. 초기 sync token 가져오기
-    const listResponse = await calendar.events.list({
-      calendarId: room.calendarId,
-      maxResults: 1,
-      singleEvents: true
+    // 1. Access Token 가져오기
+    const accessToken = await auth.getAccessToken();
+    
+    // 2. 초기 sync token 가져오기 (REST API)
+    const listUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events?maxResults=1&singleEvents=true&key=${process.env.GOOGLE_CALENDAR_API_KEY}`;
+    const listResponse = await fetch(listUrl, {
+      headers: {
+        'Authorization': `Bearer ${accessToken.token}`
+      }
     });
+    const listData = await listResponse.json();
+    const initialSyncToken = listData.nextSyncToken;
 
-    const initialSyncToken = listResponse.data.nextSyncToken;
-
-    // 2. Watch 채널 등록
+    // 3. Watch 채널 등록 (REST API with API Key in URL)
     const channelId = uuidv4();
     const channel = {
       id: channelId,
@@ -43,16 +47,23 @@ async function setupWatch(room) {
       token: room.id // 룸 ID를 토큰으로 사용
     };
 
-    const watchResponse = await calendar.events.watch({
-      calendarId: room.calendarId,
-      requestBody: channel
-    }, {
-      params: {
-        key: process.env.GOOGLE_CALENDAR_API_KEY // URL 파라미터로 API Key 추가
-      }
+    const watchUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events/watch?key=${process.env.GOOGLE_CALENDAR_API_KEY}`;
+    const watchResponse = await fetch(watchUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(channel)
     });
 
-    const { resourceId, expiration } = watchResponse.data;
+    if (!watchResponse.ok) {
+      const errorData = await watchResponse.json();
+      throw new Error(errorData.error?.message || `HTTP ${watchResponse.status}`);
+    }
+
+    const watchData = await watchResponse.json();
+    const { resourceId, expiration } = watchData;
 
     console.log(`  ✅ Watch 등록 성공`);
     console.log(`     Channel ID: ${channelId}`);
