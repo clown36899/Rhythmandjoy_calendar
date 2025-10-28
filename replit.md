@@ -219,3 +219,7 @@ FullCalendar.addEvent() / .refetchEvents() / .getEventById().remove()
 - 환경 변수로 비밀키 관리:
   - 개발: Replit Secrets
   - 프로덕션: Netlify 환경 변수
+- Git 히스토리 정리 완료:
+  - `attached_assets/` 폴더 전체를 Git 히스토리에서 제거 (비밀키 포함)
+  - `.gitignore`에 `attached_assets/` 추가
+  - GitHub push 보안 차단 해결 완료
