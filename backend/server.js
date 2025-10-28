@@ -1,7 +1,12 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
-import { syncAllCalendars, syncRoomCalendar } from './sync-calendar.js';
+import { 
+  syncAllCalendarsIncremental, 
+  syncAllCalendarsInitial,
+  incrementalSync,
+  rooms 
+} from './sync-calendar.js';
 import { setupAllWatches } from './setup-watches.js';
 
 dotenv.config();
@@ -38,7 +43,7 @@ app.post('/api/calendar-webhook', async (req, res) => {
       return res.status(200).send('OK');
     }
 
-    // 변경 감지 시 동기화 트리거
+    // 변경 감지 시 증분 동기화 트리거
     if (resourceState === 'exists') {
       const now = Date.now();
       
@@ -49,10 +54,10 @@ app.post('/api/calendar-webhook', async (req, res) => {
       }
       
       lastSyncTime = now;
-      console.log('🔄 캘린더 변경 감지, 동기화 시작...');
+      console.log('🔄 캘린더 변경 감지, 증분 동기화 시작...');
       
-      // 비동기로 동기화 실행 (응답은 즉시)
-      syncAllCalendars().catch(error => {
+      // 비동기로 증분 동기화 실행 (응답은 즉시)
+      syncAllCalendarsIncremental().catch(error => {
         console.error('❌ 자동 동기화 실패:', error);
       });
     }
@@ -64,14 +69,26 @@ app.post('/api/calendar-webhook', async (req, res) => {
   }
 });
 
-// 수동 동기화 트리거 엔드포인트 (테스트용)
+// 수동 초기 동기화 엔드포인트 (최근 3주)
 app.post('/api/sync', async (req, res) => {
   try {
-    console.log('🔄 수동 동기화 요청 받음');
-    await syncAllCalendars();
-    res.json({ success: true, message: '동기화 완료' });
+    console.log('🔄 수동 초기 동기화 요청 받음 (최근 3주)');
+    await syncAllCalendarsInitial();
+    res.json({ success: true, message: '초기 동기화 완료 (최근 3주)' });
   } catch (error) {
     console.error('❌ 수동 동기화 실패:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 수동 증분 동기화 엔드포인트 (테스트용)
+app.post('/api/sync-incremental', async (req, res) => {
+  try {
+    console.log('🔄 수동 증분 동기화 요청 받음');
+    await syncAllCalendarsIncremental();
+    res.json({ success: true, message: '증분 동기화 완료' });
+  } catch (error) {
+    console.error('❌ 증분 동기화 실패:', error);
     res.status(500).json({ error: error.message });
   }
 });

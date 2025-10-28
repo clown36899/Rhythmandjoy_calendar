@@ -23,44 +23,31 @@ const rooms = [
   { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
 ];
 
-async function syncRoomCalendar(room) {
+/**
+ * 특정 날짜 범위만 동기화 (3주 윈도우)
+ * @param {Object} room - 룸 정보 { id, calendarId }
+ * @param {Date} timeMin - 시작 날짜
+ * @param {Date} timeMax - 종료 날짜
+ */
+async function rangeSync(room, timeMin, timeMax) {
   try {
-    console.log(`🔄 ${room.id}홀 동기화 시작...`);
+    console.log(`🔄 ${room.id}홀 범위 동기화: ${timeMin.toISOString().split('T')[0]} ~ ${timeMax.toISOString().split('T')[0]}`);
 
-    // 🚀 모든 예약 이벤트 가져오기 (제한 없음)
-    const timeMin = new Date('2020-01-01T00:00:00Z'); // 모든 과거 데이터
-    const timeMax = new Date();
-    timeMax.setFullYear(timeMax.getFullYear() + 2); // 2년 후까지
+    const response = await calendar.events.list({
+      calendarId: room.calendarId,
+      timeMin: timeMin.toISOString(),
+      timeMax: timeMax.toISOString(),
+      maxResults: 500,
+      singleEvents: true,
+      orderBy: 'startTime'
+    });
 
-    // 페이지네이션으로 모든 이벤트 가져오기
-    let allEvents = [];
-    let pageToken = null;
+    const events = response.data.items || [];
+    console.log(`  📌 ${events.length}개 이벤트 발견`);
 
-    do {
-      const response = await calendar.events.list({
-        calendarId: room.calendarId,
-        timeMin: timeMin.toISOString(),
-        timeMax: timeMax.toISOString(),
-        maxResults: 2500,
-        singleEvents: true,
-        orderBy: 'startTime',
-        pageToken: pageToken
-      });
-
-      const events = response.data.items || [];
-      allEvents = allEvents.concat(events);
-      pageToken = response.data.nextPageToken;
-
-      if (pageToken) {
-        console.log(`  📄 페이지 ${Math.ceil(allEvents.length / 2500)} 로드 중... (현재: ${allEvents.length}개)`);
-      }
-    } while (pageToken);
-
-    console.log(`  📌 ${allEvents.length}개 이벤트 발견`);
-
-    // Supabase에 upsert (추가/업데이트만, 삭제 없음)
+    // Supabase에 upsert
     const eventsToUpsert = [];
-    for (const event of allEvents) {
+    for (const event of events) {
       if (!event.start || !event.start.dateTime) continue;
 
       eventsToUpsert.push({
@@ -74,45 +61,232 @@ async function syncRoomCalendar(room) {
       });
     }
 
-    // 100개씩 배치 upsert (Supabase 제한)
-    for (let i = 0; i < eventsToUpsert.length; i += 100) {
-      const batch = eventsToUpsert.slice(i, i + 100);
+    if (eventsToUpsert.length > 0) {
       const { error } = await supabase
         .from('booking_events')
-        .upsert(batch, {
+        .upsert(eventsToUpsert, {
           onConflict: 'google_event_id',
           ignoreDuplicates: false
         });
 
       if (error) {
-        console.error(`  ❌ 배치 ${Math.floor(i / 100) + 1} 저장 오류:`, error.message);
+        console.error(`  ❌ ${room.id}홀 저장 오류:`, error.message);
+        return 0;
       }
     }
 
     console.log(`  ✅ ${room.id}홀 ${eventsToUpsert.length}개 동기화 완료`);
     return eventsToUpsert.length;
   } catch (error) {
-    console.error(`❌ ${room.id}홀 동기화 실패:`, error.message);
+    console.error(`❌ ${room.id}홀 범위 동기화 실패:`, error.message);
     return 0;
   }
 }
 
-async function syncAllCalendars() {
-  console.log('🚀 전체 캘린더 동기화 시작...\n');
+/**
+ * 증분 동기화 (변경된 이벤트만 업데이트)
+ * @param {Object} room - 룸 정보 { id, calendarId }
+ */
+async function incrementalSync(room) {
+  try {
+    console.log(`🔄 ${room.id}홀 증분 동기화 시작...`);
+
+    // DB에서 sync token 가져오기
+    const { data: syncState, error: fetchError } = await supabase
+      .from('calendar_sync_state')
+      .select('sync_token')
+      .eq('room_id', room.id)
+      .single();
+
+    if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = row not found
+      console.error(`  ❌ sync token 조회 오류:`, fetchError.message);
+      return 0;
+    }
+
+    const syncToken = syncState?.sync_token;
+
+    // sync token이 없으면 최근 3주 범위 동기화로 대체
+    if (!syncToken) {
+      console.log(`  ⚠️ sync token 없음, 최근 3주 범위 동기화 실행`);
+      const now = new Date();
+      const timeMin = new Date(now);
+      timeMin.setDate(timeMin.getDate() - 7); // 1주 전
+      const timeMax = new Date(now);
+      timeMax.setDate(timeMax.getDate() + 14); // 2주 후
+
+      const count = await rangeSync(room, timeMin, timeMax);
+      
+      // 초기 sync token 저장
+      const initResponse = await calendar.events.list({
+        calendarId: room.calendarId,
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+        maxResults: 1,
+        singleEvents: true
+      });
+
+      if (initResponse.data.nextSyncToken) {
+        await supabase
+          .from('calendar_sync_state')
+          .upsert({
+            room_id: room.id,
+            sync_token: initResponse.data.nextSyncToken,
+            last_synced_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'room_id' });
+      }
+
+      return count;
+    }
+
+    // sync token으로 증분 동기화
+    console.log(`  🔄 sync token 사용: ${syncToken.substring(0, 20)}...`);
+    
+    const response = await calendar.events.list({
+      calendarId: room.calendarId,
+      syncToken: syncToken,
+      maxResults: 500,
+      singleEvents: true
+    });
+
+    const events = response.data.items || [];
+    console.log(`  📌 ${events.length}개 변경사항 발견`);
+
+    let upsertCount = 0;
+    let deleteCount = 0;
+
+    // 이벤트 처리
+    const eventsToUpsert = [];
+    const eventsToDelete = [];
+
+    for (const event of events) {
+      // 삭제된 이벤트
+      if (event.status === 'cancelled') {
+        eventsToDelete.push(event.id);
+        continue;
+      }
+
+      // 추가/수정된 이벤트
+      if (!event.start || !event.start.dateTime) continue;
+
+      eventsToUpsert.push({
+        room_id: room.id,
+        google_event_id: event.id,
+        title: event.summary || '(제목 없음)',
+        start_time: event.start.dateTime,
+        end_time: event.end.dateTime,
+        description: event.description || null,
+        updated_at: new Date().toISOString()
+      });
+    }
+
+    // Upsert
+    if (eventsToUpsert.length > 0) {
+      const { error } = await supabase
+        .from('booking_events')
+        .upsert(eventsToUpsert, {
+          onConflict: 'google_event_id',
+          ignoreDuplicates: false
+        });
+
+      if (error) {
+        console.error(`  ❌ upsert 오류:`, error.message);
+      } else {
+        upsertCount = eventsToUpsert.length;
+      }
+    }
+
+    // Delete
+    if (eventsToDelete.length > 0) {
+      const { error } = await supabase
+        .from('booking_events')
+        .delete()
+        .in('google_event_id', eventsToDelete);
+
+      if (error) {
+        console.error(`  ❌ delete 오류:`, error.message);
+      } else {
+        deleteCount = eventsToDelete.length;
+      }
+    }
+
+    // 새 sync token 저장
+    if (response.data.nextSyncToken) {
+      await supabase
+        .from('calendar_sync_state')
+        .upsert({
+          room_id: room.id,
+          sync_token: response.data.nextSyncToken,
+          last_synced_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'room_id' });
+      
+      console.log(`  💾 새 sync token 저장됨`);
+    }
+
+    console.log(`  ✅ ${room.id}홀 증분 동기화 완료 (추가/수정: ${upsertCount}, 삭제: ${deleteCount})`);
+    return upsertCount + deleteCount;
+  } catch (error) {
+    // sync token 만료 시 전체 재동기화
+    if (error.message && error.message.includes('Sync token')) {
+      console.log(`  ⚠️ sync token 만료, 전체 재동기화 실행`);
+      
+      // sync token 삭제
+      await supabase
+        .from('calendar_sync_state')
+        .delete()
+        .eq('room_id', room.id);
+
+      // 최근 3주 재동기화
+      return await incrementalSync(room);
+    }
+
+    console.error(`❌ ${room.id}홀 증분 동기화 실패:`, error.message);
+    return 0;
+  }
+}
+
+/**
+ * 모든 룸의 증분 동기화 (Webhook 트리거용)
+ */
+async function syncAllCalendarsIncremental() {
+  console.log('🚀 전체 증분 동기화 시작...\n');
   
   const results = [];
   for (const room of rooms) {
-    const count = await syncRoomCalendar(room);
+    const count = await incrementalSync(room);
     results.push({ room: room.id, count });
   }
   
-  console.log('\n✅ 전체 동기화 완료!');
+  console.log('\n✅ 전체 증분 동기화 완료!');
   return results;
 }
 
-// 스크립트 직접 실행 시
+/**
+ * 전체 룸 초기 동기화 (최근 3주)
+ */
+async function syncAllCalendarsInitial() {
+  console.log('🚀 초기 동기화 시작 (최근 3주)...\n');
+  
+  const now = new Date();
+  const timeMin = new Date(now);
+  timeMin.setDate(timeMin.getDate() - 7); // 1주 전
+  const timeMax = new Date(now);
+  timeMax.setDate(timeMax.getDate() + 14); // 2주 후
+
+  const results = [];
+  for (const room of rooms) {
+    const count = await rangeSync(room, timeMin, timeMax);
+    results.push({ room: room.id, count });
+  }
+  
+  console.log('\n✅ 초기 동기화 완료!');
+  return results;
+}
+
+// 스크립트 직접 실행 시 (초기 동기화)
 if (import.meta.url === `file://${process.argv[1]}`) {
-  syncAllCalendars()
+  syncAllCalendarsInitial()
     .then(() => process.exit(0))
     .catch(error => {
       console.error('동기화 실패:', error);
@@ -120,4 +294,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     });
 }
 
-export { syncAllCalendars, syncRoomCalendar };
+export { 
+  rangeSync, 
+  incrementalSync, 
+  syncAllCalendarsIncremental, 
+  syncAllCalendarsInitial,
+  rooms 
+};
