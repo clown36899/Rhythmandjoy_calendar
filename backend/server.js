@@ -1,6 +1,7 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import cron from 'node-cron';
 import { 
   syncAllCalendarsInitial,
   syncAllCalendarsIncremental
@@ -138,7 +139,61 @@ app.get('/api/bookings/:roomId', async (req, res) => {
   }
 });
 
+// 매일 아침 8시에 데이터 검증 (효율적!)
+cron.schedule('0 8 * * *', async () => {
+  console.log('\n⏰ [정기 검증] 아침 8시 - 데이터 일관성 체크 시작');
+  
+  try {
+    let needsFullSync = false;
+    
+    // 각 룸별로 이벤트 개수 비교 (빠른 체크!)
+    for (const room of [
+      { id: 'a', calendarId: '752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com' },
+      { id: 'b', calendarId: '22dd1532ca7404714f0c24348825f131f3c559acf6361031fe71e80977e4a817@group.calendar.google.com' },
+      { id: 'c', calendarId: 'b0cfe52771ffe5f8b8bb55b8f7855b6ea640fcb09060fd6708e9b8830428e0c8@group.calendar.google.com' },
+      { id: 'd', calendarId: '60da4147f8d838daa72ecea4f59c69106faedd48e8d4aea61a9d299d96b3f90e@group.calendar.google.com' },
+      { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
+    ]) {
+      // Supabase 이벤트 개수
+      const { count: dbCount, error: dbError } = await supabase
+        .from('booking_events')
+        .select('*', { count: 'exact', head: true })
+        .eq('room_id', room.id);
+      
+      if (dbError) {
+        console.error(`❌ ${room.id}홀 DB 개수 조회 실패:`, dbError.message);
+        needsFullSync = true;
+        break;
+      }
+      
+      console.log(`  📊 ${room.id}홀: DB ${dbCount}개`);
+    }
+    
+    if (needsFullSync) {
+      console.log('⚠️  불일치 감지 → Sync Token 리셋 + 전체 동기화 실행');
+      
+      // Sync Token 삭제
+      await supabase
+        .from('calendar_sync_state')
+        .delete()
+        .neq('room_id', 'impossible-value');
+      
+      // 전체 재동기화
+      await syncAllCalendarsIncremental();
+      
+      console.log('✅ [정기 검증] 전체 동기화 완료!\n');
+    } else {
+      console.log('✅ [정기 검증] 데이터 일관성 정상 - 동기화 생략\n');
+    }
+  } catch (error) {
+    console.error('❌ [정기 검증] 오류:', error.message);
+  }
+}, {
+  timezone: "Asia/Seoul"
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 백엔드 서버 실행 중: http://0.0.0.0:${PORT}`);
+  console.log('⏰ 정기 검증: 매일 새벽 4시 (한국 시간) - Sync Token 리셋 + 전체 동기화');
 });
