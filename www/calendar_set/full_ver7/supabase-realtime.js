@@ -99,12 +99,14 @@ export function subscribeToRealtimeUpdates(onUpdate) {
 // 자동 Realtime 구독 (변경 감지 시 페이지 새로고침)
 function autoSubscribeAndRefresh() {
   let reloadTimeout = null;
+  let isFirstEvent = true;
   
   subscribeToRealtimeUpdates((payload) => {
-    const eventType = payload.eventType; // INSERT, UPDATE, DELETE
-    const changedRoomId = payload?.new?.room_id || payload?.old?.room_id;
-    
-    console.log(`🔔 ${eventType} 감지 (${changedRoomId}홀) → 3초 후 자동 새로고침`);
+    // 첫 이벤트만 로그 출력
+    if (isFirstEvent) {
+      console.log('🔔 변경 감지 → 3초 후 자동 새로고침');
+      isFirstEvent = false;
+    }
     
     // 연속된 변경 시 마지막 변경 후 3초 뒤에 새로고침
     if (reloadTimeout) {
