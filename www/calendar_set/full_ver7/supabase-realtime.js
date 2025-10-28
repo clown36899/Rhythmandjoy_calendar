@@ -96,20 +96,33 @@ export function subscribeToRealtimeUpdates(onUpdate) {
   return channel;
 }
 
-// 자동 Realtime 구독 (변경 시 캘린더만 새로고침)
+// 자동 Realtime 구독 (변경된 룸만 새로고침)
 function autoSubscribeAndRefresh() {
   subscribeToRealtimeUpdates((payload) => {
     console.log('🔄 데이터 변경 감지, 캘린더 새로고침 중...');
     
-    // 캘린더 새로고침만 (각 캘린더가 범위별로 다시 요청)
+    // 변경된 룸 ID 확인
+    const changedRoomId = payload?.new?.room_id || payload?.old?.room_id;
+    
+    if (!changedRoomId) {
+      console.warn('⚠️ room_id를 찾을 수 없습니다, 전체 새로고침 생략');
+      return;
+    }
+    
+    console.log(`🔄 ${changedRoomId}홀만 새로고침`);
+    
+    // 변경된 룸의 이벤트 소스만 새로고침
     if (typeof calendar !== 'undefined') {
       const allCalendars = [calendar._prevCal, calendar._curCal, calendar._nextCal]
         .filter(cal => cal && typeof cal.refetchEvents === 'function');
       
       allCalendars.forEach(cal => {
-        cal.refetchEvents();
+        const eventSource = cal.getEventSourceById(changedRoomId);
+        if (eventSource) {
+          eventSource.refetch();
+        }
       });
-      console.log('✅ 캘린더 새로고침 완료 (범위별 재요청)');
+      console.log(`✅ ${changedRoomId}홀 새로고침 완료`);
     }
   });
 }
