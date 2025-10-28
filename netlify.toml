@@ -15,4 +15,9 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["googleapis", "@supabase/supabase-js"]
+  external_node_modules = ["googleapis", "@supabase/supabase-js", "uuid"]
+
+# 채널 자동 갱신 (매일 오전 3시 실행)
+[[functions]]
+  path = "netlify/functions/renew-watches.js"
+  schedule = "0 3 * * *"
