@@ -5,7 +5,8 @@ import {
   syncAllCalendarsIncremental, 
   syncAllCalendarsInitial,
   incrementalSync,
-  rooms 
+  rooms,
+  rangeSync 
 } from './sync-calendar.js';
 import { setupAllWatches } from './setup-watches.js';
 
@@ -43,7 +44,7 @@ app.post('/api/calendar-webhook', async (req, res) => {
       return res.status(200).send('OK');
     }
 
-    // 변경 감지 시 증분 동기화 트리거
+    // 변경 감지 시 해당 룸만 동기화
     if (resourceState === 'exists') {
       const now = Date.now();
       
@@ -54,12 +55,41 @@ app.post('/api/calendar-webhook', async (req, res) => {
       }
       
       lastSyncTime = now;
-      console.log('🔄 캘린더 변경 감지, 증분 동기화 시작...');
+      console.log('🔄 캘린더 변경 감지, 해당 룸만 동기화...');
       
-      // 비동기로 증분 동기화 실행 (응답은 즉시)
-      syncAllCalendarsIncremental().catch(error => {
-        console.error('❌ 자동 동기화 실패:', error);
-      });
+      // 비동기로 특정 룸만 동기화 (응답은 즉시)
+      (async () => {
+        try {
+          // channelId로 room 찾기
+          const { data: channel } = await supabase
+            .from('calendar_channels')
+            .select('room_id')
+            .eq('channel_id', channelId)
+            .single();
+          
+          if (channel && channel.room_id) {
+            const room = rooms.find(r => r.id === channel.room_id);
+            if (room) {
+              console.log(`  → ${room.id}홀 변경 감지, 최근 3주만 동기화`);
+              
+              // 최근 3주 범위 설정
+              const now = new Date();
+              const timeMin = new Date(now);
+              timeMin.setDate(timeMin.getDate() - 7);  // 1주 전
+              const timeMax = new Date(now);
+              timeMax.setDate(timeMax.getDate() + 14); // 2주 후
+              
+              await rangeSync(room, timeMin, timeMax);
+              console.log(`✅ ${room.id}홀 동기화 완료`);
+            }
+          } else {
+            console.log('  ⚠️ 룸 식별 실패, 전체 동기화');
+            await syncAllCalendarsIncremental();
+          }
+        } catch (error) {
+          console.error('❌ Webhook 동기화 실패:', error);
+        }
+      })();
     }
 
     res.status(200).send('OK');

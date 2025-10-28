@@ -96,69 +96,25 @@ export function subscribeToRealtimeUpdates(onUpdate) {
   return channel;
 }
 
-// 자동 Realtime 구독 (추가/삭제된 이벤트만 패치)
+// 자동 Realtime 구독 (변경 감지 시 페이지 새로고침)
 function autoSubscribeAndRefresh() {
+  let reloadTimeout = null;
+  
   subscribeToRealtimeUpdates((payload) => {
     const eventType = payload.eventType; // INSERT, UPDATE, DELETE
-    console.log(`🔔 ${eventType} 이벤트 감지`);
-    
-    // 변경된 룸 ID 확인
     const changedRoomId = payload?.new?.room_id || payload?.old?.room_id;
     
-    if (!changedRoomId) {
-      console.warn('⚠️ room_id를 찾을 수 없습니다');
-      return;
+    console.log(`🔔 ${eventType} 감지 (${changedRoomId}홀) → 3초 후 자동 새로고침`);
+    
+    // 연속된 변경 시 마지막 변경 후 3초 뒤에 새로고침
+    if (reloadTimeout) {
+      clearTimeout(reloadTimeout);
     }
     
-    if (typeof calendar === 'undefined') {
-      console.warn('⚠️ 캘린더가 초기화되지 않았습니다');
-      return;
-    }
-    
-    const allCalendars = [calendar._prevCal, calendar._curCal, calendar._nextCal]
-      .filter(cal => cal);
-    
-    // INSERT: 새 이벤트 추가
-    if (eventType === 'INSERT' && payload.new) {
-      const newEvent = convertToCalendarEvents([payload.new])[0];
-      
-      allCalendars.forEach(cal => {
-        // 이미 존재하는지 확인
-        const existing = cal.getEventById(newEvent.id);
-        if (!existing) {
-          cal.addEvent(newEvent);
-          console.log(`➕ ${changedRoomId}홀 이벤트 추가: ${newEvent.title}`);
-        }
-      });
-    }
-    
-    // UPDATE: 기존 이벤트 수정
-    else if (eventType === 'UPDATE' && payload.new) {
-      const updatedEvent = convertToCalendarEvents([payload.new])[0];
-      
-      allCalendars.forEach(cal => {
-        const existing = cal.getEventById(updatedEvent.id);
-        if (existing) {
-          existing.setProp('title', updatedEvent.title);
-          existing.setStart(updatedEvent.start);
-          existing.setEnd(updatedEvent.end);
-          console.log(`✏️ ${changedRoomId}홀 이벤트 수정: ${updatedEvent.title}`);
-        }
-      });
-    }
-    
-    // DELETE: 기존 이벤트 삭제
-    else if (eventType === 'DELETE' && payload.old) {
-      const deletedId = payload.old.id;
-      
-      allCalendars.forEach(cal => {
-        const existing = cal.getEventById(deletedId);
-        if (existing) {
-          existing.remove();
-          console.log(`🗑️ ${changedRoomId}홀 이벤트 삭제: ${existing.title}`);
-        }
-      });
-    }
+    reloadTimeout = setTimeout(() => {
+      console.log('🔄 페이지 새로고침...');
+      location.reload();
+    }, 3000); // 3초 대기 (연속 변경 대비)
   });
 }
 

@@ -15,7 +15,7 @@ const calendar = google.calendar({
 });
 
 // 연습실 정보
-const rooms = [
+export const rooms = [
   { id: 'a', calendarId: '752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com' },
   { id: 'b', calendarId: '22dd1532ca7404714f0c24348825f131f3c559acf6361031fe71e80977e4a817@group.calendar.google.com' },
   { id: 'c', calendarId: 'b0cfe52771ffe5f8b8bb55b8f7855b6ea640fcb09060fd6708e9b8830428e0c8@group.calendar.google.com' },
@@ -29,7 +29,7 @@ const rooms = [
  * @param {Date} timeMin - 시작 날짜
  * @param {Date} timeMax - 종료 날짜
  */
-async function rangeSync(room, timeMin, timeMax) {
+export async function rangeSync(room, timeMin, timeMax) {
   try {
     console.log(`🔄 ${room.id}홀 범위 동기화: ${timeMin.toISOString().split('T')[0]} ~ ${timeMax.toISOString().split('T')[0]}`);
 
@@ -353,9 +353,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export { 
-  rangeSync, 
-  incrementalSync, 
   syncAllCalendarsIncremental, 
   syncAllCalendarsInitial,
-  rooms 
+  incrementalSync
 };
