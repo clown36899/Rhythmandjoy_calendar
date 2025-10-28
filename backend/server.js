@@ -192,8 +192,38 @@ cron.schedule('0 8 * * *', async () => {
   timezone: "Asia/Seoul"
 });
 
+// 수동 리셋 엔드포인트 (Sync Token 삭제 + 전체 재동기화)
+app.post('/api/reset-sync', async (req, res) => {
+  try {
+    console.log('🔄 [수동 리셋] Sync Token 리셋 + 전체 동기화 시작');
+    
+    // 1. Sync Token 전체 삭제
+    const { error: deleteError } = await supabase
+      .from('calendar_sync_state')
+      .delete()
+      .neq('room_id', 'impossible-value');
+    
+    if (deleteError) {
+      console.error('❌ Sync Token 삭제 실패:', deleteError.message);
+      return res.status(500).json({ error: deleteError.message });
+    }
+    
+    console.log('✅ 모든 Sync Token 삭제 완료');
+    
+    // 2. 전체 재동기화
+    await syncAllCalendarsIncremental();
+    
+    console.log('✅ [수동 리셋] 전체 동기화 완료!\n');
+    res.json({ success: true, message: 'Sync Token 리셋 및 전체 동기화 완료' });
+  } catch (error) {
+    console.error('❌ [수동 리셋] 실패:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 백엔드 서버 실행 중: http://0.0.0.0:${PORT}`);
-  console.log('⏰ 정기 검증: 매일 새벽 4시 (한국 시간) - Sync Token 리셋 + 전체 동기화');
+  console.log('⏰ 정기 검증: 매일 아침 8시 (한국 시간) - 데이터 일관성 체크');
+  console.log('🔧 수동 리셋: POST /api/reset-sync');
 });
