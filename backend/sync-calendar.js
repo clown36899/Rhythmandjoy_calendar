@@ -11,7 +11,7 @@ const supabase = createClient(
 
 const calendar = google.calendar({
   version: 'v3',
-  auth: 'AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8' // Google Calendar API 키
+  auth: process.env.GOOGLE_CALENDAR_API_KEY
 });
 
 // 연습실 정보
@@ -27,11 +27,11 @@ async function syncRoomCalendar(room) {
   try {
     console.log(`🔄 ${room.id}홀 동기화 시작...`);
 
-    // 최근 3개월 이벤트 가져오기
+    // 전체 예약 이벤트 가져오기 (과거 6개월 ~ 미래 12개월)
     const timeMin = new Date();
-    timeMin.setMonth(timeMin.getMonth() - 1);
+    timeMin.setMonth(timeMin.getMonth() - 6);
     const timeMax = new Date();
-    timeMax.setMonth(timeMax.getMonth() + 2);
+    timeMax.setMonth(timeMax.getMonth() + 12);
 
     const response = await calendar.events.list({
       calendarId: room.calendarId,
