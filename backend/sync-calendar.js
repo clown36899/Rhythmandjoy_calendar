@@ -194,7 +194,7 @@ async function incrementalSync(room) {
 
       // sync token 저장
       if (nextSyncToken) {
-        await supabase
+        const { data, error } = await supabase
           .from('calendar_sync_state')
           .upsert({
             room_id: room.id,
@@ -203,7 +203,11 @@ async function incrementalSync(room) {
             updated_at: new Date().toISOString()
           }, { onConflict: 'room_id' });
         
-        console.log(`  💾 sync token 저장 완료 (최근 3주 ${recentEvents.length}개만 저장)`);
+        if (error) {
+          console.error(`  ❌ sync token 저장 실패:`, error.message);
+        } else {
+          console.log(`  💾 sync token 저장 완료 (최근 3주 ${recentEvents.length}개만 저장)`);
+        }
       }
 
       return recentEvents.length;
@@ -265,7 +269,7 @@ async function incrementalSync(room) {
 
     // 새 sync token 저장
     if (response.data.nextSyncToken) {
-      await supabase
+      const { error: tokenError } = await supabase
         .from('calendar_sync_state')
         .upsert({
           room_id: room.id,
@@ -273,6 +277,10 @@ async function incrementalSync(room) {
           last_synced_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }, { onConflict: 'room_id' });
+      
+      if (tokenError) {
+        console.error(`  ❌ sync token 업데이트 실패:`, tokenError.message);
+      }
     }
 
     console.log(`  ✅ ${room.id}홀 증분 완료 (추가: ${added}, 수정: ${updated}, 삭제: ${deleted})`);
