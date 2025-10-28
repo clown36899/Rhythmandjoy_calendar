@@ -92,18 +92,31 @@ async function incrementalSync(room) {
     console.log(`🔄 ${room.id}홀 증분 동기화 시작...`);
 
     // DB에서 sync token 가져오기
-    const { data: syncState, error: fetchError } = await supabase
-      .from('calendar_sync_state')
-      .select('sync_token')
-      .eq('room_id', room.id)
-      .single();
+    let syncToken = null;
+    
+    try {
+      const { data: syncState, error: fetchError } = await supabase
+        .from('calendar_sync_state')
+        .select('sync_token')
+        .eq('room_id', room.id)
+        .single();
 
-    if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = row not found
-      console.error(`  ❌ sync token 조회 오류:`, fetchError.message);
-      return 0;
+      // 테이블이 없거나 행이 없으면 sync token 없음으로 처리
+      if (fetchError) {
+        if (fetchError.code === 'PGRST116' || fetchError.message.includes('does not exist') || fetchError.message.includes('schema cache')) {
+          console.log(`  ⚠️ sync token 없음 (테이블 없음 또는 첫 실행)`);
+          syncToken = null;
+        } else {
+          console.error(`  ❌ sync token 조회 오류:`, fetchError.message);
+          return 0;
+        }
+      } else {
+        syncToken = syncState?.sync_token;
+      }
+    } catch (error) {
+      console.log(`  ⚠️ sync token 조회 실패, 범위 동기화로 진행`);
+      syncToken = null;
     }
-
-    const syncToken = syncState?.sync_token;
 
     // sync token이 없으면 최근 3주 범위 동기화로 대체
     if (!syncToken) {
@@ -116,24 +129,29 @@ async function incrementalSync(room) {
 
       const count = await rangeSync(room, timeMin, timeMax);
       
-      // 초기 sync token 저장
-      const initResponse = await calendar.events.list({
-        calendarId: room.calendarId,
-        timeMin: timeMin.toISOString(),
-        timeMax: timeMax.toISOString(),
-        maxResults: 1,
-        singleEvents: true
-      });
+      // 초기 sync token 저장 (테이블이 있으면)
+      try {
+        const initResponse = await calendar.events.list({
+          calendarId: room.calendarId,
+          timeMin: timeMin.toISOString(),
+          timeMax: timeMax.toISOString(),
+          maxResults: 1,
+          singleEvents: true
+        });
 
-      if (initResponse.data.nextSyncToken) {
-        await supabase
-          .from('calendar_sync_state')
-          .upsert({
-            room_id: room.id,
-            sync_token: initResponse.data.nextSyncToken,
-            last_synced_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'room_id' });
+        if (initResponse.data.nextSyncToken) {
+          await supabase
+            .from('calendar_sync_state')
+            .upsert({
+              room_id: room.id,
+              sync_token: initResponse.data.nextSyncToken,
+              last_synced_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'room_id' });
+          console.log(`  💾 sync token 저장됨`);
+        }
+      } catch (error) {
+        console.log(`  ⚠️ sync token 저장 실패 (테이블 없음), 다음에 재시도`);
       }
 
       return count;
@@ -210,18 +228,22 @@ async function incrementalSync(room) {
       }
     }
 
-    // 새 sync token 저장
+    // 새 sync token 저장 (테이블이 있으면)
     if (response.data.nextSyncToken) {
-      await supabase
-        .from('calendar_sync_state')
-        .upsert({
-          room_id: room.id,
-          sync_token: response.data.nextSyncToken,
-          last_synced_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'room_id' });
-      
-      console.log(`  💾 새 sync token 저장됨`);
+      try {
+        await supabase
+          .from('calendar_sync_state')
+          .upsert({
+            room_id: room.id,
+            sync_token: response.data.nextSyncToken,
+            last_synced_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'room_id' });
+        
+        console.log(`  💾 새 sync token 저장됨`);
+      } catch (error) {
+        console.log(`  ⚠️ sync token 저장 실패 (테이블 없음)`);
+      }
     }
 
     console.log(`  ✅ ${room.id}홀 증분 동기화 완료 (추가/수정: ${upsertCount}, 삭제: ${deleteCount})`);
