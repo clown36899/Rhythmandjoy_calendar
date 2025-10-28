@@ -19,7 +19,6 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     
-    socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("0.0.0.0", PORT), MyHTTPRequestHandler) as httpd:
         print(f"리듬앤조이 연습실 서버가 포트 {PORT}에서 실행 중입니다...")
         print(f"디렉토리: {os.path.abspath(DIRECTORY)}")

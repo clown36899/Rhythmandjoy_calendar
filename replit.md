@@ -1,81 +1,69 @@
-# 리듬앤조이 연습실 예약 시스템
+# Overview
 
-## 프로젝트 개요
-리듬앤조이 음악 연습실의 예약 일정을 표시하는 웹 애플리케이션입니다.
-- **유형**: 정적 웹사이트 (HTML/JavaScript/CSS)
-- **주요 기능**: Google Calendar 연동 캘린더, 연습실 예약 현황 확인
-- **언어**: JavaScript, HTML, CSS (한국어 UI)
+This is a room booking calendar application for "Rhythmjoy" (리듬앤조이), a Korean music practice room facility. The application displays real-time availability of multiple practice rooms (A, B, C, D, E halls) using Google Calendar integration. Users can view room schedules, check availability, and access booking information through a mobile-friendly web interface.
 
-## 프로젝트 구조
-```
-.
-├── server.py                    # Python HTTP 정적 파일 서버
-├── www/                         # 웹 루트 디렉토리
-│   ├── index.html              # 메인 페이지 리디렉션
-│   └── calendar_set/full_ver7/  # 메인 애플리케이션
-│       ├── calendar_7.html      # 메인 캘린더 페이지
-│       ├── fullcal.js          # 캘린더 로직
-│       ├── fullcal_02.js       # 추가 캘린더 기능
-│       ├── style.css           # 메인 스타일
-│       ├── packages/           # FullCalendar 라이브러리
-│       ├── home_infopage/      # 홈페이지 정보 섹션
-│       ├── img/                # 이미지 리소스
-│       └── js/                 # JavaScript 라이브러리
-```
+# User Preferences
 
-## 주요 기술 스택
-- **Frontend**:
-  - FullCalendar (Google Calendar 연동)
-  - jQuery & jQuery UI
-  - Bootstrap 5
-  - Font Awesome 6.5.1
+Preferred communication style: Simple, everyday language.
 
-- **Backend**:
-  - Python 3.11 (정적 파일 서버)
-  - 포트: 5000
+# System Architecture
 
-## 연습실 정보
-- **A홀** - 노란색 (#F6BF26)
-- **B홀** - 파란색 (rgb(87, 150, 200))
-- **C홀** - 청록색 (rgb(129, 180, 186))
-- **D홀** - 초록색 (rgb(125, 157, 106))
-- **E홀** - 회색 (#4c4c4c)
+## Frontend Architecture
 
-## 실행 방법
-1. **개발 환경**: 
-   - 워크플로우 "웹서버"가 자동으로 실행됩니다
-   - 브라우저에서 자동으로 프리뷰가 표시됩니다
+**Single-Page Application (SPA) Design**
+- Pure client-side application with no backend server logic
+- Static HTML/CSS/JavaScript files served via simple Python HTTP server
+- Mobile-first responsive design optimized for small screens
+- Bootstrap 5 for UI components and responsive grid system
 
-2. **수동 실행**:
-   ```bash
-   python3 server.py
-   ```
+**Calendar Library Integration**
+- FullCalendar v5.x as the core calendar rendering engine
+- SwipeCalendar extension for mobile swipe gestures and touch interactions
+- Multiple calendar instances to display different practice rooms simultaneously
+- Korean localization (ko.js) for all calendar interfaces
 
-## 배포 설정
-- **배포 타입**: Autoscale (정적 웹사이트용)
-- **실행 명령**: `python3 server.py`
-- **포트**: 5000
+**Room Management System**
+- Five separate practice rooms (A, B, C, D, E halls) each with distinct:
+  - Google Calendar ID for event synchronization
+  - Color coding for visual distinction
+  - Pricing structure (before/after 4 PM, early morning rates)
+- Dynamic room filtering via checkboxes allowing users to show/hide specific rooms
+- State persistence across calendar navigation (month/week view switches)
 
-## 최근 변경사항 (2025-10-28)
-- Replit 환경에 맞게 프로젝트 설정
-- Python HTTP 서버 구성 (캐시 무효화 헤더 포함)
-- Font Awesome integrity 오류 수정 (6.5.1로 업데이트)
-- 동적 로드 HTML 파일의 중복 CSS 링크 제거
-- 포트 재사용 문제 해결 (SO_REUSEADDR 설정)
+## External Dependencies
 
-## 주의사항
-- Google Calendar API를 사용하여 실시간 예약 현황을 표시합니다
-- 브라우저 캐시 문제를 방지하기 위해 서버에서 no-cache 헤더를 설정했습니다
-- 모든 정적 파일은 `www/` 디렉토리에서 제공됩니다
+**Google Calendar API**
+- API Key: AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8
+- Five separate Google Calendar IDs for each practice room
+- Read-only access to display events and availability
+- No write operations - calendars managed externally
 
-## 문제 해결
-### 서버가 시작되지 않을 때
-- 포트 5000이 이미 사용 중인지 확인
-- 워크플로우를 재시작해보세요
+**Third-Party JavaScript Libraries**
+- jQuery 2.1.3 for DOM manipulation and event handling
+- jQuery UI 1.12.1 for datepickers and UI interactions
+- FullCalendar 5.x for calendar display and event management
+- SwipeCalendar (licensed) for mobile swipe functionality
+- Moment.js for date/time manipulation
+- Hammer.js for touch gesture recognition
+- Bootstrap 5.3 for responsive layout and components
 
-### 캘린더가 표시되지 않을 때
-- 브라우저 개발자 도구에서 콘솔 오류 확인
-- Google Calendar API 키가 올바른지 확인
+**Development Server**
+- Python 3 built-in HTTP server (http.server module)
+- Serves static files from www/ directory on port 5000
+- Cache-control headers disabled for development
+- No database or server-side processing
 
-## 라이선스
-이 프로젝트는 리듬앤조이 연습실의 소유입니다.
+**Analytics & Tracking**
+- Google Analytics (G-T8EYR28L8V)
+- Google Tag Manager (GTM-KSDF78ZT)
+
+**Hosting & Deployment**
+- SFTP deployment to rhythmandjoy.cafe24.com
+- Cafe24 hosting service (Korean web hosting provider)
+- Credentials stored in .vscode/sftp.json for automated uploads
+
+**Revenue Calculation Module**
+- Standalone feature in google_month_settlement_amount/
+- Fetches events from all calendars for a given month
+- Calculates revenue based on time-based pricing rules
+- Different rates for each room type and time slots
