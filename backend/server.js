@@ -237,29 +237,42 @@ cron.schedule('0 8 * * *', async () => {
   timezone: "Asia/Seoul"
 });
 
-// 수동 리셋 엔드포인트 (Sync Token 삭제 + 전체 재동기화) - 관리자 전용
+// 수동 리셋 엔드포인트 (모든 데이터 삭제 + 전체 재동기화) - 관리자 전용
 app.post('/api/reset-sync', requireAuth, async (req, res) => {
   try {
-    console.log('🔄 [수동 리셋] Sync Token 리셋 + 전체 동기화 시작');
+    console.log('🔄 [수동 리셋] 전체 데이터 리셋 + 재동기화 시작');
     
-    // 1. Sync Token 전체 삭제
-    const { error: deleteError } = await supabase
+    // 1. 모든 예약 이벤트 삭제
+    const { error: eventsDeleteError } = await supabase
+      .from('booking_events')
+      .delete()
+      .neq('id', 'impossible-value'); // 모든 행 삭제
+    
+    if (eventsDeleteError) {
+      console.error('❌ 예약 이벤트 삭제 실패:', eventsDeleteError.message);
+      return res.status(500).json({ error: eventsDeleteError.message });
+    }
+    
+    console.log('✅ 모든 예약 이벤트 삭제 완료');
+    
+    // 2. Sync Token 전체 삭제
+    const { error: tokenDeleteError } = await supabase
       .from('calendar_sync_state')
       .delete()
       .neq('room_id', 'impossible-value');
     
-    if (deleteError) {
-      console.error('❌ Sync Token 삭제 실패:', deleteError.message);
-      return res.status(500).json({ error: deleteError.message });
+    if (tokenDeleteError) {
+      console.error('❌ Sync Token 삭제 실패:', tokenDeleteError.message);
+      return res.status(500).json({ error: tokenDeleteError.message });
     }
     
     console.log('✅ 모든 Sync Token 삭제 완료');
     
-    // 2. 전체 재동기화
+    // 3. 전체 재동기화
     await syncAllCalendarsIncremental();
     
     console.log('✅ [수동 리셋] 전체 동기화 완료!\n');
-    res.json({ success: true, message: 'Sync Token 리셋 및 전체 동기화 완료' });
+    res.json({ success: true, message: '전체 데이터 리셋 및 재동기화 완료' });
   } catch (error) {
     console.error('❌ [수동 리셋] 실패:', error);
     res.status(500).json({ error: error.message });
