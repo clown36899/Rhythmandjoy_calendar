@@ -309,6 +309,15 @@ async function syncAllCalendarsIncremental() {
   }
   
   console.log('\n✅ 전체 증분 동기화 완료!');
+  
+  // 프론트엔드 새로고침 신호 전송
+  try {
+    await supabase.from('sync_signals').insert({ synced_at: new Date().toISOString() });
+    console.log('📡 프론트엔드 새로고침 신호 전송');
+  } catch (err) {
+    console.error('⚠️ 신호 전송 실패:', err.message);
+  }
+  
   return results;
 }
 
