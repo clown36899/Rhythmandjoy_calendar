@@ -46,3 +46,6 @@ build/
 # Temporary files
 *.tmp
 *.bak
+
+# Attached assets (screenshots, pasted text)
+attached_assets/
