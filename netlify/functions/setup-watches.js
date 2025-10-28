@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { getCalendarClient } from './lib/google-auth.js';
+import { getGoogleAuth } from './lib/google-auth.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const supabase = createClient(
