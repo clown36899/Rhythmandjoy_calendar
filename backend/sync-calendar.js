@@ -27,11 +27,10 @@ async function syncRoomCalendar(room) {
   try {
     console.log(`🔄 ${room.id}홀 동기화 시작...`);
 
-    // 전체 예약 이벤트 가져오기 (과거 6개월 ~ 미래 12개월)
-    const timeMin = new Date();
-    timeMin.setMonth(timeMin.getMonth() - 6);
+    // 🚀 모든 예약 이벤트 가져오기 (제한 없음)
+    const timeMin = new Date('2020-01-01T00:00:00Z'); // 모든 과거 데이터
     const timeMax = new Date();
-    timeMax.setMonth(timeMax.getMonth() + 12);
+    timeMax.setFullYear(timeMax.getFullYear() + 2); // 2년 후까지
 
     // 페이지네이션으로 모든 이벤트 가져오기
     let allEvents = [];
