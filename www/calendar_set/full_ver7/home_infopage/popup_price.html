@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>새벽 통대관 안내</title>
+  <link href="popup.css" rel="stylesheet" type="text/css" />
+  <style>
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      font-family: 'Arial', sans-serif;
+      line-height: 1.6;
+    }
+
+    .example-box {
+      background-color: #f4f4f4;
+      padding: 10px 15px;
+      border-left: 4px solid #999;
+      margin: 10px 0;
+      font-family: monospace;
+    }
+
+    img.price-image {
+      display: block;
+      max-width: 60%;
+      height: auto;
+      margin: 20px auto;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+
+    a {
+      color: #0077cc;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    h1,
+    h2 {
+      color: #333;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <button type="button" id="xxx_btn" onclick="closePopup()">x</button>
+    <div class="icon-lock"><img style="
+    position: relative;" class="png_main" src="home_infopage/images/png/pay.png"></div>
+    <h1>취소변경, 환불규정</h1>
+
+    <h3 style="text-align: left;"><strong>1.잘못예약한경우</strong></h3>
+    <div class="example-box">
+
+      <strong>예약신청2시간안 변심 취소는 무료입니다. 그외에는 환불규정에 따릅니다</strong><br>
+      - 문의: <a href="sms:01048017180">010-4801-7180 (문자 문의)</a>
+    </div>
+    <h3 style="text-align: left;"><strong>2.단순취소</strong></h3>
+    <div class="example-box">
+
+      <strong>신청 2시간이 지났으면 아래 환불규정에 따릅니다</strong><br>
+
+    </div>
+    <h3 style="text-align: left;"><strong>3.변경</strong></h3>
+    <div class="example-box">
+
+
+      <code><strong>변경은 취소후 재예약만 가능합니다.</strong></code>
+      <button onclick="openPopup('home_infopage/popup_password.html')">🔐 비번 예약정보 확인,취소</button>
+    </div>
+
+    <h3 style="text-align: left;"><strong>4.환불규정</strong></h3>
+    <p>💰 환불은 네이버에서 어플로 설정되어있는 기준으로 작동합니다.</p>
+
+
+    <img src="home_infopage/images/image.jpg" alt="환불규정" class="price-image" />
+    - 문의: <a href="sms:01048017180">010-4801-7180 (문자 문의)</a>
+
+  </div>
+
+</body>
+
+</html>

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>8개 버튼 입력 + 팝업</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+    integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link href="popup.css" rel="stylesheet" type="text/css" />
+
+  <style>
+    /* body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+    } */
+
+
+
+
+
+    /* 팝업 본체 */
+
+
+    /* 700px 이하 모바일 화면 CSS */
+    @media (max-width: 700px) {
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+        gap: 10px;
+        padding: 20px;
+        max-width: 600px;
+        margin: 60px auto;
+        justify-items: center;
+      }
+
+      .grid button:hover {
+        background-color: #ddd;
+      }
+
+      .icon-main {
+        /* width: 100%;
+        max-width: 60px; /* 아이콘 최대 크기 */
+
+      }
+
+      .png_main {
+        width: 100%;
+        height: auto;
+      }
+
+      .main_text {
+        font-size: 1em;
+        line-height: 1.2;
+        margin: 0;
+      }
+
+      /* 팝업 배경 (반투명 블랙) */
+      .popup-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        /* z-index: 1000; */
+      }
+
+      .popup {
+        overflow: scroll;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: white;
+
+        border-radius: 8px;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+
+        max-width: 90%;
+        width: 300px;
+      }
+
+      .popup h3 {
+        margin-top: 0;
+      }
+
+      .popup input {
+        width: 100%;
+        padding: 8px;
+        margin-top: 10px;
+        margin-bottom: 20px;
+        font-size: 16px;
+      }
+
+      .popup-buttons {
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .popup-buttons button {
+        flex: 1;
+        margin: 0 5px;
+        padding: 10px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      .grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 24px;
+       
+        padding: 36px;
+        margin: -20px auto; 
+      }
+
+      .grid button {
+        /* padding: 0px; */
+        display: flex;
+        max-height: 4rem;
+        font-size: 14px;
+        margin: 2px;
+        flex-direction: column;
+        align-items: stretch;
+        flex-wrap: nowrap;
+        justify-content: center;
+      }
+
+      .icon-main {
+        /* max-width: 40px; */
+      }
+
+      .main_text {
+        font-size: 0.8em;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="grid">
+    <div style="display: flex;flex-direction: column;align-items: center;">
+      <button style="background-color: #42474a;color: antiquewhite;"
+        onclick="openPopup('home_infopage/popup_password.html')">
+        <div class="icon-main"><img class="png_main" src="home_infopage/images/png/lock.png"></div>
+      </button>
+      <p class="main_text">1. 비번 예약정보 확인,취소</p>
+    </div>
+    <div style="display: flex;flex-direction: column;align-items: center;">
+      <button style="background-color: #ec473f;color: antiquewhite;"
+        onclick="openPopup('home_infopage/popup_notice.html')">
+        <div class="icon-main"><img class="png_main" src="home_infopage/images/png/notice.png"></div>
+       
+      </button> <p class="main_text">2. 주의사항 (외부신발금지)</p>
+    </div>
+    <div style="display: flex;flex-direction: column;align-items: center;">
+      <button style="background-color: #ffffff;color: rgb(0, 0, 0);"
+        onclick="openPopup('home_infopage/popup_howto.html')">
+        <div class="icon-main"><img class="png_main" src="home_infopage/images/png/howto.png"></div>
+       
+      </button> <p class="main_text">3. 예약방법</p>
+    </div>
+    <div style="display: flex;flex-direction: column;align-items: center;">
+      <button style="background-color: #f6c841;color: rgb(0, 0, 0);"
+        onclick="openPopup('home_infopage/popup_info.html')">
+        <div class="icon-main"><img class="png_main" src="home_infopage/images/png/info.png"></div>
+      
+      </button>  <p class="main_text">4. 시설안내</p>
+    </div>
+    <div style="display: flex;flex-direction: column;align-items: center;">
+      <button style="background-color: #236793;color: antiquewhite;"
+        onclick="openPopup('home_infopage/popup_map.html')">
+        <div class="icon-main"><img class="png_main" src="home_infopage/images/png/map.png"></div>
+
+      </button>        <p class="main_text">5. 오시는길(주차안내)</p>
+    </div>
+    <div style="display: flex;flex-direction: column;align-items: center;">
+      <button style="background-color: #3ba59b;color: antiquewhite;"
+        onclick="openPopup('home_infopage/popup_night.html')">
+        <div class="icon-main"><img class="png_main" src="home_infopage/images/png/night.png"></div>
+       
+      </button> <p class="main_text">6. 새벽통대관, 가격표</p>
+    </div>
+    <div style="display: flex;flex-direction: column;align-items: center;">
+      <button style="background-color: #ffffff;color: rgb(0, 0, 0);"
+        onclick="openPopup('home_infopage/popup_price.html')">
+        <div class="icon-main"><img class="png_main" src="home_infopage/images/png/pay.png"></div>
+      
+      </button>  <p class="main_text">7. 환불규정</p>
+    </div>
+  </div>
+
+  <div class="popup-overlay" id="popupOverlay" onclick="closePopup()"></div>
+
+  <div class="popup" id="popupBox" style="display: none;">
+    <h3>텍스트 수정</h3>
+    <input type="text" id="popupInput" />
+    <div class="popup-buttons">
+      <button onclick="applyText()">확인</button>
+      <button onclick="closePopup()">취소</button>
+    </div>
+  </div>
+</body>
+
+</html>

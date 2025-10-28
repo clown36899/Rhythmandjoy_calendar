@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>이벤트 캘린더</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/fullcalendar@5.10.2/main.css' />
+</head>
+<body>
+    <div id="calendarAll"></div>
+
+    
+
+    <script src="event_rule.js"></script>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.10.2/main.js'></script>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.10.2/locales/ko.js'></script>
+   
+    <div id="eventPopup" class="hidden">
+        <h2>이벤트 상세</h2>
+        <div id="popupImage"></div>
+        <div id="eventDetails"></div>
+        <button id="closePopup">닫기</button>
+    </div>
+</body>
+</html>

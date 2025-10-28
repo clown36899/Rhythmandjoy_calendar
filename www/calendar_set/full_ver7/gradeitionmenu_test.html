@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  
+  <link href="offcanvas-navbar.css" rel="stylesheet">
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://getbootstrap.com/docs/5.3/assets/css/docs.css" rel="stylesheet">
+  <title>Rhythmjoy</title>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset='utf-8' />
+<script src="https://code.jquery.com/jquery-latest.js"></script>
+<link href='./packages/core/main.css' rel='stylesheet' />
+<link href='./packages/daygrid/main.css' rel='stylesheet' />
+<link href='./packages/list/main.css' rel='stylesheet' />
+
+<script src='./packages/core/main.js'></script>
+<script src='./packages/interaction/main.js'></script>
+<script src='./packages/daygrid/main.js'></script>
+<script src='./packages/list/main.js'></script>
+<script src='./packages/google-calendar/main.js'></script>
+<script src='./packages/core/locales/ko.js'></script>
+
+<link href='style.css' rel='stylesheet' />
+<link href='./packages/timegrid/main.css' rel='stylesheet' />
+<script src='./packages/timegrid/main.js'></script>
+<script src='./dist/swipeCalendar.js'></script>
+
+<!-- <link type="text/css" rel="stylesheet" href="./menu/demo/css/demo.css" />
+<link type="text/css" rel="stylesheet" href="./menu/dist/mmenu.css" /> -->
+
+
+<script src="./lib/jquery.js"></script>
+<script src="./lib/jquery-ui.js"></script>
+<script src="./js/jquery.calendar.js"></script> 
+<script src="./lib/timepicker/jquery-ui-sliderAccess.js"></script>
+<script src="./lib/timepicker/jquery-ui-timepicker-addon.min.js"></script>
+
+<script src="./js/custom.js"></script>
+
+
+<script>
+  let vh = window.innerHeight * 0.01;
+  document.documentElement.style.setProperty('--vh', vh + 'px');
+  window.addEventListener('resize', function () {
+      let vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', vh + 'px');
+  });
+  </script>
+</head>
+
+<body>       
+  <nav class="navbar navbar-dark bg-dark fixed-top" id="fixed-top">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="http://리듬앤조이일정표.com"> 
+        <div class="logoimg">
+          <img src="img/logo.png"  style="width: 100%;height: 100%; object-fit: cover;" alt="">
+      </div><div style="float: left;">리듬앤조이 연습실</div> </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasDarkNavbar" aria-controls="offcanvasDarkNavbar">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="offcanvas offcanvas-end text-bg-dark" tabindex="-1" id="offcanvasDarkNavbar" aria-labelledby="offcanvasDarkNavbarLabel">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="offcanvasDarkNavbarLabel">▼</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+          <ul class="navbar-nav justify-content-end flex-grow-1 pe-3">
+            <li class="nav-item">
+              <a class="nav-link active" aria-current="page" href="https://rhythmandjoy.modoo.at/" target="_blank">Home</a>
+            </li>           
+        </div>
+      </div>
+    </div>
+    
+ 
+  </nav>
+ 
+  </div>
+  <main id="main">
+    <div id="maintable">   
+     <div id='calendarAll' class="itemflex"></div>    
+</div>
+</main><div id="bottom">
+      <div id="loading_bar"></div>
+      <div id="loading_bar_base"></div>
+      <div>       
+        <li><button class="btnqwe btn-anim btntext" id="btnAg"><span>A홀</span></button></li>        
+      </div>  
+      <div class="button_container">       
+        <li><button class="btnB btn-anim btntext"  id="btnBg"><span>B홀</span></button></li>        
+      </div>
+      <div class="button_container">       
+        <li><button class="btnall btn-anim btntext" id="btnallg" ><span>통합</span></button></li>        
+      </div>
+      <div class="button_container">       
+        <li><button class="btnc btn-anim btntext" id="btncc">
+          <span>가격표</span></button></li>        
+      </div>
+      <div class="button_container" onclick='window.location.href = "https://booking.naver.com/booking/10/bizes/397513"'>       
+        <li><button class="btnn btn-anim btntext" id="btnnaver"><span>예약</span></button></li>        
+      </div>
+
+</div>
+
+  
+ 
+  <div id='loading'>loading...</div> 
+  <script>
+   var clockTarget = document.getElementById("clock"); 
+  function clock() {
+      var date = new Date();
+  
+      // date Object를 받아오고 
+      var month = date.getMonth();
+  
+      // 달을 받아옵니다 
+      var clockDate = date.getDate();
+  
+      // 몇일인지 받아옵니다 
+      var day = date.getDay();
+  
+      // 요일을 받아옵니다. 
+      var week = ['일', '월', '화', '수', '목', '금', '토'];
+  
+      // 요일은 숫자형태로 리턴되기때문에 미리 배열을 만듭니다. 
+      var hours = date.getHours();
+  
+      // 시간을 받아오고 
+      var minutes = date.getMinutes();
+  
+      // 분도 받아옵니다.
+      var seconds = date.getSeconds();
+  
+      // 초까지 받아온후 
+    
+      // 월은 0부터 1월이기때문에 +1일을 해주고 
+  
+      // 시간 분 초는 한자리수이면 시계가 어색해보일까봐 10보다 작으면 앞에0을 붙혀주는 작업을 3항연산으로 했습니다. 
+  } function init() {
+  clock();
+  setInterval(clock, 1000);
+  }
+  init();
+   </script>
+  <script>
+//     window.onresize = function() {
+
+//       calendar.render();
+
+// }
+$(document).ready(function(){
+
+setTimeout(scrollTo, 0, 0, 1);
+
+});
+
+      
+function BbuttonBarPoint() {
+    var menubar = document.getElementById("loading_bar")
+var btnBleft = document.getElementById("btnBg").getBoundingClientRect().left;        
+        var barWidth = document.getElementById("loading_bar").clientWidth;//바의 넓이
+        var btnBleftwidth = document.getElementById("btnBg").clientWidth;//버튼넓이
+        var bar_baseWidth = document.getElementById("loading_bar_base").clientWidth;//바베이스넓이
+
+          var leftB =  (btnBleft/bar_baseWidth)*100 //현제위치%
+          var barB  =  (barWidth/bar_baseWidth)*100  //바의사이즈%
+          var barBw =  (btnBleftwidth/bar_baseWidth)*100 //바배경전체사이즈%
+
+    menubar.style.left = leftB-(barB/2)+(barBw/2)+"%";
+} 
+function CbuttonBarPoint() {
+    var menubar = document.getElementById("loading_bar")
+var btnCleft = document.getElementById("btnallg").getBoundingClientRect().left;        
+        var barWidth = document.getElementById("loading_bar").clientWidth;//바의 넓이
+        var btnCleftwidth = document.getElementById("btnallg").clientWidth;//버튼넓이
+        var bar_baseWidth = document.getElementById("loading_bar_base").clientWidth;//바베이스넓이
+
+          var leftC =  (btnCleft/bar_baseWidth)*100 //현제위치%
+          var barC  =  (barWidth/bar_baseWidth)*100  //바의사이즈%
+          var barCw =  (btnCleftwidth/bar_baseWidth)*100 //바배경전체사이즈%
+
+    menubar.style.left = leftC-(barC/2)+(barCw/2)+"%";
+} 
+
+function paybuttonBarPoint() {
+    var menubar = document.getElementById("loading_bar")
+var btnCleft = document.getElementById("btncc").getBoundingClientRect().left;        
+        var barWidth = document.getElementById("loading_bar").clientWidth;//바의 넓이
+        var btnCleftwidth = document.getElementById("btncc").clientWidth;//버튼넓이
+        var bar_baseWidth = document.getElementById("loading_bar_base").clientWidth;//바베이스넓이
+
+          var leftC =  (btnCleft/bar_baseWidth)*100 //현제위치%
+          var barC  =  (barWidth/bar_baseWidth)*100  //바의사이즈%
+          var barCw =  (btnCleftwidth/bar_baseWidth)*100 //바배경전체사이즈%
+
+    menubar.style.left = leftC-(barC/2)+(barCw/2)+"%";
+} 
+        
+            
+
+
+
+</script>
+
+
+<script>  
+var calendarEl = document.getElementById('calendarAll');
+ 
+  function Aroom() {  
+    calendar = new SwipeCalendar(calendarEl, {
+      // SwipeCalendar specific options
+      swipeLicenseKey: '9VHD7-R6WHI-MYE4S-KHDS8',
+      swipeEffect: 'slide',
+      swipeSpeed: 500,
+      swipeTitlePosition: '',
+
+      // FullCalendar options and callbacks
+
+      height: 'auto',
+              slotDuration: '01:00',
+              theme: true,
+      locale: 'ko',
+      nowIndicator: true,
+              selectOverlap: false,
+      selectable: false,
+      selectMirror: false,
+      slotDuration: '01:00',
+      select: function(arg) {
+        var title = prompt('Event Title:');
+        if (title) {
+          calendar.addEvent({
+            title: title,
+            start: arg.start,
+            end: arg.end,
+            allDay: arg.allDay
+            , color: "#F6BF26"
+          })
+        }
+        calendar.unselect()
+        
+      },
+     
+      editable: false,
+      
+    longPressDelay:10,
+     
+      businessHours: false,
+      eventLimit: false, //현제시간표시
+      plugins: [  'interaction', 'dayGrid', 'list', 'googleCalendar', 'timeGrid'],
+      header: {
+          left: 'dayGridMonth,timeGridWeek',
+          center:'title',
+          right: 'prev,today,next'
+      },
+
+      views: {
+           timeGridWeek: { // name of view
+           columnHeaderFormat: {weekday: 'short', day: 'numeric', omitCommas: true }
+           },
+          
+       },
+      displayEventEnd:true,
+     /* events:[ // 일정 데이터 추가 , DB의 event를 가져오려면 JSON 형식으로 변환해 events에 넣어주면된다.
+                  {
+                      title:'일정',
+                      start:'2021-05-26 00:00:00',
+                      end:'2021-05-27 24:00:00' 
+                      // color 값을 추가해 색상도 변경 가능 자세한 내용은 하단의 사이트 참조
+                  }
+              ],*/ 
+
+      eventTimeFormat:{
+              hour: '2-digit',
+              minute: '2-digit',
+              meridiem: false,
+              hour12 : false 
+                   },
+      
+      navLinks: true ,
+      slotEventOverlap: false,
+      allDaySlot: false,// true, fals
+      defaultView: 'timeGridWeek',
+      fixedWeekCount: false,        
+      // THIS KEY WON'T WORK IN PRODUCTION!!!
+      // To make your own Google API key, follow the directions here:
+      // http://fullcalendar.io/docs/google_calendar/
+      googleCalendarApiKey: "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8"
+      , 
+      eventSources: [
+      {
+                    googleCalendarId: "lj8j85q4020jm556rmaa181r00@group.calendar.google.com"
+                    , className: "a"
+                    , color: "#F6BF26"
+                    , textColor: "#000000"
+                },
+      {
+              id : "dataList",
+              googleCalendarId: "amp3i5i4vcv4hbrqu937lufuss@group.calendar.google.com"               
+              , color: "#616161"
+              , textColor: "#000000"
+                  }
+      ],
+      // US Holidays
+    // windowResize: function(arg) {},
+
+      eventClick: function (info) {
+        var eventObj = info.event;
+        if (eventObj.url) {
+          alert(
+            '예약자 ' + eventObj.title + '.\n' + eventObj.start.getHours()+ ':' + '00' +'~' + eventObj.end.getHours()+ ':' + '00' 
+
+          );
+          info.jsEvent.preventDefault(); // prevents browser from following link in current tab.
+        } 
+      },
+      
+      /*columnHeaderText: function(date) {
+let weekList = ["일", "월", "화", "수", "목", "금", "토"];
+return weekList[date.getDay()];
+},*/
+
+      loading: function (bool) {
+        document.getElementById('loading').style.display =
+          bool ? 'block' : 'none';
+      },
+      titleFormat: function(date) {
+return `A룸 ${date.date.month + 1}월`;
+      }//타이틀
+      }); 
+   
+    calendar.render();
+  };
+  
+  function Broom() {  
+    calendar = new SwipeCalendar(calendarEl, {
+      // SwipeCalendar specific options
+      swipeLicenseKey: '9VHD7-R6WHI-MYE4S-KHDS8',
+      swipeEffect: 'slide',
+      swipeSpeed: 500,
+      swipeTitlePosition: '',
+
+      // FullCalendar options and callbacks
+
+              //height: 'parent',//
+              height: "auto",
+      locale: 'ko',
+      nowIndicator: true,
+              selectOverlap: false,
+      selectable: false,
+      selectMirror: false,
+      slotDuration: '01:00',
+      select: function(arg) {
+        var title = prompt('Event Title:');
+        if (title) {
+          calendar.addEvent({
+            title: title,
+            start: arg.start,
+            end: arg.end,
+            allDay: arg.allDay
+            , color: "#F6BF26"
+          })
+        }
+        calendar.unselect()
+        
+      },
+     
+      editable: false,
+      
+    longPressDelay:10,
+     
+      businessHours: false,
+      eventLimit: false, //현제시간표시
+      plugins: [  'interaction', 'dayGrid', 'list', 'googleCalendar', 'timeGrid'],
+      header: {
+          left: 'dayGridMonth,timeGridWeek',
+          center:'title',
+          right: 'prev,today,next'
+      },
+
+      views: {
+           timeGridWeek: { // name of view
+           columnHeaderFormat: {weekday: 'short', day: 'numeric', omitCommas: true }
+           },
+          
+       },
+      displayEventEnd:true,
+     /* events:[ // 일정 데이터 추가 , DB의 event를 가져오려면 JSON 형식으로 변환해 events에 넣어주면된다.
+                  {
+                      title:'일정',
+                      start:'2021-05-26 00:00:00',
+                      end:'2021-05-27 24:00:00' 
+                      // color 값을 추가해 색상도 변경 가능 자세한 내용은 하단의 사이트 참조
+                  }
+              ],*/ 
+
+      eventTimeFormat:{
+              hour: '2-digit',
+              minute: '2-digit',
+              meridiem: false,
+              hour12 : false 
+                   },
+      
+      navLinks: true ,
+      slotEventOverlap: false,
+      allDaySlot: false,// true, fals
+      defaultView: 'timeGridWeek',
+      fixedWeekCount: false,        
+      // THIS KEY WON'T WORK IN PRODUCTION!!!
+      // To make your own Google API key, follow the directions here:
+      // http://fullcalendar.io/docs/google_calendar/
+      googleCalendarApiKey: "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8"
+      , 
+      eventSources: [
+      {
+                    googleCalendarId: "lj8j85q4020jm556rmaa181r00@group.calendar.google.com"
+                    , className: "a"
+                    , color: "#F6BF26"
+                    , textColor: "#000000"
+                },
+      {
+              id : "dataList",
+              googleCalendarId: "amp3i5i4vcv4hbrqu937lufuss@group.calendar.google.com"               
+              , color: "#616161"
+              , textColor: "#000000"
+                  }
+      ],
+      // US Holidays
+    // windowResize: function(arg) {},
+
+      eventClick: function (info) {
+        var eventObj = info.event;
+        if (eventObj.url) {
+          alert(
+            '예약자 ' + eventObj.title + '.\n' + eventObj.start.getHours()+ ':' + '00' +'~' + eventObj.end.getHours()+ ':' + '00' 
+
+          );
+          info.jsEvent.preventDefault(); // prevents browser from following link in current tab.
+        } 
+      },
+      
+      /*columnHeaderText: function(date) {
+let weekList = ["일", "월", "화", "수", "목", "금", "토"];
+return weekList[date.getDay()];
+},*/
+
+      loading: function (bool) {
+        document.getElementById('loading').style.display =
+          bool ? 'block' : 'none';
+      },
+      titleFormat: function(date) {
+return `B룸 ${date.date.month + 1}월`;
+      }//타이틀
+      }); 
+   
+    calendar.render();
+  };
+  
+  
+  function AllRoom() {  
+    calendar = new SwipeCalendar(calendarEl, {
+      // SwipeCalendar specific options
+      swipeLicenseKey: '9VHD7-R6WHI-MYE4S-KHDS8',
+      swipeEffect: 'slide',
+      swipeSpeed: 500,
+      swipeTitlePosition: '',
+
+      // FullCalendar options and callbacks
+
+              height: 'auto',
+              slotDuration: '01:00',
+              theme: true,
+      locale: 'ko',
+      nowIndicator: true,
+              selectOverlap: false,
+      selectable: false,
+      selectMirror: false,
+      // slotDuration: '01:00',
+      select: function(arg) {
+        var title = prompt('Event Title:');
+        if (title) {
+          calendar.addEvent({
+            title: title,
+            start: arg.start,
+            end: arg.end,
+            allDay: arg.allDay
+            , color: "#F6BF26"
+          })
+        }
+        calendar.unselect()
+        
+      },
+     
+      editable: false,
+      
+    longPressDelay:10,
+     
+      businessHours: false,
+      eventLimit: false, //현제시간표시
+      plugins: [  'interaction', 'dayGrid', 'list', 'googleCalendar', 'timeGrid'],
+      header: {
+          left: 'dayGridMonth,timeGridWeek',
+          center:'title',
+          right: 'prev,today,next'
+      },
+
+      views: {
+           timeGridWeek: { // name of view
+           columnHeaderFormat: {weekday: 'short', day: 'numeric', omitCommas: true }
+           },
+          
+       },
+      displayEventEnd:true,
+     /* events:[ // 일정 데이터 추가 , DB의 event를 가져오려면 JSON 형식으로 변환해 events에 넣어주면된다.
+                  {
+                      title:'일정',
+                      start:'2021-05-26 00:00:00',
+                      end:'2021-05-27 24:00:00' 
+                      // color 값을 추가해 색상도 변경 가능 자세한 내용은 하단의 사이트 참조
+                  }
+              ],*/ 
+
+      eventTimeFormat:{
+              hour: '2-digit',
+              minute: '2-digit',
+              meridiem: false,
+              hour12 : false 
+                   },
+      
+      navLinks: true ,
+      slotEventOverlap: false,
+      allDaySlot: false,// true, fals
+      defaultView: 'timeGridWeek',
+      fixedWeekCount: false,        
+      // THIS KEY WON'T WORK IN PRODUCTION!!!
+      // To make your own Google API key, follow the directions here:
+      // http://fullcalendar.io/docs/google_calendar/
+      googleCalendarApiKey: "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8"
+      , 
+      eventSources: [
+      {
+                    googleCalendarId: "lj8j85q4020jm556rmaa181r00@group.calendar.google.com"
+                    , className: "a"
+                    , color: "#F6BF26"
+                    , textColor: "#000000"
+                },
+      {
+              id : "dataList",
+              googleCalendarId: "amp3i5i4vcv4hbrqu937lufuss@group.calendar.google.com"               
+              , color: "#616161"
+              , textColor: "#000000"
+                  }
+      ],
+      // US Holidays
+    // windowResize: function(arg) {},
+
+      eventClick: function (info) {
+        var eventObj = info.event;
+        if (eventObj.url) {
+          alert(
+            '예약자 ' + eventObj.title + '.\n' + eventObj.start.getHours()+ ':' + '00' +'~' + eventObj.end.getHours()+ ':' + '00' 
+
+          );
+          info.jsEvent.preventDefault(); // prevents browser from following link in current tab.
+        } 
+      },
+      
+      /*columnHeaderText: function(date) {
+let weekList = ["일", "월", "화", "수", "목", "금", "토"];
+return weekList[date.getDay()];
+},*/
+
+      loading: function (bool) {
+        document.getElementById('loading').style.display =
+          bool ? 'block' : 'none';
+      },
+      titleFormat: function(date) {
+return `통합 ${date.date.month + 1}월`;
+      }//타이틀
+      }); 
+   
+    calendar.render();
+  };
+  
+  
+</script>
+<script>
+   var windowWidth = window.innerWidth; 
+   var windowheight = window.innerHeight; 
+    var calendarAllheight = document.querySelector('body').getBoundingClientRect().height; 
+    var bottomheight = document.querySelector("#bottom").clientHeight; 
+    var topnavheight = document.querySelector("#fixed-top").clientHeight;   
+       
+   
+
+    function changehecon() {
+      
+    }
+
+      document.getElementById("btnAg").addEventListener("click", function(){
+        
+            // document.getElementById("maintable").style.width =windowWidth+"px";    
+            // document.getElementById("maintable").style.left ="0px"; 
+            document.getElementById("loading_bar").style.left ="0";             
+             Aroom(); 
+          //    var headertoolheight = document.querySelector(".fc-header-toolbar").clientHeight;
+          // document.querySelector(".fc-slats table").style.height = calendarAllheight-bottomheight-topnavheight-headertoolheight-50+"px"; 
+     
+        })
+         
+// 자식/부모*100+"%" 
+      document.getElementById("btnBg").addEventListener("click", function(){
+          document.getElementById("maintable").style.left ="0px";  
+          BbuttonBarPoint();               
+            Broom(); 
+          
+      })
+
+      document.getElementById("btnallg").addEventListener("click", function(){   
+            document.getElementById("maintable").style.left ="0px";    
+            CbuttonBarPoint() ; 
+               AllRoom();  
+              
+      })
+      document.getElementById("btncc").addEventListener("click", function(){  
+            document.getElementById("maintable").style.left="0"; 
+            paybuttonBarPoint();
+               $(document).ready(function(){
+          $("#calendarAll").load("./pay.html");
+
+}); 
+      });    
+      document.getElementById("btnnaver").addEventListener("click", function(){                  
+        menubar.style.left ="80%";  
+
+      });
+
+        
+            window.addEventListener("resize", function(){          
+            })            
+            window.addEventListener("load", function(){    
+              // document.getElementById("maintable").style.width=windowWidth*4+"px";  
+                
+            //  document.getElementById("maintable").style.left="-"+"200vw"; 
+
+            changehecon();
+            AllRoom();
+            CbuttonBarPoint();
+         
+            })
+          
+</script>
+  
+  </body>
+<script type="text/javascript" language = "javascript">
+// 모바일 웹 주소창 숨기기
+window.addEventListener('load', function() {
+  // body의 height를 살짝 늘리는 코드
+  document.body.style.height = (document.documentElement.clientHeight + 5) + 'px';
+  // scroll를 제어 하는 코드
+  setTimeout(scrollTo, 0, 0, 1);
+}, false);
+</script>
+
+
+
+
+</html>

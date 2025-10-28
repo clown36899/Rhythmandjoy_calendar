@@ -1,0 +1,24 @@
+.alert-box{
+    background: rgb(59, 202, 218);
+    color: blue;
+    padding: 20px;
+    border-radius: 5px;
+    display: none;
+
+}
+.alert1 {
+    background: rgb(59, 202, 218);
+    color: blue;
+    padding: 20px;
+    border-radius: 5px;
+    display: none;
+
+}
+.alert2 {
+    background: rgb(59, 202, 218);
+    color: blue;
+    padding: 20px;
+    border-radius: 5px;
+    display: block;
+
+}

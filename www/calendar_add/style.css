@@ -1,0 +1,22 @@
+#eventPopup {
+    position: fixed; /* 화면 고정 */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%); /* 중앙 정렬 */
+    background-color: white;
+    border: 1px solid #ccc;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    z-index: 1000; /* 다른 요소 위에 표시 */
+}
+
+.hidden {
+    display: none;
+}
+
+#popupImage {
+    /* display: none; 와 같은 숨김 속성이 없는지 확인 */
+    /* 임시로 스타일을 추가하여 영역 확인 */
+    /* border: 1px solid red; */
+    margin-bottom: 10px;
+}

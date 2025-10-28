@@ -1,0 +1,30 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Open calendar_9.html",
+            "file": "/Users/inteyeo/Rhythmjoy_calendar/www/calendar_set/full_ver7/calendar_9.html"
+        }
+    ]
+    // "configurations": [
+    //     {
+    //         "type": "chrome",
+    //         "request": "launch",
+    //         "name": "Open calendar_9.html",
+    //         "file": "/Users/inteyeo/Rhythmjoy_calendar/www/google_month_settlement_amount/main.html"
+    //     }
+    // ]
+    // "configurations": [
+    //     {
+    //         "type": "chrome",
+    //         "request": "launch",
+    //         "name": "Open calendar_9.html",
+    //         "file": "/Users/inteyeo/Rhythmjoy_calendar/www/calendar_add/event.html"
+    //     }
+    // ]
+}

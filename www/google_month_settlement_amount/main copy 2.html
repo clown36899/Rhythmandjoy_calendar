@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>리듬앤조이 연습실 수익 정산</title>
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #calendar { max-width: 1100px; margin: 0 auto; height: 500px;}
+    #summary { margin-top: 30px; text-align: center; }
+    .btn { padding: 8px 16px; margin: 5px; border: none; background: #007bff; color: white; border-radius: 5px; cursor: pointer; }
+    .btn:hover { background: #0056b3; }
+    table { width: 90%; margin: 0px auto; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background: #f2f2f2; }
+    .daily-total { font-size: 0.75em; color: green; margin-top: 2px; }
+
+    .daily-total-render{
+        bottom: 1px !important;
+    }
+    .fc .fc-day-other .fc-daygrid-day-top {
+    opacity: 0.1 !important;
+}
+
+.fc-day-other {
+    background: #fbfbfb;
+}
+.fc .fc-daygrid-more-link {
+    position: relative;
+    z-index: 4;
+    cursor: pointer;
+    color: burlywood !important;
+}
+
+
+.fc-daygrid-day:not(.fc-day-other) {
+    background: #f2f2f2;
+}
+.fc .fc-daygrid-day.fc-day-today {
+    background-color: rgba(255, 220, 40, .15) !important;
+    background-color: var(--fc-today-bg-color, rgba(255, 220, 40, .15)) !important;
+}
+.daily-income{
+  background: #5c5c5c;
+    bottom: 17px;
+    font-size: 0.4rem !important;
+    position: relative;
+    color: rgb(255, 255, 255);
+    z-index: 77777;
+}
+  </style>
+</head>
+<body>
+
+<h1 style="text-align:center;">리듬앤조이 연습실 수익 정산</h1>
+<div style="text-align:center;">
+  <button class="btn" onclick="switchToMonth()">월간 보기</button>
+  <button class="btn" onclick="switchToWeek()">주간 보기</button>
+</div>
+
+<div id="calendar"></div>
+<div id="summary"></div>
+<div id="yearSummary" style="margin-top: 30px; text-align: center;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/locales/ko.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@fullcalendar/google-calendar@5.11.3/main.global.min.js"></script>
+
+<script>
+const apiKey = "AIzaSyB2YX8YRot2BtMi_97Uhor7eSmRDAwnIzM";
+
+const roomConfigs = {
+  Ahall: { calendarId: "752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com", color: "#f6bf26", price: { before16: 10000, after16: 13000, overnight: 30000 } },
+  Bhall: { calendarId: "22dd1532ca7404714f0c24348825f131f3c559acf6361031fe71e80977e4a817@group.calendar.google.com", color: "#5796c8", price: { before16: 9000, after16: 11000, overnight: 20000 } },
+  Chall: { calendarId: "b0cfe52771ffe5f8b8bb55b8f7855b6ea640fcb09060fd6708e9b8830428e0c8@group.calendar.google.com", color: "#81b4ba", price: { before16: 4000, after16: 6000, overnight: 15000 } },
+  Dhall: { calendarId: "60da4147f8d838daa72ecea4f59c69106faedd48e8d4aea61a9d299d96b3f90e@group.calendar.google.com", color: "#7d9d6a", price: { before16: 3000, after16: 5000, overnight: 15000 } },
+  Ehall: { calendarId: "aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com", color: "#4c4c4c", price: { before16: 8000, after16: 10000, overnight: 20000 } }
+};
+let processedEvents = new Set();
+let viewMode = 'month';
+let dayIncomeMap = {};
+let refreshTimer = null;
+let selectedYear = new Date().getFullYear();  // 기본은 현재 연도
+
+
+const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+  initialView: 'dayGridMonth',
+  locale: 'ko',
+  googleCalendarApiKey: apiKey,
+  slotEventOverlap: false,
+  views: {
+      timeGridWeek: { 
+        
+        columnHeaderHtml: (date) => {
+          const days = ["일", "월", "화", "수", "목", "금", "토"];
+          return `
+            <span class='column-header-week'>${days[date.getDay()]}</span>
+            <span class='column-header-day'>${date.getDate()}</span>`;
+        },
+        titleFormat: { month: 'long' }, // "4월"
+        columnHeaderFormat: { weekday: "short", day: "numeric" } ,
+        dayMaxEvents: true,
+        eventOrder: (a, b) => {
+          const roomA = a.extendedProps.roomKey || '';
+          const roomB = b.extendedProps.roomKey || '';
+          if (roomA < roomB) return -1;
+          if (roomA > roomB) return 1;
+          return a.start - b.start;
+        },
+      },
+        
+      dayGridMonth: {
+        columnHeaderHtml: (date) => {
+          const days = ["일", "월", "화", "수", "목", "금", "토"];
+          const isSunday = date.getDay() === 0;
+          return `<span class='month-header-weekday${isSunday ? ' sunday' : ''}'>${days[date.getDay()]}</span>`;
+        },
+        dayMaxEvents:0,
+        eventOrder: (a, b) => {
+          const roomA = a.extendedProps.roomKey || '';
+          const roomB = b.extendedProps.roomKey || '';
+          if (roomA < roomB) return -1;
+          if (roomA > roomB) return 1;
+          return a.start - b.start;
+        }
+      }
+    },
+
+    
+  
+  eventSources: Object.keys(roomConfigs).map(key => ({
+    googleCalendarId: roomConfigs[key].calendarId,
+    color: roomConfigs[key].color,
+    className: key, // 초기 className 설정 (혹시 기본값이 적용될지 확인)
+    eventDataTransform: function(event) {
+      return {
+        ...event,
+        className: key // 명시적으로 className 설정
+      };
+    }
+  })),
+  eventDidMount: function(info) {
+  const title = info.event.title;
+
+  const start = new Date(info.event.start);
+  const end = new Date(info.event.end);
+  const roomKey = Array.isArray(info.event.classNames) && info.event.classNames.length > 0 ? info.event.classNames[0] : null;
+
+  let totalPrice = 0;
+
+  if (roomKey && roomConfigs[roomKey]) {
+    if (start.getHours() === 0 && end.getHours() === 6) {
+      totalPrice = roomConfigs[roomKey].price.overnight;
+    } else {
+      let cur = new Date(start);
+      while (cur < end) {
+        const hour = cur.getHours();
+        const day = cur.getDay(); // 0(일) ~ 6(토)
+
+        if (hour >= 0 && hour < 6 && roomConfigs[roomKey].price.overnight) {
+          totalPrice += roomConfigs[roomKey].price.overnight / 6;
+        } else {
+          if (day === 0 || day === 6) {
+            // 주말(토, 일) - 무조건 after16 가격
+            totalPrice += roomConfigs[roomKey].price.after16;
+          } else {
+            if (hour < 16) {
+              totalPrice += roomConfigs[roomKey].price.before16;
+            } else {
+              totalPrice += roomConfigs[roomKey].price.after16;
+            }
+          }
+        }
+        cur.setHours(cur.getHours() + 1);
+      }
+    }
+  } else {
+    totalPrice = 10000;
+  }
+
+  const description = info.event.extendedProps.description || '';
+let isNaver = false;
+
+const match = description.match(/예약번호:\s*(\d+)/);
+if (match && match[1]) {
+  isNaver = true;
+}
+
+if (isNaver) {
+  totalPrice *= 0.9802;  // 네이버 예약 수수료 적용
+} else {
+  totalPrice *= 0.9;     // 일반 예약 수수료 적용
+}
+  info.event.setExtendedProp('calculatedPrice', totalPrice);
+
+  const priceDiv = document.createElement('div');
+  priceDiv.className = 'daily-income';
+  priceDiv.style.fontSize = '0.8em';
+  priceDiv.innerText = `${Math.round(totalPrice).toLocaleString()}원`;
+  info.el.appendChild(priceDiv);
+},
+
+eventSourceSuccess: function(content, response) {
+  console.log('이벤트 소스 로드 완료:', response);
+  scheduleRefreshIncome();
+},
+datesSet: function(info) {
+  console.log('datesSet - viewType:', info.view.type);
+  scheduleRefreshIncome();
+}
+}
+
+);
+
+calendar.render();
+
+
+
+function scheduleRefreshIncome() {
+  if (refreshTimer) clearTimeout(refreshTimer);
+
+  refreshTimer = setTimeout(() => {
+    refreshIncome();
+  }, 500); // 0.5초 (조정 가능)
+}
+
+function refreshIncome() {
+  dayIncomeMap = {}; // 초기화
+  const events = calendar.getEvents();
+  
+  events.forEach(event => {
+    const dayKey = event.start.toISOString().split('T')[0];
+    const price = event.extendedProps.calculatedPrice || 0;
+
+    if (!dayIncomeMap[dayKey]) dayIncomeMap[dayKey] = 0;
+    dayIncomeMap[dayKey] += price;
+  });
+
+  summarize();
+  renderDailyTotals();
+}
+
+
+function renderDailyTotals() {
+  console.log('renderDailyTotals called - viewMode:', viewMode);
+  
+  // 1. 일단 기존 daily-total-render 싹 다 삭제
+  document.querySelectorAll('.daily-total-render').forEach(el => el.remove());
+
+  // 2. dayIncomeMap 기준으로 다시 찍기
+  const dayCells = document.querySelectorAll('.fc-daygrid-day');
+
+  dayCells.forEach(cell => {
+    const date = cell.getAttribute('data-date');
+    if (!date) return;
+
+    const income = dayIncomeMap[date];
+    if (income) {
+      const bottomArea = cell.querySelector('.fc-daygrid-day-bottom') || cell;
+
+      const totalDiv = document.createElement('div');
+      totalDiv.className = 'daily-total-render';
+      totalDiv.innerText = `${Math.round(income).toLocaleString()}`;
+
+      Object.assign(totalDiv.style, {
+        fontSize: '0.6rem',
+        color: '#1e2b37',
+        marginTop: '2px',
+       
+        borderRadius: '4px',
+        padding: '1px 4px',
+        position: viewMode === 'month' ? 'absolute' : '',
+        bottom: viewMode === 'month' ? '2px' : '',
+        left: viewMode === 'month' ? '2px' : ''
+      });
+
+      bottomArea.appendChild(totalDiv);
+    }
+  });
+}
+
+function summarize() {
+  let summary = {};
+  let totalNet = 0;
+
+  const events = calendar.getEvents(); // 🔥 현재 화면의 모든 이벤트를 다시 가져온다
+
+  events.forEach(event => {
+    const start = new Date(event.start);
+    const price = event.extendedProps.calculatedPrice || 0;
+
+    const periodKey = (viewMode === 'month')
+      ? start.toISOString().slice(0, 7)
+      : `${start.getFullYear()}-${(start.getMonth()+1).toString().padStart(2, '0')}-W${Math.ceil(start.getDate() / 7)}`;
+
+    if (!summary[periodKey]) summary[periodKey] = 0;
+    summary[periodKey] += price;
+
+    totalNet += price;
+  });
+
+  let html = '';
+
+// for (const [period, amount] of Object.entries(summary)) {
+//   html += `<tr><td>${period}</td><td>${Math.round(amount).toLocaleString()}원</td></tr>`;
+// }
+
+// html += `<tr><th>총합</th><th>${Math.round(totalNet).toLocaleString()}원</th></tr>`;
+// html += '</table>';
+
+// 🔥 여기: 현재 화면에 있는 월에 해당하는 "당월 합계"만 따로 추가
+const now = calendar.getDate();  // 달력 현재 날짜
+const currentMonthKey = now.toISOString().slice(0, 7);  // 예: "2025-04"
+const currentMonthIncome = summary[currentMonthKey] || 0;
+
+html += `<div style="margin-top:20px; font-weight:bold; font-size:1.2em;">
+          📅 ${currentMonthKey} 당월 합계: ${Math.round(currentMonthIncome).toLocaleString()}원
+         </div>`;
+
+document.getElementById('summary').innerHTML = html;
+renderYearlySummary(); // 🔥 추가
+
+}
+
+function switchToMonth() {
+  viewMode = 'month';
+  calendar.changeView('dayGridMonth');
+}
+
+function switchToWeek() {
+  viewMode = 'week';
+  calendar.changeView('timeGridWeek');
+}
+
+</script>
+
+<script>
+
+async function fetchYearlyEvents(year) {
+  let allEvents = [];
+
+  for (const roomKey in roomConfigs) {
+    const calendarId = roomConfigs[roomKey].calendarId;
+
+    const timeMin = `${year}-01-01T00:00:00Z`;
+    const timeMax = `${year}-12-31T23:59:59Z`;
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?key=${apiKey}&timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&maxResults=9999`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.items) {
+      allEvents = allEvents.concat(
+        data.items.map(event => ({
+          start: event.start.dateTime || event.start.date, 
+          end: event.end.dateTime || event.end.date,
+          summary: event.summary,
+          description: event.description,
+          calendarId: calendarId,
+          roomKey: roomKey
+        }))
+      );
+    }
+  }
+
+  return allEvents;
+}
+
+
+async function renderYearlySummary() {
+    const events = await fetchYearlyEvents(selectedYear);
+  
+    let monthlyTotals = {};
+    let totalNet = 0;
+  
+    for (let i = 1; i <= 12; i++) {
+      monthlyTotals[i] = 0;
+    }
+  
+    for (const event of events) {
+      const start = new Date(event.start);
+      const end = new Date(event.end);
+      const title = event.summary || '';
+      const description = event.description || '';
+      const roomKey = event.roomKey;
+  
+      let totalPrice = 0;
+  
+      if (roomKey && roomConfigs[roomKey]) {
+        if (start.getHours?.() === 0 && end.getHours?.() === 6) {
+          totalPrice = roomConfigs[roomKey].price.overnight;
+        } else {
+          let cur = new Date(start);
+          while (cur < end) {
+            const hour = cur.getHours();
+            const day = cur.getDay();
+  
+            if (hour >= 0 && hour < 6 && roomConfigs[roomKey].price.overnight) {
+              totalPrice += roomConfigs[roomKey].price.overnight / 6;
+            } else {
+              if (day === 0 || day === 6) {
+                totalPrice += roomConfigs[roomKey].price.after16;
+              } else {
+                if (hour < 16) {
+                  totalPrice += roomConfigs[roomKey].price.before16;
+                } else {
+                  totalPrice += roomConfigs[roomKey].price.after16;
+                }
+              }
+            }
+            cur.setHours(cur.getHours() + 1);
+          }
+        }
+      } else {
+        totalPrice = 10000;
+      }
+  
+      const match = description.match(/예약번호:\s*(\d+)/);
+      const isNaver = match && match[1];
+  
+      if (isNaver) {
+        totalPrice *= 0.9802;
+      } else {
+        totalPrice *= 0.9;
+      }
+  
+      const month = start.getMonth() + 1;
+      monthlyTotals[month] += totalPrice;
+      totalNet += totalPrice;
+    }
+  
+    let html = `<h3>${selectedYear}년 월별 정산</h3>`;
+    html += `<table style="margin: 0 auto;"><tr><th>월</th><th>정산 합계</th></tr>`;
+  
+    for (let i = 1; i <= 12; i++) {
+      html += `<tr><td>${i}월</td><td>${Math.round(monthlyTotals[i]).toLocaleString()}원</td></tr>`;
+    }
+  
+    html += `<tr style="font-weight:bold;"><td>총합</td><td>${Math.round(totalNet).toLocaleString()}원</td></tr>`;
+    html += `</table>`;
+  
+    html += `<div style="margin-top:10px;">`;
+    html += `<button class="btn" onclick="changeYear(-1)">이전 연도</button>`;
+    html += `<button class="btn" onclick="changeYear(1)">다음 연도</button>`;
+    html += `</div>`;
+  
+    document.getElementById('yearSummary').innerHTML = html;
+  }
+function changeYear(diff) {
+  selectedYear += diff;
+  renderYearlySummary();
+}
+</script>
+
+</body>
+</html>
