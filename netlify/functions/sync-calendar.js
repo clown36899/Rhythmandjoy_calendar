@@ -1,5 +1,8 @@
 import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -11,55 +14,101 @@ const calendar = google.calendar({
   auth: process.env.GOOGLE_CALENDAR_API_KEY
 });
 
+// 연습실 정보
 const rooms = [
   { id: 'a', calendarId: '752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com' },
-  { id: 'b', calendarId: '6b9dbc066ad84e9ec2003fa58e65cd27a6aa64b77ea2c7f23f1fb890c16ecc4d@group.calendar.google.com' },
-  { id: 'c', calendarId: '35ea46a1ffe4a53cc81aee9c21d5a8efebbdbfe6a39285dc83f0b5f9ae29ee49@group.calendar.google.com' },
+  { id: 'b', calendarId: '22dd1532ca7404714f0c24348825f131f3c559acf6361031fe71e80977e4a817@group.calendar.google.com' },
+  { id: 'c', calendarId: 'b0cfe52771ffe5f8b8bb55b8f7855b6ea640fcb09060fd6708e9b8830428e0c8@group.calendar.google.com' },
   { id: 'd', calendarId: '60da4147f8d838daa72ecea4f59c69106faedd48e8d4aea61a9d299d96b3f90e@group.calendar.google.com' },
   { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
 ];
 
 async function syncRoomCalendar(room) {
-  const timeMin = new Date();
-  timeMin.setMonth(timeMin.getMonth() - 6);
-  const timeMax = new Date();
-  timeMax.setMonth(timeMax.getMonth() + 12);
+  try {
+    console.log(`🔄 ${room.id}홀 동기화 시작...`);
 
-  const response = await calendar.events.list({
-    calendarId: room.calendarId,
-    timeMin: timeMin.toISOString(),
-    timeMax: timeMax.toISOString(),
-    maxResults: 2500,
-    singleEvents: true,
-    orderBy: 'startTime'
-  });
+    // 전체 예약 이벤트 가져오기 (과거 6개월 ~ 미래 12개월)
+    const timeMin = new Date();
+    timeMin.setMonth(timeMin.getMonth() - 6);
+    const timeMax = new Date();
+    timeMax.setMonth(timeMax.getMonth() + 12);
 
-  const events = response.data.items || [];
-  
-  const { error: deleteError } = await supabase
-    .from('booking_events')
-    .delete()
-    .eq('room_id', room.id);
+    // 페이지네이션으로 모든 이벤트 가져오기
+    let allEvents = [];
+    let pageToken = null;
 
-  if (deleteError) throw deleteError;
+    do {
+      const response = await calendar.events.list({
+        calendarId: room.calendarId,
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+        maxResults: 2500,
+        singleEvents: true,
+        orderBy: 'startTime',
+        pageToken: pageToken
+      });
 
-  for (const event of events) {
-    if (!event.start || !event.end) continue;
+      const events = response.data.items || [];
+      allEvents = allEvents.concat(events);
+      pageToken = response.data.nextPageToken;
 
-    const startTime = event.start.dateTime || event.start.date;
-    const endTime = event.end.dateTime || event.end.date;
+      if (pageToken) {
+        console.log(`  📄 페이지 ${Math.ceil(allEvents.length / 2500)} 로드 중... (현재: ${allEvents.length}개)`);
+      }
+    } while (pageToken);
 
-    await supabase.from('booking_events').insert({
-      room_id: room.id,
-      google_event_id: event.id,
-      title: event.summary || '예약',
-      description: event.description || '',
-      start_time: startTime,
-      end_time: endTime
-    });
+    console.log(`  📌 ${allEvents.length}개 이벤트 발견`);
+
+    // Supabase에 upsert (추가/업데이트만, 삭제 없음)
+    const eventsToUpsert = [];
+    for (const event of allEvents) {
+      if (!event.start || !event.start.dateTime) continue;
+
+      eventsToUpsert.push({
+        room_id: room.id,
+        google_event_id: event.id,
+        title: event.summary || '(제목 없음)',
+        start_time: event.start.dateTime,
+        end_time: event.end.dateTime,
+        description: event.description || null,
+        updated_at: new Date().toISOString()
+      });
+    }
+
+    // 100개씩 배치 upsert (Supabase 제한)
+    for (let i = 0; i < eventsToUpsert.length; i += 100) {
+      const batch = eventsToUpsert.slice(i, i + 100);
+      const { error } = await supabase
+        .from('booking_events')
+        .upsert(batch, {
+          onConflict: 'google_event_id',
+          ignoreDuplicates: false
+        });
+
+      if (error) {
+        console.error(`  ❌ 배치 ${Math.floor(i / 100) + 1} 저장 오류:`, error.message);
+      }
+    }
+
+    console.log(`  ✅ ${room.id}홀 ${eventsToUpsert.length}개 동기화 완료`);
+    return eventsToUpsert.length;
+  } catch (error) {
+    console.error(`❌ ${room.id}홀 동기화 실패:`, error.message);
+    return 0;
   }
+}
 
-  return events.length;
+async function syncAllCalendars() {
+  console.log('🚀 전체 캘린더 동기화 시작...\n');
+  
+  const results = [];
+  for (const room of rooms) {
+    const count = await syncRoomCalendar(room);
+    results.push({ room: room.id, count });
+  }
+  
+  console.log('\n✅ 전체 동기화 완료!');
+  return results;
 }
 
 export async function handler(event, context) {
@@ -71,12 +120,7 @@ export async function handler(event, context) {
   }
 
   try {
-    const results = await Promise.all(
-      rooms.map(async (room) => {
-        const count = await syncRoomCalendar(room);
-        return { room: room.id, count };
-      })
-    );
+    const results = await syncAllCalendars();
 
     return {
       statusCode: 200,
