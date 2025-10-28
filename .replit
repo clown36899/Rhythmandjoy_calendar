@@ -1,13 +1,9 @@
-modules = ["nodejs-20", "web", "python-3.11", "postgresql-16"]
+modules = ["nodejs-20", "web", "python-3.11"]
 [agent]
 expertMode = true
 
 [nix]
 channel = "stable-25_05"
-<<<<<<< Updated upstream
-=======
-packages = ["yakut"]
->>>>>>> Stashed changes
 
 [workflows]
 runButton = "Project"
@@ -19,40 +15,24 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "백엔드"
+args = "웹서버"
 
 [[workflows.workflow]]
-name = "백엔드"
+name = "웹서버"
 author = "agent"
-
-[workflows.workflow.metadata]
-<<<<<<< Updated upstream
-outputType = "webview"
-=======
-outputType = "console"
->>>>>>> Stashed changes
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd backend && npm start"
-<<<<<<< Updated upstream
+args = "python3 server.py"
 waitForPort = 5000
-=======
->>>>>>> Stashed changes
+
+[workflows.workflow.metadata]
+outputType = "webview"
 
 [[ports]]
 localPort = 5000
 externalPort = 80
 
-[[ports]]
-<<<<<<< Updated upstream
-localPort = 40977
-externalPort = 3000
-
 [deployment]
 deploymentTarget = "autoscale"
 run = ["python3", "server.py"]
-=======
-localPort = 8080
-externalPort = 8080
->>>>>>> Stashed changes
