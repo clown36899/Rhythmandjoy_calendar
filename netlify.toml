@@ -15,4 +15,3 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["googleapis", "@supabase/supabase-js", "uuid"]
