@@ -31,12 +31,11 @@ function getGoogleAuth() {
 
   const credentials = JSON.parse(serviceAccountJson);
 
-  return new google.auth.JWT(
-    credentials.client_email,
-    null,
-    credentials.private_key,
-    ['https://www.googleapis.com/auth/calendar']
-  );
+  return new google.auth.JWT({
+    email: credentials.client_email,
+    key: credentials.private_key,
+    scopes: ['https://www.googleapis.com/auth/calendar']
+  });
 }
 
 // Watch 채널 등록
@@ -157,4 +156,18 @@ export async function setupAllWatches() {
 
   console.log('\n✅ Watch 등록 완료!');
   return results;
+}
+
+// 직접 실행 시
+if (import.meta.url === `file://${process.argv[1]}`) {
+  setupAllWatches()
+    .then(results => {
+      console.log('\n📊 결과:');
+      console.log(JSON.stringify(results, null, 2));
+      process.exit(0);
+    })
+    .catch(error => {
+      console.error('\n❌ 오류:', error.message);
+      process.exit(1);
+    });
 }
