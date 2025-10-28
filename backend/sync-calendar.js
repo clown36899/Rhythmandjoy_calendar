@@ -9,9 +9,26 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// Google Service Account 인증
+function getGoogleAuth() {
+  const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  
+  if (!serviceAccountJson) {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 환경 변수가 설정되지 않았습니다');
+  }
+
+  const credentials = JSON.parse(serviceAccountJson);
+
+  return new google.auth.JWT({
+    email: credentials.client_email,
+    key: credentials.private_key,
+    scopes: ['https://www.googleapis.com/auth/calendar.readonly']
+  });
+}
+
 const calendar = google.calendar({
   version: 'v3',
-  auth: process.env.GOOGLE_CALENDAR_API_KEY
+  auth: getGoogleAuth()
 });
 
 // 연습실 정보
