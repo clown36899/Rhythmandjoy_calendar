@@ -36,5 +36,9 @@ export function getGoogleAuth() {
 
 export function getCalendarClient() {
   const auth = getGoogleAuth();
-  return google.calendar({ version: 'v3', auth });
+  return google.calendar({ 
+    version: 'v3', 
+    auth,
+    key: process.env.GOOGLE_CALENDAR_API_KEY // API Key 추가
+  });
 }
