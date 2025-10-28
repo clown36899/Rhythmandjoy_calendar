@@ -2,6 +2,7 @@ import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import cron from 'node-cron';
+import crypto from 'crypto';
 import { 
   syncAllCalendarsInitial,
   syncAllCalendarsIncremental
@@ -12,6 +13,25 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
+
+// 간단한 세션 토큰 저장소 (메모리)
+const activeSessions = new Map();
+
+// 토큰 생성 함수
+function generateToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// 인증 미들웨어
+function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: '인증이 필요합니다' });
+  }
+  
+  next();
+}
 
 // 정적 파일 서빙 (www 폴더)
 import path from 'path';
@@ -104,6 +124,31 @@ app.post('/api/setup-watches', async (req, res) => {
   }
 });
 
+// 관리자 로그인 API
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  
+  if (password === process.env.ADMIN_PASSWORD) {
+    const token = generateToken();
+    activeSessions.set(token, { createdAt: Date.now() });
+    
+    console.log('✅ 관리자 로그인 성공');
+    res.json({ success: true, token });
+  } else {
+    console.log('❌ 관리자 로그인 실패');
+    res.status(401).json({ error: '비밀번호가 올바르지 않습니다' });
+  }
+});
+
+// 관리자 로그아웃 API
+app.post('/api/admin/logout', requireAuth, (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  activeSessions.delete(token);
+  
+  console.log('✅ 관리자 로그아웃');
+  res.json({ success: true });
+});
+
 // 헬스체크 엔드포인트
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -192,8 +237,8 @@ cron.schedule('0 8 * * *', async () => {
   timezone: "Asia/Seoul"
 });
 
-// 수동 리셋 엔드포인트 (Sync Token 삭제 + 전체 재동기화)
-app.post('/api/reset-sync', async (req, res) => {
+// 수동 리셋 엔드포인트 (Sync Token 삭제 + 전체 재동기화) - 관리자 전용
+app.post('/api/reset-sync', requireAuth, async (req, res) => {
   try {
     console.log('🔄 [수동 리셋] Sync Token 리셋 + 전체 동기화 시작');
     
