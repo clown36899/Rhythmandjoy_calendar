@@ -1,7 +1,7 @@
 // Supabase 기반 이벤트 소스 어댑터
 // fullcal_02.js와 함께 사용됩니다
 
-// 🚀 Supabase 기반 이벤트 소스 생성 (전체 데이터 캐싱 방식)
+// 🚀 Supabase 기반 이벤트 소스 생성 (보이는 범위만 로드)
 function makeSupabaseSource(key) {
   const cfg = roomConfigs[key];
   
@@ -26,11 +26,15 @@ function makeSupabaseSource(key) {
           return;
         }
 
-        // 💡 캐시에서 가져오기 (네트워크 요청 없음!)
-        const cachedEvents = window.SupabaseCalendar.getCachedEvents();
-        const events = cachedEvents[key] || [];
+        // 💡 보이는 범위만 요청 (효율적!)
+        const bookings = await window.SupabaseCalendar.fetchBookings(
+          key, 
+          info.startStr, 
+          info.endStr
+        );
         
-        console.log(`✅ ${cfg.name} 캐시에서 ${events.length}개 이벤트 로드 (네트워크 요청 없음)`);
+        const events = window.SupabaseCalendar.convertToEvents(bookings);
+        console.log(`✅ ${cfg.name} ${events.length}개 이벤트 로드 (${info.startStr.split('T')[0]} ~ ${info.endStr.split('T')[0]})`);
         successCallback(events);
       } catch (error) {
         console.error(`❌ ${cfg.name} 이벤트 로드 실패:`, error);
@@ -43,7 +47,7 @@ function makeSupabaseSource(key) {
 // makeSource 함수 오버라이드 (fullcal_02.js 로드 대기)
 function overrideMakeSource() {
   if (typeof makeSource !== 'undefined') {
-    console.log('🔄 makeSource를 Supabase 캐싱 버전으로 교체합니다');
+    console.log('🔄 makeSource를 Supabase 범위별 로드 버전으로 교체합니다');
     const originalMakeSource = makeSource;
     
     window.makeSourceOriginal = originalMakeSource;
@@ -53,7 +57,7 @@ function overrideMakeSource() {
     
     makeSource = window.makeSource;
     
-    console.log('✅ makeSource 오버라이드 완료 (전체 데이터 캐싱 모드)');
+    console.log('✅ makeSource 오버라이드 완료 (범위별 로드 모드)');
   } else {
     console.warn('⏳ makeSource가 아직 정의되지 않음, 100ms 후 재시도...');
     setTimeout(overrideMakeSource, 100);
@@ -67,4 +71,4 @@ if (document.readyState === 'loading') {
   overrideMakeSource();
 }
 
-console.log('✅ Supabase 어댑터 로드 완료 (캐싱 모드)');
+console.log('✅ Supabase 어댑터 로드 완료 (범위별 로드)');

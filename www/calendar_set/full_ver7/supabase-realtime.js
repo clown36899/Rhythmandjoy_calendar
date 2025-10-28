@@ -14,122 +14,58 @@ const roomConfigs = {
   e: { name: "E홀", color: "#4c4c4c" }
 };
 
-// 🚀 전체 데이터를 메모리에 캐시 (룸별)
-const cachedEvents = {
-  a: [],
-  b: [],
-  c: [],
-  d: [],
-  e: []
-};
-
-let isDataLoaded = false;
-
-// 🔥 페이지 로드 시 전체 데이터를 한 번에 가져오기 (효율적!)
-export async function loadAllBookings() {
-  if (isDataLoaded) {
-    console.log('✅ 데이터 이미 로드됨 (캐시 사용)');
-    return cachedEvents;
-  }
-
-  console.log('🚀 전체 예약 데이터 로드 시작...');
-  const startTime = performance.now();
-
+// 📦 범위별 데이터 가져오기 (필요한 범위만!)
+export async function fetchBookingsFromSupabase(roomId = null, startTime = null, endTime = null) {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('booking_events')
       .select('*')
       .order('start_time', { ascending: true });
 
-    if (error) {
-      console.error('❌ Supabase 데이터 조회 오류:', error);
-      return cachedEvents;
+    if (roomId) {
+      query = query.eq('room_id', roomId);
+    }
+    if (startTime) {
+      query = query.gte('start_time', startTime);
+    }
+    if (endTime) {
+      query = query.lte('start_time', endTime);
     }
 
-    // 룸별로 분류
-    data.forEach(booking => {
-      const roomId = booking.room_id;
-      if (cachedEvents[roomId]) {
-        const roomConfig = roomConfigs[roomId] || {};
-        
-        cachedEvents[roomId].push({
-          id: booking.id,
-          title: booking.title,
-          start: booking.start_time,
-          end: booking.end_time,
-          color: roomConfig.color || '#ccc',
-          textColor: '#000',
-          extendedProps: {
-            roomKey: roomId,
-            roomName: roomConfig.name || roomId,
-            googleEventId: booking.google_event_id,
-            description: booking.description
-          }
-        });
-      }
-    });
+    const { data, error } = await query;
 
-    isDataLoaded = true;
-    const loadTime = (performance.now() - startTime).toFixed(0);
-    
-    console.log(`✅ 전체 데이터 로드 완료 (${loadTime}ms)`);
-    console.log(`   A홀: ${cachedEvents.a.length}개`);
-    console.log(`   B홀: ${cachedEvents.b.length}개`);
-    console.log(`   C홀: ${cachedEvents.c.length}개`);
-    console.log(`   D홀: ${cachedEvents.d.length}개`);
-    console.log(`   E홀: ${cachedEvents.e.length}개`);
-    console.log(`   총합: ${data.length}개`);
-    console.log('   💡 이제 모든 달력 이동이 네트워크 요청 없이 즉시 처리됩니다!');
+    if (error) {
+      console.error('❌ Supabase 데이터 조회 오류:', error);
+      return [];
+    }
 
-    // 🔥 캘린더 자동 새로고침 (데이터 로드 완료 후)
-    setTimeout(() => {
-      if (typeof calendar !== 'undefined') {
-        const allCalendars = [calendar._prevCal, calendar._curCal, calendar._nextCal]
-          .filter(cal => cal && typeof cal.refetchEvents === 'function');
-        
-        if (allCalendars.length > 0) {
-          allCalendars.forEach(cal => cal.refetchEvents());
-          console.log('🔄 캘린더 자동 새로고침 완료 (데이터 로드 후)');
-        }
-      }
-    }, 500);
-
-    return cachedEvents;
+    return data || [];
   } catch (error) {
-    console.error('❌ loadAllBookings 오류:', error);
-    return cachedEvents;
+    console.error('❌ fetchBookingsFromSupabase 오류:', error);
+    return [];
   }
 }
 
-// 기존 함수 (호환성 유지, 이제는 캐시에서 필터링)
-export async function fetchBookingsFromSupabase(roomId = null, startTime = null, endTime = null) {
-  if (!isDataLoaded) {
-    await loadAllBookings();
-  }
-
-  if (roomId && cachedEvents[roomId]) {
-    return cachedEvents[roomId];
-  }
-
-  return [];
-}
-
-// Supabase 데이터를 FullCalendar 이벤트 형식으로 변환 (이제는 불필요하지만 호환성 유지)
+// Supabase 데이터를 FullCalendar 이벤트 형식으로 변환
 export function convertToCalendarEvents(bookings) {
-  return bookings;
-}
-
-// 🔄 캐시 갱신 (Realtime 업데이트 시 사용)
-export async function refreshCache() {
-  console.log('🔄 캐시 새로고침 중...');
-  isDataLoaded = false;
-  
-  // 기존 캐시 초기화
-  Object.keys(cachedEvents).forEach(key => {
-    cachedEvents[key] = [];
+  return bookings.map(booking => {
+    const roomConfig = roomConfigs[booking.room_id] || {};
+    
+    return {
+      id: booking.id,
+      title: booking.title,
+      start: booking.start_time,
+      end: booking.end_time,
+      color: roomConfig.color || '#ccc',
+      textColor: '#000',
+      extendedProps: {
+        roomKey: booking.room_id,
+        roomName: roomConfig.name || booking.room_id,
+        googleEventId: booking.google_event_id,
+        description: booking.description
+      }
+    };
   });
-  
-  await loadAllBookings();
 }
 
 // Realtime 구독 설정
@@ -164,10 +100,8 @@ export function subscribeToRealtimeUpdates(onUpdate) {
 
 // 자동 Realtime 구독 및 캘린더 새로고침
 function autoSubscribeAndRefresh() {
-  subscribeToRealtimeUpdates(async (payload) => {
-    console.log('🔄 데이터 변경 감지, 캐시 새로고침 중...');
-    
-    await refreshCache();
+  subscribeToRealtimeUpdates((payload) => {
+    console.log('🔄 데이터 변경 감지, 캘린더 새로고침 중...');
     
     if (typeof calendar !== 'undefined') {
       const allCalendars = [calendar._prevCal, calendar._curCal, calendar._nextCal]
@@ -181,14 +115,12 @@ function autoSubscribeAndRefresh() {
   });
 }
 
-// DOM이 로드되면 자동으로 데이터 로드 및 구독 시작
+// DOM이 로드되면 자동으로 구독 시작
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    loadAllBookings();
     setTimeout(autoSubscribeAndRefresh, 2000);
   });
 } else {
-  loadAllBookings();
   setTimeout(autoSubscribeAndRefresh, 2000);
 }
 
@@ -197,9 +129,7 @@ window.SupabaseCalendar = {
   fetchBookings: fetchBookingsFromSupabase,
   convertToEvents: convertToCalendarEvents,
   subscribe: subscribeToRealtimeUpdates,
-  refreshCache,
-  getCachedEvents: () => cachedEvents,
   supabase
 };
 
-console.log('✅ Supabase Realtime 모듈 로드 완료 (전체 데이터 캐싱 모드)');
+console.log('✅ Supabase Realtime 모듈 로드 완료 (범위별 로드 모드)');
