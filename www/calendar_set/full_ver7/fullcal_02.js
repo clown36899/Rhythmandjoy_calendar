@@ -159,8 +159,7 @@ function initCalendar() {
     slotEventOverlap: false,
     defaultView: "timeGridWeek",
 
-    googleCalendarApiKey: "AIzaSyBbUM1xQyvlqXCjVg-4W-ejFl_lqvPml24",
-    plugins: ["interaction", "dayGrid", "googleCalendar", "timeGrid"],
+    plugins: ["interaction", "dayGrid", "timeGrid"],
     contentHeight: 400,
     eventSources: roomKeys.filter(k => currentRoomSelections[k]).map(makeSource),
     customButtons: {

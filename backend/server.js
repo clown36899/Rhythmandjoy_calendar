@@ -1,6 +1,7 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import { syncAllCalendars, syncRoomCalendar } from './sync-calendar.js';
 
 dotenv.config();
 
@@ -12,6 +13,10 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+// 마지막 동기화 시간 추적 (과도한 동기화 방지)
+let lastSyncTime = 0;
+const SYNC_COOLDOWN = 5000; // 5초
 
 // Google Calendar Webhook 수신 엔드포인트
 app.post('/api/calendar-webhook', async (req, res) => {
@@ -28,14 +33,38 @@ app.post('/api/calendar-webhook', async (req, res) => {
 
     // 변경 감지 시 동기화 트리거
     if (resourceState === 'exists') {
+      const now = Date.now();
+      
+      // 쿨다운 체크 (5초 이내 중복 요청 무시)
+      if (now - lastSyncTime < SYNC_COOLDOWN) {
+        console.log('⏭️ 쿨다운 중, 동기화 생략');
+        return res.status(200).send('OK');
+      }
+      
+      lastSyncTime = now;
       console.log('🔄 캘린더 변경 감지, 동기화 시작...');
-      // 동기화 로직은 sync-calendar.js에서 처리
-      // 여기서는 webhook 수신만 확인
+      
+      // 비동기로 동기화 실행 (응답은 즉시)
+      syncAllCalendars().catch(error => {
+        console.error('❌ 자동 동기화 실패:', error);
+      });
     }
 
     res.status(200).send('OK');
   } catch (error) {
     console.error('❌ Webhook 처리 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 수동 동기화 트리거 엔드포인트 (테스트용)
+app.post('/api/sync', async (req, res) => {
+  try {
+    console.log('🔄 수동 동기화 요청 받음');
+    await syncAllCalendars();
+    res.json({ success: true, message: '동기화 완료' });
+  } catch (error) {
+    console.error('❌ 수동 동기화 실패:', error);
     res.status(500).json({ error: error.message });
   }
 });
