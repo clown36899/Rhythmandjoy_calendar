@@ -45,8 +45,11 @@ async function setupWatch(room) {
 
     const watchResponse = await calendar.events.watch({
       calendarId: room.calendarId,
-      requestBody: channel,
-      key: process.env.GOOGLE_CALENDAR_API_KEY // API Key 추가
+      requestBody: channel
+    }, {
+      params: {
+        key: process.env.GOOGLE_CALENDAR_API_KEY // URL 파라미터로 API Key 추가
+      }
     });
 
     const { resourceId, expiration } = watchResponse.data;
