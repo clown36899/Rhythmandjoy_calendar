@@ -26,14 +26,13 @@ async function setupWatch(room) {
     console.log(`🔄 ${room.id}홀 Watch 등록 중...`);
 
     // 1. JWT 인증 및 Access Token 가져오기
-    await auth.authorize();
-    const accessToken = await auth.getAccessToken();
+    const { token } = await auth.getAccessToken();
     
     // 2. 초기 sync token 가져오기 (REST API)
     const listUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events?maxResults=1&singleEvents=true&key=${process.env.GOOGLE_CALENDAR_API_KEY}`;
     const listResponse = await fetch(listUrl, {
       headers: {
-        'Authorization': `Bearer ${accessToken.token}`
+        'Authorization': `Bearer ${token}`
       }
     });
     const listData = await listResponse.json();
@@ -52,7 +51,7 @@ async function setupWatch(room) {
     const watchResponse = await fetch(watchUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${accessToken.token}`,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(channel)
