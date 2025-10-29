@@ -662,20 +662,8 @@
     }
 
     function closeInfoPage() {
-      // 부모 페이지의 오프캔버스 닫기 버튼 클릭
-      const closeButton = parent.document.querySelector('.offcanvas .btn-close');
-      if (closeButton) {
-        closeButton.click();
-      } else {
-        // 또는 오프캔버스 직접 제어
-        const offcanvasElement = parent.document.getElementById('offcanvasNavbar');
-        if (offcanvasElement) {
-          const bsOffcanvas = parent.bootstrap.Offcanvas.getInstance(offcanvasElement);
-          if (bsOffcanvas) {
-            bsOffcanvas.hide();
-          }
-        }
-      }
+      // postMessage로 부모 창에 닫기 메시지 전송 (cross-origin 안전)
+      window.parent.postMessage({ type: 'closeOffcanvas' }, '*');
     }
   </script>
 </body>

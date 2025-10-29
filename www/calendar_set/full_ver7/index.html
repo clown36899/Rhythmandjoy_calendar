@@ -395,6 +395,19 @@
           console.error('외부 HTML 로드 실패:', error);
         });
     });
+    
+    // postMessage 리스너: 자식 페이지에서 오프캔버스 닫기 요청 받기
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'closeOffcanvas') {
+        const offcanvasElement = document.getElementById('offcanvasNavbar');
+        if (offcanvasElement) {
+          const bsOffcanvas = bootstrap.Offcanvas.getInstance(offcanvasElement);
+          if (bsOffcanvas) {
+            bsOffcanvas.hide();
+          }
+        }
+      }
+    });
   </script>
   <script>
 
