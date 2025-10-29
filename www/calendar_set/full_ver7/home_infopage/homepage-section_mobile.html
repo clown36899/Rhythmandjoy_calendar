@@ -598,20 +598,57 @@
       <!-- 가격표 -->
       <div class="content-section" id="pricelist">
         <h1>💰 가격표</h1>
-        <p>연습실 이용 요금 안내</p>
-        <button
-          onclick="openPriceImage()"
-          class="button"
-          style="
-            width: 100%;
-            text-align: center;
-            display: block;
-            margin-top: 10px;
-            color: #ffffff !important;
-          "
-        >
-          💵 가격표 보기
-        </button>
+        <p style="font-size: 0.9rem; margin-bottom: 10px;">연습실 이용 요금 (시간당)</p>
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; background: #2a2a2a; border-radius: 8px; overflow: hidden;">
+            <thead>
+              <tr style="background: #404040;">
+                <th style="padding: 10px 6px; text-align: left; border-bottom: 2px solid #555;">룸</th>
+                <th style="padding: 10px 6px; text-align: center; border-bottom: 2px solid #555;">16시 이전</th>
+                <th style="padding: 10px 6px; text-align: center; border-bottom: 2px solid #555;">16시 이후<br/>주말/휴일</th>
+                <th style="padding: 10px 6px; text-align: center; border-bottom: 2px solid #555;">새벽</th>
+                <th style="padding: 10px 6px; text-align: center; border-bottom: 2px solid #555;">새벽통대관<br/>00-06시</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-left: 3px solid #ffa500;">
+                <td style="padding: 10px 6px; border-bottom: 1px solid #444;"><strong>A홀</strong><br/><span style="font-size: 0.75rem; color: #999;">(20평형)</span></td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">10,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">15,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">6,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">30,000원</td>
+              </tr>
+              <tr style="border-left: 3px solid #4da6ff;">
+                <td style="padding: 10px 6px; border-bottom: 1px solid #444;"><strong>B홀</strong><br/><span style="font-size: 0.75rem; color: #999;">(16평형)</span></td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">9,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">11,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">5,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">20,000원</td>
+              </tr>
+              <tr style="border-left: 3px solid #66cc99;">
+                <td style="padding: 10px 6px; border-bottom: 1px solid #444;"><strong>C홀</strong><br/><span style="font-size: 0.75rem; color: #999;">(5평형)</span></td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">4,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">6,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">4,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">15,000원</td>
+              </tr>
+              <tr style="border-left: 3px solid #90ee90;">
+                <td style="padding: 10px 6px; border-bottom: 1px solid #444;"><strong>D홀</strong><br/><span style="font-size: 0.75rem; color: #999;">(4평형)</span></td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">3,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">5,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">3,000원</td>
+                <td style="padding: 10px 6px; text-align: center; border-bottom: 1px solid #444;">15,000원</td>
+              </tr>
+              <tr style="border-left: 3px solid #ff6b9d;">
+                <td style="padding: 10px 6px;"><strong>E홀</strong><br/><span style="font-size: 0.75rem; color: #999;">(15평형)</span></td>
+                <td style="padding: 10px 6px; text-align: center;">8,000원</td>
+                <td style="padding: 10px 6px; text-align: center;">10,000원</td>
+                <td style="padding: 10px 6px; text-align: center;">4,000원</td>
+                <td style="padding: 10px 6px; text-align: center;">20,000원</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- 환불규정 -->
@@ -750,13 +787,6 @@
         renderThumbnails();
       }
 
-      function openPriceImage() {
-        currentImages = ["pay_list.png"];
-        currentIndex = 0;
-        document.getElementById("galleryModal").classList.add("active");
-        showImage(0);
-        renderThumbnails();
-      }
 
       function closeGallery() {
         document.getElementById("galleryModal").classList.remove("active");
