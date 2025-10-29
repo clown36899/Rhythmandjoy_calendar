@@ -32,12 +32,20 @@ export function getGoogleAuth() {
   console.log('  - private_key 길이:', credentials?.private_key?.length);
   console.log('  - private_key 시작:', credentials?.private_key?.substring(0, 50));
 
-  // ⚠️ 검증
+  // ⚠️ 검증 (상세 에러 메시지)
   if (!credentials.client_email) {
-    throw new Error('client_email이 없습니다!');
+    throw new Error(`❌ client_email이 없습니다! credentials 키: ${Object.keys(credentials).join(', ')}`);
   }
   if (!credentials.private_key) {
-    throw new Error('private_key가 없습니다!');
+    const debugInfo = {
+      hasCredentials: !!credentials,
+      credentialsKeys: Object.keys(credentials),
+      privateKeyType: typeof credentials.private_key,
+      privateKeyValue: credentials.private_key ? '존재함' : '없음',
+      jsonLength: serviceAccountJson?.length,
+      jsonStart: serviceAccountJson?.substring(0, 100)
+    };
+    throw new Error(`❌ private_key가 없습니다! 디버그: ${JSON.stringify(debugInfo, null, 2)}`);
   }
 
   // JWT 인증 클라이언트 생성
