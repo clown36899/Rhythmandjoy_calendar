@@ -613,7 +613,9 @@
       const toggleBtn = document.getElementById("roomToggleBtn");
 
       // slideMenu.classList.remove("show");
-      toggleBtn.innerHTML = "룸 선택 ▼";
+      if (toggleBtn) {
+        toggleBtn.innerHTML = "룸 선택 ▼";
+      }
       isOpen = false;
     }
   </script>

@@ -845,6 +845,33 @@
         // 스크롤 맨 위로
         document.getElementById("contentArea").scrollTop = 0;
       }
+
+      // 🚀 이미지 프리로드 (백그라운드 캐싱)
+      window.addEventListener('load', function() {
+        console.log('📥 이미지 백그라운드 캐싱 시작...');
+        const allImages = [];
+        
+        // 모든 갤러리 이미지 수집
+        for (let key in galleryImages) {
+          allImages.push(...galleryImages[key]);
+        }
+        
+        // 환불규정 이미지 추가
+        allImages.push('home_infopage/images/image.jpg');
+        
+        // 백그라운드에서 이미지 미리 로드 (우선순위: 낮음)
+        setTimeout(() => {
+          allImages.forEach((src, index) => {
+            setTimeout(() => {
+              const img = new Image();
+              img.src = src;
+              if (index === allImages.length - 1) {
+                console.log(`✅ ${allImages.length}개 이미지 캐싱 완료!`);
+              }
+            }, index * 50); // 50ms 간격으로 순차 로드 (네트워크 부담 감소)
+          });
+        }, 500); // 페이지 로드 후 0.5초 뒤 시작 (초기 렌더링 우선)
+      });
     </script>
   </body>
 </html>
