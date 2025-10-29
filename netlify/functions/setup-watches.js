@@ -15,8 +15,8 @@ const rooms = [
   { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
 ];
 
-// Webhook URL (Netlify 배포 후 실제 URL로 변경 필요)
-const WEBHOOK_URL = process.env.WEBHOOK_URL || 'https://리듬앤조이일정표.com/.netlify/functions/google-webhook';
+// Webhook URL (Punycode)
+const WEBHOOK_URL = process.env.WEBHOOK_URL || 'https://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/google-webhook';
 
 // Google Service Account 인증
 function getGoogleAuth() {

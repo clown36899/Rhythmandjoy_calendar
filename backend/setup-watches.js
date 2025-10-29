@@ -18,8 +18,10 @@ const rooms = [
   { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
 ];
 
-// Replit Webhook URL
-const WEBHOOK_URL = `https://${process.env.REPLIT_DEV_DOMAIN}/api/calendar-webhook`;
+// Webhook URL (환경별 자동 선택)
+const WEBHOOK_URL = process.env.NETLIFY 
+  ? 'https://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/google-webhook'
+  : `https://${process.env.REPLIT_DEV_DOMAIN}/api/calendar-webhook`;
 
 // Google Service Account 인증
 function getGoogleAuth() {
