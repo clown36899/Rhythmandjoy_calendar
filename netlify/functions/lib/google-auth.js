@@ -22,6 +22,24 @@ export function getGoogleAuth() {
     throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 파싱 실패: ' + error.message);
   }
 
+  // 🔍 디버깅: 파싱된 값 확인
+  console.log('📋 환경 변수 디버깅:');
+  console.log('  - serviceAccountJson 존재:', !!serviceAccountJson);
+  console.log('  - serviceAccountJson 길이:', serviceAccountJson?.length);
+  console.log('  - credentials 객체:', !!credentials);
+  console.log('  - client_email:', credentials?.client_email);
+  console.log('  - private_key 존재:', !!credentials?.private_key);
+  console.log('  - private_key 길이:', credentials?.private_key?.length);
+  console.log('  - private_key 시작:', credentials?.private_key?.substring(0, 50));
+
+  // ⚠️ 검증
+  if (!credentials.client_email) {
+    throw new Error('client_email이 없습니다!');
+  }
+  if (!credentials.private_key) {
+    throw new Error('private_key가 없습니다!');
+  }
+
   // JWT 인증 클라이언트 생성
   const auth = new google.auth.JWT({
     email: credentials.client_email,
