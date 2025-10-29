@@ -7,6 +7,24 @@ body {
   /* padding-top: 130px; */
 }
 
+/* 커스텀 닫기 버튼 (화살표) */
+.btn-close-custom {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 24px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  opacity: 0.8;
+}
+
+.btn-close-custom:hover {
+  opacity: 1;
+  color: #ffc107;
+  transform: translateX(-3px);
+}
+
 @media (max-width: 991.98px) {
   .offcanvas-collapse {
     position: fixed;
