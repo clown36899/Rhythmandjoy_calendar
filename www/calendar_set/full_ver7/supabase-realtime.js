@@ -58,6 +58,7 @@ export function convertToCalendarEvents(bookings) {
       end: booking.end_time,
       color: roomConfig.color || '#ccc',
       textColor: '#000',
+      className: booking.room_id,  // ✅ CSS 위치 적용 (a, b, c, d, e)
       extendedProps: {
         roomKey: booking.room_id,
         roomName: roomConfig.name || booking.room_id,
