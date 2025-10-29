@@ -20,7 +20,7 @@
       font-family: 'Noto Sans KR', sans-serif;
       overflow: hidden;
       height: 100vh;
-      background: #0f0f0f;
+      background: #1f1f1f;
     }
 
     /* 상단 콘텐츠 영역 */
@@ -32,20 +32,20 @@
       bottom: 130px; /* 바텀 네비 높이만큼 */
       overflow-y: auto;
       padding: 20px;
-      background: linear-gradient(180deg, #1a1a1a 0%, #0f0f0f 100%);
+      background: #1f1f1f;
     }
 
     .content-area::-webkit-scrollbar {
-      width: 8px;
+      width: 6px;
     }
 
     .content-area::-webkit-scrollbar-thumb {
-      background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-      border-radius: 4px;
+      background: #616161;
+      border-radius: 3px;
     }
 
     .content-area::-webkit-scrollbar-track {
-      background: #2d2d2d;
+      background: #2f2f2f;
     }
 
     /* 콘텐츠 섹션 */
@@ -64,42 +64,44 @@
     }
 
     .content-section h1 {
-      font-size: clamp(1.3rem, 4vw, 1.8rem);
+      font-size: clamp(1.2rem, 3.5vw, 1.6rem);
       margin-bottom: 15px;
       color: #ffffff;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      padding: 15px;
-      border-radius: 12px;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      background: #353535;
+      padding: 12px 15px;
+      border-radius: 8px;
+      border-left: 4px solid #ffc107;
     }
 
     .content-section h2, .content-section h3 {
-      font-size: clamp(1.1rem, 3vw, 1.4rem);
-      margin: 20px 0 10px 0;
-      color: #e0e0e0;
-      border-left: 4px solid #667eea;
-      padding-left: 12px;
+      font-size: clamp(1rem, 3vw, 1.3rem);
+      margin: 15px 0 10px 0;
+      color: #ffffff;
+      border-left: 3px solid #616161;
+      padding-left: 10px;
     }
 
     .content-section p {
-      line-height: 1.7;
-      margin-bottom: 12px;
-      color: #b0b0b0;
+      line-height: 1.6;
+      margin-bottom: 10px;
+      color: #c1c1c1;
+      font-size: clamp(0.9rem, 2.5vw, 1rem);
     }
 
     .content-section ul {
-      padding-left: 20px;
-      margin-bottom: 15px;
+      padding-left: 15px;
+      margin-bottom: 12px;
     }
 
     .content-section li {
-      margin-bottom: 15px;
-      line-height: 1.7;
-      color: #b0b0b0;
-      background: rgba(255, 255, 255, 0.03);
+      margin-bottom: 12px;
+      line-height: 1.6;
+      color: #c1c1c1;
+      background: #2f2f2f;
       padding: 10px;
-      border-radius: 8px;
-      border-left: 3px solid #667eea;
+      border-radius: 6px;
+      border-left: 2px solid #616161;
+      font-size: clamp(0.85rem, 2.5vw, 0.95rem);
     }
 
     .content-section strong {
@@ -107,50 +109,49 @@
     }
 
     .content-section a {
-      color: #667eea;
+      color: #00baff;
       text-decoration: none;
       font-weight: 600;
       transition: all 0.3s ease;
     }
 
     .content-section a:hover {
-      color: #764ba2;
+      color: #ffc107;
       text-decoration: underline;
     }
 
     .highlight {
-      background: linear-gradient(135deg, #ffd93d 0%, #ffb600 100%);
-      padding: 3px 8px;
-      border-radius: 4px;
+      background: #ffc107;
+      padding: 2px 6px;
+      border-radius: 3px;
       font-weight: bold;
       color: #000000;
-      box-shadow: 0 2px 6px rgba(255, 217, 61, 0.3);
     }
 
     .important {
-      background: linear-gradient(135deg, rgba(255, 107, 107, 0.2) 0%, rgba(238, 90, 111, 0.2) 100%) !important;
-      border-left-color: #ff6b6b !important;
+      background: #404040 !important;
+      border-left-color: #ffc107 !important;
     }
 
     .button, .inline-button {
       display: inline-block;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 12px 20px;
-      border-radius: 12px;
+      background: #353535;
+      color: #ffc107;
+      padding: 10px 18px;
+      border-radius: 6px;
       text-decoration: none;
       font-weight: 600;
       margin: 5px;
-      border: 2px solid rgba(102, 126, 234, 0.3);
+      border: 1px solid #616161;
       cursor: pointer;
-      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
       transition: all 0.3s ease;
+      font-size: clamp(0.9rem, 2.5vw, 1rem);
     }
 
     .button:hover, .inline-button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
-      border-color: rgba(102, 126, 234, 0.6);
+      background: #404040;
+      border-color: #ffc107;
+      transform: translateY(-1px);
     }
 
     .price-image {
@@ -168,20 +169,20 @@
       bottom: 0;
       left: 0;
       right: 0;
-      background: #1a1a1a;
-      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+      background: #262626;
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       grid-template-rows: repeat(2, 1fr);
       gap: 1px;
-      background: #0f0f0f;
+      background: #1f1f1f;
       padding: 0;
       z-index: 1000;
-      border-top: 1px solid rgba(102, 126, 234, 0.3);
+      border-top: 1px solid #404040;
     }
 
     .nav-item {
-      background: #1a1a1a;
+      background: #2f2f2f;
       border: none;
       padding: 10px 5px;
       display: flex;
@@ -192,39 +193,17 @@
       transition: all 0.3s ease;
       position: relative;
       overflow: hidden;
-      color: #b0b0b0;
-    }
-
-    .nav-item::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      opacity: 0;
-      transition: opacity 0.3s ease;
+      color: #c1c1c1;
     }
 
     .nav-item:active {
-      transform: scale(0.95);
+      transform: scale(0.96);
     }
-
-    .nav-item.active::before {
-      opacity: 1;
-    }
-
-    /* 각 버튼별 배경색 */
-    .nav-item:nth-child(1)::before { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-    .nav-item:nth-child(2)::before { background: linear-gradient(135deg, #ffd93d 0%, #ffb600 100%); }
-    .nav-item:nth-child(3)::before { background: linear-gradient(135deg, #434343 0%, #000000 100%); }
-    .nav-item:nth-child(4)::before { background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); }
-    .nav-item:nth-child(5)::before { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-    .nav-item:nth-child(6)::before { background: linear-gradient(135deg, #3ba59b 0%, #2d8b82 100%); }
-    .nav-item:nth-child(7)::before { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
 
     .nav-item.active {
-      color: white;
+      background: #353535;
+      color: #ffc107;
+      border-top: 2px solid #ffc107;
     }
 
     .nav-item i {
@@ -281,22 +260,22 @@
 
     /* 정보 박스 */
     .info-box {
-      background: rgba(255, 255, 255, 0.05);
-      border: 2px solid rgba(102, 126, 234, 0.3);
-      border-radius: 12px;
-      padding: 15px;
-      margin: 15px 0;
-      backdrop-filter: blur(10px);
+      background: #2f2f2f;
+      border: 1px solid #404040;
+      border-radius: 8px;
+      padding: 12px;
+      margin: 12px 0;
     }
 
     .example-box {
-      background: rgba(255, 255, 255, 0.05);
-      padding: 15px;
-      border-left: 4px solid #667eea;
-      margin: 15px 0;
-      border-radius: 8px;
+      background: #353535;
+      padding: 12px;
+      border-left: 3px solid #ffc107;
+      margin: 12px 0;
+      border-radius: 6px;
       font-family: monospace;
-      color: #e0e0e0;
+      color: #c1c1c1;
+      font-size: clamp(0.85rem, 2.5vw, 0.9rem);
     }
   </style>
 </head>
@@ -304,173 +283,86 @@
 <body>
   <!-- 상단 콘텐츠 영역 -->
   <div class="content-area" id="contentArea">
-    <!-- 환영 메시지 -->
-    <div class="content-section active" id="welcome">
-      <div class="welcome-message">
-        <i class="fas fa-music"></i>
-        <h1>리듬앤조이 연습실</h1>
-        <p>아래 메뉴를 선택해주세요</p>
-      </div>
-    </div>
-
-    <!-- 예약방법 -->
-    <div class="content-section" id="howto">
-      <h1>📱 예약은 네이버로 승인없이!</h1>
-      <p><strong>1.</strong> 아래 링크 또는 <strong>네이버지도 앱</strong>에서 <strong>"리듬앤조이 연습실"</strong>을 검색해 예약하세요.</p>
-      
+    <!-- 예약방법 (초기 활성화) -->
+    <div class="content-section active" id="howto">
+      <h1>📱 네이버 예약</h1>
+      <p>네이버지도 앱에서 <strong>"리듬앤조이 연습실"</strong> 검색 후 예약</p>
       <div class="info-box">
-        <a href="https://naver.me/59vo9MDk" target="_blank" class="button" style="width: 100%; text-align: center; margin: 5px 0; display: block;">네이버 지도 예약</a>
-        <a href="https://m.place.naver.com/my" target="_blank" class="button" style="width: 100%; text-align: center; margin: 5px 0; display: block;">예약 확인/취소</a>
-        <p style="font-size: 0.85rem; margin-top: 10px; color: #b0b0b0;">
-          ✅ "사용 1분 전까지도 실시간 예약 가능!"<br>
-          ✅ "네이버 예약 즉시 확정 – 승인 없이 바로 이용 가능"
-        </p>
+        <a href="https://naver.me/59vo9MDk" target="_blank" class="button" style="width: 100%; text-align: center; display: block;">🔗 네이버 지도 예약</a>
+        <a href="https://m.place.naver.com/my" target="_blank" class="button" style="width: 100%; text-align: center; display: block;">🔑 예약 확인/취소</a>
       </div>
-      
-      <p>네이버 로그인과 결제 정보는 <strong>최초 1회만 입력</strong>하면 되며,<br>이후엔 더 빠르고 편리하게 예약할 수 있어요!</p>
+      <p style="font-size: 0.9rem; margin-top: 8px;">✅ 사용 1분 전까지 실시간 예약 가능<br>✅ 승인 없이 즉시 확정</p>
     </div>
 
     <!-- 시설안내 -->
     <div class="content-section" id="info">
-      <h1>🏢 리듬앤조이 연습실 시설 안내</h1>
+      <h1>🏢 시설 안내</h1>
       <ul>
-        <li><span class="highlight">총 5개의 연습룸</span>이 준비되어 있습니다.
-          <br><strong>A홀:</strong> 10×6m | <strong>B홀:</strong> 8.4×4.5m | <strong>E홀:</strong> 6.5×6m
-          <br><strong>C홀:</strong> 4.5×3.5m | <strong>D홀:</strong> 4.5×2.8m
-        </li>
-        <li class="important">❌ <strong>젖은 신발이나 우산은 절대 방 안에 들고 들어오지 마세요!</strong></li>
-        <li>📺 <strong>A, B 홀</strong>에는 각각 <strong>55인치, 65인치 TV</strong>가 설치되어 있습니다.
-          <br>&nbsp;&nbsp;- 추가 요금 없이 자유롭게 사용 가능
-          <br>&nbsp;&nbsp;- <em>HDMI / C타입 / 아이폰 8핀</em> 커넥터 모두 비치
-        </li>
-        <li>🧘‍♀️ 전 룸 <strong>댄서 전용 쿠션바닥</strong> 설치
-          <br>&nbsp;&nbsp;- 장선 고무 처리된 고급 고무 바닥
-          <br>&nbsp;&nbsp;- 일반 나무바닥과 달리 <strong>무릎 부담 최소화</strong>
-        </li>
-        <li>📹 <strong>CCTV 24시간 녹화</strong> 중이며, <span class="highlight">파손 시 원상 복구 기준</span>으로 운영됩니다.</li>
+        <li><span class="highlight">총 5개 연습룸</span> A홀(10×6m) B홀(8.4×4.5m) E홀(6.5×6m) C홀(4.5×3.5m) D홀(4.5×2.8m)</li>
+        <li>📺 A/B홀 TV 무료 (HDMI, C타입, 8핀 커넥터 비치)</li>
+        <li>🧘 전 룸 댄서 전용 쿠션바닥 (무릎 부담 최소화)</li>
+        <li>📹 CCTV 24시간 녹화 중</li>
       </ul>
     </div>
 
     <!-- 비밀번호 확인 -->
     <div class="content-section" id="password">
-      <h1>🔒 비번확인, 예약취소</h1>
-      <ul>
-        <li><strong>1. 아래 링크 클릭</strong> → 네이버 로그인 후 '예약' 메뉴 클릭</li>
-        <li><strong>2. 예약 상세 정보</strong>에서 🔑비밀번호 등 안내사항 확인 가능</li>
-      </ul>
-      <a href="https://m.place.naver.com/my" target="_blank" class="button">🔗 확인·변경 바로가기</a>
-      <p style="text-align: center; margin-top: 20px; color: #888;">네이버 예약서비스를 기준으로 운영하고 있습니다.</p>
+      <h1>🔒 비밀번호 확인</h1>
+      <p>네이버 로그인 → 예약 메뉴 → 예약 상세에서 비밀번호 확인</p>
+      <a href="https://m.place.naver.com/my" target="_blank" class="button" style="width: 100%; text-align: center; display: block;">🔗 예약 확인/취소 바로가기</a>
     </div>
 
     <!-- 주의사항 -->
     <div class="content-section" id="notice">
-      <h1>⚠️ 연습실 이용 시 주의사항</h1>
+      <h1>⚠️ 주의사항</h1>
       <ul>
-        <li>
-          <strong>1. 🚫 외부 신발 금지</strong><br>
-          - <span class="highlight">적발 시 환불 없이 퇴실</span><br>
-          - <em>금지 이유:</em> 바닥 파손 및 오염 방지<br>
-          - <strong>스키드마크를 남기는 고무굽</strong>, <strong>징 있는 탭댄스화</strong> 등은 금지<br>
-          - <em>바닥 보호 장비 착용 시에도 자국 남으면 사용 불가</em>
-        </li>
-        <li>
-          <strong>2. ⏰ 연습실 사용 시간 준수</strong><br>
-          - 대기 목적으로 일찍 입장하는 것은 <strong>가능</strong><br>
-          - <span class="highlight">연습 또는 사용 목적일 경우 단 10분이라도 대관 필요</span><br>
-          - 문의: <a href="sms:01048017180">010-4801-7180 (문자 문의)</a>
-        </li>
-        <li>
-          <strong>3. 🛠️ 물품 파손 관련 안내</strong><br>
-          - <strong>원상복구</strong>를 원칙으로 함(거울, 전자기기, 난방기기, 화재 등)<br>
-          - <em>고의적이 아닌 가벼운 파손</em>은 책임 묻지 않음 (단 반드시 관리자에게 통보)<br>
-          - 통보처: <a href="sms:01048017180">010-4801-7180 (문자)</a>
-        </li>
-        <li>
-          <strong>4. 📹 CCTV 운영</strong><br>
-          - 24시간 녹화<br>
-          - <em>시설 보호 및 사용자 안전을 위한 용도로만 사용</em>
-        </li>
-        <li>
-          <strong>5. 🥁 징, 장구, 타악기 금지</strong><br>
-          - 탭댄스는 구비해둔 탭판 위에서 사용 가능
-        </li>
-        <li>
-          <strong>6. 🍜 취식 금지</strong><br>
-          - 국물음식, 냄새 심한 것은 불가<br>
-          - 과자나 냄새 안 나는 것은 가능 (다음 팀에 피해가 안 갈 경우 허용)
-        </li>
+        <li class="important">🚫 <strong>외부 신발 금지</strong> (적발 시 환불 없이 퇴실)</li>
+        <li>⏰ 연습/사용 목적 시 10분이라도 대관 필요</li>
+        <li>🛠️ 물품 파손 시 원상복구 원칙 (관리자 통보 필수)</li>
+        <li>🥁 징, 장구, 타악기 금지 (탭댄스는 탭판에서만)</li>
+        <li>🍜 국물음식, 냄새 심한 음식 금지</li>
       </ul>
+      <p>문의: <a href="sms:01048017180">010-4801-7180</a></p>
     </div>
 
     <!-- 오시는길 -->
     <div class="content-section" id="map">
-      <h1>📍 오시는 길 & 주차 안내</h1>
-      <div class="info-box">
-        🔗 <a href="https://naver.me/59vo9MDk" target="_blank" style="color: #667eea; font-weight: bold;">네이버 지도에서 위치 보기</a>
-      </div>
-      <p>📌 <strong>사당역 7번출구 도보 1분</strong></p>
-      <p>🏢 <strong>주소:</strong> 서울시 동작구 남부순환로 2077, <strong>지하 2층</strong></p>
-      <p>📌 <strong>건물 정보:</strong> 드림디포 문구점 건물 지하</p>
-
+      <h1>📍 오시는 길</h1>
+      <p>📌 사당역 7번출구 도보 1분<br>🏢 서울시 동작구 남부순환로 2077 지하2층 (드림디포 문구점 건물)</p>
+      <a href="https://naver.me/59vo9MDk" target="_blank" class="button" style="width: 100%; text-align: center; display: block;">🔗 네이버 지도 보기</a>
       <h3>🚗 주차 안내</h3>
       <ul>
-        <li>✅ <strong>기본적으로 제공 불가입니다. 다만 문구점 퇴근 후</strong> → 문구점 앞 <strong>한정 주차 가능</strong></li>
-        <li>✅ <strong>네이버 검색 "사당역 공영주차장"을 이용해주세요!</strong></li>
-        <li>⛔ <span class="highlight">지하주차 리프트 사용 불가</span></li>
-        <li>⛔ <span class="highlight">건물 앞 좌측 주차라인 사용 불가</span></li>
-        <li>🚫 <span class="highlight">카리프트 앞 절대 주차 금지!</span></li>
+        <li>✅ 문구점 퇴근 후 문구점 앞 한정 주차 가능</li>
+        <li>✅ 사당역 공영주차장 이용 권장</li>
+        <li>⛔ 지하주차 리프트, 카리프트 앞 주차 금지</li>
       </ul>
-      <p>📞 <strong>예약 외 방문 시:</strong> <em>반드시 사전 문의 부탁드립니다.</em></p>
     </div>
 
     <!-- 새벽통대관 -->
     <div class="content-section" id="night">
-      <h1>🌙 새벽 통대관 안내</h1>
-      <p>📅 <strong>일정 확인:</strong> 현재 예약 현황을 확인해 주세요.</p>
-      <p>📲 <strong>문자 예약:</strong> <a href="sms:01048017180">010-4801-7180</a>으로 아래 예시처럼 문자 보내주세요.</p>
-      
-      <div class="example-box">
-        <strong>예시 문구:</strong><br>
-        <code>12~13일 넘어가는 새벽 A 홀 통대관 가능한가요?</code>
-      </div>
-      
-      <p>✅ <strong>승인 후 입금</strong> → <strong>이용 정보 문자 수신</strong> → <strong>예약 완료!</strong></p>
-      
-      <h2>💰 대관이용료</h2>
-      <img src="pay_list.png" alt="새벽 통대관 가격표" class="price-image" />
+      <h1>🌙 새벽 통대관</h1>
+      <p>📲 문자 예약: <a href="sms:01048017180">010-4801-7180</a></p>
+      <div class="example-box">예: "12~13일 새벽 A홀 통대관 가능한가요?"</div>
+      <p>✅ 승인 후 입금 → 이용정보 수신 → 완료</p>
+      <img src="pay_list.png" alt="가격표" class="price-image" style="max-width: 80%; margin: 10px auto;" />
     </div>
 
     <!-- 환불규정 -->
     <div class="content-section" id="price">
-      <h1>💵 취소·변경·환불규정</h1>
-      
-      <h3><strong>1. 잘못 예약한 경우</strong></h3>
-      <div class="example-box">
-        <strong>예약신청 2시간 안 변심 취소는 무료입니다. 그 외에는 환불규정에 따릅니다.</strong><br>
-        - 문의: <a href="sms:01048017180">010-4801-7180 (문자 문의)</a>
-      </div>
-      
-      <h3><strong>2. 단순 취소</strong></h3>
-      <div class="example-box">
-        <strong>신청 2시간이 지났으면 아래 환불규정에 따릅니다.</strong>
-      </div>
-      
-      <h3><strong>3. 변경</strong></h3>
-      <div class="example-box">
-        <strong>변경은 취소 후 재예약만 가능합니다.</strong>
-      </div>
-      
-      <h3><strong>4. 환불규정</strong></h3>
-      <p>💰 환불은 네이버에서 어플로 설정되어 있는 기준으로 작동합니다.</p>
-      
-      <img src="images/image.jpg" alt="환불규정" class="price-image" />
-      <p>- 문의: <a href="sms:01048017180">010-4801-7180 (문자 문의)</a></p>
+      <h1>💵 환불 규정</h1>
+      <ul>
+        <li>예약 2시간 안 변심 취소 → <span class="highlight">무료</span></li>
+        <li>2시간 경과 → 아래 환불규정 적용</li>
+        <li>변경 → 취소 후 재예약만 가능</li>
+      </ul>
+      <img src="images/image.jpg" alt="환불규정" class="price-image" style="max-width: 70%; margin: 10px auto;" />
+      <p>문의: <a href="sms:01048017180">010-4801-7180</a></p>
     </div>
   </div>
 
   <!-- 바텀 네비게이션 -->
   <div class="bottom-nav">
-    <button class="nav-item" onclick="showContent('howto', this)">
+    <button class="nav-item active" onclick="showContent('howto', this)">
       <i class="fas fa-question-circle"></i>
       <span>예약방법</span>
     </button>
