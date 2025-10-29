@@ -140,9 +140,12 @@ export async function handler(event, context) {
         const result = await setupWatch(room);
         results.push(result);
       } catch (error) {
+        // 🔍 상세 에러 정보 포함
         results.push({
           room: room.id,
-          error: error.message
+          error: error.message,
+          stack: error.stack,
+          details: error.toString()
         });
       }
     }
