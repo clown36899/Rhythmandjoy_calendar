@@ -1,665 +1,847 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>리듬앤조이 안내</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+      integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>리듬앤조이 안내</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-    integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
-    crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
 
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+      body {
+        font-family: "Noto Sans KR", sans-serif;
+        overflow: hidden;
+        height: 100vh;
+        background: #1f1f1f;
+      }
 
-    body {
-      font-family: 'Noto Sans KR', sans-serif;
-      overflow: hidden;
-      height: 100vh;
-      background: #1f1f1f;
-    }
+      /* 상단 콘텐츠 영역 */
+      .content-area {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 130px; /* 바텀 네비 높이만큼 */
+        overflow-y: auto;
+        padding: 20px;
+        background: #1f1f1f;
+      }
 
-    /* 상단 콘텐츠 영역 */
-    .content-area {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 130px; /* 바텀 네비 높이만큼 */
-      overflow-y: auto;
-      padding: 20px;
-      background: #1f1f1f;
-    }
+      .content-area::-webkit-scrollbar {
+        width: 6px;
+      }
 
-    .content-area::-webkit-scrollbar {
-      width: 6px;
-    }
+      .content-area::-webkit-scrollbar-thumb {
+        background: #616161;
+        border-radius: 3px;
+      }
 
-    .content-area::-webkit-scrollbar-thumb {
-      background: #616161;
-      border-radius: 3px;
-    }
+      .content-area::-webkit-scrollbar-track {
+        background: #2f2f2f;
+      }
 
-    .content-area::-webkit-scrollbar-track {
-      background: #2f2f2f;
-    }
+      /* 콘텐츠 섹션 */
+      .content-section {
+        display: none;
+        animation: fadeIn 0.3s ease;
+      }
 
-    /* 콘텐츠 섹션 */
-    .content-section {
-      display: none;
-      animation: fadeIn 0.3s ease;
-    }
+      .content-section.active {
+        display: block;
+      }
 
-    .content-section.active {
-      display: block;
-    }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+      .content-section h1 {
+        font-size: clamp(1.2rem, 3.5vw, 1.6rem);
+        margin-bottom: 15px;
+        color: #ffffff;
+        background: #353535;
+        padding: 12px 15px;
+        border-radius: 8px;
+        border-left: 4px solid #ffc107;
+      }
 
-    .content-section h1 {
-      font-size: clamp(1.2rem, 3.5vw, 1.6rem);
-      margin-bottom: 15px;
-      color: #ffffff;
-      background: #353535;
-      padding: 12px 15px;
-      border-radius: 8px;
-      border-left: 4px solid #ffc107;
-    }
+      .content-section h2,
+      .content-section h3 {
+        font-size: clamp(1rem, 3vw, 1.3rem);
+        margin: 15px 0 10px 0;
+        color: #ffffff;
+        border-left: 3px solid #616161;
+        padding-left: 10px;
+      }
 
-    .content-section h2, .content-section h3 {
-      font-size: clamp(1rem, 3vw, 1.3rem);
-      margin: 15px 0 10px 0;
-      color: #ffffff;
-      border-left: 3px solid #616161;
-      padding-left: 10px;
-    }
+      .content-section p {
+        line-height: 1.6;
+        margin-bottom: 10px;
+        color: #c1c1c1;
+        font-size: clamp(0.9rem, 2.5vw, 1rem);
+      }
 
-    .content-section p {
-      line-height: 1.6;
-      margin-bottom: 10px;
-      color: #c1c1c1;
-      font-size: clamp(0.9rem, 2.5vw, 1rem);
-    }
+      .content-section ul {
+        padding-left: 15px;
+        margin-bottom: 12px;
+      }
 
-    .content-section ul {
-      padding-left: 15px;
-      margin-bottom: 12px;
-    }
+      .content-section li {
+        margin-bottom: 12px;
+        line-height: 1.6;
+        color: #c1c1c1;
+        background: #2f2f2f;
+        padding: 10px;
+        border-radius: 6px;
+        border-left: 2px solid #616161;
+        font-size: clamp(0.85rem, 2.5vw, 0.95rem);
+      }
 
-    .content-section li {
-      margin-bottom: 12px;
-      line-height: 1.6;
-      color: #c1c1c1;
-      background: #2f2f2f;
-      padding: 10px;
-      border-radius: 6px;
-      border-left: 2px solid #616161;
-      font-size: clamp(0.85rem, 2.5vw, 0.95rem);
-    }
+      .content-section strong {
+        color: #ffffff;
+      }
 
-    .content-section strong {
-      color: #ffffff;
-    }
+      .content-section a {
+        color: #00baff;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+      }
 
-    .content-section a {
-      color: #00baff;
-      text-decoration: none;
-      font-weight: 600;
-      transition: all 0.3s ease;
-    }
+      .content-section a:hover {
+        color: #ffc107;
+        text-decoration: underline;
+      }
 
-    .content-section a:hover {
-      color: #ffc107;
-      text-decoration: underline;
-    }
+      .highlight {
+        background: #ffc107;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-weight: bold;
+        color: #000000;
+      }
 
-    .highlight {
-      background: #ffc107;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-weight: bold;
-      color: #000000;
-    }
+      .important {
+        background: #404040 !important;
+        border-left-color: #ffc107 !important;
+      }
 
-    .important {
-      background: #404040 !important;
-      border-left-color: #ffc107 !important;
-    }
+      .button,
+      .inline-button {
+        display: inline-block;
+        background: #353535;
+        color: #ffffff;
+        padding: 10px 18px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 600;
+        margin: 5px;
+        border: 1px solid #616161;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: clamp(0.9rem, 2.5vw, 1rem);
+      }
 
-    .button, .inline-button {
-      display: inline-block;
-      background: #353535;
-      color: #ffffff;
-      padding: 10px 18px;
-      border-radius: 6px;
-      text-decoration: none;
-      font-weight: 600;
-      margin: 5px;
-      border: 1px solid #616161;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      font-size: clamp(0.9rem, 2.5vw, 1rem);
-    }
+      .button:hover,
+      .inline-button:hover {
+        background: #404040;
+        border-color: #ffc107;
+        color: #ffc107;
+        transform: translateY(-1px);
+      }
 
-    .button:hover, .inline-button:hover {
-      background: #404040;
-      border-color: #ffc107;
-      color: #ffc107;
-      transform: translateY(-1px);
-    }
+      .price-image {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        margin: 20px auto;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+      }
 
-    .price-image {
-      display: block;
-      max-width: 100%;
-      height: auto;
-      margin: 20px auto;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-    }
+      /* 바텀 네비게이션 */
+      .bottom-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #262626;
+        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+        gap: 1px;
+        background: #1f1f1f;
+        padding: 0;
+        z-index: 1000;
+        border-top: 1px solid #404040;
+      }
 
-    /* 바텀 네비게이션 */
-    .bottom-nav {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: #262626;
-      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      grid-template-rows: repeat(2, 1fr);
-      gap: 1px;
-      background: #1f1f1f;
-      padding: 0;
-      z-index: 1000;
-      border-top: 1px solid #404040;
-    }
+      .nav-item {
+        background: #2f2f2f;
+        border: none;
+        padding: 10px 5px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+        color: #c1c1c1;
+      }
 
-    .nav-item {
-      background: #2f2f2f;
-      border: none;
-      padding: 10px 5px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      position: relative;
-      overflow: hidden;
-      color: #c1c1c1;
-    }
+      .nav-item:active {
+        transform: scale(0.96);
+      }
 
-    .nav-item:active {
-      transform: scale(0.96);
-    }
+      .nav-item.active {
+        background: #353535;
+        color: #ffc107;
+        border-top: 2px solid #ffc107;
+      }
 
-    .nav-item.active {
-      background: #353535;
-      color: #ffc107;
-      border-top: 2px solid #ffc107;
-    }
+      .nav-item i {
+        font-size: clamp(20px, 4vw, 26px);
+        margin-bottom: 4px;
+        position: relative;
+        z-index: 1;
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
+      }
 
-    .nav-item i {
-      font-size: clamp(20px, 4vw, 26px);
-      margin-bottom: 4px;
-      position: relative;
-      z-index: 1;
-      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
-    }
+      .nav-item span {
+        font-size: clamp(0.65rem, 1.8vw, 0.8rem);
+        font-weight: 600;
+        text-align: center;
+        position: relative;
+        z-index: 1;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      }
 
-    .nav-item span {
-      font-size: clamp(0.65rem, 1.8vw, 0.8rem);
-      font-weight: 600;
-      text-align: center;
-      position: relative;
-      z-index: 1;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    }
+      /* 환영 메시지 */
+      .welcome-message {
+        text-align: center;
+        padding: 60px 20px;
+        background: rgba(102, 126, 234, 0.05);
+        border-radius: 20px;
+        margin: 20px;
+      }
 
-    /* 환영 메시지 */
-    .welcome-message {
-      text-align: center;
-      padding: 60px 20px;
-      background: rgba(102, 126, 234, 0.05);
-      border-radius: 20px;
-      margin: 20px;
-    }
+      .welcome-message h1 {
+        font-size: clamp(1.8rem, 5vw, 2.5rem);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 20px;
+        padding: 0;
+        border: none;
+      }
 
-    .welcome-message h1 {
-      font-size: clamp(1.8rem, 5vw, 2.5rem);
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 20px;
-      padding: 0;
-      border: none;
-    }
+      .welcome-message p {
+        font-size: clamp(1rem, 3vw, 1.2rem);
+        color: #b0b0b0;
+      }
 
-    .welcome-message p {
-      font-size: clamp(1rem, 3vw, 1.2rem);
-      color: #b0b0b0;
-    }
+      .welcome-message i {
+        font-size: 80px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 20px;
+        filter: drop-shadow(0 4px 8px rgba(102, 126, 234, 0.3));
+      }
 
-    .welcome-message i {
-      font-size: 80px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 20px;
-      filter: drop-shadow(0 4px 8px rgba(102, 126, 234, 0.3));
-    }
+      /* 정보 박스 */
+      .info-box {
+        background: #2f2f2f;
+        border: 1px solid #404040;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 12px 0;
+      }
 
-    /* 정보 박스 */
-    .info-box {
-      background: #2f2f2f;
-      border: 1px solid #404040;
-      border-radius: 8px;
-      padding: 12px;
-      margin: 12px 0;
-    }
+      .example-box {
+        background: #353535;
+        padding: 12px;
+        border-left: 3px solid #ffc107;
+        margin: 12px 0;
+        border-radius: 6px;
+        font-family: monospace;
+        color: #c1c1c1;
+        font-size: clamp(0.85rem, 2.5vw, 0.9rem);
+      }
 
-    .example-box {
-      background: #353535;
-      padding: 12px;
-      border-left: 3px solid #ffc107;
-      margin: 12px 0;
-      border-radius: 6px;
-      font-family: monospace;
-      color: #c1c1c1;
-      font-size: clamp(0.85rem, 2.5vw, 0.9rem);
-    }
+      /* 모달 갤러리 스타일 */
+      .gallery-modal {
+        display: none;
+        position: fixed;
+        z-index: 10000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.95);
+        align-items: center;
+        justify-content: center;
+      }
 
-    /* 모달 갤러리 스타일 */
-    .gallery-modal {
-      display: none;
-      position: fixed;
-      z-index: 10000;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0, 0, 0, 0.95);
-      align-items: center;
-      justify-content: center;
-    }
+      .gallery-modal.active {
+        display: flex;
+      }
 
-    .gallery-modal.active {
-      display: flex;
-    }
+      .gallery-content {
+        position: relative;
+        width: 90%;
+        max-width: 800px;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
 
-    .gallery-content {
-      position: relative;
-      width: 90%;
-      max-width: 800px;
-      max-height: 90vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
+      .gallery-close {
+        position: absolute;
+        top: -40px;
+        right: 0;
+        color: #fff;
+        font-size: 35px;
+        font-weight: bold;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 0;
+        width: 40px;
+        height: 40px;
+        line-height: 40px;
+        text-align: center;
+      }
 
-    .gallery-close {
-      position: absolute;
-      top: -40px;
-      right: 0;
-      color: #fff;
-      font-size: 35px;
-      font-weight: bold;
-      cursor: pointer;
-      background: none;
-      border: none;
-      padding: 0;
-      width: 40px;
-      height: 40px;
-      line-height: 40px;
-      text-align: center;
-    }
+      .gallery-close:hover {
+        color: #ffc107;
+      }
 
-    .gallery-close:hover {
-      color: #ffc107;
-    }
+      .gallery-main-image {
+        max-width: 100%;
+        max-height: 70vh;
+        object-fit: contain;
+        border-radius: 8px;
+        margin-bottom: 20px;
+      }
 
-    .gallery-main-image {
-      max-width: 100%;
-      max-height: 70vh;
-      object-fit: contain;
-      border-radius: 8px;
-      margin-bottom: 20px;
-    }
+      .gallery-thumbnails {
+        display: flex;
+        overflow-x: auto;
+        gap: 10px;
+        padding: 10px 0;
+        max-width: 100%;
+      }
 
-    .gallery-thumbnails {
-      display: flex;
-      overflow-x: auto;
-      gap: 10px;
-      padding: 10px 0;
-      max-width: 100%;
-    }
+      .gallery-thumbnails::-webkit-scrollbar {
+        height: 6px;
+      }
 
-    .gallery-thumbnails::-webkit-scrollbar {
-      height: 6px;
-    }
+      .gallery-thumbnails::-webkit-scrollbar-thumb {
+        background: #616161;
+        border-radius: 3px;
+      }
 
-    .gallery-thumbnails::-webkit-scrollbar-thumb {
-      background: #616161;
-      border-radius: 3px;
-    }
+      .gallery-thumbnail {
+        height: 60px;
+        cursor: pointer;
+        border: 2px solid transparent;
+        border-radius: 4px;
+        opacity: 0.6;
+        transition: all 0.3s;
+      }
 
-    .gallery-thumbnail {
-      height: 60px;
-      cursor: pointer;
-      border: 2px solid transparent;
-      border-radius: 4px;
-      opacity: 0.6;
-      transition: all 0.3s;
-    }
+      .gallery-thumbnail.active {
+        border-color: #ffc107;
+        opacity: 1;
+      }
 
-    .gallery-thumbnail.active {
-      border-color: #ffc107;
-      opacity: 1;
-    }
+      .gallery-thumbnail:hover {
+        opacity: 1;
+      }
 
-    .gallery-thumbnail:hover {
-      opacity: 1;
-    }
+      .gallery-nav {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        border: none;
+        font-size: 30px;
+        padding: 10px 15px;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.3s;
+      }
 
-    .gallery-nav {
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%);
-      background: rgba(0, 0, 0, 0.5);
-      color: white;
-      border: none;
-      font-size: 30px;
-      padding: 10px 15px;
-      cursor: pointer;
-      border-radius: 4px;
-      transition: all 0.3s;
-    }
+      .gallery-nav:hover {
+        background: rgba(0, 0, 0, 0.8);
+        color: #ffc107;
+      }
 
-    .gallery-nav:hover {
-      background: rgba(0, 0, 0, 0.8);
-      color: #ffc107;
-    }
+      .gallery-nav.prev {
+        left: 10px;
+      }
 
-    .gallery-nav.prev {
-      left: 10px;
-    }
+      .gallery-nav.next {
+        right: 10px;
+      }
+    </style>
+  </head>
 
-    .gallery-nav.next {
-      right: 10px;
-    }
-  </style>
-</head>
-
-<body>
-  <!-- 상단 콘텐츠 영역 -->
-  <div class="content-area" id="contentArea">
-    <!-- 예약방법 (초기 활성화) -->
-    <div class="content-section active" id="howto">
-      <h1>📱 네이버 예약</h1>
-      <p>네이버지도 앱에서 <strong>"리듬앤조이 연습실"</strong> 검색 후 예약</p>
-      <div class="info-box">
-        <a href="https://naver.me/59vo9MDk" target="_blank" class="button" style="width: 100%; text-align: center; display: block; color: #ffffff !important;">🔗 네이버 지도 예약</a>
-        <a href="https://m.place.naver.com/my" target="_blank" class="button" style="width: 100%; text-align: center; display: block; color: #ffffff !important; margin-bottom: 8px;">🔑 비번 확인/취소</a>
-        <p style="font-size: 0.85rem; color: #c1c1c1; margin: 0;">💡 네이버 로그인 → 예약 메뉴 → 예약 상세에서 비밀번호 확인</p>
+  <body>
+    <!-- 상단 콘텐츠 영역 -->
+    <div class="content-area" id="contentArea">
+      <!-- 예약방법 (초기 활성화) -->
+      <div class="content-section active" id="howto">
+        <h1>📱 네이버 예약</h1>
+        <p>
+          네이버지도 앱에서 <strong>"리듬앤조이 연습실"</strong> 검색 후 예약
+        </p>
+        <div class="info-box">
+          <a
+            href="https://naver.me/59vo9MDk"
+            target="_blank"
+            class="button"
+            style="
+              width: 100%;
+              text-align: center;
+              display: block;
+              color: #ffffff !important;
+            "
+            >🔗 네이버 지도 예약</a
+          >
+          <a
+            href="https://m.place.naver.com/my"
+            target="_blank"
+            class="button"
+            style="
+              width: 100%;
+              text-align: center;
+              display: block;
+              color: #ffffff !important;
+              margin-bottom: 8px;
+            "
+            >🔑 예약, 비번 확인/취소</a
+          >
+          <p style="font-size: 0.85rem; color: #c1c1c1; margin: 0">
+            💡 예약 메뉴 → 예약 상세에서 비밀번호 확인
+          </p>
+        </div>
+        <p style="font-size: 0.9rem; margin-top: 8px">
+          ✅ 사용 1분 전까지 실시간 예약 가능<br />✅ 승인 없이 즉시 확정
+        </p>
       </div>
-      <p style="font-size: 0.9rem; margin-top: 8px;">✅ 사용 1분 전까지 실시간 예약 가능<br>✅ 승인 없이 즉시 확정</p>
-    </div>
 
-    <!-- 시설안내 -->
-    <div class="content-section" id="info">
-      <h1>🏢 시설 안내</h1>
-      <p style="margin-bottom: 10px;"><span class="highlight">총 5개 연습룸</span> - 이미지 갤러리 보기</p>
-      <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px;">
-        <button onclick="openGallery('roomALL')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">📐 평면도</button>
-        <button onclick="openGallery('roomA')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">A홀 10×6m</button>
-        <button onclick="openGallery('roomB')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">B홀 8.4×4.5m</button>
-        <button onclick="openGallery('roomE')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">E홀 6.5×6m</button>
-        <button onclick="openGallery('roomC')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">C홀 4.5×3.5m</button>
-        <button onclick="openGallery('roomD')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">D홀 4.5×2.8m</button>
+      <!-- 시설안내 -->
+      <div class="content-section" id="info">
+        <h1>🏢 시설 안내</h1>
+        <p style="margin-bottom: 10px">
+          <span class="highlight">총 5개 연습룸</span> - 이미지 갤러리 보기
+        </p>
+        <div
+          style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px"
+        >
+          <button
+            onclick="openGallery('roomALL')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            📐 평면도
+          </button>
+          <button
+            onclick="openGallery('roomA')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            A홀 10×6m
+          </button>
+          <button
+            onclick="openGallery('roomB')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            B홀 8.4×4.5m
+          </button>
+          <button
+            onclick="openGallery('roomE')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            E홀 6.5×6m
+          </button>
+          <button
+            onclick="openGallery('roomC')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            C홀 4.5×3.5m
+          </button>
+          <button
+            onclick="openGallery('roomD')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            D홀 4.5×2.8m
+          </button>
+        </div>
+        <ul>
+          <li>📺 A/B홀 TV 무료 (HDMI, C타입, 8핀 커넥터)</li>
+          <li>🧘 전 룸 댄서 전용 쿠션바닥</li>
+          <li>📹 CCTV 24시간 녹화</li>
+        </ul>
       </div>
-      <ul>
-        <li>📺 A/B홀 TV 무료 (HDMI, C타입, 8핀 커넥터)</li>
-        <li>🧘 전 룸 댄서 전용 쿠션바닥</li>
-        <li>📹 CCTV 24시간 녹화</li>
-      </ul>
+
+      <!-- 주의사항 -->
+      <div class="content-section" id="notice">
+        <h1>⚠️ 주의사항</h1>
+        <ul>
+          <li class="important">
+            🚫 <strong>외부 신발 금지</strong> (적발 시 환불 없이 퇴실)
+          </li>
+          <li>⏰ 연습/사용 목적 시 10분이라도 대관 필요</li>
+          <li>🛠️ 물품 파손 시 원상복구 원칙 (관리자 통보 필수)</li>
+          <li>🥁 징, 장구, 타악기 금지 (탭댄스는 탭판에서만)</li>
+          <li>🍜 국물음식, 냄새 심한 음식 금지</li>
+        </ul>
+        <p>문의: <a href="sms:01048017180">010-4801-7180</a></p>
+      </div>
+
+      <!-- 오시는길 -->
+      <div class="content-section" id="map">
+        <h1>📍 오시는 길</h1>
+        <p>
+          📌 사당역 7번출구 도보 1분<br />🏢 서울시 동작구 남부순환로 2077
+          지하2층 (드림디포 문구점 건물)
+        </p>
+        <a
+          href="https://naver.me/59vo9MDk"
+          target="_blank"
+          class="button"
+          style="
+            width: 100%;
+            text-align: center;
+            display: block;
+            color: #ffffff !important;
+          "
+          >🔗 네이버 지도 보기</a
+        >
+        <h3>🚗 주차 안내</h3>
+        <ul>
+          <li>✅ 문구점 퇴근 후 문구점 앞 한정 주차 가능</li>
+          <li>✅ 사당역 공영주차장 이용 권장</li>
+          <li>⛔ 지하주차 리프트, 카리프트 앞 주차 금지</li>
+        </ul>
+      </div>
+
+      <!-- 새벽통대관 -->
+      <div class="content-section" id="night">
+        <h1>🌙 새벽 통대관</h1>
+        <p>📲 문자 예약: <a href="sms:01048017180">010-4801-7180</a></p>
+        <div class="example-box">예: "12~13일 새벽 A홀 통대관 가능한가요?"</div>
+        <p>✅ 승인 후 입금 → 이용정보 수신 → 완료</p>
+      </div>
+
+      <!-- 가격표 -->
+      <div class="content-section" id="pricelist">
+        <h1>💰 가격표</h1>
+        <p>연습실 이용 요금 안내</p>
+        <button
+          onclick="openPriceImage()"
+          class="button"
+          style="
+            width: 100%;
+            text-align: center;
+            display: block;
+            margin-top: 10px;
+            color: #ffffff !important;
+          "
+        >
+          💵 가격표 보기
+        </button>
+      </div>
+
+      <!-- 환불규정 -->
+      <div class="content-section" id="price">
+        <h1>💵 환불 규정</h1>
+        <ul>
+          <li>예약 2시간 안 변심 취소 → <span class="highlight">무료</span></li>
+          <li>2시간 경과 → 아래 환불규정 적용</li>
+          <li>변경 → 취소 후 재예약만 가능</li>
+        </ul>
+        <img
+          src="home_infopage/images/image.jpg"
+          alt="환불규정"
+          class="price-image"
+          style="max-width: 70%; margin: 10px auto; display: block"
+        />
+        <p>문의: <a href="sms:01048017180">010-4801-7180</a></p>
+      </div>
     </div>
 
-    <!-- 주의사항 -->
-    <div class="content-section" id="notice">
-      <h1>⚠️ 주의사항</h1>
-      <ul>
-        <li class="important">🚫 <strong>외부 신발 금지</strong> (적발 시 환불 없이 퇴실)</li>
-        <li>⏰ 연습/사용 목적 시 10분이라도 대관 필요</li>
-        <li>🛠️ 물품 파손 시 원상복구 원칙 (관리자 통보 필수)</li>
-        <li>🥁 징, 장구, 타악기 금지 (탭댄스는 탭판에서만)</li>
-        <li>🍜 국물음식, 냄새 심한 음식 금지</li>
-      </ul>
-      <p>문의: <a href="sms:01048017180">010-4801-7180</a></p>
+    <!-- 바텀 네비게이션 -->
+    <div class="bottom-nav">
+      <button class="nav-item active" onclick="showContent('howto', this)">
+        <i class="fas fa-question-circle"></i>
+        <span>예약/비번</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('info', this)">
+        <i class="fas fa-building"></i>
+        <span>시설안내</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('notice', this)">
+        <i class="fas fa-exclamation-triangle"></i>
+        <span>주의사항</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('map', this)">
+        <i class="fas fa-map-marked-alt"></i>
+        <span>오시는길</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('night', this)">
+        <i class="fas fa-moon"></i>
+        <span>새벽통대관</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('pricelist', this)">
+        <i class="fas fa-won-sign"></i>
+        <span>가격표</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('price', this)">
+        <i class="fas fa-dollar-sign"></i>
+        <span>환불규정</span>
+      </button>
+
+      <button
+        class="nav-item"
+        data-bs-dismiss="offcanvas"
+        style="background: #404040"
+      >
+        <i class="fas fa-calendar"></i>
+        <span>전화면</span>
+      </button>
     </div>
 
-    <!-- 오시는길 -->
-    <div class="content-section" id="map">
-      <h1>📍 오시는 길</h1>
-      <p>📌 사당역 7번출구 도보 1분<br>🏢 서울시 동작구 남부순환로 2077 지하2층 (드림디포 문구점 건물)</p>
-      <a href="https://naver.me/59vo9MDk" target="_blank" class="button" style="width: 100%; text-align: center; display: block; color: #ffffff !important;">🔗 네이버 지도 보기</a>
-      <h3>🚗 주차 안내</h3>
-      <ul>
-        <li>✅ 문구점 퇴근 후 문구점 앞 한정 주차 가능</li>
-        <li>✅ 사당역 공영주차장 이용 권장</li>
-        <li>⛔ 지하주차 리프트, 카리프트 앞 주차 금지</li>
-      </ul>
+    <!-- 갤러리 모달 -->
+    <div class="gallery-modal" id="galleryModal">
+      <div class="gallery-content">
+        <button class="gallery-close" onclick="closeGallery()">&times;</button>
+        <button class="gallery-nav prev" onclick="prevImage()">&#10094;</button>
+        <img
+          id="galleryMainImage"
+          class="gallery-main-image"
+          src=""
+          alt="갤러리 이미지"
+        />
+        <button class="gallery-nav next" onclick="nextImage()">&#10095;</button>
+        <div class="gallery-thumbnails" id="galleryThumbnails"></div>
+      </div>
     </div>
 
-    <!-- 새벽통대관 -->
-    <div class="content-section" id="night">
-      <h1>🌙 새벽 통대관</h1>
-      <p>📲 문자 예약: <a href="sms:01048017180">010-4801-7180</a></p>
-      <div class="example-box">예: "12~13일 새벽 A홀 통대관 가능한가요?"</div>
-      <p>✅ 승인 후 입금 → 이용정보 수신 → 완료</p>
-    </div>
+    <script>
+      // 갤러리 데이터
+      const galleryImages = {
+        roomALL: ["home_infopage/images/roomALL/image1.jpeg"],
+        roomA: [
+          "home_infopage/images/roomA/image1.jpeg",
+          "home_infopage/images/roomA/image2.jpeg",
+          "home_infopage/images/roomA/image3.jpeg",
+          "home_infopage/images/roomA/image4.jpeg",
+          "home_infopage/images/roomA/image5.jpeg",
+          "home_infopage/images/roomA/image6.jpeg",
+        ],
+        roomB: [
+          "home_infopage/images/roomB/image1.jpeg",
+          "home_infopage/images/roomB/image2.jpeg",
+          "home_infopage/images/roomB/image3.jpeg",
+          "home_infopage/images/roomB/image4.jpeg",
+          "home_infopage/images/roomB/image5.jpeg",
+          "home_infopage/images/roomB/image6.jpeg",
+          "home_infopage/images/roomB/image7.jpeg",
+          "home_infopage/images/roomB/image8.jpeg",
+        ],
+        roomC: [
+          "home_infopage/images/roomC/image1.jpeg",
+          "home_infopage/images/roomC/image2.jpeg",
+        ],
+        roomD: [
+          "home_infopage/images/roomD/image1.jpeg",
+          "home_infopage/images/roomD/image2.jpeg",
+          "home_infopage/images/roomD/image3.jpeg",
+        ],
+        roomE: [
+          "home_infopage/images/roomE/image1.jpeg",
+          "home_infopage/images/roomE/image2.jpeg",
+          "home_infopage/images/roomE/image3.jpeg",
+          "home_infopage/images/roomE/image4.jpeg",
+          "home_infopage/images/roomE/image5.jpeg",
+        ],
+      };
 
-    <!-- 가격표 -->
-    <div class="content-section" id="pricelist">
-      <h1>💰 가격표</h1>
-      <p>연습실 이용 요금 안내</p>
-      <button onclick="openPriceImage()" class="button" style="width: 100%; text-align: center; display: block; margin-top: 10px; color: #ffffff !important;">💵 가격표 보기</button>
-    </div>
+      let currentImages = [];
+      let currentIndex = 0;
 
-    <!-- 환불규정 -->
-    <div class="content-section" id="price">
-      <h1>💵 환불 규정</h1>
-      <ul>
-        <li>예약 2시간 안 변심 취소 → <span class="highlight">무료</span></li>
-        <li>2시간 경과 → 아래 환불규정 적용</li>
-        <li>변경 → 취소 후 재예약만 가능</li>
-      </ul>
-      <img src="home_infopage/images/image.jpg" alt="환불규정" class="price-image" style="max-width: 70%; margin: 10px auto; display: block;" />
-      <p>문의: <a href="sms:01048017180">010-4801-7180</a></p>
-    </div>
-  </div>
+      function openGallery(folder) {
+        currentImages = galleryImages[folder] || [];
+        if (currentImages.length === 0) return;
 
-  <!-- 바텀 네비게이션 -->
-  <div class="bottom-nav">
-    <button class="nav-item active" onclick="showContent('howto', this)">
-      <i class="fas fa-question-circle"></i>
-      <span>예약/비번</span>
-    </button>
-
-    <button class="nav-item" onclick="showContent('info', this)">
-      <i class="fas fa-building"></i>
-      <span>시설안내</span>
-    </button>
-
-    <button class="nav-item" onclick="showContent('notice', this)">
-      <i class="fas fa-exclamation-triangle"></i>
-      <span>주의사항</span>
-    </button>
-
-    <button class="nav-item" onclick="showContent('map', this)">
-      <i class="fas fa-map-marked-alt"></i>
-      <span>오시는길</span>
-    </button>
-
-    <button class="nav-item" onclick="showContent('night', this)">
-      <i class="fas fa-moon"></i>
-      <span>새벽통대관</span>
-    </button>
-
-    <button class="nav-item" onclick="showContent('pricelist', this)">
-      <i class="fas fa-won-sign"></i>
-      <span>가격표</span>
-    </button>
-
-    <button class="nav-item" onclick="showContent('price', this)">
-      <i class="fas fa-dollar-sign"></i>
-      <span>환불규정</span>
-    </button>
-
-    <button class="nav-item" data-bs-dismiss="offcanvas" style="background: #404040;">
-      <i class="fas fa-calendar"></i>
-      <span>전화면</span>
-    </button>
-  </div>
-
-  <!-- 갤러리 모달 -->
-  <div class="gallery-modal" id="galleryModal">
-    <div class="gallery-content">
-      <button class="gallery-close" onclick="closeGallery()">&times;</button>
-      <button class="gallery-nav prev" onclick="prevImage()">&#10094;</button>
-      <img id="galleryMainImage" class="gallery-main-image" src="" alt="갤러리 이미지">
-      <button class="gallery-nav next" onclick="nextImage()">&#10095;</button>
-      <div class="gallery-thumbnails" id="galleryThumbnails"></div>
-    </div>
-  </div>
-
-  <script>
-    // 갤러리 데이터
-    const galleryImages = {
-      roomALL: ['home_infopage/images/roomALL/image1.jpeg'],
-      roomA: ['home_infopage/images/roomA/image1.jpeg', 'home_infopage/images/roomA/image2.jpeg', 'home_infopage/images/roomA/image3.jpeg', 'home_infopage/images/roomA/image4.jpeg', 'home_infopage/images/roomA/image5.jpeg', 'home_infopage/images/roomA/image6.jpeg'],
-      roomB: ['home_infopage/images/roomB/image1.jpeg', 'home_infopage/images/roomB/image2.jpeg', 'home_infopage/images/roomB/image3.jpeg', 'home_infopage/images/roomB/image4.jpeg', 'home_infopage/images/roomB/image5.jpeg', 'home_infopage/images/roomB/image6.jpeg', 'home_infopage/images/roomB/image7.jpeg', 'home_infopage/images/roomB/image8.jpeg'],
-      roomC: ['home_infopage/images/roomC/image1.jpeg', 'home_infopage/images/roomC/image2.jpeg'],
-      roomD: ['home_infopage/images/roomD/image1.jpeg', 'home_infopage/images/roomD/image2.jpeg', 'home_infopage/images/roomD/image3.jpeg'],
-      roomE: ['home_infopage/images/roomE/image1.jpeg', 'home_infopage/images/roomE/image2.jpeg', 'home_infopage/images/roomE/image3.jpeg', 'home_infopage/images/roomE/image4.jpeg', 'home_infopage/images/roomE/image5.jpeg']
-    };
-
-    let currentImages = [];
-    let currentIndex = 0;
-
-    function openGallery(folder) {
-      currentImages = galleryImages[folder] || [];
-      if (currentImages.length === 0) return;
-      
-      currentIndex = 0;
-      document.getElementById('galleryModal').classList.add('active');
-      showImage(0);
-      renderThumbnails();
-    }
-
-    function openPriceImage() {
-      currentImages = ['pay_list.png'];
-      currentIndex = 0;
-      document.getElementById('galleryModal').classList.add('active');
-      showImage(0);
-      renderThumbnails();
-    }
-
-    function closeGallery() {
-      document.getElementById('galleryModal').classList.remove('active');
-    }
-
-    function showImage(index) {
-      if (index < 0) index = currentImages.length - 1;
-      if (index >= currentImages.length) index = 0;
-      currentIndex = index;
-      
-      document.getElementById('galleryMainImage').src = currentImages[index];
-      
-      // 썸네일 활성화 업데이트
-      document.querySelectorAll('.gallery-thumbnail').forEach((thumb, i) => {
-        thumb.classList.toggle('active', i === index);
-      });
-    }
-
-    function prevImage() {
-      showImage(currentIndex - 1);
-    }
-
-    function nextImage() {
-      showImage(currentIndex + 1);
-    }
-
-    function renderThumbnails() {
-      const container = document.getElementById('galleryThumbnails');
-      container.innerHTML = '';
-      
-      if (currentImages.length <= 1) {
-        container.style.display = 'none';
-        document.querySelector('.gallery-nav.prev').style.display = 'none';
-        document.querySelector('.gallery-nav.next').style.display = 'none';
-        return;
+        currentIndex = 0;
+        document.getElementById("galleryModal").classList.add("active");
+        showImage(0);
+        renderThumbnails();
       }
-      
-      container.style.display = 'flex';
-      document.querySelector('.gallery-nav.prev').style.display = 'block';
-      document.querySelector('.gallery-nav.next').style.display = 'block';
-      
-      currentImages.forEach((src, index) => {
-        const thumb = document.createElement('img');
-        thumb.src = src;
-        thumb.className = 'gallery-thumbnail';
-        if (index === 0) thumb.classList.add('active');
-        thumb.onclick = () => showImage(index);
-        container.appendChild(thumb);
-      });
-    }
 
-    // 모달 외부 클릭 시 닫기
-    document.getElementById('galleryModal').addEventListener('click', function(e) {
-      if (e.target === this) {
-        closeGallery();
+      function openPriceImage() {
+        currentImages = ["pay_list.png"];
+        currentIndex = 0;
+        document.getElementById("galleryModal").classList.add("active");
+        showImage(0);
+        renderThumbnails();
       }
-    });
 
-    // ESC 키로 모달 닫기
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') {
-        closeGallery();
+      function closeGallery() {
+        document.getElementById("galleryModal").classList.remove("active");
       }
-    });
 
-    function showContent(sectionId, button) {
-      // 모든 섹션 숨기기
-      document.querySelectorAll('.content-section').forEach(section => {
-        section.classList.remove('active');
+      function showImage(index) {
+        if (index < 0) index = currentImages.length - 1;
+        if (index >= currentImages.length) index = 0;
+        currentIndex = index;
+
+        document.getElementById("galleryMainImage").src = currentImages[index];
+
+        // 썸네일 활성화 업데이트
+        document.querySelectorAll(".gallery-thumbnail").forEach((thumb, i) => {
+          thumb.classList.toggle("active", i === index);
+        });
+      }
+
+      function prevImage() {
+        showImage(currentIndex - 1);
+      }
+
+      function nextImage() {
+        showImage(currentIndex + 1);
+      }
+
+      function renderThumbnails() {
+        const container = document.getElementById("galleryThumbnails");
+        container.innerHTML = "";
+
+        if (currentImages.length <= 1) {
+          container.style.display = "none";
+          document.querySelector(".gallery-nav.prev").style.display = "none";
+          document.querySelector(".gallery-nav.next").style.display = "none";
+          return;
+        }
+
+        container.style.display = "flex";
+        document.querySelector(".gallery-nav.prev").style.display = "block";
+        document.querySelector(".gallery-nav.next").style.display = "block";
+
+        currentImages.forEach((src, index) => {
+          const thumb = document.createElement("img");
+          thumb.src = src;
+          thumb.className = "gallery-thumbnail";
+          if (index === 0) thumb.classList.add("active");
+          thumb.onclick = () => showImage(index);
+          container.appendChild(thumb);
+        });
+      }
+
+      // 모달 외부 클릭 시 닫기
+      document
+        .getElementById("galleryModal")
+        .addEventListener("click", function (e) {
+          if (e.target === this) {
+            closeGallery();
+          }
+        });
+
+      // ESC 키로 모달 닫기
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          closeGallery();
+        }
       });
 
-      // 모든 버튼 비활성화
-      document.querySelectorAll('.nav-item').forEach(btn => {
-        btn.classList.remove('active');
-      });
+      function showContent(sectionId, button) {
+        // 모든 섹션 숨기기
+        document.querySelectorAll(".content-section").forEach((section) => {
+          section.classList.remove("active");
+        });
 
-      // 선택된 섹션 표시
-      document.getElementById(sectionId).classList.add('active');
-      
-      // 선택된 버튼 활성화
-      button.classList.add('active');
+        // 모든 버튼 비활성화
+        document.querySelectorAll(".nav-item").forEach((btn) => {
+          btn.classList.remove("active");
+        });
 
-      // 스크롤 맨 위로
-      document.getElementById('contentArea').scrollTop = 0;
-    }
+        // 선택된 섹션 표시
+        document.getElementById(sectionId).classList.add("active");
 
-  </script>
-</body>
+        // 선택된 버튼 활성화
+        button.classList.add("active");
 
+        // 스크롤 맨 위로
+        document.getElementById("contentArea").scrollTop = 0;
+      }
+    </script>
+  </body>
 </html>
