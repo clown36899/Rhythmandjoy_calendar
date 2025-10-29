@@ -136,7 +136,7 @@
     .button, .inline-button {
       display: inline-block;
       background: #353535;
-      color: #ffc107;
+      color: #ffffff;
       padding: 10px 18px;
       border-radius: 6px;
       text-decoration: none;
@@ -151,6 +151,7 @@
     .button:hover, .inline-button:hover {
       background: #404040;
       border-color: #ffc107;
+      color: #ffc107;
       transform: translateY(-1px);
     }
 
@@ -277,6 +278,125 @@
       color: #c1c1c1;
       font-size: clamp(0.85rem, 2.5vw, 0.9rem);
     }
+
+    /* 모달 갤러리 스타일 */
+    .gallery-modal {
+      display: none;
+      position: fixed;
+      z-index: 10000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.95);
+      align-items: center;
+      justify-content: center;
+    }
+
+    .gallery-modal.active {
+      display: flex;
+    }
+
+    .gallery-content {
+      position: relative;
+      width: 90%;
+      max-width: 800px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .gallery-close {
+      position: absolute;
+      top: -40px;
+      right: 0;
+      color: #fff;
+      font-size: 35px;
+      font-weight: bold;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      width: 40px;
+      height: 40px;
+      line-height: 40px;
+      text-align: center;
+    }
+
+    .gallery-close:hover {
+      color: #ffc107;
+    }
+
+    .gallery-main-image {
+      max-width: 100%;
+      max-height: 70vh;
+      object-fit: contain;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .gallery-thumbnails {
+      display: flex;
+      overflow-x: auto;
+      gap: 10px;
+      padding: 10px 0;
+      max-width: 100%;
+    }
+
+    .gallery-thumbnails::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    .gallery-thumbnails::-webkit-scrollbar-thumb {
+      background: #616161;
+      border-radius: 3px;
+    }
+
+    .gallery-thumbnail {
+      height: 60px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      border-radius: 4px;
+      opacity: 0.6;
+      transition: all 0.3s;
+    }
+
+    .gallery-thumbnail.active {
+      border-color: #ffc107;
+      opacity: 1;
+    }
+
+    .gallery-thumbnail:hover {
+      opacity: 1;
+    }
+
+    .gallery-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      border: none;
+      font-size: 30px;
+      padding: 10px 15px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.3s;
+    }
+
+    .gallery-nav:hover {
+      background: rgba(0, 0, 0, 0.8);
+      color: #ffc107;
+    }
+
+    .gallery-nav.prev {
+      left: 10px;
+    }
+
+    .gallery-nav.next {
+      right: 10px;
+    }
   </style>
 </head>
 
@@ -299,12 +419,12 @@
       <h1>🏢 시설 안내</h1>
       <p style="margin-bottom: 10px;"><span class="highlight">총 5개 연습룸</span> - 이미지 갤러리 보기</p>
       <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px;">
-        <a href="home_infopage/popup_gallery.html?folder=roomALL" target="_blank" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">📐 평면도</a>
-        <a href="home_infopage/popup_gallery.html?folder=roomA" target="_blank" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">A홀 10×6m</a>
-        <a href="home_infopage/popup_gallery.html?folder=roomB" target="_blank" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">B홀 8.4×4.5m</a>
-        <a href="home_infopage/popup_gallery.html?folder=roomE" target="_blank" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">E홀 6.5×6m</a>
-        <a href="home_infopage/popup_gallery.html?folder=roomC" target="_blank" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">C홀 4.5×3.5m</a>
-        <a href="home_infopage/popup_gallery.html?folder=roomD" target="_blank" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">D홀 4.5×2.8m</a>
+        <button onclick="openGallery('roomALL')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">📐 평면도</button>
+        <button onclick="openGallery('roomA')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">A홀 10×6m</button>
+        <button onclick="openGallery('roomB')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">B홀 8.4×4.5m</button>
+        <button onclick="openGallery('roomE')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">E홀 6.5×6m</button>
+        <button onclick="openGallery('roomC')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">C홀 4.5×3.5m</button>
+        <button onclick="openGallery('roomD')" class="inline-button" style="flex: 1 1 45%; min-width: 80px; padding: 8px; font-size: 0.85rem;">D홀 4.5×2.8m</button>
       </div>
       <ul>
         <li>📺 A/B홀 TV 무료 (HDMI, C타입, 8핀 커넥터)</li>
@@ -352,7 +472,13 @@
       <p>📲 문자 예약: <a href="sms:01048017180">010-4801-7180</a></p>
       <div class="example-box">예: "12~13일 새벽 A홀 통대관 가능한가요?"</div>
       <p>✅ 승인 후 입금 → 이용정보 수신 → 완료</p>
-      <img src="pay_list.png" alt="가격표" class="price-image" style="max-width: 80%; margin: 10px auto; display: block;" />
+    </div>
+
+    <!-- 가격표 -->
+    <div class="content-section" id="pricelist">
+      <h1>💰 가격표</h1>
+      <p>연습실 이용 요금 안내</p>
+      <button onclick="openPriceImage()" class="button" style="width: 100%; text-align: center; display: block; margin-top: 10px;">💵 가격표 보기</button>
     </div>
 
     <!-- 환불규정 -->
@@ -400,15 +526,124 @@
       <span>새벽통대관</span>
     </button>
 
+    <button class="nav-item" onclick="showContent('pricelist', this)">
+      <i class="fas fa-won-sign"></i>
+      <span>가격표</span>
+    </button>
+
     <button class="nav-item" onclick="showContent('price', this)">
       <i class="fas fa-dollar-sign"></i>
       <span>환불규정</span>
     </button>
+  </div>
 
-    <div class="nav-item" style="background: #f5f5f5; cursor: default;"></div>
+  <!-- 갤러리 모달 -->
+  <div class="gallery-modal" id="galleryModal">
+    <div class="gallery-content">
+      <button class="gallery-close" onclick="closeGallery()">&times;</button>
+      <button class="gallery-nav prev" onclick="prevImage()">&#10094;</button>
+      <img id="galleryMainImage" class="gallery-main-image" src="" alt="갤러리 이미지">
+      <button class="gallery-nav next" onclick="nextImage()">&#10095;</button>
+      <div class="gallery-thumbnails" id="galleryThumbnails"></div>
+    </div>
   </div>
 
   <script>
+    // 갤러리 데이터
+    const galleryImages = {
+      roomALL: ['home_infopage/images/roomALL/image1.jpeg'],
+      roomA: ['home_infopage/images/roomA/image1.jpeg', 'home_infopage/images/roomA/image2.jpeg', 'home_infopage/images/roomA/image3.jpeg', 'home_infopage/images/roomA/image4.jpeg', 'home_infopage/images/roomA/image5.jpeg', 'home_infopage/images/roomA/image6.jpeg'],
+      roomB: ['home_infopage/images/roomB/image1.jpeg', 'home_infopage/images/roomB/image2.jpeg', 'home_infopage/images/roomB/image3.jpeg', 'home_infopage/images/roomB/image4.jpeg', 'home_infopage/images/roomB/image5.jpeg', 'home_infopage/images/roomB/image6.jpeg', 'home_infopage/images/roomB/image7.jpeg', 'home_infopage/images/roomB/image8.jpeg'],
+      roomC: ['home_infopage/images/roomC/image1.jpeg', 'home_infopage/images/roomC/image2.jpeg'],
+      roomD: ['home_infopage/images/roomD/image1.jpeg', 'home_infopage/images/roomD/image2.jpeg', 'home_infopage/images/roomD/image3.jpeg'],
+      roomE: ['home_infopage/images/roomE/image1.jpeg', 'home_infopage/images/roomE/image2.jpeg', 'home_infopage/images/roomE/image3.jpeg', 'home_infopage/images/roomE/image4.jpeg', 'home_infopage/images/roomE/image5.jpeg']
+    };
+
+    let currentImages = [];
+    let currentIndex = 0;
+
+    function openGallery(folder) {
+      currentImages = galleryImages[folder] || [];
+      if (currentImages.length === 0) return;
+      
+      currentIndex = 0;
+      document.getElementById('galleryModal').classList.add('active');
+      showImage(0);
+      renderThumbnails();
+    }
+
+    function openPriceImage() {
+      currentImages = ['pay_list.png'];
+      currentIndex = 0;
+      document.getElementById('galleryModal').classList.add('active');
+      showImage(0);
+      renderThumbnails();
+    }
+
+    function closeGallery() {
+      document.getElementById('galleryModal').classList.remove('active');
+    }
+
+    function showImage(index) {
+      if (index < 0) index = currentImages.length - 1;
+      if (index >= currentImages.length) index = 0;
+      currentIndex = index;
+      
+      document.getElementById('galleryMainImage').src = currentImages[index];
+      
+      // 썸네일 활성화 업데이트
+      document.querySelectorAll('.gallery-thumbnail').forEach((thumb, i) => {
+        thumb.classList.toggle('active', i === index);
+      });
+    }
+
+    function prevImage() {
+      showImage(currentIndex - 1);
+    }
+
+    function nextImage() {
+      showImage(currentIndex + 1);
+    }
+
+    function renderThumbnails() {
+      const container = document.getElementById('galleryThumbnails');
+      container.innerHTML = '';
+      
+      if (currentImages.length <= 1) {
+        container.style.display = 'none';
+        document.querySelector('.gallery-nav.prev').style.display = 'none';
+        document.querySelector('.gallery-nav.next').style.display = 'none';
+        return;
+      }
+      
+      container.style.display = 'flex';
+      document.querySelector('.gallery-nav.prev').style.display = 'block';
+      document.querySelector('.gallery-nav.next').style.display = 'block';
+      
+      currentImages.forEach((src, index) => {
+        const thumb = document.createElement('img');
+        thumb.src = src;
+        thumb.className = 'gallery-thumbnail';
+        if (index === 0) thumb.classList.add('active');
+        thumb.onclick = () => showImage(index);
+        container.appendChild(thumb);
+      });
+    }
+
+    // 모달 외부 클릭 시 닫기
+    document.getElementById('galleryModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeGallery();
+      }
+    });
+
+    // ESC 키로 모달 닫기
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeGallery();
+      }
+    });
+
     function showContent(sectionId, button) {
       // 모든 섹션 숨기기
       document.querySelectorAll('.content-section').forEach(section => {
