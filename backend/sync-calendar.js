@@ -277,6 +277,13 @@ async function incrementalSync(room) {
       // 추가/수정된 이벤트
       if (!event.start || !event.start.dateTime) continue;
 
+      // upsert 전에 먼저 존재 여부 확인
+      const { data: existing } = await supabase
+        .from('booking_events')
+        .select('id')
+        .eq('google_event_id', event.id)
+        .maybeSingle();
+
       const { error } = await supabase
         .from('booking_events')
         .upsert({
@@ -290,13 +297,6 @@ async function incrementalSync(room) {
         }, { onConflict: 'google_event_id' });
 
       if (!error) {
-        // 기존 이벤트인지 확인
-        const { data: existing } = await supabase
-          .from('booking_events')
-          .select('id')
-          .eq('google_event_id', event.id)
-          .single();
-        
         if (existing) updated++;
         else added++;
       }
