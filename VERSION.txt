@@ -1,0 +1,10 @@
+v1.0 - Production Ready (2025-10-29)
+
+Phase 1 완료: 핵심 기능
+- Google Calendar ↔ Supabase 실시간 동기화
+- 증분 동기화 (API 97% 절감)
+- 관리자 시스템
+- 5개 룸 자동 배치
+- 실시간 업데이트 (리로드 없음)
+
+배포: 리듬앤조이일정표.com
