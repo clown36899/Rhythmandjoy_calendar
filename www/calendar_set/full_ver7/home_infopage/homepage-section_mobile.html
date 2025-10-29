@@ -455,7 +455,10 @@
       <div class="content-section active" id="howto">
         <div class="section-header">
           <h1>📱 네이버 예약</h1>
-          <button class="share-btn" onclick="shareSection('예약/비번', '네이버 예약 정보')">
+          <button
+            class="share-btn"
+            onclick="shareSection('예약/비번', '네이버 예약 정보')"
+          >
             <i class="fas fa-share-alt"></i>
             <span>공유</span>
           </button>
@@ -502,7 +505,10 @@
       <div class="content-section" id="info">
         <div class="section-header">
           <h1>🏢 시설 안내</h1>
-          <button class="share-btn" onclick="shareSection('시설안내', '연습실 시설 정보')">
+          <button
+            class="share-btn"
+            onclick="shareSection('시설안내', '연습실 시설 정보')"
+          >
             <i class="fas fa-share-alt"></i>
             <span>공유</span>
           </button>
@@ -597,7 +603,10 @@
       <div class="content-section" id="notice">
         <div class="section-header">
           <h1>⚠️ 주의사항</h1>
-          <button class="share-btn" onclick="shareSection('주의사항', '연습실 이용 주의사항')">
+          <button
+            class="share-btn"
+            onclick="shareSection('주의사항', '연습실 이용 주의사항')"
+          >
             <i class="fas fa-share-alt"></i>
             <span>공유</span>
           </button>
@@ -618,7 +627,10 @@
       <div class="content-section" id="map">
         <div class="section-header">
           <h1>📍 오시는 길</h1>
-          <button class="share-btn" onclick="shareSection('오시는길', '리듬앤조이 찾아오는 길')">
+          <button
+            class="share-btn"
+            onclick="shareSection('오시는길', '리듬앤조이 찾아오는 길')"
+          >
             <i class="fas fa-share-alt"></i>
             <span>공유</span>
           </button>
@@ -642,8 +654,12 @@
         <h3>🚗 주차 안내</h3>
         <ul>
           <li>⛔ 건물 주차 기본적으로 <span class="highlight">불가</span></li>
-          <li>✅ 예외: 문구점 폐점 후 지정 주차자리 가능<br>
-              <span style="font-size: 0.9em; color: #999;">※ 카리프트 앞은 제외</span></li>
+          <li>
+            ✅ 예외: 문구점 폐점 후 문구점앞만 가능<br />
+            <span style="font-size: 0.9em; color: #999"
+              >※ 카리프트 앞& 지정주차장 불가</span
+            >
+          </li>
           <li>✅ 사당역 공영주차장 이용 권장</li>
         </ul>
       </div>
@@ -652,7 +668,10 @@
       <div class="content-section" id="night">
         <div class="section-header">
           <h1>🌙 새벽 통대관</h1>
-          <button class="share-btn" onclick="shareSection('새벽통대관', '새벽 통대관 예약 정보')">
+          <button
+            class="share-btn"
+            onclick="shareSection('새벽통대관', '새벽 통대관 예약 정보')"
+          >
             <i class="fas fa-share-alt"></i>
             <span>공유</span>
           </button>
@@ -666,7 +685,10 @@
       <div class="content-section" id="pricelist">
         <div class="section-header">
           <h1>💰 가격표 (시간당)</h1>
-          <button class="share-btn" onclick="shareSection('가격표', '연습실 이용 요금')">
+          <button
+            class="share-btn"
+            onclick="shareSection('가격표', '연습실 이용 요금')"
+          >
             <i class="fas fa-share-alt"></i>
             <span>공유</span>
           </button>
@@ -967,7 +989,10 @@
       <div class="content-section" id="price">
         <div class="section-header">
           <h1>💵 환불 규정</h1>
-          <button class="share-btn" onclick="shareSection('환불규정', '예약 환불 규정')">
+          <button
+            class="share-btn"
+            onclick="shareSection('환불규정', '예약 환불 규정')"
+          >
             <i class="fas fa-share-alt"></i>
             <span>공유</span>
           </button>
@@ -1195,7 +1220,7 @@
 
       // 📤 공유 기능
       async function shareSection(sectionName, description) {
-        const url = 'https://리듬앤조이일정표.com';
+        const url = "https://리듬앤조이일정표.com";
         const title = `리듬앤조이 - ${sectionName}`;
         const text = description;
 
@@ -1205,12 +1230,12 @@
             await navigator.share({
               title: title,
               text: text,
-              url: url
+              url: url,
             });
-            console.log('✅ 공유 완료');
+            console.log("✅ 공유 완료");
           } catch (err) {
-            if (err.name !== 'AbortError') {
-              console.error('공유 실패:', err);
+            if (err.name !== "AbortError") {
+              console.error("공유 실패:", err);
               fallbackCopyToClipboard(url, title);
             }
           }
@@ -1222,24 +1247,27 @@
 
       // URL 복사 (폴백)
       function fallbackCopyToClipboard(url, title) {
-        navigator.clipboard.writeText(url).then(() => {
-          alert(`📋 링크가 복사되었습니다!\n${title}\n${url}`);
-        }).catch(err => {
-          // Clipboard API도 실패 시 수동 선택
-          const textArea = document.createElement('textarea');
-          textArea.value = url;
-          textArea.style.position = 'fixed';
-          textArea.style.opacity = '0';
-          document.body.appendChild(textArea);
-          textArea.select();
-          try {
-            document.execCommand('copy');
+        navigator.clipboard
+          .writeText(url)
+          .then(() => {
             alert(`📋 링크가 복사되었습니다!\n${title}\n${url}`);
-          } catch (err) {
-            alert(`링크: ${url}`);
-          }
-          document.body.removeChild(textArea);
-        });
+          })
+          .catch((err) => {
+            // Clipboard API도 실패 시 수동 선택
+            const textArea = document.createElement("textarea");
+            textArea.value = url;
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+              document.execCommand("copy");
+              alert(`📋 링크가 복사되었습니다!\n${title}\n${url}`);
+            } catch (err) {
+              alert(`링크: ${url}`);
+            }
+            document.body.removeChild(textArea);
+          });
       }
 
       // 🚀 이미지 프리로드 (백그라운드 캐싱)
