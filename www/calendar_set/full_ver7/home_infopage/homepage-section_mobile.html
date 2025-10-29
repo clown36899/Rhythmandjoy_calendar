@@ -72,6 +72,38 @@
         }
       }
 
+      /* 섹션 헤더 컨테이너 */
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+      }
+
+      /* 공유 버튼 */
+      .share-btn {
+        background: #404040;
+        border: none;
+        color: #ffffff;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .share-btn:hover {
+        background: #ffc107;
+        color: #000000;
+      }
+
+      .share-btn i {
+        font-size: 14px;
+      }
+
       .content-section h1 {
         font-size: clamp(1.2rem, 3.5vw, 1.6rem);
         margin-bottom: 15px;
@@ -417,7 +449,13 @@
     <div class="content-area" id="contentArea">
       <!-- 예약방법 (초기 활성화) -->
       <div class="content-section active" id="howto">
-        <h1>📱 네이버 예약</h1>
+        <div class="section-header">
+          <h1>📱 네이버 예약</h1>
+          <button class="share-btn" onclick="shareSection('예약/비번', '네이버 예약 정보')">
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
         <p>
           네이버지도 앱에서 <strong>"리듬앤조이 연습실"</strong> 검색 후 예약
         </p>
@@ -458,7 +496,13 @@
 
       <!-- 시설안내 -->
       <div class="content-section" id="info">
-        <h1>🏢 시설 안내</h1>
+        <div class="section-header">
+          <h1>🏢 시설 안내</h1>
+          <button class="share-btn" onclick="shareSection('시설안내', '연습실 시설 정보')">
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
         <p style="margin-bottom: 10px">
           <span class="highlight">총 5개 연습룸</span> - 이미지 갤러리 보기
         </p>
@@ -547,7 +591,13 @@
 
       <!-- 주의사항 -->
       <div class="content-section" id="notice">
-        <h1>⚠️ 주의사항</h1>
+        <div class="section-header">
+          <h1>⚠️ 주의사항</h1>
+          <button class="share-btn" onclick="shareSection('주의사항', '연습실 이용 주의사항')">
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
         <ul>
           <li class="important">
             🚫 <strong>외부 신발 금지</strong> (적발 시 환불 없이 퇴실)
@@ -562,7 +612,13 @@
 
       <!-- 오시는길 -->
       <div class="content-section" id="map">
-        <h1>📍 오시는 길</h1>
+        <div class="section-header">
+          <h1>📍 오시는 길</h1>
+          <button class="share-btn" onclick="shareSection('오시는길', '리듬앤조이 찾아오는 길')">
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
         <p>
           📌 사당역 7번출구 도보 1분<br />🏢 서울시 동작구 남부순환로 2077
           지하2층 (드림디포 문구점 건물)
@@ -589,7 +645,13 @@
 
       <!-- 새벽통대관 -->
       <div class="content-section" id="night">
-        <h1>🌙 새벽 통대관</h1>
+        <div class="section-header">
+          <h1>🌙 새벽 통대관</h1>
+          <button class="share-btn" onclick="shareSection('새벽통대관', '새벽 통대관 예약 정보')">
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
         <p>📲 문자 예약: <a href="sms:01048017180">010-4801-7180</a></p>
         <div class="example-box">예: "12~13일 새벽 A홀 통대관 가능한가요?"</div>
         <p>✅ 승인 후 입금 → 이용정보 수신 → 완료</p>
@@ -597,7 +659,13 @@
 
       <!-- 가격표 -->
       <div class="content-section" id="pricelist">
-        <h1>💰 가격표 (시간당)</h1>
+        <div class="section-header">
+          <h1>💰 가격표 (시간당)</h1>
+          <button class="share-btn" onclick="shareSection('가격표', '연습실 이용 요금')">
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
         <table
           style="
             width: 100%;
@@ -892,7 +960,13 @@
 
       <!-- 환불규정 -->
       <div class="content-section" id="price">
-        <h1>💵 환불 규정</h1>
+        <div class="section-header">
+          <h1>💵 환불 규정</h1>
+          <button class="share-btn" onclick="shareSection('환불규정', '예약 환불 규정')">
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
         <ul>
           <li>예약 2시간 안 변심 취소 → <span class="highlight">무료</span></li>
           <li>2시간 경과 → 아래 환불규정 적용</li>
@@ -1112,6 +1186,55 @@
 
         // 스크롤 맨 위로
         document.getElementById("contentArea").scrollTop = 0;
+      }
+
+      // 📤 공유 기능
+      async function shareSection(sectionName, description) {
+        const url = 'https://리듬앤조이일정표.com';
+        const title = `리듬앤조이 - ${sectionName}`;
+        const text = description;
+
+        // Web Share API 지원 여부 확인 (모바일)
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: title,
+              text: text,
+              url: url
+            });
+            console.log('✅ 공유 완료');
+          } catch (err) {
+            if (err.name !== 'AbortError') {
+              console.error('공유 실패:', err);
+              fallbackCopyToClipboard(url, title);
+            }
+          }
+        } else {
+          // Web Share API 미지원 시 URL 복사
+          fallbackCopyToClipboard(url, title);
+        }
+      }
+
+      // URL 복사 (폴백)
+      function fallbackCopyToClipboard(url, title) {
+        navigator.clipboard.writeText(url).then(() => {
+          alert(`📋 링크가 복사되었습니다!\n${title}\n${url}`);
+        }).catch(err => {
+          // Clipboard API도 실패 시 수동 선택
+          const textArea = document.createElement('textarea');
+          textArea.value = url;
+          textArea.style.position = 'fixed';
+          textArea.style.opacity = '0';
+          document.body.appendChild(textArea);
+          textArea.select();
+          try {
+            document.execCommand('copy');
+            alert(`📋 링크가 복사되었습니다!\n${title}\n${url}`);
+          } catch (err) {
+            alert(`링크: ${url}`);
+          }
+          document.body.removeChild(textArea);
+        });
       }
 
       // 🚀 이미지 프리로드 (백그라운드 캐싱)
