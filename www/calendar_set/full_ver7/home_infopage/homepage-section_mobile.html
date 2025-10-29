@@ -448,7 +448,7 @@
             >🔑 예약, 비번 확인/취소</a
           >
           <p style="font-size: 0.85rem; color: #c1c1c1; margin: 0">
-            💡 예약 메뉴 → 예약 상세에서 비밀번호 확인
+            💡 네이버 로그인 필요(승인없음, 당일1분전까지 예약가능)
           </p>
         </div>
         <p style="font-size: 0.9rem; margin-top: 8px">
@@ -626,6 +626,7 @@
           src="home_infopage/images/image.jpg"
           alt="환불규정"
           class="price-image"
+          loading="lazy"
           style="max-width: 70%; margin: 10px auto; display: block"
         />
         <p>문의: <a href="sms:01048017180">010-4801-7180</a></p>
@@ -689,6 +690,7 @@
           class="gallery-main-image"
           src=""
           alt="갤러리 이미지"
+          loading="lazy"
         />
         <button class="gallery-nav next" onclick="nextImage()">&#10095;</button>
         <div class="gallery-thumbnails" id="galleryThumbnails"></div>
@@ -799,6 +801,7 @@
         currentImages.forEach((src, index) => {
           const thumb = document.createElement("img");
           thumb.src = src;
+          thumb.loading = "lazy"; // Lazy loading 추가
           thumb.className = "gallery-thumbnail";
           if (index === 0) thumb.classList.add("active");
           thumb.onclick = () => showImage(index);
