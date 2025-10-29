@@ -377,7 +377,19 @@
       fetch('home_infopage/homepage-section_mobile.html')
         .then(response => response.text())
         .then(html => {
-          document.querySelector('.offcanvas-body-2000').innerHTML = html;
+          const container = document.querySelector('.offcanvas-body-2000');
+          container.innerHTML = html;
+          
+          // script 태그를 수동으로 실행
+          const scripts = container.querySelectorAll('script');
+          scripts.forEach(oldScript => {
+            const newScript = document.createElement('script');
+            Array.from(oldScript.attributes).forEach(attr => {
+              newScript.setAttribute(attr.name, attr.value);
+            });
+            newScript.textContent = oldScript.textContent;
+            oldScript.parentNode.replaceChild(newScript, oldScript);
+          });
         })
         .catch(error => {
           console.error('외부 HTML 로드 실패:', error);
