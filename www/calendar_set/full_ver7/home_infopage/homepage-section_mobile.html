@@ -20,7 +20,7 @@
       font-family: 'Noto Sans KR', sans-serif;
       overflow: hidden;
       height: 100vh;
-      background: #f8f9fa;
+      background: #0f0f0f;
     }
 
     /* 상단 콘텐츠 영역 */
@@ -32,7 +32,7 @@
       bottom: 130px; /* 바텀 네비 높이만큼 */
       overflow-y: auto;
       padding: 20px;
-      background: #ffffff;
+      background: linear-gradient(180deg, #1a1a1a 0%, #0f0f0f 100%);
     }
 
     .content-area::-webkit-scrollbar {
@@ -40,8 +40,12 @@
     }
 
     .content-area::-webkit-scrollbar-thumb {
-      background: #888;
+      background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
       border-radius: 4px;
+    }
+
+    .content-area::-webkit-scrollbar-track {
+      background: #2d2d2d;
     }
 
     /* 콘텐츠 섹션 */
@@ -62,21 +66,25 @@
     .content-section h1 {
       font-size: clamp(1.3rem, 4vw, 1.8rem);
       margin-bottom: 15px;
-      color: #333;
-      border-bottom: 3px solid #667eea;
-      padding-bottom: 10px;
+      color: #ffffff;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 15px;
+      border-radius: 12px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
 
     .content-section h2, .content-section h3 {
       font-size: clamp(1.1rem, 3vw, 1.4rem);
-      margin: 15px 0 10px 0;
-      color: #555;
+      margin: 20px 0 10px 0;
+      color: #e0e0e0;
+      border-left: 4px solid #667eea;
+      padding-left: 12px;
     }
 
     .content-section p {
       line-height: 1.7;
       margin-bottom: 12px;
-      color: #666;
+      color: #b0b0b0;
     }
 
     .content-section ul {
@@ -85,40 +93,64 @@
     }
 
     .content-section li {
-      margin-bottom: 10px;
-      line-height: 1.6;
+      margin-bottom: 15px;
+      line-height: 1.7;
+      color: #b0b0b0;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 10px;
+      border-radius: 8px;
+      border-left: 3px solid #667eea;
     }
 
     .content-section strong {
-      color: #333;
+      color: #ffffff;
+    }
+
+    .content-section a {
+      color: #667eea;
+      text-decoration: none;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .content-section a:hover {
+      color: #764ba2;
+      text-decoration: underline;
     }
 
     .highlight {
-      background-color: #fff3cd;
-      padding: 2px 6px;
-      border-radius: 3px;
+      background: linear-gradient(135deg, #ffd93d 0%, #ffb600 100%);
+      padding: 3px 8px;
+      border-radius: 4px;
       font-weight: bold;
-      color: #856404;
+      color: #000000;
+      box-shadow: 0 2px 6px rgba(255, 217, 61, 0.3);
+    }
+
+    .important {
+      background: linear-gradient(135deg, rgba(255, 107, 107, 0.2) 0%, rgba(238, 90, 111, 0.2) 100%) !important;
+      border-left-color: #ff6b6b !important;
     }
 
     .button, .inline-button {
       display: inline-block;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
-      padding: 10px 18px;
-      border-radius: 8px;
+      padding: 12px 20px;
+      border-radius: 12px;
       text-decoration: none;
       font-weight: 600;
       margin: 5px;
-      border: none;
+      border: 2px solid rgba(102, 126, 234, 0.3);
       cursor: pointer;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
       transition: all 0.3s ease;
     }
 
     .button:hover, .inline-button:hover {
       transform: translateY(-2px);
-      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+      border-color: rgba(102, 126, 234, 0.6);
     }
 
     .price-image {
@@ -136,19 +168,20 @@
       bottom: 0;
       left: 0;
       right: 0;
-      background: #ffffff;
-      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+      background: #1a1a1a;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       grid-template-rows: repeat(2, 1fr);
       gap: 1px;
-      background: #e0e0e0;
+      background: #0f0f0f;
       padding: 0;
       z-index: 1000;
+      border-top: 1px solid rgba(102, 126, 234, 0.3);
     }
 
     .nav-item {
-      background: #ffffff;
+      background: #1a1a1a;
       border: none;
       padding: 10px 5px;
       display: flex;
@@ -159,6 +192,7 @@
       transition: all 0.3s ease;
       position: relative;
       overflow: hidden;
+      color: #b0b0b0;
     }
 
     .nav-item::before {
@@ -214,24 +248,55 @@
     .welcome-message {
       text-align: center;
       padding: 60px 20px;
+      background: rgba(102, 126, 234, 0.05);
+      border-radius: 20px;
+      margin: 20px;
     }
 
     .welcome-message h1 {
       font-size: clamp(1.8rem, 5vw, 2.5rem);
-      color: #667eea;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
       margin-bottom: 20px;
-      border-bottom: none;
+      padding: 0;
+      border: none;
     }
 
     .welcome-message p {
       font-size: clamp(1rem, 3vw, 1.2rem);
-      color: #888;
+      color: #b0b0b0;
     }
 
     .welcome-message i {
       font-size: 80px;
-      color: #667eea;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
       margin-bottom: 20px;
+      filter: drop-shadow(0 4px 8px rgba(102, 126, 234, 0.3));
+    }
+
+    /* 정보 박스 */
+    .info-box {
+      background: rgba(255, 255, 255, 0.05);
+      border: 2px solid rgba(102, 126, 234, 0.3);
+      border-radius: 12px;
+      padding: 15px;
+      margin: 15px 0;
+      backdrop-filter: blur(10px);
+    }
+
+    .example-box {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 15px;
+      border-left: 4px solid #667eea;
+      margin: 15px 0;
+      border-radius: 8px;
+      font-family: monospace;
+      color: #e0e0e0;
     }
   </style>
 </head>
@@ -253,10 +318,10 @@
       <h1>📱 예약은 네이버로 승인없이!</h1>
       <p><strong>1.</strong> 아래 링크 또는 <strong>네이버지도 앱</strong>에서 <strong>"리듬앤조이 연습실"</strong>을 검색해 예약하세요.</p>
       
-      <div style="border: 2px solid #667eea; border-radius: 15px; background-color: #f0f4ff; padding: 15px; margin: 15px 0;">
-        <a href="https://naver.me/59vo9MDk" target="_blank" class="button" style="width: 100%; text-align: center; margin: 5px 0;">네이버 지도 예약</a>
-        <a href="https://m.place.naver.com/my" target="_blank" class="button" style="width: 100%; text-align: center; margin: 5px 0;">예약 확인/취소</a>
-        <p style="font-size: 0.85rem; margin-top: 10px; color: #555;">
+      <div class="info-box">
+        <a href="https://naver.me/59vo9MDk" target="_blank" class="button" style="width: 100%; text-align: center; margin: 5px 0; display: block;">네이버 지도 예약</a>
+        <a href="https://m.place.naver.com/my" target="_blank" class="button" style="width: 100%; text-align: center; margin: 5px 0; display: block;">예약 확인/취소</a>
+        <p style="font-size: 0.85rem; margin-top: 10px; color: #b0b0b0;">
           ✅ "사용 1분 전까지도 실시간 예약 가능!"<br>
           ✅ "네이버 예약 즉시 확정 – 승인 없이 바로 이용 가능"
         </p>
@@ -340,7 +405,7 @@
     <!-- 오시는길 -->
     <div class="content-section" id="map">
       <h1>📍 오시는 길 & 주차 안내</h1>
-      <div style="background: #f0f4ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
+      <div class="info-box">
         🔗 <a href="https://naver.me/59vo9MDk" target="_blank" style="color: #667eea; font-weight: bold;">네이버 지도에서 위치 보기</a>
       </div>
       <p>📌 <strong>사당역 7번출구 도보 1분</strong></p>
@@ -364,9 +429,9 @@
       <p>📅 <strong>일정 확인:</strong> 현재 예약 현황을 확인해 주세요.</p>
       <p>📲 <strong>문자 예약:</strong> <a href="sms:01048017180">010-4801-7180</a>으로 아래 예시처럼 문자 보내주세요.</p>
       
-      <div style="background: #f4f4f4; padding: 15px; border-left: 4px solid #999; margin: 15px 0;">
+      <div class="example-box">
         <strong>예시 문구:</strong><br>
-        <code style="font-family: monospace;">12~13일 넘어가는 새벽 A 홀 통대관 가능한가요?</code>
+        <code>12~13일 넘어가는 새벽 A 홀 통대관 가능한가요?</code>
       </div>
       
       <p>✅ <strong>승인 후 입금</strong> → <strong>이용 정보 문자 수신</strong> → <strong>예약 완료!</strong></p>
@@ -380,18 +445,18 @@
       <h1>💵 취소·변경·환불규정</h1>
       
       <h3><strong>1. 잘못 예약한 경우</strong></h3>
-      <div style="background: #f4f4f4; padding: 15px; border-left: 4px solid #999; margin: 10px 0;">
+      <div class="example-box">
         <strong>예약신청 2시간 안 변심 취소는 무료입니다. 그 외에는 환불규정에 따릅니다.</strong><br>
         - 문의: <a href="sms:01048017180">010-4801-7180 (문자 문의)</a>
       </div>
       
       <h3><strong>2. 단순 취소</strong></h3>
-      <div style="background: #f4f4f4; padding: 15px; border-left: 4px solid #999; margin: 10px 0;">
+      <div class="example-box">
         <strong>신청 2시간이 지났으면 아래 환불규정에 따릅니다.</strong>
       </div>
       
       <h3><strong>3. 변경</strong></h3>
-      <div style="background: #f4f4f4; padding: 15px; border-left: 4px solid #999; margin: 10px 0;">
+      <div class="example-box">
         <strong>변경은 취소 후 재예약만 가능합니다.</strong>
       </div>
       
