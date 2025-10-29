@@ -527,7 +527,7 @@
       <span>환불규정</span>
     </button>
 
-    <button class="nav-item" onclick="closeInfoPage()" style="background: #404040;">
+    <button class="nav-item" data-bs-dismiss="offcanvas" style="background: #404040;">
       <i class="fas fa-calendar"></i>
       <span>전화면</span>
     </button>
@@ -661,21 +661,6 @@
       document.getElementById('contentArea').scrollTop = 0;
     }
 
-    function closeInfoPage() {
-      // 방법 1: 부모 페이지의 닫기 버튼 찾아서 클릭
-      try {
-        const closeBtn = window.top.document.querySelector('#offcanvasNavbar .btn-close');
-        if (closeBtn) {
-          closeBtn.click();
-          return;
-        }
-      } catch (e) {
-        console.log('Same-origin 방법 실패, postMessage 사용');
-      }
-      
-      // 방법 2: postMessage (cross-origin 환경)
-      window.parent.postMessage({ type: 'closeOffcanvas' }, '*');
-    }
   </script>
 </body>
 
