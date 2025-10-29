@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { google } from 'googleapis';
 import { v4 as uuidv4 } from 'uuid';
+import { getGoogleAuth } from './lib/google-auth.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -18,23 +19,7 @@ const rooms = [
 // Webhook URL (Punycode)
 const WEBHOOK_URL = process.env.WEBHOOK_URL || 'https://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/google-webhook';
 
-// Google Service Account 인증
-function getGoogleAuth() {
-  const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  
-  if (!serviceAccountJson) {
-    throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 환경 변수가 설정되지 않았습니다');
-  }
-
-  const credentials = JSON.parse(serviceAccountJson);
-
-  return new google.auth.JWT(
-    credentials.client_email,
-    null,
-    credentials.private_key,
-    ['https://www.googleapis.com/auth/calendar']
-  );
-}
+// Google Service Account 인증 - lib/google-auth.js에서 import
 
 // Watch 채널 등록
 async function setupWatch(room) {
