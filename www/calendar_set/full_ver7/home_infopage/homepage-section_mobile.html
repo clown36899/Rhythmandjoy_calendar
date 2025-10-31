@@ -1253,20 +1253,24 @@
 
         // Web Share API 지원 여부 확인 (모바일)
         if (navigator.share) {
+          console.log('📱 모바일 네이티브 공유 시트 열기...');
           try {
             await navigator.share({
               title: title,
               url: url,
             });
-            console.log("✅ 공유 완료:", url);
+            console.log("✅ 네이티브 공유 완료 (카카오톡/문자 등)");
           } catch (err) {
             if (err.name !== "AbortError") {
               console.error("공유 실패:", err);
               fallbackCopyToClipboard(url, title);
+            } else {
+              console.log("❎ 사용자가 공유 취소");
             }
           }
         } else {
           // Web Share API 미지원 시 URL 복사
+          console.log('💻 데스크톱 환경 - URL 복사 모드');
           fallbackCopyToClipboard(url, title);
         }
       }
