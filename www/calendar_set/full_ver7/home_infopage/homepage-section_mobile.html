@@ -1250,6 +1250,93 @@
         }
       }
 
+      // 📱 외부 브라우저 안내 팝업
+      function showExternalBrowserGuide(url) {
+        // 오버레이 생성
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.7);
+          z-index: 99999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        `;
+        
+        // 팝업 박스
+        const popup = document.createElement('div');
+        popup.style.cssText = `
+          background: white;
+          border-radius: 12px;
+          padding: 24px;
+          max-width: 320px;
+          width: 100%;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        `;
+        
+        popup.innerHTML = `
+          <div style="text-align: center;">
+            <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: bold; color: #333;">
+              공유 안내
+            </h3>
+            <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.5; color: #666;">
+              카카오톡 앱에서는 공유 기능이 제한됩니다.<br>
+              외부 브라우저에서 열고 공유 버튼을 눌러주세요.
+            </p>
+            <button id="openExternalBtn" style="
+              width: 100%;
+              padding: 14px;
+              background: #4CAF50;
+              color: white;
+              border: none;
+              border-radius: 8px;
+              font-size: 16px;
+              font-weight: bold;
+              cursor: pointer;
+              margin-bottom: 8px;
+            ">
+              외부 브라우저에서 열기
+            </button>
+            <button id="closeGuideBtn" style="
+              width: 100%;
+              padding: 12px;
+              background: transparent;
+              color: #999;
+              border: none;
+              font-size: 14px;
+              cursor: pointer;
+            ">
+              닫기
+            </button>
+          </div>
+        `;
+        
+        overlay.appendChild(popup);
+        document.body.appendChild(overlay);
+        
+        // 버튼 이벤트
+        document.getElementById('openExternalBtn').onclick = () => {
+          openInExternalBrowser(url);
+          document.body.removeChild(overlay);
+        };
+        
+        document.getElementById('closeGuideBtn').onclick = () => {
+          document.body.removeChild(overlay);
+        };
+        
+        // 오버레이 클릭 시 닫기
+        overlay.onclick = (e) => {
+          if (e.target === overlay) {
+            document.body.removeChild(overlay);
+          }
+        };
+      }
+
       // 📤 공유 기능
       async function shareSection(sectionName, sectionId) {
         // 섹션 ID 매핑
@@ -1282,15 +1369,7 @@
         // 인앱 브라우저 체크
         if (isInAppBrowser()) {
           console.log('📱 인앱 브라우저 감지 - 외부 브라우저 안내');
-          
-          const message = `📱 카카오톡/네이버 앱에서는 공유 기능이 제한됩니다.\n\n✅ [확인] → Safari/Chrome에서 열기\n   (열린 후 공유 버튼 클릭하면 카톡/문자 등으로 공유 가능)\n\n📋 [취소] → 링크만 복사\n   (복사 후 카톡에 직접 붙여넣기)`;
-          
-          if (confirm(message)) {
-            openInExternalBrowser(url);
-          } else {
-            // 취소하면 URL 복사
-            fallbackCopyToClipboard(url, title);
-          }
+          showExternalBrowserGuide(url);
           return;
         }
 
