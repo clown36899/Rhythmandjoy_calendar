@@ -1236,9 +1236,20 @@
         };
         
         const targetSection = sectionMap[sectionName] || 'howto';
-        const baseUrl = window.location.origin + window.location.pathname;
+        
+        // 현재 URL 정보 (프로덕션: 리듬앤조이일정표.com, 개발: Replit URL)
+        let baseUrl;
+        if (window.location.hostname.includes('리듬앤조이일정표.com') || window.location.hostname.includes('rhythmandjoy')) {
+          baseUrl = 'https://리듬앤조이일정표.com/calendar_set/full_ver7/';
+        } else {
+          // 개발 환경 (Replit 등)
+          baseUrl = window.location.origin + '/calendar_set/full_ver7/';
+        }
+        
         const url = `${baseUrl}?section=${targetSection}`;
         const title = `리듬앤조이 - ${sectionName}`;
+
+        console.log('🔗 공유 URL 생성:', url);
 
         // Web Share API 지원 여부 확인 (모바일)
         if (navigator.share) {
@@ -1247,7 +1258,7 @@
               title: title,
               url: url,
             });
-            console.log("✅ 공유 완료");
+            console.log("✅ 공유 완료:", url);
           } catch (err) {
             if (err.name !== "AbortError") {
               console.error("공유 실패:", err);
