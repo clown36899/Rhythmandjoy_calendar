@@ -157,7 +157,10 @@
     aria-labelledby="offcanvasDarkNavbarLabel">
     <div class="offcanvas-header">
 
-      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+      <button type="button" class="calendar-close-btn" data-bs-dismiss="offcanvas" aria-label="일정표로 돌아가기">
+        <i class="fa-regular fa-calendar"></i>
+        <span>일정표</span>
+      </button>
     </div>
     <!-- 이곳은 좌측 홈페이지 구역입니다 -->
     <div class="offcanvas-body-1000" id="homepage-section">
@@ -412,19 +415,34 @@
         const section = urlParams.get('section');
         
         if (section) {
-          // getOrCreateInstance로 중복 인스턴스 방지 (안정성 개선)
-          const bsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasElement);
-          bsOffcanvas.show();
+          // 인앱 브라우저 체크
+          const ua = navigator.userAgent.toLowerCase();
+          const isInApp = (ua.includes('kakaotalk') || ua.includes('naver') || 
+                          ua.includes('fb_iab') || ua.includes('fban') || ua.includes('fbav'));
           
-          // 오프캔버스가 완전히 열린 후 섹션 표시
-          offcanvasElement.addEventListener('shown.bs.offcanvas', function onShown() {
-            if (window.openSectionFromURL) {
-              window.openSectionFromURL();
-            }
-            offcanvasElement.removeEventListener('shown.bs.offcanvas', onShown);
-          }, { once: true });
-          
-          console.log(`✅ 딥링크 자동 열기: ${section}`);
+          if (isInApp) {
+            // 인앱 브라우저면 안내창 표시
+            console.log('📱 인앱 브라우저에서 딥링크 접속 - 안내창 표시');
+            setTimeout(() => {
+              if (window.showExternalBrowserGuideFromDeepLink) {
+                window.showExternalBrowserGuideFromDeepLink(window.location.href);
+              }
+            }, 500);
+          } else {
+            // 일반 브라우저면 정상 동작
+            const bsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasElement);
+            bsOffcanvas.show();
+            
+            // 오프캔버스가 완전히 열린 후 섹션 표시
+            offcanvasElement.addEventListener('shown.bs.offcanvas', function onShown() {
+              if (window.openSectionFromURL) {
+                window.openSectionFromURL();
+              }
+              offcanvasElement.removeEventListener('shown.bs.offcanvas', onShown);
+            }, { once: true });
+            
+            console.log(`✅ 딥링크 자동 열기: ${section}`);
+          }
         }
       }
       

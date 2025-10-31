@@ -25,6 +25,30 @@ body {
   transform: translateX(-3px);
 }
 
+/* 일정표 버튼 */
+.calendar-close-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 16px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.9;
+}
+
+.calendar-close-btn:hover {
+  opacity: 1;
+  color: #4CAF50;
+}
+
+.calendar-close-btn i {
+  font-size: 20px;
+}
+
 @media (max-width: 991.98px) {
   .offcanvas-collapse {
     position: fixed;
