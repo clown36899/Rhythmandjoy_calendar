@@ -391,38 +391,47 @@
             oldScript.parentNode.replaceChild(newScript, oldScript);
           });
           
-          // 🔗 URL 해시로 섹션 자동 열기
+          // 🔗 URL 쿼리로 섹션 자동 열기
           setTimeout(() => {
-            const hash = window.location.hash.replace('#', '');
-            if (hash) {
-              const navButtons = {
-                'howto': container.querySelector('.nav-item[onclick*="howto"]'),
-                'info': container.querySelector('.nav-item[onclick*="info"]'),
-                'notice': container.querySelector('.nav-item[onclick*="notice"]'),
-                'map': container.querySelector('.nav-item[onclick*="map"]'),
-                'night': container.querySelector('.nav-item[onclick*="night"]'),
-                'pricelist': container.querySelector('.nav-item[onclick*="pricelist"]'),
-                'refund': container.querySelector('.nav-item[onclick*="refund"]')
-              };
-
-              if (navButtons[hash]) {
-                // 오프캔버스 열기
-                const offcanvasElement = document.getElementById('offcanvasDarkNavbar');
-                const bsOffcanvas = new bootstrap.Offcanvas(offcanvasElement);
-                bsOffcanvas.show();
-                
-                // 해당 섹션 버튼 클릭
-                setTimeout(() => {
-                  navButtons[hash].click();
-                  console.log(`✅ URL 해시로 ${hash} 섹션 자동 열기`);
-                }, 300);
-              }
+            const urlParams = new URLSearchParams(window.location.search);
+            const section = urlParams.get('section');
+            
+            if (section) {
+              // 오프캔버스 열기
+              const offcanvasElement = document.getElementById('offcanvasDarkNavbar');
+              const bsOffcanvas = new bootstrap.Offcanvas(offcanvasElement);
+              bsOffcanvas.show();
+              
+              // 오프캔버스가 완전히 열린 후 섹션 표시
+              offcanvasElement.addEventListener('shown.bs.offcanvas', function onShown() {
+                if (window.openSectionFromURL) {
+                  window.openSectionFromURL();
+                }
+                offcanvasElement.removeEventListener('shown.bs.offcanvas', onShown);
+              }, { once: true });
+              
+              console.log(`✅ URL 쿼리로 오프캔버스 자동 열기: ${section}`);
             }
           }, 100);
         })
         .catch(error => {
           console.error('외부 HTML 로드 실패:', error);
         });
+    });
+    
+    // 오프캔버스 닫기 시 URL에서 쿼리 파라미터 제거
+    window.addEventListener('DOMContentLoaded', () => {
+      const offcanvasElement = document.getElementById('offcanvasDarkNavbar');
+      
+      offcanvasElement.addEventListener('hidden.bs.offcanvas', function() {
+        // 쿼리 파라미터가 있으면 제거
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('section')) {
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, '', cleanUrl);
+          console.log('✅ 오프캔버스 닫힘 - URL 쿼리 제거');
+        }
+      });
     });
   </script>
   <script>
