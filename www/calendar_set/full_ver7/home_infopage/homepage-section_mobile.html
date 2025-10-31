@@ -1222,6 +1222,32 @@
         window.history.pushState({ section: sectionId }, '', newUrl);
       }
 
+      // 🔍 인앱 브라우저 감지
+      function isInAppBrowser() {
+        const ua = navigator.userAgent.toLowerCase();
+        return (ua.includes('kakaotalk') || 
+                ua.includes('naver') || 
+                ua.includes('fb_iab') ||
+                ua.includes('fban') ||
+                ua.includes('fbav'));
+      }
+
+      // 🌐 외부 브라우저로 열기
+      function openInExternalBrowser(url) {
+        const ua = navigator.userAgent.toLowerCase();
+        
+        if (/android/i.test(ua)) {
+          // Android: Intent URL로 외부 브라우저 열기
+          window.location.href = `intent:${url}#Intent;scheme=https;action=android.intent.action.VIEW;end`;
+        } else if (/iphone|ipad|ipod/i.test(ua)) {
+          // iOS: 새 창으로 열기 (Safari로 열림)
+          window.open(url, '_blank');
+        } else {
+          // 기타: 새 창
+          window.open(url, '_blank');
+        }
+      }
+
       // 📤 공유 기능
       async function shareSection(sectionName, sectionId) {
         // 섹션 ID 매핑
@@ -1250,6 +1276,21 @@
         const title = `리듬앤조이 - ${sectionName}`;
 
         console.log('🔗 공유 URL 생성:', url);
+
+        // 인앱 브라우저 체크
+        if (isInAppBrowser()) {
+          console.log('📱 인앱 브라우저 감지 - 외부 브라우저 안내');
+          
+          const message = `카카오톡/네이버 앱에서는 공유 기능이 제한됩니다.\n\n아래 버튼을 눌러 Safari/Chrome에서 열어주세요!`;
+          
+          if (confirm(message)) {
+            openInExternalBrowser(url);
+          } else {
+            // 취소하면 URL 복사
+            fallbackCopyToClipboard(url, title);
+          }
+          return;
+        }
 
         // Web Share API 지원 여부 확인 (모바일)
         if (navigator.share) {
