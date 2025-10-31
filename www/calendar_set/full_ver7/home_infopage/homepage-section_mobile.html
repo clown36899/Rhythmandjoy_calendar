@@ -58,6 +58,22 @@
 
       .content-section.active {
         display: block;
+        animation: fadeIn 0.3s ease;
+      }
+
+      .content-section.active.no-animation {
+        animation: none;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
 
       /* 섹션 헤더 컨테이너 */
@@ -1185,10 +1201,10 @@
         }
       });
 
-      function showContent(sectionId, button) {
+      function showContent(sectionId, button, skipAnimation = false) {
         // 모든 섹션 숨기기
         document.querySelectorAll(".content-section").forEach((section) => {
-          section.classList.remove("active");
+          section.classList.remove("active", "no-animation");
         });
 
         // 모든 버튼 비활성화
@@ -1197,10 +1213,18 @@
         });
 
         // 선택된 섹션 표시
-        document.getElementById(sectionId).classList.add("active");
+        const targetSection = document.getElementById(sectionId);
+        targetSection.classList.add("active");
+        
+        // 애니메이션 스킵 (URL 링크로 첫 로드 시)
+        if (skipAnimation) {
+          targetSection.classList.add("no-animation");
+        }
 
         // 선택된 버튼 활성화
-        button.classList.add("active");
+        if (button) {
+          button.classList.add("active");
+        }
 
         // 스크롤 맨 위로
         document.getElementById("contentArea").scrollTop = 0;
@@ -1426,9 +1450,11 @@
             'refund': document.querySelector('.nav-item[onclick*="refund"]')
           };
 
-          if (navButtons[section]) {
-            navButtons[section].click();
-            console.log(`✅ URL 쿼리로 ${section} 섹션 자동 열기`);
+          const button = navButtons[section];
+          if (button) {
+            // URL 링크로 첫 로드 시 애니메이션 없이 즉시 표시
+            showContent(section, button, true);
+            console.log(`✅ URL 쿼리로 ${section} 섹션 자동 열기 (애니메이션 없음)`);
           }
         }
       };
