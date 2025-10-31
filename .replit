@@ -6,14 +6,32 @@ expertMode = true
 channel = "stable-25_05"
 
 [workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "정적 서버"
+
+[[workflows.workflow]]
+name = "정적 서버"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd www && python3 -m http.server 5000 --bind 0.0.0.0"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
 
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 36751
-externalPort = 3000
 
 [deployment]
 deploymentTarget = "autoscale"
