@@ -391,48 +391,72 @@
             oldScript.parentNode.replaceChild(newScript, oldScript);
           });
           
-          // 🔗 URL 쿼리로 섹션 자동 열기
+          // ✅ HTML 로드 완료 후 딥링크 처리
           setTimeout(() => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const section = urlParams.get('section');
-            
-            if (section) {
-              // 오프캔버스 열기
-              const offcanvasElement = document.getElementById('offcanvasDarkNavbar');
-              const bsOffcanvas = new bootstrap.Offcanvas(offcanvasElement);
-              bsOffcanvas.show();
-              
-              // 오프캔버스가 완전히 열린 후 섹션 표시
-              offcanvasElement.addEventListener('shown.bs.offcanvas', function onShown() {
-                if (window.openSectionFromURL) {
-                  window.openSectionFromURL();
-                }
-                offcanvasElement.removeEventListener('shown.bs.offcanvas', onShown);
-              }, { once: true });
-              
-              console.log(`✅ URL 쿼리로 오프캔버스 자동 열기: ${section}`);
-            }
-          }, 100);
+            initializeDeepLinking();
+          }, 150);
         })
         .catch(error => {
           console.error('외부 HTML 로드 실패:', error);
         });
     });
     
-    // 오프캔버스 닫기 시 URL에서 쿼리 파라미터 제거
-    window.addEventListener('DOMContentLoaded', () => {
+    // 🔗 안정적인 딥링크 시스템
+    function initializeDeepLinking() {
       const offcanvasElement = document.getElementById('offcanvasDarkNavbar');
+      if (!offcanvasElement) return;
       
+      // 🔹 URL 쿼리로 섹션 자동 열기
+      function openFromURL() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const section = urlParams.get('section');
+        
+        if (section) {
+          // getOrCreateInstance로 중복 인스턴스 방지 (안정성 개선)
+          const bsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasElement);
+          bsOffcanvas.show();
+          
+          // 오프캔버스가 완전히 열린 후 섹션 표시
+          offcanvasElement.addEventListener('shown.bs.offcanvas', function onShown() {
+            if (window.openSectionFromURL) {
+              window.openSectionFromURL();
+            }
+            offcanvasElement.removeEventListener('shown.bs.offcanvas', onShown);
+          }, { once: true });
+          
+          console.log(`✅ 딥링크 자동 열기: ${section}`);
+        }
+      }
+      
+      // 🔹 오프캔버스 닫기 시 URL 정리
       offcanvasElement.addEventListener('hidden.bs.offcanvas', function() {
-        // 쿼리 파라미터가 있으면 제거
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('section')) {
           const cleanUrl = window.location.pathname;
           window.history.replaceState({}, '', cleanUrl);
-          console.log('✅ 오프캔버스 닫힘 - URL 쿼리 제거');
+          console.log('✅ 오프캔버스 닫힘 - URL 정리');
         }
       });
-    });
+      
+      // 🔹 뒤로가기/앞으로가기 버튼 대응 (안정성 개선)
+      window.addEventListener('popstate', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const section = urlParams.get('section');
+        const instance = bootstrap.Offcanvas.getInstance(offcanvasElement);
+        
+        if (section && !instance) {
+          // 쿼리 파라미터 있는데 닫혀있으면 열기
+          openFromURL();
+        } else if (!section && instance && offcanvasElement.classList.contains('show')) {
+          // 쿼리 파라미터 없는데 열려있으면 닫기
+          instance.hide();
+          console.log('✅ 뒤로가기 - 오프캔버스 닫기');
+        }
+      });
+      
+      // 초기 실행
+      openFromURL();
+    }
   </script>
   <script>
 
