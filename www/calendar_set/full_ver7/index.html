@@ -392,6 +392,35 @@
             newScript.textContent = oldScript.textContent;
             oldScript.parentNode.replaceChild(newScript, oldScript);
           });
+          
+          // 🔗 URL 해시로 섹션 자동 열기
+          setTimeout(() => {
+            const hash = window.location.hash.replace('#', '');
+            if (hash) {
+              const navButtons = {
+                'howto': container.querySelector('.nav-item[onclick*="howto"]'),
+                'info': container.querySelector('.nav-item[onclick*="info"]'),
+                'notice': container.querySelector('.nav-item[onclick*="notice"]'),
+                'map': container.querySelector('.nav-item[onclick*="map"]'),
+                'night': container.querySelector('.nav-item[onclick*="night"]'),
+                'pricelist': container.querySelector('.nav-item[onclick*="pricelist"]'),
+                'refund': container.querySelector('.nav-item[onclick*="refund"]')
+              };
+
+              if (navButtons[hash]) {
+                // 오프캔버스 열기
+                const offcanvasElement = document.getElementById('offcanvasDarkNavbar');
+                const bsOffcanvas = new bootstrap.Offcanvas(offcanvasElement);
+                bsOffcanvas.show();
+                
+                // 해당 섹션 버튼 클릭
+                setTimeout(() => {
+                  navButtons[hash].click();
+                  console.log(`✅ URL 해시로 ${hash} 섹션 자동 열기`);
+                }, 300);
+              }
+            }
+          }, 100);
         })
         .catch(error => {
           console.error('외부 HTML 로드 실패:', error);
