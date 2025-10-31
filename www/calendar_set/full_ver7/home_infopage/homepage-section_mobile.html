@@ -1219,17 +1219,27 @@
       }
 
       // 📤 공유 기능
-      async function shareSection(sectionName, description) {
-        const url = "https://리듬앤조이일정표.com";
+      async function shareSection(sectionName, sectionId) {
+        // 섹션 ID 매핑
+        const sectionMap = {
+          '예약/비번': 'howto',
+          '시설안내': 'info',
+          '주의사항': 'notice',
+          '오시는길': 'map',
+          '새벽통대관': 'night',
+          '가격표': 'pricelist',
+          '환불규정': 'refund'
+        };
+        
+        const targetSection = sectionMap[sectionName] || 'howto';
+        const url = `https://리듬앤조이일정표.com#${targetSection}`;
         const title = `리듬앤조이 - ${sectionName}`;
-        const text = description;
 
         // Web Share API 지원 여부 확인 (모바일)
         if (navigator.share) {
           try {
             await navigator.share({
               title: title,
-              text: text,
               url: url,
             });
             console.log("✅ 공유 완료");
@@ -1269,6 +1279,30 @@
             document.body.removeChild(textArea);
           });
       }
+
+      // 🔗 URL 해시로 섹션 자동 열기
+      window.addEventListener("DOMContentLoaded", function () {
+        const hash = window.location.hash.replace('#', '');
+        if (hash) {
+          // 해시에 해당하는 섹션이 있는지 확인
+          const targetSection = document.getElementById(hash);
+          const navButtons = {
+            'howto': document.querySelector('.nav-item[onclick*="howto"]'),
+            'info': document.querySelector('.nav-item[onclick*="info"]'),
+            'notice': document.querySelector('.nav-item[onclick*="notice"]'),
+            'map': document.querySelector('.nav-item[onclick*="map"]'),
+            'night': document.querySelector('.nav-item[onclick*="night"]'),
+            'pricelist': document.querySelector('.nav-item[onclick*="pricelist"]'),
+            'refund': document.querySelector('.nav-item[onclick*="refund"]')
+          };
+
+          if (targetSection && navButtons[hash]) {
+            // 해당 섹션으로 이동
+            navButtons[hash].click();
+            console.log(`✅ URL 해시로 ${hash} 섹션 자동 열기`);
+          }
+        }
+      });
 
       // 🚀 이미지 프리로드 (백그라운드 캐싱)
       window.addEventListener("load", function () {
