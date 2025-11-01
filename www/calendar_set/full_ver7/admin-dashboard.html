@@ -914,7 +914,7 @@
       const results = document.getElementById('priceTestResults');
       results.innerHTML = '<div class="spinner-border text-primary" role="status"></div><p>이벤트 로딩 중...</p>';
       
-      // ✅ 1단계: 전체 이벤트 한 번에 가져오기
+      // ✅ 1단계: 전체 이벤트 한 번에 가져오기 (모든 컬럼)
       let allEvents = [];
       let from = 0;
       const fetchSize = 1000;
@@ -922,7 +922,7 @@
       while (true) {
         const { data: events, error } = await supabase
           .from('booking_events')
-          .select('id, start_time, end_time, room_id, description, price')
+          .select('*')
           .order('start_time', { ascending: true })
           .range(from, from + fetchSize - 1);
         
@@ -939,7 +939,7 @@
         from += fetchSize;
       }
       
-      // ✅ 2단계: 클라이언트에서 전부 계산
+      // ✅ 2단계: 클라이언트에서 전부 계산 (전체 row 유지)
       results.innerHTML = `<div class="spinner-border text-primary" role="status"></div><p>${allEvents.length}개 계산 중...</p>`;
       
       const updates = allEvents.map(event => {
@@ -951,7 +951,7 @@
         );
         
         return {
-          id: event.id,
+          ...event,
           price,
           price_type: priceType,
           is_naver: isNaver
