@@ -858,7 +858,7 @@
         return;
       }
       
-      let html = '<h5>D홀 최근 20개 이벤트 검증</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>제목</th><th>시작 (UTC)</th><th>시작 (KST)</th><th>DB 가격</th><th>재계산</th><th>상태</th></tr></thead><tbody>';
+      let html = '<h5>D홀 최근 20개 이벤트 검증</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>제목</th><th>시작시간</th><th>DB 가격</th><th>재계산</th><th>상태</th></tr></thead><tbody>';
       let wrongCount = 0;
       
       events.forEach(event => {
@@ -868,13 +868,11 @@
         
         if (!match) wrongCount++;
         
-        const startUtc = new Date(event.start_time);
         const startKst = new Date(new Date(event.start_time).getTime() + 9 * 60 * 60 * 1000);
         
         html += `
           <tr style="background: ${match ? '#e8f5e9' : '#ffebee'}">
             <td style="font-size: 0.9em;">${event.title}</td>
-            <td style="font-size: 0.85em; color: #666;">${startUtc.toISOString().slice(0, 16).replace('T', ' ')}</td>
             <td style="font-size: 0.9em;">${startKst.toISOString().slice(5, 16).replace('T', ' ')}</td>
             <td>${(stored || 0).toLocaleString()}원</td>
             <td><strong>${calculated.price.toLocaleString()}원</strong></td>
