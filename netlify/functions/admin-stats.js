@@ -8,27 +8,10 @@ const supabase = createClient(
 );
 
 /**
- * 이벤트의 가격을 가져옴 (이번 달 이후는 재계산, 이전 달은 DB 값 사용)
+ * 이벤트의 가격을 가져옴 (DB에 저장된 값 사용)
  */
 async function getEventPrice(event) {
-  const now = new Date();
-  const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const eventYearMonth = event.start_time.substring(0, 7); // 'YYYY-MM'
-  
-  // 이번 달 이후는 실시간 재계산
-  if (eventYearMonth >= currentYearMonth) {
-    const roomPrices = await getPricePolicyForDate(supabase, event.start_time);
-    const { price } = calculatePrice(
-      event.start_time,
-      event.end_time,
-      event.room_id,
-      event.description || '',
-      roomPrices
-    );
-    return price;
-  }
-  
-  // 이전 달은 DB 저장된 값 사용
+  // DB에 이미 저장된 가격 사용
   return event.price || 0;
 }
 
