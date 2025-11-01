@@ -6,7 +6,10 @@
   <title>매출 통계 대시보드 - Rhythmjoy</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/locales/ko.js"></script>
   <style>
     body {
       background: #f5f7fa;
@@ -98,6 +101,38 @@
       vertical-align: middle;
       color: #32325d;
     }
+    #monthlyCalendar {
+      max-width: 100%;
+      margin: 0 auto;
+    }
+    .fc-event-title {
+      font-size: 0.85em;
+    }
+    .fc-event-time {
+      font-size: 0.75em;
+    }
+    .event-price {
+      font-size: 0.75em;
+      font-weight: bold;
+      color: #fff;
+      background: rgba(0,0,0,0.2);
+      padding: 2px 4px;
+      border-radius: 3px;
+      display: inline-block;
+      margin-top: 2px;
+    }
+    .room-badge {
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: white;
+    }
+    .room-a { background: #f6bf26; }
+    .room-b { background: #5796c8; }
+    .room-c { background: #81b4ba; }
+    .room-d { background: #7d9d6a; }
+    .room-e { background: #4c4c4c; }
     .btn-logout {
       background: rgba(255,255,255,0.2);
       border: 1px solid rgba(255,255,255,0.3);
@@ -253,6 +288,12 @@
             </tbody>
           </table>
         </div>
+      </div>
+
+      <!-- 월간 캘린더 뷰 (이벤트별 가격 확인) -->
+      <div class="chart-container">
+        <div class="chart-title">📅 월간 캘린더 (이벤트별 가격 확인)</div>
+        <div id="monthlyCalendar"></div>
       </div>
     </div>
   </div>
@@ -705,8 +746,120 @@
       });
     }
 
+    // 월간 캘린더 로드
+    let calendar = null;
+    async function loadMonthlyCalendar() {
+      if (!IS_REPLIT || !supabase) return;
+
+      console.log('📅 월간 캘린더 로드 시작...');
+
+      // 전체 이벤트 가져오기
+      let allEvents = [];
+      let from = 0;
+      const batchSize = 1000;
+      
+      while (true) {
+        const { data: batch, error } = await supabase
+          .from('booking_events')
+          .select('*')
+          .order('start_time', { ascending: true })
+          .range(from, from + batchSize - 1);
+        
+        if (error) {
+          console.error('Supabase 쿼리 오류:', error);
+          break;
+        }
+        
+        if (!batch || batch.length === 0) break;
+        
+        allEvents = allEvents.concat(batch);
+        
+        if (batch.length < batchSize) break;
+        from += batchSize;
+      }
+
+      console.log(`✅ ${allEvents.length}개 이벤트 로드 완료`);
+
+      // 중복 체크
+      const uniqueIds = new Set();
+      const duplicates = [];
+      allEvents.forEach(event => {
+        if (uniqueIds.has(event.google_event_id)) {
+          duplicates.push(event.google_event_id);
+        }
+        uniqueIds.add(event.google_event_id);
+      });
+
+      if (duplicates.length > 0) {
+        console.error('⚠️ 중복된 이벤트 발견:', duplicates.length, '개');
+      } else {
+        console.log('✅ 중복 없음');
+      }
+
+      const roomColors = {
+        a: '#f6bf26',
+        b: '#5796c8',
+        c: '#81b4ba',
+        d: '#7d9d6a',
+        e: '#4c4c4c'
+      };
+
+      const events = allEvents.map(event => ({
+        id: event.id,
+        title: `${event.room_id.toUpperCase()}홀 - ${event.title}`,
+        start: event.start_time,
+        end: event.end_time,
+        backgroundColor: roomColors[event.room_id] || '#ccc',
+        borderColor: roomColors[event.room_id] || '#ccc',
+        extendedProps: {
+          price: event.price,
+          priceType: event.price_type,
+          isNaver: event.is_naver,
+          roomId: event.room_id,
+          googleEventId: event.google_event_id
+        }
+      }));
+
+      const calendarEl = document.getElementById('monthlyCalendar');
+      calendar = new FullCalendar.Calendar(calendarEl, {
+        locale: 'ko',
+        initialView: 'dayGridMonth',
+        headerToolbar: {
+          left: 'prev,next today',
+          center: 'title',
+          right: 'dayGridMonth,timeGridWeek'
+        },
+        events: events,
+        eventDidMount: function(info) {
+          const price = info.event.extendedProps.price || 0;
+          const priceEl = document.createElement('div');
+          priceEl.className = 'event-price';
+          priceEl.innerHTML = `${price.toLocaleString()}원`;
+          info.el.querySelector('.fc-event-title').appendChild(priceEl);
+        },
+        eventClick: function(info) {
+          const props = info.event.extendedProps;
+          alert(`
+이벤트: ${info.event.title}
+시작: ${info.event.start.toLocaleString('ko-KR')}
+종료: ${info.event.end.toLocaleString('ko-KR')}
+가격: ${(props.price || 0).toLocaleString()}원
+가격타입: ${props.priceType || '-'}
+네이버예약: ${props.isNaver ? '예' : '아니오'}
+Google Event ID: ${props.googleEventId}
+          `);
+        }
+      });
+
+      calendar.render();
+      console.log('✅ 캘린더 렌더링 완료');
+    }
+
     // 페이지 로드 시 대시보드 로드
     loadDashboard();
+    if (IS_REPLIT) {
+      loadMonthlyCalendar();
+    }
   </script>
 </body>
 </html>
