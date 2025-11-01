@@ -912,59 +912,75 @@
       if (!confirm('⚠️ 주의: 전체 이벤트의 가격을 재계산하여 DB를 업데이트합니다. 계속하시겠습니까?')) return;
       
       const results = document.getElementById('priceTestResults');
-      results.innerHTML = '<div class="spinner-border text-primary" role="status"></div><p>전체 가격 재계산 중...</p>';
+      results.innerHTML = '<div class="spinner-border text-primary" role="status"></div><p>이벤트 로딩 중...</p>';
       
+      // ✅ 1단계: 전체 이벤트 한 번에 가져오기
+      let allEvents = [];
       let from = 0;
-      const batchSize = 100;
-      const parallelLimit = 10; // 동시 실행 제한
-      let totalUpdated = 0;
+      const fetchSize = 1000;
       
       while (true) {
         const { data: events, error } = await supabase
           .from('booking_events')
-          .select('*')
+          .select('id, start_time, end_time, room_id, description, price')
           .order('start_time', { ascending: true })
-          .range(from, from + batchSize - 1);
+          .range(from, from + fetchSize - 1);
         
-        if (error || !events || events.length === 0) break;
-        
-        // ✅ 10개씩만 병렬 실행
-        for (let i = 0; i < events.length; i += parallelLimit) {
-          const chunk = events.slice(i, i + parallelLimit);
-          const updatePromises = chunk.map(event => {
-            const { price, priceType, isNaver } = calculatePrice(
-              event.start_time,
-              event.end_time,
-              event.room_id,
-              event.description
-            );
-            
-            return supabase
-              .from('booking_events')
-              .update({ price, price_type: priceType, is_naver: isNaver })
-              .eq('id', event.id);
-          });
-          
-          const results_array = await Promise.all(updatePromises);
-          
-          const errors = results_array.filter(r => r.error);
-          if (errors.length > 0) {
-            console.error('업데이트 오류:', errors);
-            results.innerHTML = `<div class="alert alert-danger">오류: ${errors.length}개 업데이트 실패</div>`;
-            return;
-          }
-          
-          totalUpdated += chunk.length;
-          results.innerHTML = `<div class="spinner-border text-primary" role="status"></div><p>${totalUpdated}개 업데이트 완료...</p>`;
+        if (error) {
+          results.innerHTML = `<div class="alert alert-danger">오류: ${error.message}</div>`;
+          return;
         }
         
-        if (events.length < batchSize) break;
-        from += batchSize;
+        if (!events || events.length === 0) break;
+        allEvents = allEvents.concat(events);
+        results.innerHTML = `<div class="spinner-border text-primary" role="status"></div><p>${allEvents.length}개 로딩 중...</p>`;
+        
+        if (events.length < fetchSize) break;
+        from += fetchSize;
+      }
+      
+      // ✅ 2단계: 클라이언트에서 전부 계산
+      results.innerHTML = `<div class="spinner-border text-primary" role="status"></div><p>${allEvents.length}개 계산 중...</p>`;
+      
+      const updates = allEvents.map(event => {
+        const { price, priceType, isNaver } = calculatePrice(
+          event.start_time,
+          event.end_time,
+          event.room_id,
+          event.description
+        );
+        
+        return {
+          id: event.id,
+          price,
+          price_type: priceType,
+          is_naver: isNaver
+        };
+      });
+      
+      // ✅ 3단계: 500개씩 배치 업데이트
+      const batchSize = 500;
+      let totalUpdated = 0;
+      
+      for (let i = 0; i < updates.length; i += batchSize) {
+        const batch = updates.slice(i, i + batchSize);
+        
+        const { error } = await supabase
+          .from('booking_events')
+          .upsert(batch, { onConflict: 'id', ignoreDuplicates: false });
+        
+        if (error) {
+          console.error('업데이트 오류:', error);
+          results.innerHTML = `<div class="alert alert-danger">오류: ${error.message}</div>`;
+          return;
+        }
+        
+        totalUpdated += batch.length;
+        results.innerHTML = `<div class="spinner-border text-primary" role="status"></div><p>${totalUpdated}/${updates.length} 업데이트 완료...</p>`;
       }
       
       results.innerHTML = `<div class="alert alert-success"><h5>✅ 완료!</h5><p>총 ${totalUpdated}개 이벤트 가격 재계산 완료</p></div>`;
       
-      // 대시보드 새로고침
       setTimeout(() => {
         loadDashboard();
       }, 1000);
