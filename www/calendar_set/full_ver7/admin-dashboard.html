@@ -355,72 +355,8 @@
       return num.toLocaleString('ko-KR');
     }
 
-    // 현재/미래 달 가격 재계산 (로그인 시 1회만 실행)
+    // 현재/미래 달 가격 재계산 플래그
     let priceRecalculated = false;
-    
-    async function recalculateFuturePrices() {
-      if (priceRecalculated || !supabase) return;
-      
-      console.log('🔄 현재/미래 달 가격 재계산 시작...');
-      
-      // 현재 년월 계산 (이번 달 1일 00:00)
-      const now = new Date();
-      const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const currentMonthStr = currentMonth.toISOString();
-      
-      // 현재/미래 달 이벤트 가져오기
-      const { data: futureEvents, error: fetchError } = await supabase
-        .from('booking_events')
-        .select('*')
-        .gte('start_time', currentMonthStr)
-        .order('start_time', { ascending: true });
-      
-      if (fetchError) {
-        console.error('조회 오류:', fetchError);
-        return;
-      }
-      
-      if (!futureEvents || futureEvents.length === 0) {
-        console.log('재계산할 현재/미래 달 이벤트 없음');
-        priceRecalculated = true;
-        return;
-      }
-      
-      console.log(`📋 ${futureEvents.length}개 현재/미래 달 이벤트 재계산 중...`);
-      
-      // 가격 재계산 (기존 calculatePrice 함수 사용)
-      const updates = futureEvents.map(event => {
-        const { price, priceType, isNaver } = calculatePrice(
-          event.start_time,
-          event.end_time,
-          event.room_id,
-          event.description
-        );
-        
-        return {
-          ...event,
-          price,
-          price_type: priceType,
-          is_naver: isNaver
-        };
-      });
-      
-      // 배치 업데이트 (500개씩)
-      const batchSize = 500;
-      for (let i = 0; i < updates.length; i += batchSize) {
-        const batch = updates.slice(i, i + batchSize);
-        const { error: upsertError } = await supabase
-          .from('booking_events')
-          .upsert(batch, { onConflict: 'id', ignoreDuplicates: false });
-        
-        if (upsertError) {
-          console.error('업데이트 오류:', upsertError);
-        }
-      }
-      
-      priceRecalculated = true;
-      console.log(`✅ ${updates.length}개 현재/미래 달 가격 재계산 및 DB 업데이트 완료`);
-    }
 
     // 대시보드 로드
     async function loadDashboard() {
@@ -920,6 +856,71 @@
       totalPrice = Math.round(totalPrice * (isNaver ? 0.9802 : 0.9));
       
       return { price: totalPrice, priceType, isNaver };
+    }
+    
+    // 현재/미래 달 가격 재계산 (로그인 시 1회만 실행)
+    async function recalculateFuturePrices() {
+      if (priceRecalculated || !supabase) return;
+      
+      console.log('🔄 현재/미래 달 가격 재계산 시작...');
+      
+      // 현재 년월 계산 (이번 달 1일 00:00)
+      const now = new Date();
+      const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const currentMonthStr = currentMonth.toISOString();
+      
+      // 현재/미래 달 이벤트 가져오기
+      const { data: futureEvents, error: fetchError } = await supabase
+        .from('booking_events')
+        .select('*')
+        .gte('start_time', currentMonthStr)
+        .order('start_time', { ascending: true });
+      
+      if (fetchError) {
+        console.error('조회 오류:', fetchError);
+        return;
+      }
+      
+      if (!futureEvents || futureEvents.length === 0) {
+        console.log('재계산할 현재/미래 달 이벤트 없음');
+        priceRecalculated = true;
+        return;
+      }
+      
+      console.log(`📋 ${futureEvents.length}개 현재/미래 달 이벤트 재계산 중...`);
+      
+      // 가격 재계산 (기존 calculatePrice 함수 사용)
+      const updates = futureEvents.map(event => {
+        const { price, priceType, isNaver } = calculatePrice(
+          event.start_time,
+          event.end_time,
+          event.room_id,
+          event.description
+        );
+        
+        return {
+          ...event,
+          price,
+          price_type: priceType,
+          is_naver: isNaver
+        };
+      });
+      
+      // 배치 업데이트 (500개씩)
+      const batchSize = 500;
+      for (let i = 0; i < updates.length; i += batchSize) {
+        const batch = updates.slice(i, i + batchSize);
+        const { error: upsertError } = await supabase
+          .from('booking_events')
+          .upsert(batch, { onConflict: 'id', ignoreDuplicates: false });
+        
+        if (upsertError) {
+          console.error('업데이트 오류:', upsertError);
+        }
+      }
+      
+      priceRecalculated = true;
+      console.log(`✅ ${updates.length}개 현재/미래 달 가격 재계산 및 DB 업데이트 완료`);
     }
     
     async function testPricing() {
