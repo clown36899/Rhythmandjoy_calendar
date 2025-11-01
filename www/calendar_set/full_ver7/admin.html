@@ -95,6 +95,7 @@
     </div>
   </div>
 
+  <script src="env.js"></script>
   <script>
     let authToken = localStorage.getItem('adminToken');
 
@@ -107,7 +108,7 @@
       window.location.href = 'index.html';
     }
 
-    async function login() {
+    function login() {
       const password = document.getElementById('password').value;
       const errorDiv = document.getElementById('loginError');
 
@@ -117,76 +118,36 @@
         return;
       }
 
-      try {
-        const response = await fetch('/api/admin/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password })
-        });
+      // 개발 환경: 환경 변수에서 비밀번호 확인
+      const correctPassword = window.ENV?.ADMIN_PASSWORD;
+      
+      if (!correctPassword) {
+        errorDiv.textContent = '관리자 비밀번호가 설정되지 않았습니다';
+        errorDiv.style.display = 'block';
+        return;
+      }
 
-        const data = await response.json();
-
-        if (response.ok) {
-          authToken = data.token;
-          localStorage.setItem('adminToken', authToken);
-          showAdminSection();
-        } else {
-          errorDiv.textContent = data.error || '로그인 실패';
-          errorDiv.style.display = 'block';
-        }
-      } catch (error) {
-        errorDiv.textContent = '서버 연결 실패';
+      if (password === correctPassword) {
+        authToken = 'dev-token-' + Date.now();
+        localStorage.setItem('adminToken', authToken);
+        showAdminSection();
+      } else {
+        errorDiv.textContent = '비밀번호가 틀렸습니다';
         errorDiv.style.display = 'block';
       }
     }
 
-    async function logout() {
-      try {
-        await fetch('/api/admin/logout', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-      } catch (error) {
-        console.error('로그아웃 오류:', error);
-      }
-
+    function logout() {
       localStorage.removeItem('adminToken');
       authToken = null;
       showLoginSection();
     }
 
-    async function resetSync() {
+    function resetSync() {
       const messageDiv = document.getElementById('adminMessage');
-      messageDiv.textContent = '⏳ 리셋 중... 잠시만 기다려주세요';
-      messageDiv.className = 'alert alert-info mt-3';
+      messageDiv.textContent = '⚠️ 수동 리셋은 프로덕션 환경(Netlify)에서만 사용 가능합니다';
+      messageDiv.className = 'alert alert-warning mt-3';
       messageDiv.style.display = 'block';
-
-      try {
-        const response = await fetch('/api/reset-sync', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-          messageDiv.textContent = '✅ ' + data.message;
-          messageDiv.className = 'alert alert-success mt-3';
-        } else {
-          if (response.status === 401) {
-            messageDiv.textContent = '❌ 인증 만료됨. 다시 로그인해주세요';
-            localStorage.removeItem('adminToken');
-            authToken = null;
-            setTimeout(() => showLoginSection(), 2000);
-          } else {
-            messageDiv.textContent = '❌ ' + (data.error || '리셋 실패');
-          }
-          messageDiv.className = 'alert alert-danger mt-3';
-        }
-      } catch (error) {
-        messageDiv.textContent = '❌ 서버 연결 실패';
-        messageDiv.className = 'alert alert-danger mt-3';
-      }
     }
 
     function showLoginSection() {
