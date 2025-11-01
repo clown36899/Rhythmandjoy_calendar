@@ -415,14 +415,14 @@
 
     // Supabase에서 직접 통계 계산 (Replit용)
     async function calculateStatsFromSupabase(year) {
-      console.log('✅ Supabase 통계 계산 시작 - 전체 데이터');
+      console.log(`✅ Supabase 통계 계산 시작 - ${year}년 데이터`);
       console.log('Supabase 객체:', supabase);
       
       if (!supabase) {
         throw new Error('Supabase 클라이언트가 초기화되지 않았습니다');
       }
       
-      // 🔥 전체 이벤트 데이터 가져오기 (연도 제한 없음, limit 없음)
+      // 해당 연도 이벤트만 가져오기
       let allEvents = [];
       let from = 0;
       const batchSize = 1000;
@@ -431,6 +431,8 @@
         const { data: batch, error } = await supabase
           .from('booking_events')
           .select('*')
+          .gte('start_time', `${year}-01-01T00:00:00Z`)
+          .lt('start_time', `${parseInt(year) + 1}-01-01T00:00:00Z`)
           .order('start_time', { ascending: true })
           .range(from, from + batchSize - 1);
         
