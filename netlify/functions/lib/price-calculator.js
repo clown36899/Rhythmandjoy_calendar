@@ -1,5 +1,5 @@
-// 방별 가격 정보
-const ROOM_PRICES = {
+// 기본 가격 정보 (fallback용)
+const DEFAULT_ROOM_PRICES = {
   a: { before16: 10000, after16: 13000, overnight: 30000 },
   b: { before16: 9000, after16: 11000, overnight: 20000 },
   c: { before16: 4000, after16: 6000, overnight: 15000 },
@@ -67,10 +67,13 @@ function isNaverBooking(description) {
 }
 
 // 가격 계산 메인 함수
-function calculatePrice(startTime, endTime, roomId, description = '') {
+function calculatePrice(startTime, endTime, roomId, description = '', roomPrices = null) {
   const start = new Date(startTime);
   const end = new Date(endTime);
-  const prices = ROOM_PRICES[roomId];
+  
+  // roomPrices 파라미터가 없으면 기본값 사용
+  const allPrices = roomPrices || DEFAULT_ROOM_PRICES;
+  const prices = allPrices[roomId];
   
   if (!prices) {
     console.error(`Unknown room: ${roomId}`);
@@ -157,7 +160,7 @@ function calculatePrice(startTime, endTime, roomId, description = '') {
 
 module.exports = {
   calculatePrice,
-  ROOM_PRICES,
+  DEFAULT_ROOM_PRICES,
   isWeekendOrHoliday,
   isNaverBooking
 };

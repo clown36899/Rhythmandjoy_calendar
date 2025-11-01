@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import { calculatePrice } from './lib/price-calculator.js';
+import { getPricePolicyForDate } from './lib/price-policy-service.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -6,30 +8,57 @@ const supabase = createClient(
 );
 
 /**
+ * 이벤트의 가격을 가져옴 (이번 달 이후는 재계산, 이전 달은 DB 값 사용)
+ */
+async function getEventPrice(event) {
+  const now = new Date();
+  const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const eventYearMonth = event.start_time.substring(0, 7); // 'YYYY-MM'
+  
+  // 이번 달 이후는 실시간 재계산
+  if (eventYearMonth >= currentYearMonth) {
+    const roomPrices = await getPricePolicyForDate(supabase, event.start_time);
+    const { price } = calculatePrice(
+      event.start_time,
+      event.end_time,
+      event.room_id,
+      event.description || '',
+      roomPrices
+    );
+    return price;
+  }
+  
+  // 이전 달은 DB 저장된 값 사용
+  return event.price || 0;
+}
+
+/**
  * 연도별 총 매출 요약
  */
 async function getYearlySummary(year) {
   const { data, error } = await supabase
     .from('booking_events')
-    .select('price, room_id, price_type')
+    .select('price, room_id, price_type, start_time, end_time, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
-    .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
-    .not('price', 'is', null);
+    .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
 
   if (error) throw error;
 
-  const totalRevenue = data.reduce((sum, event) => sum + (event.price || 0), 0);
+  let totalRevenue = 0;
   const totalBookings = data.length;
 
   // 방별 예약 수 집계
   const roomStats = {};
-  data.forEach(event => {
+  for (const event of data) {
+    const price = await getEventPrice(event);
+    totalRevenue += price;
+    
     if (!roomStats[event.room_id]) {
       roomStats[event.room_id] = { count: 0, revenue: 0 };
     }
     roomStats[event.room_id].count++;
-    roomStats[event.room_id].revenue += event.price || 0;
-  });
+    roomStats[event.room_id].revenue += price;
+  }
 
   // 최다 예약 방 찾기
   const topRoom = Object.entries(roomStats)
@@ -55,10 +84,9 @@ async function getYearlySummary(year) {
 async function getMonthlyStats(year) {
   const { data, error } = await supabase
     .from('booking_events')
-    .select('price, start_time, room_id')
+    .select('price, start_time, end_time, room_id, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
-    .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
-    .not('price', 'is', null);
+    .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
 
   if (error) throw error;
 
@@ -70,12 +98,13 @@ async function getMonthlyStats(year) {
     byRoom: { a: 0, b: 0, c: 0, d: 0, e: 0 }
   }));
 
-  data.forEach(event => {
+  for (const event of data) {
+    const price = await getEventPrice(event);
     const month = new Date(event.start_time).getMonth(); // 0-11
-    monthlyData[month].revenue += event.price || 0;
+    monthlyData[month].revenue += price;
     monthlyData[month].bookings += 1;
-    monthlyData[month].byRoom[event.room_id] += event.price || 0;
-  });
+    monthlyData[month].byRoom[event.room_id] += price;
+  }
 
   return monthlyData;
 }
@@ -86,26 +115,27 @@ async function getMonthlyStats(year) {
 async function getRoomStats(year) {
   const { data, error } = await supabase
     .from('booking_events')
-    .select('price, room_id, price_type')
+    .select('price, room_id, price_type, start_time, end_time, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
-    .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
-    .not('price', 'is', null);
+    .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
 
   if (error) throw error;
 
   const rooms = ['a', 'b', 'c', 'd', 'e'];
   const roomStats = {};
 
-  rooms.forEach(roomId => {
+  for (const roomId of rooms) {
     const roomEvents = data.filter(e => e.room_id === roomId);
-    const totalRevenue = roomEvents.reduce((sum, e) => sum + (e.price || 0), 0);
+    let totalRevenue = 0;
     
     // 가격 타입별 집계
     const byPriceType = {};
-    roomEvents.forEach(e => {
+    for (const e of roomEvents) {
+      const price = await getEventPrice(e);
+      totalRevenue += price;
       const type = e.price_type || '일반';
-      byPriceType[type] = (byPriceType[type] || 0) + (e.price || 0);
-    });
+      byPriceType[type] = (byPriceType[type] || 0) + price;
+    }
 
     roomStats[roomId] = {
       name: `${roomId.toUpperCase()}홀`,
@@ -114,7 +144,7 @@ async function getRoomStats(year) {
       averagePrice: roomEvents.length > 0 ? Math.round(totalRevenue / roomEvents.length) : 0,
       byPriceType
     };
-  });
+  }
 
   return roomStats;
 }
@@ -129,10 +159,9 @@ async function getDailyStats(year, month) {
 
   const { data, error } = await supabase
     .from('booking_events')
-    .select('price, start_time, room_id')
+    .select('price, start_time, end_time, room_id, description')
     .gte('start_time', startDate.toISOString())
-    .lt('start_time', new Date(year, month, 1).toISOString())
-    .not('price', 'is', null);
+    .lt('start_time', new Date(year, month, 1).toISOString());
 
   if (error) throw error;
 
@@ -144,12 +173,13 @@ async function getDailyStats(year, month) {
     byRoom: { a: 0, b: 0, c: 0, d: 0, e: 0 }
   }));
 
-  data.forEach(event => {
+  for (const event of data) {
+    const price = await getEventPrice(event);
     const day = new Date(event.start_time).getDate();
-    dailyData[day - 1].revenue += event.price || 0;
+    dailyData[day - 1].revenue += price;
     dailyData[day - 1].bookings += 1;
-    dailyData[day - 1].byRoom[event.room_id] += event.price || 0;
-  });
+    dailyData[day - 1].byRoom[event.room_id] += price;
+  }
 
   return dailyData;
 }
@@ -160,10 +190,9 @@ async function getDailyStats(year, month) {
 async function getWeeklyStats(year) {
   const { data, error } = await supabase
     .from('booking_events')
-    .select('price, start_time, room_id')
+    .select('price, start_time, end_time, room_id, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
-    .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
-    .not('price', 'is', null);
+    .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
 
   if (error) throw error;
 
@@ -178,7 +207,8 @@ async function getWeeklyStats(year) {
 
   const weeklyData = {};
 
-  data.forEach(event => {
+  for (const event of data) {
+    const price = await getEventPrice(event);
     const week = getISOWeek(event.start_time);
     if (!weeklyData[week]) {
       weeklyData[week] = {
@@ -188,10 +218,10 @@ async function getWeeklyStats(year) {
         byRoom: { a: 0, b: 0, c: 0, d: 0, e: 0 }
       };
     }
-    weeklyData[week].revenue += event.price || 0;
+    weeklyData[week].revenue += price;
     weeklyData[week].bookings += 1;
-    weeklyData[week].byRoom[event.room_id] += event.price || 0;
-  });
+    weeklyData[week].byRoom[event.room_id] += price;
+  }
 
   return Object.values(weeklyData).sort((a, b) => a.week - b.week);
 }
