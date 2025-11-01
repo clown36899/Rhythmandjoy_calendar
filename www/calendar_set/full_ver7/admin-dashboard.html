@@ -869,7 +869,10 @@
         return;
       }
       
-      let html = `<h5>${roomName} 최근 20개 이벤트 검증</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>제목</th><th>시작시간</th><th>DB 가격</th><th>재계산</th><th>상태</th></tr></thead><tbody>`;
+      // 디버깅: 콘솔에 데이터 출력
+      console.log(`${roomName} 이벤트 ${events.length}개:`, events);
+      
+      let html = `<h5>${roomName} 최근 20개 이벤트 검증</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>제목</th><th>UTC 시작</th><th>KST 시작</th><th>시간</th><th>DB 가격</th><th>재계산</th><th>상태</th></tr></thead><tbody>`;
       let wrongCount = 0;
       
       events.forEach(event => {
@@ -879,12 +882,18 @@
         
         if (!match) wrongCount++;
         
-        const startKst = new Date(new Date(event.start_time).getTime() + 9 * 60 * 60 * 1000);
+        const startUtc = new Date(event.start_time);
+        const endUtc = new Date(event.end_time);
+        const startKst = new Date(startUtc.getTime() + 9 * 60 * 60 * 1000);
+        const endKst = new Date(endUtc.getTime() + 9 * 60 * 60 * 1000);
+        const duration = (endUtc - startUtc) / (1000 * 60 * 60);
         
         html += `
           <tr style="background: ${match ? '#e8f5e9' : '#ffebee'}">
-            <td style="font-size: 0.9em;">${event.title}</td>
+            <td style="font-size: 0.85em;">${event.title}</td>
+            <td style="font-size: 0.75em; color: #999;">${startUtc.toISOString().slice(5, 16).replace('T', ' ')}</td>
             <td style="font-size: 0.9em;">${startKst.toISOString().slice(5, 16).replace('T', ' ')}</td>
+            <td style="font-size: 0.85em;">${duration}h</td>
             <td>${(stored || 0).toLocaleString()}원</td>
             <td><strong>${calculated.price.toLocaleString()}원</strong></td>
             <td>${match ? '✅' : '❌'}</td>
