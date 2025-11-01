@@ -355,26 +355,42 @@
 
     // Supabase에서 직접 통계 계산 (Replit용)
     async function calculateStatsFromSupabase(year) {
-      console.log('✅ Supabase 통계 계산 시작:', year);
+      console.log('✅ Supabase 통계 계산 시작 - 전체 데이터');
       console.log('Supabase 객체:', supabase);
       
       if (!supabase) {
         throw new Error('Supabase 클라이언트가 초기화되지 않았습니다');
       }
       
-      // 해당 연도 데이터 가져오기
-      const { data: events, error } = await supabase
-        .from('booking_events')
-        .select('*')
-        .gte('start_time', `${year}-01-01`)
-        .lt('start_time', `${parseInt(year) + 1}-01-01`);
-
-      if (error) {
-        console.error('Supabase 쿼리 오류:', error);
-        throw error;
+      // 🔥 전체 이벤트 데이터 가져오기 (연도 제한 없음, limit 없음)
+      let allEvents = [];
+      let from = 0;
+      const batchSize = 1000;
+      
+      while (true) {
+        const { data: batch, error } = await supabase
+          .from('booking_events')
+          .select('*')
+          .order('start_time', { ascending: true })
+          .range(from, from + batchSize - 1);
+        
+        if (error) {
+          console.error('Supabase 쿼리 오류:', error);
+          throw error;
+        }
+        
+        if (!batch || batch.length === 0) break;
+        
+        allEvents = allEvents.concat(batch);
+        console.log(`📥 ${allEvents.length}개 이벤트 로드 중...`);
+        
+        if (batch.length < batchSize) break; // 마지막 배치
+        from += batchSize;
       }
       
-      console.log(`✅ ${events.length}개 이벤트 로드 완료`);
+      const events = allEvents;
+      
+      console.log(`✅ 전체 ${events.length}개 이벤트 로드 완료`);
 
       if (!events || events.length === 0) {
         console.warn('⚠️ 이벤트 데이터가 없습니다');
