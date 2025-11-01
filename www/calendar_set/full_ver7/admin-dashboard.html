@@ -233,27 +233,20 @@
         </div>
       </div>
 
-      <!-- 방별 연간 매출 테이블 -->
+      <!-- 방별 월간 매출 테이블 -->
       <div class="table-container">
         <div class="chart-title">📋 방별 월간 매출 비교 (A~E홀)</div>
         <div class="table-responsive">
           <table class="table table-hover">
             <thead>
               <tr>
-                <th>방</th>
-                <th class="text-end">1월</th>
-                <th class="text-end">2월</th>
-                <th class="text-end">3월</th>
-                <th class="text-end">4월</th>
-                <th class="text-end">5월</th>
-                <th class="text-end">6월</th>
-                <th class="text-end">7월</th>
-                <th class="text-end">8월</th>
-                <th class="text-end">9월</th>
-                <th class="text-end">10월</th>
-                <th class="text-end">11월</th>
-                <th class="text-end">12월</th>
-                <th class="text-end"><strong>연간 합계</strong></th>
+                <th>월</th>
+                <th class="text-end">A홀</th>
+                <th class="text-end">B홀</th>
+                <th class="text-end">C홀</th>
+                <th class="text-end">D홀</th>
+                <th class="text-end">E홀</th>
+                <th class="text-end"><strong>월별 합계</strong></th>
               </tr>
             </thead>
             <tbody id="monthlyTableBody">
@@ -557,47 +550,47 @@
       tbody.innerHTML = '';
 
       const rooms = ['a', 'b', 'c', 'd', 'e'];
-      const roomNames = { a: 'A홀', b: 'B홀', c: 'C홀', d: 'D홀', e: 'E홀' };
-
-      // 각 방별로 행 생성
-      rooms.forEach(roomId => {
-        let yearTotal = 0;
+      
+      // 각 월별로 행 생성
+      for (let month = 1; month <= 12; month++) {
+        const monthData = data.find(m => m.month === month);
         const cells = [];
+        let monthTotal = 0;
 
-        // 1월~12월 매출 계산
-        for (let month = 1; month <= 12; month++) {
-          const monthData = data.find(m => m.month === month);
+        // 각 방별 매출
+        rooms.forEach(roomId => {
           const revenue = monthData?.byRoom?.[roomId] || 0;
-          yearTotal += revenue;
-          
+          monthTotal += revenue;
           cells.push(`<td class="text-end">${formatNumber(revenue)}</td>`);
-        }
+        });
 
         const row = `
           <tr>
-            <td><strong>${roomNames[roomId]}</strong></td>
+            <td><strong>${month}월</strong></td>
             ${cells.join('')}
-            <td class="text-end"><strong>${formatNumber(yearTotal)}원</strong></td>
+            <td class="text-end"><strong>${formatNumber(monthTotal)}원</strong></td>
           </tr>
         `;
         tbody.innerHTML += row;
-      });
-
-      // 월별 합계 행 추가
-      let grandTotal = 0;
-      const monthTotals = [];
-      
-      for (let month = 1; month <= 12; month++) {
-        const monthData = data.find(m => m.month === month);
-        const total = monthData?.revenue || 0;
-        grandTotal += total;
-        monthTotals.push(`<td class="text-end"><strong>${formatNumber(total)}원</strong></td>`);
       }
+
+      // 방별 합계 행 추가
+      const roomTotals = [];
+      let grandTotal = 0;
+      
+      rooms.forEach(roomId => {
+        let total = 0;
+        data.forEach(monthData => {
+          total += monthData?.byRoom?.[roomId] || 0;
+        });
+        grandTotal += total;
+        roomTotals.push(`<td class="text-end"><strong>${formatNumber(total)}원</strong></td>`);
+      });
 
       const totalRow = `
         <tr style="background: #f8f9fa; font-weight: bold;">
-          <td><strong>월별 합계</strong></td>
-          ${monthTotals.join('')}
+          <td><strong>방별 합계</strong></td>
+          ${roomTotals.join('')}
           <td class="text-end" style="background: #e3e8ee;"><strong>${formatNumber(grandTotal)}원</strong></td>
         </tr>
       `;
