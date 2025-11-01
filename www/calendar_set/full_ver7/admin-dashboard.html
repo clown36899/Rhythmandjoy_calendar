@@ -1079,45 +1079,50 @@
         headerToolbar: {
           left: 'prev,next today',
           center: 'title',
-          right: 'dayGridMonth,timeGridWeek'
+          right: 'dayGridMonth'
         },
-        events: events,
-        dayCellDidMount: function(info) {
-          // 날짜 셀에 일일 매출 표시
+        // 개별 이벤트 숨기기
+        displayEventTime: false,
+        displayEventEnd: false,
+        eventDisplay: 'none',
+        dayCellContent: function(info) {
+          // 날짜 번호 표시
+          const dateNumber = info.dayNumberText.replace('일', '');
           const dateStr = info.date.toISOString().substring(0, 10);
           const revenue = dailyRevenue[dateStr] || 0;
           
+          const content = document.createElement('div');
+          content.style.cssText = 'padding: 5px; height: 100%;';
+          
+          // 날짜 번호
+          const dateDiv = document.createElement('div');
+          dateDiv.style.cssText = 'font-weight: bold; font-size: 14px; margin-bottom: 5px;';
+          dateDiv.textContent = dateNumber;
+          content.appendChild(dateDiv);
+          
+          // 일일 매출 표시
           if (revenue > 0) {
             const revenueDiv = document.createElement('div');
             revenueDiv.style.cssText = `
-              font-size: 11px;
+              font-size: 16px;
               color: #e74c3c;
               font-weight: bold;
-              margin-top: 2px;
-              text-align: center;
+              margin-top: 10px;
             `;
-            revenueDiv.innerHTML = `${(revenue / 10000).toFixed(1)}만원`;
-            info.el.appendChild(revenueDiv);
+            revenueDiv.innerHTML = `${revenue.toLocaleString()}원`;
+            content.appendChild(revenueDiv);
+            
+            // 예약 건수 표시
+            const dateEvents = allEvents.filter(e => e.start_time.substring(0, 10) === dateStr);
+            if (dateEvents.length > 0) {
+              const countDiv = document.createElement('div');
+              countDiv.style.cssText = 'font-size: 11px; color: #888; margin-top: 3px;';
+              countDiv.textContent = `${dateEvents.length}건`;
+              content.appendChild(countDiv);
+            }
           }
-        },
-        eventDidMount: function(info) {
-          const price = info.event.extendedProps.price || 0;
-          const priceEl = document.createElement('div');
-          priceEl.className = 'event-price';
-          priceEl.innerHTML = `${price.toLocaleString()}원`;
-          info.el.querySelector('.fc-event-title').appendChild(priceEl);
-        },
-        eventClick: function(info) {
-          const props = info.event.extendedProps;
-          alert(`
-이벤트: ${info.event.title}
-시작: ${info.event.start.toLocaleString('ko-KR')}
-종료: ${info.event.end.toLocaleString('ko-KR')}
-가격: ${(props.price || 0).toLocaleString()}원
-가격타입: ${props.priceType || '-'}
-네이버예약: ${props.isNaver ? '예' : '아니오'}
-Google Event ID: ${props.googleEventId}
-          `);
+          
+          return { domNodes: [content] };
         }
       });
 
