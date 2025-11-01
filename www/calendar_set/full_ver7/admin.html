@@ -197,9 +197,8 @@
     }
 
     function showAdminSection() {
-      document.getElementById('loginSection').style.display = 'none';
-      document.getElementById('adminSection').style.display = 'block';
-      document.getElementById('adminMessage').style.display = 'none';
+      // 로그인 성공 → 대시보드로 이동
+      window.location.href = 'admin-dashboard.html';
     }
 
     // Enter 키로 로그인
