@@ -355,6 +355,50 @@
       return num.toLocaleString('ko-KR');
     }
 
+    // 현재/미래 달 가격 재계산 (로그인 시 1회만 실행)
+    let priceRecalculated = false;
+    
+    async function recalculateFuturePrices() {
+      if (priceRecalculated || !IS_REPLIT || !supabase) return;
+      
+      console.log('🔄 현재/미래 달 가격 재계산 시작...');
+      
+      // 현재 년월 계산 (이번 달 1일 00:00)
+      const now = new Date();
+      const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const currentMonthStr = currentMonth.toISOString();
+      
+      // 현재 달 이후 DB 데이터 삭제
+      const { error: deleteError, count } = await supabase
+        .from('booking_events')
+        .delete()
+        .gte('start_time', currentMonthStr);
+      
+      if (deleteError) {
+        console.error('삭제 오류:', deleteError);
+      } else {
+        console.log(`✅ ${count || 0}개 현재/미래 달 데이터 삭제 완료`);
+      }
+      
+      // sync-calendar 호출하여 최신 데이터 동기화 (가격 재계산 포함)
+      try {
+        const response = await fetch('/.netlify/functions/sync-calendar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ Google Calendar 동기화 완료:', result);
+        }
+      } catch (error) {
+        console.error('동기화 오류:', error);
+      }
+      
+      priceRecalculated = true;
+      console.log('✅ 현재/미래 달 가격 재계산 완료');
+    }
+
     // 대시보드 로드
     async function loadDashboard() {
       const year = document.getElementById('yearSelect').value;
@@ -363,6 +407,9 @@
       document.getElementById('dashboardContent').style.display = 'none';
 
       try {
+        // 첫 로드 시 현재/미래 달 가격 재계산
+        await recalculateFuturePrices();
+        
         let summary, monthly, room, hourly;
 
         if (IS_REPLIT) {
@@ -404,6 +451,21 @@
 
         document.getElementById('loadingSpinner').style.display = 'none';
         document.getElementById('dashboardContent').style.display = 'block';
+        
+        // DB에는 과거 달만 유지 (현재/미래 달 다시 삭제)
+        if (IS_REPLIT && supabase && priceRecalculated) {
+          const now = new Date();
+          const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+          const currentMonthStr = currentMonth.toISOString();
+          
+          // 현재 달 이후 삭제 (DB에는 과거만 저장)
+          await supabase
+            .from('booking_events')
+            .delete()
+            .gte('start_time', currentMonthStr);
+          
+          console.log('✅ DB에 과거 달 데이터만 유지 (현재/미래 삭제 완료)');
+        }
 
       } catch (error) {
         console.error('데이터 로드 오류:', error);
