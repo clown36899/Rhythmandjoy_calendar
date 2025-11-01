@@ -64,15 +64,24 @@ async function syncRoomCalendar(room) {
       // 가격 정보 파싱
       const { price, priceType } = parsePriceFromEvent(
         event.summary,
-        event.description
+        event.description,
+        event.start.dateTime
       );
 
       // 가격이 없으면 시간 기반으로 추정
-      const finalPrice = price || estimateDefaultPrice(
-        event.start.dateTime,
-        event.end.dateTime,
-        room.id
-      );
+      let finalPrice = price;
+      let finalPriceType = priceType;
+      
+      if (!finalPrice) {
+        const estimated = estimateDefaultPrice(
+          event.start.dateTime,
+          event.end.dateTime,
+          room.id
+        );
+        finalPrice = estimated.price;
+        // priceType이 null이면 추정된 타입 사용
+        finalPriceType = finalPriceType || estimated.priceType;
+      }
 
       eventsToUpsert.push({
         room_id: room.id,
@@ -82,7 +91,7 @@ async function syncRoomCalendar(room) {
         end_time: event.end.dateTime,
         description: event.description || null,
         price: finalPrice,
-        price_type: priceType,
+        price_type: finalPriceType,
         updated_at: new Date().toISOString()
       });
     }

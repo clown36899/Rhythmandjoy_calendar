@@ -93,15 +93,24 @@ async function incrementalSync(roomId, calendarId, syncToken) {
         // 가격 정보 파싱
         const { price, priceType } = parsePriceFromEvent(
           event.summary,
-          event.description
+          event.description,
+          startTime
         );
 
         // 가격이 없으면 시간 기반으로 추정
-        const finalPrice = price || estimateDefaultPrice(
-          startTime,
-          endTime,
-          roomId
-        );
+        let finalPrice = price;
+        let finalPriceType = priceType;
+        
+        if (!finalPrice) {
+          const estimated = estimateDefaultPrice(
+            startTime,
+            endTime,
+            roomId
+          );
+          finalPrice = estimated.price;
+          // priceType이 null이면 추정된 타입 사용
+          finalPriceType = finalPriceType || estimated.priceType;
+        }
 
         await supabase
           .from('booking_events')
@@ -113,11 +122,11 @@ async function incrementalSync(roomId, calendarId, syncToken) {
             start_time: startTime,
             end_time: endTime,
             price: finalPrice,
-            price_type: priceType
+            price_type: finalPriceType
           }, {
             onConflict: 'google_event_id'
           });
-        console.log(`  ✅ 업데이트: ${event.summary || event.id} (${finalPrice}원)`);
+        console.log(`  ✅ 업데이트: ${event.summary || event.id} (${finalPrice}원, ${finalPriceType})`);
       }
     }
 

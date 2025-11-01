@@ -149,7 +149,61 @@ Preferred communication style: Simple, everyday language.
 
 ---
 
-## Recent Changes (2025-10-28)
+## Recent Changes
+
+### 2025-11-01 - 관리자 통계 대시보드 구축 ✅
+
+**관리자 매출 통계 시스템 완성**
+
+**새로운 기능:**
+- ✅ 가격 정보 자동 파싱 (Google Calendar 이벤트에서 금액 추출)
+- ✅ 종합 통계 대시보드 (`/admin-dashboard`)
+  - 연/월/주/일별 매출 통계
+  - 방별 매출 비교 (A/B/C/D/E홀)
+  - 시간대별 예약 현황
+  - Chart.js 그래프 시각화
+- ✅ 월별 매출 한눈에 비교 (1-12월 테이블)
+- ✅ 실시간 통계 집계 API (`/admin-stats`)
+
+**데이터베이스 스키마 업데이트:**
+```sql
+ALTER TABLE booking_events ADD COLUMN price INTEGER;  -- 가격 (원)
+ALTER TABLE booking_events ADD COLUMN price_type TEXT;  -- 가격 타입
+CREATE TABLE admin_users;  -- 관리자 계정
+```
+
+**통계 API 엔드포인트:**
+- `GET /admin-stats?type=summary&year=2025` - 연도 전체 요약
+- `GET /admin-stats?type=monthly&year=2025` - 월별 통계 (1-12월)
+- `GET /admin-stats?type=room&year=2025` - 방별 통계
+- `GET /admin-stats?type=daily&year=2025&month=1` - 일별 통계
+- `GET /admin-stats?type=weekly&year=2025` - 주별 통계
+- `GET /admin-stats?type=hourly&year=2025` - 시간대별 통계
+
+**가격 파싱 로직:**
+- Google Calendar 이벤트 `title`/`description`에서 정규식으로 금액 추출
+  - 예: "A홀 - 30,000원" → `price: 30000`
+- 금액이 없으면 시간대별 기본 요금으로 자동 추정
+  - 새벽 (00-06시): 15,000원/시간
+  - 오전~오후4시 (06-16시): 20,000원/시간
+  - 저녁 (16-22시): 25,000원/시간
+  - 심야 (22-24시): 30,000원/시간
+
+**관리자 접근:**
+1. 메인 페이지 → 톱니바퀴 아이콘 ⚙️ (시간 표시 옆)
+2. `/admin` 로그인 (비밀번호: 환경 변수 `ADMIN_PASSWORD`)
+3. 자동으로 `/admin-dashboard` 이동
+
+**파일 구조:**
+- `netlify/functions/admin-stats.js` - 통계 API
+- `netlify/functions/lib/price-parser.js` - 가격 파싱 로직
+- `www/calendar_set/full_ver7/admin-dashboard.html` - 대시보드 UI
+- `supabase/migrations/add_price_columns.sql` - 가격 컬럼 마이그레이션
+- `supabase/migrations/create_admin_users.sql` - 관리자 계정 테이블
+
+---
+
+### 2025-10-28 (이전 작업)
 
 **🎉 실시간 증분 동기화 시스템 완성 (v2.0)**
 
