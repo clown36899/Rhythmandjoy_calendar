@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { getCalendarClient } from './lib/google-auth.js';
+import { parsePriceFromEvent, estimateDefaultPrice } from './lib/price-parser.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -89,6 +90,19 @@ async function incrementalSync(roomId, calendarId, syncToken) {
         const startTime = event.start.dateTime || event.start.date;
         const endTime = event.end.dateTime || event.end.date;
 
+        // 가격 정보 파싱
+        const { price, priceType } = parsePriceFromEvent(
+          event.summary,
+          event.description
+        );
+
+        // 가격이 없으면 시간 기반으로 추정
+        const finalPrice = price || estimateDefaultPrice(
+          startTime,
+          endTime,
+          roomId
+        );
+
         await supabase
           .from('booking_events')
           .upsert({
@@ -97,11 +111,13 @@ async function incrementalSync(roomId, calendarId, syncToken) {
             title: event.summary || '예약',
             description: event.description || '',
             start_time: startTime,
-            end_time: endTime
+            end_time: endTime,
+            price: finalPrice,
+            price_type: priceType
           }, {
             onConflict: 'google_event_id'
           });
-        console.log(`  ✅ 업데이트: ${event.summary || event.id}`);
+        console.log(`  ✅ 업데이트: ${event.summary || event.id} (${finalPrice}원)`);
       }
     }
 

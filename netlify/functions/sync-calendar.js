@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
+import { parsePriceFromEvent, estimateDefaultPrice } from './lib/price-parser.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -60,6 +61,19 @@ async function syncRoomCalendar(room) {
     for (const event of allEvents) {
       if (!event.start || !event.start.dateTime) continue;
 
+      // 가격 정보 파싱
+      const { price, priceType } = parsePriceFromEvent(
+        event.summary,
+        event.description
+      );
+
+      // 가격이 없으면 시간 기반으로 추정
+      const finalPrice = price || estimateDefaultPrice(
+        event.start.dateTime,
+        event.end.dateTime,
+        room.id
+      );
+
       eventsToUpsert.push({
         room_id: room.id,
         google_event_id: event.id,
@@ -67,6 +81,8 @@ async function syncRoomCalendar(room) {
         start_time: event.start.dateTime,
         end_time: event.end.dateTime,
         description: event.description || null,
+        price: finalPrice,
+        price_type: priceType,
         updated_at: new Date().toISOString()
       });
     }

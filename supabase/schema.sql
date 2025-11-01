@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS booking_events (
   start_time TIMESTAMPTZ NOT NULL,
   end_time TIMESTAMPTZ NOT NULL,
   description TEXT,
+  price INTEGER,  -- 가격 (원 단위)
+  price_type TEXT,  -- 가격 타입 (일반/심야/새벽/할인 등)
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
