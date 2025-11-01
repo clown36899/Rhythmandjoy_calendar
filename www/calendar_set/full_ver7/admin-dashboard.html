@@ -300,8 +300,16 @@
       <div class="chart-container">
         <div class="chart-title">🔧 가격 재계산 도구</div>
         <p style="color: #8898aa; font-size: 14px;">DB에 저장된 가격과 재계산한 가격을 비교하고 수정할 수 있습니다.</p>
-        <div class="d-flex gap-2 mb-3">
-          <button class="btn btn-primary" onclick="testPricing()">가격 검증 (D홀 최근 20개)</button>
+        <div class="d-flex gap-2 mb-3 align-items-center">
+          <label class="mb-0">검증할 방:</label>
+          <select id="roomSelect" class="form-select" style="width: 120px;">
+            <option value="a">A홀</option>
+            <option value="b">B홀</option>
+            <option value="c">C홀</option>
+            <option value="d" selected>D홀</option>
+            <option value="e">E홀</option>
+          </select>
+          <button class="btn btn-primary" onclick="testPricing()">가격 검증 (최근 20개)</button>
           <button class="btn btn-warning" onclick="fixAllPrices()">⚠️ 전체 가격 재계산 및 수정</button>
         </div>
         <div id="priceTestResults"></div>
@@ -846,10 +854,13 @@
       const results = document.getElementById('priceTestResults');
       results.innerHTML = '<p>로딩 중...</p>';
       
+      const roomId = document.getElementById('roomSelect').value;
+      const roomName = roomId.toUpperCase() + '홀';
+      
       const { data: events, error } = await supabase
         .from('booking_events')
         .select('*')
-        .eq('room_id', 'd')
+        .eq('room_id', roomId)
         .limit(20)
         .order('start_time', { ascending: false });
       
@@ -858,7 +869,7 @@
         return;
       }
       
-      let html = '<h5>D홀 최근 20개 이벤트 검증</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>제목</th><th>시작시간</th><th>DB 가격</th><th>재계산</th><th>상태</th></tr></thead><tbody>';
+      let html = `<h5>${roomName} 최근 20개 이벤트 검증</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>제목</th><th>시작시간</th><th>DB 가격</th><th>재계산</th><th>상태</th></tr></thead><tbody>`;
       let wrongCount = 0;
       
       events.forEach(event => {
