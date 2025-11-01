@@ -551,32 +551,57 @@
       });
     }
 
-    // 월별 테이블 업데이트
+    // 방별 월간 매출 테이블 업데이트
     function updateMonthlyTable(data) {
       const tbody = document.getElementById('monthlyTableBody');
       tbody.innerHTML = '';
 
-      data.forEach(month => {
-        // 최다 매출 방 찾기
-        const topRoom = Object.entries(month.byRoom)
-          .sort((a, b) => b[1] - a[1])[0];
-        
-        const avgPrice = month.bookings > 0 ? Math.round(month.revenue / month.bookings) : 0;
+      const rooms = ['a', 'b', 'c', 'd', 'e'];
+      const roomNames = { a: 'A홀', b: 'B홀', c: 'C홀', d: 'D홀', e: 'E홀' };
+
+      // 각 방별로 행 생성
+      rooms.forEach(roomId => {
+        let yearTotal = 0;
+        const cells = [];
+
+        // 1월~12월 매출 계산
+        for (let month = 1; month <= 12; month++) {
+          const monthData = data.find(m => m.month === month);
+          const revenue = monthData?.byRoom?.[roomId] || 0;
+          yearTotal += revenue;
+          
+          cells.push(`<td class="text-end">${formatNumber(revenue)}</td>`);
+        }
 
         const row = `
           <tr>
-            <td><strong>${month.month}월</strong></td>
-            <td class="text-end">${formatNumber(month.bookings)}건</td>
-            <td class="text-end"><strong>${formatNumber(month.revenue)}원</strong></td>
-            <td class="text-end">${formatNumber(avgPrice)}원</td>
-            <td>
-              <span class="room-badge room-${topRoom[0]}">${topRoom[0].toUpperCase()}홀</span>
-              ${formatNumber(topRoom[1])}원
-            </td>
+            <td><strong>${roomNames[roomId]}</strong></td>
+            ${cells.join('')}
+            <td class="text-end"><strong>${formatNumber(yearTotal)}원</strong></td>
           </tr>
         `;
         tbody.innerHTML += row;
       });
+
+      // 월별 합계 행 추가
+      let grandTotal = 0;
+      const monthTotals = [];
+      
+      for (let month = 1; month <= 12; month++) {
+        const monthData = data.find(m => m.month === month);
+        const total = monthData?.revenue || 0;
+        grandTotal += total;
+        monthTotals.push(`<td class="text-end"><strong>${formatNumber(total)}원</strong></td>`);
+      }
+
+      const totalRow = `
+        <tr style="background: #f8f9fa; font-weight: bold;">
+          <td><strong>월별 합계</strong></td>
+          ${monthTotals.join('')}
+          <td class="text-end" style="background: #e3e8ee;"><strong>${formatNumber(grandTotal)}원</strong></td>
+        </tr>
+      `;
+      tbody.innerHTML += totalRow;
     }
 
     // 방별 매출 차트 업데이트
