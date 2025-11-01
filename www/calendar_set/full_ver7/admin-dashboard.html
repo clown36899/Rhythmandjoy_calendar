@@ -345,12 +345,21 @@
 
       } catch (error) {
         console.error('데이터 로드 오류:', error);
-        alert('데이터를 불러오는데 실패했습니다.');
+        console.error('에러 상세:', error.message, error.stack);
+        alert('데이터를 불러오는데 실패했습니다: ' + error.message);
+        document.getElementById('loadingSpinner').style.display = 'none';
       }
     }
 
     // Supabase에서 직접 통계 계산 (Replit용)
     async function calculateStatsFromSupabase(year) {
+      console.log('✅ Supabase 통계 계산 시작:', year);
+      console.log('Supabase 객체:', supabase);
+      
+      if (!supabase) {
+        throw new Error('Supabase 클라이언트가 초기화되지 않았습니다');
+      }
+      
       // 해당 연도 데이터 가져오기
       const { data: events, error } = await supabase
         .from('booking_events')
@@ -358,7 +367,12 @@
         .gte('start_time', `${year}-01-01`)
         .lt('start_time', `${parseInt(year) + 1}-01-01`);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase 쿼리 오류:', error);
+        throw error;
+      }
+      
+      console.log(`✅ ${events.length}개 이벤트 로드 완료`);
 
       // 요약 통계
       const totalRevenue = events.reduce((sum, e) => sum + (e.price || 0), 0);
