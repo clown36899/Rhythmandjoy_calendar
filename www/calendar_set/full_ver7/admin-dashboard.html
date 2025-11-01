@@ -255,11 +255,22 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="env.js"></script>
   <script>
-    const API_BASE = window.location.hostname === 'localhost' || window.location.hostname.includes('replit')
+    const IS_REPLIT = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
+    const API_BASE = IS_REPLIT
       ? 'http://localhost:8888/.netlify/functions'
       : '/.netlify/functions';
+
+    // Supabase 클라이언트 (Replit용)
+    let supabase = null;
+    if (IS_REPLIT) {
+      supabase = window.supabase.createClient(
+        window.SUPABASE_URL,
+        window.SUPABASE_ANON_KEY
+      );
+    }
 
     let monthlyChart = null;
     let roomChart = null;
@@ -290,18 +301,29 @@
       document.getElementById('dashboardContent').style.display = 'none';
 
       try {
-        // 모든 통계 데이터 병렬 로드
-        const [summaryRes, monthlyRes, roomRes, hourlyRes] = await Promise.all([
-          fetch(`${API_BASE}/admin-stats?type=summary&year=${year}`),
-          fetch(`${API_BASE}/admin-stats?type=monthly&year=${year}`),
-          fetch(`${API_BASE}/admin-stats?type=room&year=${year}`),
-          fetch(`${API_BASE}/admin-stats?type=hourly&year=${year}`)
-        ]);
+        let summary, monthly, room, hourly;
 
-        const summary = await summaryRes.json();
-        const monthly = await monthlyRes.json();
-        const room = await roomRes.json();
-        const hourly = await hourlyRes.json();
+        if (IS_REPLIT) {
+          // Replit: Supabase에서 직접 데이터 계산
+          const stats = await calculateStatsFromSupabase(year);
+          summary = { data: stats.summary };
+          monthly = { data: stats.monthly };
+          room = { data: stats.room };
+          hourly = { data: stats.hourly };
+        } else {
+          // Netlify: Functions API 호출
+          const [summaryRes, monthlyRes, roomRes, hourlyRes] = await Promise.all([
+            fetch(`${API_BASE}/admin-stats?type=summary&year=${year}`),
+            fetch(`${API_BASE}/admin-stats?type=monthly&year=${year}`),
+            fetch(`${API_BASE}/admin-stats?type=room&year=${year}`),
+            fetch(`${API_BASE}/admin-stats?type=hourly&year=${year}`)
+          ]);
+
+          summary = await summaryRes.json();
+          monthly = await monthlyRes.json();
+          room = await roomRes.json();
+          hourly = await hourlyRes.json();
+        }
 
         // 요약 통계 업데이트
         updateSummary(summary.data);
@@ -325,6 +347,99 @@
         console.error('데이터 로드 오류:', error);
         alert('데이터를 불러오는데 실패했습니다.');
       }
+    }
+
+    // Supabase에서 직접 통계 계산 (Replit용)
+    async function calculateStatsFromSupabase(year) {
+      // 해당 연도 데이터 가져오기
+      const { data: events, error } = await supabase
+        .from('booking_events')
+        .select('*')
+        .gte('start_time', `${year}-01-01`)
+        .lt('start_time', `${parseInt(year) + 1}-01-01`);
+
+      if (error) throw error;
+
+      // 요약 통계
+      const totalRevenue = events.reduce((sum, e) => sum + (e.price || 0), 0);
+      const totalBookings = events.length;
+      const averagePrice = totalBookings > 0 ? Math.round(totalRevenue / totalBookings) : 0;
+      
+      // 방별 통계
+      const roomStats = {};
+      events.forEach(e => {
+        if (!roomStats[e.room_id]) {
+          roomStats[e.room_id] = { count: 0, revenue: 0 };
+        }
+        roomStats[e.room_id].count++;
+        roomStats[e.room_id].revenue += (e.price || 0);
+      });
+      
+      const topRoomId = Object.keys(roomStats).reduce((a, b) => 
+        roomStats[a].count > roomStats[b].count ? a : b, Object.keys(roomStats)[0]
+      );
+
+      // 월별 통계
+      const monthlyData = [];
+      for (let month = 1; month <= 12; month++) {
+        const monthEvents = events.filter(e => {
+          const eventMonth = new Date(e.start_time).getMonth() + 1;
+          return eventMonth === month;
+        });
+        
+        const revenue = monthEvents.reduce((sum, e) => sum + (e.price || 0), 0);
+        const count = monthEvents.length;
+        
+        // 해당 월 최다 방
+        const monthRoomStats = {};
+        monthEvents.forEach(e => {
+          monthRoomStats[e.room_id] = (monthRoomStats[e.room_id] || 0) + 1;
+        });
+        const topRoom = Object.keys(monthRoomStats).reduce((a, b) => 
+          monthRoomStats[a] > monthRoomStats[b] ? a : b, 
+          Object.keys(monthRoomStats)[0] || null
+        );
+
+        monthlyData.push({
+          month,
+          revenue,
+          count,
+          averagePrice: count > 0 ? Math.round(revenue / count) : 0,
+          topRoom: topRoom ? topRoom.toUpperCase() + '홀' : '-'
+        });
+      }
+
+      // 방별 통계 배열
+      const roomData = Object.keys(roomStats).map(roomId => ({
+        roomId,
+        count: roomStats[roomId].count,
+        revenue: roomStats[roomId].revenue
+      }));
+
+      // 시간대별 통계
+      const hourlyData = Array.from({ length: 24 }, (_, hour) => {
+        const hourEvents = events.filter(e => {
+          const eventHour = new Date(e.start_time).getHours();
+          return eventHour === hour;
+        });
+        return {
+          hour,
+          count: hourEvents.length,
+          revenue: hourEvents.reduce((sum, e) => sum + (e.price || 0), 0)
+        };
+      });
+
+      return {
+        summary: {
+          totalRevenue,
+          totalBookings,
+          averagePrice,
+          topRoom: { roomId: topRoomId, count: roomStats[topRoomId]?.count || 0 }
+        },
+        monthly: monthlyData,
+        room: roomData,
+        hourly: hourlyData
+      };
     }
 
     // 요약 통계 업데이트
