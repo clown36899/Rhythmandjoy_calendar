@@ -6,6 +6,26 @@ This project is a mobile-friendly room booking calendar application for "Rhythmj
 
 Preferred communication style: Simple, everyday language.
 
+# Critical System Boundaries
+
+**IMPORTANT: This project consists of TWO SEPARATE applications sharing the same database:**
+
+1. **User-Facing Calendar** (`calendar_7.html`)
+   - Displays booking schedules for customers
+   - Reads from `booking_events` table
+   - NEVER modify without explicit user command
+
+2. **Admin Dashboard** (`admin-dashboard.html`)
+   - Revenue statistics and management
+   - **ONLY allowed to modify `price`, `price_type`, `is_naver` columns**
+   - NEVER add/delete events in `booking_events` table
+
+**Shared Database Rules:**
+- The `booking_events` table is shared between both applications
+- Google Calendar is the source of truth for booking data
+- Google Calendar → DB synchronization should only be triggered by explicit user command
+- Admin dashboard operations must be read-only for event data, write-only for price columns
+
 # System Architecture
 
 ## Frontend Architecture
