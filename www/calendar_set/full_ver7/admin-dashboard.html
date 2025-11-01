@@ -374,10 +374,22 @@
       
       console.log(`✅ ${events.length}개 이벤트 로드 완료`);
 
+      if (!events || events.length === 0) {
+        console.warn('⚠️ 이벤트 데이터가 없습니다');
+        return {
+          summary: { totalRevenue: 0, totalBookings: 0, averagePrice: 0, topRoom: { roomId: 'a', count: 0 } },
+          monthly: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, revenue: 0, bookings: 0, byRoom: {} })),
+          room: {},
+          hourly: Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0, revenue: 0 }))
+        };
+      }
+
       // 요약 통계
       const totalRevenue = events.reduce((sum, e) => sum + (e.price || 0), 0);
       const totalBookings = events.length;
       const averagePrice = totalBookings > 0 ? Math.round(totalRevenue / totalBookings) : 0;
+      
+      console.log(`💰 총 매출: ${totalRevenue}원, 총 예약: ${totalBookings}건`);
       
       // 방별 통계
       const roomStats = {};
@@ -389,9 +401,12 @@
         roomStats[e.room_id].revenue += (e.price || 0);
       });
       
-      const topRoomId = Object.keys(roomStats).reduce((a, b) => 
-        roomStats[a].count > roomStats[b].count ? a : b, Object.keys(roomStats)[0]
-      );
+      console.log('📊 방별 통계:', roomStats);
+      
+      const roomIds = Object.keys(roomStats);
+      const topRoomId = roomIds.length > 0 
+        ? roomIds.reduce((a, b) => roomStats[a].count > roomStats[b].count ? a : b)
+        : 'a';
 
       // 월별 통계
       const monthlyData = [];
@@ -421,6 +436,8 @@
         });
       }
 
+      console.log('📅 월별 데이터 계산 완료:', monthlyData.length, '개월');
+
       // 방별 통계 객체로 변환
       const roomData = {};
       Object.keys(roomStats).forEach(roomId => {
@@ -430,6 +447,8 @@
           count: roomStats[roomId].count
         };
       });
+
+      console.log('🏢 방별 데이터:', roomData);
 
       // 시간대별 통계
       const hourlyData = Array.from({ length: 24 }, (_, hour) => {
@@ -444,7 +463,9 @@
         };
       });
 
-      return {
+      console.log('🕐 시간대별 데이터 계산 완료');
+
+      const result = {
         summary: {
           totalRevenue,
           totalBookings,
@@ -455,6 +476,9 @@
         room: roomData,
         hourly: hourlyData
       };
+
+      console.log('✅ 최종 통계 데이터:', result);
+      return result;
     }
 
     // 요약 통계 업데이트
