@@ -893,7 +893,8 @@
       results.innerHTML = '<div class="spinner-border text-primary" role="status"></div><p>전체 가격 재계산 중...</p>';
       
       let from = 0;
-      const batchSize = 500;
+      const batchSize = 100;
+      const parallelLimit = 10; // 동시 실행 제한
       let totalUpdated = 0;
       
       while (true) {
@@ -905,42 +906,35 @@
         
         if (error || !events || events.length === 0) break;
         
-        // ✅ 배치로 모아서 계산 후 병렬 업데이트
-        const updatePromises = [];
-        for (const event of events) {
-          const { price, priceType, isNaver } = calculatePrice(
-            event.start_time,
-            event.end_time,
-            event.room_id,
-            event.description
-          );
-          
-          // 병렬로 update 요청 추가
-          updatePromises.push(
-            supabase
+        // ✅ 10개씩만 병렬 실행
+        for (let i = 0; i < events.length; i += parallelLimit) {
+          const chunk = events.slice(i, i + parallelLimit);
+          const updatePromises = chunk.map(event => {
+            const { price, priceType, isNaver } = calculatePrice(
+              event.start_time,
+              event.end_time,
+              event.room_id,
+              event.description
+            );
+            
+            return supabase
               .from('booking_events')
-              .update({ 
-                price, 
-                price_type: priceType, 
-                is_naver: isNaver 
-              })
-              .eq('id', event.id)
-          );
+              .update({ price, price_type: priceType, is_naver: isNaver })
+              .eq('id', event.id);
+          });
+          
+          const results_array = await Promise.all(updatePromises);
+          
+          const errors = results_array.filter(r => r.error);
+          if (errors.length > 0) {
+            console.error('업데이트 오류:', errors);
+            results.innerHTML = `<div class="alert alert-danger">오류: ${errors.length}개 업데이트 실패</div>`;
+            return;
+          }
+          
+          totalUpdated += chunk.length;
+          results.innerHTML = `<div class="spinner-border text-primary" role="status"></div><p>${totalUpdated}개 업데이트 완료...</p>`;
         }
-        
-        // ✅ 모든 업데이트 병렬 실행 (500개 동시!)
-        const results_array = await Promise.all(updatePromises);
-        
-        // 오류 체크
-        const errors = results_array.filter(r => r.error);
-        if (errors.length > 0) {
-          console.error('업데이트 오류:', errors);
-          results.innerHTML = `<div class="alert alert-danger">오류: ${errors.length}개 업데이트 실패</div>`;
-          return;
-        }
-        
-        totalUpdated += events.length;
-        results.innerHTML = `<div class="spinner-border text-primary" role="status"></div><p>${totalUpdated}개 업데이트 완료...</p>`;
         
         if (events.length < batchSize) break;
         from += batchSize;
