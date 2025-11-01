@@ -5,8 +5,8 @@ ALTER TABLE booking_events ADD COLUMN IF NOT EXISTS is_naver BOOLEAN DEFAULT fal
 
 -- 인덱스 추가 (통계 쿼리 성능 향상)
 CREATE INDEX IF NOT EXISTS idx_booking_events_price ON booking_events(price);
-CREATE INDEX IF NOT EXISTS idx_booking_events_year_month ON booking_events(EXTRACT(YEAR FROM start_time), EXTRACT(MONTH FROM start_time));
 CREATE INDEX IF NOT EXISTS idx_booking_events_is_naver ON booking_events(is_naver);
+CREATE INDEX IF NOT EXISTS idx_booking_events_start_time ON booking_events(start_time);
 
 COMMENT ON COLUMN booking_events.price IS '계산된 최종 가격 (수수료 적용 후, 원 단위)';
 COMMENT ON COLUMN booking_events.price_type IS '가격 타입 (새벽통대관/새벽/일반/저녁/주말/공휴일)';
