@@ -38,9 +38,21 @@ Preferred communication style: Simple, everyday language.
 ## System Design
 
 - **Real-time Synchronization**: Google Calendar changes trigger webhooks, leading to incremental synchronization with Supabase, which then updates the frontend via Realtime subscriptions. This ensures immediate updates without page reloads.
-- **Data Persistence**: All past and future booking data are stored in Supabase for historical analysis and forecasting.
+- **Data Persistence & Pricing Strategy**: 
+  - **Past months**: Immutable data stored in Supabase with finalized prices
+  - **Current/future months**: Automatically recalculated on admin dashboard login to reflect latest pricing policies
+  - On each admin login, current and future month event prices are recalculated and updated in DB via upsert
+  - This ensures historical accuracy while keeping future projections aligned with current pricing rules
 - **Room Management**: Five distinct practice rooms, each linked to a specific Google Calendar ID, with individual pricing structures and visual identification.
-- **Admin Dashboard**: A login-protected dashboard provides detailed revenue statistics, including monthly comparisons, room-specific performance, and time-based booking trends, visualized with Chart.js. Price parsing logic automatically extracts and categorizes event prices from calendar descriptions.
+- **Admin Dashboard**: A login-protected dashboard provides detailed revenue statistics:
+  - Monthly revenue comparison table (by room)
+  - Monthly revenue chart with year selection (2024/2025/2026)
+  - Room-specific revenue breakdown
+  - Hourly booking pattern analysis
+  - **Calendar view**: Displays daily revenue totals (not individual bookings) for clean overview
+  - All statistics use DB-stored prices (no real-time recalculation)
+  - Price verification tool for spot-checking calculations
+  - Bulk price recalculation tool for updating all events
 
 # External Dependencies
 
