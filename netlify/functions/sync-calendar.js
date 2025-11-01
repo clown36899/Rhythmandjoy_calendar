@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
-import { parsePriceFromEvent, estimateDefaultPrice } from './lib/price-parser.js';
+import { calculatePrice } from './lib/price-calculator.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -61,27 +61,13 @@ async function syncRoomCalendar(room) {
     for (const event of allEvents) {
       if (!event.start || !event.start.dateTime) continue;
 
-      // 가격 정보 파싱
-      const { price, priceType } = parsePriceFromEvent(
-        event.summary,
-        event.description,
-        event.start.dateTime
+      // 가격 계산 (시간대별/방별/공휴일/수수료 모두 고려)
+      const { price, priceType, isNaver } = calculatePrice(
+        event.start.dateTime,
+        event.end.dateTime,
+        room.id,
+        event.description || ''
       );
-
-      // 가격이 없으면 시간 기반으로 추정
-      let finalPrice = price;
-      let finalPriceType = priceType;
-      
-      if (!finalPrice) {
-        const estimated = estimateDefaultPrice(
-          event.start.dateTime,
-          event.end.dateTime,
-          room.id
-        );
-        finalPrice = estimated.price;
-        // priceType이 null이면 추정된 타입 사용
-        finalPriceType = finalPriceType || estimated.priceType;
-      }
 
       eventsToUpsert.push({
         room_id: room.id,
@@ -90,8 +76,9 @@ async function syncRoomCalendar(room) {
         start_time: event.start.dateTime,
         end_time: event.end.dateTime,
         description: event.description || null,
-        price: finalPrice,
-        price_type: finalPriceType,
+        price: price,
+        price_type: priceType,
+        is_naver: isNaver,
         updated_at: new Date().toISOString()
       });
     }
