@@ -388,33 +388,34 @@
         });
         
         const revenue = monthEvents.reduce((sum, e) => sum + (e.price || 0), 0);
-        const count = monthEvents.length;
+        const bookings = monthEvents.length;
         
-        // 해당 월 최다 방
-        const monthRoomStats = {};
+        // 해당 월 방별 매출
+        const byRoom = {};
         monthEvents.forEach(e => {
-          monthRoomStats[e.room_id] = (monthRoomStats[e.room_id] || 0) + 1;
+          if (!byRoom[e.room_id]) {
+            byRoom[e.room_id] = 0;
+          }
+          byRoom[e.room_id] += (e.price || 0);
         });
-        const topRoom = Object.keys(monthRoomStats).reduce((a, b) => 
-          monthRoomStats[a] > monthRoomStats[b] ? a : b, 
-          Object.keys(monthRoomStats)[0] || null
-        );
 
         monthlyData.push({
           month,
           revenue,
-          count,
-          averagePrice: count > 0 ? Math.round(revenue / count) : 0,
-          topRoom: topRoom ? topRoom.toUpperCase() + '홀' : '-'
+          bookings,
+          byRoom
         });
       }
 
-      // 방별 통계 배열
-      const roomData = Object.keys(roomStats).map(roomId => ({
-        roomId,
-        count: roomStats[roomId].count,
-        revenue: roomStats[roomId].revenue
-      }));
+      // 방별 통계 객체로 변환
+      const roomData = {};
+      Object.keys(roomStats).forEach(roomId => {
+        roomData[roomId] = {
+          name: roomId.toUpperCase() + '홀',
+          revenue: roomStats[roomId].revenue,
+          count: roomStats[roomId].count
+        };
+      });
 
       // 시간대별 통계
       const hourlyData = Array.from({ length: 24 }, (_, hour) => {
