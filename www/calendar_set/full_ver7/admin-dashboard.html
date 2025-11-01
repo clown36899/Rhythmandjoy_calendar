@@ -895,7 +895,7 @@
       results.innerHTML = '<div class="spinner-border text-primary" role="status"></div><p>전체 가격 재계산 중...</p>';
       
       let from = 0;
-      const batchSize = 100;
+      const batchSize = 500;
       let totalUpdated = 0;
       
       while (true) {
@@ -907,6 +907,8 @@
         
         if (error || !events || events.length === 0) break;
         
+        // ✅ 배치로 모아서 계산
+        const updates = [];
         for (const event of events) {
           const { price, priceType, isNaver } = calculatePrice(
             event.start_time,
@@ -915,15 +917,27 @@
             event.description
           );
           
-          await supabase
-            .from('booking_events')
-            .update({ price, price_type: priceType, is_naver: isNaver })
-            .eq('id', event.id);
-          
-          totalUpdated++;
+          updates.push({
+            id: event.id,
+            price,
+            price_type: priceType,
+            is_naver: isNaver
+          });
         }
         
-        results.innerHTML = `<div class="spinner-border text-primary" role="status"></div><p>${totalUpdated}개 업데이트 중...</p>`;
+        // ✅ 한 번에 upsert (500개 한방!)
+        const { error: updateError } = await supabase
+          .from('booking_events')
+          .upsert(updates, { onConflict: 'id' });
+        
+        if (updateError) {
+          console.error('업데이트 오류:', updateError);
+          results.innerHTML = `<div class="alert alert-danger">오류: ${updateError.message}</div>`;
+          return;
+        }
+        
+        totalUpdated += updates.length;
+        results.innerHTML = `<div class="spinner-border text-primary" role="status"></div><p>${totalUpdated}개 업데이트 완료...</p>`;
         
         if (events.length < batchSize) break;
         from += batchSize;
