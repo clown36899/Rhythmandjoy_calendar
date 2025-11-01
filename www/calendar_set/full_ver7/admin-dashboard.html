@@ -290,10 +290,51 @@
         </div>
       </div>
 
-      <!-- 월간 캘린더 뷰 (이벤트별 가격 확인) -->
-      <div class="chart-container">
+      <!-- 월간 캘린더 뷰 (이벤트별 가격 확인) - 숨김 -->
+      <div class="chart-container" style="display: none;">
         <div class="chart-title">📅 월간 캘린더 (이벤트별 가격 확인)</div>
         <div id="monthlyCalendar"></div>
+      </div>
+
+      <!-- 일일 매출 테이블 -->
+      <div class="table-container">
+        <div class="chart-title">📅 일일 매출 상세</div>
+        <div class="mb-3 d-flex gap-2 align-items-center">
+          <label class="mb-0">조회 월:</label>
+          <select id="dailyMonthSelect" class="form-select" style="width: 120px;" onchange="loadDailyStats()">
+            <option value="1">1월</option>
+            <option value="2">2월</option>
+            <option value="3">3월</option>
+            <option value="4">4월</option>
+            <option value="5">5월</option>
+            <option value="6">6월</option>
+            <option value="7">7월</option>
+            <option value="8">8월</option>
+            <option value="9">9월</option>
+            <option value="10">10월</option>
+            <option value="11">11월</option>
+            <option value="12">12월</option>
+          </select>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover table-sm">
+            <thead>
+              <tr>
+                <th>날짜</th>
+                <th class="text-end">예약 건수</th>
+                <th class="text-end">일일 매출</th>
+                <th class="text-end">A홀</th>
+                <th class="text-end">B홀</th>
+                <th class="text-end">C홀</th>
+                <th class="text-end">D홀</th>
+                <th class="text-end">E홀</th>
+              </tr>
+            </thead>
+            <tbody id="dailyTableBody">
+              <tr><td colspan="8" class="text-center">월을 선택하세요</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- 가격 재계산 도구 -->
