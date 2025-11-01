@@ -94,28 +94,43 @@ function calculatePrice(startTime, endTime, roomId, description = '') {
     // 시간별 계산
     let currentTime = new Date(start);
     
+    console.log(`[${roomId}홀] 시작: ${start.toISOString()}, KST ${startHourKst}시`);
+    
     while (currentTime < end) {
       const hourKst = getKstHour(currentTime);
+      const isWeekend = isWeekendOrHoliday(currentTime);
+      
+      let hourlyPrice = 0;
+      let reason = '';
       
       // 새벽 시간 (0~6시): overnight ÷ 6
       if (hourKst >= 0 && hourKst < 6) {
-        totalPrice += prices.overnight / 6;
+        hourlyPrice = prices.overnight / 6;
+        reason = `새벽(KST ${hourKst}시)`;
       } 
       // 주말 또는 공휴일: after16 요금
-      else if (isWeekendOrHoliday(currentTime)) {
-        totalPrice += prices.after16;
+      else if (isWeekend) {
+        hourlyPrice = prices.after16;
+        reason = `주말/공휴일(KST ${hourKst}시)`;
       }
       // 평일
       else {
         if (hourKst < 16) {
-          totalPrice += prices.before16;
+          hourlyPrice = prices.before16;
+          reason = `평일오전(KST ${hourKst}시)`;
         } else {
-          totalPrice += prices.after16;
+          hourlyPrice = prices.after16;
+          reason = `평일저녁(KST ${hourKst}시)`;
         }
       }
       
+      console.log(`  ${currentTime.toISOString()} → ${reason} = ${hourlyPrice}원`);
+      totalPrice += hourlyPrice;
+      
       currentTime.setHours(currentTime.getHours() + 1);
     }
+    
+    console.log(`  총합: ${totalPrice}원, 수수료 후: ${Math.round(totalPrice * (isNaver ? 0.9802 : 0.9))}원`);
 
     // 가격 타입 결정 (KST 기준)
     if (startHourKst >= 0 && startHourKst < 6) {
