@@ -6,26 +6,6 @@ This project is a mobile-friendly room booking calendar application for "Rhythmj
 
 Preferred communication style: Simple, everyday language.
 
-# Critical System Boundaries
-
-**IMPORTANT: This project consists of TWO SEPARATE applications sharing the same database:**
-
-1. **User-Facing Calendar** (`calendar_7.html`)
-   - Displays booking schedules for customers
-   - Reads from `booking_events` table
-   - NEVER modify without explicit user command
-
-2. **Admin Dashboard** (`admin-dashboard.html`)
-   - Revenue statistics and management
-   - **ONLY allowed to modify `price`, `price_type`, `is_naver` columns**
-   - NEVER add/delete events in `booking_events` table
-
-**Shared Database Rules:**
-- The `booking_events` table is shared between both applications
-- Google Calendar is the source of truth for booking data
-- Google Calendar → DB synchronization should only be triggered by explicit user command
-- Admin dashboard operations must be read-only for event data, write-only for price columns
-
 # System Architecture
 
 ## Frontend Architecture
@@ -58,21 +38,9 @@ Preferred communication style: Simple, everyday language.
 ## System Design
 
 - **Real-time Synchronization**: Google Calendar changes trigger webhooks, leading to incremental synchronization with Supabase, which then updates the frontend via Realtime subscriptions. This ensures immediate updates without page reloads.
-- **Data Persistence & Pricing Strategy**: 
-  - **Past months**: Immutable data stored in Supabase with finalized prices
-  - **Current/future months**: Automatically recalculated on admin dashboard login to reflect latest pricing policies
-  - On each admin login, current and future month event prices are recalculated and updated in DB via upsert
-  - This ensures historical accuracy while keeping future projections aligned with current pricing rules
+- **Data Persistence**: All past and future booking data are stored in Supabase for historical analysis and forecasting.
 - **Room Management**: Five distinct practice rooms, each linked to a specific Google Calendar ID, with individual pricing structures and visual identification.
-- **Admin Dashboard**: A login-protected dashboard provides detailed revenue statistics:
-  - Monthly revenue comparison table (by room)
-  - Monthly revenue chart with year selection (2024/2025/2026)
-  - Room-specific revenue breakdown
-  - Hourly booking pattern analysis
-  - **Calendar view**: Displays daily revenue totals (not individual bookings) for clean overview
-  - All statistics use DB-stored prices (no real-time recalculation)
-  - Price verification tool for spot-checking calculations
-  - Bulk price recalculation tool for updating all events
+- **Admin Dashboard**: A login-protected dashboard provides detailed revenue statistics, including monthly comparisons, room-specific performance, and time-based booking trends, visualized with Chart.js. Price parsing logic automatically extracts and categorizes event prices from calendar descriptions.
 
 # External Dependencies
 

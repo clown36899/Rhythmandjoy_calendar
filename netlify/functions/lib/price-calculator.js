@@ -158,7 +158,7 @@ function calculatePrice(startTime, endTime, roomId, description = '', roomPrices
   };
 }
 
-export {
+module.exports = {
   calculatePrice,
   DEFAULT_ROOM_PRICES,
   isWeekendOrHoliday,
