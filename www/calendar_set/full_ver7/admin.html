@@ -102,7 +102,9 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="env.js"></script>
+  <script src="js/price-calculator.js"></script>
   <script>
     let authToken = localStorage.getItem('adminToken');
 
@@ -155,6 +157,21 @@
       window.location.href = 'admin-dashboard.html';
     }
 
+    // Supabase 클라이언트 초기화
+    const supabase = window.supabase.createClient(
+      window.SUPABASE_URL,
+      window.SUPABASE_ANON_KEY
+    );
+
+    // 연습실 정보
+    const rooms = [
+      { id: 'a', calendarId: '752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com' },
+      { id: 'b', calendarId: '22dd1532ca7404714f0c24348825f131f3c559acf6361031fe71e80977e4a817@group.calendar.google.com' },
+      { id: 'c', calendarId: 'b0cfe52771ffe5f8b8bb55b8f7855b6ea640fcb09060fd6708e9b8830428e0c8@group.calendar.google.com' },
+      { id: 'd', calendarId: '60da4147f8d838daa72ecea4f59c69106faedd48e8d4aea61a9d299d96b3f90e@group.calendar.google.com' },
+      { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
+    ];
+
     // DB 전체 재동기화
     async function fullResync() {
       const messageDiv = document.getElementById('adminMessage');
@@ -162,28 +179,85 @@
       const confirmMsg = '⚠️ Google Calendar에서 전체 데이터를 다시 받아옵니다.\n\n이 작업은 몇 분 정도 소요될 수 있습니다.\n\n계속하시겠습니까?';
       if (!confirm(confirmMsg)) return;
       
-      messageDiv.textContent = '🔄 동기화 중... 잠시만 기다려주세요.';
+      messageDiv.textContent = '🔄 동기화 준비 중...';
       messageDiv.className = 'alert alert-info mt-3';
       messageDiv.style.display = 'block';
       
       try {
-        const response = await fetch('/.netlify/functions/sync-calendar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
+        let totalProcessed = 0;
+        const apiKey = window.GOOGLE_CALENDAR_API_KEY;
         
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+        for (const room of rooms) {
+          messageDiv.textContent = `🔄 ${room.id.toUpperCase()}홀 동기화 중...`;
+          
+          // Google Calendar API 호출
+          const timeMin = new Date('2020-01-01T00:00:00Z').toISOString();
+          const timeMax = new Date();
+          timeMax.setFullYear(timeMax.getFullYear() + 2);
+          
+          const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events?key=${apiKey}&timeMin=${timeMin}&timeMax=${timeMax.toISOString()}&maxResults=2500&singleEvents=true&orderBy=startTime`;
+          
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`${room.id}홀 데이터 가져오기 실패: HTTP ${response.status}`);
+          }
+          
+          const data = await response.json();
+          const events = data.items || [];
+          
+          // Supabase에 저장
+          const eventsToUpsert = [];
+          for (const event of events) {
+            if (!event.start || !event.start.dateTime) continue;
+            
+            // 가격 계산
+            const { price, priceType, isNaver } = window.calculatePrice(
+              event.start.dateTime,
+              event.end.dateTime,
+              room.id,
+              event.description || ''
+            );
+            
+            eventsToUpsert.push({
+              room_id: room.id,
+              google_event_id: event.id,
+              title: event.summary || '(제목 없음)',
+              start_time: event.start.dateTime,
+              end_time: event.end.dateTime,
+              description: event.description || null,
+              price: price,
+              price_type: priceType,
+              is_naver: isNaver,
+              updated_at: new Date().toISOString()
+            });
+          }
+          
+          // 100개씩 배치 저장
+          for (let i = 0; i < eventsToUpsert.length; i += 100) {
+            const batch = eventsToUpsert.slice(i, i + 100);
+            const { error } = await supabase
+              .from('booking_events')
+              .upsert(batch, {
+                onConflict: 'google_event_id',
+                ignoreDuplicates: false
+              });
+            
+            if (error) {
+              console.error(`${room.id}홀 저장 오류:`, error);
+              throw new Error(`${room.id}홀 DB 저장 실패: ${error.message}`);
+            }
+          }
+          
+          totalProcessed += eventsToUpsert.length;
+          console.log(`✅ ${room.id}홀: ${eventsToUpsert.length}개 이벤트 동기화 완료`);
         }
         
-        const result = await response.json();
-        
-        messageDiv.textContent = `✅ DB 복구 완료!\n\n처리: ${result.processed || 0}개\n추가: ${result.added || 0}개\n업데이트: ${result.updated || 0}개`;
+        messageDiv.textContent = `✅ DB 복구 완료!\n\n총 ${totalProcessed}개 이벤트 동기화 완료`;
         messageDiv.className = 'alert alert-success mt-3';
         
       } catch (error) {
         console.error('동기화 오류:', error);
-        messageDiv.textContent = `❌ 동기화 실패: ${error.message}`;
+        messageDiv.textContent = `❌ 동기화 실패\n\n${error.message}`;
         messageDiv.className = 'alert alert-danger mt-3';
       }
     }
