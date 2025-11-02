@@ -22,7 +22,7 @@ class UnifiedHandler(SimpleHTTPRequestHandler):
             
             try:
                 result = subprocess.run(
-                    [sys.executable, 'sync_calendar.py'],
+                    [sys.executable, self.sync_script],
                     capture_output=True,
                     text=True,
                     timeout=300
@@ -55,6 +55,13 @@ class UnifiedHandler(SimpleHTTPRequestHandler):
             return SimpleHTTPRequestHandler.do_GET(self)
 
 if __name__ == '__main__':
+    # sync_calendar.py 절대 경로 저장
+    import pathlib
+    SCRIPT_PATH = str(pathlib.Path(__file__).parent / 'sync_calendar.py')
+    
+    # UnifiedHandler에서 사용할 수 있도록 클래스 변수로 설정
+    UnifiedHandler.sync_script = SCRIPT_PATH
+    
     os.chdir('www')
     server = HTTPServer(('0.0.0.0', 5000), UnifiedHandler)
     print('Server started on port 5000')
