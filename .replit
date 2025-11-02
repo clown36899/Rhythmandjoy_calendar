@@ -17,41 +17,21 @@ author = "agent"
 task = "workflow.run"
 args = "정적 서버"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "API 서버"
-
 [[workflows.workflow]]
 name = "정적 서버"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd www && python3 -m http.server 5000 --bind 0.0.0.0"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
 
-[[workflows.workflow]]
-name = "API 서버"
-author = "agent"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 api_server.py"
-waitForPort = 8000
-
-[workflows.workflow.metadata]
-outputType = "console"
+args = "python3 simple_server.py"
+waitForPort = 5000
 
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 45679
-externalPort = 3000
 
 [[ports]]
 localPort = 46855
