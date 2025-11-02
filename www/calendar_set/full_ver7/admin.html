@@ -191,14 +191,26 @@
           messageDiv.textContent = `🔄 ${room.id.toUpperCase()}홀 동기화 중...`;
           
           // Google Calendar API 호출
-          const timeMin = new Date('2020-01-01T00:00:00Z').toISOString();
+          const timeMin = '2020-01-01T00:00:00Z';
           const timeMax = new Date();
           timeMax.setFullYear(timeMax.getFullYear() + 2);
+          const timeMaxStr = timeMax.toISOString();
           
-          const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events?key=${apiKey}&timeMin=${timeMin}&timeMax=${timeMax.toISOString()}&maxResults=2500&singleEvents=true&orderBy=startTime`;
+          const params = new URLSearchParams({
+            key: apiKey,
+            timeMin: timeMin,
+            timeMax: timeMaxStr,
+            maxResults: '2500',
+            singleEvents: 'true',
+            orderBy: 'startTime'
+          });
+          
+          const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events?${params.toString()}`;
           
           const response = await fetch(url);
           if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`${room.id}홀 API 에러:`, errorText);
             throw new Error(`${room.id}홀 데이터 가져오기 실패: HTTP ${response.status}`);
           }
           
