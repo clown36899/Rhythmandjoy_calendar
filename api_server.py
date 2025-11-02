@@ -16,7 +16,7 @@ class SyncHandler(BaseHTTPRequestHandler):
         self.end_headers()
     
     def do_POST(self):
-        """동기화 실행"""
+        """동기화 또는 Watch 재설정"""
         if self.path == '/sync':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -61,6 +61,35 @@ class SyncHandler(BaseHTTPRequestHandler):
                 }
             
             self.wfile.write(json.dumps(response).encode())
+            
+        elif self.path == '/setup-watches':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            
+            try:
+                # Watch 채널 재설정 스크립트 실행
+                result = subprocess.run(
+                    [sys.executable, 'reset_watches.py'],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                
+                response = {
+                    'success': result.returncode == 0,
+                    'output': result.stdout,
+                    'error': result.stderr
+                }
+                
+            except Exception as e:
+                response = {
+                    'success': False,
+                    'error': str(e)
+                }
+            
+            self.wfile.write(json.dumps(response).encode())
         else:
             self.send_error(404)
     
@@ -79,5 +108,6 @@ if __name__ == '__main__':
     server = HTTPServer(('0.0.0.0', 8000), SyncHandler)
     print('🚀 API 서버 시작: http://0.0.0.0:8000')
     print('   POST /sync - 동기화 실행')
+    print('   POST /setup-watches - Watch 채널 재설정')
     print('   GET /health - 상태 확인')
     server.serve_forever()

@@ -21,11 +21,57 @@ class UnifiedHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             
             try:
+                # 요청 body에서 선택된 연습실 확인
+                content_length = int(self.headers.get('Content-Length', 0))
+                selected_rooms = None
+                
+                if content_length > 0:
+                    body = self.rfile.read(content_length)
+                    try:
+                        data = json.loads(body.decode('utf-8'))
+                        selected_rooms = data.get('rooms')
+                    except:
+                        pass
+                
+                # Python 스크립트 실행
+                cmd = [sys.executable, self.sync_script]
+                if selected_rooms:
+                    cmd.extend(selected_rooms)
+                
                 result = subprocess.run(
-                    [sys.executable, self.sync_script],
+                    cmd,
                     capture_output=True,
                     text=True,
                     timeout=300
+                )
+                
+                response = {
+                    'success': result.returncode == 0,
+                    'output': result.stdout,
+                    'error': result.stderr
+                }
+                
+            except Exception as e:
+                response = {
+                    'success': False,
+                    'error': str(e)
+                }
+            
+            self.wfile.write(json.dumps(response).encode())
+            
+        elif self.path == '/api/setup-watches':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            
+            try:
+                # Watch 채널 재설정 스크립트 실행
+                result = subprocess.run(
+                    [sys.executable, self.watch_script],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
                 )
                 
                 response = {
@@ -55,14 +101,19 @@ class UnifiedHandler(SimpleHTTPRequestHandler):
             return SimpleHTTPRequestHandler.do_GET(self)
 
 if __name__ == '__main__':
-    # sync_calendar.py 절대 경로 저장
+    # 스크립트 절대 경로 저장
     import pathlib
-    SCRIPT_PATH = str(pathlib.Path(__file__).parent / 'sync_calendar.py')
+    base_path = pathlib.Path(__file__).parent
     
     # UnifiedHandler에서 사용할 수 있도록 클래스 변수로 설정
-    UnifiedHandler.sync_script = SCRIPT_PATH
+    UnifiedHandler.sync_script = str(base_path / 'sync_calendar.py')
+    UnifiedHandler.watch_script = str(base_path / 'reset_watches.py')
     
     os.chdir('www')
     server = HTTPServer(('0.0.0.0', 5000), UnifiedHandler)
     print('Server started on port 5000')
+    print('API endpoints:')
+    print('  POST /api/sync - 동기화 실행')
+    print('  POST /api/setup-watches - Watch 채널 재설정')
+    print('  GET /api/health - 헬스 체크')
     server.serve_forever()
