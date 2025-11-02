@@ -103,37 +103,24 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config-loader.js"></script>
+  <script src="env.js"></script>
   <script src="sync-manager.js"></script>
   <script>
     let authToken = localStorage.getItem('adminToken');
     let supabase = null;
 
-    // 페이지 로드 시 설정 로드 및 토큰 확인
-    (async function init() {
-      await initSupabase();
-      if (authToken) {
-        showAdminSection();
-      }
-    })();
+    // 페이지 로드 시 Supabase 초기화
+    if (window.SUPABASE_URL) {
+      supabase = window.supabase.createClient(
+        window.SUPABASE_URL,
+        window.SUPABASE_ANON_KEY
+      );
+      console.log('✅ Supabase 클라이언트 초기화 완료');
+    }
 
-    // Supabase 클라이언트 초기화 (config-loader.js 대기)
-    async function initSupabase() {
-      let retries = 0;
-      while (!window.SUPABASE_URL && retries < 20) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        retries++;
-      }
-      
-      if (window.SUPABASE_URL) {
-        supabase = window.supabase.createClient(
-          window.SUPABASE_URL,
-          window.SUPABASE_ANON_KEY
-        );
-        console.log('✅ Supabase 클라이언트 초기화 완료');
-      } else {
-        console.error('❌ 환경 설정 로드 실패');
-      }
+    // 토큰 확인
+    if (authToken) {
+      showAdminSection();
     }
 
     function getBaseUrl() {
@@ -145,7 +132,7 @@
       window.location.href = 'index.html';
     }
 
-    async function login() {
+    function login() {
       const password = document.getElementById('password').value;
       const errorDiv = document.getElementById('loginError');
 
@@ -155,48 +142,20 @@
         return;
       }
 
-      try {
-        // 1단계: 서버 API로 비밀번호 검증 시도 (배포 환경)
-        const baseUrl = getBaseUrl();
-        const response = await fetch(`${baseUrl}/verify-admin`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password })
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          
-          if (result.valid) {
-            authToken = 'admin-token-' + Date.now();
-            localStorage.setItem('adminToken', authToken);
-            showAdminSection();
-            return;
-          } else {
-            errorDiv.textContent = result.error || '비밀번호가 틀렸습니다';
-            errorDiv.style.display = 'block';
-            return;
-          }
-        }
-      } catch (error) {
-        console.warn('서버 API 연결 실패, 로컬 모드로 전환:', error);
+      const correctPassword = window.ENV?.ADMIN_PASSWORD;
+      
+      if (!correctPassword) {
+        errorDiv.textContent = '관리자 비밀번호가 설정되지 않았습니다';
+        errorDiv.style.display = 'block';
+        return;
       }
-      
-      // 2단계: 로컬 env.js에서 비밀번호 확인 (개발 환경)
-      const localPassword = window.ENV?.ADMIN_PASSWORD;
-      
-      if (localPassword) {
-        if (password === localPassword) {
-          authToken = 'local-token-' + Date.now();
-          localStorage.setItem('adminToken', authToken);
-          showAdminSection();
-          console.log('✅ 로컬 모드 로그인 성공');
-        } else {
-          errorDiv.textContent = '비밀번호가 틀렸습니다';
-          errorDiv.style.display = 'block';
-        }
+
+      if (password === correctPassword) {
+        authToken = 'admin-' + Date.now();
+        localStorage.setItem('adminToken', authToken);
+        showAdminSection();
       } else {
-        errorDiv.textContent = '관리자 비밀번호가 설정되지 않았습니다.\nenv.js 파일을 확인해주세요.';
+        errorDiv.textContent = '비밀번호가 틀렸습니다';
         errorDiv.style.display = 'block';
       }
     }
