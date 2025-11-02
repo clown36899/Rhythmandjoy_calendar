@@ -8,6 +8,7 @@ package-lock.json
 .env
 .env.local
 .env.production
+www/calendar_set/full_ver7/env.js
 
 # Replit
 .replit
