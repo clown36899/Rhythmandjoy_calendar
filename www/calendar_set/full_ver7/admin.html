@@ -103,34 +103,35 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config-loader.js"></script>
   <script>
     let authToken = localStorage.getItem('adminToken');
     let supabase = null;
 
     // 페이지 로드 시 설정 로드 및 토큰 확인
     (async function init() {
-      await loadConfig();
+      await initSupabase();
       if (authToken) {
         showAdminSection();
       }
     })();
 
-    // 서버에서 환경 설정 로드
-    async function loadConfig() {
-      try {
-        const baseUrl = getBaseUrl();
-        const response = await fetch(`${baseUrl}/get-config`);
-        const config = await response.json();
-        
-        // Supabase 클라이언트 초기화
+    // Supabase 클라이언트 초기화 (config-loader.js 대기)
+    async function initSupabase() {
+      let retries = 0;
+      while (!window.SUPABASE_URL && retries < 20) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        retries++;
+      }
+      
+      if (window.SUPABASE_URL) {
         supabase = window.supabase.createClient(
-          config.supabaseUrl,
-          config.supabaseAnonKey
+          window.SUPABASE_URL,
+          window.SUPABASE_ANON_KEY
         );
-        
-        window.GOOGLE_CALENDAR_API_KEY = config.googleCalendarApiKey;
-      } catch (error) {
-        console.error('설정 로드 실패:', error);
+        console.log('✅ Supabase 클라이언트 초기화 완료');
+      } else {
+        console.error('❌ 환경 설정 로드 실패');
       }
     }
 
