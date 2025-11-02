@@ -211,28 +211,45 @@
         const result = await response.json();
         
         if (result.success) {
-          let message = `✅ 동기화 완료! (총 ${result.totalTime})\n\n`;
-          
-          // 동기화 결과
-          if (result.results) {
-            message += '📊 동기화 결과:\n';
-            result.results.forEach(r => {
-              message += `  - ${r.room.toUpperCase()}홀: ${r.count}개 이벤트\n`;
-            });
+          // 테스트 모드 감지
+          if (result.env && result.imports) {
+            // 테스트 결과 표시
+            let message = '🔍 테스트 결과\n\n';
+            message += '📋 환경 변수:\n';
+            message += `  SUPABASE_URL: ${result.env.hasSupabaseUrl ? '✅' : '❌'}\n`;
+            message += `  SUPABASE_KEY: ${result.env.hasSupabaseKey ? '✅' : '❌'}\n`;
+            message += `  GOOGLE_API_KEY: ${result.env.hasGoogleKey ? '✅' : '❌'}\n\n`;
+            message += '📦 모듈 Import:\n';
+            message += `  Supabase: ${result.imports.supabase}\n`;
+            message += `  googleapis: ${result.imports.googleapis}\n`;
+            message += `  price-calculator: ${result.imports.priceCalculator}\n\n`;
+            message += `⏰ 시간: ${result.timestamp}`;
+            
+            messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px;">${message}</pre>`;
+            messageDiv.className = 'alert alert-info mt-3';
+          } else {
+            // 실제 동기화 결과 표시
+            let message = `✅ 동기화 완료! (총 ${result.totalTime || '측정 실패'})\n\n`;
+            
+            if (result.results) {
+              message += '📊 동기화 결과:\n';
+              result.results.forEach(r => {
+                message += `  - ${r.room.toUpperCase()}홀: ${r.count}개 이벤트\n`;
+              });
+            }
+            
+            if (result.logs && result.logs.length > 0) {
+              message += '\n📋 상세 로그:\n';
+              result.logs.forEach(log => {
+                message += `${log}\n`;
+              });
+            }
+            
+            message += '\n⚠️ Watch 채널은 별도로 재설정해주세요:\nhttps://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/setup-watches';
+            
+            messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
+            messageDiv.className = 'alert alert-success mt-3';
           }
-          
-          // 상세 로그
-          if (result.logs && result.logs.length > 0) {
-            message += '\n📋 상세 로그:\n';
-            result.logs.forEach(log => {
-              message += `${log}\n`;
-            });
-          }
-          
-          message += '\n⚠️ Watch 채널은 별도로 재설정해주세요:\nhttps://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/setup-watches';
-          
-          messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
-          messageDiv.className = 'alert alert-success mt-3';
         } else {
           let errorMsg = `❌ 동기화 실패\n\n에러: ${result.error || result.message}`;
           if (result.stack) {
