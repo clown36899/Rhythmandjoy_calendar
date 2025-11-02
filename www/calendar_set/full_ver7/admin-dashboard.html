@@ -506,7 +506,7 @@
 
     // Supabase에서 직접 통계 계산 (하이브리드: 과거=DB, 현재/미래=실시간)
     async function calculateStatsFromSupabase(year) {
-      console.log(`✅ Supabase 통계 계산 시작 - ${year}년 데이터 (하이브리드 모드)`);
+      console.log(`✅ Supabase 통계 계산 시작 - ${year}년 데이터`);
       
       if (!supabase) {
         throw new Error('Supabase 클라이언트가 초기화되지 않았습니다');
@@ -518,17 +518,16 @@
       const currentYear = nowKst.getUTCFullYear();
       const currentMonth = nowKst.getUTCMonth() + 1;
       
-      // 요청 연도가 현재 연도보다 작으면 모두 DB 사용, 크면 모두 재계산
       let currentMonthStart;
       if (parseInt(year) < currentYear) {
-        currentMonthStart = `${parseInt(year) + 1}-01-01T00:00:00Z`; // 미래 날짜로 설정 (모두 과거)
+        currentMonthStart = `${parseInt(year) + 1}-01-01T00:00:00Z`;
       } else if (parseInt(year) > currentYear) {
-        currentMonthStart = `${year}-01-01T00:00:00Z`; // 모두 현재/미래
+        currentMonthStart = `${year}-01-01T00:00:00Z`;
       } else {
         currentMonthStart = `${year}-${String(currentMonth).padStart(2, '0')}-01T00:00:00Z`;
       }
       
-      console.log(`📅 기준: ${currentMonthStart} 이후는 실시간 계산, 그 전은 DB 사용`);
+      console.log(`📅 현재/미래(${currentMonthStart} 이후)만 재계산, 과거는 DB 사용`);
       
       // 한 번에 모든 이벤트 가져오기
       const { data: events, error } = await supabase
