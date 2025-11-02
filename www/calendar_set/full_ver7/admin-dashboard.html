@@ -318,21 +318,33 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="env.js"></script>
+  <script src="config-loader.js"></script>
   <script>
     const IS_REPLIT = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
     const API_BASE = IS_REPLIT
       ? 'http://localhost:8888/.netlify/functions'
       : '/.netlify/functions';
 
-    // Supabase 클라이언트 (Replit용)
+    // Supabase 클라이언트 초기화 (config-loader.js 로드 대기)
     let supabase = null;
-    if (IS_REPLIT) {
-      supabase = window.supabase.createClient(
-        window.SUPABASE_URL,
-        window.SUPABASE_ANON_KEY
-      );
+    async function initSupabase() {
+      // config-loader.js가 로드될 때까지 대기
+      let retries = 0;
+      while (!window.SUPABASE_URL && retries < 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        retries++;
+      }
+      
+      if (window.SUPABASE_URL) {
+        supabase = window.supabase.createClient(
+          window.SUPABASE_URL,
+          window.SUPABASE_ANON_KEY
+        );
+        console.log('✅ Supabase 클라이언트 초기화 완료');
+      }
     }
+    
+    initSupabase();
 
     let monthlyChart = null;
     let roomChart = null;

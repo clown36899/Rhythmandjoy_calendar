@@ -103,21 +103,47 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="env.js"></script>
-  <script src="js/price-calculator.js"></script>
   <script>
     let authToken = localStorage.getItem('adminToken');
+    let supabase = null;
 
-    // 페이지 로드 시 토큰 확인
-    if (authToken) {
-      showAdminSection();
+    // 페이지 로드 시 설정 로드 및 토큰 확인
+    (async function init() {
+      await loadConfig();
+      if (authToken) {
+        showAdminSection();
+      }
+    })();
+
+    // 서버에서 환경 설정 로드
+    async function loadConfig() {
+      try {
+        const baseUrl = getBaseUrl();
+        const response = await fetch(`${baseUrl}/get-config`);
+        const config = await response.json();
+        
+        // Supabase 클라이언트 초기화
+        supabase = window.supabase.createClient(
+          config.supabaseUrl,
+          config.supabaseAnonKey
+        );
+        
+        window.GOOGLE_CALENDAR_API_KEY = config.googleCalendarApiKey;
+      } catch (error) {
+        console.error('설정 로드 실패:', error);
+      }
+    }
+
+    function getBaseUrl() {
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
+      return isLocal ? 'http://localhost:8888/.netlify/functions' : '/.netlify/functions';
     }
 
     function goBack() {
       window.location.href = 'index.html';
     }
 
-    function login() {
+    async function login() {
       const password = document.getElementById('password').value;
       const errorDiv = document.getElementById('loginError');
 
@@ -127,21 +153,28 @@
         return;
       }
 
-      // 개발 환경: 환경 변수에서 비밀번호 확인
-      const correctPassword = window.ENV?.ADMIN_PASSWORD;
-      
-      if (!correctPassword) {
-        errorDiv.textContent = '관리자 비밀번호가 설정되지 않았습니다';
-        errorDiv.style.display = 'block';
-        return;
-      }
-
-      if (password === correctPassword) {
-        authToken = 'dev-token-' + Date.now();
-        localStorage.setItem('adminToken', authToken);
-        showAdminSection();
-      } else {
-        errorDiv.textContent = '비밀번호가 틀렸습니다';
+      try {
+        // 서버에서 비밀번호 검증
+        const baseUrl = getBaseUrl();
+        const response = await fetch(`${baseUrl}/verify-admin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        
+        const result = await response.json();
+        
+        if (result.valid) {
+          authToken = 'admin-token-' + Date.now();
+          localStorage.setItem('adminToken', authToken);
+          showAdminSection();
+        } else {
+          errorDiv.textContent = result.error || '비밀번호가 틀렸습니다';
+          errorDiv.style.display = 'block';
+        }
+      } catch (error) {
+        console.error('로그인 오류:', error);
+        errorDiv.textContent = '로그인 중 오류가 발생했습니다';
         errorDiv.style.display = 'block';
       }
     }
@@ -156,12 +189,6 @@
     function goToDashboard() {
       window.location.href = 'admin-dashboard.html';
     }
-
-    // Supabase 클라이언트 초기화
-    const supabase = window.supabase.createClient(
-      window.SUPABASE_URL,
-      window.SUPABASE_ANON_KEY
-    );
 
     // 연습실 정보
     const rooms = [
