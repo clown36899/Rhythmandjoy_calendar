@@ -388,7 +388,7 @@
         
         if (error) throw error;
         
-        // 클라이언트에서 모든 이벤트 가격 재계산 및 DB 저장 (진행률 표시)
+        // 클라이언트에서 모든 이벤트 가격 재계산 (진행률 표시)
         const total = allEvents.length;
         
         for (let i = 0; i < allEvents.length; i++) {
@@ -400,18 +400,23 @@
             event.description || ''
           );
           
-          // 클라이언트에서 직접 DB 저장
-          await supabase
-            .from('booking_events')
-            .update({ price: priceResult.price })
-            .eq('id', event.id);
+          event.price = priceResult.price; // price 필드 업데이트
           
-          // 진행률 표시 (10개마다)
-          if ((i + 1) % 10 === 0 || i === allEvents.length - 1) {
+          // 진행률 표시 (100개마다)
+          if ((i + 1) % 100 === 0 || i === allEvents.length - 1) {
             const percent = Math.round(((i + 1) / total) * 100);
-            loadingText.textContent = `처리 중... ${percent}% (${i + 1}/${total})`;
+            loadingText.textContent = `계산 중... ${percent}% (${i + 1}/${total})`;
           }
         }
+        
+        // 한 번에 DB 저장
+        loadingText.textContent = 'DB 저장 중...';
+        
+        const { error: updateError } = await supabase
+          .from('booking_events')
+          .upsert(allEvents, { onConflict: 'id' });
+        
+        if (updateError) throw updateError;
         
         const totalUpdated = allEvents.length;
         
@@ -546,19 +551,22 @@
       if (currentFutureEvents.length > 0) {
         console.log(`🔄 ${currentFutureEvents.length}개 현재/미래 이벤트 재계산 중...`);
         
-        // 클라이언트에서 하나씩 DB 업데이트
-        for (const e of currentFutureEvents) {
+        // 클라이언트에서 계산
+        currentFutureEvents.forEach(e => {
           const priceResult = window.calculatePrice(e.start_time, e.end_time, e.room_id, e.description || '');
-          e.price = priceResult.price; // 메모리 업데이트
-          
-          // DB 저장
-          await supabase
-            .from('booking_events')
-            .update({ price: priceResult.price })
-            .eq('id', e.id);
-        }
+          e.price = priceResult.price; // price 필드 업데이트
+        });
         
-        console.log(`✅ ${currentFutureEvents.length}개 현재/미래 데이터 DB 저장 완료`);
+        // 한 번에 DB 저장 (전체 행 데이터 포함)
+        const { error: updateError } = await supabase
+          .from('booking_events')
+          .upsert(currentFutureEvents, { onConflict: 'id' });
+        
+        if (updateError) {
+          console.error('현재/미래 데이터 DB 업데이트 오류:', updateError);
+        } else {
+          console.log(`✅ ${currentFutureEvents.length}개 현재/미래 데이터 DB 저장 완료 (1회 요청)`);
+        }
       }
       
       console.log(`💾 과거는 DB price 사용, 현재/미래는 재계산 완료`);
