@@ -184,92 +184,27 @@
       messageDiv.style.display = 'block';
       
       try {
-        let totalProcessed = 0;
-        const apiKey = window.GOOGLE_CALENDAR_API_KEY;
+        // Netlify Functions 호출 (로컬: localhost:8888, 배포: /.netlify/functions)
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
+        const baseUrl = isLocal ? 'http://localhost:8888/.netlify/functions' : '/.netlify/functions';
         
-        for (const room of rooms) {
-          messageDiv.textContent = `🔄 ${room.id.toUpperCase()}홀 동기화 중...`;
-          
-          // Google Calendar API 호출
-          const timeMin = '2020-01-01T00:00:00Z';
-          const timeMax = new Date();
-          timeMax.setFullYear(timeMax.getFullYear() + 2);
-          const timeMaxStr = timeMax.toISOString();
-          
-          const params = new URLSearchParams({
-            key: apiKey,
-            timeMin: timeMin,
-            timeMax: timeMaxStr,
-            maxResults: '2500',
-            singleEvents: 'true',
-            orderBy: 'startTime'
-          });
-          
-          const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events?${params.toString()}`;
-          
-          const response = await fetch(url);
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`${room.id}홀 API 에러:`, errorText);
-            throw new Error(`${room.id}홀 데이터 가져오기 실패: HTTP ${response.status}`);
-          }
-          
-          const data = await response.json();
-          const events = data.items || [];
-          
-          // Supabase에 저장
-          const eventsToUpsert = [];
-          for (const event of events) {
-            if (!event.start || !event.start.dateTime) continue;
-            
-            // 가격 계산
-            const { price, priceType, isNaver } = window.calculatePrice(
-              event.start.dateTime,
-              event.end.dateTime,
-              room.id,
-              event.description || ''
-            );
-            
-            eventsToUpsert.push({
-              room_id: room.id,
-              google_event_id: event.id,
-              title: event.summary || '(제목 없음)',
-              start_time: event.start.dateTime,
-              end_time: event.end.dateTime,
-              description: event.description || null,
-              price: price,
-              price_type: priceType,
-              is_naver: isNaver,
-              updated_at: new Date().toISOString()
-            });
-          }
-          
-          // 100개씩 배치 저장
-          for (let i = 0; i < eventsToUpsert.length; i += 100) {
-            const batch = eventsToUpsert.slice(i, i + 100);
-            const { error } = await supabase
-              .from('booking_events')
-              .upsert(batch, {
-                onConflict: 'google_event_id',
-                ignoreDuplicates: false
-              });
-            
-            if (error) {
-              console.error(`${room.id}홀 저장 오류:`, error);
-              throw new Error(`${room.id}홀 DB 저장 실패: ${error.message}`);
-            }
-          }
-          
-          totalProcessed += eventsToUpsert.length;
-          console.log(`✅ ${room.id}홀: ${eventsToUpsert.length}개 이벤트 동기화 완료`);
+        const response = await fetch(`${baseUrl}/sync-calendar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         
-        messageDiv.textContent = `✅ DB 복구 완료!\n\n총 ${totalProcessed}개 이벤트 동기화 완료`;
+        const result = await response.json();
+        
+        messageDiv.textContent = `✅ DB 복구 완료!\n\n총 ${result.totalProcessed || 0}개 이벤트 동기화 완료`;
         messageDiv.className = 'alert alert-success mt-3';
         
       } catch (error) {
         console.error('동기화 오류:', error);
-        messageDiv.textContent = `❌ 동기화 실패\n\n${error.message}`;
+        messageDiv.textContent = `❌ 동기화 실패\n\n${error.message}\n\n로컬 환경에서는 Netlify Functions를 먼저 실행하세요:\nnpm install -g netlify-cli\nnetlify dev`;
         messageDiv.className = 'alert alert-danger mt-3';
       }
     }

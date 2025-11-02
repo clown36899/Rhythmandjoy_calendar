@@ -158,9 +158,20 @@ function calculatePrice(startTime, endTime, roomId, description = '', roomPrices
   };
 }
 
-module.exports = {
-  calculatePrice,
-  DEFAULT_ROOM_PRICES,
-  isWeekendOrHoliday,
-  isNaverBooking
-};
+// 브라우저 전역 객체로 export
+if (typeof window !== 'undefined') {
+  window.calculatePrice = calculatePrice;
+  window.DEFAULT_ROOM_PRICES = DEFAULT_ROOM_PRICES;
+  window.isWeekendOrHoliday = isWeekendOrHoliday;
+  window.isNaverBooking = isNaverBooking;
+}
+
+// Node.js용 export (Netlify Functions에서 사용)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    calculatePrice,
+    DEFAULT_ROOM_PRICES,
+    isWeekendOrHoliday,
+    isNaverBooking
+  };
+}
