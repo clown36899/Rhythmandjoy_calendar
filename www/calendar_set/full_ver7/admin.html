@@ -104,6 +104,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config-loader.js"></script>
+  <script src="sync-manager.js"></script>
   <script>
     let authToken = localStorage.getItem('adminToken');
     let supabase = null;
@@ -220,39 +221,56 @@
       { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
     ];
 
-    // DB 전체 재동기화
+    // DB 전체 재동기화 (클라이언트에서 직접)
     async function fullResync() {
       const messageDiv = document.getElementById('adminMessage');
       
       const confirmMsg = '⚠️ Google Calendar에서 전체 데이터를 다시 받아옵니다.\n\n이 작업은 몇 분 정도 소요될 수 있습니다.\n\n계속하시겠습니까?';
       if (!confirm(confirmMsg)) return;
       
-      messageDiv.textContent = '🔄 동기화 준비 중...';
+      if (!supabase) {
+        messageDiv.textContent = '❌ Supabase가 초기화되지 않았습니다';
+        messageDiv.className = 'alert alert-danger mt-3';
+        messageDiv.style.display = 'block';
+        return;
+      }
+
+      if (!window.GOOGLE_CALENDAR_API_KEY) {
+        messageDiv.textContent = '❌ Google Calendar API Key가 설정되지 않았습니다.\nenv.js 파일을 확인해주세요.';
+        messageDiv.className = 'alert alert-danger mt-3';
+        messageDiv.style.display = 'block';
+        return;
+      }
+      
+      messageDiv.textContent = '🔄 동기화 시작...';
       messageDiv.className = 'alert alert-info mt-3';
       messageDiv.style.display = 'block';
       
       try {
-        // Netlify Functions 호출 (로컬: localhost:8888, 배포: /.netlify/functions)
-        const isLocal = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
-        const baseUrl = isLocal ? 'http://localhost:8888/.netlify/functions' : '/.netlify/functions';
+        const syncManager = new SyncManager(supabase, window.GOOGLE_CALENDAR_API_KEY);
+        const results = await syncManager.syncAll(2020, new Date().getFullYear() + 2);
         
-        const response = await fetch(`${baseUrl}/sync-calendar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+        const totalCount = results.reduce((sum, r) => sum + (r.count || 0), 0);
+        const successCount = results.filter(r => r.success).length;
+        
+        let resultText = `✅ 동기화 완료!\n\n`;
+        resultText += `성공: ${successCount}/5개 방\n`;
+        resultText += `총 이벤트: ${totalCount}개\n\n`;
+        
+        results.forEach(r => {
+          if (r.success) {
+            resultText += `${r.room.toUpperCase()}홀: ${r.count}개 ✅\n`;
+          } else {
+            resultText += `${r.room.toUpperCase()}홀: 실패 ❌ (${r.error})\n`;
+          }
         });
         
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        const result = await response.json();
-        
-        messageDiv.textContent = `✅ DB 복구 완료!\n\n총 ${result.totalProcessed || 0}개 이벤트 동기화 완료`;
+        messageDiv.textContent = resultText;
         messageDiv.className = 'alert alert-success mt-3';
         
       } catch (error) {
         console.error('동기화 오류:', error);
-        messageDiv.textContent = `❌ 동기화 실패\n\n${error.message}\n\n로컬 환경에서는 Netlify Functions를 먼저 실행하세요:\nnpm install -g netlify-cli\nnetlify dev`;
+        messageDiv.textContent = `❌ 동기화 실패\n\n${error.message}`;
         messageDiv.className = 'alert alert-danger mt-3';
       }
     }
