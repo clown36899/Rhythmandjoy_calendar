@@ -12,13 +12,14 @@ CREATE TABLE IF NOT EXISTS price_history (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 날짜 범위 겹침 방지 인덱스 (같은 방에서 날짜가 겹치면 안됨)
+-- 날짜 범위 겹침 방지 제약조건 (같은 방에서 날짜가 겹치면 안됨)
 CREATE EXTENSION IF NOT EXISTS btree_gist;
-CREATE INDEX IF NOT EXISTS idx_price_history_room_dates 
-  ON price_history USING GIST (
-    room_id, 
-    daterange(effective_from, COALESCE(effective_to, '9999-12-31'::date), '[]') 
-  );
+ALTER TABLE price_history 
+ADD CONSTRAINT price_history_no_overlap 
+EXCLUDE USING GIST (
+  room_id WITH =, 
+  daterange(effective_from, COALESCE(effective_to, '9999-12-31'::date), '[]') WITH &&
+);
 
 -- 조회 성능을 위한 인덱스
 CREATE INDEX IF NOT EXISTS idx_price_history_lookup 
