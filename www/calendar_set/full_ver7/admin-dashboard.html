@@ -945,6 +945,12 @@
       }
 
       console.log(`✅ ${allEvents.length}개 이벤트 로드 완료`);
+      
+      // 첫 5개 이벤트의 event_prices 구조 확인
+      console.log('🔍 첫 5개 이벤트 샘플:');
+      allEvents.slice(0, 5).forEach((e, idx) => {
+        console.log(`  [${idx}] id: ${e.id}, event_prices:`, e.event_prices);
+      });
 
       // 중복 체크
       const uniqueIds = new Set();
