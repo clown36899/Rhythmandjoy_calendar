@@ -17,10 +17,6 @@ author = "agent"
 task = "workflow.run"
 args = "정적 서버"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "백엔드 서버"
-
 [[workflows.workflow]]
 name = "정적 서버"
 author = "agent"
@@ -32,18 +28,6 @@ outputType = "webview"
 task = "shell.exec"
 args = "python3 simple_server.py"
 waitForPort = 5000
-
-[[workflows.workflow]]
-name = "백엔드 서버"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd backend && node server.js"
-waitForPort = 8000
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [[ports]]
 localPort = 5000
