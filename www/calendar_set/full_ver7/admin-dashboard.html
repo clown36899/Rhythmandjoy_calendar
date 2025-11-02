@@ -191,9 +191,6 @@
             <option value="2025" selected>2025년</option>
             <option value="2026">2026년</option>
           </select>
-          <button class="btn btn-warning" onclick="fullResync()" id="resyncBtn" title="Google Calendar에서 전체 데이터를 다시 받아옵니다">
-            <i class="fas fa-sync-alt"></i> 전체 재동기화
-          </button>
           <button class="btn btn-logout" onclick="logout()">
             <i class="fas fa-sign-out-alt"></i> 로그아웃
           </button>
@@ -356,59 +353,6 @@
     // 숫자 포맷팅 (천 단위 쉼표)
     function formatNumber(num) {
       return num.toLocaleString('ko-KR');
-    }
-
-    // 전체 재동기화 (DB 복구 및 전체 데이터 재로드)
-    async function fullResync() {
-      const confirmMsg = `⚠️ Google Calendar에서 전체 데이터를 다시 받아옵니다.\n\n이 작업은 몇 분 정도 소요될 수 있습니다.\n계속하시겠습니까?`;
-      
-      if (!confirm(confirmMsg)) return;
-      
-      const btn = document.getElementById('resyncBtn');
-      const originalHtml = btn.innerHTML;
-      
-      try {
-        // 버튼 비활성화 및 로딩 표시
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 동기화 중...';
-        
-        console.log('🔄 전체 재동기화 시작...');
-        
-        // sync-calendar 호출 (전체 동기화)
-        const response = await fetch('/.netlify/functions/sync-calendar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fullSync: true })
-        });
-        
-        if (!response.ok) {
-          throw new Error(`동기화 실패: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        console.log('✅ 동기화 결과:', result);
-        
-        // 성공 알림
-        alert(`✅ DB 복구 완료!\n\n처리된 이벤트: ${result.processed || 0}개\n새로운 이벤트: ${result.added || 0}개\n업데이트된 이벤트: ${result.updated || 0}개`);
-        
-        // 대시보드 새로고침
-        await loadDashboard();
-        
-        // 캘린더도 새로고침
-        if (IS_REPLIT && calendar) {
-          calendar.destroy();
-          calendar = null;
-          await loadMonthlyCalendar();
-        }
-        
-      } catch (error) {
-        console.error('재동기화 오류:', error);
-        alert(`❌ 동기화 실패\n\n${error.message}\n\n관리자에게 문의하세요.`);
-      } finally {
-        // 버튼 복구
-        btn.disabled = false;
-        btn.innerHTML = originalHtml;
-      }
     }
 
     // 대시보드 로드
