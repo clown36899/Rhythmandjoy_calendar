@@ -193,12 +193,9 @@
       
       try {
         // 환경 감지: Netlify vs Replit
-        // 테스트: sync-calendar-test 사용
         const syncUrl = window.location.hostname.includes('replit') 
           ? '/api/sync'
-          : '/.netlify/functions/sync-calendar-test';
-        
-        console.log('🔍 테스트 URL:', syncUrl);
+          : '/.netlify/functions/sync-calendar';
         
         const response = await fetch(syncUrl, {
           method: 'POST'

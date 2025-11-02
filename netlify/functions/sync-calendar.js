@@ -2,16 +2,6 @@ import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
 import { calculatePrice } from './lib/price-calculator.js';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
-const calendar = google.calendar({
-  version: 'v3',
-  auth: process.env.GOOGLE_CALENDAR_API_KEY
-});
-
 // 연습실 정보
 const rooms = [
   { id: 'a', calendarId: '752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com' },
@@ -20,6 +10,25 @@ const rooms = [
   { id: 'd', calendarId: '60da4147f8d838daa72ecea4f59c69106faedd48e8d4aea61a9d299d96b3f90e@group.calendar.google.com' },
   { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
 ];
+
+// Lazy initialization
+let supabase = null;
+let calendar = null;
+
+function initClients() {
+  if (!supabase) {
+    supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+  }
+  if (!calendar) {
+    calendar = google.calendar({
+      version: 'v3',
+      auth: process.env.GOOGLE_CALENDAR_API_KEY
+    });
+  }
+}
 
 async function syncRoomCalendar(room) {
   const startTime = Date.now();
@@ -130,6 +139,9 @@ async function syncRoomCalendar(room) {
 async function syncAllCalendars() {
   const overallStartTime = Date.now();
   console.log('🚀 전체 캘린더 동기화 시작 (병렬 처리)...\n');
+  
+  // 클라이언트 초기화
+  initClients();
   
   // 병렬 처리로 속도 향상
   const promises = rooms.map(room => syncRoomCalendar(room));
