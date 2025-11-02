@@ -367,7 +367,8 @@
         before16: policy.price_weekday_before16,
         after16: policy.price_weekday_after16,
         weekend: policy.price_weekend,
-        overnight: policy.price_overnight
+        overnight: policy.price_overnight,
+        dawnHourly: policy.price_dawn_hourly
       };
     }
 
@@ -1177,6 +1178,7 @@
           <td>${row.price_weekday_before16.toLocaleString()}원</td>
           <td>${row.price_weekday_after16.toLocaleString()}원</td>
           <td>${row.price_weekend.toLocaleString()}원</td>
+          <td>${(row.price_dawn_hourly || 0).toLocaleString()}원</td>
           <td>${row.price_overnight.toLocaleString()}원</td>
           <td>
             <button class="btn btn-sm btn-primary" onclick="editPrice('${row.id}')">
@@ -1214,6 +1216,7 @@
           document.getElementById('priceWeekdayBefore16').value = defaults.before16;
           document.getElementById('priceWeekdayAfter16').value = defaults.after16;
           document.getElementById('priceWeekend').value = defaults.after16;
+          document.getElementById('priceDawnHourly').value = defaults.dawnHourly;
           document.getElementById('priceOvernight').value = defaults.overnight;
         }
         return;
@@ -1233,6 +1236,7 @@
       document.getElementById('priceWeekdayBefore16').value = latestPolicy.price_weekday_before16;
       document.getElementById('priceWeekdayAfter16').value = latestPolicy.price_weekday_after16;
       document.getElementById('priceWeekend').value = latestPolicy.price_weekend;
+      document.getElementById('priceDawnHourly').value = latestPolicy.price_dawn_hourly || 5000;
       document.getElementById('priceOvernight').value = latestPolicy.price_overnight;
       
       console.log(`✅ ${roomId.toUpperCase()}홀의 최신 가격 정책 로드:`, latestPolicy);
@@ -1250,6 +1254,7 @@
       document.getElementById('priceWeekdayBefore16').value = price.price_weekday_before16;
       document.getElementById('priceWeekdayAfter16').value = price.price_weekday_after16;
       document.getElementById('priceWeekend').value = price.price_weekend;
+      document.getElementById('priceDawnHourly').value = price.price_dawn_hourly || 5000;
       document.getElementById('priceOvernight').value = price.price_overnight;
       
       const modal = new bootstrap.Modal(document.getElementById('priceFormModal'));
@@ -1267,6 +1272,7 @@
         price_weekday_before16: parseInt(document.getElementById('priceWeekdayBefore16').value),
         price_weekday_after16: parseInt(document.getElementById('priceWeekdayAfter16').value),
         price_weekend: parseInt(document.getElementById('priceWeekend').value),
+        price_dawn_hourly: parseInt(document.getElementById('priceDawnHourly').value),
         price_overnight: parseInt(document.getElementById('priceOvernight').value)
       };
       
@@ -1433,7 +1439,8 @@
                   <th>평일 오전<br><small>(6~16시)</small></th>
                   <th>평일 저녁<br><small>(16~24시)</small></th>
                   <th>주말/공휴일<br><small>(6~24시)</small></th>
-                  <th>새벽 통대관<br><small>(0~6시)</small></th>
+                  <th>새벽 1시간<br><small>(0~6시)</small></th>
+                  <th>새벽 통대관<br><small>(0~6시, 6시간)</small></th>
                   <th>작업</th>
                 </tr>
               </thead>
@@ -1496,6 +1503,11 @@
             <div class="mb-3">
               <label class="form-label">주말/공휴일 (6~24시) *</label>
               <input type="number" id="priceWeekend" class="form-control" required placeholder="15000">
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">새벽 1시간 (0~6시) *</label>
+              <input type="number" id="priceDawnHourly" class="form-control" required placeholder="5000">
             </div>
             
             <div class="mb-3">

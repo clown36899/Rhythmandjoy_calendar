@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS price_history (
   price_weekday_before16 INTEGER NOT NULL,
   price_weekday_after16 INTEGER NOT NULL,
   price_weekend INTEGER NOT NULL,
+  price_dawn_hourly INTEGER NOT NULL DEFAULT 5000,
   price_overnight INTEGER NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()

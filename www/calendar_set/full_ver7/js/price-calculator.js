@@ -1,10 +1,10 @@
 // 기본 가격 정보 (fallback용)
 const DEFAULT_ROOM_PRICES = {
-  a: { before16: 10000, after16: 13000, overnight: 30000 },
-  b: { before16: 9000, after16: 11000, overnight: 20000 },
-  c: { before16: 4000, after16: 6000, overnight: 15000 },
-  d: { before16: 3000, after16: 5000, overnight: 15000 },
-  e: { before16: 8000, after16: 10000, overnight: 20000 }
+  a: { before16: 10000, after16: 13000, dawnHourly: 5000, overnight: 30000 },
+  b: { before16: 9000, after16: 11000, dawnHourly: 3500, overnight: 20000 },
+  c: { before16: 4000, after16: 6000, dawnHourly: 2500, overnight: 15000 },
+  d: { before16: 3000, after16: 5000, dawnHourly: 2500, overnight: 15000 },
+  e: { before16: 8000, after16: 10000, dawnHourly: 3500, overnight: 20000 }
 };
 
 // 2025년 한국 법정 공휴일 (매년 업데이트 필요)
@@ -106,9 +106,9 @@ function calculatePrice(startTime, endTime, roomId, description = '', roomPrices
       let hourlyPrice = 0;
       let reason = '';
       
-      // 새벽 시간 (0~6시): overnight ÷ 6
+      // 새벽 시간 (0~6시): 새벽 1시간 가격 사용
       if (hourKst >= 0 && hourKst < 6) {
-        hourlyPrice = prices.overnight / 6;
+        hourlyPrice = prices.dawnHourly || (prices.overnight / 6);
         reason = `새벽(KST ${hourKst}시)`;
       } 
       // 주말 또는 공휴일: after16 요금
