@@ -1168,44 +1168,59 @@
         price_overnight: parseInt(document.getElementById('priceOvernight').value)
       };
       
-      // 날짜 겹침 검증 (같은 방에서)
+      // 시작일이 종료일보다 나중이면 오류
       const newStart = new Date(priceData.effective_from);
       const newEnd = priceData.effective_to ? new Date(priceData.effective_to) : new Date('9999-12-31');
       
-      const overlaps = priceHistoryData.filter(p => {
-        // 수정 중인 항목은 제외
-        if (id && p.id === id) return false;
-        // 같은 방만 확인
-        if (p.room_id !== priceData.room_id) return false;
-        
-        const existStart = new Date(p.effective_from);
-        const existEnd = p.effective_to ? new Date(p.effective_to) : new Date('9999-12-31');
-        
-        // 날짜 범위 겹침 체크
-        return (newStart <= existEnd && newEnd >= existStart);
-      });
-      
-      if (overlaps.length > 0) {
-        const roomNames = { a: 'A홀', b: 'B홀', c: 'C홀', d: 'D홀', e: 'E홀' };
-        alert(`❌ 날짜가 겹칩니다!\n\n${roomNames[priceData.room_id]}의 기존 가격 정책과 날짜가 겹칩니다:\n` + 
-              overlaps.map(p => `• ${p.effective_from} ~ ${p.effective_to || '계속'}`).join('\n') + 
-              '\n\n날짜 범위가 겹치지 않도록 조정해주세요.');
-        return;
-      }
-      
-      // 시작일이 종료일보다 나중이면 오류
       if (priceData.effective_to && newStart > newEnd) {
         alert('❌ 시작일이 종료일보다 나중일 수 없습니다!');
         return;
       }
       
+      // 새 정책 추가 시: 이전 정책의 종료일 자동 설정
+      if (!id) { // 새로 추가하는 경우만
+        const samePlacePolicies = priceHistoryData.filter(p => p.room_id === priceData.room_id);
+        
+        // 새 시작일보다 이전에 시작하고, 종료일이 없거나 새 시작일 이후인 정책 찾기
+        const policiesToUpdate = samePlacePolicies.filter(p => {
+          const existStart = new Date(p.effective_from);
+          const existEnd = p.effective_to ? new Date(p.effective_to) : null;
+          
+          // 이전에 시작했고, (종료일이 없거나 새 시작일 이후에 끝나는 경우)
+          return existStart < newStart && (!existEnd || existEnd >= newStart);
+        });
+        
+        // 이전 정책의 종료일을 (새 시작일 - 1일)로 설정
+        if (policiesToUpdate.length > 0) {
+          const newEndDate = new Date(newStart);
+          newEndDate.setDate(newEndDate.getDate() - 1);
+          const newEndDateStr = newEndDate.toISOString().split('T')[0];
+          
+          for (const policy of policiesToUpdate) {
+            const { error: updateError } = await supabase
+              .from('price_history')
+              .update({ effective_to: newEndDateStr })
+              .eq('id', policy.id);
+            
+            if (updateError) {
+              console.error('이전 정책 종료일 업데이트 실패:', updateError);
+            }
+          }
+          
+          console.log(`✅ ${policiesToUpdate.length}개 이전 정책의 종료일을 ${newEndDateStr}로 자동 설정했습니다.`);
+        }
+      }
+      
+      // 저장
       let result;
       if (id) {
+        // 수정
         result = await supabase
           .from('price_history')
           .update(priceData)
           .eq('id', id);
       } else {
+        // 추가
         result = await supabase
           .from('price_history')
           .insert([priceData]);
