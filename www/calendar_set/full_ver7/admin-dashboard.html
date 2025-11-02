@@ -915,7 +915,7 @@
     // 월간 캘린더 로드
     let calendar = null;
     async function loadMonthlyCalendar() {
-      if (!IS_REPLIT || !supabase) return;
+      if (!supabase) return;
 
       console.log('📅 월간 캘린더 로드 시작...');
 
@@ -1070,9 +1070,7 @@
     async function init() {
       await initSupabase();
       await loadDashboard();
-      if (IS_REPLIT) {
-        await loadMonthlyCalendar();
-      }
+      await loadMonthlyCalendar();
     }
     
     init();
