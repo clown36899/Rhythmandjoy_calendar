@@ -180,20 +180,36 @@
       { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
     ];
 
-    // DB 전체 재동기화 안내
-    function showSyncInstructions() {
+    // DB 전체 재동기화
+    async function showSyncInstructions() {
       const messageDiv = document.getElementById('adminMessage');
       
-      messageDiv.innerHTML = `
-        <div style="text-align: left;">
-          <h5>🔄 DB 전체 재동기화</h5>
-          <p>Replit Shell에서 다음 명령어를 실행하세요:</p>
-          <pre style="background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px;">python3 sync_calendar.py</pre>
-          <p><small>※ 2-3분 소요됩니다. 완료되면 자동으로 DB에 반영됩니다.</small></p>
-        </div>
-      `;
+      const confirmMsg = '⚠️ Google Calendar에서 전체 데이터를 다시 받아옵니다.\n\n이 작업은 2-3분 소요됩니다.\n\n계속하시겠습니까?';
+      if (!confirm(confirmMsg)) return;
+      
+      messageDiv.textContent = '🔄 동기화 시작 중...';
       messageDiv.className = 'alert alert-info mt-3';
       messageDiv.style.display = 'block';
+      
+      try {
+        const response = await fetch('http://localhost:8000/sync', {
+          method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          messageDiv.innerHTML = `<pre style="white-space: pre-wrap;">${result.output}</pre>`;
+          messageDiv.className = 'alert alert-success mt-3';
+        } else {
+          messageDiv.textContent = `❌ 동기화 실패\n\n${result.error}`;
+          messageDiv.className = 'alert alert-danger mt-3';
+        }
+        
+      } catch (error) {
+        messageDiv.textContent = `❌ 서버 연결 실패\n\nAPI 서버가 실행 중인지 확인하세요.\n(python3 api_server.py)`;
+        messageDiv.className = 'alert alert-danger mt-3';
+      }
     }
 
     function showLoginSection() {
