@@ -6,7 +6,8 @@ Google Calendar → Supabase 동기화 스크립트
 
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
+import re
 
 # 환경변수에서 읽기
 GOOGLE_API_KEY = os.environ['GOOGLE_CALENDAR_API_KEY']
@@ -21,24 +22,84 @@ ROOMS = [
     {'id': 'e', 'calendar_id': 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com'},
 ]
 
-def extract_price(description):
-    """설명에서 가격 추출"""
+# 가격 정책
+ROOM_PRICES = {
+    'a': {'before16': 10000, 'after16': 13000, 'overnight': 30000},
+    'b': {'before16': 9000, 'after16': 11000, 'overnight': 20000},
+    'c': {'before16': 4000, 'after16': 6000, 'overnight': 15000},
+    'd': {'before16': 3000, 'after16': 5000, 'overnight': 15000},
+    'e': {'before16': 8000, 'after16': 10000, 'overnight': 20000},
+}
+
+# 2025년 한국 법정 공휴일
+KOREAN_HOLIDAYS_2025 = [
+    '2025-01-01', '2025-01-28', '2025-01-29', '2025-01-30',
+    '2025-03-01', '2025-03-03', '2025-05-05', '2025-05-06',
+    '2025-06-06', '2025-08-15', '2025-09-06', '2025-09-07',
+    '2025-09-08', '2025-09-09', '2025-10-03', '2025-10-09',
+    '2025-12-25'
+]
+
+def is_naver_booking(description):
+    """네이버 예약 체크"""
     if not description:
+        return False
+    return bool(re.search(r'예약번호:\s*\d+', description))
+
+def is_weekend_or_holiday(dt):
+    """주말 또는 공휴일 체크 (KST 기준)"""
+    date_str = dt.strftime('%Y-%m-%d')
+    weekday = dt.weekday()  # 0=월요일, 6=일요일
+    return weekday >= 5 or date_str in KOREAN_HOLIDAYS_2025
+
+def calculate_price(start_time_str, end_time_str, room_id, description=''):
+    """가격 계산"""
+    # UTC를 KST로 변환 (+9시간)
+    start_utc = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+    end_utc = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
+    
+    start_kst = start_utc + timedelta(hours=9)
+    end_kst = end_utc + timedelta(hours=9)
+    
+    prices = ROOM_PRICES.get(room_id)
+    if not prices:
         return 0
     
-    import re
-    patterns = [
-        r'(\d{1,3}(?:,?\d{3})*)\s*원',
-        r'(\d{1,3}(?:,?\d{3})*)\s*\/',
-        r'가격[:\s]*(\d{1,3}(?:,?\d{3})*)',
-    ]
+    is_naver = is_naver_booking(description)
+    commission = 0.9802 if is_naver else 0.9
     
-    for pattern in patterns:
-        match = re.search(pattern, description)
-        if match:
-            return int(match.group(1).replace(',', ''))
+    start_hour = start_kst.hour
+    end_hour = end_kst.hour
+    duration_hours = (end_kst - start_kst).total_seconds() / 3600
     
-    return 0
+    # 새벽 통대관: 0~6시 정확히 6시간
+    if start_hour == 0 and end_hour == 6 and duration_hours == 6:
+        return round(prices['overnight'] * commission)
+    
+    # 시간별 계산
+    total_price = 0
+    current = start_kst
+    
+    while current < end_kst:
+        hour = current.hour
+        
+        # 새벽 시간 (0~6시)
+        if 0 <= hour < 6:
+            hourly_price = prices['overnight'] / 6
+        # 주말 또는 공휴일
+        elif is_weekend_or_holiday(current):
+            hourly_price = prices['after16']
+        # 평일
+        else:
+            if hour < 16:
+                hourly_price = prices['before16']
+            else:
+                hourly_price = prices['after16']
+        
+        total_price += hourly_price
+        current += timedelta(hours=1)
+    
+    return round(total_price * commission)
 
 def fetch_calendar_events(calendar_id):
     """Google Calendar API로 이벤트 가져오기"""
@@ -73,14 +134,21 @@ def save_to_supabase(room_id, events):
     # 새 데이터 입력
     records = []
     for event in events:
+        start_time = event.get('start', {}).get('dateTime') or event.get('start', {}).get('date')
+        end_time = event.get('end', {}).get('dateTime') or event.get('end', {}).get('date')
+        description = event.get('description', '')
+        
+        # 가격 계산
+        price = calculate_price(start_time, end_time, room_id, description)
+        
         records.append({
             'google_event_id': event.get('id'),
             'room_id': room_id,
             'title': event.get('summary', '제목 없음'),
-            'description': event.get('description', ''),
-            'start_time': event.get('start', {}).get('dateTime') or event.get('start', {}).get('date'),
-            'end_time': event.get('end', {}).get('dateTime') or event.get('end', {}).get('date'),
-            'price': extract_price(event.get('description')),
+            'description': description,
+            'start_time': start_time,
+            'end_time': end_time,
+            'price': price,
             'created_at': event.get('created'),
             'updated_at': event.get('updated'),
         })
