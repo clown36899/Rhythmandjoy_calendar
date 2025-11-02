@@ -84,13 +84,20 @@
       <div id="loginError" class="alert alert-danger mt-3" style="display: none;"></div>
     </div>
 
-    <!-- 관리자 섹션 -->
+    <!-- 관리자 메뉴 -->
     <div class="admin-section" id="adminSection">
-      <div class="status-text">로그인 완료</div>
-      <button class="btn btn-danger" onclick="resetSync()">
-        🔄 수동 리셋 (전체 동기화)
+      <div class="status-text">✅ 로그인 완료</div>
+      
+      <button class="btn btn-primary mb-3" onclick="goToDashboard()">
+        📊 매출 통계 대시보드
       </button>
+      
+      <button class="btn btn-danger mb-3" onclick="fullResync()">
+        🔄 DB 전체 재동기화
+      </button>
+      
       <button class="btn btn-secondary" onclick="logout()">로그아웃</button>
+      
       <div id="adminMessage" class="alert mt-3" style="display: none;"></div>
     </div>
   </div>
@@ -143,11 +150,42 @@
       showLoginSection();
     }
 
-    function resetSync() {
+    // 매출 대시보드로 이동
+    function goToDashboard() {
+      window.location.href = 'admin-dashboard.html';
+    }
+
+    // DB 전체 재동기화
+    async function fullResync() {
       const messageDiv = document.getElementById('adminMessage');
-      messageDiv.textContent = '⚠️ 수동 리셋은 프로덕션 환경(Netlify)에서만 사용 가능합니다';
-      messageDiv.className = 'alert alert-warning mt-3';
+      
+      const confirmMsg = '⚠️ Google Calendar에서 전체 데이터를 다시 받아옵니다.\n\n이 작업은 몇 분 정도 소요될 수 있습니다.\n\n계속하시겠습니까?';
+      if (!confirm(confirmMsg)) return;
+      
+      messageDiv.textContent = '🔄 동기화 중... 잠시만 기다려주세요.';
+      messageDiv.className = 'alert alert-info mt-3';
       messageDiv.style.display = 'block';
+      
+      try {
+        const response = await fetch('/.netlify/functions/sync-calendar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        messageDiv.textContent = `✅ DB 복구 완료!\n\n처리: ${result.processed || 0}개\n추가: ${result.added || 0}개\n업데이트: ${result.updated || 0}개`;
+        messageDiv.className = 'alert alert-success mt-3';
+        
+      } catch (error) {
+        console.error('동기화 오류:', error);
+        messageDiv.textContent = `❌ 동기화 실패: ${error.message}`;
+        messageDiv.className = 'alert alert-danger mt-3';
+      }
     }
 
     function showLoginSection() {
@@ -158,8 +196,9 @@
     }
 
     function showAdminSection() {
-      // 로그인 성공 → 대시보드로 이동
-      window.location.href = 'admin-dashboard.html';
+      // 로그인 성공 → 관리 메뉴 표시
+      document.getElementById('loginSection').style.display = 'none';
+      document.getElementById('adminSection').style.display = 'block';
     }
 
     // Enter 키로 로그인
