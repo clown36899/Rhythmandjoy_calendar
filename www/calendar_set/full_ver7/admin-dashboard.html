@@ -365,15 +365,14 @@
       console.log(`💾 백그라운드에서 ${updates.length}개 가격 업데이트 중...`);
       
       try {
-        // 순차 처리 (한 번에 하나씩)
-        for (const update of updates) {
-          await supabase
-            .from('booking_events')
-            .update({ price: update.price })
-            .eq('id', update.id);
-        }
+        // RPC 함수로 한 번에 업데이트
+        const { error } = await supabase.rpc('update_event_prices', {
+          price_data: updates
+        });
         
-        console.log(`✅ ${updates.length}개 가격 업데이트 완료`);
+        if (error) throw error;
+        
+        console.log(`✅ ${updates.length}개 가격 업데이트 완료 (1회 요청)`);
       } catch (error) {
         console.error('백그라운드 업데이트 실패:', error);
       }
@@ -437,21 +436,16 @@
           };
         });
         
-        // 순차 업데이트
+        // RPC 함수로 한 번에 업데이트
         loadingText.textContent = 'DB 업데이트 중...';
-        let totalUpdated = 0;
         
-        for (const update of updates) {
-          await supabase
-            .from('booking_events')
-            .update({ price: update.price })
-            .eq('id', update.id);
-          
-          totalUpdated++;
-          if (totalUpdated % 100 === 0 || totalUpdated === updates.length) {
-            loadingText.textContent = `DB 업데이트 중... (${totalUpdated}/${updates.length})`;
-          }
-        }
+        const { error: updateError } = await supabase.rpc('update_event_prices', {
+          price_data: updates
+        });
+        
+        if (updateError) throw updateError;
+        
+        const totalUpdated = updates.length;
         
         alert(`✅ 전체 재계산 완료!\n\n${totalUpdated}개 이벤트의 가격이 업데이트되었습니다.`);
         
