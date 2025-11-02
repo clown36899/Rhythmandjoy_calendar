@@ -981,6 +981,10 @@
         const price = event.event_prices?.[0]?.calculated_price || 0;
         dailyRevenue[dateKey] += price;
       });
+      
+      console.log('📊 일일 매출 계산 완료:', dailyRevenue);
+      console.log('💰 총 일수:', Object.keys(dailyRevenue).length);
+      console.log('💰 첫 3개 날짜:', Object.entries(dailyRevenue).slice(0, 3));
 
       const events = allEvents.map(event => ({
         id: event.id,
