@@ -92,8 +92,12 @@
         📊 매출 통계 대시보드
       </button>
       
-      <button class="btn btn-danger mb-3" onclick="showSyncInstructions()">
-        🔄 DB 전체 재동기화
+      <button class="btn btn-warning mb-3" onclick="syncCalendars()">
+        1️⃣ DB 전체 재동기화
+      </button>
+      
+      <button class="btn btn-primary mb-3 ms-2" onclick="resetWatchChannels()" id="watchBtn">
+        2️⃣ Watch 채널 재설정
       </button>
       
       <button class="btn btn-secondary" onclick="logout()">로그아웃</button>
@@ -180,8 +184,8 @@
       { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
     ];
 
-    // DB 전체 재동기화
-    async function showSyncInstructions() {
+    // 1️⃣ DB 전체 재동기화 (Watch 제외)
+    async function syncCalendars() {
       const messageDiv = document.getElementById('adminMessage');
       
       const confirmMsg = '⚠️ Google Calendar에서 전체 데이터를 다시 받아옵니다.\n\n이 작업은 2-3분 소요됩니다.\n\n계속하시겠습니까?';
@@ -253,40 +257,10 @@
               });
             }
             
-            message += '\n🔔 Watch 채널 재설정 중...';
-            messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
-            messageDiv.className = 'alert alert-info mt-3';
+            message += '\n\n✅ 동기화 완료! 다음 단계: "2️⃣ Watch 채널 재설정" 버튼을 눌러주세요.';
             
-            // 동기화 완료 후 자동으로 Watch 재설정 (Netlify만)
-            if (!window.location.hostname.includes('replit')) {
-              try {
-                const watchResponse = await fetch('/.netlify/functions/setup-watches', {
-                  method: 'POST'
-                });
-                
-                const watchResult = await watchResponse.json();
-                
-                if (watchResult.success) {
-                  message += '\n✅ Watch 채널 재설정 완료!\n\n';
-                  if (watchResult.results) {
-                    watchResult.results.forEach(r => {
-                      const status = r.success ? '✅' : '❌';
-                      message += `${status} ${r.room.toUpperCase()}홀\n`;
-                    });
-                  }
-                } else {
-                  message += `\n⚠️ Watch 재설정 실패: ${watchResult.error}\n`;
-                }
-              } catch (watchError) {
-                message += `\n⚠️ Watch 재설정 오류: ${watchError.message}\n`;
-              }
-              
-              messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
-              messageDiv.className = 'alert alert-success mt-3';
-            } else {
-              messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
-              messageDiv.className = 'alert alert-success mt-3';
-            }
+            messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
+            messageDiv.className = 'alert alert-success mt-3';
           }
         } else {
           let errorMsg = `❌ 동기화 실패\n\n에러: ${result.error || result.message}`;
@@ -299,6 +273,55 @@
         
       } catch (error) {
         messageDiv.textContent = `❌ 동기화 실패\n\n${error.message}`;
+        messageDiv.className = 'alert alert-danger mt-3';
+      }
+    }
+
+    // 2️⃣ Watch 채널 재설정
+    async function resetWatchChannels() {
+      const messageDiv = document.getElementById('adminMessage');
+      
+      const confirmMsg = '🔔 Watch 채널을 재설정합니다.\n\n계속하시겠습니까?';
+      if (!confirm(confirmMsg)) return;
+      
+      messageDiv.textContent = '🔔 Watch 채널 재설정 중...';
+      messageDiv.className = 'alert alert-info mt-3';
+      messageDiv.style.display = 'block';
+      
+      try {
+        const watchUrl = window.location.hostname.includes('replit')
+          ? '/api/setup-watches'
+          : '/.netlify/functions/setup-watches';
+        
+        const response = await fetch(watchUrl, {
+          method: 'POST'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          let message = '✅ Watch 채널 재설정 완료!\n\n';
+          
+          if (result.results) {
+            result.results.forEach(r => {
+              const status = r.success ? '✅' : '❌';
+              const errorMsg = r.error ? ` (${r.error})` : '';
+              message += `${status} ${r.room.toUpperCase()}홀${errorMsg}\n`;
+            });
+          }
+          
+          messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px;">${message}</pre>`;
+          messageDiv.className = 'alert alert-success mt-3';
+        } else {
+          messageDiv.textContent = `❌ Watch 재설정 실패\n\n${result.error || result.message}`;
+          messageDiv.className = 'alert alert-danger mt-3';
+        }
+      } catch (error) {
+        messageDiv.textContent = `❌ Watch 재설정 실패\n\n${error.message}`;
         messageDiv.className = 'alert alert-danger mt-3';
       }
     }
