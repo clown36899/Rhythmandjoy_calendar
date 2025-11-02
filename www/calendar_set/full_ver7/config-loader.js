@@ -3,10 +3,13 @@
   const isLocal = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
   
   try {
+    // Replit 로컬 환경에서는 API 호출 건너뛰기
+    if (isLocal) {
+      throw new Error('Replit 환경: env.js 직접 사용');
+    }
+    
     // 1단계: 서버 API로 환경변수 가져오기 시도 (배포 환경)
-    const baseUrl = isLocal
-      ? 'http://localhost:8888/.netlify/functions'
-      : '/.netlify/functions';
+    const baseUrl = '/.netlify/functions';
     
     const response = await fetch(`${baseUrl}/get-config`, { timeout: 3000 });
     

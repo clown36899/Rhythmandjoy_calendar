@@ -321,9 +321,7 @@
   <script src="config-loader.js"></script>
   <script>
     const IS_REPLIT = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
-    const API_BASE = IS_REPLIT
-      ? 'http://localhost:8888/.netlify/functions'
-      : '/.netlify/functions';
+    const API_BASE = '/.netlify/functions';
 
     // Supabase 클라이언트 초기화 (config-loader.js 로드 대기)
     let supabase = null;
