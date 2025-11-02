@@ -77,7 +77,6 @@ CREATE OR REPLACE VIEW booking_events_with_price AS
 SELECT 
   be.*,
   COALESCE(ep.calculated_price, 0) AS calculated_price,
-  ep.price_type,
   ep.price_metadata,
   ep.updated_at AS price_updated_at
 FROM booking_events be
