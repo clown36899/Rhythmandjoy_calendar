@@ -237,12 +237,19 @@
       }
       
       const roomNames = selectedRooms.map(r => r.toUpperCase() + '홀').join(', ');
-      const confirmMsg = `⚠️ ${roomNames}을(를) 동기화합니다.\n\n계속하시겠습니까?`;
+      const confirmMsg = `⚠️ ${roomNames}을(를) 동기화합니다.\n\n⏱️ 예상 시간: ${selectedRooms.length * 2}초\n\n계속하시겠습니까?`;
       if (!confirm(confirmMsg)) return;
       
-      messageDiv.textContent = `🔄 ${roomNames} 동기화 시작 중...`;
+      messageDiv.textContent = `🔄 ${roomNames} 동기화 중... (화면 새로고침 금지)`;
       messageDiv.className = 'alert alert-info mt-3';
       messageDiv.style.display = 'block';
+      
+      // ⭐ Realtime 구독 일시 중지 (과부하 방지)
+      console.log('🔇 Realtime 구독 일시 중지 (동기화 중)');
+      if (window.supabaseChannel) {
+        await window.supabaseChannel.unsubscribe();
+        window.supabaseChannel = null;
+      }
       
       try {
         // 환경 감지: Netlify vs Replit
@@ -268,6 +275,12 @@
         
         const result = await response.json();
         
+        // ⭐ 동기화 완료 후 1초 대기 후 자동 새로고침
+        setTimeout(() => {
+          console.log('🔄 페이지 새로고침 (최신 데이터 반영)');
+          window.location.reload();
+        }, 1500);
+        
         if (result.success) {
           // 테스트 모드 감지
           if (result.env && result.imports) {
@@ -287,15 +300,9 @@
             messageDiv.className = 'alert alert-info mt-3';
           } else if (result.output) {
             // Python 스크립트 stdout 출력 (Replit 테스트 서버)
-            messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${result.output}</pre>`;
+            const outputWithMessage = result.output + '\n\n✅ 동기화 완료!\n💡 페이지가 자동으로 새로고침됩니다...';
+            messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${outputWithMessage}</pre>`;
             messageDiv.className = 'alert alert-success mt-3';
-            
-            // Watch 재설정 확인
-            if (result.output.includes('Watch 채널 재설정 완료')) {
-              console.log('✅ Watch 채널 자동 재설정 완료됨');
-            } else if (result.output.includes('Watch 재설정')) {
-              console.warn('⚠️ Watch 재설정 시도했으나 확인 필요');
-            }
           } else {
             // Netlify Functions JSON 응답
             let message = `✅ 동기화 완료! (총 ${result.totalTime || '측정 실패'})\n\n`;
@@ -314,7 +321,7 @@
               });
             }
             
-            message += '\n\n✅ 동기화 완료! 다음 단계: "2️⃣ Watch 채널 재설정" 버튼을 눌러주세요.';
+            message += '\n\n✅ 동기화 완료!\n💡 페이지가 자동으로 새로고침됩니다...';
             
             messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
             messageDiv.className = 'alert alert-success mt-3';

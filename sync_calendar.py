@@ -283,9 +283,7 @@ def main(selected_rooms=None):
             print(f'  ❌ {room["id"].upper()}홀 실패: {e}')
     
     print(f'\n✅ 동기화 완료! 총 {total}개 이벤트')
-    
-    # 자동으로 Watch 채널 재설정
-    reset_watch_channels()
+    print('\n💡 다음 단계: admin.html에서 "2️⃣ Watch 채널 재설정" 버튼을 눌러주세요.')
 
 if __name__ == '__main__':
     # 명령줄 인자로 선택된 연습실 받기 (예: python sync_calendar.py a b c)
