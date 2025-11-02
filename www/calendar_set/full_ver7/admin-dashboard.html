@@ -556,10 +556,20 @@
       // 이번 달 첫날 계산 (KST 기준)
       const now = new Date();
       const nowKst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-      const currentMonth = nowKst.getUTCFullYear() === parseInt(year) ? nowKst.getUTCMonth() + 1 : 13;
-      const currentMonthStart = `${year}-${String(currentMonth).padStart(2, '0')}-01T00:00:00Z`;
+      const currentYear = nowKst.getUTCFullYear();
+      const currentMonth = nowKst.getUTCMonth() + 1;
       
-      console.log(`📅 기준: ${year}년 ${currentMonth}월부터는 실시간 계산, 그 전은 DB 사용`);
+      // 요청 연도가 현재 연도보다 작으면 모두 DB 사용, 크면 모두 재계산
+      let currentMonthStart;
+      if (parseInt(year) < currentYear) {
+        currentMonthStart = `${parseInt(year) + 1}-01-01T00:00:00Z`; // 미래 날짜로 설정 (모두 과거)
+      } else if (parseInt(year) > currentYear) {
+        currentMonthStart = `${year}-01-01T00:00:00Z`; // 모두 현재/미래
+      } else {
+        currentMonthStart = `${year}-${String(currentMonth).padStart(2, '0')}-01T00:00:00Z`;
+      }
+      
+      console.log(`📅 기준: ${currentMonthStart} 이후는 실시간 계산, 그 전은 DB 사용`);
       
       // 해당 연도 이벤트만 가져오기
       let allEvents = [];
