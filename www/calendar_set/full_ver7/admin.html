@@ -253,8 +253,40 @@
               });
             }
             
+            message += '\n🔔 Watch 채널 재설정 중...';
             messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
-            messageDiv.className = 'alert alert-success mt-3';
+            messageDiv.className = 'alert alert-info mt-3';
+            
+            // 동기화 완료 후 자동으로 Watch 재설정 (Netlify만)
+            if (!window.location.hostname.includes('replit')) {
+              try {
+                const watchResponse = await fetch('/.netlify/functions/setup-watches', {
+                  method: 'POST'
+                });
+                
+                const watchResult = await watchResponse.json();
+                
+                if (watchResult.success) {
+                  message += '\n✅ Watch 채널 재설정 완료!\n\n';
+                  if (watchResult.results) {
+                    watchResult.results.forEach(r => {
+                      const status = r.success ? '✅' : '❌';
+                      message += `${status} ${r.room.toUpperCase()}홀\n`;
+                    });
+                  }
+                } else {
+                  message += `\n⚠️ Watch 재설정 실패: ${watchResult.error}\n`;
+                }
+              } catch (watchError) {
+                message += `\n⚠️ Watch 재설정 오류: ${watchError.message}\n`;
+              }
+              
+              messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
+              messageDiv.className = 'alert alert-success mt-3';
+            } else {
+              messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
+              messageDiv.className = 'alert alert-success mt-3';
+            }
           }
         } else {
           let errorMsg = `❌ 동기화 실패\n\n에러: ${result.error || result.message}`;
