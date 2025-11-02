@@ -191,6 +191,9 @@
             <option value="2025" selected>2025년</option>
             <option value="2026">2026년</option>
           </select>
+          <button class="btn btn-info" onclick="openPriceManagement()" style="white-space: nowrap;">
+            <i class="fas fa-tags"></i> 가격 정책
+          </button>
           <button class="btn btn-warning" onclick="recalculateAllPrices()" style="white-space: nowrap;">
             <i class="fas fa-sync-alt"></i> 전체 재계산
           </button>
@@ -1074,6 +1077,240 @@
     }
     
     init();
+
+    // ========== 가격 정책 관리 ==========
+    let priceHistoryData = [];
+
+    async function openPriceManagement() {
+      const modal = new bootstrap.Modal(document.getElementById('priceManagementModal'));
+      modal.show();
+      await loadPriceHistory();
+    }
+
+    async function loadPriceHistory() {
+      const { data, error } = await supabase
+        .from('price_history')
+        .select('*')
+        .order('room_id', { ascending: true })
+        .order('effective_from', { ascending: false });
+      
+      if (error) {
+        console.error('가격 히스토리 조회 오류:', error);
+        return;
+      }
+      
+      priceHistoryData = data;
+      renderPriceHistory(data);
+    }
+
+    function renderPriceHistory(data) {
+      const tbody = document.getElementById('priceHistoryBody');
+      const roomNames = { a: 'A홀', b: 'B홀', c: 'C홀', d: 'D홀', e: 'E홀' };
+      
+      tbody.innerHTML = data.map(row => `
+        <tr>
+          <td><span class="room-badge room-${row.room_id}">${roomNames[row.room_id]}</span></td>
+          <td>${row.effective_from}</td>
+          <td>${row.effective_to || '계속'}</td>
+          <td>${row.price_weekday_before16.toLocaleString()}원</td>
+          <td>${row.price_weekday_after16.toLocaleString()}원</td>
+          <td>${row.price_weekend.toLocaleString()}원</td>
+          <td>${row.price_overnight.toLocaleString()}원</td>
+          <td>
+            <button class="btn btn-sm btn-primary" onclick="editPrice('${row.id}')">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button class="btn btn-sm btn-danger" onclick="deletePrice('${row.id}')">
+              <i class="fas fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function openAddPriceForm() {
+      document.getElementById('priceFormTitle').textContent = '새 가격 정책 추가';
+      document.getElementById('priceForm').reset();
+      document.getElementById('priceId').value = '';
+      const modal = new bootstrap.Modal(document.getElementById('priceFormModal'));
+      modal.show();
+    }
+
+    async function editPrice(id) {
+      const price = priceHistoryData.find(p => p.id === id);
+      if (!price) return;
+      
+      document.getElementById('priceFormTitle').textContent = '가격 정책 수정';
+      document.getElementById('priceId').value = id;
+      document.getElementById('roomId').value = price.room_id;
+      document.getElementById('effectiveFrom').value = price.effective_from;
+      document.getElementById('effectiveTo').value = price.effective_to || '';
+      document.getElementById('priceWeekdayBefore16').value = price.price_weekday_before16;
+      document.getElementById('priceWeekdayAfter16').value = price.price_weekday_after16;
+      document.getElementById('priceWeekend').value = price.price_weekend;
+      document.getElementById('priceOvernight').value = price.price_overnight;
+      
+      const modal = new bootstrap.Modal(document.getElementById('priceFormModal'));
+      modal.show();
+    }
+
+    async function savePrice(event) {
+      event.preventDefault();
+      
+      const id = document.getElementById('priceId').value;
+      const priceData = {
+        room_id: document.getElementById('roomId').value,
+        effective_from: document.getElementById('effectiveFrom').value,
+        effective_to: document.getElementById('effectiveTo').value || null,
+        price_weekday_before16: parseInt(document.getElementById('priceWeekdayBefore16').value),
+        price_weekday_after16: parseInt(document.getElementById('priceWeekdayAfter16').value),
+        price_weekend: parseInt(document.getElementById('priceWeekend').value),
+        price_overnight: parseInt(document.getElementById('priceOvernight').value)
+      };
+      
+      let result;
+      if (id) {
+        result = await supabase
+          .from('price_history')
+          .update(priceData)
+          .eq('id', id);
+      } else {
+        result = await supabase
+          .from('price_history')
+          .insert([priceData]);
+      }
+      
+      if (result.error) {
+        alert('저장 실패: ' + result.error.message);
+        return;
+      }
+      
+      alert('가격 정책이 저장되었습니다!');
+      bootstrap.Modal.getInstance(document.getElementById('priceFormModal')).hide();
+      await loadPriceHistory();
+    }
+
+    async function deletePrice(id) {
+      if (!confirm('이 가격 정책을 삭제하시겠습니까?')) return;
+      
+      const { error } = await supabase
+        .from('price_history')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        alert('삭제 실패: ' + error.message);
+        return;
+      }
+      
+      alert('가격 정책이 삭제되었습니다!');
+      await loadPriceHistory();
+    }
   </script>
+
+  <!-- 가격 정책 관리 모달 -->
+  <div class="modal fade" id="priceManagementModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="fas fa-tags"></i> 가격 정책 관리</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <button class="btn btn-success" onclick="openAddPriceForm()">
+              <i class="fas fa-plus"></i> 새 가격 추가
+            </button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>방</th>
+                  <th>시작일</th>
+                  <th>종료일</th>
+                  <th>평일 오전<br><small>(6~16시)</small></th>
+                  <th>평일 저녁<br><small>(16~24시)</small></th>
+                  <th>주말/공휴일<br><small>(6~24시)</small></th>
+                  <th>새벽 통대관<br><small>(0~6시)</small></th>
+                  <th>작업</th>
+                </tr>
+              </thead>
+              <tbody id="priceHistoryBody">
+                <tr>
+                  <td colspan="8" class="text-center">로딩 중...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 가격 입력 폼 모달 -->
+  <div class="modal fade" id="priceFormModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="priceFormTitle">새 가격 정책 추가</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form onsubmit="savePrice(event)">
+          <div class="modal-body">
+            <input type="hidden" id="priceId">
+            
+            <div class="mb-3">
+              <label class="form-label">방 선택 *</label>
+              <select id="roomId" class="form-select" required>
+                <option value="a">A홀</option>
+                <option value="b">B홀</option>
+                <option value="c">C홀</option>
+                <option value="d">D홀</option>
+                <option value="e">E홀</option>
+              </select>
+            </div>
+            
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label">시작일 *</label>
+                <input type="date" id="effectiveFrom" class="form-control" required>
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">종료일 <small>(비워두면 계속)</small></label>
+                <input type="date" id="effectiveTo" class="form-control">
+              </div>
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">평일 오전 (6~16시) *</label>
+              <input type="number" id="priceWeekdayBefore16" class="form-control" required placeholder="10000">
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">평일 저녁 (16~24시) *</label>
+              <input type="number" id="priceWeekdayAfter16" class="form-control" required placeholder="13000">
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">주말/공휴일 (6~24시) *</label>
+              <input type="number" id="priceWeekend" class="form-control" required placeholder="15000">
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">새벽 통대관 (0~6시, 6시간) *</label>
+              <input type="number" id="priceOvernight" class="form-control" required placeholder="30000">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+            <button type="submit" class="btn btn-primary">저장</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
