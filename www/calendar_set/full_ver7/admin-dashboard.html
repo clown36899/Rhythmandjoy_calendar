@@ -797,91 +797,7 @@
       });
     }
 
-    // 가격 계산 함수들
-    const ROOM_PRICES = {
-      a: { before16: 10000, after16: 13000, overnight: 30000 },
-      b: { before16: 9000, after16: 11000, overnight: 20000 },
-      c: { before16: 4000, after16: 6000, overnight: 15000 },
-      d: { before16: 3000, after16: 5000, overnight: 15000 },
-      e: { before16: 8000, after16: 10000, overnight: 20000 }
-    };
-    
-    const KOREAN_HOLIDAYS_2025 = [
-      '2025-01-01', '2025-01-28', '2025-01-29', '2025-01-30',
-      '2025-03-01', '2025-03-03', '2025-05-05', '2025-05-06',
-      '2025-06-06', '2025-08-15', '2025-09-06', '2025-09-07',
-      '2025-09-08', '2025-09-09', '2025-10-03', '2025-10-09',
-      '2025-12-25'
-    ];
-    
-    function toKst(date) {
-      return new Date(date.getTime() + 9 * 60 * 60 * 1000);
-    }
-    
-    function getKstHour(date) {
-      return toKst(date).getUTCHours();
-    }
-    
-    function getKstDay(date) {
-      return toKst(date).getUTCDay();
-    }
-    
-    function getKstDateString(date) {
-      return toKst(date).toISOString().split('T')[0];
-    }
-    
-    function isWeekendOrHoliday(date) {
-      const day = getKstDay(date);
-      const dateString = getKstDateString(date);
-      return day === 0 || day === 6 || KOREAN_HOLIDAYS_2025.includes(dateString);
-    }
-    
-    function calculatePrice(startTime, endTime, roomId, description = '') {
-      const start = new Date(startTime);
-      const end = new Date(endTime);
-      const prices = ROOM_PRICES[roomId];
-      
-      if (!prices) return { price: 0, priceType: 'unknown', isNaver: false };
-      
-      let totalPrice = 0;
-      let priceType = '일반';
-      const isNaver = /예약번호:\s*\d+/.test(description || '');
-      
-      const startHourKst = getKstHour(start);
-      const endHourKst = getKstHour(end);
-      const durationHours = (end - start) / (1000 * 60 * 60);
-      
-      if (startHourKst === 0 && endHourKst === 6 && durationHours === 6) {
-        totalPrice = prices.overnight;
-        priceType = '새벽통대관';
-      } else {
-        let currentTime = new Date(start);
-        
-        while (currentTime < end) {
-          const hourKst = getKstHour(currentTime);
-          
-          if (hourKst >= 0 && hourKst < 6) {
-            totalPrice += prices.overnight / 6;
-          } else if (isWeekendOrHoliday(currentTime)) {
-            totalPrice += prices.after16;
-          } else {
-            totalPrice += hourKst < 16 ? prices.before16 : prices.after16;
-          }
-          
-          currentTime.setHours(currentTime.getHours() + 1);
-        }
-        
-        if (startHourKst >= 0 && startHourKst < 6) priceType = '새벽';
-        else if (isWeekendOrHoliday(start)) priceType = '주말/공휴일';
-        else if (startHourKst >= 16) priceType = '저녁';
-        else priceType = '일반';
-      }
-      
-      totalPrice = Math.round(totalPrice * (isNaver ? 0.9802 : 0.9));
-      
-      return { price: totalPrice, priceType, isNaver };
-    }
-    
+    // 가격 재계산 도구
     async function testPricing() {
       const results = document.getElementById('priceTestResults');
       results.innerHTML = '<p>로딩 중...</p>';
@@ -910,7 +826,7 @@
       let wrongCount = 0;
       
       events.forEach(event => {
-        const calculated = calculatePrice(event.start_time, event.end_time, event.room_id, event.description);
+        const calculated = window.calculatePrice(event.start_time, event.end_time, event.room_id, event.description);
         const stored = event.price;
         const match = calculated.price === stored;
         
@@ -975,7 +891,7 @@
       results.innerHTML = `<div class="spinner-border text-primary" role="status"></div><p>${allEvents.length}개 계산 중...</p>`;
       
       const updates = allEvents.map(event => {
-        const { price, priceType, isNaver } = calculatePrice(
+        const { price, priceType, isNaver } = window.calculatePrice(
           event.start_time,
           event.end_time,
           event.room_id,
