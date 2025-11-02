@@ -378,16 +378,30 @@
       loadingText.textContent = '전체 이벤트 로딩 중...';
       
       try {
-        // 한 번에 모든 이벤트 가져오기 (제한 없음, 1회 요청)
-        loadingText.textContent = '이벤트 로딩 중...';
+        // 전체 데이터 받기 (1000개씩 여러 번)
+        let allEvents = [];
+        let from = 0;
+        const pageSize = 1000;
         
-        const { data: allEvents, error } = await supabase
-          .from('booking_events')
-          .select('*', { count: 'exact' })
-          .order('start_time', { ascending: true })
-          .limit(100000);
+        while (true) {
+          loadingText.textContent = `이벤트 로딩 중... (${allEvents.length}개)`;
+          
+          const { data: batch, error } = await supabase
+            .from('booking_events')
+            .select('*')
+            .order('start_time', { ascending: true })
+            .range(from, from + pageSize - 1);
+          
+          if (error) throw error;
+          if (!batch || batch.length === 0) break;
+          
+          allEvents = allEvents.concat(batch);
+          
+          if (batch.length < pageSize) break;
+          from += pageSize;
+        }
         
-        if (error) throw error;
+        loadingText.textContent = `${allEvents.length}개 이벤트 로드 완료`;
         
         // 클라이언트에서 모든 이벤트 가격 재계산 (진행률 표시)
         const total = allEvents.length;
@@ -530,21 +544,36 @@
       
       console.log(`📅 현재/미래(${currentMonthStart} 이후)만 재계산, 과거는 DB 사용`);
       
-      // 한 번에 모든 이벤트 가져오기 (제한 없음)
-      const { data: events, error } = await supabase
-        .from('booking_events')
-        .select('*', { count: 'exact' })
-        .gte('start_time', `${year}-01-01T00:00:00Z`)
-        .lt('start_time', `${parseInt(year) + 1}-01-01T00:00:00Z`)
-        .order('start_time', { ascending: true })
-        .limit(100000);
+      // 전체 데이터 받기 (1000개씩 여러 번 요청)
+      let allEvents = [];
+      let from = 0;
+      const pageSize = 1000;
       
-      if (error) {
-        console.error('Supabase 쿼리 오류:', error);
-        throw error;
+      while (true) {
+        const { data: batch, error } = await supabase
+          .from('booking_events')
+          .select('*')
+          .gte('start_time', `${year}-01-01T00:00:00Z`)
+          .lt('start_time', `${parseInt(year) + 1}-01-01T00:00:00Z`)
+          .order('start_time', { ascending: true })
+          .range(from, from + pageSize - 1);
+        
+        if (error) {
+          console.error('Supabase 쿼리 오류:', error);
+          throw error;
+        }
+        
+        if (!batch || batch.length === 0) break;
+        
+        allEvents = allEvents.concat(batch);
+        console.log(`📥 ${allEvents.length}개 이벤트 로드 중...`);
+        
+        if (batch.length < pageSize) break;
+        from += pageSize;
       }
       
-      console.log(`✅ ${events.length}개 이벤트 로드 완료 (1회 요청)`);
+      const events = allEvents;
+      console.log(`✅ 전체 ${events.length}개 이벤트 로드 완료`);
       
       // 현재+미래 데이터만 재계산
       const currentFutureEvents = events.filter(e => e.start_time >= currentMonthStart);
