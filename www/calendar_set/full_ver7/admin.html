@@ -224,8 +224,19 @@
             
             messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px;">${message}</pre>`;
             messageDiv.className = 'alert alert-info mt-3';
+          } else if (result.output) {
+            // Python 스크립트 stdout 출력 (Replit 테스트 서버)
+            messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${result.output}</pre>`;
+            messageDiv.className = 'alert alert-success mt-3';
+            
+            // Watch 재설정 확인
+            if (result.output.includes('Watch 채널 재설정 완료')) {
+              console.log('✅ Watch 채널 자동 재설정 완료됨');
+            } else if (result.output.includes('Watch 재설정')) {
+              console.warn('⚠️ Watch 재설정 시도했으나 확인 필요');
+            }
           } else {
-            // 실제 동기화 결과 표시
+            // Netlify Functions JSON 응답
             let message = `✅ 동기화 완료! (총 ${result.totalTime || '측정 실패'})\n\n`;
             
             if (result.results) {
@@ -241,12 +252,6 @@
                 message += `${log}\n`;
               });
             }
-            
-            message += '\n\n📌 다음 단계: Watch 채널 재설정이 필요합니다.';
-            
-            // Watch 재설정 버튼 추가
-            messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>
-            <button class="btn btn-primary mt-2" onclick="resetWatchChannels()">🔔 Watch 채널 재설정하기</button>`;
             
             messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
             messageDiv.className = 'alert alert-success mt-3';
