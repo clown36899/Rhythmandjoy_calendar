@@ -378,13 +378,14 @@
       loadingText.textContent = '전체 이벤트 로딩 중...';
       
       try {
-        // 한 번에 모든 이벤트 가져오기 (1회 요청)
+        // 한 번에 모든 이벤트 가져오기 (제한 없음, 1회 요청)
         loadingText.textContent = '이벤트 로딩 중...';
         
         const { data: allEvents, error } = await supabase
           .from('booking_events')
-          .select('*')
-          .order('start_time', { ascending: true });
+          .select('*', { count: 'exact' })
+          .order('start_time', { ascending: true })
+          .limit(100000);
         
         if (error) throw error;
         
@@ -529,13 +530,14 @@
       
       console.log(`📅 현재/미래(${currentMonthStart} 이후)만 재계산, 과거는 DB 사용`);
       
-      // 한 번에 모든 이벤트 가져오기
+      // 한 번에 모든 이벤트 가져오기 (제한 없음)
       const { data: events, error } = await supabase
         .from('booking_events')
-        .select('*')
+        .select('*', { count: 'exact' })
         .gte('start_time', `${year}-01-01T00:00:00Z`)
         .lt('start_time', `${parseInt(year) + 1}-01-01T00:00:00Z`)
-        .order('start_time', { ascending: true });
+        .order('start_time', { ascending: true })
+        .limit(100000);
       
       if (error) {
         console.error('Supabase 쿼리 오류:', error);
