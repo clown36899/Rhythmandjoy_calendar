@@ -365,18 +365,19 @@
       console.log(`💾 백그라운드에서 ${updates.length}개 가격 업데이트 중...`);
       
       try {
-        const batchSize = 500;
-        for (let i = 0; i < updates.length; i += batchSize) {
-          const batch = updates.slice(i, i + batchSize);
-          
-          const { error } = await supabase
+        // 개별 업데이트 (병렬 처리)
+        const promises = updates.map(update => 
+          supabase
             .from('booking_events')
-            .upsert(batch, { onConflict: 'id', ignoreDuplicates: false });
-          
-          if (error) {
-            console.error('백그라운드 업데이트 오류:', error);
-            return;
-          }
+            .update({ price: update.price })
+            .eq('id', update.id)
+        );
+        
+        // 100개씩 병렬 처리
+        const batchSize = 100;
+        for (let i = 0; i < promises.length; i += batchSize) {
+          const batch = promises.slice(i, i + batchSize);
+          await Promise.all(batch);
         }
         
         console.log(`✅ ${updates.length}개 가격 업데이트 완료`);
@@ -443,19 +444,22 @@
           };
         });
         
-        // 배치 업데이트
+        // 배치 업데이트 (개별 업데이트를 병렬 처리)
         loadingText.textContent = 'DB 업데이트 중...';
-        const updateBatchSize = 500;
         let totalUpdated = 0;
         
-        for (let i = 0; i < updates.length; i += updateBatchSize) {
-          const batch = updates.slice(i, i + updateBatchSize);
-          
-          const { error } = await supabase
+        const promises = updates.map(update => 
+          supabase
             .from('booking_events')
-            .upsert(batch, { onConflict: 'id', ignoreDuplicates: false });
-          
-          if (error) throw error;
+            .update({ price: update.price })
+            .eq('id', update.id)
+        );
+        
+        // 100개씩 병렬 처리
+        const updateBatchSize = 100;
+        for (let i = 0; i < promises.length; i += updateBatchSize) {
+          const batch = promises.slice(i, i + updateBatchSize);
+          await Promise.all(batch);
           
           totalUpdated += batch.length;
           loadingText.textContent = `DB 업데이트 중... (${totalUpdated}/${updates.length})`;
