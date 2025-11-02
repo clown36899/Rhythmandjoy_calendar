@@ -193,9 +193,10 @@
       
       try {
         // 환경 감지: Netlify vs Replit
+        // 테스트: 단일 연습실만 동기화
         const syncUrl = window.location.hostname.includes('replit') 
           ? '/api/sync'
-          : '/.netlify/functions/sync-calendar';
+          : '/.netlify/functions/sync-single-room';
         
         const response = await fetch(syncUrl, {
           method: 'POST'
