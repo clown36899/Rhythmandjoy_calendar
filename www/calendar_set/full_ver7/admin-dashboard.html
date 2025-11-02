@@ -343,9 +343,9 @@
       window.location.href = 'admin.html';
     }
 
-    // 전체 가격 재계산 (event_prices 테이블에만 저장)
+    // 전체 가격 재계산 (Netlify Functions 호출)
     async function recalculateAllPrices() {
-      if (!confirm('⚠️ 모든 이벤트의 가격을 재계산하여 event_prices 테이블에 저장합니다.\n\n(booking_events는 건드리지 않습니다)\n\n계속하시겠습니까?')) {
+      if (!confirm('⚠️ 모든 이벤트의 가격을 재계산하여 event_prices 테이블에 저장합니다.\n\n변경된 가격 정책이 반영됩니다.\n\n계속하시겠습니까?')) {
         return;
       }
       
@@ -358,78 +358,31 @@
       
       contentDiv.style.display = 'none';
       loadingDiv.style.display = 'flex';
-      loadingText.textContent = '전체 이벤트 로딩 중...';
+      loadingText.textContent = '서버에서 가격 재계산 중...';
       
       try {
-        // 전체 데이터 받기 (1000개씩 여러 번)
-        let allEvents = [];
-        let from = 0;
-        const pageSize = 1000;
-        
-        while (true) {
-          loadingText.textContent = `이벤트 로딩 중... (${allEvents.length}개)`;
-          
-          const { data: batch, error } = await supabase
-            .from('booking_events')
-            .select('id, start_time, end_time, room_id, description')
-            .order('start_time', { ascending: true })
-            .range(from, from + pageSize - 1);
-          
-          if (error) throw error;
-          if (!batch || batch.length === 0) break;
-          
-          allEvents = allEvents.concat(batch);
-          
-          if (batch.length < pageSize) break;
-          from += pageSize;
-        }
-        
-        loadingText.textContent = `${allEvents.length}개 이벤트 로드 완료`;
-        
-        // 클라이언트에서 모든 이벤트 가격 재계산
-        const total = allEvents.length;
-        const priceRecords = [];
-        
-        for (let i = 0; i < allEvents.length; i++) {
-          const event = allEvents[i];
-          const priceResult = window.calculatePrice(
-            event.start_time,
-            event.end_time,
-            event.room_id,
-            event.description || ''
-          );
-          
-          priceRecords.push({
-            booking_event_id: event.id,
-            calculated_price: priceResult.price,
-            price_type: priceResult.priceType || null,
-            price_metadata: null
-          });
-          
-          // 진행률 표시 (100개마다)
-          if ((i + 1) % 100 === 0 || i === allEvents.length - 1) {
-            const percent = Math.round(((i + 1) / total) * 100);
-            loadingText.textContent = `계산 중... ${percent}% (${i + 1}/${total})`;
+        // Netlify Functions 호출
+        const response = await fetch('/.netlify/functions/recalculate-prices', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
           }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         
-        // event_prices 테이블에만 저장 (booking_events는 건드리지 않음)
-        loadingText.textContent = 'event_prices 테이블에 저장 중...';
+        const result = await response.json();
         
-        const { error: updateError } = await supabase
-          .from('event_prices')
-          .upsert(priceRecords, { onConflict: 'booking_event_id' });
-        
-        if (updateError) throw updateError;
-        
-        alert(`✅ 전체 재계산 완료!\n\n${priceRecords.length}개 이벤트의 가격이 event_prices 테이블에 저장되었습니다.\n\n(booking_events는 건드리지 않았습니다)`);
+        alert(`✅ 전체 재계산 완료!\n\n${result.updated || result.total}개 이벤트의 가격이 재계산되었습니다.`);
         
         // 대시보드 새로고침
         loadDashboard();
         
       } catch (error) {
         console.error('전체 재계산 오류:', error);
-        alert(`❌ 재계산 실패: ${error.message}`);
+        alert(`❌ 재계산 실패: ${error.message}\n\n배포된 환경에서만 작동합니다.`);
         loadingDiv.style.display = 'none';
         contentDiv.style.display = 'block';
       } finally {
@@ -539,7 +492,7 @@
       while (true) {
         const { data: batch, error } = await supabase
           .from('booking_events')
-          .select('*')
+          .select('*, event_prices(calculated_price)')
           .gte('start_time', `${year}-01-01T00:00:00Z`)
           .lt('start_time', `${parseInt(year) + 1}-01-01T00:00:00Z`)
           .order('start_time', { ascending: true })
@@ -560,35 +513,12 @@
       }
       
       const events = allEvents;
-      console.log(`✅ 전체 ${events.length}개 이벤트 로드 완료`);
+      console.log(`✅ 전체 ${events.length}개 이벤트 로드 완료 (event_prices 포함)`);
       
-      // 모든 이벤트의 가격 계산 (event_prices 테이블에 저장)
-      console.log(`🔄 ${events.length}개 이벤트 가격 계산 중...`);
-      
-      const priceRecords = events.map(e => {
-        const priceResult = window.calculatePrice(e.start_time, e.end_time, e.room_id, e.description || '');
-        e.calculated_price = priceResult.price; // 메모리에 저장 (통계 계산용)
-        
-        return {
-          booking_event_id: e.id,
-          calculated_price: priceResult.price,
-          price_type: priceResult.priceType || null,
-          price_metadata: null
-        };
+      // event_prices에서 가격 가져오기
+      events.forEach(e => {
+        e.calculated_price = e.event_prices?.calculated_price || 0;
       });
-      
-      // event_prices 테이블에만 저장 (booking_events는 절대 건드리지 않음)
-      const { error: updateError } = await supabase
-        .from('event_prices')
-        .upsert(priceRecords, { onConflict: 'booking_event_id' });
-      
-      if (updateError) {
-        console.error('❌ event_prices 저장 오류:', updateError);
-      } else {
-        console.log(`✅ ${priceRecords.length}개 가격 데이터 event_prices 테이블에 저장 완료`);
-      }
-      
-      console.log(`💾 booking_events는 건드리지 않음, event_prices만 업데이트`);
 
       if (!events || events.length === 0) {
         console.warn('⚠️ 이벤트 데이터가 없습니다');
