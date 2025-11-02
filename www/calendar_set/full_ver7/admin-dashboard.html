@@ -358,25 +358,6 @@
       window.location.href = 'admin.html';
     }
 
-    // 백그라운드에서 현재/미래 데이터 DB 업데이트
-    async function updatePricesInBackground(updates) {
-      if (!updates || updates.length === 0) return;
-      
-      console.log(`💾 백그라운드에서 ${updates.length}개 가격 업데이트 중...`);
-      
-      try {
-        // RPC 함수로 한 번에 업데이트
-        const { error } = await supabase.rpc('update_event_prices', {
-          price_data: updates
-        });
-        
-        if (error) throw error;
-        
-        console.log(`✅ ${updates.length}개 가격 업데이트 완료 (1회 요청)`);
-      } catch (error) {
-        console.error('백그라운드 업데이트 실패:', error);
-      }
-    }
 
     // 전체 가격 재계산 (헤더 버튼)
     async function recalculateAllPrices() {
@@ -397,31 +378,19 @@
       loadingText.textContent = '전체 이벤트 로딩 중...';
       
       try {
-        // 모든 이벤트 가져오기
-        let allEvents = [];
-        let from = 0;
-        const batchSize = 1000;
+        // 한 번에 모든 이벤트 가져오기
+        loadingText.textContent = '이벤트 로딩 중...';
         
-        while (true) {
-          const { data: batch, error } = await supabase
-            .from('booking_events')
-            .select('*')
-            .order('start_time', { ascending: true })
-            .range(from, from + batchSize - 1);
-          
-          if (error) throw error;
-          if (!batch || batch.length === 0) break;
-          
-          allEvents = allEvents.concat(batch);
-          loadingText.textContent = `${allEvents.length}개 이벤트 로딩 중...`;
-          
-          if (batch.length < batchSize) break;
-          from += batchSize;
-        }
+        const { data: allEvents, error } = await supabase
+          .from('booking_events')
+          .select('*')
+          .order('start_time', { ascending: true });
+        
+        if (error) throw error;
         
         loadingText.textContent = `${allEvents.length}개 이벤트 가격 계산 중...`;
         
-        // 모든 이벤트 가격 재계산
+        // 브라우저에서 모든 이벤트 가격 재계산
         const updates = allEvents.map(event => {
           const priceResult = window.calculatePrice(
             event.start_time,
@@ -557,61 +526,29 @@
       
       console.log(`📅 기준: ${currentMonthStart} 이후는 실시간 계산, 그 전은 DB 사용`);
       
-      // 해당 연도 이벤트만 가져오기
-      let allEvents = [];
-      let from = 0;
-      const batchSize = 1000;
+      // 한 번에 모든 이벤트 가져오기
+      const { data: events, error } = await supabase
+        .from('booking_events')
+        .select('*')
+        .gte('start_time', `${year}-01-01T00:00:00Z`)
+        .lt('start_time', `${parseInt(year) + 1}-01-01T00:00:00Z`)
+        .order('start_time', { ascending: true });
       
-      while (true) {
-        const { data: batch, error } = await supabase
-          .from('booking_events')
-          .select('*')
-          .gte('start_time', `${year}-01-01T00:00:00Z`)
-          .lt('start_time', `${parseInt(year) + 1}-01-01T00:00:00Z`)
-          .order('start_time', { ascending: true })
-          .range(from, from + batchSize - 1);
-        
-        if (error) {
-          console.error('Supabase 쿼리 오류:', error);
-          throw error;
-        }
-        
-        if (!batch || batch.length === 0) break;
-        
-        allEvents = allEvents.concat(batch);
-        console.log(`📥 ${allEvents.length}개 이벤트 로드 중...`);
-        
-        if (batch.length < batchSize) break;
-        from += batchSize;
+      if (error) {
+        console.error('Supabase 쿼리 오류:', error);
+        throw error;
       }
       
-      const events = allEvents;
+      console.log(`✅ ${events.length}개 이벤트 로드 완료 (1회 요청)`);
       
-      console.log(`✅ 전체 ${events.length}개 이벤트 로드 완료`);
+      // 브라우저에서 모든 가격 계산 (DB 업데이트 없음)
+      console.log(`🔄 브라우저에서 ${events.length}개 이벤트 가격 계산 중...`);
+      events.forEach(e => {
+        const priceResult = window.calculatePrice(e.start_time, e.end_time, e.room_id, e.description || '');
+        e.price = priceResult.price; // 메모리에만 저장
+      });
       
-      // 현재/미래 이벤트 실시간 계산 및 DB 업데이트 준비
-      const currentFutureEvents = events.filter(e => e.start_time >= currentMonthStart);
-      const updatesToDb = [];
-      
-      if (currentFutureEvents.length > 0) {
-        console.log(`🔄 ${currentFutureEvents.length}개 현재/미래 이벤트 실시간 계산 중...`);
-        
-        currentFutureEvents.forEach(e => {
-          const priceResult = window.calculatePrice(e.start_time, e.end_time, e.room_id, e.description || '');
-          e.price = priceResult.price; // 메모리 업데이트
-          
-          // DB 업데이트 준비
-          updatesToDb.push({
-            id: e.id,
-            price: priceResult.price
-          });
-        });
-        
-        // 현재/미래 데이터를 DB에 배치 업데이트 (백그라운드)
-        updatePricesInBackground(updatesToDb);
-      }
-      
-      console.log(`💾 과거 이벤트는 DB price 사용, 현재/미래는 실시간 계산 완료`);
+      console.log(`✅ 브라우저 계산 완료 (DB 업데이트 안 함)`);
 
       if (!events || events.length === 0) {
         console.warn('⚠️ 이벤트 데이터가 없습니다');
