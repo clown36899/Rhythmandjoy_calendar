@@ -107,13 +107,15 @@ async function syncRoomCalendar(room) {
 }
 
 async function syncAllCalendars() {
-  console.log('🚀 전체 캘린더 동기화 시작...\n');
+  console.log('🚀 전체 캘린더 동기화 시작 (병렬 처리)...\n');
   
-  const results = [];
-  for (const room of rooms) {
+  // 병렬 처리로 속도 향상
+  const promises = rooms.map(async (room) => {
     const count = await syncRoomCalendar(room);
-    results.push({ room: room.id, count });
-  }
+    return { room: room.id, count };
+  });
+  
+  const results = await Promise.all(promises);
   
   console.log('\n✅ 전체 동기화 완료!');
   return results;
@@ -129,16 +131,6 @@ export async function handler(event, context) {
 
   try {
     const results = await syncAllCalendars();
-
-    // 동기화 완료 후 Watch 채널 재설정 (별도 호출, 에러 무시)
-    try {
-      await fetch('https://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/setup-watches', {
-        method: 'POST'
-      });
-      console.log('🔔 Watch 채널 재설정 요청 완료');
-    } catch (watchError) {
-      console.warn('⚠️ Watch 재설정 요청 실패 (무시):', watchError.message);
-    }
 
     return {
       statusCode: 200,
