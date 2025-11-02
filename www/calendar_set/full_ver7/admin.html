@@ -192,22 +192,50 @@
       messageDiv.style.display = 'block';
       
       try {
-        const response = await fetch('/api/sync', {
+        // 환경 감지: Netlify vs Replit
+        const syncUrl = window.location.hostname.includes('replit') 
+          ? '/api/sync'
+          : '/.netlify/functions/sync-calendar';
+        
+        const response = await fetch(syncUrl, {
           method: 'POST'
         });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         
         const result = await response.json();
         
         if (result.success) {
-          messageDiv.innerHTML = `<pre style="white-space: pre-wrap;">${result.output}</pre>`;
+          let message = '✅ 동기화 완료!\n\n';
+          
+          // 동기화 결과
+          if (result.syncResults) {
+            message += '📊 동기화 결과:\n';
+            result.syncResults.forEach(r => {
+              message += `  - ${r.room.toUpperCase()}홀: ${r.count}개 이벤트\n`;
+            });
+          }
+          
+          // Watch 채널 재설정 결과
+          if (result.watchResults) {
+            message += '\n🔔 Watch 채널 재설정:\n';
+            result.watchResults.forEach(r => {
+              const status = r.success ? '✅' : '❌';
+              message += `  ${status} ${r.room.toUpperCase()}홀\n`;
+            });
+          }
+          
+          messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 14px;">${message}</pre>`;
           messageDiv.className = 'alert alert-success mt-3';
         } else {
-          messageDiv.textContent = `❌ 동기화 실패\n\n${result.error}`;
+          messageDiv.textContent = `❌ 동기화 실패\n\n${result.error || result.message}`;
           messageDiv.className = 'alert alert-danger mt-3';
         }
         
       } catch (error) {
-        messageDiv.textContent = `❌ 서버 연결 실패\n\nAPI 서버가 실행 중인지 확인하세요.\n(python3 api_server.py)`;
+        messageDiv.textContent = `❌ 동기화 실패\n\n${error.message}`;
         messageDiv.className = 'alert alert-danger mt-3';
       }
     }
