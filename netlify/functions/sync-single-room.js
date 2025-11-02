@@ -45,20 +45,14 @@ export async function handler(event, context) {
     const events = response.data.items || [];
     logs.push(`[5] API 완료: ${events.length}개 이벤트, ${Date.now() - apiStart}ms`);
     
-    logs.push('[6] 가격 계산 시작');
-    const calcStart = Date.now();
+    logs.push('[6] 이벤트 준비 시작');
+    const prepStart = Date.now();
     const eventsToUpsert = [];
     
     for (const event of events) {
       if (!event.start || !event.start.dateTime) continue;
       
-      const { price, priceType, isNaver } = await calculatePrice(
-        event.start.dateTime,
-        event.end.dateTime,
-        room.id,
-        event.description || ''
-      );
-      
+      // booking_events에는 메타데이터만 저장
       eventsToUpsert.push({
         room_id: room.id,
         google_event_id: event.id,
@@ -66,16 +60,13 @@ export async function handler(event, context) {
         start_time: event.start.dateTime,
         end_time: event.end.dateTime,
         description: event.description || null,
-        price: price,
-        price_type: priceType,
-        is_naver: isNaver,
         updated_at: new Date().toISOString()
       });
     }
     
-    logs.push(`[7] 가격 계산 완료: ${eventsToUpsert.length}개, ${Date.now() - calcStart}ms`);
+    logs.push(`[7] 이벤트 준비 완료: ${eventsToUpsert.length}개, ${Date.now() - prepStart}ms`);
     
-    logs.push('[8] Supabase 저장 시작');
+    logs.push('[8] booking_events 저장 시작');
     const dbStart = Date.now();
     
     const { error } = await supabase
@@ -86,11 +77,67 @@ export async function handler(event, context) {
       });
     
     if (error) {
-      logs.push(`[ERROR] DB 저장 실패: ${error.message}`);
+      logs.push(`[ERROR] booking_events 저장 실패: ${error.message}`);
       throw error;
     }
     
-    logs.push(`[9] DB 저장 완료: ${Date.now() - dbStart}ms`);
+    logs.push(`[9] booking_events 저장 완료: ${Date.now() - dbStart}ms`);
+    
+    // event_prices 계산 및 저장
+    logs.push('[10] event_prices 계산 시작');
+    const priceStart = Date.now();
+    
+    // google_event_id로 booking_events 조회 (1000개씩 페이지네이션)
+    const googleEventIds = eventsToUpsert.map(e => e.google_event_id);
+    const allSavedEvents = [];
+    
+    for (let i = 0; i < googleEventIds.length; i += 1000) {
+      const idBatch = googleEventIds.slice(i, i + 1000);
+      const { data: savedEvents, error: fetchError } = await supabase
+        .from('booking_events')
+        .select('id, google_event_id, start_time, end_time, room_id, description')
+        .eq('room_id', room.id)
+        .in('google_event_id', idBatch);
+      
+      if (fetchError) {
+        logs.push(`[ERROR] booking_events 조회 실패 (배치 ${Math.floor(i / 1000) + 1}): ${fetchError.message}`);
+      } else {
+        allSavedEvents.push(...savedEvents);
+      }
+    }
+    
+    if (allSavedEvents.length > 0) {
+      // 각 이벤트의 가격 계산
+      const pricesToUpsert = [];
+      for (const savedEvent of allSavedEvents) {
+        const { price, priceType, isNaver } = await calculatePrice(
+          savedEvent.start_time,
+          savedEvent.end_time,
+          savedEvent.room_id,
+          savedEvent.description || ''
+        );
+        
+        pricesToUpsert.push({
+          booking_event_id: savedEvent.id,
+          calculated_price: price,
+          price_type: priceType,
+          price_metadata: { is_naver: isNaver }
+        });
+      }
+      
+      // event_prices 저장
+      const { error: priceError } = await supabase
+        .from('event_prices')
+        .upsert(pricesToUpsert, {
+          onConflict: 'booking_event_id'
+        });
+      
+      if (priceError) {
+        logs.push(`[ERROR] event_prices 저장 실패: ${priceError.message}`);
+      } else {
+        logs.push(`[11] event_prices 저장 완료: ${pricesToUpsert.length}개, ${Date.now() - priceStart}ms`);
+      }
+    }
     
     const totalTime = Date.now() - startTime;
     logs.push(`[END] 전체 완료: ${totalTime}ms`);
