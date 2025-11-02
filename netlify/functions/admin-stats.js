@@ -34,8 +34,8 @@ async function fetchAllData(query) {
  * 이벤트의 가격을 가져옴 (event_prices 테이블에서 계산된 가격 사용)
  */
 async function getEventPrice(event) {
-  // event_prices JOIN 결과에서 calculated_price 사용
-  return event.event_prices?.[0]?.calculated_price || 0;
+  // event_prices는 1:1 관계라서 객체로 반환됨
+  return event.event_prices?.calculated_price || 0;
 }
 
 /**
@@ -256,7 +256,7 @@ async function getHourlyStats(year) {
 
   data.forEach(event => {
     const hour = new Date(event.start_time).getHours();
-    const price = event.event_prices?.[0]?.calculated_price || 0;
+    const price = event.event_prices?.calculated_price || 0;
     hourlyData[hour].revenue += price;
     hourlyData[hour].bookings += 1;
   });

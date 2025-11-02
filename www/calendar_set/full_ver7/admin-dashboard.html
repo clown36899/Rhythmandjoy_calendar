@@ -984,7 +984,7 @@
           dailyRevenue[dateKey] = 0;
         }
         
-        const price = event.event_prices?.[0]?.calculated_price || 0;
+        const price = event.event_prices?.calculated_price || 0;
         dailyRevenue[dateKey] += price;
       });
       
@@ -1000,7 +1000,7 @@
         backgroundColor: roomColors[event.room_id] || '#ccc',
         borderColor: roomColors[event.room_id] || '#ccc',
         extendedProps: {
-          price: event.event_prices?.[0]?.calculated_price || 0,
+          price: event.event_prices?.calculated_price || 0,
           priceType: event.price_type,
           isNaver: event.is_naver,
           roomId: event.room_id,
