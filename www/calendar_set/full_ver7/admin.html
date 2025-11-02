@@ -254,7 +254,7 @@
       try {
         // 환경 감지: Netlify vs Replit
         const isReplit = window.location.hostname.includes('replit');
-        const syncUrl = isReplit ? '/api/sync' : '/.netlify/functions/test-sync';
+        const syncUrl = isReplit ? '/api/sync' : '/.netlify/functions/sync-calendar';
         
         // 선택된 연습실 정보 전달
         const requestBody = {
