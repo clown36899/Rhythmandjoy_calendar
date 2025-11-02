@@ -141,6 +141,7 @@ export async function handler(event, context) {
     return {
       statusCode: 200,
       body: JSON.stringify({
+        success: true,
         message: 'Watch 채널 등록 완료',
         results
       }, null, 2)
@@ -151,6 +152,7 @@ export async function handler(event, context) {
     return {
       statusCode: 500,
       body: JSON.stringify({
+        success: false,
         error: error.message,
         stack: error.stack
       })
