@@ -22,14 +22,20 @@ const rooms = [
 ];
 
 async function syncRoomCalendar(room) {
+  const startTime = Date.now();
+  const logs = [];
+  
   try {
-    console.log(`🔄 ${room.id}홀 동기화 시작...`);
-
+    logs.push(`[${room.id}] 시작`);
+    
     // 🚀 모든 예약 이벤트 가져오기 (제한 없음)
-    const timeMin = new Date('2020-01-01T00:00:00Z'); // 모든 과거 데이터
+    const timeMin = new Date('2020-01-01T00:00:00Z');
     const timeMax = new Date();
-    timeMax.setFullYear(timeMax.getFullYear() + 2); // 2년 후까지
+    timeMax.setFullYear(timeMax.getFullYear() + 2);
 
+    logs.push(`[${room.id}] Google Calendar API 호출 시작`);
+    const apiStartTime = Date.now();
+    
     // 페이지네이션으로 모든 이벤트 가져오기
     let allEvents = [];
     let pageToken = null;
@@ -50,18 +56,21 @@ async function syncRoomCalendar(room) {
       pageToken = response.data.nextPageToken;
 
       if (pageToken) {
-        console.log(`  📄 페이지 ${Math.ceil(allEvents.length / 2500)} 로드 중... (현재: ${allEvents.length}개)`);
+        logs.push(`[${room.id}] 페이지 ${Math.ceil(allEvents.length / 2500)} 로드 중... (현재: ${allEvents.length}개)`);
       }
     } while (pageToken);
 
-    console.log(`  📌 ${allEvents.length}개 이벤트 발견`);
+    const apiTime = Date.now() - apiStartTime;
+    logs.push(`[${room.id}] API 호출 완료: ${allEvents.length}개 이벤트, ${(apiTime/1000).toFixed(1)}초`);
 
-    // Supabase에 upsert (추가/업데이트만, 삭제 없음)
+    // Supabase에 upsert
+    logs.push(`[${room.id}] 가격 계산 시작`);
+    const calcStartTime = Date.now();
+    
     const eventsToUpsert = [];
     for (const event of allEvents) {
       if (!event.start || !event.start.dateTime) continue;
 
-      // 가격 계산 (시간대별/방별/공휴일/수수료 모두 고려)
       const { price, priceType, isNaver } = calculatePrice(
         event.start.dateTime,
         event.end.dateTime,
@@ -82,8 +91,14 @@ async function syncRoomCalendar(room) {
         updated_at: new Date().toISOString()
       });
     }
+    
+    const calcTime = Date.now() - calcStartTime;
+    logs.push(`[${room.id}] 가격 계산 완료: ${eventsToUpsert.length}개, ${(calcTime/1000).toFixed(1)}초`);
 
-    // 100개씩 배치 upsert (Supabase 제한)
+    // 100개씩 배치 upsert
+    logs.push(`[${room.id}] Supabase 저장 시작`);
+    const dbStartTime = Date.now();
+    
     for (let i = 0; i < eventsToUpsert.length; i += 100) {
       const batch = eventsToUpsert.slice(i, i + 100);
       const { error } = await supabase
@@ -94,31 +109,36 @@ async function syncRoomCalendar(room) {
         });
 
       if (error) {
-        console.error(`  ❌ 배치 ${Math.floor(i / 100) + 1} 저장 오류:`, error.message);
+        logs.push(`[${room.id}] ❌ 배치 ${Math.floor(i / 100) + 1} 오류: ${error.message}`);
       }
     }
-
-    console.log(`  ✅ ${room.id}홀 ${eventsToUpsert.length}개 동기화 완료`);
-    return eventsToUpsert.length;
+    
+    const dbTime = Date.now() - dbStartTime;
+    const totalTime = Date.now() - startTime;
+    logs.push(`[${room.id}] DB 저장 완료: ${(dbTime/1000).toFixed(1)}초`);
+    logs.push(`[${room.id}] ✅ 전체 완료: ${eventsToUpsert.length}개, ${(totalTime/1000).toFixed(1)}초`);
+    
+    console.log(logs.join('\n'));
+    return { room: room.id, count: eventsToUpsert.length, logs, totalTime };
   } catch (error) {
-    console.error(`❌ ${room.id}홀 동기화 실패:`, error.message);
-    return 0;
+    logs.push(`[${room.id}] ❌ 오류: ${error.message}`);
+    console.error(logs.join('\n'));
+    return { room: room.id, count: 0, logs, error: error.message };
   }
 }
 
 async function syncAllCalendars() {
+  const overallStartTime = Date.now();
   console.log('🚀 전체 캘린더 동기화 시작 (병렬 처리)...\n');
   
   // 병렬 처리로 속도 향상
-  const promises = rooms.map(async (room) => {
-    const count = await syncRoomCalendar(room);
-    return { room: room.id, count };
-  });
-  
+  const promises = rooms.map(room => syncRoomCalendar(room));
   const results = await Promise.all(promises);
   
-  console.log('\n✅ 전체 동기화 완료!');
-  return results;
+  const overallTime = Date.now() - overallStartTime;
+  console.log(`\n✅ 전체 동기화 완료! 총 ${(overallTime/1000).toFixed(1)}초`);
+  
+  return { results, overallTime };
 }
 
 export async function handler(event, context) {
@@ -130,21 +150,33 @@ export async function handler(event, context) {
   }
 
   try {
-    const results = await syncAllCalendars();
+    const { results, overallTime } = await syncAllCalendars();
+    
+    // 모든 로그 수집
+    const allLogs = [];
+    results.forEach(r => {
+      if (r.logs) allLogs.push(...r.logs);
+    });
 
     return {
       statusCode: 200,
       body: JSON.stringify({
         success: true,
         message: '전체 캘린더 동기화 완료',
-        results
+        results: results.map(r => ({ room: r.room, count: r.count })),
+        totalTime: `${(overallTime/1000).toFixed(1)}초`,
+        logs: allLogs
       })
     };
   } catch (error) {
     console.error('동기화 오류:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: error.message })
+      body: JSON.stringify({ 
+        success: false,
+        error: error.message,
+        stack: error.stack
+      })
     };
   }
 }
