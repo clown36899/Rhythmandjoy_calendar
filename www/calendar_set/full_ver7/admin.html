@@ -208,23 +208,13 @@
         const result = await response.json();
         
         if (result.success) {
-          let message = '✅ 동기화 완료!\n\n';
+          let message = '✅ 동기화 완료!\n\n📊 동기화 결과:\n';
           
-          // 동기화 결과
-          if (result.syncResults) {
-            message += '📊 동기화 결과:\n';
-            result.syncResults.forEach(r => {
+          if (result.results) {
+            result.results.forEach(r => {
               message += `  - ${r.room.toUpperCase()}홀: ${r.count}개 이벤트\n`;
             });
-          }
-          
-          // Watch 채널 재설정 결과
-          if (result.watchResults) {
-            message += '\n🔔 Watch 채널 재설정:\n';
-            result.watchResults.forEach(r => {
-              const status = r.success ? '✅' : '❌';
-              message += `  ${status} ${r.room.toUpperCase()}홀\n`;
-            });
+            message += '\n🔔 Watch 채널도 자동으로 재설정되었습니다.';
           }
           
           messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 14px;">${message}</pre>`;
