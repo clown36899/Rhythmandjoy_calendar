@@ -69,6 +69,13 @@ export function convertToCalendarEvents(bookings) {
   });
 }
 
+// 대량 업데이트 감지 변수
+let updateCount = 0;
+let updateTimer = null;
+let realtimeChannel = null;
+const UPDATE_THRESHOLD = 50; // 1초 내 50개 이상 업데이트 시 중지
+const UPDATE_WINDOW = 1000; // 1초
+
 // Realtime 구독 설정 (booking_events 변경 감지)
 export function subscribeToRealtimeUpdates(onUpdate) {
   const channel = supabase
@@ -81,6 +88,42 @@ export function subscribeToRealtimeUpdates(onUpdate) {
         table: 'booking_events'
       },
       (payload) => {
+        // 대량 업데이트 감지
+        updateCount++;
+        
+        if (updateTimer) {
+          clearTimeout(updateTimer);
+        }
+        
+        updateTimer = setTimeout(() => {
+          updateCount = 0; // 1초 후 카운터 리셋
+        }, UPDATE_WINDOW);
+        
+        // 임계값 초과 시 Realtime 중지 및 새로고침 유도
+        if (updateCount >= UPDATE_THRESHOLD) {
+          console.warn(`⚠️ 대량 업데이트 감지 (${updateCount}개) - Realtime 일시 중지`);
+          
+          // Realtime 구독 중지
+          if (realtimeChannel) {
+            realtimeChannel.unsubscribe();
+            realtimeChannel = null;
+          }
+          
+          // 사용자에게 알림
+          const message = `🔄 데이터베이스 동기화가 진행 중입니다.\n\n최신 데이터를 보려면 페이지를 새로고침하세요.`;
+          
+          // 알림 표시 (5초 후 자동 새로고침)
+          if (confirm(message + '\n\n5초 후 자동으로 새로고침됩니다.\n\n지금 새로고침하시겠습니까?')) {
+            window.location.reload();
+          } else {
+            setTimeout(() => {
+              window.location.reload();
+            }, 5000);
+          }
+          
+          return; // 더 이상 업데이트 처리 안 함
+        }
+        
         if (typeof onUpdate === 'function') {
           onUpdate(payload);
         }
@@ -88,6 +131,7 @@ export function subscribeToRealtimeUpdates(onUpdate) {
     )
     .subscribe();
 
+  realtimeChannel = channel;
   return channel;
 }
 
@@ -176,10 +220,13 @@ function updateCalendarEvent(payload) {
 
 // 자동 Realtime 구독 (실시간 업데이트, 리로드 없음!)
 function autoSubscribeAndRefresh() {
-  subscribeToRealtimeUpdates((payload) => {
+  const channel = subscribeToRealtimeUpdates((payload) => {
     console.log('🔔 실시간 변경 감지:', payload.eventType);
     updateCalendarEvent(payload);
   });
+  
+  // 전역 참조 저장 (나중에 구독 해제 가능)
+  window.supabaseChannel = channel;
 }
 
 // DOM이 로드되면 자동으로 구독 시작

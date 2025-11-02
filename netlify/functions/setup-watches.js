@@ -111,6 +111,7 @@ async function setupWatch(room) {
     }
 
     return {
+      success: true,
       room: room.id,
       channelId,
       resourceId,
