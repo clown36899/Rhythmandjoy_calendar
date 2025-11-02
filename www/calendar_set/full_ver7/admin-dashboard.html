@@ -319,6 +319,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config-loader.js"></script>
+  <script src="js/price-calculator.js"></script>
   <script>
     const IS_REPLIT = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
     const API_BASE = '/.netlify/functions';
@@ -474,22 +475,29 @@
         };
       }
 
-      // 요약 통계
-      const totalRevenue = events.reduce((sum, e) => sum + (e.price || 0), 0);
+      // 요약 통계 (실시간 가격 계산)
+      let totalRevenue = 0;
       const totalBookings = events.length;
-      const averagePrice = totalBookings > 0 ? Math.round(totalRevenue / totalBookings) : 0;
-      
-      console.log(`💰 총 매출: ${totalRevenue}원, 총 예약: ${totalBookings}건`);
       
       // 방별 통계
       const roomStats = {};
       events.forEach(e => {
+        // 가격 계산
+        const priceResult = window.calculatePrice(e.start_time, e.end_time, e.room_id, e.description || '');
+        const price = priceResult.price;
+        
+        totalRevenue += price;
+        
         if (!roomStats[e.room_id]) {
           roomStats[e.room_id] = { count: 0, revenue: 0 };
         }
         roomStats[e.room_id].count++;
-        roomStats[e.room_id].revenue += (e.price || 0);
+        roomStats[e.room_id].revenue += price;
       });
+      
+      const averagePrice = totalBookings > 0 ? Math.round(totalRevenue / totalBookings) : 0;
+      
+      console.log(`💰 총 매출: ${totalRevenue}원, 총 예약: ${totalBookings}건`);
       
       console.log('📊 방별 통계:', roomStats);
       
@@ -506,16 +514,21 @@
           return eventMonth === month;
         });
         
-        const revenue = monthEvents.reduce((sum, e) => sum + (e.price || 0), 0);
+        let revenue = 0;
         const bookings = monthEvents.length;
         
         // 해당 월 방별 매출
         const byRoom = {};
         monthEvents.forEach(e => {
+          const priceResult = window.calculatePrice(e.start_time, e.end_time, e.room_id, e.description || '');
+          const price = priceResult.price;
+          
+          revenue += price;
+          
           if (!byRoom[e.room_id]) {
             byRoom[e.room_id] = 0;
           }
-          byRoom[e.room_id] += (e.price || 0);
+          byRoom[e.room_id] += price;
         });
 
         monthlyData.push({
@@ -546,10 +559,17 @@
           const eventHour = new Date(e.start_time).getHours();
           return eventHour === hour;
         });
+        
+        let revenue = 0;
+        hourEvents.forEach(e => {
+          const priceResult = window.calculatePrice(e.start_time, e.end_time, e.room_id, e.description || '');
+          revenue += priceResult.price;
+        });
+        
         return {
           hour,
           count: hourEvents.length,
-          revenue: hourEvents.reduce((sum, e) => sum + (e.price || 0), 0)
+          revenue: revenue
         };
       });
 
@@ -1063,7 +1083,9 @@
         if (!dailyRevenue[dateKey]) {
           dailyRevenue[dateKey] = 0;
         }
-        dailyRevenue[dateKey] += (event.price || 0);
+        
+        const priceResult = window.calculatePrice(event.start_time, event.end_time, event.room_id, event.description || '');
+        dailyRevenue[dateKey] += priceResult.price;
       });
 
       const events = allEvents.map(event => ({

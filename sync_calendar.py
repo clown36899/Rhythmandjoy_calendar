@@ -119,7 +119,7 @@ def fetch_calendar_events(calendar_id):
     return response.json().get('items', [])
 
 def save_to_supabase(room_id, events):
-    """Supabase에 저장"""
+    """Supabase에 저장 (가격 계산 없이 이벤트 데이터만 저장)"""
     headers = {
         'apikey': SUPABASE_KEY,
         'Authorization': f'Bearer {SUPABASE_KEY}',
@@ -134,21 +134,13 @@ def save_to_supabase(room_id, events):
     # 새 데이터 입력
     records = []
     for event in events:
-        start_time = event.get('start', {}).get('dateTime') or event.get('start', {}).get('date')
-        end_time = event.get('end', {}).get('dateTime') or event.get('end', {}).get('date')
-        description = event.get('description', '')
-        
-        # 가격 계산
-        price = calculate_price(start_time, end_time, room_id, description)
-        
         records.append({
             'google_event_id': event.get('id'),
             'room_id': room_id,
             'title': event.get('summary', '제목 없음'),
-            'description': description,
-            'start_time': start_time,
-            'end_time': end_time,
-            'price': price,
+            'description': event.get('description', ''),
+            'start_time': event.get('start', {}).get('dateTime') or event.get('start', {}).get('date'),
+            'end_time': event.get('end', {}).get('dateTime') or event.get('end', {}).get('date'),
             'created_at': event.get('created'),
             'updated_at': event.get('updated'),
         })
