@@ -1194,8 +1194,48 @@
       document.getElementById('priceFormTitle').textContent = '새 가격 정책 추가';
       document.getElementById('priceForm').reset();
       document.getElementById('priceId').value = '';
+      
+      // 기본 선택된 방(A홀)의 최신 가격 로드
+      loadLatestPriceForRoom('a');
+      
       const modal = new bootstrap.Modal(document.getElementById('priceFormModal'));
       modal.show();
+    }
+
+    // 선택한 방의 최신 가격 정책을 폼에 자동 입력
+    function loadLatestPriceForRoom(roomId) {
+      // 해당 방의 모든 정책 찾기
+      const roomPolicies = priceHistoryData.filter(p => p.room_id === roomId);
+      
+      if (roomPolicies.length === 0) {
+        // 정책이 없으면 기본값 사용
+        const defaults = window.DEFAULT_ROOM_PRICES[roomId];
+        if (defaults) {
+          document.getElementById('priceWeekdayBefore16').value = defaults.before16;
+          document.getElementById('priceWeekdayAfter16').value = defaults.after16;
+          document.getElementById('priceWeekend').value = defaults.after16;
+          document.getElementById('priceOvernight').value = defaults.overnight;
+        }
+        return;
+      }
+      
+      // 가장 최근 정책 찾기 (effective_to가 null이거나 가장 늦은 것)
+      const latestPolicy = roomPolicies.reduce((latest, current) => {
+        // effective_to가 null이면 현재 진행중인 정책
+        if (!current.effective_to) return current;
+        if (!latest.effective_to) return latest;
+        
+        // 둘 다 종료일이 있으면 더 늦은 것 선택
+        return new Date(current.effective_to) > new Date(latest.effective_to) ? current : latest;
+      });
+      
+      // 폼에 값 채우기
+      document.getElementById('priceWeekdayBefore16').value = latestPolicy.price_weekday_before16;
+      document.getElementById('priceWeekdayAfter16').value = latestPolicy.price_weekday_after16;
+      document.getElementById('priceWeekend').value = latestPolicy.price_weekend;
+      document.getElementById('priceOvernight').value = latestPolicy.price_overnight;
+      
+      console.log(`✅ ${roomId.toUpperCase()}홀의 최신 가격 정책 로드:`, latestPolicy);
     }
 
     async function editPrice(id) {
@@ -1423,7 +1463,7 @@
             
             <div class="mb-3">
               <label class="form-label">방 선택 *</label>
-              <select id="roomId" class="form-select" required>
+              <select id="roomId" class="form-select" required onchange="loadLatestPriceForRoom(this.value)">
                 <option value="a">A홀</option>
                 <option value="b">B홀</option>
                 <option value="c">C홀</option>
