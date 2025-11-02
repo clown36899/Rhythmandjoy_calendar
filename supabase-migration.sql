@@ -84,25 +84,5 @@ LEFT JOIN event_prices ep ON be.id = ep.booking_event_id;
 
 COMMENT ON VIEW booking_events_with_price IS 'booking_events + calculated_price (LEFT JOIN event_prices)';
 
--- 7. 기존 데이터 백필 (booking_events.price → event_prices)
--- 주의: 이미 event_prices에 데이터가 있으면 ON CONFLICT로 업데이트
-INSERT INTO event_prices (booking_event_id, calculated_price, price_type, price_metadata)
-SELECT 
-  id, 
-  COALESCE(price, 0) AS calculated_price,
-  price_type,
-  jsonb_build_object('source', 'backfill_from_booking_events', 'backfill_date', NOW()) AS price_metadata
-FROM booking_events 
-WHERE id IS NOT NULL
-ON CONFLICT (booking_event_id) 
-DO UPDATE SET 
-  calculated_price = EXCLUDED.calculated_price,
-  price_type = EXCLUDED.price_type,
-  price_metadata = EXCLUDED.price_metadata,
-  updated_at = NOW();
-
--- 8. 확인 쿼리 (실행 후 확인용)
-SELECT 
-  (SELECT COUNT(*) FROM booking_events) AS total_booking_events,
-  (SELECT COUNT(*) FROM event_prices) AS total_event_prices,
-  (SELECT COUNT(*) FROM booking_events_with_price) AS total_view_records;
+-- 7. 완료 메시지
+SELECT 'event_prices 테이블, VIEW, RLS, 인덱스 생성 완료!' AS status;
