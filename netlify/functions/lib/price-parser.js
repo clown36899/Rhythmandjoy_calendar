@@ -154,7 +154,7 @@ function estimateDefaultPrice(startTime, endTime, roomId) {
   return { price, priceType };
 }
 
-module.exports = {
+export {
   parsePriceFromEvent,
   estimateDefaultPrice
 };
