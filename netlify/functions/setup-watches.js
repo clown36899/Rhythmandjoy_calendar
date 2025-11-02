@@ -75,7 +75,7 @@ async function setupWatch(room) {
     console.log(`     만료: ${new Date(parseInt(expiration)).toLocaleString('ko-KR')}`);
 
     // 3. Supabase에 채널 정보 저장
-    await supabase
+    const { error: channelError } = await supabase
       .from('calendar_channels')
       .upsert({
         room_id: room.id,
@@ -86,10 +86,15 @@ async function setupWatch(room) {
       }, {
         onConflict: 'room_id'
       });
+    
+    if (channelError) {
+      throw new Error(`DB 저장 실패 (calendar_channels): ${channelError.message}`);
+    }
+    console.log(`  ✅ DB 저장 성공 (calendar_channels)`);
 
     // 4. Sync token 저장
     if (initialSyncToken) {
-      await supabase
+      const { error: syncError } = await supabase
         .from('calendar_sync_state')
         .upsert({
           room_id: room.id,
@@ -98,6 +103,11 @@ async function setupWatch(room) {
         }, {
           onConflict: 'room_id'
         });
+      
+      if (syncError) {
+        throw new Error(`DB 저장 실패 (calendar_sync_state): ${syncError.message}`);
+      }
+      console.log(`  ✅ DB 저장 성공 (calendar_sync_state)`);
     }
 
     return {
