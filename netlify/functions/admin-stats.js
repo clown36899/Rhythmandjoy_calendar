@@ -34,8 +34,8 @@ async function fetchAllData(query) {
  * 이벤트의 가격을 가져옴 (event_prices 테이블에서 계산된 가격 사용)
  */
 async function getEventPrice(event) {
-  // booking_events_with_price VIEW에서 calculated_price 사용
-  return event.calculated_price || 0;
+  // event_prices JOIN 결과에서 calculated_price 사용
+  return event.event_prices?.[0]?.calculated_price || 0;
 }
 
 /**
@@ -43,8 +43,8 @@ async function getEventPrice(event) {
  */
 async function getYearlySummary(year) {
   const query = supabase
-    .from('booking_events_with_price')
-    .select('calculated_price, room_id, price_type, start_time, end_time, description')
+    .from('booking_events')
+    .select('id, room_id, price_type, start_time, end_time, description, event_prices(calculated_price)')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
     .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
     .order('id', { ascending: true });
@@ -90,8 +90,8 @@ async function getYearlySummary(year) {
  */
 async function getMonthlyStats(year) {
   const query = supabase
-    .from('booking_events_with_price')
-    .select('calculated_price, start_time, end_time, room_id, description')
+    .from('booking_events')
+    .select('id, start_time, end_time, room_id, description, event_prices(calculated_price)')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
     .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
     .order('id', { ascending: true });
@@ -122,8 +122,8 @@ async function getMonthlyStats(year) {
  */
 async function getRoomStats(year) {
   const query = supabase
-    .from('booking_events_with_price')
-    .select('calculated_price, room_id, price_type, start_time, end_time, description')
+    .from('booking_events')
+    .select('id, room_id, price_type, start_time, end_time, description, event_prices(calculated_price)')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
     .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
     .order('id', { ascending: true });
@@ -167,8 +167,8 @@ async function getDailyStats(year, month) {
   const daysInMonth = endDate.getDate();
 
   const query = supabase
-    .from('booking_events_with_price')
-    .select('calculated_price, start_time, end_time, room_id, description')
+    .from('booking_events')
+    .select('id, start_time, end_time, room_id, description, event_prices(calculated_price)')
     .gte('start_time', startDate.toISOString())
     .lt('start_time', new Date(year, month, 1).toISOString())
     .order('id', { ascending: true });
@@ -199,8 +199,8 @@ async function getDailyStats(year, month) {
  */
 async function getWeeklyStats(year) {
   const query = supabase
-    .from('booking_events_with_price')
-    .select('calculated_price, start_time, end_time, room_id, description')
+    .from('booking_events')
+    .select('id, start_time, end_time, room_id, description, event_prices(calculated_price)')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
     .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
 
@@ -241,8 +241,8 @@ async function getWeeklyStats(year) {
  */
 async function getHourlyStats(year) {
   const query = supabase
-    .from('booking_events_with_price')
-    .select('calculated_price, start_time')
+    .from('booking_events')
+    .select('id, start_time, event_prices(calculated_price)')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
     .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
 
@@ -256,7 +256,8 @@ async function getHourlyStats(year) {
 
   data.forEach(event => {
     const hour = new Date(event.start_time).getHours();
-    hourlyData[hour].revenue += event.calculated_price || 0;
+    const price = event.event_prices?.[0]?.calculated_price || 0;
+    hourlyData[hour].revenue += price;
     hourlyData[hour].bookings += 1;
   });
 

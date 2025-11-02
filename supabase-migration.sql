@@ -1,11 +1,6 @@
--- =============================================
--- Rhythmjoy 매출 대시보드용 event_prices 테이블 생성
--- =============================================
--- 목적: booking_events는 Google Calendar 동기화 전용
---       가격 계산 결과는 event_prices에 별도 저장
--- =============================================
+-- event_prices 테이블만 생성
+-- booking_event_id로 연결해서 가격만 저장
 
--- 1. event_prices 테이블 생성
 CREATE TABLE IF NOT EXISTS event_prices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_event_id UUID NOT NULL UNIQUE,
@@ -20,7 +15,7 @@ CREATE TABLE IF NOT EXISTS event_prices (
     ON DELETE CASCADE
 );
 
--- 2. updated_at 자동 업데이트 트리거
+-- updated_at 트리거
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -35,54 +30,18 @@ CREATE TRIGGER update_event_prices_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
--- 3. 코멘트 추가
-COMMENT ON TABLE event_prices IS '클라이언트 계산 가격 저장 (booking_events는 건드리지 않음)';
-COMMENT ON COLUMN event_prices.booking_event_id IS 'booking_events.id 외래키';
-COMMENT ON COLUMN event_prices.calculated_price IS '클라이언트 측에서 계산된 가격';
-
--- 4. RLS 활성화 및 정책 설정
+-- RLS
 ALTER TABLE event_prices ENABLE ROW LEVEL SECURITY;
 
--- 기존 정책 삭제 후 재생성
 DROP POLICY IF EXISTS "Allow public read access" ON event_prices;
 DROP POLICY IF EXISTS "Allow write access" ON event_prices;
 DROP POLICY IF EXISTS "Allow update access" ON event_prices;
 
--- 모든 사용자 읽기 허용
-CREATE POLICY "Allow public read access"
-  ON event_prices
-  FOR SELECT
-  USING (true);
+CREATE POLICY "Allow public read access" ON event_prices FOR SELECT USING (true);
+CREATE POLICY "Allow write access" ON event_prices FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update access" ON event_prices FOR UPDATE USING (true);
 
--- 모든 사용자 쓰기 허용 (admin 인증은 앱 레벨에서 처리)
-CREATE POLICY "Allow write access"
-  ON event_prices
-  FOR INSERT
-  WITH CHECK (true);
+-- 인덱스
+CREATE INDEX IF NOT EXISTS idx_event_prices_booking_event_id ON event_prices(booking_event_id);
 
-CREATE POLICY "Allow update access"
-  ON event_prices
-  FOR UPDATE
-  USING (true);
-
--- 5. 인덱스 생성 (JOIN 성능 향상)
-CREATE INDEX IF NOT EXISTS idx_event_prices_booking_event_id 
-  ON event_prices(booking_event_id);
-
-CREATE INDEX IF NOT EXISTS idx_event_prices_metadata 
-  ON event_prices USING GIN(price_metadata);
-
--- 6. booking_events_with_price VIEW 생성
-CREATE OR REPLACE VIEW booking_events_with_price AS
-SELECT 
-  be.*,
-  COALESCE(ep.calculated_price, 0) AS calculated_price,
-  ep.price_metadata,
-  ep.updated_at AS price_updated_at
-FROM booking_events be
-LEFT JOIN event_prices ep ON be.id = ep.booking_event_id;
-
-COMMENT ON VIEW booking_events_with_price IS 'booking_events + calculated_price (LEFT JOIN event_prices)';
-
--- 7. 완료 메시지
-SELECT 'event_prices 테이블, VIEW, RLS, 인덱스 생성 완료!' AS status;
+SELECT 'event_prices 테이블 생성 완료' AS status;
