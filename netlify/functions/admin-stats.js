@@ -8,6 +8,29 @@ const supabase = createClient(
 );
 
 /**
+ * 페이지네이션으로 모든 데이터 가져오기
+ */
+async function fetchAllData(query) {
+  let allData = [];
+  let start = 0;
+  const pageSize = 1000;
+
+  while (true) {
+    const { data, error } = await query.range(start, start + pageSize - 1);
+    
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    
+    allData.push(...data);
+    
+    if (data.length < pageSize) break; // 마지막 페이지
+    start += pageSize;
+  }
+
+  return allData;
+}
+
+/**
  * 이벤트의 가격을 가져옴 (DB에 저장된 값 사용)
  */
 async function getEventPrice(event) {
@@ -19,14 +42,14 @@ async function getEventPrice(event) {
  * 연도별 총 매출 요약
  */
 async function getYearlySummary(year) {
-  const { data, error } = await supabase
+  const query = supabase
     .from('booking_events')
     .select('price, room_id, price_type, start_time, end_time, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
     .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
-    .limit(100000);
+    .order('id', { ascending: true });
 
-  if (error) throw error;
+  const data = await fetchAllData(query);
 
   let totalRevenue = 0;
   const totalBookings = data.length;
@@ -66,14 +89,14 @@ async function getYearlySummary(year) {
  * 월별 매출 통계 (1-12월)
  */
 async function getMonthlyStats(year) {
-  const { data, error } = await supabase
+  const query = supabase
     .from('booking_events')
     .select('price, start_time, end_time, room_id, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
     .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
-    .limit(100000);
+    .order('id', { ascending: true });
 
-  if (error) throw error;
+  const data = await fetchAllData(query);
 
   // 월별 집계
   const monthlyData = Array.from({ length: 12 }, (_, i) => ({
@@ -98,14 +121,14 @@ async function getMonthlyStats(year) {
  * 방별 매출 통계
  */
 async function getRoomStats(year) {
-  const { data, error } = await supabase
+  const query = supabase
     .from('booking_events')
     .select('price, room_id, price_type, start_time, end_time, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
     .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
-    .limit(100000);
+    .order('id', { ascending: true });
 
-  if (error) throw error;
+  const data = await fetchAllData(query);
 
   const rooms = ['a', 'b', 'c', 'd', 'e'];
   const roomStats = {};
@@ -143,14 +166,14 @@ async function getDailyStats(year, month) {
   const endDate = new Date(year, month, 0); // 마지막 날
   const daysInMonth = endDate.getDate();
 
-  const { data, error } = await supabase
+  const query = supabase
     .from('booking_events')
     .select('price, start_time, end_time, room_id, description')
     .gte('start_time', startDate.toISOString())
     .lt('start_time', new Date(year, month, 1).toISOString())
-    .limit(100000);
+    .order('id', { ascending: true });
 
-  if (error) throw error;
+  const data = await fetchAllData(query);
 
   // 일별 집계
   const dailyData = Array.from({ length: daysInMonth }, (_, i) => ({
@@ -175,14 +198,13 @@ async function getDailyStats(year, month) {
  * 주별 매출 통계 (ISO 주차 기준)
  */
 async function getWeeklyStats(year) {
-  const { data, error } = await supabase
+  const query = supabase
     .from('booking_events')
     .select('price, start_time, end_time, room_id, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
-    .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
-    .limit(100000);
+    .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
 
-  if (error) throw error;
+  const data = await fetchAllData(query);
 
   // ISO 주차 계산
   function getISOWeek(date) {
@@ -218,15 +240,14 @@ async function getWeeklyStats(year) {
  * 시간대별 매출 통계
  */
 async function getHourlyStats(year) {
-  const { data, error } = await supabase
+  const query = supabase
     .from('booking_events')
     .select('price, start_time')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
     .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
-    .not('price', 'is', null)
-    .limit(100000);
+    .not('price', 'is', null);
 
-  if (error) throw error;
+  const data = await fetchAllData(query);
 
   const hourlyData = Array.from({ length: 24 }, (_, i) => ({
     hour: i,
