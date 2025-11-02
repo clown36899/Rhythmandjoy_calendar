@@ -15,3 +15,7 @@
 
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = ["@supabase/supabase-js", "googleapis"]
+  
+[[functions.environment]]
+  NODE_OPTIONS = "--experimental-modules"
