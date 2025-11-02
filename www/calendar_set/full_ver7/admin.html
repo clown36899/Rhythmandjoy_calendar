@@ -242,7 +242,11 @@
               });
             }
             
-            message += '\n⚠️ Watch 채널은 별도로 재설정해주세요:\nhttps://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/setup-watches';
+            message += '\n\n📌 다음 단계: Watch 채널 재설정이 필요합니다.';
+            
+            // Watch 재설정 버튼 추가
+            messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>
+            <button class="btn btn-primary mt-2" onclick="resetWatchChannels()">🔔 Watch 채널 재설정하기</button>`;
             
             messageDiv.innerHTML = `<pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow-y: auto;">${message}</pre>`;
             messageDiv.className = 'alert alert-success mt-3';
