@@ -339,96 +339,6 @@
     }
 
 
-    // 전체 가격 재계산 (헤더 버튼)
-    async function recalculateAllPrices() {
-      if (!confirm('⚠️ 모든 이벤트의 가격을 재계산하여 DB에 저장합니다.\n\n이 작업은 몇 분 소요될 수 있습니다.\n계속하시겠습니까?')) {
-        return;
-      }
-      
-      const yearSelect = document.getElementById('yearSelect');
-      const originalYear = yearSelect.value;
-      yearSelect.disabled = true;
-      
-      const loadingDiv = document.getElementById('loadingSpinner');
-      const contentDiv = document.getElementById('dashboardContent');
-      const loadingText = loadingDiv.querySelector('p');
-      
-      contentDiv.style.display = 'none';
-      loadingDiv.style.display = 'flex';
-      loadingText.textContent = '전체 이벤트 로딩 중...';
-      
-      try {
-        // 전체 데이터 받기 (1000개씩 여러 번)
-        let allEvents = [];
-        let from = 0;
-        const pageSize = 1000;
-        
-        while (true) {
-          loadingText.textContent = `이벤트 로딩 중... (${allEvents.length}개)`;
-          
-          const { data: batch, error } = await supabase
-            .from('booking_events')
-            .select('*')
-            .order('start_time', { ascending: true })
-            .range(from, from + pageSize - 1);
-          
-          if (error) throw error;
-          if (!batch || batch.length === 0) break;
-          
-          allEvents = allEvents.concat(batch);
-          
-          if (batch.length < pageSize) break;
-          from += pageSize;
-        }
-        
-        loadingText.textContent = `${allEvents.length}개 이벤트 로드 완료`;
-        
-        // 클라이언트에서 모든 이벤트 가격 재계산 (진행률 표시)
-        const total = allEvents.length;
-        
-        for (let i = 0; i < allEvents.length; i++) {
-          const event = allEvents[i];
-          const priceResult = window.calculatePrice(
-            event.start_time,
-            event.end_time,
-            event.room_id,
-            event.description || ''
-          );
-          
-          event.price = priceResult.price; // price 필드 업데이트
-          
-          // 진행률 표시 (100개마다)
-          if ((i + 1) % 100 === 0 || i === allEvents.length - 1) {
-            const percent = Math.round(((i + 1) / total) * 100);
-            loadingText.textContent = `계산 중... ${percent}% (${i + 1}/${total})`;
-          }
-        }
-        
-        // 한 번에 DB 저장
-        loadingText.textContent = 'DB 저장 중...';
-        
-        const { error: updateError } = await supabase
-          .from('booking_events')
-          .upsert(allEvents, { onConflict: 'id' });
-        
-        if (updateError) throw updateError;
-        
-        const totalUpdated = allEvents.length;
-        
-        alert(`✅ 전체 재계산 완료!\n\n${totalUpdated}개 이벤트의 가격이 업데이트되었습니다.`);
-        
-        // 대시보드 새로고침
-        loadDashboard();
-        
-      } catch (error) {
-        console.error('전체 재계산 오류:', error);
-        alert(`❌ 재계산 실패: ${error.message}`);
-        loadingDiv.style.display = 'none';
-        contentDiv.style.display = 'block';
-      } finally {
-        yearSelect.disabled = false;
-      }
-    }
 
     // 인증 확인
     const authToken = localStorage.getItem('adminToken');
@@ -555,31 +465,33 @@
       const events = allEvents;
       console.log(`✅ 전체 ${events.length}개 이벤트 로드 완료`);
       
-      // 현재+미래 데이터만 재계산
-      const currentFutureEvents = events.filter(e => e.start_time >= currentMonthStart);
+      // 모든 이벤트의 가격 계산 (event_prices 테이블에 저장)
+      console.log(`🔄 ${events.length}개 이벤트 가격 계산 중...`);
       
-      if (currentFutureEvents.length > 0) {
-        console.log(`🔄 ${currentFutureEvents.length}개 현재/미래 이벤트 재계산 중...`);
+      const priceRecords = events.map(e => {
+        const priceResult = window.calculatePrice(e.start_time, e.end_time, e.room_id, e.description || '');
+        e.calculated_price = priceResult.price; // 메모리에 저장 (통계 계산용)
         
-        // 클라이언트에서 계산
-        currentFutureEvents.forEach(e => {
-          const priceResult = window.calculatePrice(e.start_time, e.end_time, e.room_id, e.description || '');
-          e.price = priceResult.price; // price 필드 업데이트
-        });
-        
-        // 한 번에 DB 저장 (전체 행 데이터 포함)
-        const { error: updateError } = await supabase
-          .from('booking_events')
-          .upsert(currentFutureEvents, { onConflict: 'id' });
-        
-        if (updateError) {
-          console.error('현재/미래 데이터 DB 업데이트 오류:', updateError);
-        } else {
-          console.log(`✅ ${currentFutureEvents.length}개 현재/미래 데이터 DB 저장 완료 (1회 요청)`);
-        }
+        return {
+          booking_event_id: e.id,
+          calculated_price: priceResult.price,
+          price_type: priceResult.priceType || null,
+          price_metadata: null
+        };
+      });
+      
+      // event_prices 테이블에만 저장 (booking_events는 절대 건드리지 않음)
+      const { error: updateError } = await supabase
+        .from('event_prices')
+        .upsert(priceRecords, { onConflict: 'booking_event_id' });
+      
+      if (updateError) {
+        console.error('❌ event_prices 저장 오류:', updateError);
+      } else {
+        console.log(`✅ ${priceRecords.length}개 가격 데이터 event_prices 테이블에 저장 완료`);
       }
       
-      console.log(`💾 과거는 DB price 사용, 현재/미래는 재계산 완료`);
+      console.log(`💾 booking_events는 건드리지 않음, event_prices만 업데이트`);
 
       if (!events || events.length === 0) {
         console.warn('⚠️ 이벤트 데이터가 없습니다');
@@ -598,8 +510,8 @@
       // 방별 통계
       const roomStats = {};
       events.forEach(e => {
-        // 이미 메모리에 계산된 price 사용 (과거=DB, 현재/미래=실시간)
-        const price = e.price || 0;
+        // 메모리에 계산된 calculated_price 사용
+        const price = e.calculated_price || 0;
         
         totalRevenue += price;
         
@@ -635,7 +547,7 @@
         // 해당 월 방별 매출
         const byRoom = {};
         monthEvents.forEach(e => {
-          const price = e.price || 0;
+          const price = e.calculated_price || 0;
           revenue += price;
           
           if (!byRoom[e.room_id]) {
@@ -673,7 +585,7 @@
           return eventHour === hour;
         });
         
-        const revenue = hourEvents.reduce((sum, e) => sum + (e.price || 0), 0);
+        const revenue = hourEvents.reduce((sum, e) => sum + (e.calculated_price || 0), 0);
         
         return {
           hour,
@@ -972,7 +884,7 @@
           dailyRevenue[dateKey] = 0;
         }
         
-        dailyRevenue[dateKey] += (event.price || 0);
+        dailyRevenue[dateKey] += (event.calculated_price || 0);
       });
 
       const events = allEvents.map(event => ({
@@ -983,7 +895,7 @@
         backgroundColor: roomColors[event.room_id] || '#ccc',
         borderColor: roomColors[event.room_id] || '#ccc',
         extendedProps: {
-          price: event.price,
+          price: event.calculated_price,
           priceType: event.price_type,
           isNaver: event.is_naver,
           roomId: event.room_id,
