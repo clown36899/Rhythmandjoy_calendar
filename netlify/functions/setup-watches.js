@@ -138,6 +138,7 @@ export async function handler(event, context) {
       } catch (error) {
         // 🔍 상세 에러 정보 포함
         results.push({
+          success: false,
           room: room.id,
           error: error.message,
           stack: error.stack,
