@@ -221,40 +221,9 @@ def reset_watch_channels():
                 resource_id = watch_data['resourceId']
                 expiration = int(watch_data['expiration'])
                 
-                # 3. Supabase에 저장
-                headers = {
-                    'apikey': SUPABASE_KEY,
-                    'Authorization': f'Bearer {SUPABASE_KEY}',
-                    'Content-Type': 'application/json',
-                    'Prefer': 'resolution=merge-duplicates'
-                }
-                
-                # calendar_channels
-                requests.post(
-                    f'{SUPABASE_URL}/rest/v1/calendar_channels',
-                    headers=headers,
-                    json={
-                        'room_id': room['id'],
-                        'calendar_id': room['calendar_id'],
-                        'channel_id': channel_id,
-                        'resource_id': resource_id,
-                        'expiration': expiration
-                    }
-                )
-                
-                # calendar_sync_state
-                if initial_sync_token:
-                    requests.post(
-                        f'{SUPABASE_URL}/rest/v1/calendar_sync_state',
-                        headers=headers,
-                        json={
-                            'room_id': room['id'],
-                            'sync_token': initial_sync_token,
-                            'last_synced_at': datetime.now().isoformat()
-                        }
-                    )
-                
-                print(f"    ✅ {room['id'].upper()}홀 Watch 등록 완료")
+                # ⭐ Watch는 Google에 등록만 하고, DB 저장은 Netlify에서만 처리
+                # (Netlify Functions는 Supabase JS SDK를 사용하여 RLS 우회)
+                print(f"    ✅ {room['id'].upper()}홀 Watch 등록 완료 (Google)")
                 
             except Exception as e:
                 print(f"    ❌ {room['id'].upper()}홀 Watch 등록 실패: {str(e)}")
