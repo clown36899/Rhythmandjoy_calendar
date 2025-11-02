@@ -1,10 +1,12 @@
-// 기본 가격 정보 (fallback용)
+import { getPricePolicy } from './price-policy-service.js';
+
+// 기본 가격 정보 (fallback용 - DB 조회 실패 시에만 사용)
 const DEFAULT_ROOM_PRICES = {
-  a: { before16: 10000, after16: 13000, overnight: 30000 },
-  b: { before16: 9000, after16: 11000, overnight: 20000 },
-  c: { before16: 4000, after16: 6000, overnight: 15000 },
-  d: { before16: 3000, after16: 5000, overnight: 15000 },
-  e: { before16: 8000, after16: 10000, overnight: 20000 }
+  a: { price_weekday_before16: 10000, price_weekday_after16: 13000, price_weekend: 13000, price_overnight: 30000 },
+  b: { price_weekday_before16: 9000, price_weekday_after16: 11000, price_weekend: 11000, price_overnight: 20000 },
+  c: { price_weekday_before16: 4000, price_weekday_after16: 6000, price_weekend: 6000, price_overnight: 15000 },
+  d: { price_weekday_before16: 3000, price_weekday_after16: 5000, price_weekend: 5000, price_overnight: 15000 },
+  e: { price_weekday_before16: 8000, price_weekday_after16: 10000, price_weekend: 10000, price_overnight: 20000 }
 };
 
 // 2025년 한국 법정 공휴일 (매년 업데이트 필요)
@@ -66,14 +68,19 @@ function isNaverBooking(description) {
   return /예약번호:\s*\d+/.test(description);
 }
 
-// 가격 계산 메인 함수
-function calculatePrice(startTime, endTime, roomId, description = '', roomPrices = null) {
+// 가격 계산 메인 함수 (이제 async)
+async function calculatePrice(startTime, endTime, roomId, description = '') {
   const start = new Date(startTime);
   const end = new Date(endTime);
   
-  // roomPrices 파라미터가 없으면 기본값 사용
-  const allPrices = roomPrices || DEFAULT_ROOM_PRICES;
-  const prices = allPrices[roomId];
+  // DB에서 가격 정책 조회 (예약 시작 날짜 기준)
+  let prices = await getPricePolicy(roomId, start);
+  
+  // DB 조회 실패 시 기본값 사용
+  if (!prices) {
+    console.warn(`[${roomId}홀] DB 가격 조회 실패 - 기본값 사용`);
+    prices = DEFAULT_ROOM_PRICES[roomId];
+  }
   
   if (!prices) {
     console.error(`Unknown room: ${roomId}`);
@@ -91,7 +98,7 @@ function calculatePrice(startTime, endTime, roomId, description = '', roomPrices
 
   // 새벽 통대관 체크: KST 0시~6시 정확히 6시간
   if (startHourKst === 0 && endHourKst === 6 && durationHours === 6) {
-    totalPrice = prices.overnight;
+    totalPrice = prices.price_overnight;
     priceType = '새벽통대관';
   } else {
     // 시간별 계산
@@ -108,21 +115,21 @@ function calculatePrice(startTime, endTime, roomId, description = '', roomPrices
       
       // 새벽 시간 (0~6시): overnight ÷ 6
       if (hourKst >= 0 && hourKst < 6) {
-        hourlyPrice = prices.overnight / 6;
+        hourlyPrice = prices.price_overnight / 6;
         reason = `새벽(KST ${hourKst}시)`;
       } 
-      // 주말 또는 공휴일: after16 요금
+      // 주말 또는 공휴일: price_weekend 요금 사용
       else if (isWeekend) {
-        hourlyPrice = prices.after16;
+        hourlyPrice = prices.price_weekend;
         reason = `주말/공휴일(KST ${hourKst}시)`;
       }
       // 평일
       else {
         if (hourKst < 16) {
-          hourlyPrice = prices.before16;
+          hourlyPrice = prices.price_weekday_before16;
           reason = `평일오전(KST ${hourKst}시)`;
         } else {
-          hourlyPrice = prices.after16;
+          hourlyPrice = prices.price_weekday_after16;
           reason = `평일저녁(KST ${hourKst}시)`;
         }
       }
@@ -162,5 +169,6 @@ export {
   calculatePrice,
   DEFAULT_ROOM_PRICES,
   isWeekendOrHoliday,
-  isNaverBooking
+  isNaverBooking,
+  KOREAN_HOLIDAYS_2025
 };

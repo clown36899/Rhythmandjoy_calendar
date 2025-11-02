@@ -80,7 +80,7 @@ async function syncRoomCalendar(room) {
     for (const event of allEvents) {
       if (!event.start || !event.start.dateTime) continue;
 
-      const { price, priceType, isNaver } = calculatePrice(
+      const { price, priceType, isNaver } = await calculatePrice(
         event.start.dateTime,
         event.end.dateTime,
         room.id,

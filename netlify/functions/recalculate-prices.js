@@ -30,54 +30,40 @@ export async function handler(event, context) {
 
     console.log(`📌 총 ${events.length}개 이벤트 발견`);
 
-    // 각 이벤트의 가격 재계산
-    const updates = [];
+    // 각 이벤트의 가격 재계산 및 event_prices 테이블에 upsert
+    let updated = 0;
     let processed = 0;
 
     for (const event of events) {
-      const { price, priceType, isNaver } = calculatePrice(
+      const { price, priceType, isNaver } = await calculatePrice(
         event.start_time,
         event.end_time,
         event.room_id,
         event.description || ''
       );
 
-      updates.push({
-        id: event.id,
-        price: price,
-        price_type: priceType,
-        is_naver: isNaver
-      });
+      // event_prices 테이블에 upsert
+      const { error: upsertError } = await supabase
+        .from('event_prices')
+        .upsert({
+          booking_event_id: event.id,
+          calculated_price: price,
+          price_type: priceType,
+          price_metadata: { is_naver: isNaver }
+        }, {
+          onConflict: 'booking_event_id'
+        });
+
+      if (upsertError) {
+        console.error(`  ❌ ID ${event.id} 저장 실패:`, upsertError.message);
+      } else {
+        updated++;
+      }
 
       processed++;
       if (processed % 100 === 0) {
         console.log(`  📊 진행률: ${processed}/${events.length} (${Math.round(processed/events.length*100)}%)`);
       }
-    }
-
-    // 100개씩 배치 업데이트
-    let updated = 0;
-    for (let i = 0; i < updates.length; i += 100) {
-      const batch = updates.slice(i, i + 100);
-      
-      for (const update of batch) {
-        const { error: updateError } = await supabase
-          .from('booking_events')
-          .update({
-            price: update.price,
-            price_type: update.price_type,
-            is_naver: update.is_naver
-          })
-          .eq('id', update.id);
-
-        if (updateError) {
-          console.error(`  ❌ ID ${update.id} 업데이트 실패:`, updateError.message);
-        } else {
-          updated++;
-        }
-      }
-
-      console.log(`  💾 배치 ${Math.floor(i / 100) + 1}/${Math.ceil(updates.length / 100)} 업데이트 완료`);
     }
 
     console.log(`✅ 가격 재계산 완료! ${updated}/${events.length}개 업데이트됨`);
