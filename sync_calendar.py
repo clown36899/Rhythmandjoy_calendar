@@ -8,6 +8,8 @@ import os
 import requests
 from datetime import datetime, timedelta
 import re
+import uuid
+import json
 
 # 환경변수에서 읽기
 GOOGLE_API_KEY = os.environ['GOOGLE_CALENDAR_API_KEY']
@@ -152,6 +154,115 @@ def save_to_supabase(room_id, events):
     
     return len(records)
 
+def reset_watch_channels():
+    """Watch 채널 자동 재설정"""
+    print('\n🔔 Watch 채널 자동 재설정 시작...')
+    
+    # Google Service Account JSON 파싱
+    service_account_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+    if not service_account_json:
+        print('⚠️  GOOGLE_SERVICE_ACCOUNT_JSON 환경 변수 없음, Watch 재설정 건너뛰기')
+        return
+    
+    try:
+        from google.oauth2 import service_account
+        from google.auth.transport.requests import Request
+        
+        credentials = json.loads(service_account_json)
+        
+        # OAuth2 토큰 요청
+        creds = service_account.Credentials.from_service_account_info(
+            credentials,
+            scopes=['https://www.googleapis.com/auth/calendar']
+        )
+        creds.refresh(Request())
+        access_token = creds.token
+        
+        webhook_url = os.environ.get('WEBHOOK_URL', 'https://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/google-webhook')
+        
+        for room in ROOMS:
+            try:
+                print(f"  🔄 {room['id'].upper()}홀 Watch 등록 중...")
+                
+                # 1. 초기 sync token 가져오기
+                list_url = f"https://www.googleapis.com/calendar/v3/calendars/{room['calendar_id']}/events"
+                list_response = requests.get(
+                    list_url,
+                    headers={'Authorization': f'Bearer {access_token}'},
+                    params={'maxResults': 1, 'singleEvents': True, 'key': GOOGLE_API_KEY}
+                )
+                list_data = list_response.json()
+                initial_sync_token = list_data.get('nextSyncToken')
+                
+                # 2. Watch 채널 등록
+                channel_id = str(uuid.uuid4())
+                channel = {
+                    'id': channel_id,
+                    'type': 'web_hook',
+                    'address': webhook_url,
+                    'token': room['id']
+                }
+                
+                watch_url = f"https://www.googleapis.com/calendar/v3/calendars/{room['calendar_id']}/events/watch"
+                watch_response = requests.post(
+                    watch_url,
+                    headers={
+                        'Authorization': f'Bearer {access_token}',
+                        'Content-Type': 'application/json'
+                    },
+                    params={'key': GOOGLE_API_KEY},
+                    json=channel
+                )
+                
+                if watch_response.status_code != 200:
+                    raise Exception(f"HTTP {watch_response.status_code}: {watch_response.text}")
+                
+                watch_data = watch_response.json()
+                resource_id = watch_data['resourceId']
+                expiration = int(watch_data['expiration'])
+                
+                # 3. Supabase에 저장
+                headers = {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': f'Bearer {SUPABASE_KEY}',
+                    'Content-Type': 'application/json',
+                    'Prefer': 'resolution=merge-duplicates'
+                }
+                
+                # calendar_channels
+                requests.post(
+                    f'{SUPABASE_URL}/rest/v1/calendar_channels',
+                    headers=headers,
+                    json={
+                        'room_id': room['id'],
+                        'calendar_id': room['calendar_id'],
+                        'channel_id': channel_id,
+                        'resource_id': resource_id,
+                        'expiration': expiration
+                    }
+                )
+                
+                # calendar_sync_state
+                if initial_sync_token:
+                    requests.post(
+                        f'{SUPABASE_URL}/rest/v1/calendar_sync_state',
+                        headers=headers,
+                        json={
+                            'room_id': room['id'],
+                            'sync_token': initial_sync_token,
+                            'last_synced_at': datetime.now().isoformat()
+                        }
+                    )
+                
+                print(f"    ✅ {room['id'].upper()}홀 Watch 등록 완료")
+                
+            except Exception as e:
+                print(f"    ❌ {room['id'].upper()}홀 Watch 등록 실패: {str(e)}")
+        
+        print('✅ Watch 채널 재설정 완료!')
+    except Exception as e:
+        print(f'⚠️  Watch 재설정 실패: {str(e)}')
+
 def main():
     """전체 동기화 실행"""
     print('🔄 Google Calendar → Supabase 동기화 시작...\n')
@@ -168,6 +279,9 @@ def main():
             print(f'  ❌ {room["id"].upper()}홀 실패: {e}')
     
     print(f'\n✅ 동기화 완료! 총 {total}개 이벤트')
+    
+    # 자동으로 Watch 채널 재설정
+    reset_watch_channels()
 
 if __name__ == '__main__':
     main()

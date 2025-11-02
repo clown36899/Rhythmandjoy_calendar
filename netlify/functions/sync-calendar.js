@@ -1,6 +1,8 @@
 import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
 import { calculatePrice } from './lib/price-calculator.js';
+import { getGoogleAuth } from './lib/google-auth.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -11,6 +13,8 @@ const calendar = google.calendar({
   version: 'v3',
   auth: process.env.GOOGLE_CALENDAR_API_KEY
 });
+
+const WEBHOOK_URL = process.env.WEBHOOK_URL || 'https://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/google-webhook';
 
 // 연습실 정보
 const rooms = [
@@ -106,6 +110,87 @@ async function syncRoomCalendar(room) {
   }
 }
 
+// Watch 채널 재설정
+async function resetWatchChannels() {
+  console.log('\n🔔 Watch 채널 자동 재설정 시작...');
+  
+  const auth = getGoogleAuth();
+  await auth.authorize();
+  const tokenInfo = await auth.getAccessToken();
+  const token = tokenInfo.token;
+  
+  const watchResults = [];
+  
+  for (const room of rooms) {
+    try {
+      // 1. 초기 sync token 가져오기
+      const listUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events?maxResults=1&singleEvents=true&key=${process.env.GOOGLE_CALENDAR_API_KEY}`;
+      const listResponse = await fetch(listUrl, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const listData = await listResponse.json();
+      const initialSyncToken = listData.nextSyncToken;
+
+      // 2. Watch 채널 등록
+      const channelId = uuidv4();
+      const channel = {
+        id: channelId,
+        type: 'web_hook',
+        address: WEBHOOK_URL,
+        token: room.id
+      };
+
+      const watchUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events/watch?key=${process.env.GOOGLE_CALENDAR_API_KEY}`;
+      const watchResponse = await fetch(watchUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(channel)
+      });
+
+      if (!watchResponse.ok) {
+        throw new Error(`HTTP ${watchResponse.status}`);
+      }
+
+      const watchData = await watchResponse.json();
+      const { resourceId, expiration } = watchData;
+
+      // 3. Supabase에 채널 정보 저장
+      await supabase
+        .from('calendar_channels')
+        .upsert({
+          room_id: room.id,
+          calendar_id: room.calendarId,
+          channel_id: channelId,
+          resource_id: resourceId,
+          expiration: parseInt(expiration)
+        }, { onConflict: 'room_id' });
+
+      // 4. Sync token 저장
+      if (initialSyncToken) {
+        await supabase
+          .from('calendar_sync_state')
+          .upsert({
+            room_id: room.id,
+            sync_token: initialSyncToken,
+            last_synced_at: new Date().toISOString()
+          }, { onConflict: 'room_id' });
+      }
+
+      console.log(`  ✅ ${room.id}홀 Watch 등록 완료`);
+      watchResults.push({ room: room.id, success: true });
+    } catch (error) {
+      console.error(`  ❌ ${room.id}홀 Watch 등록 실패:`, error.message);
+      watchResults.push({ room: room.id, success: false, error: error.message });
+    }
+  }
+  
+  console.log('✅ Watch 채널 재설정 완료!');
+  return watchResults;
+}
+
 async function syncAllCalendars() {
   console.log('🚀 전체 캘린더 동기화 시작...\n');
   
@@ -116,7 +201,11 @@ async function syncAllCalendars() {
   }
   
   console.log('\n✅ 전체 동기화 완료!');
-  return results;
+  
+  // 자동으로 Watch 채널 재설정
+  const watchResults = await resetWatchChannels();
+  
+  return { syncResults: results, watchResults };
 }
 
 export async function handler(event, context) {
@@ -128,14 +217,15 @@ export async function handler(event, context) {
   }
 
   try {
-    const results = await syncAllCalendars();
+    const { syncResults, watchResults } = await syncAllCalendars();
 
     return {
       statusCode: 200,
       body: JSON.stringify({
         success: true,
-        message: '전체 캘린더 동기화 완료',
-        results
+        message: '전체 캘린더 동기화 및 Watch 채널 재설정 완료',
+        syncResults,
+        watchResults
       })
     };
   } catch (error) {
