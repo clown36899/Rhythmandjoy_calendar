@@ -927,7 +927,7 @@
       while (true) {
         const { data: batch, error } = await supabase
           .from('booking_events')
-          .select('*')
+          .select('*, event_prices(calculated_price)')
           .order('start_time', { ascending: true })
           .range(from, from + batchSize - 1);
         
@@ -978,7 +978,8 @@
           dailyRevenue[dateKey] = 0;
         }
         
-        dailyRevenue[dateKey] += (event.calculated_price || 0);
+        const price = event.event_prices?.[0]?.calculated_price || 0;
+        dailyRevenue[dateKey] += price;
       });
 
       const events = allEvents.map(event => ({
@@ -989,7 +990,7 @@
         backgroundColor: roomColors[event.room_id] || '#ccc',
         borderColor: roomColors[event.room_id] || '#ccc',
         extendedProps: {
-          price: event.calculated_price,
+          price: event.event_prices?.[0]?.calculated_price || 0,
           priceType: event.price_type,
           isNaver: event.is_naver,
           roomId: event.room_id,
