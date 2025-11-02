@@ -365,19 +365,12 @@
       console.log(`💾 백그라운드에서 ${updates.length}개 가격 업데이트 중...`);
       
       try {
-        // 개별 업데이트 (병렬 처리)
-        const promises = updates.map(update => 
-          supabase
+        // 순차 처리 (한 번에 하나씩)
+        for (const update of updates) {
+          await supabase
             .from('booking_events')
             .update({ price: update.price })
-            .eq('id', update.id)
-        );
-        
-        // 100개씩 병렬 처리
-        const batchSize = 100;
-        for (let i = 0; i < promises.length; i += batchSize) {
-          const batch = promises.slice(i, i + batchSize);
-          await Promise.all(batch);
+            .eq('id', update.id);
         }
         
         console.log(`✅ ${updates.length}개 가격 업데이트 완료`);
@@ -444,25 +437,20 @@
           };
         });
         
-        // 배치 업데이트 (개별 업데이트를 병렬 처리)
+        // 순차 업데이트
         loadingText.textContent = 'DB 업데이트 중...';
         let totalUpdated = 0;
         
-        const promises = updates.map(update => 
-          supabase
+        for (const update of updates) {
+          await supabase
             .from('booking_events')
             .update({ price: update.price })
-            .eq('id', update.id)
-        );
-        
-        // 100개씩 병렬 처리
-        const updateBatchSize = 100;
-        for (let i = 0; i < promises.length; i += updateBatchSize) {
-          const batch = promises.slice(i, i + updateBatchSize);
-          await Promise.all(batch);
+            .eq('id', update.id);
           
-          totalUpdated += batch.length;
-          loadingText.textContent = `DB 업데이트 중... (${totalUpdated}/${updates.length})`;
+          totalUpdated++;
+          if (totalUpdated % 100 === 0 || totalUpdated === updates.length) {
+            loadingText.textContent = `DB 업데이트 중... (${totalUpdated}/${updates.length})`;
+          }
         }
         
         alert(`✅ 전체 재계산 완료!\n\n${totalUpdated}개 이벤트의 가격이 업데이트되었습니다.`);
