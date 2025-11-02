@@ -136,19 +136,25 @@ async function syncRoomCalendar(room) {
   }
 }
 
-async function syncAllCalendars() {
+async function syncAllCalendars(selectedRoomIds = null) {
   const overallStartTime = Date.now();
-  console.log('🚀 전체 캘린더 동기화 시작 (병렬 처리)...\n');
+  
+  // 선택된 연습실만 필터링
+  const roomsToSync = selectedRoomIds 
+    ? rooms.filter(room => selectedRoomIds.includes(room.id))
+    : rooms;
+  
+  console.log(`🚀 캘린더 동기화 시작 (${roomsToSync.map(r => r.id.toUpperCase()).join(', ')}) - 병렬 처리...\n`);
   
   // 클라이언트 초기화
   initClients();
   
   // 병렬 처리로 속도 향상
-  const promises = rooms.map(room => syncRoomCalendar(room));
+  const promises = roomsToSync.map(room => syncRoomCalendar(room));
   const results = await Promise.all(promises);
   
   const overallTime = Date.now() - overallStartTime;
-  console.log(`\n✅ 전체 동기화 완료! 총 ${(overallTime/1000).toFixed(1)}초`);
+  console.log(`\n✅ 동기화 완료! 총 ${(overallTime/1000).toFixed(1)}초`);
   
   return { results, overallTime };
 }
@@ -162,7 +168,18 @@ export async function handler(event, context) {
   }
 
   try {
-    const { results, overallTime } = await syncAllCalendars();
+    // 요청 body에서 선택된 연습실 확인
+    let selectedRoomIds = null;
+    if (event.body) {
+      try {
+        const body = JSON.parse(event.body);
+        selectedRoomIds = body.rooms; // ['a', 'b', 'c'] 형태
+      } catch (e) {
+        // body 파싱 실패 시 전체 동기화
+      }
+    }
+    
+    const { results, overallTime } = await syncAllCalendars(selectedRoomIds);
     
     // 모든 로그 수집
     const allLogs = [];

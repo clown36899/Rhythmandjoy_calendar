@@ -92,11 +92,44 @@
         📊 매출 통계 대시보드
       </button>
       
-      <button class="btn btn-warning mb-3" onclick="syncCalendars()">
-        1️⃣ DB 전체 재동기화
-      </button>
+      <div class="mb-3">
+        <label class="form-label fw-bold">1️⃣ DB 재동기화 (연습실 선택)</label>
+        <div class="mb-2">
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" id="syncAll" onchange="toggleAllRooms(this.checked)">
+            <label class="form-check-label" for="syncAll">
+              <strong>전체 선택</strong>
+            </label>
+          </div>
+        </div>
+        <div class="mb-2">
+          <div class="form-check form-check-inline">
+            <input class="form-check-input sync-room" type="checkbox" value="a" id="roomA">
+            <label class="form-check-label" for="roomA">A홀</label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input sync-room" type="checkbox" value="b" id="roomB">
+            <label class="form-check-label" for="roomB">B홀</label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input sync-room" type="checkbox" value="c" id="roomC">
+            <label class="form-check-label" for="roomC">C홀</label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input sync-room" type="checkbox" value="d" id="roomD">
+            <label class="form-check-label" for="roomD">D홀</label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input sync-room" type="checkbox" value="e" id="roomE">
+            <label class="form-check-label" for="roomE">E홀</label>
+          </div>
+        </div>
+        <button class="btn btn-warning" onclick="syncSelectedRooms()">
+          🔄 선택한 연습실 동기화
+        </button>
+      </div>
       
-      <button class="btn btn-primary mb-3 ms-2" onclick="resetWatchChannels()" id="watchBtn">
+      <button class="btn btn-primary mb-3" onclick="resetWatchChannels()" id="watchBtn">
         2️⃣ Watch 채널 재설정
       </button>
       
@@ -184,25 +217,49 @@
       { id: 'e', calendarId: 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com' }
     ];
 
-    // 1️⃣ DB 전체 재동기화 (Watch 제외)
-    async function syncCalendars() {
+    // 전체 선택/해제
+    function toggleAllRooms(checked) {
+      document.querySelectorAll('.sync-room').forEach(checkbox => {
+        checkbox.checked = checked;
+      });
+    }
+    
+    // 1️⃣ 선택한 연습실만 동기화
+    async function syncSelectedRooms() {
       const messageDiv = document.getElementById('adminMessage');
       
-      const confirmMsg = '⚠️ Google Calendar에서 전체 데이터를 다시 받아옵니다.\n\n이 작업은 2-3분 소요됩니다.\n\n계속하시겠습니까?';
+      // 선택된 연습실 확인
+      const selectedRooms = Array.from(document.querySelectorAll('.sync-room:checked')).map(cb => cb.value);
+      
+      if (selectedRooms.length === 0) {
+        alert('⚠️ 동기화할 연습실을 선택해주세요.');
+        return;
+      }
+      
+      const roomNames = selectedRooms.map(r => r.toUpperCase() + '홀').join(', ');
+      const confirmMsg = `⚠️ ${roomNames}을(를) 동기화합니다.\n\n계속하시겠습니까?`;
       if (!confirm(confirmMsg)) return;
       
-      messageDiv.textContent = '🔄 동기화 시작 중...';
+      messageDiv.textContent = `🔄 ${roomNames} 동기화 시작 중...`;
       messageDiv.className = 'alert alert-info mt-3';
       messageDiv.style.display = 'block';
       
       try {
         // 환경 감지: Netlify vs Replit
-        const syncUrl = window.location.hostname.includes('replit') 
-          ? '/api/sync'
-          : '/.netlify/functions/sync-calendar';
+        const isReplit = window.location.hostname.includes('replit');
+        const syncUrl = isReplit ? '/api/sync' : '/.netlify/functions/sync-calendar';
+        
+        // 선택된 연습실 정보 전달
+        const requestBody = {
+          rooms: selectedRooms
+        };
         
         const response = await fetch(syncUrl, {
-          method: 'POST'
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
         });
         
         if (!response.ok) {

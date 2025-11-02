@@ -263,12 +263,16 @@ def reset_watch_channels():
     except Exception as e:
         print(f'⚠️  Watch 재설정 실패: {str(e)}')
 
-def main():
-    """전체 동기화 실행"""
-    print('🔄 Google Calendar → Supabase 동기화 시작...\n')
+def main(selected_rooms=None):
+    """동기화 실행 (선택된 연습실만)"""
+    # 선택된 연습실만 필터링
+    rooms_to_sync = ROOMS if not selected_rooms else [r for r in ROOMS if r['id'] in selected_rooms]
+    
+    room_names = ', '.join([r['id'].upper() + '홀' for r in rooms_to_sync])
+    print(f'🔄 Google Calendar → Supabase 동기화 시작: {room_names}\n')
     
     total = 0
-    for room in ROOMS:
+    for room in rooms_to_sync:
         try:
             print(f'  📥 {room["id"].upper()}홀 동기화 중...')
             events = fetch_calendar_events(room['calendar_id'])
@@ -284,4 +288,7 @@ def main():
     reset_watch_channels()
 
 if __name__ == '__main__':
-    main()
+    # 명령줄 인자로 선택된 연습실 받기 (예: python sync_calendar.py a b c)
+    import sys
+    selected = sys.argv[1:] if len(sys.argv) > 1 else None
+    main(selected)

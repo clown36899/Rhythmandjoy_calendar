@@ -24,9 +24,25 @@ class SyncHandler(BaseHTTPRequestHandler):
             self.end_headers()
             
             try:
+                # 요청 body에서 선택된 연습실 확인
+                content_length = int(self.headers.get('Content-Length', 0))
+                selected_rooms = None
+                
+                if content_length > 0:
+                    body = self.rfile.read(content_length)
+                    try:
+                        data = json.loads(body.decode('utf-8'))
+                        selected_rooms = data.get('rooms')  # ['a', 'b', 'c']
+                    except:
+                        pass
+                
                 # Python 스크립트 실행
+                cmd = [sys.executable, 'sync_calendar.py']
+                if selected_rooms:
+                    cmd.extend(selected_rooms)  # 선택된 연습실을 인자로 전달
+                
                 result = subprocess.run(
-                    [sys.executable, 'sync_calendar.py'],
+                    cmd,
                     capture_output=True,
                     text=True,
                     timeout=300
