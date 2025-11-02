@@ -327,8 +327,6 @@
       }
     }
     
-    initSupabase();
-
     let monthlyChart = null;
     let roomChart = null;
     let hourlyChart = null;
@@ -1051,10 +1049,15 @@
     }
 
     // 페이지 로드 시 대시보드 로드
-    loadDashboard();
-    if (IS_REPLIT) {
-      loadMonthlyCalendar();
+    async function init() {
+      await initSupabase();
+      await loadDashboard();
+      if (IS_REPLIT) {
+        await loadMonthlyCalendar();
+      }
     }
+    
+    init();
   </script>
 </body>
 </html>
