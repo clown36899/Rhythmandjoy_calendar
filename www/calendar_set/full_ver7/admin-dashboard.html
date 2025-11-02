@@ -371,8 +371,8 @@
       };
     }
 
-    // price_history 로드
-    async function loadPriceHistory() {
+    // price_history 로드 (가격 계산용 캐시)
+    async function loadPriceHistoryCache() {
       try {
         const { data, error } = await supabase
           .from('price_history')
@@ -384,7 +384,7 @@
           priceHistoryCache = [];
         } else {
           priceHistoryCache = data || [];
-          console.log(`✅ ${priceHistoryCache.length}개 가격 정책 로드 완료`);
+          console.log(`✅ ${priceHistoryCache.length}개 가격 정책 로드 완료 (캐시)`);
         }
       } catch (error) {
         console.error('❌ price_history 로드 오류:', error);
@@ -436,7 +436,7 @@
         loadingText.textContent = `${allEvents.length}개 이벤트 로드 완료`;
         
         // 가격 정책 먼저 로드
-        await loadPriceHistory();
+        await loadPriceHistoryCache();
         
         // 클라이언트에서 모든 이벤트 가격 재계산
         const total = allEvents.length;
@@ -512,7 +512,7 @@
       document.getElementById('dashboardContent').style.display = 'none';
 
       // 가격 정책 먼저 로드
-      await loadPriceHistory();
+      await loadPriceHistoryCache();
 
       try {
         let summary, monthly, room, hourly;
