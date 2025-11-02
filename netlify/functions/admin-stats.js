@@ -23,7 +23,8 @@ async function getYearlySummary(year) {
     .from('booking_events')
     .select('price, room_id, price_type, start_time, end_time, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
-    .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
+    .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
+    .limit(100000);
 
   if (error) throw error;
 
@@ -69,7 +70,8 @@ async function getMonthlyStats(year) {
     .from('booking_events')
     .select('price, start_time, end_time, room_id, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
-    .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
+    .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
+    .limit(100000);
 
   if (error) throw error;
 
@@ -100,7 +102,8 @@ async function getRoomStats(year) {
     .from('booking_events')
     .select('price, room_id, price_type, start_time, end_time, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
-    .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
+    .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
+    .limit(100000);
 
   if (error) throw error;
 
@@ -144,7 +147,8 @@ async function getDailyStats(year, month) {
     .from('booking_events')
     .select('price, start_time, end_time, room_id, description')
     .gte('start_time', startDate.toISOString())
-    .lt('start_time', new Date(year, month, 1).toISOString());
+    .lt('start_time', new Date(year, month, 1).toISOString())
+    .limit(100000);
 
   if (error) throw error;
 
@@ -175,7 +179,8 @@ async function getWeeklyStats(year) {
     .from('booking_events')
     .select('price, start_time, end_time, room_id, description')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
-    .lt('start_time', `${year + 1}-01-01T00:00:00Z`);
+    .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
+    .limit(100000);
 
   if (error) throw error;
 
@@ -218,7 +223,8 @@ async function getHourlyStats(year) {
     .select('price, start_time')
     .gte('start_time', `${year}-01-01T00:00:00Z`)
     .lt('start_time', `${year + 1}-01-01T00:00:00Z`)
-    .not('price', 'is', null);
+    .not('price', 'is', null)
+    .limit(100000);
 
   if (error) throw error;
 
