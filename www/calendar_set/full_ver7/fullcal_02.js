@@ -727,9 +727,17 @@ document.addEventListener("DOMContentLoaded", () => {
   
   // ⭐ 페이지 로드 시 자동으로 오늘 버튼 클릭
   setTimeout(() => {
+    console.log('🔍 [오늘 이동 시도] calendar 객체:', calendar);
+    console.log('🔍 [오늘 이동 시도] calendar 타입:', typeof calendar);
+    console.log('🔍 [오늘 이동 시도] calendar.today 함수:', typeof calendar?.today);
+    
     if (calendar) {
-      calendar.today();
+      console.log('🔄 calendar.today() 호출 직전');
+      const result = calendar.today();
+      console.log('🔄 calendar.today() 호출 완료, 반환값:', result);
       console.log('✅ 자동으로 오늘 날짜로 이동');
+    } else {
+      console.error('❌ calendar 객체가 없습니다');
     }
   }, 500);
   
