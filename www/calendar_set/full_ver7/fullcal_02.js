@@ -196,19 +196,15 @@ function updateTodayButtonState(info) {
   const isTodayInRange = today >= viewStart && today < viewEnd;
   
   if (isTodayInRange) {
-    // 오늘이 현재 범위에 있으면: 활성화 + 하이라이트
+    // 오늘이 현재 범위에 있으면: 활성화 상태 (월/주 버튼처럼 눌린 상태)
     todayBtn.removeAttribute('disabled');
-    todayBtn.removeAttribute('aria-disabled');
     todayBtn.classList.remove('fc-state-disabled');
-    todayBtn.classList.add('is-active');
-    todayBtn.style.pointerEvents = 'auto';
+    todayBtn.classList.add('fc-button-active');
   } else {
     // 오늘이 현재 범위에 없으면: 비활성화
     todayBtn.setAttribute('disabled', 'true');
-    todayBtn.setAttribute('aria-disabled', 'true');
     todayBtn.classList.add('fc-state-disabled');
-    todayBtn.classList.remove('is-active');
-    todayBtn.style.pointerEvents = 'none';
+    todayBtn.classList.remove('fc-button-active');
   }
 }
 
