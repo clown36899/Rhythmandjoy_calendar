@@ -1,5 +1,5 @@
 // 공개 가능한 환경변수만 제공
-exports.handler = async (event, context) => {
+export async function handler(event, context) {
   return {
     statusCode: 200,
     headers: {
@@ -12,4 +12,4 @@ exports.handler = async (event, context) => {
       googleCalendarApiKey: process.env.GOOGLE_CALENDAR_API_KEY
     })
   };
-};
+}

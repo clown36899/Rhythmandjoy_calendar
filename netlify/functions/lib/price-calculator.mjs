@@ -1,4 +1,4 @@
-import { getPricePolicy } from './price-policy-service.js';
+import { getPricePolicy } from './price-policy-service.mjs';
 
 // 기본 가격 정보 (fallback용 - DB 조회 실패 시에만 사용)
 const DEFAULT_ROOM_PRICES = {

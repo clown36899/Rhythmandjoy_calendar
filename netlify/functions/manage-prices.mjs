@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { clearCache } from './lib/price-policy-service.mjs';
+import { clearPriceCache } from './lib/price-policy-service.mjs';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -60,7 +60,7 @@ export async function handler(event, context) {
       if (error) throw error;
 
       // 캐시 초기화
-      clearCache();
+      clearPriceCache();
 
       return {
         statusCode: 200,
