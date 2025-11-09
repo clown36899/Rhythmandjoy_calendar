@@ -2,11 +2,11 @@ import { getPricePolicy } from './price-policy-service.js';
 
 // 기본 가격 정보 (fallback용 - DB 조회 실패 시에만 사용)
 const DEFAULT_ROOM_PRICES = {
-  a: { price_weekday_before16: 10000, price_weekday_after16: 13000, price_weekend: 13000, price_overnight: 30000 },
-  b: { price_weekday_before16: 9000, price_weekday_after16: 11000, price_weekend: 11000, price_overnight: 20000 },
-  c: { price_weekday_before16: 4000, price_weekday_after16: 6000, price_weekend: 6000, price_overnight: 15000 },
-  d: { price_weekday_before16: 3000, price_weekday_after16: 5000, price_weekend: 5000, price_overnight: 15000 },
-  e: { price_weekday_before16: 8000, price_weekday_after16: 10000, price_weekend: 10000, price_overnight: 20000 }
+  a: { price_weekday_before16: 10000, price_weekday_after16: 13000, price_weekend: 13000, price_dawn_hourly: 5000, price_overnight: 30000 },
+  b: { price_weekday_before16: 9000, price_weekday_after16: 11000, price_weekend: 11000, price_dawn_hourly: 3500, price_overnight: 20000 },
+  c: { price_weekday_before16: 4000, price_weekday_after16: 6000, price_weekend: 6000, price_dawn_hourly: 2500, price_overnight: 15000 },
+  d: { price_weekday_before16: 3000, price_weekday_after16: 5000, price_weekend: 5000, price_dawn_hourly: 2500, price_overnight: 15000 },
+  e: { price_weekday_before16: 8000, price_weekday_after16: 10000, price_weekend: 10000, price_dawn_hourly: 3500, price_overnight: 20000 }
 };
 
 // 2025년 한국 법정 공휴일 (매년 업데이트 필요)
@@ -113,9 +113,9 @@ async function calculatePrice(startTime, endTime, roomId, description = '') {
       let hourlyPrice = 0;
       let reason = '';
       
-      // 새벽 시간 (0~6시): overnight ÷ 6
+      // 새벽 시간 (0~6시): 새벽 1시간 가격 사용
       if (hourKst >= 0 && hourKst < 6) {
-        hourlyPrice = prices.price_overnight / 6;
+        hourlyPrice = prices.price_dawn_hourly || (prices.price_overnight / 6);
         reason = `새벽(KST ${hourKst}시)`;
       } 
       // 주말 또는 공휴일: price_weekend 요금 사용
