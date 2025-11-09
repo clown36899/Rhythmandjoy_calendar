@@ -17,14 +17,26 @@ function makeSource(key) {
   const cfg = roomConfigs[key];
   return {
     id: key,
-    googleCalendarId: cfg.calendarId,
     className: key,
     color: cfg.color,
     textColor: '#000',
-    eventDataTransform: (ev) => {
-      delete ev.url;
-      ev.extendedProps = { ...ev.extendedProps, roomKey: key, roomName: cfg.name };
-      return ev;
+    events: async function(info, successCallback, failureCallback) {
+      try {
+        // Supabase DB에서 해당 룸의 이벤트 가져오기 (범위 지정)
+        const startStr = info.start.toISOString();
+        const endStr = info.end.toISOString();
+        
+        console.log(`📥 [${key}] DB 조회: ${startStr.split('T')[0]} ~ ${endStr.split('T')[0]}`);
+        
+        const bookings = await window.SupabaseCalendar.fetchBookings(key, startStr, endStr);
+        const events = window.SupabaseCalendar.convertToEvents(bookings);
+        
+        console.log(`✅ [${key}] ${events.length}개 이벤트 로드`);
+        successCallback(events);
+      } catch (error) {
+        console.error(`❌ [${key}] DB 조회 실패:`, error);
+        failureCallback(error);
+      }
     }
   };
 }
