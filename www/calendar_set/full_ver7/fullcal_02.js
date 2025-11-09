@@ -176,47 +176,6 @@ console.log("css제어")
 
 const roomOrder = ['Ahall', 'Bhall', 'Chall', 'Dhall', 'Ehall'];
 
-// 오늘 버튼 상태 업데이트 (오늘이 포함된 주면 눌린 상태)
-function updateTodayButtonState(info) {
-  const todayBtn = document.getElementById('todaybtn');
-  if (!todayBtn) {
-    console.log('❌ todaybtn 버튼을 찾을 수 없습니다');
-    return;
-  }
-  
-  // 오늘 날짜 (시간 제거, 자정으로 정규화)
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  // 현재 보이는 주/달의 시작/종료 날짜
-  const viewStart = new Date(info.start);
-  viewStart.setHours(0, 0, 0, 0);
-  
-  const viewEnd = new Date(info.end);
-  viewEnd.setHours(0, 0, 0, 0);
-  
-  // 오늘이 현재 보이는 범위에 포함되어 있는지 확인
-  const isTodayInRange = today >= viewStart && today < viewEnd;
-  
-  console.log('🔘 오늘 버튼 상태 체크:', {
-    오늘: today.toLocaleDateString(),
-    시작: viewStart.toLocaleDateString(),
-    종료: viewEnd.toLocaleDateString(),
-    '오늘포함?': isTodayInRange,
-    '현재클래스': todayBtn.className
-  });
-  
-  if (isTodayInRange) {
-    // 오늘이 포함된 주: 눌린 상태
-    todayBtn.classList.add('fc-button-active');
-    console.log('✅ fc-button-active 추가됨');
-  } else {
-    // 다른 주: 평범한 상태
-    todayBtn.classList.remove('fc-button-active');
-    console.log('⚪ fc-button-active 제거됨');
-  }
-}
-
 function initCalendar() {
  
   calendar = new SwipeCalendar(calendarEl, {
@@ -241,7 +200,6 @@ function initCalendar() {
     datesSet: function(info) {
       console.log('📅 날짜 범위 변경 감지:', info.startStr.split('T')[0], '~', info.endStr.split('T')[0]);
       refreshAllEventSources();
-      updateTodayButtonState(info);
     },
     
     customButtons: {
@@ -352,12 +310,6 @@ function initCalendar() {
     
     datesRender: (info) => {
          
-      // ⭐ 오늘 버튼 상태 업데이트 추가
-      updateTodayButtonState({
-        start: info.view.activeStart || info.view.currentStart,
-        end: info.view.activeEnd || info.view.currentEnd
-      });
-      
       try {
         const titleElement = document.querySelector("#calendarAll .fc-toolbar-view-title");
         if (titleElement) {
@@ -772,6 +724,14 @@ function renderClockSvg(startHour, startMinute = 0, endHour, endMinute = 0) {
 
 document.addEventListener("DOMContentLoaded", () => {
   initCalendar();
+  
+  // ⭐ 페이지 로드 시 자동으로 오늘 버튼 클릭
+  setTimeout(() => {
+    if (calendar) {
+      calendar.today();
+      console.log('✅ 자동으로 오늘 날짜로 이동');
+    }
+  }, 500);
   
   // 페이지를 다시 열 때 (탭 활성화 시) 3주치 DB 리셋
   document.addEventListener('visibilitychange', () => {
