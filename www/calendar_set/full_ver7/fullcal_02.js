@@ -176,6 +176,39 @@ console.log("css제어")
 
 const roomOrder = ['Ahall', 'Bhall', 'Chall', 'Dhall', 'Ehall'];
 
+// 오늘 버튼 하이라이트 상태 업데이트
+function updateTodayButtonState(info) {
+  const todayBtn = document.getElementById('todaybtn');
+  if (!todayBtn) return;
+  
+  // 오늘 날짜 (시간 제거, 자정으로 정규화)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // 현재 보이는 주의 시작/종료 날짜
+  const viewStart = new Date(info.start);
+  viewStart.setHours(0, 0, 0, 0);
+  
+  const viewEnd = new Date(info.end);
+  viewEnd.setHours(0, 0, 0, 0);
+  
+  // 오늘이 현재 보이는 주에 포함되어 있는지 확인
+  const isTodayInRange = today >= viewStart && today < viewEnd;
+  
+  // 버튼은 항상 클릭 가능하도록 유지
+  todayBtn.removeAttribute('disabled');
+  todayBtn.removeAttribute('aria-disabled');
+  todayBtn.classList.remove('fc-state-disabled');
+  
+  if (isTodayInRange) {
+    // 오늘이 현재 주에 있으면 하이라이트 추가
+    todayBtn.classList.add('is-active');
+  } else {
+    // 오늘이 현재 주에 없으면 하이라이트 제거
+    todayBtn.classList.remove('is-active');
+  }
+}
+
 function initCalendar() {
  
   calendar = new SwipeCalendar(calendarEl, {
@@ -200,6 +233,7 @@ function initCalendar() {
     datesSet: function(info) {
       console.log('📅 날짜 범위 변경 감지:', info.startStr.split('T')[0], '~', info.endStr.split('T')[0]);
       refreshAllEventSources();
+      updateTodayButtonState(info);
     },
     
     customButtons: {
