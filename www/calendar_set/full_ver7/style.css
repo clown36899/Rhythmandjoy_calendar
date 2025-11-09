@@ -22,6 +22,8 @@
   background-color: #44444400;
   height: 6rem !important;
   border: 0;
+  font-size: 2rem !important;
+  margin-right: 2rem !important;
 }
 
 /* 다음 달 버튼만 */
@@ -29,6 +31,8 @@
   background-color: #44444400;
   height: 6rem !important;
   border: 0;
+  font-size: 2rem !important;
+  margin-left: 2rem !important;
 }
 
 
