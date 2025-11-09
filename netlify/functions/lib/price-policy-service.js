@@ -30,7 +30,7 @@ export async function getPricePolicy(roomId, bookingDate) {
   // DB 조회
   const { data, error } = await supabase
     .from('price_history')
-    .select('price_weekday_before16, price_weekday_after16, price_weekend, price_overnight')
+    .select('price_weekday_before16, price_weekday_after16, price_weekend, price_dawn_hourly, price_overnight')
     .eq('room_id', roomId)
     .lte('effective_from', dateStr)
     .or(`effective_to.is.null,effective_to.gte.${dateStr}`)
@@ -62,11 +62,11 @@ export async function getPricePolicy(roomId, bookingDate) {
  */
 export function getDefaultPrices() {
   return {
-    a: { price_weekday_before16: 10000, price_weekday_after16: 13000, price_weekend: 13000, price_overnight: 30000 },
-    b: { price_weekday_before16: 9000, price_weekday_after16: 11000, price_weekend: 11000, price_overnight: 20000 },
-    c: { price_weekday_before16: 4000, price_weekday_after16: 6000, price_weekend: 6000, price_overnight: 15000 },
-    d: { price_weekday_before16: 3000, price_weekday_after16: 5000, price_weekend: 5000, price_overnight: 15000 },
-    e: { price_weekday_before16: 8000, price_weekday_after16: 10000, price_weekend: 10000, price_overnight: 20000 }
+    a: { price_weekday_before16: 10000, price_weekday_after16: 13000, price_weekend: 13000, price_dawn_hourly: 5000, price_overnight: 30000 },
+    b: { price_weekday_before16: 9000, price_weekday_after16: 11000, price_weekend: 11000, price_dawn_hourly: 3500, price_overnight: 20000 },
+    c: { price_weekday_before16: 4000, price_weekday_after16: 6000, price_weekend: 6000, price_dawn_hourly: 2500, price_overnight: 15000 },
+    d: { price_weekday_before16: 3000, price_weekday_after16: 5000, price_weekend: 5000, price_dawn_hourly: 2500, price_overnight: 15000 },
+    e: { price_weekday_before16: 8000, price_weekday_after16: 10000, price_weekend: 10000, price_dawn_hourly: 3500, price_overnight: 20000 }
   };
 }
 
