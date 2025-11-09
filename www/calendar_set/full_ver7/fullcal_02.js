@@ -725,6 +725,17 @@ function renderClockSvg(startHour, startMinute = 0, endHour, endMinute = 0) {
 
 document.addEventListener("DOMContentLoaded", () => {
   initCalendar();
+  
+  // 페이지를 다시 열 때 (탭 활성화 시) 3주치 DB 리셋
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      console.log('🔄 페이지 다시 활성화 - 3주치 DB 리셋');
+      setTimeout(() => {
+        refreshAllEventSources();
+      }, 500);
+    }
+  });
+  
   document.querySelectorAll(".room-toggle").forEach(cb => {
     const key = cb.value;
     cb.checked = currentRoomSelections[key];
