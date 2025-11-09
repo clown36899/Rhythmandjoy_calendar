@@ -6,6 +6,13 @@ import subprocess
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 class UnifiedHandler(SimpleHTTPRequestHandler):
+    
+    # ETag 완전 비활성화 (캐싱 방지)
+    def send_header(self, keyword, value):
+        # ETag와 Last-Modified 헤더 차단
+        if keyword.lower() not in ('etag', 'last-modified'):
+            SimpleHTTPRequestHandler.send_header(self, keyword, value)
+    
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
