@@ -352,6 +352,11 @@ function initCalendar() {
     
     datesRender: (info) => {
          
+      // ⭐ 오늘 버튼 상태 업데이트 추가
+      updateTodayButtonState({
+        start: info.view.activeStart || info.view.currentStart,
+        end: info.view.activeEnd || info.view.currentEnd
+      });
       
       try {
         const titleElement = document.querySelector("#calendarAll .fc-toolbar-view-title");
