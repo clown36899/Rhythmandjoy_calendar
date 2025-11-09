@@ -218,7 +218,7 @@ function initCalendar() {
         }
       },
       prevMonth: {
-        text: '←',
+        text: '<',
         click: function () {
           const raw = calendar.getDate();
           const date = new Date(raw);
@@ -227,7 +227,7 @@ function initCalendar() {
         }
       },
       nextMonth: {
-        text: '→',
+        text: '>',
         click: function () {
           const raw = calendar.getDate();
           const date = new Date(raw);
@@ -247,7 +247,7 @@ function initCalendar() {
       }
     },
     header: {
-      left: 'prevMonth,todayButton',
+      left: 'prevMonth',
       center: 'title',
       right: 'nextMonth'
     },
