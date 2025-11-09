@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import { getCalendarClient } from './lib/google-auth.js';
-import { parsePriceFromEvent, estimateDefaultPrice } from './lib/price-parser.js';
+import { getCalendarClient } from './lib/google-auth.mjs';
+import { parsePriceFromEvent, estimateDefaultPrice } from './lib/price-parser.mjs';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,

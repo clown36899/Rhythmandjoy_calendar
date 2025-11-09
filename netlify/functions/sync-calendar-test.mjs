@@ -33,7 +33,7 @@ export async function handler(event, context) {
     }
     
     try {
-      const { calculatePrice } = await import('./lib/price-calculator.js');
+      const { calculatePrice } = await import('./lib/price-calculator.mjs');
       importStatus.priceCalculator = 'OK';
       console.log('✅ price-calculator import 성공');
     } catch (e) {

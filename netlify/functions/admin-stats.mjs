@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import { calculatePrice } from './lib/price-calculator.js';
-import { getPricePolicyForDate } from './lib/price-policy-service.js';
+import { calculatePrice } from './lib/price-calculator.mjs';
+import { getPricePolicyForDate } from './lib/price-policy-service.mjs';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,

@@ -1,7 +1,7 @@
 // 단일 연습실 동기화 테스트 (A홀만)
 import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
-import { calculatePrice } from './lib/price-calculator.js';
+import { calculatePrice } from './lib/price-calculator.mjs';
 
 export async function handler(event, context) {
   const startTime = Date.now();

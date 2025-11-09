@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
-import { calculatePrice } from './lib/price-calculator.js';
+import { calculatePrice } from './lib/price-calculator.mjs';
 
 // 연습실 정보
 const rooms = [

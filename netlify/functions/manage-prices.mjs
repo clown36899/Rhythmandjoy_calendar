@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { clearCache } from './lib/price-policy-service.js';
+import { clearCache } from './lib/price-policy-service.mjs';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,

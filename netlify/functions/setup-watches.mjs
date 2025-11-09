@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { google } from 'googleapis';
 import { v4 as uuidv4 } from 'uuid';
-import { getGoogleAuth } from './lib/google-auth.js';
+import { getGoogleAuth } from './lib/google-auth.mjs';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,

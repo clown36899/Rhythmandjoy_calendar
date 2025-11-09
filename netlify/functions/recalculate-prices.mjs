@@ -1,6 +1,6 @@
 // 기존 booking_events의 가격을 재계산하는 함수
 import { createClient } from '@supabase/supabase-js';
-import { calculatePrice } from './lib/price-calculator.js';
+import { calculatePrice } from './lib/price-calculator.mjs';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
