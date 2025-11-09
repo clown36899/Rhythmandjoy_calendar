@@ -90,6 +90,14 @@ class UnifiedHandler(SimpleHTTPRequestHandler):
         else:
             self.send_error(404)
     
+    def end_headers(self):
+        # CSS, JS 파일 캐시 방지
+        if self.path.endswith(('.css', '.js', '.html')):
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
+        SimpleHTTPRequestHandler.end_headers(self)
+    
     def do_GET(self):
         if self.path == '/api/health':
             self.send_response(200)
