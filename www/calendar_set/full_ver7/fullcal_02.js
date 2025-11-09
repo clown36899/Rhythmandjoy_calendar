@@ -176,7 +176,7 @@ console.log("css제어")
 
 const roomOrder = ['Ahall', 'Bhall', 'Chall', 'Dhall', 'Ehall'];
 
-// 오늘 버튼 활성화/비활성화 상태 업데이트
+// 오늘 버튼 상태 업데이트 (오늘이 포함된 주면 눌린 상태)
 function updateTodayButtonState(info) {
   const todayBtn = document.getElementById('todaybtn');
   if (!todayBtn) return;
@@ -196,14 +196,10 @@ function updateTodayButtonState(info) {
   const isTodayInRange = today >= viewStart && today < viewEnd;
   
   if (isTodayInRange) {
-    // 오늘이 현재 범위에 있으면: 활성화 상태 (월/주 버튼처럼 눌린 상태)
-    todayBtn.removeAttribute('disabled');
-    todayBtn.classList.remove('fc-state-disabled');
+    // 오늘이 포함된 주: 눌린 상태
     todayBtn.classList.add('fc-button-active');
   } else {
-    // 오늘이 현재 범위에 없으면: 비활성화
-    todayBtn.setAttribute('disabled', 'true');
-    todayBtn.classList.add('fc-state-disabled');
+    // 다른 주: 평범한 상태
     todayBtn.classList.remove('fc-button-active');
   }
 }

@@ -90,13 +90,6 @@
   box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
 }
 
-/* 오늘 버튼 비활성화 상태 (다른 달/주에 있을 때) */
-.fc-today-button.fc-state-disabled {
-  color: #555555;
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .navbar-toggler-icon {
   display: flex;
   padding: 0 10px 0;
