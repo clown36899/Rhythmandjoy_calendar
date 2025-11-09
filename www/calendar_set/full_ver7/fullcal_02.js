@@ -179,7 +179,10 @@ const roomOrder = ['Ahall', 'Bhall', 'Chall', 'Dhall', 'Ehall'];
 // 오늘 버튼 상태 업데이트 (오늘이 포함된 주면 눌린 상태)
 function updateTodayButtonState(info) {
   const todayBtn = document.getElementById('todaybtn');
-  if (!todayBtn) return;
+  if (!todayBtn) {
+    console.log('❌ todaybtn 버튼을 찾을 수 없습니다');
+    return;
+  }
   
   // 오늘 날짜 (시간 제거, 자정으로 정규화)
   const today = new Date();
@@ -195,12 +198,22 @@ function updateTodayButtonState(info) {
   // 오늘이 현재 보이는 범위에 포함되어 있는지 확인
   const isTodayInRange = today >= viewStart && today < viewEnd;
   
+  console.log('🔘 오늘 버튼 상태 체크:', {
+    오늘: today.toLocaleDateString(),
+    시작: viewStart.toLocaleDateString(),
+    종료: viewEnd.toLocaleDateString(),
+    '오늘포함?': isTodayInRange,
+    '현재클래스': todayBtn.className
+  });
+  
   if (isTodayInRange) {
     // 오늘이 포함된 주: 눌린 상태
     todayBtn.classList.add('fc-button-active');
+    console.log('✅ fc-button-active 추가됨');
   } else {
     // 다른 주: 평범한 상태
     todayBtn.classList.remove('fc-button-active');
+    console.log('⚪ fc-button-active 제거됨');
   }
 }
 
