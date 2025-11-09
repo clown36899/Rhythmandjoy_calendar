@@ -176,7 +176,7 @@ console.log("css제어")
 
 const roomOrder = ['Ahall', 'Bhall', 'Chall', 'Dhall', 'Ehall'];
 
-// 오늘 버튼 하이라이트 상태 업데이트
+// 오늘 버튼 활성화/비활성화 상태 업데이트
 function updateTodayButtonState(info) {
   const todayBtn = document.getElementById('todaybtn');
   if (!todayBtn) return;
@@ -185,27 +185,30 @@ function updateTodayButtonState(info) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  // 현재 보이는 주의 시작/종료 날짜
+  // 현재 보이는 주/달의 시작/종료 날짜
   const viewStart = new Date(info.start);
   viewStart.setHours(0, 0, 0, 0);
   
   const viewEnd = new Date(info.end);
   viewEnd.setHours(0, 0, 0, 0);
   
-  // 오늘이 현재 보이는 주에 포함되어 있는지 확인
+  // 오늘이 현재 보이는 범위에 포함되어 있는지 확인
   const isTodayInRange = today >= viewStart && today < viewEnd;
   
-  // 버튼은 항상 클릭 가능하도록 유지
-  todayBtn.removeAttribute('disabled');
-  todayBtn.removeAttribute('aria-disabled');
-  todayBtn.classList.remove('fc-state-disabled');
-  
   if (isTodayInRange) {
-    // 오늘이 현재 주에 있으면 하이라이트 추가
+    // 오늘이 현재 범위에 있으면: 활성화 + 하이라이트
+    todayBtn.removeAttribute('disabled');
+    todayBtn.removeAttribute('aria-disabled');
+    todayBtn.classList.remove('fc-state-disabled');
     todayBtn.classList.add('is-active');
+    todayBtn.style.pointerEvents = 'auto';
   } else {
-    // 오늘이 현재 주에 없으면 하이라이트 제거
+    // 오늘이 현재 범위에 없으면: 비활성화
+    todayBtn.setAttribute('disabled', 'true');
+    todayBtn.setAttribute('aria-disabled', 'true');
+    todayBtn.classList.add('fc-state-disabled');
     todayBtn.classList.remove('is-active');
+    todayBtn.style.pointerEvents = 'none';
   }
 }
 
