@@ -16,3 +16,6 @@
 [functions]
   node_bundler = "esbuild"
   external_node_modules = ["@supabase/supabase-js", "googleapis"]
+
+[functions."renew-watches"]
+  schedule = "@daily"
