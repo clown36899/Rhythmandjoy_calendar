@@ -234,10 +234,20 @@ function initCalendar() {
           const newDate = new Date(date.getFullYear(), date.getMonth() + 1, 1);
           calendar.gotoDate(newDate);
         }
+      },
+      todayButton: {
+        text: '오늘',
+        click: function () {
+          calendar.today();
+          // datesSet 이벤트가 자동으로 발생하지만, 명시적으로 3주치 리셋
+          setTimeout(() => {
+            refreshAllEventSources();
+          }, 100);
+        }
       }
     },
     header: {
-      left: 'prevMonth',
+      left: 'prevMonth,todayButton',
       center: 'title',
       right: 'nextMonth'
     },
