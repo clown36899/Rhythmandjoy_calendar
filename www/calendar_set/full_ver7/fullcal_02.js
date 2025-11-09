@@ -176,6 +176,31 @@ console.log("css제어")
 
 const roomOrder = ['Ahall', 'Bhall', 'Chall', 'Dhall', 'Ehall'];
 
+// 오늘 버튼 활성화 상태 설정 (오늘이 포함된 주/월이면 활성화)
+function updateTodayButtonState(info) {
+  const todayBtn = document.getElementById('todaybtn');
+  if (!todayBtn) return;
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const viewStart = new Date(info.start);
+  viewStart.setHours(0, 0, 0, 0);
+  
+  const viewEnd = new Date(info.end);
+  viewEnd.setHours(0, 0, 0, 0);
+  
+  const isTodayInRange = today >= viewStart && today < viewEnd;
+  
+  if (isTodayInRange) {
+    todayBtn.classList.add('fc-button-active');
+    console.log('✅ 오늘 버튼 활성화 (오늘 포함된 범위)');
+  } else {
+    todayBtn.classList.remove('fc-button-active');
+    console.log('⚪ 오늘 버튼 비활성화 (다른 범위)');
+  }
+}
+
 function initCalendar() {
  
   calendar = new SwipeCalendar(calendarEl, {
@@ -200,6 +225,7 @@ function initCalendar() {
     datesSet: function(info) {
       console.log('📅 날짜 범위 변경 감지:', info.startStr.split('T')[0], '~', info.endStr.split('T')[0]);
       refreshAllEventSources();
+      updateTodayButtonState(info);
     },
     
     customButtons: {
@@ -724,32 +750,6 @@ function renderClockSvg(startHour, startMinute = 0, endHour, endMinute = 0) {
 
 document.addEventListener("DOMContentLoaded", () => {
   initCalendar();
-  
-  // ⭐ 페이지 로드 시 자동으로 오늘 버튼 클릭
-  setTimeout(() => {
-    console.log('🔍 [오늘 이동 시도] calendar 객체:', calendar);
-    
-    if (calendar) {
-      try {
-        // 방법 1: gotoDate로 오늘 날짜 전달
-        const today = new Date();
-        console.log('🔄 방법1: gotoDate(오늘) 시도');
-        calendar.gotoDate(today);
-        console.log('✅ gotoDate로 오늘 날짜 이동 완료');
-        
-        // 방법 2: refreshAllEventSources로 3주치 데이터 다시 로드
-        setTimeout(() => {
-          console.log('🔄 방법2: DB 리프레시 시도');
-          refreshAllEventSources();
-          console.log('✅ 자동으로 오늘 날짜로 이동 + DB 리프레시 완료');
-        }, 200);
-      } catch (error) {
-        console.error('❌ 오늘 이동 실패:', error);
-      }
-    } else {
-      console.error('❌ calendar 객체가 없습니다');
-    }
-  }, 1000);
   
   // 페이지를 다시 열 때 (탭 활성화 시) 3주치 DB 리셋
   document.addEventListener('visibilitychange', () => {
