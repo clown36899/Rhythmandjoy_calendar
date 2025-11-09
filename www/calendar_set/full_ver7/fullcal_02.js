@@ -34,6 +34,27 @@ function getLegacySlideCalendars() {
   return candidates.filter(cal => cal && typeof cal.getEventSources === 'function');
 }
 
+// 모든 슬라이드의 Event Sources를 DB에서 다시 로드 (3주치 동기화)
+function refreshAllEventSources() {
+  const calendars = getLegacySlideCalendars();
+  
+  if (calendars.length === 0) {
+    console.warn('⚠️ FullCalendar 인스턴스가 아직 준비되지 않음');
+    return;
+  }
+  
+  let totalRefetched = 0;
+  calendars.forEach((cal, idx) => {
+    const sources = cal.getEventSources();
+    sources.forEach(source => {
+      source.refetch(); // DB에서 새로 가져옴
+      totalRefetched++;
+    });
+  });
+  
+  console.log(`✅ DB 동기화 완료: ${calendars.length}개 슬라이드, ${totalRefetched}개 소스`);
+}
+
 function updateSourcesDynamicallyAllSlides() {
   const activeKeys = Object.keys(currentRoomSelections).filter(k => currentRoomSelections[k]);
   console.log("\uD83D\uDD01 [동기화 시작] 체크된 룸:", activeKeys);
@@ -162,6 +183,13 @@ function initCalendar() {
     plugins: ["interaction", "dayGrid", "timeGrid"],
     contentHeight: 400,
     eventSources: roomKeys.filter(k => currentRoomSelections[k]).map(makeSource),
+    
+    // 날짜 범위가 바뀔 때마다 DB 동기화 (슬라이드, 달 이동 버튼, 페이지 로드)
+    datesSet: function(info) {
+      console.log('📅 날짜 범위 변경 감지:', info.startStr.split('T')[0], '~', info.endStr.split('T')[0]);
+      refreshAllEventSources();
+    },
+    
     customButtons: {
       weekview: {
         text: '주간',
