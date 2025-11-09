@@ -728,18 +728,28 @@ document.addEventListener("DOMContentLoaded", () => {
   // ⭐ 페이지 로드 시 자동으로 오늘 버튼 클릭
   setTimeout(() => {
     console.log('🔍 [오늘 이동 시도] calendar 객체:', calendar);
-    console.log('🔍 [오늘 이동 시도] calendar 타입:', typeof calendar);
-    console.log('🔍 [오늘 이동 시도] calendar.today 함수:', typeof calendar?.today);
     
     if (calendar) {
-      console.log('🔄 calendar.today() 호출 직전');
-      const result = calendar.today();
-      console.log('🔄 calendar.today() 호출 완료, 반환값:', result);
-      console.log('✅ 자동으로 오늘 날짜로 이동');
+      try {
+        // 방법 1: gotoDate로 오늘 날짜 전달
+        const today = new Date();
+        console.log('🔄 방법1: gotoDate(오늘) 시도');
+        calendar.gotoDate(today);
+        console.log('✅ gotoDate로 오늘 날짜 이동 완료');
+        
+        // 방법 2: refreshAllEventSources로 3주치 데이터 다시 로드
+        setTimeout(() => {
+          console.log('🔄 방법2: DB 리프레시 시도');
+          refreshAllEventSources();
+          console.log('✅ 자동으로 오늘 날짜로 이동 + DB 리프레시 완료');
+        }, 200);
+      } catch (error) {
+        console.error('❌ 오늘 이동 실패:', error);
+      }
     } else {
       console.error('❌ calendar 객체가 없습니다');
     }
-  }, 500);
+  }, 1000);
   
   // 페이지를 다시 열 때 (탭 활성화 시) 3주치 DB 리셋
   document.addEventListener('visibilitychange', () => {
