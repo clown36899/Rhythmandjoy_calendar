@@ -77,3 +77,6 @@ export function clearPriceCache() {
   priceCache.clear();
   console.log('[가격 캐시 초기화]');
 }
+
+// 하위 호환성을 위한 alias (Netlify 배포 버전용)
+export { getPricePolicy as getPricePolicyForDate };
