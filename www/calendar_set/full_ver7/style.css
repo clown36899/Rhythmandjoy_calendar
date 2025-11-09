@@ -24,9 +24,7 @@
   border: 0;
   font-size: 1.33rem !important;
   margin-right: 2rem !important;
-  display: flex !important;
-  align-items: center !important;
-  padding-top: 0 !important;
+  padding: 0 !important;
 }
 
 /* 다음 달 버튼만 */
@@ -36,9 +34,13 @@
   border: 0;
   font-size: 1.33rem !important;
   margin-left: 2rem !important;
+  padding: 0 !important;
+}
+
+/* 툴바 청크 정렬 */
+.fc-toolbar-chunk {
   display: flex !important;
   align-items: center !important;
-  padding-top: 0 !important;
 }
 
 
