@@ -22,8 +22,11 @@
   background-color: #44444400;
   height: 6rem !important;
   border: 0;
-  font-size: 2rem !important;
+  font-size: 1.33rem !important;
   margin-right: 2rem !important;
+  display: flex !important;
+  align-items: center !important;
+  padding-top: 0 !important;
 }
 
 /* 다음 달 버튼만 */
@@ -31,8 +34,11 @@
   background-color: #44444400;
   height: 6rem !important;
   border: 0;
-  font-size: 2rem !important;
+  font-size: 1.33rem !important;
   margin-left: 2rem !important;
+  display: flex !important;
+  align-items: center !important;
+  padding-top: 0 !important;
 }
 
 
