@@ -2,6 +2,16 @@
 
 This project is a mobile-friendly room booking calendar application for "Rhythmjoy" (리듬앤조이), a Korean music practice room facility. It integrates with Google Calendar to display real-time availability for five practice rooms (A, B, C, D, E halls). The application enables users to view schedules, check availability, and access booking information through a responsive web interface. Its core ambition is to provide a seamless, real-time booking overview for users while offering robust backend management and statistical insights for the facility owners.
 
+# Recent Changes
+
+**2025-11-14: Mobile Reservation Info Page Separation**
+- Created independent `info.html` page for reservation information (separate from calendar offcanvas)
+- Added top header with back-to-calendar and home buttons
+- Implemented deep linking with URL encoding/decoding (info.html?section=xxx)
+- Added DOMContentLoaded event for automatic deep link processing
+- Updated share URLs from calendar_7.html?section=xxx to info.html?section=xxx
+- Added "📱 예약정보" link in calendar_7.html offcanvas menu
+
 # User Preferences
 
 Preferred communication style: Simple, everyday language.

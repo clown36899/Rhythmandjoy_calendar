@@ -1,0 +1,1552 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>리듬앤조이 안내</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+      integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Noto Sans KR", sans-serif;
+        overflow: hidden;
+        height: 100vh;
+        background: #1f1f1f;
+      }
+
+      /* 상단 헤더 */
+      .top-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 60px;
+        background: #262626;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 15px;
+        border-bottom: 1px solid #404040;
+        z-index: 1000;
+      }
+
+      .header-title {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: #ffffff;
+      }
+
+      .header-btn {
+        background: #404040;
+        border: none;
+        color: #ffffff;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        text-decoration: none;
+      }
+
+      .header-btn:hover {
+        background: #ffc107;
+        color: #000000;
+      }
+
+      /* 상단 콘텐츠 영역 */
+      .content-area {
+        position: fixed;
+        top: 60px; /* 헤더 높이만큼 */
+        left: 0;
+        right: 0;
+        bottom: 130px; /* 바텀 네비 높이만큼 */
+        overflow-y: auto;
+        padding: 20px;
+        background: #1f1f1f;
+      }
+
+      .content-area::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      .content-area::-webkit-scrollbar-thumb {
+        background: #616161;
+        border-radius: 3px;
+      }
+
+      .content-area::-webkit-scrollbar-track {
+        background: #2f2f2f;
+      }
+
+      /* 콘텐츠 섹션 */
+      .content-section {
+        display: none;
+      }
+
+      .content-section.active {
+        display: block;
+        animation: fadeIn 0.3s ease;
+      }
+
+      .content-section.active.no-animation {
+        animation: none;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* 섹션 헤더 컨테이너 */
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+      }
+
+      .section-header h1 {
+        margin-bottom: 0 !important;
+      }
+
+      /* 공유 버튼 */
+      .share-btn {
+        background: #404040;
+        border: none;
+        color: #ffffff;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .share-btn:hover {
+        background: #ffc107;
+        color: #000000;
+      }
+
+      .share-btn i {
+        font-size: 14px;
+      }
+
+      .content-section h1 {
+        font-size: clamp(1.2rem, 3.5vw, 1.6rem);
+        margin-bottom: 15px;
+        color: #ffffff;
+        background: #353535;
+        padding: 12px 15px;
+        border-radius: 8px;
+        border-left: 4px solid #ffc107;
+      }
+
+      .content-section h2,
+      .content-section h3 {
+        font-size: clamp(1rem, 3vw, 1.3rem);
+        margin: 15px 0 10px 0;
+        color: #ffffff;
+        border-left: 3px solid #616161;
+        padding-left: 10px;
+      }
+
+      .content-section p {
+        line-height: 1.6;
+        margin-bottom: 10px;
+        color: #c1c1c1;
+        font-size: clamp(0.9rem, 2.5vw, 1rem);
+      }
+
+      .content-section ul {
+        padding-left: 15px;
+        margin-bottom: 12px;
+      }
+
+      .content-section li {
+        margin-bottom: 12px;
+        line-height: 1.6;
+        color: #c1c1c1;
+        background: #2f2f2f;
+        padding: 10px;
+        border-radius: 6px;
+        border-left: 2px solid #616161;
+        font-size: clamp(0.85rem, 2.5vw, 0.95rem);
+      }
+
+      .content-section strong {
+        color: #ffffff;
+      }
+
+      .content-section a {
+        color: #00baff;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+      }
+
+      .content-section a:hover {
+        color: #ffc107;
+        text-decoration: underline;
+      }
+
+      .highlight {
+        background: #ffc107;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-weight: bold;
+        color: #000000;
+      }
+
+      .important {
+        background: #404040 !important;
+        border-left-color: #ffc107 !important;
+      }
+
+      .button,
+      .inline-button {
+        display: inline-block;
+        background: #353535;
+        color: #ffffff;
+        padding: 10px 18px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 600;
+        margin: 5px;
+        border: 1px solid #616161;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: clamp(0.9rem, 2.5vw, 1rem);
+      }
+
+      .button:hover,
+      .inline-button:hover {
+        background: #404040;
+        border-color: #ffc107;
+        color: #ffc107;
+        transform: translateY(-1px);
+      }
+
+      .price-image {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        margin: 20px auto;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+      }
+
+      /* 바텀 네비게이션 */
+      .bottom-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #262626;
+        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+        gap: 1px;
+        background: #1f1f1f;
+        padding: 0;
+        z-index: 1000;
+        border-top: 1px solid #404040;
+      }
+
+      .nav-item {
+        background: #2f2f2f;
+        border: none;
+        padding: 10px 5px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+        color: #c1c1c1;
+      }
+
+      .nav-item:active {
+        transform: scale(0.96);
+      }
+
+      .nav-item.active {
+        background: #353535;
+        color: #ffc107;
+        border-top: 2px solid #ffc107;
+      }
+
+      .nav-item i {
+        font-size: clamp(20px, 4vw, 26px);
+        margin-bottom: 4px;
+        position: relative;
+        z-index: 1;
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
+      }
+
+      .nav-item span {
+        font-size: clamp(0.65rem, 1.8vw, 0.8rem);
+        font-weight: 600;
+        text-align: center;
+        position: relative;
+        z-index: 1;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      }
+
+      /* 환영 메시지 */
+      .welcome-message {
+        text-align: center;
+        padding: 60px 20px;
+        background: rgba(102, 126, 234, 0.05);
+        border-radius: 20px;
+        margin: 20px;
+      }
+
+      .welcome-message h1 {
+        font-size: clamp(1.8rem, 5vw, 2.5rem);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 20px;
+        padding: 0;
+        border: none;
+      }
+
+      .welcome-message p {
+        font-size: clamp(1rem, 3vw, 1.2rem);
+        color: #b0b0b0;
+      }
+
+      .welcome-message i {
+        font-size: 80px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 20px;
+        filter: drop-shadow(0 4px 8px rgba(102, 126, 234, 0.3));
+      }
+
+      /* 정보 박스 */
+      .info-box {
+        background: #2f2f2f;
+        border: 1px solid #404040;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 12px 0;
+      }
+
+      .example-box {
+        background: #353535;
+        padding: 12px;
+        border-left: 3px solid #ffc107;
+        margin: 12px 0;
+        border-radius: 6px;
+        font-family: monospace;
+        color: #c1c1c1;
+        font-size: clamp(0.85rem, 2.5vw, 0.9rem);
+      }
+
+      /* 모달 갤러리 스타일 */
+      .gallery-modal {
+        display: none;
+        position: fixed;
+        z-index: 10000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.95);
+        align-items: center;
+        justify-content: center;
+      }
+
+      .gallery-modal.active {
+        display: flex;
+      }
+
+      .gallery-content {
+        position: relative;
+        width: 90%;
+        max-width: 800px;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .gallery-close {
+        position: absolute;
+        top: -40px;
+        right: 0;
+        color: #fff;
+        font-size: 35px;
+        font-weight: bold;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 0;
+        width: 40px;
+        height: 40px;
+        line-height: 40px;
+        text-align: center;
+      }
+
+      .gallery-close:hover {
+        color: #ffc107;
+      }
+
+      .gallery-main-image {
+        max-width: 100%;
+        max-height: 70vh;
+        object-fit: contain;
+        border-radius: 8px;
+        margin-bottom: 20px;
+      }
+
+      .gallery-thumbnails {
+        display: flex;
+        overflow-x: auto;
+        gap: 10px;
+        padding: 10px 0;
+        max-width: 100%;
+      }
+
+      .gallery-thumbnails::-webkit-scrollbar {
+        height: 6px;
+      }
+
+      .gallery-thumbnails::-webkit-scrollbar-thumb {
+        background: #616161;
+        border-radius: 3px;
+      }
+
+      .gallery-thumbnail {
+        height: 60px;
+        cursor: pointer;
+        border: 2px solid transparent;
+        border-radius: 4px;
+        opacity: 0.6;
+        transition: all 0.3s;
+      }
+
+      .gallery-thumbnail.active {
+        border-color: #ffc107;
+        opacity: 1;
+      }
+
+      .gallery-thumbnail:hover {
+        opacity: 1;
+      }
+
+      .gallery-nav {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        border: none;
+        font-size: 30px;
+        padding: 10px 15px;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.3s;
+      }
+
+      .gallery-nav:hover {
+        background: rgba(0, 0, 0, 0.8);
+        color: #ffc107;
+      }
+
+      .gallery-nav.prev {
+        left: 10px;
+      }
+
+      .gallery-nav.next {
+        right: 10px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- 상단 헤더 -->
+    <div class="top-header">
+      <a href="calendar_7.html" class="header-btn">
+        <i class="fas fa-arrow-left"></i>
+        <span>캘린더</span>
+      </a>
+      <div class="header-title">리듬앤조이 예약정보</div>
+      <a href="calendar_7.html" class="header-btn">
+        <i class="fas fa-home"></i>
+      </a>
+    </div>
+
+    <!-- 상단 콘텐츠 영역 -->
+    <div class="content-area" id="contentArea">
+      <!-- 예약방법 (초기 활성화) -->
+      <div class="content-section active" id="howto">
+        <div class="section-header">
+          <h1>📱 네이버 예약</h1>
+          <button
+            class="share-btn"
+            onclick="shareSection('예약/비번', '네이버 예약 정보')"
+          >
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
+        <p>
+          네이버지도 앱에서 <strong>"리듬앤조이 연습실"</strong> 검색 후 예약
+        </p>
+        <div class="info-box">
+          <a
+            href="https://naver.me/59vo9MDk"
+            target="_blank"
+            class="button"
+            style="
+              width: 100%;
+              text-align: center;
+              display: block;
+              color: #ffffff !important;
+            "
+            >🔗 네이버 지도 예약</a
+          >
+          <a
+            href="https://m.place.naver.com/my"
+            target="_blank"
+            class="button"
+            style="
+              width: 100%;
+              text-align: center;
+              display: block;
+              color: #ffffff !important;
+              margin-bottom: 8px;
+            "
+            >🔑 예약, 비번 확인/취소</a
+          >
+          <p style="font-size: 0.85rem; color: #c1c1c1; margin: 0">
+            💡 네이버 로그인 필요(승인없음, 당일1분전까지 예약가능)
+          </p>
+        </div>
+        <p style="font-size: 0.9rem; margin-top: 8px">
+          ✅ 사용 1분 전까지 실시간 예약 가능<br />✅ 승인 없이 즉시 확정
+        </p>
+      </div>
+
+      <!-- 시설안내 -->
+      <div class="content-section" id="info">
+        <div class="section-header">
+          <h1>🏢 시설 안내</h1>
+          <button
+            class="share-btn"
+            onclick="shareSection('시설안내', '연습실 시설 정보')"
+          >
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
+        <p style="margin-bottom: 10px">
+          <span class="highlight">총 5개 연습룸</span> - 이미지 갤러리 보기
+        </p>
+        <div
+          style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px"
+        >
+          <button
+            onclick="openGallery('roomALL')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            📐 평면도
+          </button>
+          <button
+            onclick="openGallery('roomA')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            A홀 10×6m
+          </button>
+          <button
+            onclick="openGallery('roomB')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            B홀 8.4×4.5m
+          </button>
+          <button
+            onclick="openGallery('roomE')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            E홀 6.5×6m
+          </button>
+          <button
+            onclick="openGallery('roomC')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            C홀 4.5×3.5m
+          </button>
+          <button
+            onclick="openGallery('roomD')"
+            class="inline-button"
+            style="
+              flex: 1 1 45%;
+              min-width: 80px;
+              padding: 8px;
+              font-size: 0.85rem;
+            "
+          >
+            D홀 4.5×2.8m
+          </button>
+        </div>
+        <ul>
+          <li>📺 A/B홀 TV 무료 (HDMI, C타입, 8핀 커넥터)</li>
+          <li>🧘 전 룸 댄서 전용 쿠션바닥</li>
+          <li>📹 CCTV 24시간 녹화</li>
+        </ul>
+      </div>
+
+      <!-- 주의사항 -->
+      <div class="content-section" id="notice">
+        <div class="section-header">
+          <h1>⚠️ 주의사항</h1>
+          <button
+            class="share-btn"
+            onclick="shareSection('주의사항', '연습실 이용 주의사항')"
+          >
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
+        <ul>
+          <li class="important">
+            🚫 <strong>외부 신발 금지</strong> (적발 시 환불 없이 퇴실)
+          </li>
+          <li>⏰ 연습/사용 목적 시 10분이라도 대관 필요</li>
+          <li>🛠️ 물품 파손 시 원상복구 원칙 (관리자 통보 필수)</li>
+          <li>🥁 징, 장구, 타악기 금지 (탭댄스는 탭판에서만)</li>
+          <li>🍜 국물음식, 냄새 심한 음식 금지</li>
+        </ul>
+        <p>문의: <a href="sms:01048017180">010-4801-7180</a></p>
+      </div>
+
+      <!-- 오시는길 -->
+      <div class="content-section" id="map">
+        <div class="section-header">
+          <h1>📍 오시는 길</h1>
+          <button
+            class="share-btn"
+            onclick="shareSection('오시는길', '리듬앤조이 찾아오는 길')"
+          >
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
+        <p>
+          📌 사당역 7번출구 도보 1분<br />🏢 서울시 동작구 남부순환로 2077
+          지하2층 (드림디포 문구점 건물)
+        </p>
+        <a
+          href="https://naver.me/59vo9MDk"
+          target="_blank"
+          class="button"
+          style="
+            width: 100%;
+            text-align: center;
+            display: block;
+            color: #ffffff !important;
+          "
+          >🔗 네이버 지도 보기</a
+        >
+        <h3>🚗 주차 안내</h3>
+        <ul>
+          <li>⛔ 건물 주차 기본적으로 <span class="highlight">불가</span></li>
+          <li>
+            ✅ 예외: 문구점 폐점 후 문구점앞만 가능<br />
+            <span style="font-size: 0.9em; color: #999"
+              >※ 카리프트 앞& 지정주차장 불가</span
+            >
+          </li>
+          <li>✅ 사당역 공영주차장 이용 권장</li>
+        </ul>
+      </div>
+
+      <!-- 새벽통대관 -->
+      <div class="content-section" id="night">
+        <div class="section-header">
+          <h1>🌙 새벽 통대관</h1>
+          <button
+            class="share-btn"
+            onclick="shareSection('새벽통대관', '새벽 통대관 예약 정보')"
+          >
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
+        <p>📲 문자 예약: <a href="sms:01048017180">010-4801-7180</a></p>
+        <div class="example-box">예: "12~13일 새벽 A홀 통대관 가능한가요?"</div>
+        <p>✅ 승인 후 입금 → 이용정보 수신 → 완료</p>
+      </div>
+
+      <!-- 가격표 -->
+      <div class="content-section" id="pricelist">
+        <div class="section-header">
+          <h1>💰 가격표 (시간당)</h1>
+          <button
+            class="share-btn"
+            onclick="shareSection('가격표', '연습실 이용 요금')"
+          >
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
+        <table
+          style="
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.75rem;
+            background: #2a2a2a;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 8px;
+          "
+        >
+          <thead>
+            <tr style="background: #404040">
+              <th
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #555;
+                  font-size: 0.7rem;
+                "
+              >
+                룸
+              </th>
+              <th
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #555;
+                  font-size: 0.7rem;
+                "
+              >
+                16시전
+              </th>
+              <th
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #555;
+                  font-size: 0.7rem;
+                "
+              >
+                16시후<br />주말/공휴일
+              </th>
+              <th
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #555;
+                  font-size: 0.7rem;
+                "
+              >
+                새벽
+              </th>
+              <th
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #555;
+                  font-size: 0.7rem;
+                "
+              >
+                새벽 통대관<br />(6시간)
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-left: 3px solid #ffa500">
+              <td
+                style="
+                  padding: 6px 4px;
+                  border-bottom: 1px solid #444;
+                  text-align: center;
+                "
+              >
+                <strong>A</strong><br /><span
+                  style="font-size: 0.65rem; color: #999"
+                  >20평</span
+                >
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                10,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                15,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                6,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                30,000
+              </td>
+            </tr>
+            <tr style="border-left: 3px solid #4da6ff">
+              <td
+                style="
+                  padding: 6px 4px;
+                  border-bottom: 1px solid #444;
+                  text-align: center;
+                "
+              >
+                <strong>B</strong><br /><span
+                  style="font-size: 0.65rem; color: #999"
+                  >16평</span
+                >
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                9,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                11,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                5,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                20,000
+              </td>
+            </tr>
+            <tr style="border-left: 3px solid #66cc99">
+              <td
+                style="
+                  padding: 6px 4px;
+                  border-bottom: 1px solid #444;
+                  text-align: center;
+                "
+              >
+                <strong>C</strong><br /><span
+                  style="font-size: 0.65rem; color: #999"
+                  >5평</span
+                >
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                4,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                6,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                4,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                15,000
+              </td>
+            </tr>
+            <tr style="border-left: 3px solid #90ee90">
+              <td
+                style="
+                  padding: 6px 4px;
+                  border-bottom: 1px solid #444;
+                  text-align: center;
+                "
+              >
+                <strong>D</strong><br /><span
+                  style="font-size: 0.65rem; color: #999"
+                  >4평</span
+                >
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                3,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                5,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                3,000
+              </td>
+              <td
+                style="
+                  padding: 6px 4px;
+                  text-align: center;
+                  border-bottom: 1px solid #444;
+                "
+              >
+                15,000
+              </td>
+            </tr>
+            <tr style="border-left: 3px solid #ff6b9d">
+              <td style="padding: 6px 4px; text-align: center">
+                <strong>E</strong><br /><span
+                  style="font-size: 0.65rem; color: #999"
+                  >15평</span
+                >
+              </td>
+              <td style="padding: 6px 4px; text-align: center">8,000</td>
+              <td style="padding: 6px 4px; text-align: center">10,000</td>
+              <td style="padding: 6px 4px; text-align: center">4,000</td>
+              <td style="padding: 6px 4px; text-align: center">20,000</td>
+            </tr>
+          </tbody>
+        </table>
+        <p
+          style="
+            font-size: 0.7rem;
+            color: #999;
+            margin-top: 8px;
+            text-align: center;
+          "
+        >
+          ※ 단위: 원
+        </p>
+      </div>
+
+      <!-- 환불규정 -->
+      <div class="content-section" id="price">
+        <div class="section-header">
+          <h1>💵 환불 규정</h1>
+          <button
+            class="share-btn"
+            onclick="shareSection('환불규정', '예약 환불 규정')"
+          >
+            <i class="fas fa-share-alt"></i>
+            <span>공유</span>
+          </button>
+        </div>
+        <ul>
+          <li>예약 2시간 안 변심 취소 → <span class="highlight">무료</span></li>
+          <li>2시간 경과 → 아래 환불규정 적용</li>
+          <li>변경 → 취소 후 재예약만 가능</li>
+        </ul>
+        <img
+          src="home_infopage/images/image.jpg"
+          alt="환불규정"
+          class="price-image"
+          loading="lazy"
+          style="max-width: 70%; margin: 10px auto; display: block"
+        />
+        <p>문의: <a href="sms:01048017180">010-4801-7180</a></p>
+      </div>
+    </div>
+
+    <!-- 바텀 네비게이션 -->
+    <div class="bottom-nav">
+      <button class="nav-item active" onclick="showContent('howto', this)">
+        <i class="fas fa-question-circle"></i>
+        <span>예약/비번</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('info', this)">
+        <i class="fas fa-building"></i>
+        <span>시설안내</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('notice', this)">
+        <i class="fas fa-exclamation-triangle"></i>
+        <span>주의사항</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('map', this)">
+        <i class="fas fa-map-marked-alt"></i>
+        <span>오시는길</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('night', this)">
+        <i class="fas fa-moon"></i>
+        <span>새벽통대관</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('pricelist', this)">
+        <i class="fas fa-won-sign"></i>
+        <span>가격표</span>
+      </button>
+
+      <button class="nav-item" onclick="showContent('price', this)">
+        <i class="fas fa-dollar-sign"></i>
+        <span>환불규정</span>
+      </button>
+
+      <button
+        class="nav-item"
+        data-bs-dismiss="offcanvas"
+        style="background: #404040"
+      >
+        <i class="fas fa-calendar"></i>
+        <span>일정표</span>
+      </button>
+    </div>
+
+    <!-- 갤러리 모달 -->
+    <div class="gallery-modal" id="galleryModal">
+      <div class="gallery-content">
+        <button class="gallery-close" onclick="closeGallery()">&times;</button>
+        <button class="gallery-nav prev" onclick="prevImage()">&#10094;</button>
+        <img
+          id="galleryMainImage"
+          class="gallery-main-image"
+          src=""
+          alt="갤러리 이미지"
+          loading="lazy"
+        />
+        <button class="gallery-nav next" onclick="nextImage()">&#10095;</button>
+        <div class="gallery-thumbnails" id="galleryThumbnails"></div>
+      </div>
+    </div>
+
+    <script>
+      // 갤러리 데이터
+      const galleryImages = {
+        roomALL: ["home_infopage/images/roomALL/image1.jpeg"],
+        roomA: [
+          "home_infopage/images/roomA/image1.jpeg",
+          "home_infopage/images/roomA/image2.jpeg",
+          "home_infopage/images/roomA/image3.jpeg",
+          "home_infopage/images/roomA/image4.jpeg",
+          "home_infopage/images/roomA/image5.jpeg",
+          "home_infopage/images/roomA/image6.jpeg",
+        ],
+        roomB: [
+          "home_infopage/images/roomB/image1.jpeg",
+          "home_infopage/images/roomB/image2.jpeg",
+          "home_infopage/images/roomB/image3.jpeg",
+          "home_infopage/images/roomB/image4.jpeg",
+          "home_infopage/images/roomB/image5.jpeg",
+          "home_infopage/images/roomB/image6.jpeg",
+          "home_infopage/images/roomB/image7.jpeg",
+          "home_infopage/images/roomB/image8.jpeg",
+        ],
+        roomC: [
+          "home_infopage/images/roomC/image1.jpeg",
+          "home_infopage/images/roomC/image2.jpeg",
+        ],
+        roomD: [
+          "home_infopage/images/roomD/image1.jpeg",
+          "home_infopage/images/roomD/image2.jpeg",
+          "home_infopage/images/roomD/image3.jpeg",
+        ],
+        roomE: [
+          "home_infopage/images/roomE/image1.jpeg",
+          "home_infopage/images/roomE/image2.jpeg",
+          "home_infopage/images/roomE/image3.jpeg",
+          "home_infopage/images/roomE/image4.jpeg",
+          "home_infopage/images/roomE/image5.jpeg",
+        ],
+      };
+
+      let currentImages = [];
+      let currentIndex = 0;
+
+      function openGallery(folder) {
+        currentImages = galleryImages[folder] || [];
+        if (currentImages.length === 0) return;
+
+        currentIndex = 0;
+        document.getElementById("galleryModal").classList.add("active");
+        showImage(0);
+        renderThumbnails();
+      }
+
+      function closeGallery() {
+        document.getElementById("galleryModal").classList.remove("active");
+      }
+
+      function showImage(index) {
+        if (index < 0) index = currentImages.length - 1;
+        if (index >= currentImages.length) index = 0;
+        currentIndex = index;
+
+        document.getElementById("galleryMainImage").src = currentImages[index];
+
+        // 썸네일 활성화 업데이트
+        document.querySelectorAll(".gallery-thumbnail").forEach((thumb, i) => {
+          thumb.classList.toggle("active", i === index);
+        });
+      }
+
+      function prevImage() {
+        showImage(currentIndex - 1);
+      }
+
+      function nextImage() {
+        showImage(currentIndex + 1);
+      }
+
+      function renderThumbnails() {
+        const container = document.getElementById("galleryThumbnails");
+        container.innerHTML = "";
+
+        if (currentImages.length <= 1) {
+          container.style.display = "none";
+          document.querySelector(".gallery-nav.prev").style.display = "none";
+          document.querySelector(".gallery-nav.next").style.display = "none";
+          return;
+        }
+
+        container.style.display = "flex";
+        document.querySelector(".gallery-nav.prev").style.display = "block";
+        document.querySelector(".gallery-nav.next").style.display = "block";
+
+        currentImages.forEach((src, index) => {
+          const thumb = document.createElement("img");
+          thumb.src = src;
+          thumb.loading = "lazy"; // Lazy loading 추가
+          thumb.className = "gallery-thumbnail";
+          if (index === 0) thumb.classList.add("active");
+          thumb.onclick = () => showImage(index);
+          container.appendChild(thumb);
+        });
+      }
+
+      // 모달 외부 클릭 시 닫기
+      document
+        .getElementById("galleryModal")
+        .addEventListener("click", function (e) {
+          if (e.target === this) {
+            closeGallery();
+          }
+        });
+
+      // ESC 키로 모달 닫기
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          closeGallery();
+        }
+      });
+
+      function showContent(sectionId, button, skipAnimation = false) {
+        // 모든 섹션 숨기기
+        document.querySelectorAll(".content-section").forEach((section) => {
+          section.classList.remove("active", "no-animation");
+        });
+
+        // 모든 버튼 비활성화
+        document.querySelectorAll(".nav-item").forEach((btn) => {
+          btn.classList.remove("active");
+        });
+
+        // 선택된 섹션 표시
+        const targetSection = document.getElementById(sectionId);
+        targetSection.classList.add("active");
+        
+        // 애니메이션 스킵 (URL 링크로 첫 로드 시)
+        if (skipAnimation) {
+          targetSection.classList.add("no-animation");
+        }
+
+        // 선택된 버튼 활성화
+        if (button) {
+          button.classList.add("active");
+        }
+
+        // 스크롤 맨 위로
+        document.getElementById("contentArea").scrollTop = 0;
+        
+        // URL 업데이트 (브라우저 히스토리에 추가)
+        const newUrl = `${window.location.pathname}?section=${encodeURIComponent(sectionId)}`;
+        window.history.pushState({ section: sectionId }, '', newUrl);
+      }
+
+      // 🔍 인앱 브라우저 감지
+      function isInAppBrowser() {
+        const ua = navigator.userAgent.toLowerCase();
+        return (ua.includes('kakaotalk') || 
+                ua.includes('naver') || 
+                ua.includes('fb_iab') ||
+                ua.includes('fban') ||
+                ua.includes('fbav'));
+      }
+
+      // 🌐 외부 브라우저로 열기
+      function openInExternalBrowser(url) {
+        const ua = navigator.userAgent.toLowerCase();
+        
+        if (/android/i.test(ua)) {
+          // Android: Intent URL로 외부 브라우저 열기
+          // https:// 제거하고 intent 형식으로 변환
+          const urlWithoutProtocol = url.replace(/^https?:\/\//, '');
+          window.location.href = `intent://${urlWithoutProtocol}#Intent;scheme=https;action=android.intent.action.VIEW;end`;
+        } else if (/iphone|ipad|ipod/i.test(ua)) {
+          // iOS: 새 창으로 열기 (Safari로 열림)
+          window.open(url, '_blank');
+        } else {
+          // 기타: 새 창
+          window.open(url, '_blank');
+        }
+      }
+
+      // 📱 외부 브라우저 안내 팝업
+      function showExternalBrowserGuide(url) {
+        // 오버레이 생성
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.7);
+          z-index: 99999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        `;
+        
+        // 팝업 박스
+        const popup = document.createElement('div');
+        popup.style.cssText = `
+          background: white;
+          border-radius: 12px;
+          padding: 24px;
+          max-width: 320px;
+          width: 100%;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        `;
+        
+        popup.innerHTML = `
+          <div style="text-align: center;">
+            <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: bold; color: #333;">
+              공유 안내
+            </h3>
+            <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.5; color: #666;">
+              카카오톡 앱에서는 공유 기능이 제한됩니다.<br>
+              외부 브라우저에서 열고 공유 버튼을 눌러주세요.
+            </p>
+            <button id="openExternalBtn" style="
+              width: 100%;
+              padding: 14px;
+              background: #4CAF50;
+              color: white;
+              border: none;
+              border-radius: 8px;
+              font-size: 16px;
+              font-weight: bold;
+              cursor: pointer;
+              margin-bottom: 8px;
+            ">
+              외부 브라우저에서 열기
+            </button>
+            <button id="closeGuideBtn" style="
+              width: 100%;
+              padding: 12px;
+              background: transparent;
+              color: #999;
+              border: none;
+              font-size: 14px;
+              cursor: pointer;
+            ">
+              닫기
+            </button>
+          </div>
+        `;
+        
+        overlay.appendChild(popup);
+        document.body.appendChild(overlay);
+        
+        // 버튼 이벤트
+        document.getElementById('openExternalBtn').onclick = () => {
+          openInExternalBrowser(url);
+          document.body.removeChild(overlay);
+        };
+        
+        document.getElementById('closeGuideBtn').onclick = () => {
+          document.body.removeChild(overlay);
+        };
+        
+        // 오버레이 클릭 시 닫기
+        overlay.onclick = (e) => {
+          if (e.target === overlay) {
+            document.body.removeChild(overlay);
+          }
+        };
+      }
+
+      // 📤 공유 기능
+      async function shareSection(sectionName, sectionId) {
+        // 섹션 ID 매핑
+        const sectionMap = {
+          '예약/비번': 'howto',
+          '시설안내': 'info',
+          '주의사항': 'notice',
+          '오시는길': 'map',
+          '새벽통대관': 'night',
+          '가격표': 'pricelist',
+          '환불규정': 'refund'
+        };
+        
+        const targetSection = sectionMap[sectionName] || 'howto';
+        
+        // 현재 URL 정보 (프로덕션: 리듬앤조이일정표.com, 개발: Replit URL)
+        let baseUrl;
+        if (window.location.hostname.includes('리듬앤조이일정표.com') || window.location.hostname.includes('rhythmandjoy')) {
+          baseUrl = 'https://리듬앤조이일정표.com/calendar_set/full_ver7/info.html';
+        } else {
+          // 개발 환경 (Replit 등)
+          baseUrl = window.location.origin + '/calendar_set/full_ver7/info.html';
+        }
+        
+        const url = `${baseUrl}?section=${encodeURIComponent(targetSection)}`;
+        const title = `리듬앤조이 - ${sectionName}`;
+
+        console.log('🔗 공유 URL 생성:', url);
+
+        // 인앱 브라우저 체크
+        if (isInAppBrowser()) {
+          console.log('📱 인앱 브라우저 감지 - 외부 브라우저 안내');
+          showExternalBrowserGuide(url);
+          return;
+        }
+
+        // Web Share API 지원 여부 확인 (모바일)
+        if (navigator.share) {
+          console.log('📱 모바일 네이티브 공유 시트 열기...');
+          try {
+            await navigator.share({
+              title: title,
+              url: url,
+            });
+            console.log("✅ 네이티브 공유 완료 (카카오톡/문자 등)");
+          } catch (err) {
+            if (err.name !== "AbortError") {
+              console.error("공유 실패:", err);
+              fallbackCopyToClipboard(url, title);
+            } else {
+              console.log("❎ 사용자가 공유 취소");
+            }
+          }
+        } else {
+          // Web Share API 미지원 시 URL 복사
+          console.log('💻 데스크톱 환경 - URL 복사 모드');
+          fallbackCopyToClipboard(url, title);
+        }
+      }
+
+      // URL 복사 (폴백)
+      function fallbackCopyToClipboard(url, title) {
+        navigator.clipboard
+          .writeText(url)
+          .then(() => {
+            alert(`📋 링크가 복사되었습니다!\n${title}\n${url}`);
+          })
+          .catch((err) => {
+            // Clipboard API도 실패 시 수동 선택
+            const textArea = document.createElement("textarea");
+            textArea.value = url;
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+              document.execCommand("copy");
+              alert(`📋 링크가 복사되었습니다!\n${title}\n${url}`);
+            } catch (err) {
+              alert(`링크: ${url}`);
+            }
+            document.body.removeChild(textArea);
+          });
+      }
+
+      // 🔗 URL 쿼리로 섹션 자동 표시 (홈페이지 섹션 내부용)
+      window.openSectionFromURL = function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const rawSection = urlParams.get('section');
+        
+        if (rawSection) {
+          // URL 디코딩 (한글 등 특수 문자 지원)
+          const section = decodeURIComponent(rawSection);
+          
+          const navButtons = {
+            'howto': document.querySelector('.nav-item[onclick*="howto"]'),
+            'info': document.querySelector('.nav-item[onclick*="info"]'),
+            'notice': document.querySelector('.nav-item[onclick*="notice"]'),
+            'map': document.querySelector('.nav-item[onclick*="map"]'),
+            'night': document.querySelector('.nav-item[onclick*="night"]'),
+            'pricelist': document.querySelector('.nav-item[onclick*="pricelist"]'),
+            'refund': document.querySelector('.nav-item[onclick*="refund"]')
+          };
+
+          const button = navButtons[section];
+          if (button) {
+            // URL 링크로 첫 로드 시 애니메이션 없이 즉시 표시
+            showContent(section, button, true);
+            console.log(`✅ URL 쿼리로 ${section} 섹션 자동 열기 (애니메이션 없음)`);
+          }
+        }
+      };
+      
+      // 🚀 페이지 로드 시 딥링크 자동 처리
+      document.addEventListener('DOMContentLoaded', function() {
+        openSectionFromURL();
+      });
+
+      // 🚀 이미지 프리로드 (백그라운드 캐싱)
+      window.addEventListener("load", function () {
+        console.log("📥 이미지 백그라운드 캐싱 시작...");
+        const allImages = [];
+
+        // 모든 갤러리 이미지 수집
+        for (let key in galleryImages) {
+          allImages.push(...galleryImages[key]);
+        }
+
+        // 환불규정 이미지 추가
+        allImages.push("home_infopage/images/image.jpg");
+
+        // 백그라운드에서 이미지 미리 로드 (우선순위: 낮음)
+        setTimeout(() => {
+          allImages.forEach((src, index) => {
+            setTimeout(() => {
+              const img = new Image();
+              img.src = src;
+              if (index === allImages.length - 1) {
+                console.log(`✅ ${allImages.length}개 이미지 캐싱 완료!`);
+              }
+            }, index * 50); // 50ms 간격으로 순차 로드 (네트워크 부담 감소)
+          });
+        }, 500); // 페이지 로드 후 0.5초 뒤 시작 (초기 렌더링 우선)
+      });
+    </script>
+  </body>
+</html>
