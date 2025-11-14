@@ -1367,13 +1367,13 @@
         // 현재 URL 정보 (프로덕션: 리듬앤조이일정표.com, 개발: Replit URL)
         let baseUrl;
         if (window.location.hostname.includes('리듬앤조이일정표.com') || window.location.hostname.includes('rhythmandjoy')) {
-          baseUrl = 'https://리듬앤조이일정표.com/calendar_set/full_ver7/calendar_7.html';
+          baseUrl = 'https://리듬앤조이일정표.com/calendar_set/full_ver7/info.html';
         } else {
           // 개발 환경 (Replit 등)
-          baseUrl = window.location.origin + '/calendar_set/full_ver7/calendar_7.html';
+          baseUrl = window.location.origin + '/calendar_set/full_ver7/info.html';
         }
         
-        const url = `${baseUrl}?section=${targetSection}`;
+        const url = `${baseUrl}?section=${encodeURIComponent(targetSection)}`;
         const title = `리듬앤조이 - ${sectionName}`;
 
         console.log('🔗 공유 URL 생성:', url);
