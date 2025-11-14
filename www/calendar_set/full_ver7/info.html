@@ -1108,7 +1108,7 @@
 
       <button
         class="nav-item"
-        onclick="window.location.href='calendar_7.html'"
+        onclick="goToCalendar()"
         style="background: #404040"
       >
         <i class="fas fa-calendar"></i>
@@ -1134,6 +1134,17 @@
     </div>
 
     <script>
+      // 일정표로 이동
+      function goToCalendar() {
+        if (window.location.hostname.includes('리듬앤조이일정표.com') || 
+            window.location.hostname.includes('xn--xy1b23ggrmm5bfb82ees967e.com') || 
+            window.location.hostname.includes('rhythmandjoy')) {
+          window.location.href = 'https://xn--xy1b23ggrmm5bfb82ees967e.com/calendar_7.html';
+        } else {
+          window.location.href = 'calendar_7.html';
+        }
+      }
+
       // 갤러리 데이터
       const galleryImages = {
         roomALL: ["home_infopage/images/roomALL/image1.jpeg"],
