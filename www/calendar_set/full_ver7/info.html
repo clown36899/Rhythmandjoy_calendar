@@ -1377,9 +1377,11 @@
             </h3>
             <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.5; color: #666;">
               카카오톡 앱에서는 공유 기능이 제한됩니다.<br>
-              외부 브라우저에서 열고 공유 버튼을 눌러주세요.
+              상단 오른쪽 점 3개(⋮) 메뉴를 눌러<br>
+              <strong>"다른 브라우저에서 열기"</strong>를 선택한 후<br>
+              공유 버튼을 눌러주세요.
             </p>
-            <button id="openExternalBtn" style="
+            <button id="closeGuideBtn" style="
               width: 100%;
               padding: 14px;
               background: #4CAF50;
@@ -1388,18 +1390,6 @@
               border-radius: 8px;
               font-size: 16px;
               font-weight: bold;
-              cursor: pointer;
-              margin-bottom: 8px;
-            ">
-              외부 브라우저에서 열기
-            </button>
-            <button id="closeGuideBtn" style="
-              width: 100%;
-              padding: 12px;
-              background: transparent;
-              color: #999;
-              border: none;
-              font-size: 14px;
               cursor: pointer;
             ">
               닫기
@@ -1411,11 +1401,6 @@
         document.body.appendChild(overlay);
         
         // 버튼 이벤트
-        document.getElementById('openExternalBtn').onclick = () => {
-          openInExternalBrowser(url);
-          document.body.removeChild(overlay);
-        };
-        
         document.getElementById('closeGuideBtn').onclick = () => {
           document.body.removeChild(overlay);
         };
