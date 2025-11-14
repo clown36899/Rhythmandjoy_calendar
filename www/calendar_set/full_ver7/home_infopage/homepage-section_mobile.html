@@ -1215,7 +1215,7 @@
         // 선택된 섹션 표시
         const targetSection = document.getElementById(sectionId);
         targetSection.classList.add("active");
-        
+
         // 애니메이션 스킵 (URL 링크로 첫 로드 시)
         if (skipAnimation) {
           targetSection.classList.add("no-animation");
@@ -1228,44 +1228,46 @@
 
         // 스크롤 맨 위로
         document.getElementById("contentArea").scrollTop = 0;
-        
+
         // URL 업데이트 (브라우저 히스토리에 추가)
         const newUrl = `${window.location.pathname}?section=${sectionId}`;
-        window.history.pushState({ section: sectionId }, '', newUrl);
+        window.history.pushState({ section: sectionId }, "", newUrl);
       }
 
       // 🔍 인앱 브라우저 감지
       function isInAppBrowser() {
         const ua = navigator.userAgent.toLowerCase();
-        return (ua.includes('kakaotalk') || 
-                ua.includes('naver') || 
-                ua.includes('fb_iab') ||
-                ua.includes('fban') ||
-                ua.includes('fbav'));
+        return (
+          ua.includes("kakaotalk") ||
+          ua.includes("naver") ||
+          ua.includes("fb_iab") ||
+          ua.includes("fban") ||
+          ua.includes("fbav")
+        );
       }
 
       // 🌐 외부 브라우저로 열기
       function openInExternalBrowser(url) {
         const ua = navigator.userAgent.toLowerCase();
-        
+
         if (/android/i.test(ua)) {
           // Android: Intent URL로 외부 브라우저 열기
           // https:// 제거하고 intent 형식으로 변환
-          const urlWithoutProtocol = url.replace(/^https?:\/\//, '');
+          const urlWithoutProtocol = url.replace(/^https?:\/\//, "");
           window.location.href = `intent://${urlWithoutProtocol}#Intent;scheme=https;action=android.intent.action.VIEW;end`;
         } else if (/iphone|ipad|ipod/i.test(ua)) {
           // iOS: 새 창으로 열기 (Safari로 열림)
-          window.open(url, '_blank');
+          window.open(url, "_blank");
         } else {
           // 기타: 새 창
-          window.open(url, '_blank');
+          window.open(url, "_blank");
         }
       }
 
       // 📱 외부 브라우저 안내 팝업
       function showExternalBrowserGuide(url) {
         // 오버레이 생성
-        const overlay = document.createElement('div');
+        const overlay = document.createElement("div");
         overlay.style.cssText = `
           position: fixed;
           top: 0;
@@ -1279,9 +1281,9 @@
           justify-content: center;
           padding: 20px;
         `;
-        
+
         // 팝업 박스
-        const popup = document.createElement('div');
+        const popup = document.createElement("div");
         popup.style.cssText = `
           background: white;
           border-radius: 12px;
@@ -1290,7 +1292,7 @@
           width: 100%;
           box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         `;
-        
+
         popup.innerHTML = `
           <div style="text-align: center;">
             <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: bold; color: #333;">
@@ -1327,20 +1329,20 @@
             </button>
           </div>
         `;
-        
+
         overlay.appendChild(popup);
         document.body.appendChild(overlay);
-        
+
         // 버튼 이벤트
-        document.getElementById('openExternalBtn').onclick = () => {
+        document.getElementById("openExternalBtn").onclick = () => {
           openInExternalBrowser(url);
           document.body.removeChild(overlay);
         };
-        
-        document.getElementById('closeGuideBtn').onclick = () => {
+
+        document.getElementById("closeGuideBtn").onclick = () => {
           document.body.removeChild(overlay);
         };
-        
+
         // 오버레이 클릭 시 닫기
         overlay.onclick = (e) => {
           if (e.target === overlay) {
@@ -1353,41 +1355,45 @@
       async function shareSection(sectionName, sectionId) {
         // 섹션 ID 매핑
         const sectionMap = {
-          '예약/비번': 'howto',
-          '시설안내': 'info',
-          '주의사항': 'notice',
-          '오시는길': 'map',
-          '새벽통대관': 'night',
-          '가격표': 'pricelist',
-          '환불규정': 'refund'
+          "예약/비번": "howto",
+          시설안내: "info",
+          주의사항: "notice",
+          오시는길: "map",
+          새벽통대관: "night",
+          가격표: "pricelist",
+          환불규정: "refund",
         };
-        
-        const targetSection = sectionMap[sectionName] || 'howto';
-        
+
+        const targetSection = sectionMap[sectionName] || "howto";
+
         // 현재 URL 정보 (프로덕션: 리듬앤조이일정표.com, 개발: Replit URL)
         let baseUrl;
-        if (window.location.hostname.includes('리듬앤조이일정표.com') || window.location.hostname.includes('rhythmandjoy')) {
-          baseUrl = 'https://리듬앤조이일정표.com/calendar_set/full_ver7/info.html';
+        if (
+          window.location.hostname.includes("리듬앤조이일정표.com") ||
+          window.location.hostname.includes("rhythmandjoy")
+        ) {
+          baseUrl = "https://리듬앤조이일정표.com/info.html";
         } else {
           // 개발 환경 (Replit 등)
-          baseUrl = window.location.origin + '/calendar_set/full_ver7/info.html';
+          baseUrl =
+            window.location.origin + "/calendar_set/full_ver7/info.html";
         }
-        
+
         const url = `${baseUrl}?section=${encodeURIComponent(targetSection)}`;
         const title = `리듬앤조이 - ${sectionName}`;
 
-        console.log('🔗 공유 URL 생성:', url);
+        console.log("🔗 공유 URL 생성:", url);
 
         // 인앱 브라우저 체크
         if (isInAppBrowser()) {
-          console.log('📱 인앱 브라우저 감지 - 외부 브라우저 안내');
+          console.log("📱 인앱 브라우저 감지 - 외부 브라우저 안내");
           showExternalBrowserGuide(url);
           return;
         }
 
         // Web Share API 지원 여부 확인 (모바일)
         if (navigator.share) {
-          console.log('📱 모바일 네이티브 공유 시트 열기...');
+          console.log("📱 모바일 네이티브 공유 시트 열기...");
           try {
             await navigator.share({
               title: title,
@@ -1404,7 +1410,7 @@
           }
         } else {
           // Web Share API 미지원 시 URL 복사
-          console.log('💻 데스크톱 환경 - URL 복사 모드');
+          console.log("💻 데스크톱 환경 - URL 복사 모드");
           fallbackCopyToClipboard(url, title);
         }
       }
@@ -1435,26 +1441,30 @@
       }
 
       // 🔗 URL 쿼리로 섹션 자동 표시 (홈페이지 섹션 내부용)
-      window.openSectionFromURL = function() {
+      window.openSectionFromURL = function () {
         const urlParams = new URLSearchParams(window.location.search);
-        const section = urlParams.get('section');
-        
+        const section = urlParams.get("section");
+
         if (section) {
           const navButtons = {
-            'howto': document.querySelector('.nav-item[onclick*="howto"]'),
-            'info': document.querySelector('.nav-item[onclick*="info"]'),
-            'notice': document.querySelector('.nav-item[onclick*="notice"]'),
-            'map': document.querySelector('.nav-item[onclick*="map"]'),
-            'night': document.querySelector('.nav-item[onclick*="night"]'),
-            'pricelist': document.querySelector('.nav-item[onclick*="pricelist"]'),
-            'refund': document.querySelector('.nav-item[onclick*="refund"]')
+            howto: document.querySelector('.nav-item[onclick*="howto"]'),
+            info: document.querySelector('.nav-item[onclick*="info"]'),
+            notice: document.querySelector('.nav-item[onclick*="notice"]'),
+            map: document.querySelector('.nav-item[onclick*="map"]'),
+            night: document.querySelector('.nav-item[onclick*="night"]'),
+            pricelist: document.querySelector(
+              '.nav-item[onclick*="pricelist"]',
+            ),
+            refund: document.querySelector('.nav-item[onclick*="refund"]'),
           };
 
           const button = navButtons[section];
           if (button) {
             // URL 링크로 첫 로드 시 애니메이션 없이 즉시 표시
             showContent(section, button, true);
-            console.log(`✅ URL 쿼리로 ${section} 섹션 자동 열기 (애니메이션 없음)`);
+            console.log(
+              `✅ URL 쿼리로 ${section} 섹션 자동 열기 (애니메이션 없음)`,
+            );
           }
         }
       };
