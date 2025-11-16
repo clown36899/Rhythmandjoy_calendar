@@ -29,10 +29,16 @@ class Calendar {
   }
 
   setupEventListeners() {
+    // 헤더 네비게이션
     document.getElementById('prevBtn').addEventListener('click', () => this.navigate(-1));
     document.getElementById('nextBtn').addEventListener('click', () => this.navigate(1));
+    
+    // 푸터 네비게이션
+    document.getElementById('prevWeekBtn').addEventListener('click', () => this.navigate(-1));
+    document.getElementById('nextWeekBtn').addEventListener('click', () => this.navigate(1));
     document.getElementById('todayBtn').addEventListener('click', () => this.goToToday());
 
+    // 방 선택
     document.querySelectorAll('.room-btn[data-room]').forEach(btn => {
       btn.addEventListener('click', () => this.toggleRoom(btn.dataset.room));
     });
