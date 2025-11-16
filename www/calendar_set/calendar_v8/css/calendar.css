@@ -368,11 +368,12 @@ body {
 
 /* 1000px 이상 화면: 3등분 레이아웃 */
 @media (min-width: 1000px) {
+
   /* 예약 정보 버튼 숨김 */
   .info-btn {
     display: none !important;
   }
-  
+
   /* 왼쪽 메뉴 iframe */
   #leftMenuFrame {
     display: block !important;
@@ -386,12 +387,12 @@ body {
     background: #212529;
     z-index: 1050;
   }
-  
+
   /* 모바일 오프캔버스는 데스크탑에서 숨김 */
   #leftMenu {
     display: none !important;
   }
-  
+
   /* 가운데 달력 */
   .app-container {
     position: absolute;
@@ -399,7 +400,7 @@ body {
     left: 33.3%;
     height: 100vh;
   }
-  
+
   /* 오른쪽 iframe */
   #sideFrame {
     display: block !important;
@@ -413,22 +414,22 @@ body {
     background: #111;
     z-index: 9;
   }
-  
+
   /* 오프캔버스 헤더 숨김 (데스크탑) */
   #leftMenu .offcanvas-header {
     display: none;
   }
-  
+
   /* 데스크탑: 데스크탑용 홈페이지 섹션 표시 */
   .offcanvas-body-desktop {
     display: block;
   }
-  
+
   /* 데스크탑: 모바일용 메뉴 숨김 */
   .offcanvas-body {
     display: none;
   }
-  
+
   .offcanvas-body-mobile {
     display: none;
   }
@@ -467,7 +468,7 @@ body {
 
 .week-view .week-event {
   position: absolute;
-  padding: 0.15em 0.25em;
+
   border-radius: 0.2em;
   font-size: 0.85em;
   overflow: hidden;
