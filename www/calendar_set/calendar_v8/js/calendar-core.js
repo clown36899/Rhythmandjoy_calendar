@@ -138,47 +138,24 @@ class Calendar {
       return;
     }
     
-    // 새로운 주 날짜 계산
-    const newDate = new Date(this.currentDate);
-    newDate.setDate(newDate.getDate() + (direction * 7));
+    // 스와이프 애니메이션
+    const targetTransform = direction === 1 ? '-66.666%' : '0%';
+    slider.style.transform = `translateX(${targetTransform})`;
     
-    // 캐시 확인
-    const newCacheKey = this.getWeekCacheKey(newDate);
-    const hasCache = this.weekDataCache.has(newCacheKey);
-    
-    console.log(`📦 새 주 캐시 상태: ${hasCache ? 'HIT' : 'MISS'}`);
-    
-    if (hasCache) {
-      // 캐시가 있으면: 슬라이드만 회전 (깜빡임 없음)
-      const targetTransform = direction === 1 ? '-66.666%' : '0%';
-      slider.style.transform = `translateX(${targetTransform})`;
+    // 애니메이션 완료 후
+    setTimeout(async () => {
+      this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
+      console.log(`📅 날짜 변경: ${this.currentDate.toLocaleDateString('ko-KR')}`);
       
-      setTimeout(() => {
-        this.currentDate = newDate;
-        console.log(`📅 날짜 변경: ${this.currentDate.toLocaleDateString('ko-KR')}`);
-        
-        // 슬라이드 순서만 재배열 (DOM 재생성 없음)
-        this.rotateSlides(direction);
-        
-        this.isAnimating = false;
-        console.log(`✅ 네비게이션 완료 (캐시)`);
-      }, 300);
-    } else {
-      // 캐시가 없으면: 전체 재렌더링
-      const targetTransform = direction === 1 ? '-66.666%' : '0%';
-      slider.style.transform = `translateX(${targetTransform})`;
+      // 안 보이는 슬라이드만 업데이트 (DOM 재배열 없음)
+      await this.updateInvisibleSlide(direction);
       
-      setTimeout(async () => {
-        this.currentDate = newDate;
-        console.log(`📅 날짜 변경: ${this.currentDate.toLocaleDateString('ko-KR')}`);
-        await this.render();
-        this.isAnimating = false;
-        console.log(`✅ 네비게이션 완료 (재렌더)`);
-      }, 300);
-    }
+      this.isAnimating = false;
+      console.log(`✅ 네비게이션 완료`);
+    }, 300);
   }
   
-  rotateSlides(direction) {
+  async updateInvisibleSlide(direction) {
     const slider = this.container.querySelector('.calendar-slider');
     if (!slider) return;
     
@@ -188,24 +165,27 @@ class Calendar {
     // 트랜지션 비활성화
     slider.classList.add('no-transition');
     
+    // 안 보이는 슬라이드의 내용을 새 주로 업데이트
     if (direction === 1) {
-      // 다음 주: 첫 번째 슬라이드를 맨 뒤로
-      const firstSlide = slides[0];
-      const nextDate = new Date(this.currentDate);
-      nextDate.setDate(nextDate.getDate() + 7);
+      // 다음 주로 이동 → 왼쪽 슬라이드(slides[0])를 새로운 다음주로 업데이트
+      const newNextDate = new Date(this.currentDate);
+      newNextDate.setDate(newNextDate.getDate() + 7);
       
-      // 새 내용으로 업데이트
-      firstSlide.innerHTML = this.renderWeekViewContent(nextDate);
-      slider.appendChild(firstSlide);
+      // 캐시 로드
+      await this.loadWeekDataToCache(newNextDate);
+      
+      slides[0].innerHTML = this.renderWeekViewContent(newNextDate);
+      console.log(`🔄 왼쪽 슬라이드 업데이트: ${newNextDate.toLocaleDateString('ko-KR')}`);
     } else {
-      // 이전 주: 마지막 슬라이드를 맨 앞으로
-      const lastSlide = slides[2];
-      const prevDate = new Date(this.currentDate);
-      prevDate.setDate(prevDate.getDate() - 7);
+      // 이전 주로 이동 → 오른쪽 슬라이드(slides[2])를 새로운 이전주로 업데이트
+      const newPrevDate = new Date(this.currentDate);
+      newPrevDate.setDate(newPrevDate.getDate() - 7);
       
-      // 새 내용으로 업데이트
-      lastSlide.innerHTML = this.renderWeekViewContent(prevDate);
-      slider.insertBefore(lastSlide, slides[0]);
+      // 캐시 로드
+      await this.loadWeekDataToCache(newPrevDate);
+      
+      slides[2].innerHTML = this.renderWeekViewContent(newPrevDate);
+      console.log(`🔄 오른쪽 슬라이드 업데이트: ${newPrevDate.toLocaleDateString('ko-KR')}`);
     }
     
     // 중앙 위치로 즉시 리셋
