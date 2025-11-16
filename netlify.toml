@@ -5,14 +5,10 @@
   functions = "../netlify/functions"
 
 [[redirects]]
-  from = "/home_infopage/homepage-section_mobile.html"
-  to = "/home_infopage/homepage-section_mobile.html"
-  status = 200
-
-[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+  force = false
 
 [build.environment]
   NODE_VERSION = "18"
