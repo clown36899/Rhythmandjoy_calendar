@@ -23,7 +23,7 @@
 }
 
 html {
-  font-size: min(1.5625vw, 2.08333vh, 16px);
+  font-size: min(1.5625vw, 2.08333vh);
 }
 
 html, body {
@@ -216,7 +216,7 @@ body {
 
 .day-events-container {
   position: absolute;
-  top: 3.75rem;
+  top: 0;
   bottom: 0;
   pointer-events: none;
 }
