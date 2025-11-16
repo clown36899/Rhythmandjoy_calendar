@@ -235,15 +235,18 @@ class Calendar {
     this.baseTranslate = -33.333;
     
     // 화면이 안정된 후 안 보이는 슬라이드 업데이트
-    requestAnimationFrame(async () => {
-      await this.prepareAdjacentSlides(direction);
-      
-      // innerHTML 교체 직후 즉시 레이아웃 조정 (깜빡임 방지)
-      this.adjustWeekViewLayout(true);
-      
-      // 트랜지션 재활성화
-      requestAnimationFrame(() => {
-        slider.classList.remove('no-transition');
+    await new Promise(resolve => {
+      requestAnimationFrame(async () => {
+        await this.prepareAdjacentSlides(direction);
+        
+        // innerHTML 교체 직후 즉시 레이아웃 조정 (깜빡임 방지)
+        this.adjustWeekViewLayout(true);
+        
+        // 트랜지션 재활성화
+        requestAnimationFrame(() => {
+          slider.classList.remove('no-transition');
+          resolve();
+        });
       });
     });
   }
