@@ -250,8 +250,9 @@ class Calendar {
     requestAnimationFrame(() => {
       const weekView = this.container.querySelector('.week-view');
       const headerElement = this.container.querySelector('.day-header');
+      const timeLabel = this.container.querySelector('.time-label');
       
-      if (!weekView || !headerElement) return;
+      if (!weekView || !headerElement || !timeLabel) return;
       
       const headerHeight = headerElement.getBoundingClientRect().height;
       const weekViewHeight = weekView.clientHeight;
@@ -261,9 +262,18 @@ class Calendar {
       // Grid 행 높이를 동적으로 설정하여 24시간이 항상 fit되도록
       weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px)`;
       
-      // 이벤트 컨테이너를 헤더 아래에 정확히 배치
+      // 시간 컬럼의 실제 너비 측정
+      const timeLabelWidth = timeLabel.getBoundingClientRect().width;
+      
+      // 이벤트 컨테이너를 시간 컬럼 너비만큼 offset하여 정확히 배치
       const eventContainers = this.container.querySelectorAll('.day-events-container');
-      eventContainers.forEach(container => {
+      eventContainers.forEach((container, index) => {
+        const weekViewWidth = weekView.clientWidth;
+        const dayWidth = (weekViewWidth - timeLabelWidth) / 7;
+        const dayLeft = timeLabelWidth + (dayWidth * index);
+        
+        container.style.left = `${dayLeft}px`;
+        container.style.width = `${dayWidth}px`;
         container.style.top = `${headerHeight}px`;
         container.style.bottom = '0';
         container.style.paddingTop = '0';
