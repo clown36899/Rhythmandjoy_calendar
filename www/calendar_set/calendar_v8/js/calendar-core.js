@@ -210,7 +210,18 @@ class Calendar {
     // Time grid
     CONFIG.hoursDisplay.forEach((hourLabel, hourIndex) => {
       html += '<div class="time-row">';
-      html += `<div class="time-label">${hourLabel}</div>`;
+      
+      // 시간 라벨에도 시간대 클래스 적용
+      let timeLabelClass = '';
+      if (hourIndex >= 0 && hourIndex < 6) {
+        timeLabelClass = 'dawn-time';
+      } else if (hourIndex >= 6 && hourIndex < 16) {
+        timeLabelClass = 'day-time';
+      } else if (hourIndex >= 16 && hourIndex < 24) {
+        timeLabelClass = 'evening-time';
+      }
+      
+      html += `<div class="time-label ${timeLabelClass}">${hourLabel}</div>`;
       
       days.forEach(day => {
         const timeClass = this.getTimeSlotClass(hourIndex, day);
