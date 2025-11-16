@@ -769,18 +769,14 @@ class Calendar {
     
     // 오늘 날짜가 있으면 해당 열에만 라인 표시
     if (todayIndex !== -1) {
-      // 시간 컬럼의 실제 너비를 가져오기
-      const timeColumn = this.container.querySelector('.time-column-fixed');
-      const timeColumnWidth = timeColumn ? timeColumn.offsetWidth : 60; // 기본값 60px
-      
       // 오늘 날짜 헤더의 실제 위치와 너비 가져오기
       const todayHeader = allDayHeaders[todayIndex];
       if (todayHeader) {
         const headerRect = todayHeader.getBoundingClientRect();
-        const containerRect = this.container.getBoundingClientRect();
+        const slideRect = currentSlide.getBoundingClientRect();
         
-        // 컨테이너 기준 상대 위치 계산
-        const dayLeft = headerRect.left - containerRect.left;
+        // 슬라이드 기준 상대 위치 계산 (슬라이드 안에 넣어서 스와이프 시 함께 이동)
+        const dayLeft = headerRect.left - slideRect.left;
         const dayWidth = headerRect.width;
         
         const indicator = document.createElement('div');
@@ -788,7 +784,7 @@ class Calendar {
         indicator.style.top = `${topPosition}px`;
         indicator.style.left = `${dayLeft}px`;
         indicator.style.width = `${dayWidth}px`;
-        this.container.appendChild(indicator);
+        currentSlide.appendChild(indicator);
       }
     }
   }
