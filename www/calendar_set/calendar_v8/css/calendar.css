@@ -23,7 +23,7 @@
 }
 
 html {
-  font-size: min(1.5625vw, 2.08333vh);
+  font-size: calc(0.78vw + 1.04vh);
 }
 
 html, body {
