@@ -2216,3 +2216,16 @@ body.view-all .fc-event.e { left: 80% !important; width: 18% !important; }
   display: none;
 }
 }
+
+/* 시간대별 배경색 (주간보기 전용) - 은은한 색상 */
+.fc-timegrid-slot-lane.time-slot-dawn {
+  background-color: #E3F2FD !important;
+}
+
+.fc-timegrid-slot-lane.time-slot-day {
+  background-color: #FFF9C4 !important;
+}
+
+.fc-timegrid-slot-lane.time-slot-evening {
+  background-color: #FFE0B2 !important;
+}

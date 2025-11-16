@@ -277,6 +277,22 @@ function initCalendar() {
       center: 'title',
       right: 'nextMonth'
     },
+    slotLaneClassNames: function(slotInfo) {
+      const hour = slotInfo.date.getHours();
+      
+      if (hour >= 0 && hour < 6) {
+        return ['time-slot-dawn'];
+      }
+      if (hour >= 6 && hour < 16) {
+        return ['time-slot-day'];
+      }
+      if (hour >= 16 && hour < 24) {
+        return ['time-slot-evening'];
+      }
+      
+      return [];
+    },
+    
     views: {
       timeGridWeek: { 
         
