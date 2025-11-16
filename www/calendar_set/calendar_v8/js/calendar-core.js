@@ -150,7 +150,9 @@ class Calendar {
       
       const slides = this.container.querySelectorAll('.calendar-slide');
       if (slides.length === 3) {
-        const percentMove = (e.deltaX / this.container.offsetWidth) * 100;
+        const sliderElement = this.container.querySelector('.calendar-slider');
+        const sliderWidth = sliderElement ? sliderElement.offsetWidth : this.container.offsetWidth;
+        const percentMove = (e.deltaX / sliderWidth) * 100;
         slides.forEach((slide, i) => {
           const newPos = slideStarts[i] + percentMove;
           slide.style.transform = `translateX(${newPos}%)`;
@@ -192,8 +194,9 @@ class Calendar {
           slide.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
         });
         
-        const containerWidth = this.container.offsetWidth;
-        const distanceThreshold = Math.min(containerWidth * 0.15, 120);
+        const sliderElement = this.container.querySelector('.calendar-slider');
+        const sliderWidth = sliderElement ? sliderElement.offsetWidth : this.container.offsetWidth;
+        const distanceThreshold = Math.min(sliderWidth * 0.15, 120);
         const velocityThreshold = 0.35;
         
         const shouldNavigate = distance >= distanceThreshold || velocity >= velocityThreshold;
