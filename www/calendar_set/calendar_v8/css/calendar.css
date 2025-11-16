@@ -202,16 +202,26 @@ body {
   position: relative;
 }
 
-.time-cell.dawn {
-  background-color: rgba(227, 242, 253, 0.05);
+/* 평일 시간대 색상 */
+.time-cell.weekday-dawn {
+  background-color: rgba(100, 149, 237, 0.12);
 }
 
-.time-cell.day {
-  background-color: rgba(255, 249, 196, 0.05);
+.time-cell.weekday-day {
+  background-color: rgba(255, 249, 196, 0.08);
 }
 
-.time-cell.evening {
-  background-color: rgba(255, 224, 178, 0.05);
+.time-cell.weekday-evening {
+  background-color: rgba(255, 165, 0, 0.12);
+}
+
+/* 주말 시간대 색상 */
+.time-cell.weekend-dawn {
+  background-color: rgba(255, 182, 193, 0.12);
+}
+
+.time-cell.weekend-day {
+  background-color: rgba(255, 228, 225, 0.15);
 }
 
 .day-events-container {

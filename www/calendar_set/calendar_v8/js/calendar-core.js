@@ -213,7 +213,7 @@ class Calendar {
       html += `<div class="time-label">${hourLabel}</div>`;
       
       days.forEach(day => {
-        const timeClass = this.getTimeSlotClass(hourIndex);
+        const timeClass = this.getTimeSlotClass(hourIndex, day);
         html += `<div class="time-cell ${timeClass}" data-date="${day.toISOString()}" data-hour="${hourIndex}"></div>`;
       });
       
@@ -322,15 +322,27 @@ class Calendar {
     this.container.innerHTML = html;
   }
 
-  getTimeSlotClass(hourIndex) {
-    if (hourIndex >= CONFIG.timeSlots.dawn.start && hourIndex < CONFIG.timeSlots.dawn.end) {
-      return 'dawn';
-    }
-    if (hourIndex >= CONFIG.timeSlots.day.start && hourIndex < CONFIG.timeSlots.day.end) {
-      return 'day';
-    }
-    if (hourIndex >= CONFIG.timeSlots.evening.start && hourIndex < CONFIG.timeSlots.evening.end) {
-      return 'evening';
+  getTimeSlotClass(hourIndex, date) {
+    const dayOfWeek = date.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    
+    if (isWeekend) {
+      if (hourIndex >= 0 && hourIndex < 6) {
+        return 'weekend-dawn';
+      }
+      if (hourIndex >= 6 && hourIndex < 24) {
+        return 'weekend-day';
+      }
+    } else {
+      if (hourIndex >= 0 && hourIndex < 6) {
+        return 'weekday-dawn';
+      }
+      if (hourIndex >= 6 && hourIndex < 16) {
+        return 'weekday-day';
+      }
+      if (hourIndex >= 16 && hourIndex < 24) {
+        return 'weekday-evening';
+      }
     }
     return '';
   }
