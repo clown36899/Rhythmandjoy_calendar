@@ -7,6 +7,7 @@ class Calendar {
     this.events = [];
     this.hammer = null;
     this.isAnimating = false;
+    this.isPanning = false;  // 스와이프 상태 플래그
     this.currentSlideIndex = 1; // 0: prev, 1: current, 2: next
     this.weekDataCache = new Map(); // 주간 데이터 캐시
     this.baseTranslate = -33.333; // 현재 slider의 기본 위치 (%)
@@ -42,13 +43,28 @@ class Calendar {
 
   setupEventListeners() {
     // 헤더 네비게이션
-    document.getElementById('prevBtn').addEventListener('click', () => this.navigate(-1));
-    document.getElementById('nextBtn').addEventListener('click', () => this.navigate(1));
+    document.getElementById('prevBtn').addEventListener('click', () => {
+      this.resetSwipeState();
+      this.navigate(-1);
+    });
+    document.getElementById('nextBtn').addEventListener('click', () => {
+      this.resetSwipeState();
+      this.navigate(1);
+    });
     
     // 푸터 네비게이션
-    document.getElementById('prevWeekBtn').addEventListener('click', () => this.navigate(-1));
-    document.getElementById('nextWeekBtn').addEventListener('click', () => this.navigate(1));
-    document.getElementById('todayBtn').addEventListener('click', () => this.goToToday());
+    document.getElementById('prevWeekBtn').addEventListener('click', () => {
+      this.resetSwipeState();
+      this.navigate(-1);
+    });
+    document.getElementById('nextWeekBtn').addEventListener('click', () => {
+      this.resetSwipeState();
+      this.navigate(1);
+    });
+    document.getElementById('todayBtn').addEventListener('click', () => {
+      this.resetSwipeState();
+      this.goToToday();
+    });
 
     // 방 선택
     document.querySelectorAll('.room-btn[data-room]').forEach(btn => {
@@ -56,6 +72,17 @@ class Calendar {
     });
 
     document.getElementById('allRoomsBtn').addEventListener('click', () => this.toggleAllRooms());
+  }
+  
+  resetSwipeState() {
+    this.isPanning = false;
+    const slides = this.container.querySelectorAll('.calendar-slide');
+    if (slides.length === 3) {
+      slides.forEach((slide, i) => {
+        slide.style.transition = 'transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)';
+        slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
+      });
+    }
   }
 
   setupSwipeGestures() {
@@ -72,21 +99,19 @@ class Calendar {
       return;
     }
     
+    // 터치와 마우스 모두 지원
     this.hammer = new Hammer(slider, {
-      touchAction: 'pan-y',
-      inputClass: Hammer.SUPPORT_POINTER_EVENTS ? Hammer.PointerEventInput : Hammer.TouchInput
+      touchAction: 'pan-y'
     });
     
-    // Pan 제스처 설정 (모바일 호환)
+    // Pan 제스처 설정
     this.hammer.get('pan').set({ 
       direction: Hammer.DIRECTION_HORIZONTAL,
-      threshold: 10
+      threshold: 10,
+      pointers: 0  // 모든 포인터 유형 허용 (터치, 마우스, 펜)
     });
     
-    let startTransform = 0;
     let swipeStartTime = 0;
-    let isPanning = false;
-    
     let slideStarts = [-100, 0, 100]; // 각 슬라이드의 초기 위치
     
     this.hammer.on('panstart', (e) => {
@@ -98,13 +123,13 @@ class Calendar {
         });
         slideStarts = [-100, 0, 100];
         swipeStartTime = Date.now();
-        isPanning = true;
+        this.isPanning = true;
         console.log('🚀 [스와이프 시작]');
       }
     });
     
     this.hammer.on('panmove', (e) => {
-      if (this.isAnimating || !isPanning) return;
+      if (this.isAnimating || !this.isPanning) return;
       
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       
@@ -119,8 +144,8 @@ class Calendar {
     });
     
     this.hammer.on('panend', (e) => {
-      if (this.isAnimating || !isPanning) return;
-      isPanning = false;
+      if (this.isAnimating || !this.isPanning) return;
+      this.isPanning = false;
       
       const slides = this.container.querySelectorAll('.calendar-slide');
       if (slides.length === 3) {
@@ -174,14 +199,9 @@ class Calendar {
     
     // 터치 중단 시 리셋
     this.hammer.on('pancancel', (e) => {
-      if (isPanning) {
+      if (this.isPanning) {
         console.log('❌ [스와이프 취소]');
-        isPanning = false;
-        const slides = this.container.querySelectorAll('.calendar-slide');
-        slides.forEach((slide, i) => {
-          slide.style.transition = 'transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)';
-          slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
-        });
+        this.resetSwipeState();
       }
     });
     
@@ -194,6 +214,7 @@ class Calendar {
       return;
     }
     this.isAnimating = true;
+    this.isPanning = false;  // 네비게이션 시작 시 스와이프 상태 리셋
     
     console.log(`🧭 네비게이션 시작: ${direction > 0 ? '다음 주' : '이전 주'}`);
     
