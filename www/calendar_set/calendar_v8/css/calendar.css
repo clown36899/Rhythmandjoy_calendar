@@ -340,12 +340,14 @@ body {
   background-color: #1a1a1a;
   border-top: 1px solid var(--border-color);
   flex-shrink: 0;
+  font-size: 15px;
 }
 
 .logo-section {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex: 0 1 auto;
 }
 
 .logo-circle {
@@ -365,7 +367,7 @@ body {
 
 .logo-text {
   flex: 0 1 auto;
-  font-size: 15px;
+  font-size: 1em;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -378,7 +380,7 @@ body {
   border: none;
   border-radius: 2rem;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 1em;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -398,6 +400,7 @@ body {
   border-top: 1px solid var(--border-color);
   overflow-x: auto;
   flex-shrink: 0;
+  font-size: 16px;
 }
 
 .week-nav {
@@ -499,7 +502,7 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 1rem;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 1em;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
