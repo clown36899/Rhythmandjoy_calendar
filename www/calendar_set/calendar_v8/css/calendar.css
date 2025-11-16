@@ -154,6 +154,7 @@ body {
   flex-shrink: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .loading {

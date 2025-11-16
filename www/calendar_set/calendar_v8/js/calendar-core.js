@@ -106,15 +106,18 @@ class Calendar {
       return;
     }
     
-    // Hammer.js 설정: 가로 스와이프만 감지
-    this.hammer = new Hammer(slider);
+    // Hammer.js 설정: touch-action 비활성화하여 가로 스와이프 허용
+    this.hammer = new Hammer(slider, {
+      touchAction: 'auto',
+      inputClass: Hammer.TouchMouseInput
+    });
     this.hammer.get('pan').set({ 
       direction: Hammer.DIRECTION_HORIZONTAL,
       threshold: 10,
       enable: true
     });
     
-    console.log('✅ Hammer 새로 생성:', slider);
+    console.log('✅ Hammer 새로 생성 (touchAction: auto):', slider);
     
     let swipeStartTime = 0;
     let slideStarts = [-100, 0, 100]; // 각 슬라이드의 초기 위치
