@@ -60,14 +60,18 @@ class Calendar {
   }
 
   toggleRoom(roomId) {
-    if (this.selectedRooms.has(roomId)) {
-      this.selectedRooms.delete(roomId);
-    } else {
-      this.selectedRooms.add(roomId);
-    }
+    // 단일 방만 선택
+    this.selectedRooms.clear();
+    this.selectedRooms.add(roomId);
+    
+    // 모든 버튼 비활성화 후 선택한 버튼만 활성화
+    document.querySelectorAll('.room-btn[data-room]').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    document.getElementById('allRoomsBtn').classList.remove('active');
     
     const btn = document.querySelector(`.room-btn[data-room="${roomId}"]`);
-    btn.classList.toggle('active');
+    btn.classList.add('active');
     
     this.render();
   }
@@ -76,19 +80,13 @@ class Calendar {
     const allBtn = document.getElementById('allRoomsBtn');
     const allRoomIds = Object.keys(CONFIG.rooms);
     
-    if (this.selectedRooms.size === allRoomIds.length) {
-      this.selectedRooms.clear();
-      allBtn.classList.remove('active');
-      document.querySelectorAll('.room-btn[data-room]').forEach(btn => {
-        btn.classList.remove('active');
-      });
-    } else {
-      this.selectedRooms = new Set(allRoomIds);
-      allBtn.classList.add('active');
-      document.querySelectorAll('.room-btn[data-room]').forEach(btn => {
-        btn.classList.add('active');
-      });
-    }
+    // 모든 방 선택
+    this.selectedRooms = new Set(allRoomIds);
+    
+    document.querySelectorAll('.room-btn[data-room]').forEach(btn => {
+      btn.classList.add('active');
+    });
+    allBtn.classList.remove('active');
     
     this.render();
   }
@@ -322,16 +320,22 @@ class Calendar {
     const endPercent = ((endHour * 60 + endMin) / (24 * 60)) * 100;
     const height = endPercent - startPercent;
     
-    // Fixed room positions: A=0-20%, B=20-40%, C=40-60%, D=60-80%, E=80-100%
-    const roomPositions = {
-      'a': { left: 0, width: 20 },
-      'b': { left: 20, width: 20 },
-      'c': { left: 40, width: 20 },
-      'd': { left: 60, width: 20 },
-      'e': { left: 80, width: 20 }
-    };
-    
-    const position = roomPositions[event.roomId];
+    // 단일 방 필터링된 경우 100% width, 아니면 고정 위치
+    let position;
+    if (this.selectedRooms.size === 1) {
+      // 단일 방만 선택된 경우 100% width
+      position = { left: 0, width: 100 };
+    } else {
+      // 모든 방 표시 시 고정 위치: A=0-20%, B=20-40%, C=40-60%, D=60-80%, E=80-100%
+      const roomPositions = {
+        'a': { left: 0, width: 20 },
+        'b': { left: 20, width: 20 },
+        'c': { left: 40, width: 20 },
+        'd': { left: 60, width: 20 },
+        'e': { left: 80, width: 20 }
+      };
+      position = roomPositions[event.roomId];
+    }
     
     const roomName = CONFIG.rooms[event.roomId]?.name || event.roomId.toUpperCase();
     const displayTitle = event.title.length > 10 ? event.title.substring(0, 10) + '...' : event.title;
