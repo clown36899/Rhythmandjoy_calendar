@@ -524,12 +524,6 @@ body {
   color: #ffffff5e;
 }
 
-.week-view .event-initial {
-  font-weight: 700;
-  opacity: 1;
-  color: #ffffff;
-}
-
 .week-event.room-a {
   background-color: rgba(246, 191, 38, 0.9);
   border-left-color: var(--room-a);
@@ -641,7 +635,7 @@ body {
 
 .logo-text {
   flex: 0 1 auto;
-  font-size: 1em;
+  font-size: 2em;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -654,7 +648,7 @@ body {
   border: none;
   border-radius: 2rem;
   color: var(--text-primary);
-  font-size: 1em;
+  font-size: 1.67em;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
