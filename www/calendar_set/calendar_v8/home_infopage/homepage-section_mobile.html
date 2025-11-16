@@ -1346,24 +1346,25 @@
           오시는길: "map",
           새벽통대관: "night",
           가격표: "pricelist",
-          환불규정: "refund",
+          환불규정: "price",
         };
 
         const targetSection = sectionMap[sectionName] || "howto";
 
         // 현재 URL 정보 (프로덕션: 리듬앤조이일정표.com, 개발: Replit URL)
-        let url;
+        let baseUrl;
         if (
           window.location.hostname.includes("리듬앤조이일정표.com") ||
           window.location.hostname.includes("xn--xy1b23ggrmm5bfb82ees967e.com") ||
           window.location.hostname.includes("rhythmandjoy")
         ) {
-          url = "https://리듬앤조이일정표.com";
+          baseUrl = "https://리듬앤조이일정표.com/calendar_set/calendar_v8/home_infopage/homepage-section_mobile.html";
         } else {
           // 개발 환경 (Replit 등)
-          url = window.location.origin + "/calendar_set/calendar_v8/index.html";
+          baseUrl = window.location.origin + "/calendar_set/calendar_v8/home_infopage/homepage-section_mobile.html";
         }
 
+        const url = `${baseUrl}?section=${encodeURIComponent(targetSection)}`;
         const title = `리듬앤조이 - ${sectionName}`;
 
         console.log("🔗 공유 URL 생성:", url);
@@ -1436,10 +1437,9 @@
             notice: document.querySelector('.nav-item[onclick*="notice"]'),
             map: document.querySelector('.nav-item[onclick*="map"]'),
             night: document.querySelector('.nav-item[onclick*="night"]'),
-            pricelist: document.querySelector(
-              '.nav-item[onclick*="pricelist"]',
-            ),
-            refund: document.querySelector('.nav-item[onclick*="refund"]'),
+            pricelist: document.querySelector('.nav-item[onclick*="pricelist"]'),
+            refund: document.querySelector('.nav-item[onclick*="price"]'),
+            price: document.querySelector('.nav-item[onclick*="price"]'),
           };
 
           const button = navButtons[section];
@@ -1452,6 +1452,11 @@
           }
         }
       };
+
+      // 📄 페이지 로드 시 URL 쿼리 파라미터 확인
+      document.addEventListener("DOMContentLoaded", function () {
+        openSectionFromURL();
+      });
 
       // 🚀 이미지 프리로드 (백그라운드 캐싱)
       window.addEventListener("load", function () {
