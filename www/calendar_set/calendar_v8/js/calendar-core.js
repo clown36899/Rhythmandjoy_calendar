@@ -305,7 +305,7 @@ class Calendar {
     });
   }
 
-  renderWeekEvent(event, dayIndex, index, total) {
+  renderWeekEvent(event, day, dayIndex) {
     const startHour = event.start.getHours();
     const startMin = event.start.getMinutes();
     const endHour = event.end.getHours();
@@ -319,15 +319,17 @@ class Calendar {
     // Use grid column positioning (column 1 is time, columns 2-8 are days)
     const gridColumn = dayIndex + 2; // +2 to skip time column (1-indexed)
     
-    // Stack events horizontally if overlapping
-    const width = total > 1 ? (100 / total) : 100;
-    const left = (100 / total) * index;
+    // Fixed horizontal position based on room (same room = same position)
+    const roomOrder = ['a', 'b', 'c', 'd', 'e'];
+    const roomIndex = roomOrder.indexOf(event.roomId);
+    const roomWidth = 20; // Each room takes 20% of the width
+    const left = roomIndex * roomWidth;
     
     const roomName = CONFIG.rooms[event.roomId]?.name || event.roomId.toUpperCase();
-    const displayTitle = event.title.length > 12 ? event.title.substring(0, 12) + '...' : event.title;
+    const displayTitle = event.title.length > 10 ? event.title.substring(0, 10) + '...' : event.title;
     
     return `<div class="week-event room-${event.roomId}" 
-                 style="grid-column: ${gridColumn}; top: ${startPercent}%; height: ${height}%; width: ${width}%; left: ${left}%;"
+                 style="grid-column: ${gridColumn}; top: ${startPercent}%; height: ${height}%; width: ${roomWidth}%; left: ${left}%;"
                  title="${roomName}: ${event.title}">
               <div class="event-room">${roomName}</div>
               <div class="event-title">${displayTitle}</div>
