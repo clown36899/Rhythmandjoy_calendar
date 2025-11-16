@@ -33,56 +33,26 @@
     <div id="innerPopupContent"></div>
   </div>
 
-  <!-- 왼쪽 메뉴 (오프캔버스) -->
+  <!-- 왼쪽 메뉴 iframe (데스크탑) -->
+  <iframe 
+    id="leftMenuFrame"
+    src="left-menu.html" 
+    style="display: none;"
+  ></iframe>
+
+  <!-- 왼쪽 메뉴 (모바일 오프캔버스) -->
   <div class="offcanvas offcanvas-start text-bg-dark" tabindex="-1" id="leftMenu" aria-labelledby="leftMenuLabel">
     <div class="offcanvas-header">
       <h5 class="offcanvas-title" id="leftMenuLabel">메뉴</h5>
       <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
     </div>
     
-    <!-- 데스크탑용 홈페이지 섹션 -->
-    <div class="offcanvas-body-desktop" id="homepage-section"></div>
-    
-    <!-- 모바일용 홈페이지 섹션 -->
-    <div class="offcanvas-body-mobile" id="homepage-section_mobile" style="overflow: scroll;"></div>
-    
-    <!-- 메뉴 -->
-    <div class="offcanvas-body">
-      <ul class="navbar-nav justify-content-end flex-grow-1 pe-3">
-        <li class="nav-item nav_line">
-          <a class="nav-link active" aria-current="page" href="https://naver.me/GMmI6eUr" target="_blank">
-            예약 바로가기(네이버예약)
-          </a>
-        </li>
-
-        <li class="nav-item nav_line">
-          <a class="nav-link active" aria-current="page" href="https://blog.naver.com/clown313" target="_blank">
-            홈페이지
-          </a>
-        </li>
-
-        <li class="nav-item nav_line" style="font-size: 2vh">
-          <span>*새벽통대관은 가격,일정표 확인후 문자문의*</span>
-        </li>
-        
-        <li class="nav-item">
-          <button onclick="copy()" class="copyTxt2">COPY</button>
-          <input type="text" value="01048017180" class="copyTxt1" id="copyTxt" readonly />
-        </li>
-
-        <li class="nav-item" style="width: 70%;">
-          <span class="nav-link">요금</span>
-          <img src="pay_list.png" alt="요금표" class="nav_image_pop" />
-        </li>
-        
-        <li class="nav-item">
-          <span class="nav-link">도면</span>
-          <img src="도면_1.png" alt="도면" class="nav_image_pop" />
-        </li>
-
-        <br />
-        <br />
-      </ul>
+    <!-- 모바일용 메뉴 iframe -->
+    <div class="offcanvas-body" style="padding: 0;">
+      <iframe 
+        src="left-menu.html" 
+        style="width: 100%; height: 100%; border: none;"
+      ></iframe>
     </div>
   </div>
 
@@ -147,27 +117,6 @@
   <script src="js/data-manager.js"></script>
   <script src="js/calendar-core.js"></script>
   <script src="js/main.js"></script>
-  
-  <script src="home_infopage/open_popup.js"></script>
-  
-  <script>
-    // 홈페이지 섹션 로드
-    document.addEventListener('DOMContentLoaded', function() {
-      // 데스크탑용
-      fetch('home_infopage/homepage-section.html')
-        .then(response => response.text())
-        .then(html => {
-          document.getElementById('homepage-section').innerHTML = html;
-        });
-      
-      // 모바일용
-      fetch('home_infopage/homepage-section_mobile.html')
-        .then(response => response.text())
-        .then(html => {
-          document.getElementById('homepage-section_mobile').innerHTML = html;
-        });
-    });
-  </script>
   
   <script>
     // 연락처 복사 함수
