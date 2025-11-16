@@ -62,7 +62,7 @@ class Calendar {
         const slider = this.container.querySelector('.calendar-slider');
         if (slider) {
           slider.classList.add('no-transition');
-          startTransform = -100; // 항상 중앙(현재주)에서 시작
+          startTransform = -33.333; // 항상 중앙(현재주)에서 시작
         }
       });
       
@@ -91,8 +91,8 @@ class Calendar {
             // 오른쪽으로 스와이프 -> 이전 주
             this.navigate(-1);
           } else {
-            // 원위치
-            slider.style.transform = 'translateX(-100%)';
+            // 원위치 (중앙으로 복귀)
+            slider.style.transform = 'translateX(-33.333%)';
           }
         }
       });
@@ -108,8 +108,8 @@ class Calendar {
     const slider = this.container.querySelector('.calendar-slider');
     
     if (slider) {
-      // 애니메이션 시작
-      const targetTransform = direction === 1 ? '-200%' : '0%';
+      // 애니메이션: 다음주(-66.666%) 또는 이전주(0%)로 이동
+      const targetTransform = direction === 1 ? '-66.666%' : '0%';
       slider.style.transform = `translateX(${targetTransform})`;
       
       // 애니메이션 완료 후 날짜 업데이트 및 재렌더링
@@ -243,27 +243,41 @@ class Calendar {
   }
   
   async renderWeekViewWithSlider() {
-    // 이전주, 현재주, 다음주 데이터 준비
+    // 이전주, 현재주, 다음주 날짜 계산
     const prevDate = new Date(this.currentDate);
     prevDate.setDate(prevDate.getDate() - 7);
     
     const nextDate = new Date(this.currentDate);
     nextDate.setDate(nextDate.getDate() + 7);
     
-    // 슬라이더 구조 생성
-    let html = '<div class="calendar-slider" style="transform: translateX(-100%)">';
+    // 3주치 이벤트 로드
+    const prevRange = this.getWeekRange(prevDate);
+    const nextRange = this.getWeekRange(nextDate);
+    const roomIds = Array.from(this.selectedRooms);
     
-    // 이전 주
+    if (roomIds.length > 0) {
+      const bookings = await window.dataManager.fetchBookings(
+        roomIds,
+        prevRange.start.toISOString(),
+        nextRange.end.toISOString()
+      );
+      this.events = window.dataManager.convertToEvents(bookings);
+    } else {
+      this.events = [];
+    }
+    
+    // 3개 슬라이드 생성: 이전주 | 현재주 | 다음주
+    // transform: translateX(-33.333%)로 중앙(현재주)을 보여줌
+    let html = '<div class="calendar-slider" style="transform: translateX(-33.333%)">';
+    
     html += '<div class="calendar-slide">';
     html += this.renderWeekViewContent(prevDate);
     html += '</div>';
     
-    // 현재 주
     html += '<div class="calendar-slide">';
     html += this.renderWeekViewContent(this.currentDate);
     html += '</div>';
     
-    // 다음 주
     html += '<div class="calendar-slide">';
     html += this.renderWeekViewContent(nextDate);
     html += '</div>';
@@ -278,7 +292,7 @@ class Calendar {
   }
   
   renderWeekViewContent(date) {
-    const { start } = this.getWeekRange(date);
+    const { start, end } = this.getWeekRange(date);
     const days = [];
     
     for (let i = 0; i < 7; i++) {
@@ -286,6 +300,12 @@ class Calendar {
       day.setDate(start.getDate() + i);
       days.push(day);
     }
+    
+    // 해당 주의 이벤트 필터링
+    const weekEvents = this.events.filter(event => {
+      const eventStart = new Date(event.start);
+      return eventStart >= start && eventStart < end;
+    });
 
     let html = '<div class="week-view">';
     
