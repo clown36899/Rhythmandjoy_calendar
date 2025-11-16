@@ -188,10 +188,12 @@ class Calendar {
     requestAnimationFrame(async () => {
       await this.prepareAdjacentSlides(direction);
       
+      // innerHTML 교체 직후 즉시 레이아웃 조정 (깜빡임 방지)
+      this.adjustWeekViewLayout(true);
+      
       // 트랜지션 재활성화
       requestAnimationFrame(() => {
         slider.classList.remove('no-transition');
-        this.adjustWeekViewLayout();
       });
     });
   }
@@ -547,8 +549,8 @@ class Calendar {
     return html;
   }
   
-  adjustWeekViewLayout() {
-    requestAnimationFrame(() => {
+  adjustWeekViewLayout(immediate = false) {
+    const doLayout = () => {
       // 모든 슬라이드의 week-view 조정
       const allWeekViews = this.container.querySelectorAll('.week-view');
       
@@ -584,7 +586,13 @@ class Calendar {
           container.style.height = `${availableHeight}px`;
         });
       });
-    });
+    };
+    
+    if (immediate) {
+      doLayout();
+    } else {
+      requestAnimationFrame(doLayout);
+    }
   }
 
   renderMonthView() {
