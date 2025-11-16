@@ -214,9 +214,11 @@ class Calendar {
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
       
-      // Create event container for this day
-      const gridColumn = dayIndex + 2;
-      html += `<div class="day-events-container" style="grid-column: ${gridColumn};">`;
+      // Calculate position for this day column (7 equal columns after 60px time column)
+      const dayWidth = `calc((100% - 60px) / 7)`;
+      const dayLeft = `calc(60px + (100% - 60px) / 7 * ${dayIndex})`;
+      
+      html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
       
       // Render events with fixed room positions
       dayEvents.forEach(event => {
