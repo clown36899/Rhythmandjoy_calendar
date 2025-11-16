@@ -131,24 +131,91 @@ class Calendar {
     this.isAnimating = true;
     const slider = this.container.querySelector('.calendar-slider');
     
-    if (slider) {
-      // 애니메이션: 다음주(-66.666%) 또는 이전주(0%)로 이동
-      const targetTransform = direction === 1 ? '-66.666%' : '0%';
-      slider.style.transform = `translateX(${targetTransform})`;
-      
-      // 애니메이션 완료 후 날짜 업데이트 및 재렌더링
-      setTimeout(async () => {
-        this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
-        console.log(`📅 날짜 변경: ${this.currentDate.toLocaleDateString('ko-KR')}`);
-        await this.render();
-        this.isAnimating = false;
-        console.log(`✅ 네비게이션 완료`);
-      }, 300);
-    } else {
+    if (!slider) {
       this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
       await this.render();
       this.isAnimating = false;
+      return;
     }
+    
+    // 새로운 주 날짜 계산
+    const newDate = new Date(this.currentDate);
+    newDate.setDate(newDate.getDate() + (direction * 7));
+    
+    // 캐시 확인
+    const newCacheKey = this.getWeekCacheKey(newDate);
+    const hasCache = this.weekDataCache.has(newCacheKey);
+    
+    console.log(`📦 새 주 캐시 상태: ${hasCache ? 'HIT' : 'MISS'}`);
+    
+    if (hasCache) {
+      // 캐시가 있으면: 슬라이드만 회전 (깜빡임 없음)
+      const targetTransform = direction === 1 ? '-66.666%' : '0%';
+      slider.style.transform = `translateX(${targetTransform})`;
+      
+      setTimeout(() => {
+        this.currentDate = newDate;
+        console.log(`📅 날짜 변경: ${this.currentDate.toLocaleDateString('ko-KR')}`);
+        
+        // 슬라이드 순서만 재배열 (DOM 재생성 없음)
+        this.rotateSlides(direction);
+        
+        this.isAnimating = false;
+        console.log(`✅ 네비게이션 완료 (캐시)`);
+      }, 300);
+    } else {
+      // 캐시가 없으면: 전체 재렌더링
+      const targetTransform = direction === 1 ? '-66.666%' : '0%';
+      slider.style.transform = `translateX(${targetTransform})`;
+      
+      setTimeout(async () => {
+        this.currentDate = newDate;
+        console.log(`📅 날짜 변경: ${this.currentDate.toLocaleDateString('ko-KR')}`);
+        await this.render();
+        this.isAnimating = false;
+        console.log(`✅ 네비게이션 완료 (재렌더)`);
+      }, 300);
+    }
+  }
+  
+  rotateSlides(direction) {
+    const slider = this.container.querySelector('.calendar-slider');
+    if (!slider) return;
+    
+    const slides = Array.from(slider.querySelectorAll('.calendar-slide'));
+    if (slides.length !== 3) return;
+    
+    // 트랜지션 비활성화
+    slider.classList.add('no-transition');
+    
+    if (direction === 1) {
+      // 다음 주: 첫 번째 슬라이드를 맨 뒤로
+      const firstSlide = slides[0];
+      const nextDate = new Date(this.currentDate);
+      nextDate.setDate(nextDate.getDate() + 7);
+      
+      // 새 내용으로 업데이트
+      firstSlide.innerHTML = this.renderWeekViewContent(nextDate);
+      slider.appendChild(firstSlide);
+    } else {
+      // 이전 주: 마지막 슬라이드를 맨 앞으로
+      const lastSlide = slides[2];
+      const prevDate = new Date(this.currentDate);
+      prevDate.setDate(prevDate.getDate() - 7);
+      
+      // 새 내용으로 업데이트
+      lastSlide.innerHTML = this.renderWeekViewContent(prevDate);
+      slider.insertBefore(lastSlide, slides[0]);
+    }
+    
+    // 중앙 위치로 즉시 리셋
+    slider.style.transform = 'translateX(-33.333%)';
+    
+    // 다음 프레임에 트랜지션 재활성화
+    requestAnimationFrame(() => {
+      slider.classList.remove('no-transition');
+      this.adjustWeekViewLayout();
+    });
   }
 
   goToToday() {
@@ -391,8 +458,12 @@ class Calendar {
       days.push(day);
     }
     
+    // 캐시에서 이벤트 가져오기
+    const cacheKey = this.getWeekCacheKey(date);
+    const cachedEvents = this.weekDataCache.get(cacheKey) || [];
+    
     // 해당 주의 이벤트 필터링
-    const weekEvents = this.events.filter(event => {
+    const weekEvents = cachedEvents.filter(event => {
       return event.start < end && event.end > start;
     });
 
@@ -464,36 +535,40 @@ class Calendar {
   
   adjustWeekViewLayout() {
     requestAnimationFrame(() => {
-      const weekView = this.container.querySelector('.week-view');
-      const headerElement = this.container.querySelector('.day-header');
-      const timeLabel = this.container.querySelector('.time-label');
+      // 모든 슬라이드의 week-view 조정
+      const allWeekViews = this.container.querySelectorAll('.week-view');
       
-      if (!weekView || !headerElement || !timeLabel) return;
-      
-      const headerHeight = headerElement.getBoundingClientRect().height;
-      const weekViewHeight = weekView.clientHeight;
-      const availableHeight = weekViewHeight - headerHeight;
-      const rowHeight = availableHeight / 24;
-      
-      // Grid 행 높이를 동적으로 설정하여 24시간이 항상 fit되도록
-      weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px)`;
-      
-      // 시간 컬럼의 실제 너비 측정
-      const timeLabelWidth = timeLabel.getBoundingClientRect().width;
-      
-      // 이벤트 컨테이너를 시간 컬럼 너비만큼 offset하여 정확히 배치
-      const eventContainers = this.container.querySelectorAll('.day-events-container');
-      eventContainers.forEach((container, index) => {
-        const weekViewWidth = weekView.clientWidth;
-        const dayWidth = (weekViewWidth - timeLabelWidth) / 7;
-        const dayLeft = timeLabelWidth + (dayWidth * index);
+      allWeekViews.forEach(weekView => {
+        const headerElement = weekView.querySelector('.day-header');
+        const timeLabel = weekView.querySelector('.time-label');
         
-        container.style.left = `${dayLeft}px`;
-        container.style.width = `${dayWidth}px`;
-        container.style.top = `${headerHeight}px`;
-        container.style.bottom = '0';
-        container.style.paddingTop = '0';
-        container.style.height = `${availableHeight}px`;
+        if (!headerElement || !timeLabel) return;
+        
+        const headerHeight = headerElement.getBoundingClientRect().height;
+        const weekViewHeight = weekView.clientHeight;
+        const availableHeight = weekViewHeight - headerHeight;
+        const rowHeight = availableHeight / 24;
+        
+        // Grid 행 높이를 동적으로 설정하여 24시간이 항상 fit되도록
+        weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px)`;
+        
+        // 시간 컬럼의 실제 너비 측정
+        const timeLabelWidth = timeLabel.getBoundingClientRect().width;
+        
+        // 이 weekView 안의 이벤트 컨테이너들 조정
+        const eventContainers = weekView.querySelectorAll('.day-events-container');
+        eventContainers.forEach((container, index) => {
+          const weekViewWidth = weekView.clientWidth;
+          const dayWidth = (weekViewWidth - timeLabelWidth) / 7;
+          const dayLeft = timeLabelWidth + (dayWidth * index);
+          
+          container.style.left = `${dayLeft}px`;
+          container.style.width = `${dayWidth}px`;
+          container.style.top = `${headerHeight}px`;
+          container.style.bottom = '0';
+          container.style.paddingTop = '0';
+          container.style.height = `${availableHeight}px`;
+        });
       });
     });
   }
