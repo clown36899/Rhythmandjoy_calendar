@@ -212,9 +212,9 @@ class Calendar {
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
       
-      // Calculate position for this day column (7 equal columns after 60px time column)
-      const dayWidth = `calc((100% - 60px) / 7)`;
-      const dayLeft = `calc(60px + (100% - 60px) / 7 * ${dayIndex})`;
+      // Calculate position for this day column (7 equal columns after 3.75rem time column)
+      const dayWidth = `calc((100% - 3.75rem) / 7)`;
+      const dayLeft = `calc(3.75rem + (100% - 3.75rem) / 7 * ${dayIndex})`;
       
       html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
       
