@@ -469,7 +469,7 @@ body {
 .week-view .week-event {
   position: absolute;
 
-  border-radius: 0.2em;
+  border-radius: 0.5em;
   font-size: 0.85em;
   overflow: hidden;
   cursor: pointer;
@@ -513,7 +513,7 @@ body {
 
 .week-view .event-time {
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
-  font-size: 0.85em;
+  font-size: 0.75em;
   font-weight: 400;
   letter-spacing: 0;
   overflow: hidden;
