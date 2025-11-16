@@ -90,16 +90,16 @@
     <script src="home_infopage/open_popup.js"></script>
 
     <script>
-      // iframe 안에서 실행 중이면 부모 창에 메시지 전달
+      // iframe 안에서 실행 중이면 부모 창의 함수 직접 호출 (더 빠름)
       const originalOpenPopup = openPopup;
       const originalClosePopup = closePopup;
       const originalOpenInnerPopup = openInnerPopup;
       const originalCloseInnerPopup = closeInnerPopup;
       
       openPopup = function(url) {
-        if (window.parent !== window) {
-          // iframe 안에 있으면 부모 창에 메시지 전달
-          window.parent.postMessage({ type: 'openPopup', url: url }, window.location.origin);
+        if (window.parent !== window && window.parent.openPopup) {
+          // iframe 안에 있으면 부모 함수 직접 호출
+          window.parent.openPopup(url);
         } else {
           // 독립 페이지면 원래대로 실행
           originalOpenPopup(url);
@@ -107,24 +107,24 @@
       };
       
       closePopup = function() {
-        if (window.parent !== window) {
-          window.parent.postMessage({ type: 'closePopup' }, window.location.origin);
+        if (window.parent !== window && window.parent.closePopup) {
+          window.parent.closePopup();
         } else {
           originalClosePopup();
         }
       };
       
       openInnerPopup = function(url) {
-        if (window.parent !== window) {
-          window.parent.postMessage({ type: 'openInnerPopup', url: url }, window.location.origin);
+        if (window.parent !== window && window.parent.openInnerPopup) {
+          window.parent.openInnerPopup(url);
         } else {
           originalOpenInnerPopup(url);
         }
       };
       
       closeInnerPopup = function() {
-        if (window.parent !== window) {
-          window.parent.postMessage({ type: 'closeInnerPopup' }, window.location.origin);
+        if (window.parent !== window && window.parent.closeInnerPopup) {
+          window.parent.closeInnerPopup();
         } else {
           originalCloseInnerPopup();
         }
