@@ -290,11 +290,11 @@ body {
 /* 현재 시간 표시 라인 */
 .current-time-indicator {
   position: absolute;
-  left: -3.75em;
+  left: 0;
   right: 0;
   height: 2px;
   background-color: #ff4444;
-  z-index: 150;
+  z-index: 200;
   pointer-events: none;
 }
 

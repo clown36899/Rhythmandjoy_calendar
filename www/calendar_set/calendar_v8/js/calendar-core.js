@@ -723,33 +723,34 @@ class Calendar {
       return;
     }
     
-    // 모든 슬라이드의 week-view에 현재 시간 라인 추가
-    const allWeekViews = this.container.querySelectorAll('.week-view');
-    console.log('🎨 [시간인디케이터] week-view 개수:', allWeekViews.length);
+    // 첫 번째 week-view에서 높이 계산
+    const firstWeekView = this.container.querySelector('.week-view');
+    if (!firstWeekView) {
+      console.log('❌ [시간인디케이터] week-view 없음');
+      return;
+    }
     
-    allWeekViews.forEach((weekView, idx) => {
-      const headerElement = weekView.querySelector('.day-header');
-      if (!headerElement) {
-        console.log(`❌ [시간인디케이터] week-view ${idx}: 헤더 없음`);
-        return;
-      }
-      
-      const headerHeight = headerElement.getBoundingClientRect().height;
-      const weekViewHeight = weekView.clientHeight;
-      const availableHeight = weekViewHeight - headerHeight;
-      
-      // 시간 위치 계산 (0시 = 0%, 24시 = 100%)
-      const hourProgress = currentHour + (currentMinute / 60);
-      const topPosition = headerHeight + (availableHeight * (hourProgress / 24));
-      
-      // 현재 시간 라인 생성
-      const indicator = document.createElement('div');
-      indicator.className = 'current-time-indicator';
-      indicator.style.top = `${topPosition}px`;
-      weekView.appendChild(indicator);
-      
-      console.log(`✅ [시간인디케이터] week-view ${idx}: 생성완료 (top: ${topPosition.toFixed(0)}px, 시각: ${currentHour}:${currentMinute})`);
-    });
+    const headerElement = firstWeekView.querySelector('.day-header');
+    if (!headerElement) {
+      console.log('❌ [시간인디케이터] 헤더 없음');
+      return;
+    }
+    
+    const headerHeight = headerElement.getBoundingClientRect().height;
+    const weekViewHeight = firstWeekView.clientHeight;
+    const availableHeight = weekViewHeight - headerHeight;
+    
+    // 시간 위치 계산 (0시 = 0%, 24시 = 100%)
+    const hourProgress = currentHour + (currentMinute / 60);
+    const topPosition = headerHeight + (availableHeight * (hourProgress / 24));
+    
+    // 현재 시간 라인 생성 (calendarContainer에 직접 추가)
+    const indicator = document.createElement('div');
+    indicator.className = 'current-time-indicator';
+    indicator.style.top = `${topPosition}px`;
+    this.container.appendChild(indicator);
+    
+    console.log(`✅ [시간인디케이터] 생성완료 (top: ${topPosition.toFixed(0)}px, 시각: ${currentHour}:${currentMinute})`);
   }
   
   startCurrentTimeUpdater() {
