@@ -23,7 +23,7 @@
 }
 
 html {
-  font-size: clamp(8px, min(1.5625vw, 2.08333vh), 16px);
+  font-size: min(1.5625vw, 2.08333vh, 16px);
 }
 
 html, body {
