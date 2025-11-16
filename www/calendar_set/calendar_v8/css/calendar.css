@@ -25,30 +25,43 @@
 html, body {
   height: 100%;
   overflow: hidden;
+  position: fixed;
+  width: 100%;
 }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background-color: var(--bg-dark);
   color: var(--text-primary);
+  margin: 0;
+  padding: 0;
 }
 
 .app-container {
-  width: 100%;
+  width: 100vw;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 .calendar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
+  gap: 0.5rem;
+  padding: 0.75rem 0.5rem;
   background-color: var(--bg-darker);
   border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+@media (min-width: 768px) {
+  .calendar-header {
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+  }
 }
 
 .nav-btn {
