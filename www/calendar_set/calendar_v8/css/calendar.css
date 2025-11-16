@@ -467,20 +467,20 @@ body {
 
 .week-view .week-event {
   position: absolute;
-  padding: 0.1em 0.2em;
+  padding: 0.15em 0.25em;
   border-radius: 0.2em;
-  font-size: 0.75em;
+  font-size: 0.85em;
   overflow: hidden;
   cursor: pointer;
   border-left: 0.125em solid;
   transition: all 0.1s;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 0.05em;
   pointer-events: auto;
   box-shadow: 0 0.0625em 0.125em rgba(0, 0, 0, 0.4);
   margin: 0 0.0625em;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .week-event:hover {
@@ -489,23 +489,36 @@ body {
 }
 
 .week-view .event-room {
-  font-family: 'Pretendard', -apple-system, 'SF Pro Display', 'Noto Sans KR', sans-serif;
-  font-weight: 800;
-  font-size: 1.15em;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+  font-weight: 700;
+  font-size: 1.2em;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: #ffffff;
 }
 
 .week-view .event-title {
-  font-family: 'Pretendard', -apple-system, 'SF Pro Display', 'Noto Sans KR', sans-serif;
-  font-size: 1.05em;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+  font-size: 0.95em;
+  font-weight: 500;
+  letter-spacing: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 1;
-  line-height: 1.15;
+  line-height: 1.2;
+  color: #ffffff;
+}
+
+.week-view .event-time {
+  font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+  font-size: 0.85em;
+  font-weight: 400;
+  letter-spacing: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0.95;
+  line-height: 1.2;
+  color: #ffffff;
 }
 
 .week-event.room-a {

@@ -1020,13 +1020,14 @@ class Calendar {
     }
     
     const roomName = CONFIG.rooms[event.roomId]?.name || event.roomId.toUpperCase();
-    const displayTitle = event.title.length > 10 ? event.title.substring(0, 10) + '...' : event.title;
+    const timeStr = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}-${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
     
     return `<div class="week-event room-${event.roomId}" 
                  style="top: ${startPercent}%; height: ${height}%; width: ${position.width}%; left: ${position.left}%;"
-                 title="${roomName}: ${event.title}">
+                 title="${roomName}: ${event.title} (${timeStr})">
               <div class="event-room">${roomName}</div>
-              <div class="event-title">${displayTitle}</div>
+              <div class="event-title">${event.title}</div>
+              <div class="event-time">${timeStr}</div>
             </div>`;
   }
   
