@@ -168,31 +168,27 @@ class Calendar {
     // 트랜지션 비활성화
     slider.classList.add('no-transition');
     
-    // DOM 재배열 (transform은 스와이프 오프셋 그대로 유지)
+    // DOM 재배열
     if (direction === 1) {
       const firstSlide = slides[0];
       slider.appendChild(firstSlide);
-      // transform은 -66.666%에 유지됨
     } else {
       const lastSlide = slides[2];
       slider.insertBefore(lastSlide, slides[0]);
-      // transform은 0%에 유지됨
     }
     
-    // 안 보이는 슬라이드 업데이트
-    await this.prepareAdjacentSlides(direction);
+    // 즉시 중앙(-33.333%)으로 재설정 (트랜지션 없이)
+    slider.style.transform = 'translateX(-33.333%)';
+    this.baseTranslate = -33.333;
     
-    // double RAF로 중앙(-33.333%)으로 재설정 (트랜지션 없이)
-    requestAnimationFrame(() => {
+    // 화면이 안정된 후 안 보이는 슬라이드 업데이트
+    requestAnimationFrame(async () => {
+      await this.prepareAdjacentSlides(direction);
+      
+      // 트랜지션 재활성화
       requestAnimationFrame(() => {
-        slider.style.transform = 'translateX(-33.333%)';
-        this.baseTranslate = -33.333;
-        
-        // 트랜지션 재활성화
-        requestAnimationFrame(() => {
-          slider.classList.remove('no-transition');
-          this.adjustWeekViewLayout();
-        });
+        slider.classList.remove('no-transition');
+        this.adjustWeekViewLayout();
       });
     });
   }
