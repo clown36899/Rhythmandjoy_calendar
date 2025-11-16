@@ -315,17 +315,6 @@ body {
   display: contents;
 }
 
-/* 메뉴 토글 버튼 - 기본 숨김, 모바일에서만 표시 */
-.menu-toggle-btn {
-  background: none;
-  border: none;
-  color: #fff;
-  font-size: 1.5em;
-  cursor: pointer;
-  padding: 0.5em;
-  margin-right: 0.5em;
-  display: none;
-}
 
 /* 메뉴 스타일 */
 .nav_line {
@@ -376,21 +365,9 @@ body {
   display: none;
 }
 
-/* 모바일 (1000px 미만): 메뉴 토글 버튼 표시 */
-@media (max-width: 999px) {
-  .menu-toggle-btn {
-    display: inline-block !important;
-  }
-}
 
 /* 1000px 이상 화면: 3등분 레이아웃 */
 @media (min-width: 1000px) {
-  /* 메뉴 토글 버튼 완전히 숨김 */
-  .menu-toggle-btn {
-    display: none !important;
-    visibility: hidden !important;
-  }
-  
   /* 왼쪽 메뉴 iframe */
   #leftMenuFrame {
     display: block !important;
