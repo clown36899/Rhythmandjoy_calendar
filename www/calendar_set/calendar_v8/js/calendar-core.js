@@ -221,8 +221,8 @@ class Calendar {
     // 먼저 새 데이터 준비
     await this.prepareAdjacentSlides(direction);
     
-    // 트랜지션 비활성화
-    slider.classList.add('no-transition');
+    // 트랜지션 완전 비활성화 (inline style 제거)
+    slider.style.transition = 'none';
     
     // DOM 재배열과 transform 리셋을 한 프레임에
     await new Promise(resolve => requestAnimationFrame(() => {
@@ -246,9 +246,9 @@ class Calendar {
     // 레이아웃 조정
     this.adjustWeekViewLayout(true);
     
-    // 트랜지션 재활성화
+    // 트랜지션 재활성화 (inline style 제거하여 CSS로 복귀)
     await new Promise(resolve => requestAnimationFrame(() => {
-      slider.classList.remove('no-transition');
+      slider.style.transition = '';
       resolve();
     }));
   }
