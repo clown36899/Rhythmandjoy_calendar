@@ -51,11 +51,22 @@ class Calendar {
   }
 
   setupSwipeGestures() {
-    if (typeof Hammer !== 'undefined') {
-      const slider = this.container.querySelector('.calendar-slider') || this.container;
-      this.hammer = new Hammer(slider, {
-        touchAction: 'none'
-      });
+    console.log('🔍 Hammer.js 확인:', typeof Hammer);
+    
+    if (typeof Hammer === 'undefined') {
+      console.error('❌ Hammer.js가 로드되지 않았습니다!');
+      return;
+    }
+    
+    const slider = this.container.querySelector('.calendar-slider');
+    if (!slider) {
+      console.error('❌ .calendar-slider 요소를 찾을 수 없습니다!');
+      return;
+    }
+    
+    this.hammer = new Hammer(slider, {
+      touchAction: 'none'
+    });
       
       // Pan과 Swipe 제스처 모두 활성화 (모바일 호환)
       this.hammer.get('pan').set({ 
