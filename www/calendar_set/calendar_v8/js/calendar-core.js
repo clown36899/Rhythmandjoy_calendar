@@ -9,6 +9,7 @@ class Calendar {
     this.isAnimating = false;
     this.currentSlideIndex = 1; // 0: prev, 1: current, 2: next
     this.weekDataCache = new Map(); // 주간 데이터 캐시
+    this.baseTranslate = -33.333; // 현재 slider의 기본 위치 (%)
   }
 
   async init() {
@@ -71,7 +72,7 @@ class Calendar {
         const slider = this.container.querySelector('.calendar-slider');
         if (slider) {
           slider.classList.add('no-transition');
-          startTransform = -33.333; // 항상 중앙(현재주)에서 시작
+          startTransform = this.baseTranslate; // 현재 위치에서 시작
         }
       });
       
@@ -167,34 +168,32 @@ class Calendar {
     // 트랜지션 비활성화
     slider.classList.add('no-transition');
     
-    // DOM 재배열
+    // DOM 재배열 (transform은 스와이프 오프셋 그대로 유지)
     if (direction === 1) {
       const firstSlide = slides[0];
       slider.appendChild(firstSlide);
-      
-      // post-swipe 위치로 transform 설정 (중앙이 다음주가 되도록)
-      slider.style.transform = 'translateX(-66.666%)';
+      // transform은 -66.666%에 유지됨
     } else {
       const lastSlide = slides[2];
       slider.insertBefore(lastSlide, slides[0]);
-      
-      // post-swipe 위치로 transform 설정 (중앙이 이전주가 되도록)
-      slider.style.transform = 'translateX(0%)';
+      // transform은 0%에 유지됨
     }
-    
-    // Reflow 강제
-    slider.offsetWidth;
-    
-    // 중앙으로 즉시 snap
-    slider.style.transform = 'translateX(-33.333%)';
     
     // 안 보이는 슬라이드 업데이트
     await this.prepareAdjacentSlides(direction);
     
-    // 트랜지션 재활성화
+    // double RAF로 중앙(-33.333%)으로 재설정 (트랜지션 없이)
     requestAnimationFrame(() => {
-      slider.classList.remove('no-transition');
-      this.adjustWeekViewLayout();
+      requestAnimationFrame(() => {
+        slider.style.transform = 'translateX(-33.333%)';
+        this.baseTranslate = -33.333;
+        
+        // 트랜지션 재활성화
+        requestAnimationFrame(() => {
+          slider.classList.remove('no-transition');
+          this.adjustWeekViewLayout();
+        });
+      });
     });
   }
   
