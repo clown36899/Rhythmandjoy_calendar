@@ -228,26 +228,44 @@ body {
 h1 {
   font-weight: 700;
   font-size: 1.4rem;
-  background: linear-gradient(135deg, #2c3e50, #00A859);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #1a1a1a;
   margin-bottom: 24px;
   margin-top: 12px;
   text-align: center;
   letter-spacing: -0.5px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 p {
-  line-height: 1.6;
+  line-height: 1.7;
   margin-bottom: 16px;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+strong {
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+em {
+  color: #666;
+  font-style: normal;
+  font-size: 0.9rem;
+}
+
+b {
+  color: #c0392b;
+  font-weight: 600;
 }
 
 .highlight {
-  background-color: #ffeaa7;
-  padding: 4px 8px;
+  background-color: #fff3cd;
+  color: #856404;
+  padding: 4px 10px;
   border-radius: 6px;
-  font-weight: bold;
+  font-weight: 600;
+  border: 1px solid #ffeeba;
 }
 
 .link-box {
@@ -342,49 +360,56 @@ ul {
 }
 
 li {
-  margin-bottom: 18px;
-  color: #555;
+  margin-bottom: 20px;
+  color: #2c3e50;
   font-size: 0.95rem;
-  line-height: 1.6;
-  padding-left: 28px;
+  line-height: 1.8;
+  padding-left: 32px;
   position: relative;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 li:before {
   content: "✓";
   position: absolute;
   left: 0;
-  top: 0;
-  width: 20px;
-  height: 20px;
+  top: 2px;
+  width: 22px;
+  height: 22px;
   background: linear-gradient(135deg, #00A859, #00b366);
   color: white;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: bold;
+  flex-shrink: 0;
 }
 
 li:hover {
-  color: #333;
-  transform: translateX(4px);
+  color: #1a1a1a;
+  transform: translateX(3px);
 }
 
-.highlight {
-  background-color: #fff3cd00;
-  color: #040010;
-  /* padding: 2px 6px; */
-  margin: 0 10px 5px;
-  border-radius: 4px;
-  font-weight: bold;
+.notice-list li {
+  color: #2c3e50;
+  font-size: 0.95rem;
+}
+
+.notice-list li strong {
+  color: #1a1a1a;
+  display: block;
+  margin-bottom: 8px;
+  font-size: 1rem;
 }
 
 .important {
   color: #c0392b;
-  font-weight: bold;
+  font-weight: 600;
+  background-color: #fee;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 a.button {
@@ -448,24 +473,39 @@ a.button:active {
 }
 
 .inline-button {
-  padding: 4px 8px;
+  padding: 6px 12px;
   font-size: 13px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background-color: #f1f1f1;
-  margin: 2px 2px;
+  border: 1.5px solid #00A859;
+  border-radius: 8px;
+  background-color: #fff;
+  color: #00A859;
+  font-weight: 600;
+  margin: 4px 3px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.3s ease;
+  display: inline-block;
 }
 
 .inline-button:hover {
-  background-color: #e0e0e0;
+  background-color: #00A859;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 168, 89, 0.2);
 }
 
 .notice-list a {
-  color: #03c75a;
-  text-decoration: underline;
-  font-size: 13.5px;
+  color: #00A859;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 2px solid #00A859;
+  padding-bottom: 1px;
+  transition: all 0.2s ease;
+}
+
+.notice-list a:hover {
+  color: #00b366;
+  border-bottom-color: #00b366;
 }
 
 .below-link {
@@ -474,4 +514,40 @@ a.button:active {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 하우투 페이지 인포박스 */
+.info-box {
+  border: 2px solid #00A859;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #f0fff4, #ffffff);
+  padding: 20px;
+  margin: 20px 0;
+  box-shadow: 0 4px 12px rgba(0, 168, 89, 0.1);
+}
+
+.info-main {
+  font-size: 1.05rem;
+  color: #1a1a1a;
+  margin-bottom: 16px;
+  font-weight: 500;
+  line-height: 1.7;
+}
+
+.info-sub {
+  padding: 12px 16px;
+  background-color: rgba(0, 168, 89, 0.05);
+  border-radius: 10px;
+  border-left: 4px solid #00A859;
+}
+
+.info-sub p {
+  font-size: 0.9rem;
+  color: #2c3e50;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.info-sub p:last-child {
+  margin-bottom: 0;
 }

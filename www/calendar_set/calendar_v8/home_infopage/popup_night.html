@@ -5,68 +5,90 @@
   <title>새벽 통대관 안내</title>
   <link href="home_infopage/popup.css" rel="stylesheet" type="text/css" />
   <style>
-    .container {
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 20px;
-      font-family: 'Arial', sans-serif;
+    .night-box {
+      background: linear-gradient(145deg, #e8eaf6, #ffffff);
+      border: 2px solid #5c6bc0;
+      border-radius: 12px;
+      padding: 18px;
+      margin: 20px 0;
+      border-left: 6px solid #3f51b5;
+    }
+
+    .night-box code {
+      display: block;
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 10px;
+      color: #1a1a1a;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
       line-height: 1.6;
     }
 
-    .example-box {
-      background-color: #f4f4f4;
-      padding: 10px 15px;
-      border-left: 4px solid #999;
-      margin: 10px 0;
-      font-family: monospace;
+    .step-flow {
+      background: #e8f5e9;
+      padding: 16px;
+      border-radius: 10px;
+      margin: 20px 0;
+      text-align: center;
+      border: 2px solid #4caf50;
+    }
+
+    .step-flow strong {
+      color: #2e7d32;
+      font-size: 1rem;
     }
 
     img.price-image {
       display: block;
-      max-width: 100%;
+      max-width: 90%;
       height: auto;
-      margin: 20px auto;
-      border: 1px solid #ccc;
-      border-radius: 8px;
+      margin: 24px auto;
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
     }
 
-    a {
-      color: #0077cc;
-      text-decoration: none;
-    }
-
-    a:hover {
-      text-decoration: underline;
-    }
-
-    h1, h2 {
-      color: #333;
+    h2 {
+      color: #1a1a1a;
+      font-size: 1.25rem;
+      margin: 32px 0 16px;
+      padding-left: 10px;
+      border-left: 5px solid #5c6bc0;
     }
   </style>
 </head>
 <body>
-
   <div class="container">
     <button type="button" id="xxx_btn" onclick="closePopup()">x</button>
-    <div class="icon-lock"><img class="png_main" src="home_infopage/images/png/night.png"></div>
+    <div class="icon-lock">
+      <img class="png_main" src="home_infopage/images/png/night.png">
+    </div>
     <h1>새벽 통대관 안내</h1>
 
-    <p>📅 <strong>일정 확인:</strong> 현재 예약 현황을 확인해 주세요.</p>
+    <p style="color: #555; font-size: 1rem; line-height: 1.8;">
+      📅 <strong>일정 확인:</strong> 현재 예약 현황을 먼저 확인해 주세요.
+    </p>
 
-    <p>📲 <strong>문자 예약:</strong> <a href="sms:01048017180">010-4801-7180</a> 으로 아래 예시처럼 문자 보내주세요.</p>
+    <p style="color: #555; font-size: 1rem; line-height: 1.8;">
+      📲 <strong>문자 예약:</strong> 
+      <a href="sms:01048017180" style="color: #00A859; font-weight: 600; border-bottom: 2px solid #00A859; text-decoration: none;">010-4801-7180</a>
+      으로 아래 예시처럼 문자 보내주세요.
+    </p>
 
-    <div class="example-box">
-      <strong>예시 문구:</strong><br>
+    <div class="night-box">
+      <strong style="color: #1a1a1a; font-size: 1rem;">📝 예시 문구:</strong>
       <code>12~13일 넘어가는 새벽 A 홀 통대관 가능한가요?</code>
     </div>
 
-    <p>✅ <strong>승인 후 입금</strong> → <strong>이용 정보 문자 수신</strong> → <strong>예약 완료!</strong></p>
+    <div class="step-flow">
+      <strong>✅ 승인 후 입금 → 이용 정보 문자 수신 → 예약 완료!</strong>
+    </div>
 
-    <h2>💰 대관이용료</h2>
+    <h2>💰 대관 이용료</h2>
 
     <img src="pay_list.png" alt="새벽 통대관 가격표" class="price-image" />
-    
   </div>
-
 </body>
 </html>
