@@ -106,13 +106,12 @@ class Calendar {
       return;
     }
     
-    // 터치: 가로만 Hammer가 처리, 세로는 브라우저 스크롤
-    this.hammer = new Hammer(slider, {
-      touchAction: 'pan-y'
-    });
+    // Hammer.js 설정: 가로 스와이프만 감지
+    this.hammer = new Hammer(slider);
     this.hammer.get('pan').set({ 
       direction: Hammer.DIRECTION_HORIZONTAL,
-      threshold: 10
+      threshold: 10,
+      enable: true
     });
     
     console.log('✅ Hammer 새로 생성:', slider);
@@ -122,6 +121,13 @@ class Calendar {
     
     this.hammer.on('panstart', (e) => {
       if (this.isAnimating) return;
+      
+      // 가로 스와이프인지 확인
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) {
+        console.log('⬆️ [세로 스크롤] deltaX:', e.deltaX, 'deltaY:', e.deltaY);
+        return;
+      }
+      
       const slides = this.container.querySelectorAll('.calendar-slide');
       if (slides.length === 3) {
         slides.forEach((slide, i) => {
@@ -130,7 +136,7 @@ class Calendar {
         slideStarts = [-100, 0, 100];
         swipeStartTime = Date.now();
         this.isPanning = true;
-        console.log('🚀 [스와이프 시작]');
+        console.log('🚀 [스와이프 시작] deltaX:', e.deltaX, 'deltaY:', e.deltaY);
       }
     });
     
@@ -206,7 +212,12 @@ class Calendar {
     // 터치 중단 시 리셋
     this.hammer.on('pancancel', (e) => {
       if (this.isPanning) {
-        console.log('❌ [스와이프 취소]');
+        console.log('❌ [스와이프 취소]', {
+          deltaX: e.deltaX,
+          deltaY: e.deltaY,
+          velocityX: e.velocityX,
+          velocityY: e.velocityY
+        });
         this.resetSwipeState();
       }
     });
