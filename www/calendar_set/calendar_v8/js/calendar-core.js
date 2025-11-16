@@ -228,6 +228,18 @@ class Calendar {
 
     html += '</div>';
     this.container.innerHTML = html;
+    
+    // 헤더 높이 측정 후 이벤트 컨테이너 위치 조정
+    requestAnimationFrame(() => {
+      const headerElement = this.container.querySelector('.day-header');
+      if (headerElement) {
+        const headerHeight = headerElement.getBoundingClientRect().height;
+        const eventContainers = this.container.querySelectorAll('.day-events-container');
+        eventContainers.forEach(container => {
+          container.style.paddingTop = `${headerHeight}px`;
+        });
+      }
+    });
   }
 
   renderMonthView() {
