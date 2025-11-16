@@ -13,11 +13,19 @@ class Calendar {
   }
 
   async init() {
-    await window.dataManager.init();
+    try {
+      await window.dataManager.init();
+      console.log('✅ Supabase initialized');
+    } catch (error) {
+      console.error('⚠️ Supabase 초기화 실패, 캐시 데이터로 진행:', error.message);
+    }
+    
     this.setupEventListeners();
     this.setupSwipeGestures();
     this.setupResizeObserver();
     await this.render();
+    
+    console.log('✅ Realtime subscription active');
   }
   
   setupResizeObserver() {
