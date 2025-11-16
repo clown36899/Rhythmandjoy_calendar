@@ -214,27 +214,13 @@ class Calendar {
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
       
-      // Build lane map for this day (only rooms with events)
-      const roomsThisDay = [...new Set(dayEvents.map(e => e.roomId))].sort();
-      const laneMap = {};
-      const roomOrder = ['a', 'b', 'c', 'd', 'e'];
-      
-      // Filter to only rooms that have events this day, keeping original order
-      const activeLanes = roomOrder.filter(r => roomsThisDay.includes(r));
-      activeLanes.forEach((roomId, idx) => {
-        laneMap[roomId] = {
-          index: idx,
-          total: activeLanes.length
-        };
-      });
-      
       // Create event container for this day
       const gridColumn = dayIndex + 2;
       html += `<div class="day-events-container" style="grid-column: ${gridColumn};">`;
       
-      // Render events with per-day lane positioning
+      // Render events with fixed room positions
       dayEvents.forEach(event => {
-        html += this.renderWeekEvent(event, day, dayIndex, laneMap);
+        html += this.renderWeekEvent(event);
       });
       
       html += '</div>';
@@ -323,7 +309,7 @@ class Calendar {
     });
   }
 
-  renderWeekEvent(event, day, dayIndex, laneMap) {
+  renderWeekEvent(event) {
     const startHour = event.start.getHours();
     const startMin = event.start.getMinutes();
     const endHour = event.end.getHours();
@@ -334,16 +320,22 @@ class Calendar {
     const endPercent = ((endHour * 60 + endMin) / (24 * 60)) * 100;
     const height = endPercent - startPercent;
     
-    // Per-day lane positioning based on rooms active this day
-    const lane = laneMap[event.roomId];
-    const roomWidth = 100 / lane.total;
-    const left = (100 / lane.total) * lane.index;
+    // Fixed room positions: A=0-20%, B=20-40%, C=40-60%, D=60-80%, E=80-100%
+    const roomPositions = {
+      'a': { left: 0, width: 20 },
+      'b': { left: 20, width: 20 },
+      'c': { left: 40, width: 20 },
+      'd': { left: 60, width: 20 },
+      'e': { left: 80, width: 20 }
+    };
+    
+    const position = roomPositions[event.roomId];
     
     const roomName = CONFIG.rooms[event.roomId]?.name || event.roomId.toUpperCase();
     const displayTitle = event.title.length > 10 ? event.title.substring(0, 10) + '...' : event.title;
     
     return `<div class="week-event room-${event.roomId}" 
-                 style="top: ${startPercent}%; height: ${height}%; width: ${roomWidth}%; left: ${left}%;"
+                 style="top: ${startPercent}%; height: ${height}%; width: ${position.width}%; left: ${position.left}%;"
                  title="${roomName}: ${event.title}">
               <div class="event-room">${roomName}</div>
               <div class="event-title">${displayTitle}</div>
