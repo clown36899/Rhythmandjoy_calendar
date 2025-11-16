@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  
+  <title>리듬앤조이 일정표</title>
+  
+  <link rel="manifest" href="../full_ver7/manifest.json">
+  <link rel="apple-touch-icon" href="../full_ver7/img/logo.png">
+  
+  <link rel="stylesheet" href="css/calendar.css">
+</head>
+<body>
+  <div class="app-container">
+    <header class="calendar-header">
+      <button class="nav-btn" id="prevBtn">&lt;</button>
+      <h1 class="calendar-title" id="calendarTitle">11월</h1>
+      <button class="nav-btn" id="nextBtn">&gt;</button>
+      <button class="admin-btn" id="adminBtn" title="관리자 모드">⚙️</button>
+    </header>
+
+    <nav class="view-controls">
+      <button class="view-btn active" id="weekBtn">주간</button>
+      <button class="view-btn" id="monthBtn">월간</button>
+      <button class="view-btn" id="todayBtn">오늘</button>
+    </nav>
+
+    <main class="calendar-main" id="calendarContainer">
+      <div class="loading">로딩 중...</div>
+    </main>
+
+    <footer class="room-selector">
+      <button class="room-btn active" data-room="a" style="background-color: #F6BF26;">A홀</button>
+      <button class="room-btn active" data-room="b" style="background-color: rgb(87, 150, 200);">B홀</button>
+      <button class="room-btn active" data-room="c" style="background-color: rgb(129, 180, 186);">C홀</button>
+      <button class="room-btn active" data-room="d" style="background-color: rgb(125, 157, 106);">D홀</button>
+      <button class="room-btn active" data-room="e" style="background-color: #4c4c4c; color: #fff;">E홀</button>
+      <button class="room-btn" id="allRoomsBtn">ALL</button>
+    </footer>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <script src="../full_ver7/env.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/data-manager.js"></script>
+  <script src="js/calendar-core.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

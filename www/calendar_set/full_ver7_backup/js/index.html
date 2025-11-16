@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://code.jquery.com/jquery-latest.js"></script> 
+ 
+    <style>
+        /* The Modal (background) */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 999999; /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+            overflow: auto; /* Enable scroll if needed */
+            background-color: rgb(0,0,0); /* Fallback color */
+            background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+            
+        }
+    
+        /* Modal Content/Box */
+        .modal-content {
+            background-color: #fefefe;
+    margin: 5% auto;
+    padding: 5px;
+    border: 1px solid #888;
+    width: 80%;
+}                        
+        
+ 
+</style>
+
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset='utf-8'>
+
+  <script src='./packages/core/locales/ko.js'></script>
+  <link href='./packages/core/main.css' rel='stylesheet' />
+  <link href='./packages/daygrid/main.css' rel='stylesheet' />
+  <link href='./packages/list/main.css' rel='stylesheet' />
+  <script src='./packages/core/main.js'></script>
+  <script src='./packages/interaction/main.js'></script>
+  <script src='./packages/daygrid/main.js'></script>
+  <script src='./packages/list/main.js'></script>
+  <script src='./packages/google-calendar/main.js'></script>
+
+ 
+  <link href='./packages/timegrid/main.css' rel='stylesheet' />
+  <script src='./packages/timegrid/main.js'></script>
+  <script src='./dist/swipeCalendar.js'></script>
+
+  <link href='style.css' rel='stylesheet' />
+  <script src="./lib/jquery.js"></script>
+  <script src="./lib/jquery-ui.js"></script>
+  <script src="./js/jquery.calendar.js"></script>
+  <script src="./js/fullcalendar.js"></script>
+  <script src="./lib/timepicker/jquery-ui-sliderAccess.js"></script>
+  <script src="./lib/timepicker/jquery-ui-timepicker-addon.min.js"></script>
+  
+  <script src="./js/custom.js"></script>
+  <script src="./js/gcal.js"></script>
+  <script src="./js/g.map.js"></script>
+  <script src="http://maps.google.com/maps/api/js"></script>
+
+  <link type="text/css" rel="stylesheet" href="./menu/demo/css/demo.css" />
+  <link type="text/css" rel="stylesheet" href="./menu/dist/mmenu.css" />
+
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var calendarEl = document.getElementById('calendar');
+
+      calendar = new SwipeCalendar(calendarEl, {
+        // SwipeCalendar specific options
+        swipeLicenseKey: '9VHD7-R6WHI-MYE4S-KHDS8',
+        swipeEffect: 'slide',
+        swipeSpeed: 500,
+        swipeTitlePosition: '',
+
+        // FullCalendar options and callbacks
+        //height: 'parent',//
+        contentHeight: 'auto',
+        locale: 'ko',
+        nowIndicator: true,
+        
+        businessHours: false,
+        eventLimit: false, //현제시간표시
+        plugins: [ 'bootstrap', 'interaction', 'dayGrid', 'list', 'googleCalendar', 'timeGrid','jquery','fullcalendar','lib'],
+        header: {
+            left: 'dayGridMonth,timeGridWeek',
+            center:'title',
+            right: 'prev,today,next'
+        },
+  
+        views: {
+             timeGridWeek: { // name of view
+             columnHeaderFormat: {weekday: 'short', day: 'numeric', omitCommas: true }
+             },
+            
+         },
+        displayEventEnd:true,
+        eventTimeFormat:{
+                hour: '2-digit',
+                minute: '2-digit',
+                meridiem: false,
+                hour12 : false 
+                     },
+        
+        navLinks: true ,
+        slotEventOverlap: false,
+        allDaySlot: false,// true, fals
+        defaultView: 'dayGridMonth',
+        fixedWeekCount: false,
+        // THIS KEY WON'T WORK IN PRODUCTION!!!
+        // To make your own Google API key, follow the directions here:
+        // http://fullcalendar.io/docs/google_calendar/
+        googleCalendarApiKey: "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8"
+        , eventSources: [
+                {
+                    googleCalendarId: "lj8j85q4020jm556rmaa181r00@group.calendar.google.com"
+                    , className: "a"
+                    , color: "#F6BF26"
+                    , textColor: "#000000"
+                }
+          
+        ],
+
+        // US Holidays
+       windowResize: function(arg) {},
+
+        eventClick: function (info) {
+          var eventObj = info.event;
+          if (eventObj.url) {
+            alert(
+              '예약자 ' + eventObj.title + '.\n' + eventObj.start.getHours()+ ':' + '00' +'~' + eventObj.end.getHours()+ ':' + '00' 
+
+            );
+            info.jsEvent.preventDefault(); // prevents browser from following link in current tab.
+          } else {
+            alert('Clicked ' + eventObj.title);
+          }
+        },
+        
+        /*columnHeaderText: function(date) {
+	let weekList = ["일", "월", "화", "수", "목", "금", "토"];
+	return weekList[date.getDay()];
+},*/
+
+        loading: function (bool) {
+          document.getElementById('loading').style.display =
+            bool ? 'block' : 'none';
+        },
+        titleFormat: function(date) {
+	return `A홀 ${date.date.month + 1}월`;
+        }//타이틀
+        }); 
+
+      function closeModal() {
+            calendarEventModal.style.display = "none";
+        }
+        
+
+        
+      function scheduleChoice(num, id, distinct, color, text) {
+      if (jQuery(".swingBar").eq(num).is(":checked")) {
+        jQuery("#calendar").fullCalendar("addEventSource", { googleCalendarId: id, className: distinct, color: color, textColor: text });
+      } else {
+        jQuery("#calendar").fullCalendar("removeEventSource", { googleCalendarId: id });
+      }
+    }//이거애들따로나타났다들어갔다
+ 
+      calendar.render();
+    });
+    
+    
+  </script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+  <script src="../js/cookie.js"></script>
+</head>
+
+<body>
+        <!-- The Modal -->
+        <div id="myModal" class="modal">
+ 
+            <!-- Modal content -->
+            <div class="modal-content">
+                      <img src="./img/1234ed.jpg" style="width: 100%;display: block;margin: 0px auto;" alt="">
+                      
+                      <div style="    box-shadow: inset 0px 1px 0px 0px #ffffff;
+                      background: linear-gradient(to bottom, #f9f9f9 5%, #e9e9e9 100%);
+                      background-color: #f9f9f9;
+                      border-radius: 6px;
+                      border: 1px solid #dcdcdc;
+                      display: inline-block;
+                      cursor: pointer;
+                      color: #666666;
+                      font-family: Arial;
+                      font-size: 15px;
+                      font-weight: bold;
+                      /* padding: 6px 24px; */
+                      text-decoration: none;
+                      text-shadow: 0px 1px 0px #ffffff;
+                      /* margin: auto; */
+                      display: block;
+                      text-align: center;
+                      margin-bottom: 5px;">
+                        <a href="sms:+01048017180" class="myButton">장기문의 : 010-4801-7180</a>
+                      </div>
+                     
+                      <div style="cursor:pointer;background-color:#DDDDDD;text-align: center;padding-bottom: 10px;padding-top: 10px;" onClick="close_pop();">
+                    
+                    <span class="pop_bt" style="font-size: 13pt;" >
+                           닫기
+                           <a href="javascript:closePopup();">닫기</a>
+	<a href="javascript:closePopupToday()">오늘하루닫기</a>
+                      </span>
+                  </div>
+            </div>
+       
+          </div>
+              <!--End Modal-->
+       
+       
+          <script type="text/javascript">
+            
+              jQuery(document).ready(function() {
+                      $('#myModal').show();
+              });
+              //팝업 Close 기능
+              function close_pop(flag) {
+                   $('#myModal').hide();
+              };
+              
+            </script>
+       
+      
+      
+    
+    <div id="page">
+        <div class="header">
+           <!--<a href="https://rhythmandjoy.modoo.at/"><span>Home</span></a>->일정확인->예약하러가기--> 
+           <div id='selectmain_main'>
+            <div class="select_main" >
+                        <a href="https://rhythmandjoy.modoo.at/" target="_self">R&J 홈</a>     
+            </div>
+           <div class="select_main_c" >→</div>
+            <div class="select_main_b" >
+                        <a  href="http://rhythmandjoy.cafe24.com/Simple3/" target="_self">일정확인  </a> 
+            </div>
+            <div class="select_main_c" >→</div>
+            <a href="https://booking.naver.com/booking/10/bizes/397513">
+              <div class="nsc">
+                <img src=./img/ccca.png width="10px"> 예약하러가기
+        
+              </div>
+            </a>        
+          </div>
+        </div>  
+    </div>
+
+  
+
+
+
+<div id='selectmain'>
+        <div class="select" style="background-color:#F6BF26;color:#000000;">
+                    <a href="./index.html" target="_self">A15평    </a>     
+        </div>
+        <div class="select" style="background-color:#616161;color:#000000;">
+                    <a href="./b.html" target="_self">B10평  </a> 
+        </div>
+        <div class="select" style="background-color:#039BE5;color:#000000;">
+                    <a href="./c.html" target="_self">C25평   </a> 
+        </div>
+        <div class="select" style="background-color:#de0088;color:#000000;">
+            <a href="./r.html" target="_self">조명   </a> 
+        </div>
+        <div class="select" style="background-color:#039BE5;color:#000000;">
+                    <a href="./a.html" target="_self">통합   </a> 
+        </div>
+  </div>
+
+
+
+ 
+  
+  <div id='calendar-container'>
+     <div id='calendar'></div>
+  </div>
+
+  <div id='loading'>loading...</div>
+  <!--<div id="clock" style="color:gray;bottom:10px;">00:00</div>-->
+  <script>
+  
+  
+  var clockTarget = document.getElementById("clock");
+  
+  
+  function clock() {
+      var date = new Date();
+  
+      // date Object를 받아오고 
+      var month = date.getMonth();
+  
+      // 달을 받아옵니다 
+      var clockDate = date.getDate();
+  
+      // 몇일인지 받아옵니다 
+      var day = date.getDay();
+  
+      // 요일을 받아옵니다. 
+      var week = ['일', '월', '화', '수', '목', '금', '토'];
+  
+      // 요일은 숫자형태로 리턴되기때문에 미리 배열을 만듭니다. 
+      var hours = date.getHours();
+  
+      // 시간을 받아오고 
+      var minutes = date.getMinutes();
+  
+      // 분도 받아옵니다.
+      var seconds = date.getSeconds();
+  
+      // 초까지 받아온후 
+      clockTarget .innerText = `${month+1}월 ${clockDate}일 ${week[day]}요일` +
+  
+      `${hours < 10 ? `0${hours}` : hours}:${minutes < 10 ? `0${minutes }`  : minutes }:${seconds < 10 ? `0${seconds }`  : seconds }`;
+  
+      // 월은 0부터 1월이기때문에 +1일을 해주고 
+  
+      // 시간 분 초는 한자리수이면 시계가 어색해보일까봐 10보다 작으면 앞에0을 붙혀주는 작업을 3항연산으로 했습니다. 
+  }
+  
+  
+  
+  function init() {
+  
+  clock();
+  
+  // 최초에 함수를 한번 실행시켜주고 
+  setInterval(clock, 1000);
+  
+  // setInterval이라는 함수로 매초마다 실행을 해줍니다.
+  
+  // setInterval은 첫번째 파라메터는 함수이고 두번째는 시간인데 밀리초단위로 받습니다. 1000 = 1초 
+  
+  }
+  init();
+  
+  
+  </script>
+</body>
+
+</html>

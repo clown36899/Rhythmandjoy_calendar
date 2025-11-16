@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-T8EYR28L8V"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+
+    gtag('config', 'G-T8EYR28L8V');
+  </script>
+
+
+  <!-- Google Tag Manager -->
+  <script>(function (w, d, s, l, i) {
+      w[l] = w[l] || []; w[l].push({
+        'gtm.start':
+          new Date().getTime(), event: 'gtm.js'
+      }); var f = d.getElementsByTagName(s)[0],
+        j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+          'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    })(window, document, 'script', 'dataLayer', 'GTM-KSDF78ZT');</script>
+  <!-- End Google Tag Manager -->
+
+
+
+
+
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <!-- 캐쉬무효화 코드 -->
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#2f2f2f" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="#2f2f2f" />
+  <meta name="msapplication-navbutton-color" content="#2f2f2f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <!-- <meta name="apple-mobile-web-app-status-bar-style" content="black" /> -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="리듬앤조이" />
+  <link rel="apple-touch-icon" href="img/logo.png" />
+
+  <link href="offcanvas-navbar.css" rel="stylesheet" />
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+  <title>Rhythmjoy</title>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8" />
+  <script src="https://code.jquery.com/jquery-latest.js"></script>
+  <link href="./packages/core/main.css" rel="stylesheet" />
+  <link href="./packages/daygrid/main.css" rel="stylesheet" />
+  <link href="./packages/list/main.css" rel="stylesheet" />
+
+  <script src="./packages/core/main.js"></script>
+  <script src="./packages/interaction/main.js"></script>
+  <script src="./packages/daygrid/main.js"></script>
+  <script src="./packages/list/main.js"></script>
+  <script src="./packages/google-calendar/main.js"></script>
+  <script src="./packages/core/locales/ko.js"></script>
+
+  <link href="style.css" rel="stylesheet" />
+  <link href="./packages/timegrid/main.css" rel="stylesheet" />
+ 
+  <link href="./home_infopage/popup.css" rel="stylesheet" type="text/css" />
+
+  <script src="./packages/timegrid/main.js"></script>
+  <script src="./dist/swipeCalendar.js"></script>
+
+  <!-- <link type="text/css" rel="stylesheet" href="./menu/demo/css/demo.css" />
+<link type="text/css" rel="stylesheet" href="./menu/dist/mmenu.css" /> -->
+
+  <script src="./lib/jquery.js"></script>
+  <script src="./lib/jquery-ui.js"></script>
+  <script src="./js/jquery.calendar.js"></script>
+  <script src="./lib/timepicker/jquery-ui-sliderAccess.js"></script>
+  <script src="./lib/timepicker/jquery-ui-timepicker-addon.min.js"></script>
+
+  <script src="./js/custom.js"></script>
+  <script src="home_infopage/open_popup.js"></script>
+
+  <script src="config-loader.js"></script>
+  <script type="module" src="supabase-realtime.js"></script>
+  <script src="fullcal-supabase-adapter.js"></script>
+
+  <script>
+    let vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty("--vh", vh + "px");
+    window.addEventListener("resize", function () {
+      let vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty("--vh", vh + "px");
+    });
+  </script>
+
+  <meta name="viewport" content="width=device-width" />
+  <!--딜레이를 제거하는기능-->
+</head>
+
+<body oncontextmenu="return false" onselectstart="return false" ondragstart="return false">
+
+  <!-- Google Tag Manager (noscript) -->
+  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KSDF78ZT" height="0" width="0"
+      style="display:none;visibility:hidden"></iframe></noscript>
+  <!-- End Google Tag Manager (noscript) -->
+
+
+
+  <modallogo class="logobackground">
+    <div class="center-modal">
+      <img id="logoimga" src="./img/logo.png" alt="" />
+      <div class="timelogo" style="text-align: center">
+        <span id="clock" style="color: gray">clock</span>
+        <span id="apm" style="color: gray"></span>
+        <i id="adminIcon" class="fa-solid fa-gear" style="color: gray; font-size: 14px; margin-left: 8px; cursor: pointer; opacity: 0.5; transition: opacity 0.2s;"></i>
+      </div>
+    </div>
+  </modallogo>
+
+  <!-- 내부 팝업용 오버레이 -->
+  <div id="innerPopupOverlay" class="popup-overlay" style="display: none; z-index: 10002;"></div>
+
+  <!-- 내부 팝업 박스 -->
+  <div id="innerPopupBox" class="popup" style="display: none; z-index: 10003;">
+    <div id="innerPopupContent"></div>
+  </div>
+
+
+
+  <!-- 팝업 배경 -->
+  <div id="popupOverlay" class="popup-overlay" style="display: none;"></div>
+
+  <!-- 팝업 박스 -->
+  <div id="popupBox" class="popup" style="display: none;">
+    <div id="popupContent"></div>
+  </div>
+
+
+
+  <div id="main_room_title"></div>
+  <div id="calendarWrapper" style="width: 100%; height: 100%;">
+  <div id="calendarAll" class="itemflex"></div>
+
+    <!-- ✅ 새로 추가: 오른쪽 영역 iframe -->
+    <iframe 
+      id="sideFrame"
+      src="https://voluble-mochi-a91544.netlify.app/" 
+      style="flex: 1; border: none; width: 33.33%; height: 100%; background: #111; right: 0;position: absolute;z-index: 9;border-left: 1px solid #5e5e5e;"
+    ></iframe>
+  </div>
+  <div class="offcanvas offcanvas-end text-bg-dark" tabindex="-1" id="offcanvasDarkNavbar"
+    aria-labelledby="offcanvasDarkNavbarLabel">
+    <div class="offcanvas-header">
+
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <!-- 이곳은 좌측 홈페이지 구역입니다 -->
+    <div class="offcanvas-body-1000" id="homepage-section">
+
+    </div>
+    <div class="offcanvas-body-2000" id="homepage-section_mobile" style="    overflow: scroll;">
+
+    </div>
+    <!-- 여기까지가 좌측 홈페이지구역 -->
+    <div class="offcanvas-body">
+      <ul class="navbar-nav justify-content-end flex-grow-1 pe-3">
+        <!-- <li class="nav-item">
+         <a class="nav-link active" aria-current="page" href="http://리듬앤조이일정표.com" target="_blank">초기화면</a>
+        </li> -->
+
+        <li class="nav-item nav_line">
+          <a class="nav-link active" aria-current="page" href="info.html">📱 예약정보 (예약방법/시설안내/주의사항)</a>
+        </li>
+
+        <li class="nav-item nav_line">
+          <a class="nav-link active" aria-current="page" href="https://naver.me/GMmI6eUr" target="_blank">예약
+            바로가기(네이버예약)</a>
+        </li>
+
+        <li class="nav-item nav_line">
+          <a class="nav-link active" aria-current="page" href="https://blog.naver.com/clown313" target="_blank">홈페이지</a>
+        </li>
+
+        <li class="nav-item nav_line" style="font-size: 2vh">
+          <span>*새벽통대관은 가격,일정표 확인후 문자문의*</span>
+        </li>
+        <li class="nav-item">
+          <button onclick="copy()" class="copyTxt2">COPY</button>
+          <input type="text" value="01048017180" class="copyTxt1" id="copyTxt" readonly />
+        </li>
+
+        <li class="nav-item" style="width: 70%;">
+          <span class="nav-link">요금</span>
+          <img src="./pay_list.png" alt="" class="nav_image_pop" />
+        </li>
+        <li class="nav-item">
+          <span class="nav-link">도면</span>
+          <img src="./도면_1.png" alt="" class="nav_image_pop" />
+        </li>
+
+        <br />
+        <br />
+
+ 
+      </ul>
+    </div>
+  </div>
+  <div class="bottomtop">
+    <nav class="navbar navbar-dark bg-dark fixed-top" id="fixed-top">
+      <div class="container-fluid">
+        <div class="logoimg" oncontextmenu="return false">
+          <img src="img/logo.png" style="width: 100%; height: 100%; object-fit: cover" alt=""
+            oncontextmenu="return false" />
+        </div>
+        <div class="navbar-brand" oncontextmenu="return false">
+          <div class="titlerhy" style="float: left">리듬앤조이 연습실</div>
+        </div>
+
+        <div>
+          <div style="display: flex">
+            <span id="titleMonth"></span>
+          </div>
+        </div>
+
+
+      </div>
+      <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasDarkNavbar"
+        aria-controls="offcanvasDarkNavbar">
+        <span class="navbar-toggler-icon">▶️ 예약,정보</span>
+      </button>
+    </nav>
+    <div id="loading_bar_base_a">
+      <div id="bar_btn">
+        <div class="bar-line"></div>
+        <div class="bar-line"></div>
+      </div>
+      <div id="bottom">
+
+
+
+        <div style="display: flex;justify-content: space-around;">
+          <div id="roombtnn" style="display: flex;align-items: flex-end;margin: 0 25px 0 0;">
+            <!-- ✅ 룸 버튼들 -->
+
+            <div style="display: flex;flex-direction: column;align-items: center;">
+              <label class="toggle-switch-vertical">
+                <input type="checkbox" class="room-toggle" value="a" checked>
+                <span class="slider"></span>
+              </label>
+              <button style="background-color: #F6BF26;" class="room-btn" id="Abtn_pick_oneroom">A</button>
+            </div>
+
+            <div style="display: flex;flex-direction: column;align-items: center;">
+              <label class="toggle-switch-vertical">
+                <input type="checkbox" class="room-toggle" value="b" checked>
+                <span class="slider"></span>
+              </label>
+              <button style="background-color: rgb(87, 150, 200);" class="room-btn" id="Bbtn_pick_oneroom">B</button>
+            </div>
+            <div style="display: flex;flex-direction: column;align-items: center;">
+              <label class="toggle-switch-vertical">
+                <input type="checkbox" class="room-toggle" value="c" checked>
+                <span class="slider"></span>
+              </label>
+              <button style="background-color: rgb(129, 180, 186);" class="room-btn" id="Cbtn_pick_oneroom">C</button>
+            </div>
+            <div style="display: flex;flex-direction: column;align-items: center;">
+              <label class="toggle-switch-vertical">
+                <input type="checkbox" class="room-toggle" value="d" checked>
+                <span class="slider"></span>
+              </label>
+              <button style="background-color: rgb(125, 157, 106);" class="room-btn" id="Dbtn_pick_oneroom">D</button>
+            </div>
+            <div style="display: flex;flex-direction: column;align-items: center;">
+              <label class="toggle-switch-vertical">
+                <input type="checkbox" class="room-toggle" value="e" checked>
+                <span class="slider"></span>
+              </label>
+              <button style="background-color: #4c4c4c;" class="room-btn" id="Ebtn_pick_oneroom">E</button>
+            </div>
+            <div style="display: flex;flex-direction: column;align-items: center;">
+              <label style="visibility: hidden;" class="toggle-switch-vertical">
+                <input type="checkbox" class="room-toggle" value="e" checked>
+                <span class="slider"></span>
+              </label>
+              <button style="background-color: #525252;" class="room-btn" id="ALLbtn_pick_oneroom">ALL</button>
+            </div>
+
+
+
+          </div>
+
+          <div class="jo-right">
+
+
+            <div class="fc-button-group">
+              <button type="button" id="monthview" class="fc-prev-button fc-button fc-button-primary fc-corner-left"
+                aria-label="이전달">
+                <span>월</span>
+              </button>
+
+              <button type="button" id="weekview" class="fc-prev-button fc-button fc-button-primary fc-corner-left"
+                aria-label="이전달">
+                <span>주</span>
+              </button>
+            </div>
+
+
+
+            <div class="fc-button-group" style="display: flex;
+                      flex-direction: column;
+                      flex-wrap: wrap;
+                      height: 4.5rem;
+                      align-items: flex-end;
+                      bottom: 0px;
+                      justify-content: space-between;">
+              <div>
+                <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas"
+                  data-bs-target="#offcanvasDarkNavbar" aria-controls="offcanvasDarkNavbar">
+                  <span class="navbar-toggler-icon">예약</span>
+                </button>
+              </div>
+              <div class="fc-button-group">
+                <button type="button" id="prev" class="fc-prev-button fc-button fc-button-primary fc-corner-left"
+                  aria-label="이전달">
+                  <span class="fc-icon fc-icon-chevron-left"></span>
+                </button>
+                <button type="button" id="todaybtn"
+                  class="fc-today-button fc-button fc-button-primary fc-state-disabled">
+                  <span>오늘</span>
+                </button>
+                <button type="button" id="nextbtn" class="fc-next-button fc-button fc-button-primary fc-corner-right"
+                  aria-label="다음달">
+                  <span class="fc-icon fc-icon-chevron-right"></span>
+                </button>
+              </div>
+            </div>
+
+
+
+
+
+
+          </div>
+        </div>
+
+        <!-- ✅ 슬라이드 외부 회색 배경 -->
+
+
+        <!-- ✅ 달력 영역 -->
+        <!-- <div id="calendarAll"></div> -->
+      </div>
+    </div>
+
+  </div>
+
+  <!-- <div id="back_gray" class="back_gray"></div> -->
+  </div>
+
+
+  <div id="popupBackdrop" class="popup-backdrop hidden"></div>
+
+
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      fetch('home_infopage/homepage-section.html')
+        .then(response => response.text())
+        .then(html => {
+          document.querySelector('.offcanvas-body-1000').innerHTML = html;
+        })
+        .catch(error => {
+          console.error('외부 HTML 로드 실패:', error);
+        });
+    });
+    window.addEventListener('DOMContentLoaded', () => {
+      fetch('home_infopage/homepage-section_mobile.html')
+        .then(response => response.text())
+        .then(html => {
+          const container = document.querySelector('.offcanvas-body-2000');
+          container.innerHTML = html;
+          
+          // script 태그를 수동으로 실행
+          const scripts = container.querySelectorAll('script');
+          scripts.forEach(oldScript => {
+            const newScript = document.createElement('script');
+            Array.from(oldScript.attributes).forEach(attr => {
+              newScript.setAttribute(attr.name, attr.value);
+            });
+            newScript.textContent = oldScript.textContent;
+            oldScript.parentNode.replaceChild(newScript, oldScript);
+          });
+          
+          // ✅ HTML 로드 완료 후 딥링크 처리
+          setTimeout(() => {
+            initializeDeepLinking();
+          }, 150);
+        })
+        .catch(error => {
+          console.error('외부 HTML 로드 실패:', error);
+        });
+    });
+    
+    // 🔗 안정적인 딥링크 시스템
+    function initializeDeepLinking() {
+      const offcanvasElement = document.getElementById('offcanvasDarkNavbar');
+      if (!offcanvasElement) return;
+      
+      // 🔹 URL 쿼리로 섹션 자동 열기
+      function openFromURL() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const section = urlParams.get('section');
+        
+        if (section) {
+          // getOrCreateInstance로 중복 인스턴스 방지 (안정성 개선)
+          const bsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasElement);
+          bsOffcanvas.show();
+          
+          // 오프캔버스가 완전히 열린 후 섹션 표시
+          offcanvasElement.addEventListener('shown.bs.offcanvas', function onShown() {
+            if (window.openSectionFromURL) {
+              window.openSectionFromURL();
+            }
+            offcanvasElement.removeEventListener('shown.bs.offcanvas', onShown);
+          }, { once: true });
+          
+          console.log(`✅ 딥링크 자동 열기: ${section}`);
+        }
+      }
+      
+      // 🔹 오프캔버스 닫기 시 URL 정리
+      offcanvasElement.addEventListener('hidden.bs.offcanvas', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('section')) {
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, '', cleanUrl);
+          console.log('✅ 오프캔버스 닫힘 - URL 정리');
+        }
+      });
+      
+      // 🔹 뒤로가기/앞으로가기 버튼 대응 (안정성 개선)
+      window.addEventListener('popstate', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const section = urlParams.get('section');
+        const instance = bootstrap.Offcanvas.getInstance(offcanvasElement);
+        
+        if (section && !instance) {
+          // 쿼리 파라미터 있는데 닫혀있으면 열기
+          openFromURL();
+        } else if (!section && instance && offcanvasElement.classList.contains('show')) {
+          // 쿼리 파라미터 없는데 열려있으면 닫기
+          instance.hide();
+          console.log('✅ 뒤로가기 - 오프캔버스 닫기');
+        }
+      });
+      
+      // 초기 실행
+      openFromURL();
+    }
+  </script>
+  <script>
+
+    // const slideMenu = document.getElementById("roomSlideMenu");
+    const bottom = document.getElementById("bottom");
+    const loading_bar_base_a = document.getElementById("loading_bar_base_a");
+
+    const backGray = document.getElementById("back_gray");
+    const calendarArea = document.getElementById("calendarAll");
+
+    let isOpen = false;
+
+    // ✅ 버튼 클릭 시 메뉴 열기
+
+
+    const barBtn = document.getElementById("bar_btn");
+    const fc_buttons = document.querySelectorAll(".fc-button");
+
+
+    let isBottomOpen = false; // 상태 추적
+
+    loading_bar_base_a.addEventListener("click", (e) => {
+      // 만약 fc-button이 클릭된 경우엔 무시
+      if ([...fc_buttons].some(btn => btn.contains(e.target))) {
+        return;
+      }
+      console.log("✅ 바 버튼 클릭됨");
+
+      if (isBottomOpen) {
+        console.log("✅ 바 버튼 클릭됨1");
+        bottom.classList.remove("show");
+
+        // ❌ 닫힐 때: 토글 스위치 숨기기
+        document.querySelectorAll(".toggle-switch-vertical").forEach(label => {
+          label.classList.remove("show-toggle");
+        });
+
+      } else {
+        bottom.classList.add("show");
+
+        // ✅ 열릴 때: 토글 스위치 보이기
+        document.querySelectorAll(".toggle-switch-vertical").forEach(label => {
+          label.classList.add("show-toggle");
+        });
+      }
+
+      isBottomOpen = !isBottomOpen; // 상태 반전
+    });
+
+
+
+    document.querySelectorAll(".room-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        bottom.classList.add("show");
+
+        // slideMenu.classList.add("show");
+
+        // backGray.classList.add("show");
+
+        document.querySelectorAll(".toggle-switch-vertical").forEach(label => {
+          label.classList.add("show-toggle");
+        });
+
+        isBottomOpen = true;
+      });
+    });
+
+    function close_bottom() {
+      bottom.classList.remove("show");
+      // slideMenu.classList.remove("show");
+      // backGray.classList.remove("show");
+      // 먼저 모든 토글 숨기고
+      document.querySelectorAll(".toggle-switch-vertical").forEach(el => {
+        el.classList.remove("show-toggle");
+      });
+      isBottomOpen = false;
+
+    }
+
+    let startX = 0;
+    let endX = 0;
+    // 모바일용
+    calendarArea.addEventListener("touchstart", function (e) {
+      startX = e.touches[0].clientX;
+    });
+    calendarArea.addEventListener("touchend", function (e) {
+      endX = e.changedTouches[0].clientX;
+      handleSwipe(endX - startX);
+    });
+
+    // 데스크탑용
+    calendarArea.addEventListener("mousedown", function (e) {
+      startX = e.clientX;
+    });
+    calendarArea.addEventListener("mouseup", function (e) {
+      endX = e.clientX;
+      handleSwipe(endX - startX);
+    });
+
+    function handleSwipe(diffX) {
+      if (Math.abs(diffX) > 30) {
+        console.log(diffX > 0 ? "➡️ 오른쪽 스와이프" : "⬅️ 왼쪽 스와이프");
+
+        document.querySelectorAll(".toggle-switch-vertical").forEach(el => {
+          el.classList.remove("show-toggle");
+        });
+        bottom.classList.remove("show");
+        isBottomOpen = false;
+      }
+    }
+    // // // // ✅ 회색 배경 클릭 시 닫기
+    // backGray.addEventListener("click", () => {
+
+    //   bottom.classList.remove("show");
+    //   // slideMenu.classList.remove("show");
+    //   backGray.classList.remove("show");
+    //   // 먼저 모든 토글 숨기고
+    //   document.querySelectorAll(".toggle-switch-vertical").forEach(el => {
+    //   el.classList.remove("show-toggle");
+    // });
+    //   isOpen = false;
+    // });
+    document.querySelectorAll(".room-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        // 다른 버튼 active 제거
+        document.querySelectorAll(".room-btn").forEach(b => b.classList.remove("active"));
+
+        // 현재 버튼에 active 부여
+        btn.classList.add("active");
+      });
+    });
+
+    document.querySelectorAll(".room-toggle").forEach(input => {
+      input.addEventListener("change", () => {
+        const roomKey = input.value.toUpperCase(); // 예: 'A', 'B'
+        const btn = document.getElementById(`${roomKey}btn_pick_oneroom`);
+        if (input.checked) {
+          btn.classList.add("active");
+        } else {
+          btn.classList.remove("active");
+        }
+      });
+    });
+
+  </script>
+
+
+
+
+  <script>
+    const aroom_name = "all"
+    const roomKeys_other = ['a', 'b', 'c', 'd', 'e', 'all'];
+
+    roomKeys_other.forEach(key => {
+      const upperKey = key.toUpperCase();
+      const btn_pickk = document.getElementById(`${upperKey}btn_pick_oneroom`);
+      if (btn_pickk) {
+        btn_pickk.addEventListener("click", function () {
+          console.log(`${upperKey} 버튼 클릭됨`);
+          select_room_btn_function(key);
+          console.log(key, ` ???`);
+        });
+      }
+    });
+  </script>
+
+  <script>
+    // JS에서 alert 대신 이걸 호출
+    function showEventPopup(message) {
+      const popup = document.getElementById("eventPopup");
+      const content = document.getElementById("eventPopupContent");
+      content.innerText = message;
+      popup.style.display = "flex";
+
+      // 아무데나 클릭하면 닫힘
+      popup.onclick = function () {
+        popup.style.display = "none";
+      };
+    }
+
+
+    document.getElementById("monthview").addEventListener("click", function () {
+      calendar.changeView("dayGridMonth");
+      //기능설명 풀캘린더에서 쓸수있는 기능 찾는 코드
+      console.log(Object.getOwnPropertyNames(Object.getPrototypeOf(calendar?._curCal)));
+    
+
+    });
+
+    document.getElementById("weekview").addEventListener("click", function () {
+      calendar.changeView("timeGridWeek");
+  
+    });
+
+    document.getElementById("prev").addEventListener("click", function () {
+      calendar.prev();
+    
+      close_bottom()
+    });
+    document.getElementById("todaybtn").addEventListener("click", function () {
+      calendar.today();
+      console.log(Object.getOwnPropertyNames(Object.getPrototypeOf(calendar)));
+     
+      close_bottom()
+    });
+    document.getElementById("nextbtn").addEventListener("click", function () {
+      calendar.next();
+      close_bottom()
+     
+
+    });
+
+
+    function closeRoomMenu() {
+      const slideMenu = document.getElementById("roomSlideMenu");
+      const toggleBtn = document.getElementById("roomToggleBtn");
+
+      // slideMenu.classList.remove("show");
+      if (toggleBtn) {
+        toggleBtn.innerHTML = "룸 선택 ▼";
+      }
+      isOpen = false;
+    }
+  </script>
+
+  <!-- <div id='loading'>loading...</div> -->
+  <script>
+    var clockTarget = document.getElementById("clock");
+    function clock() {
+      var date = new Date();
+
+      // date Object를 받아오고
+      var month = date.getMonth();
+
+      // 달을 받아옵니다
+      var clockDate = date.getDate();
+
+      // 몇일인지 받아옵니다
+      var day = date.getDay();
+
+      // 요일을 받아옵니다.
+      var week = ["일", "월", "화", "수", "목", "금", "토"];
+
+      // 요일은 숫자형태로 리턴되기때문에 미리 배열을 만듭니다.
+      var hours = date.getHours();
+
+      // 시간을 받아오고
+      var minutes = date.getMinutes();
+
+      // 분도 받아옵니다.
+      var seconds = date.getSeconds();
+
+      // 초까지 받아온후
+
+      // 월은 0부터 1월이기때문에 +1일을 해주고
+
+      // 시간 분 초는 한자리수이면 시계가 어색해보일까봐 10보다 작으면 앞에0을 붙혀주는 작업을 3항연산으로 했습니다.
+    }
+    function init() {
+      clock();
+      setInterval(clock, 1000);
+    }
+    init();
+  </script>
+  <script>
+    //     window.onresize = function() {
+
+    //       calendar.render();
+
+    // }
+    $(document).ready(function () {
+      setTimeout(scrollTo, 0, 0, 1);
+    });
+
+    function AbuttonBarPoint() {
+      var menubar = document.getElementById("loading_bar");
+      var btnAleft = document.getElementById("btnAg").getBoundingClientRect().left; //버튼위치값
+      var barWidth = document.getElementById("loading_bar").clientWidth; //바의 넓이
+      var btnAleftwidth = document.getElementById("btnAg").clientWidth; //버튼넓이
+      var bar_baseWidth = document.getElementById("loading_bar_base").clientWidth; //바베이스넓이
+      var windowWidth = window.innerWidth;
+
+      var leftA = (btnAleft / windowWidth) * 100; //현제위치%
+      var barA = (btnAleftwidth / windowWidth) * 100; //바의사이즈%
+      var barAw = (btnAleftwidth / windowWidth) * 100; //바배경전체사이즈%
+      // 자식/부모*100+"%"
+      document.getElementById("loading_bar").style.width = btnAleftwidth + "px";
+      if (bar_baseWidth < 700) {
+        menubar.style.left = leftA - barA / 2 + barAw / 2 + "%"; //모바일
+      } else {
+        menubar.style.left = btnAleft + "px"; //데스크탑
+      }
+    }
+
+    function BbuttonBarPoint() {
+      var menubar = document.getElementById("loading_bar");
+      var btnBleft = document.getElementById("btnBg").getBoundingClientRect().left; //버튼위치값
+      var barWidth = document.getElementById("loading_bar").clientWidth; //바의 넓이
+      var btnBleftwidth = document.getElementById("btnBg").clientWidth; //버튼넓이
+      var bar_baseWidth = document.getElementById("loading_bar_base").clientWidth; //바베이스넓이
+      var windowWidth = window.innerWidth;
+
+      var leftB = (btnBleft / windowWidth) * 100; //현제위치%
+      var barB = (btnBleftwidth / windowWidth) * 100; //바의사이즈%
+      var barBw = (btnBleftwidth / windowWidth) * 100; //바배경전체사이즈%
+      // 자식/부모*100+"%"
+      document.getElementById("loading_bar").style.width = btnBleftwidth + "px";
+      if (bar_baseWidth < 700) {
+        menubar.style.left = leftB - barB / 2 + barBw / 2 + "%"; //모바일
+      } else {
+        menubar.style.left = btnBleft + "px"; //데스크탑
+      }
+    }
+    function CbuttonBarPoint() {
+      var menubar = document.getElementById("loading_bar");
+      var btnBleft = document.getElementById("btnCg").getBoundingClientRect().left; //버튼위치값
+      var barWidth = document.getElementById("loading_bar").clientWidth; //바의 넓이
+      var btnBleftwidth = document.getElementById("btnCg").clientWidth; //버튼넓이
+      var bar_baseWidth = document.getElementById("loading_bar_base").clientWidth; //바베이스넓이
+      var windowWidth = window.innerWidth;
+
+      var leftB = (btnBleft / windowWidth) * 100; //현제위치%
+      var barB = (btnBleftwidth / windowWidth) * 100; //바의사이즈%
+      var barBw = (btnBleftwidth / windowWidth) * 100; //바배경전체사이즈%
+      // 자식/부모*100+"%"
+      document.getElementById("loading_bar").style.width = btnBleftwidth + "px";
+      if (bar_baseWidth < 700) {
+        menubar.style.left = leftB - barB / 2 + barBw / 2 + "%"; //모바일
+      } else {
+        menubar.style.left = btnBleft + "px"; //데스크탑
+      }
+    }
+
+    function DbuttonBarPoint() {
+      var menubar = document.getElementById("loading_bar");
+      var btnBleft = document.getElementById("btnDg").getBoundingClientRect().left; //버튼위치값
+      var barWidth = document.getElementById("loading_bar").clientWidth; //바의 넓이
+      var btnBleftwidth = document.getElementById("btnDg").clientWidth; //버튼넓이
+      var bar_baseWidth = document.getElementById("loading_bar_base").clientWidth; //바베이스넓이
+      var windowWidth = window.innerWidth;
+
+      var leftB = (btnBleft / windowWidth) * 100; //현제위치%
+      var barB = (btnBleftwidth / windowWidth) * 100; //바의사이즈%
+      var barBw = (btnBleftwidth / windowWidth) * 100; //바배경전체사이즈%
+      // 자식/부모*100+"%"
+      document.getElementById("loading_bar").style.width = btnBleftwidth + "px";
+      if (bar_baseWidth < 700) {
+        menubar.style.left = leftB - barB / 2 + barBw / 2 + "%"; //모바일
+      } else {
+        menubar.style.left = btnBleft + "px"; //데스크탑
+      }
+    }
+
+    function EbuttonBarPoint() {
+      var menubar = document.getElementById("loading_bar");
+      var btnBleft = document.getElementById("btnEg").getBoundingClientRect().left; //버튼위치값
+      var barWidth = document.getElementById("loading_bar").clientWidth; //바의 넓이
+      var btnBleftwidth = document.getElementById("btnEg").clientWidth; //버튼넓이
+      var bar_baseWidth = document.getElementById("loading_bar_base").clientWidth; //바베이스넓이
+      var windowWidth = window.innerWidth;
+
+      var leftB = (btnBleft / windowWidth) * 100; //현제위치%
+      var barB = (btnBleftwidth / windowWidth) * 100; //바의사이즈%
+      var barBw = (btnBleftwidth / windowWidth) * 100; //바배경전체사이즈%
+      // 자식/부모*100+"%"
+      document.getElementById("loading_bar").style.width = btnBleftwidth + "px";
+      if (bar_baseWidth < 700) {
+        menubar.style.left = leftB - barB / 2 + barBw / 2 + "%"; //모바일
+      } else {
+        menubar.style.left = btnBleft + "px"; //데스크탑
+      }
+    }
+
+    function AllbuttonBarPoint() {
+      var menubar = document.getElementById("loading_bar");
+      var btnCleft = document.getElementById("btnallg").getBoundingClientRect().left;
+      var barWidth = document.getElementById("loading_bar").clientWidth; //바의 넓이
+      var btnCleftwidth = document.getElementById("btnallg").clientWidth; //버튼넓이
+      var bar_baseWidth = document.getElementById("loading_bar_base").clientWidth; //바베이스넓이
+
+      var leftC = (btnCleft / bar_baseWidth) * 100; //현제위치%
+      var barC = (btnCleftwidth / bar_baseWidth) * 100; //바의사이즈%
+      var barCw = (btnCleftwidth / bar_baseWidth) * 100; //바배경전체사이즈%
+      document.getElementById("loading_bar").style.width = btnCleftwidth + "px";
+      if (bar_baseWidth < 700) {
+        menubar.style.left = leftC - barC / 2 + barCw / 2 + "%";
+      } else {
+        menubar.style.left = btnCleft + "px";
+      }
+    }
+
+  </script>
+
+
+
+
+
+
+
+
+
+  <script src="./fullcal_02.js"></script>
+  <!-- 풀캘린더 js -->
+
+
+  <script>// ⭐ [새 함수: 월간 뷰 width 적용 로직 - datesRender와 resize 이벤트에서 모두 사용] ⭐
+   // ⭐ [새 함수: 월간 뷰 width 적용 로직 - datesRender와 resize 이벤트에서 모두 사용] ⭐
+function applyMonthViewWidth() {
+    // 캘린더 인스턴스가 존재하고 뷰 정보가 있는지 확인
+    if (typeof calendar === 'undefined' || !calendar || !calendar.view) {
+        return;
+    }
+    
+    const currentView = calendar.view;
+    const DESKTOP_THRESHOLD = 1000; 
+    const isLargeScreen = window.innerWidth > DESKTOP_THRESHOLD; // 1000px 초과인지 확인
+    
+    // 💡 수정된 선택자: 모든 슬라이드에서 캘린더 tbody 요소를 모두 가져옴
+    // SwipeCalendar는 기본 캘린더 외에 이전/다음 캘린더를 DOM에 미리 로드합니다.
+    // 따라서 #calendarAll 내부의 모든 뷰 컨테이너의 .fc-body를 선택합니다.
+    const tbodyEls = document.querySelectorAll("#calendarAll .fc-body"); 
+    
+    // 선택된 요소의 개수를 확인합니다. (기대값: 3개 또는 그 이상)
+    console.log(`⭐ 발견된 캘린더 tbody/fc-body 요소 개수: ${tbodyEls.length}개`);
+    
+    // 3개의 요소에 모두 스타일을 적용하기 위해 반복문을 사용합니다.
+    tbodyEls.forEach((tbodyEl, index) => {
+        // 스타일을 적용할 기본값 (초기화)
+        let newWidth = ''; 
+        let logMessage = '';
+
+        if (currentView.type === 'dayGridMonth') {
+            if (isLargeScreen) {
+                // 🟢 월간 뷰 AND 1000px 초과일 때 50% 적용
+                newWidth = '33.3%'; 
+                logMessage = `✅ 월간 뷰 (1000px 초과): 50% 적용`;
+            } else {
+                // 🟡 월간 뷰 AND 1000px 이하일 때 width 초기화 (100%로 동작)
+                newWidth = ''; 
+                logMessage = `✅ 월간 뷰 (1000px 이하): 초기화 (100%)`;
+            }
+        } else if (currentView.type === 'timeGridWeek') {
+            // 🔵 주간 뷰일 때는 항상 width 초기화 (100%로 동작)
+            newWidth = ''; 
+            logMessage = `✅ 주간 뷰: 초기화 (100%)`;
+        }
+
+        // 선택된 모든 요소에 스타일 적용
+        tbodyEl.style.width = newWidth;
+        // 가운데 정렬을 위해 margin-left/right auto 추가
+        tbodyEl.style.marginLeft = newWidth === '50%' ? 'auto' : '';
+        tbodyEl.style.marginRight = newWidth === '50%' ? 'auto' : '';
+
+        if (logMessage) {
+             console.log(`[${index + 1}번째 슬라이드] ${logMessage}`);
+        }
+    });
+
+    console.log(`⭐ 최종 적용 폭: ${window.innerWidth}px`);
+}
+    
+    
+    // ⭐ [디바운스 함수 정의] ⭐
+    function debounce(func, timeout = 100) {
+        let timer;
+        return (...args) => {
+            clearTimeout(timer);
+            timer = setTimeout(() => { func.apply(this, args); }, timeout);
+        };
+    }
+    
+    
+    // ⭐ [리사이즈 핸들러: 캘린더 업데이트 및 스타일 적용] ⭐
+    const handleResizeLog = debounce(() => {
+        const currentWidth = window.innerWidth;
+        // console.log(`↔️ 리사이즈 감지 (Debounce): Width = ${currentWidth}px`);
+    
+        if (typeof calendar !== 'undefined' && calendar && typeof calendar.render === 'function') {
+            // 1. FullCalendar 자체 렌더링/리사이즈 메서드 호출
+            calendar.render(); 
+    
+            // 2. 렌더링 후 스타일 적용 함수 호출 (지연 없이 즉시 호출)
+            applyMonthViewWidth(); 
+        }
+    }, 100); // 100ms 동안 리사이즈 멈춘 후 실행
+    
+    window.addEventListener('resize', handleResizeLog);
+    
+    console.log("✅ 리사이즈 감지 및 스타일 통합 리스너 등록 완료");
+    </script>
+
+
+
+  <script>
+    
+    var windowWidth = window.innerWidth;
+    var windowheight = window.innerHeight;
+    var calendarAllheight = document.querySelector("body").getBoundingClientRect().height;
+    var bottomheight = document.querySelector("#bottom").clientHeight;
+    var topnavheight = document.querySelector("#fixed-top").clientHeight;
+
+    function changehecon() { }
+
+
+
+
+    function timeloof() {
+      let timessss = setInterval(leftindicatortop, 500);
+    }
+    window.addEventListener("load", function () {
+
+
+      var view = calendar.view;
+      document.getElementById('titleMonth').innerHTML = view.title;
+      document.getElementById("titleMonth").style.color = "#029df7";
+
+
+      //leftindicatortop();
+      //timeloof();
+
+      window.addEventListener("change", function () {
+        //clearInterval(timessss);
+        //leftindicatortop();
+        //timeloof();
+
+      });
+    });
+  </script>
+</body>
+<script>
+  as = document.querySelector(".center-modal");
+
+  document.querySelector(".navbar-brand").addEventListener("click", function () {
+    document.querySelector(".logobackground").style.top = "calc(var(--vh, 1vh) * 0)";
+  });
+  document.querySelector(".logobackground").addEventListener("click", function () {
+    document.querySelector(".logobackground").style.top = "calc(var(--vh, 1vh) * -300)";
+  });
+
+  // document.querySelector(".navbar-brand").addEventListener("click", function(){
+  //   document.querySelector(".logobackground").style.top="calc(var(--vh, 1vh) * 0)";
+
+  // })
+  // document.querySelector(".navbar-brand").addEventListener("click", function(){
+  //   document.querySelector(".logobackground").style.top="calc(var(--vh, 1vh) * 0)";
+
+  // })
+  // document.querySelector("#fixed-top").addEventListener("click", function(){
+  //   document.querySelector(".logobackground").style.top="calc(var(--vh, 1vh) * -100)";
+
+  // })
+</script>
+
+<script>
+  var Target = document.getElementById("clock");
+  function clock() {
+    var time = new Date();
+
+    var month = time.getMonth();
+    var date = time.getDate();
+    var day = time.getDay();
+    var week = ["일", "월", "화", "수", "목", "금", "토"];
+
+    var hours = time.getHours();
+    var minutes = time.getMinutes();
+    var seconds = time.getSeconds();
+
+    Target.innerText =
+      `${month + 1}월 ${date}일 ${week[day]}요일 ` +
+      `${hours < 10 ? `0${hours}` : hours}:${minutes < 10 ? `0${minutes}` : minutes}:${seconds < 10 ? `0${seconds}` : seconds}`;
+  }
+  clock();
+  setInterval(clock, 1000); // 1초마다 실행
+
+  // 관리자 아이콘 클릭 이벤트
+  document.getElementById("adminIcon").addEventListener("click", function(e) {
+    e.stopPropagation(); // 로고 배경 클릭 이벤트와 충돌 방지
+    window.location.href = "admin.html";
+  });
+
+  // 마우스 오버 효과
+  document.getElementById("adminIcon").addEventListener("mouseenter", function() {
+    this.style.opacity = "1";
+  });
+  document.getElementById("adminIcon").addEventListener("mouseleave", function() {
+    this.style.opacity = "0.5";
+  });
+</script>
+<script>
+  function copy() {
+    var copyTxt = document.getElementById("copyTxt");
+
+    // Mobile 대응을 위해 텍스트 선택
+    copyTxt.select();
+    copyTxt.setSelectionRange(0, 99999); // 모바일 대응
+
+    // 클립보드 API가 지원될 경우
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(copyTxt.value)
+        .then(() => {
+          alert("010-4801-7180 복사되었습니다.");
+          copyTxt.blur(); // 포커스를 제거하여 선택 해제
+        })
+        .catch((err) => {
+          console.error("복사 실패:", err);
+          alert("복사에 실패했습니다.");
+        });
+    } else {
+      // 클립보드 API가 지원되지 않는 경우 execCommand 사용
+      try {
+        document.execCommand("copy");
+        alert("010-4801-7180 복사되었습니다.");
+        copyTxt.blur(); // 포커스를 제거하여 선택 해제
+      } catch (err) {
+        console.error("복사 실패:", err);
+        alert("복사에 실패했습니다. 수동으로 복사해주세요.");
+      }
+    }
+  }
+</script>
+
+</html>

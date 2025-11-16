@@ -1,0 +1,102 @@
+html,
+body {
+  /* overflow-x: hidden; Prevent scroll on narrow devices */
+}
+
+body {
+  /* padding-top: 130px; */
+}
+
+/* 커스텀 닫기 버튼 (화살표) */
+.btn-close-custom {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 24px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  opacity: 0.8;
+}
+
+.btn-close-custom:hover {
+  opacity: 1;
+  color: #ffc107;
+  transform: translateX(-3px);
+}
+
+@media (max-width: 991.98px) {
+  .offcanvas-collapse {
+    position: fixed;
+    top: 56px;
+    /* Height of navbar */
+    bottom: 0;
+    left: 100%;
+    width: 100%;
+    padding-right: 1rem;
+    padding-left: 11rem;
+    overflow-y: auto;
+    visibility: hidden;
+    background-color: #343a40;
+    transition: transform .3s ease-in-out, visibility .3s ease-in-out;
+  }
+
+  .offcanvas-collapse.open {
+    visibility: visible;
+    transform: translateX(-100%);
+  }
+}
+
+.offcanvas.offcanvas-end {
+  width: 100% !important;
+}
+
+
+
+.container-fluid{
+   -ms-user-select: none;
+    -moz-user-select: -moz-none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    user-select: none;
+    
+  z-index: 99999999;
+}
+.nav-tabs {
+  width: 100%;
+  background-color: #353535;
+  padding: 20px 6px 6px 16px;
+  display: flex;
+  /* padding-left: 10px; */
+  z-index: 222;
+  bottom: 0 !important;
+  height: 100vw;
+  position: fixed;
+  /* margin-bottom: 0; */
+  /* flex-direction: row; */
+  justify-content: space-around;
+}
+
+.nav-scroller .nav {
+  color: rgba(255, 255, 255, .75);
+}
+
+.nav-scroller .nav-link {
+  padding-top: .75rem;
+  padding-bottom: .75rem;
+  font-size: .875rem;
+  color: #6c757d;
+}
+
+.nav-scroller .nav-link:hover {
+  color: #007bff;
+}
+
+.nav-scroller .active {
+  font-weight: 500;
+  color: #343a40;
+}
+
+.bg-purple {
+  background-color: #6f42c1;
+}
