@@ -212,11 +212,9 @@ class Calendar {
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
       
-      // Calculate position for this day column (7 equal columns after time column)
-      // Mobile: 40px time column, Desktop: 60px time column
-      const timeWidth = window.innerWidth >= 768 ? '60px' : '40px';
-      const dayWidth = `calc((100% - ${timeWidth}) / 7)`;
-      const dayLeft = `calc(${timeWidth} + (100% - ${timeWidth}) / 7 * ${dayIndex})`;
+      // Calculate position for this day column (7 equal columns after 60px time column)
+      const dayWidth = `calc((100% - 60px) / 7)`;
+      const dayLeft = `calc(60px + (100% - 60px) / 7 * ${dayIndex})`;
       
       html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
       
