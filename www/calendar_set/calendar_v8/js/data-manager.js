@@ -74,15 +74,25 @@ class DataManager {
   }
 
   convertToEvents(bookings) {
-    return bookings.map(booking => ({
-      id: booking.id,
-      title: booking.summary || '예약',
-      start: new Date(booking.start_time),
-      end: new Date(booking.end_time),
-      roomId: booking.room_id,
-      description: booking.description,
-      raw: booking
-    }));
+    return bookings.map(booking => {
+      const start = new Date(booking.start_time);
+      const end = new Date(booking.end_time);
+      
+      // 타임존 변환 로그 (첫 이벤트만)
+      if (bookings.indexOf(booking) === 0) {
+        console.log(`   🕐 [타임존] DB: ${booking.start_time} → JS: ${start.toLocaleString('ko-KR')}`);
+      }
+      
+      return {
+        id: booking.id,
+        title: booking.summary || '예약',
+        start,
+        end,
+        roomId: booking.room_id,
+        description: booking.description,
+        raw: booking
+      };
+    });
   }
 }
 

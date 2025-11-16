@@ -126,6 +126,8 @@ class Calendar {
   async navigate(direction) {
     if (this.isAnimating) return;
     
+    console.log(`🧭 네비게이션 시작: ${direction > 0 ? '다음 주' : '이전 주'}`);
+    
     this.isAnimating = true;
     const slider = this.container.querySelector('.calendar-slider');
     
@@ -137,8 +139,10 @@ class Calendar {
       // 애니메이션 완료 후 날짜 업데이트 및 재렌더링
       setTimeout(async () => {
         this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
+        console.log(`📅 날짜 변경: ${this.currentDate.toLocaleDateString('ko-KR')}`);
         await this.render();
         this.isAnimating = false;
+        console.log(`✅ 네비게이션 완료`);
       }, 300);
     } else {
       this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
@@ -159,6 +163,7 @@ class Calendar {
 
   toggleRoom(roomId) {
     // 방 선택 변경 시 캐시 무효화
+    console.log(`🗑️ [캐시클리어] 방 선택 변경: ${roomId}`);
     this.weekDataCache.clear();
     
     // 단일 방만 선택
@@ -179,6 +184,7 @@ class Calendar {
 
   toggleAllRooms() {
     // 방 선택 변경 시 캐시 무효화
+    console.log(`🗑️ [캐시클리어] 전체 방 선택`);
     this.weekDataCache.clear();
     
     const allBtn = document.getElementById('allRoomsBtn');
@@ -270,12 +276,19 @@ class Calendar {
   }
   
   async renderWeekViewWithSlider() {
+    console.log(`\n🎨 [렌더] 3슬라이드 렌더링 시작`);
+    console.log(`   현재 캐시 크기: ${this.weekDataCache.size}개`);
+    
     // 이전주, 현재주, 다음주 날짜 계산
     const prevDate = new Date(this.currentDate);
     prevDate.setDate(prevDate.getDate() - 7);
     
     const nextDate = new Date(this.currentDate);
     nextDate.setDate(nextDate.getDate() + 7);
+    
+    console.log(`   이전주: ${prevDate.toLocaleDateString('ko-KR')}`);
+    console.log(`   현재주: ${this.currentDate.toLocaleDateString('ko-KR')}`);
+    console.log(`   다음주: ${nextDate.toLocaleDateString('ko-KR')}`);
     
     // 3주치 이벤트를 캐시에서 로드 또는 새로 가져오기
     await this.loadWeekDataToCache(prevDate);
@@ -284,6 +297,7 @@ class Calendar {
     
     // 캐시된 데이터를 합쳐서 this.events에 설정
     this.events = this.getMergedEventsFromCache([prevDate, this.currentDate, nextDate]);
+    console.log(`   ✅ 병합된 이벤트: ${this.events.length}개`);
     
     // 3개 슬라이드 생성: 이전주 | 현재주 | 다음주
     // transform: translateX(-33.333%)로 중앙(현재주)을 보여줌
@@ -316,8 +330,12 @@ class Calendar {
     
     // 이미 캐시에 있으면 스킵
     if (this.weekDataCache.has(cacheKey)) {
+      const cachedEvents = this.weekDataCache.get(cacheKey);
+      console.log(`   ✅ [캐시HIT] ${date.toLocaleDateString('ko-KR')} - ${cachedEvents.length}개 이벤트`);
       return;
     }
+    
+    console.log(`   🔍 [캐시MISS] ${date.toLocaleDateString('ko-KR')} - DB 조회 시작`);
     
     // 캐시에 없으면 DB에서 로드
     const { start, end } = this.getWeekRange(date);
@@ -331,6 +349,7 @@ class Calendar {
       );
       const events = window.dataManager.convertToEvents(bookings);
       this.weekDataCache.set(cacheKey, events);
+      console.log(`   💾 [캐시저장] ${date.toLocaleDateString('ko-KR')} - ${events.length}개 이벤트 저장`);
     } else {
       this.weekDataCache.set(cacheKey, []);
     }
@@ -571,6 +590,11 @@ class Calendar {
         // 이 날짜에 해당하는 부분만 추출
         const segmentStart = event.start < dayStart ? dayStart : event.start;
         const segmentEnd = event.end > dayEnd ? dayEnd : event.end;
+        
+        // 자정넘어가는 이벤트 로그
+        if (event.start < dayStart || event.end > dayEnd) {
+          console.log(`   📅 [자정분할] ${event.roomId.toUpperCase()}: ${event.start.toLocaleString('ko-KR')} ~ ${event.end.toLocaleString('ko-KR')} → ${segmentStart.toLocaleString('ko-KR')} ~ ${segmentEnd.toLocaleString('ko-KR')}`);
+        }
         
         dayEvents.push({
           ...event,
