@@ -710,18 +710,29 @@ class Calendar {
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     
+    console.log('⏰ [시간인디케이터] 현재시각:', now.toLocaleTimeString('ko-KR'));
+    
     // 현재 주의 날짜 범위 확인
     const { start, end } = this.getWeekRange(this.currentDate);
     
+    console.log('📅 [시간인디케이터] 주범위:', start.toLocaleDateString('ko-KR'), '~', end.toLocaleDateString('ko-KR'));
+    
     // 현재 시간이 표시된 주에 속하는지 확인
-    if (now < start || now > end) return;
+    if (now < start || now > end) {
+      console.log('❌ [시간인디케이터] 현재 주가 아님');
+      return;
+    }
     
     // 모든 슬라이드의 week-view에 현재 시간 라인 추가
     const allWeekViews = this.container.querySelectorAll('.week-view');
+    console.log('🎨 [시간인디케이터] week-view 개수:', allWeekViews.length);
     
-    allWeekViews.forEach(weekView => {
+    allWeekViews.forEach((weekView, idx) => {
       const headerElement = weekView.querySelector('.day-header');
-      if (!headerElement) return;
+      if (!headerElement) {
+        console.log(`❌ [시간인디케이터] week-view ${idx}: 헤더 없음`);
+        return;
+      }
       
       const headerHeight = headerElement.getBoundingClientRect().height;
       const weekViewHeight = weekView.clientHeight;
@@ -736,6 +747,8 @@ class Calendar {
       indicator.className = 'current-time-indicator';
       indicator.style.top = `${topPosition}px`;
       weekView.appendChild(indicator);
+      
+      console.log(`✅ [시간인디케이터] week-view ${idx}: 생성완료 (top: ${topPosition.toFixed(0)}px, 시각: ${currentHour}:${currentMinute})`);
     });
   }
   
