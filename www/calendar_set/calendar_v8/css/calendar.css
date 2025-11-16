@@ -130,15 +130,16 @@ body {
   flex: 1;
   overflow: hidden;
   position: relative;
-  touch-action: pan-y;
+  touch-action: auto;
 }
 
 .calendar-slider {
   display: flex;
   height: 100%;
   width: 300%;
-  transition: transform 0.5s ease-in-out;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
+  touch-action: pan-y;
 }
 
 .calendar-slider.no-transition {

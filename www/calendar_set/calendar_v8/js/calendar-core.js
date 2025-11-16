@@ -53,13 +53,13 @@ class Calendar {
   setupSwipeGestures() {
     if (typeof Hammer !== 'undefined') {
       this.hammer = new Hammer(this.container, {
-        touchAction: 'pan-y'
+        touchAction: 'auto'
       });
       
-      // Pan과 Swipe 제스처 모두 활성화
+      // Pan과 Swipe 제스처 모두 활성화 (모바일 호환)
       this.hammer.get('pan').set({ 
-        direction: Hammer.DIRECTION_HORIZONTAL,
-        threshold: 0 // 즉시 반응
+        direction: Hammer.DIRECTION_ALL, // 모바일에서 터치 인식 향상
+        threshold: 5 // 작은 떨림 무시
       });
       this.hammer.get('swipe').set({ 
         direction: Hammer.DIRECTION_HORIZONTAL 
@@ -82,6 +82,9 @@ class Calendar {
       this.hammer.on('panmove', (e) => {
         if (this.isAnimating) return;
         
+        // 수평 스와이프만 허용 (모바일 호환)
+        if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+        
         const slider = this.container.querySelector('.calendar-slider');
         if (slider) {
           const percentMove = (e.deltaX / this.container.offsetWidth) * 100;
@@ -95,8 +98,6 @@ class Calendar {
         
         const slider = this.container.querySelector('.calendar-slider');
         if (slider) {
-          slider.classList.remove('no-transition');
-          
           // 스와이프 속도 로깅
           const swipeEndTime = Date.now();
           const duration = swipeEndTime - swipeStartTime;
@@ -112,24 +113,32 @@ class Calendar {
             '방향': e.deltaX < 0 ? '왼쪽←' : '오른쪽→'
           });
           
+          // 수평 스와이프 확인
+          const isHorizontalSwipe = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+          if (!isHorizontalSwipe) {
+            slider.classList.remove('no-transition');
+            slider.style.transform = 'translateX(-33.333%)';
+            return;
+          }
+          
+          // 속도에 따른 동적 애니메이션 속도 (부드러운 느낌)
+          const animationDuration = velocity > 1.5 ? 0.25 : 0.3;
+          slider.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
+          
           // 업계 표준 스와이프 임계값
           const containerWidth = this.container.offsetWidth;
-          const distanceThreshold = Math.min(containerWidth * 0.15, 120); // 15% 또는 최대 120px
-          const velocityThreshold = 0.35; // px/ms
+          const distanceThreshold = Math.min(containerWidth * 0.15, 120);
+          const velocityThreshold = 0.35;
           
-          // 거리 조건 OR 속도 조건 (빠른 플링)
           const shouldNavigate = distance >= distanceThreshold || velocity >= velocityThreshold;
           
           if (shouldNavigate) {
             if (e.deltaX < 0) {
-              // 왼쪽으로 스와이프 -> 다음 주
               this.navigate(1);
             } else {
-              // 오른쪽으로 스와이프 -> 이전 주
               this.navigate(-1);
             }
           } else {
-            // 원위치 (중앙으로 복귀)
             slider.style.transform = 'translateX(-33.333%)';
           }
         }
