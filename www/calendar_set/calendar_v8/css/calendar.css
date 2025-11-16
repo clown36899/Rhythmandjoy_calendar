@@ -158,7 +158,6 @@ body {
   text-align: center;
   font-weight: 500;
   font-size: 0.9rem;
-  min-height: 3.75rem;
 }
 
 .time-label {
@@ -197,7 +196,6 @@ body {
 
 .time-cell {
   border: 1px solid var(--border-color);
-  min-height: 3.75rem;
   position: relative;
 }
 
