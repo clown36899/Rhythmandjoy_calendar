@@ -1352,20 +1352,18 @@
         const targetSection = sectionMap[sectionName] || "howto";
 
         // 현재 URL 정보 (프로덕션: 리듬앤조이일정표.com, 개발: Replit URL)
-        let baseUrl;
+        let url;
         if (
           window.location.hostname.includes("리듬앤조이일정표.com") ||
           window.location.hostname.includes("xn--xy1b23ggrmm5bfb82ees967e.com") ||
           window.location.hostname.includes("rhythmandjoy")
         ) {
-          baseUrl = "https://리듬앤조이일정표.com/info.html";
+          url = "https://리듬앤조이일정표.com";
         } else {
           // 개발 환경 (Replit 등)
-          baseUrl =
-            window.location.origin + "/calendar_set/calendar_v8/home_infopage/homepage-section_mobile.html";
+          url = window.location.origin + "/calendar_set/calendar_v8/index.html";
         }
 
-        const url = `${baseUrl}?section=${encodeURIComponent(targetSection)}`;
         const title = `리듬앤조이 - ${sectionName}`;
 
         console.log("🔗 공유 URL 생성:", url);
