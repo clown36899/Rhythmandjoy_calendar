@@ -87,6 +87,7 @@ class Calendar {
     
     let startTransform = 0;
     let swipeStartTime = 0;
+    let isPanning = false;
     
     this.hammer.on('panstart', (e) => {
       if (this.isAnimating) return;
@@ -95,12 +96,13 @@ class Calendar {
         slider.classList.add('no-transition');
         startTransform = this.baseTranslate;
         swipeStartTime = Date.now();
+        isPanning = true;
         console.log('🚀 [스와이프 시작]');
       }
     });
     
     this.hammer.on('panmove', (e) => {
-      if (this.isAnimating) return;
+      if (this.isAnimating || !isPanning) return;
       
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       
@@ -113,7 +115,8 @@ class Calendar {
     });
     
     this.hammer.on('panend', (e) => {
-      if (this.isAnimating) return;
+      if (this.isAnimating || !isPanning) return;
+      isPanning = false;
       
       const slider = this.container.querySelector('.calendar-slider');
       if (slider) {
