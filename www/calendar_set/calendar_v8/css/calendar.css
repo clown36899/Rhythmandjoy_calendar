@@ -504,7 +504,8 @@ body {
   font-weight: 500;
   letter-spacing: 0;
   overflow: hidden;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-all;
   opacity: 1;
   line-height: 1.2;
   color: #ffffff;
@@ -516,7 +517,8 @@ body {
   font-weight: 400;
   letter-spacing: 0;
   overflow: hidden;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-all;
   opacity: 0.95;
   line-height: 1.2;
   color: #ffffff;
