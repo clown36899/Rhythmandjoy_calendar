@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await calendar.init();
   
   setupAdminButton();
+  setupInfoButton();
   
   console.log('✅ 초기화 완료');
 });
@@ -18,6 +19,15 @@ function setupAdminButton() {
   if (adminBtn) {
     adminBtn.addEventListener('click', () => {
       window.location.href = '../full_ver7/admin.html';
+    });
+  }
+}
+
+function setupInfoButton() {
+  const infoBtn = document.getElementById('infoBtn');
+  if (infoBtn) {
+    infoBtn.addEventListener('click', () => {
+      window.location.href = '../full_ver7/info.html';
     });
   }
 }
