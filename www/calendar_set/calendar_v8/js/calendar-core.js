@@ -743,33 +743,36 @@ class Calendar {
     triangle.style.top = `${topPosition}px`;
     this.container.appendChild(triangle);
     
-    // 2. 오늘 날짜 열 찾기
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // 2. 오늘 날짜 열 찾기 - 중간 슬라이드(현재 주)에서 찾기
+    const allSlides = this.container.querySelectorAll('.calendar-slide');
+    const currentSlide = allSlides[1]; // 중간 슬라이드 = 현재 주
     
-    const allDayHeaders = firstWeekView.querySelectorAll('.day-header');
+    if (!currentSlide) {
+      console.log('❌ [오늘라인] 중간 슬라이드 없음');
+      return;
+    }
+    
+    const currentWeekView = currentSlide.querySelector('.week-view');
+    if (!currentWeekView) {
+      console.log('❌ [오늘라인] week-view 없음');
+      return;
+    }
+    
+    const allDayHeaders = currentWeekView.querySelectorAll('.day-header');
     let todayIndex = -1;
     
-    console.log('📅 [오늘날짜찾기] 헤더 개수:', allDayHeaders.length);
-    
     allDayHeaders.forEach((header, index) => {
-      const hasToday = header.classList.contains('today');
-      console.log(`  헤더 ${index}:`, hasToday ? '✅ 오늘' : '일반', header.classList.toString());
-      if (hasToday) {
+      if (header.classList.contains('today')) {
         todayIndex = index;
       }
     });
-    
-    console.log('📍 [오늘날짜] 인덱스:', todayIndex);
     
     // 오늘 날짜가 있으면 해당 열에만 라인 표시
     if (todayIndex !== -1) {
       const sliderElement = this.container.querySelector('.calendar-slider');
       const sliderWidth = sliderElement ? sliderElement.offsetWidth : this.container.offsetWidth;
       const dayWidth = sliderWidth / 7;
-      const dayLeft = 3.75 * 16 + (dayWidth * todayIndex); // 3.75em ≈ 60px
-      
-      console.log('📏 [라인계산] left:', dayLeft, 'width:', dayWidth);
+      const dayLeft = 3.75 * 16 + (dayWidth * todayIndex);
       
       const indicator = document.createElement('div');
       indicator.className = 'current-time-indicator';
@@ -777,10 +780,6 @@ class Calendar {
       indicator.style.left = `${dayLeft}px`;
       indicator.style.width = `${dayWidth}px`;
       this.container.appendChild(indicator);
-      
-      console.log('✅ [오늘라인] 생성완료');
-    } else {
-      console.log('❌ [오늘라인] 오늘 날짜 없음');
     }
   }
   
