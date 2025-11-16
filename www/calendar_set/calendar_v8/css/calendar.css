@@ -178,16 +178,17 @@ body {
   height: 100%;
   width: 100%;
   position: relative;
-  margin-left: 3.75em;
+  padding-left: 3.75em;
+  box-sizing: border-box;
 }
 
 .calendar-slide {
   position: absolute;
-  width: 100%;
+  width: calc(100% - 3.75em);
   height: 100%;
+  left: 3.75em;
   transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
-  height: 100%;
   flex-shrink: 0;
   overflow-y: auto;
   overflow-x: hidden;
