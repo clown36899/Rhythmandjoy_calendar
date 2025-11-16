@@ -93,6 +93,13 @@ class Calendar {
       return;
     }
     
+    // 기존 Hammer 인스턴스 제거
+    if (this.hammer) {
+      console.log('🔄 기존 Hammer 제거');
+      this.hammer.destroy();
+      this.hammer = null;
+    }
+    
     const slider = this.container.querySelector('.calendar-slider');
     if (!slider) {
       console.error('❌ .calendar-slider 요소를 찾을 수 없습니다!');
@@ -107,6 +114,8 @@ class Calendar {
       direction: Hammer.DIRECTION_HORIZONTAL,
       threshold: 10
     });
+    
+    console.log('✅ Hammer 새로 생성:', slider);
     
     let swipeStartTime = 0;
     let slideStarts = [-100, 0, 100]; // 각 슬라이드의 초기 위치
@@ -452,6 +461,8 @@ class Calendar {
     
     if (this.currentView === 'week') {
       await this.renderWeekViewWithSlider();
+      // DOM 재생성 후 Hammer.js 재설정
+      this.setupSwipeGestures();
     } else {
       await this.loadEvents();
       this.renderMonthView();
