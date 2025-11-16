@@ -633,9 +633,12 @@ class Calendar {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
+    console.log('📅 [헤더생성] 오늘:', today.toLocaleDateString('ko-KR'));
+    
     days.forEach(day => {
       const isToday = day.getTime() === today.getTime();
       const isSunday = day.getDay() === 0;
+      console.log(`  ${day.toLocaleDateString('ko-KR')}: ${isToday ? '✅ 오늘' : '일반'} (${day.getTime()} vs ${today.getTime()})`);
       html += `<div class="day-header ${isSunday ? 'sunday' : ''} ${isToday ? 'today' : ''}">
         <span class="day-name">${CONFIG.dayNames[day.getDay()]}</span>
         <span class="day-date">${day.getDate()}</span>
