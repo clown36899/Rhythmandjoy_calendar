@@ -139,29 +139,29 @@ body {
 .week-view {
   position: relative;
   display: grid;
-  grid-template-columns: 4vh repeat(7, 1fr);
+  grid-template-columns: 3.75em repeat(7, 1fr);
   grid-template-rows: auto repeat(24, 1fr);
   width: 100%;
   flex: 1;
   border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
+  border-radius: 0.5em;
   overflow: hidden;
   min-height: 0;
-  font-size: clamp(8px, 1.6vh, 16px);
+  font-size: clamp(6px, 1.6vh, 16px);
 }
 
 .week-header {
   display: contents;
 }
 
-.time-label,
-.day-header {
+.week-view .time-label,
+.week-view .day-header {
   background-color: var(--bg-darker);
   border: 1px solid var(--border-color);
-  padding: 0.75rem 0.5rem;
+  padding: 0.75em 0.5em;
   text-align: center;
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: 0.9em;
 }
 
 .time-label {
@@ -170,19 +170,19 @@ body {
   z-index: 10;
 }
 
-.day-header {
+.week-view .day-header {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.25em;
 }
 
-.day-name {
-  font-size: 0.85rem;
+.week-view .day-name {
+  font-size: 0.85em;
   color: var(--text-secondary);
 }
 
-.day-date {
-  font-size: 1.1rem;
+.week-view .day-date {
+  font-size: 1.1em;
 }
 
 .day-header.sunday .day-name,
@@ -223,21 +223,21 @@ body {
   padding-top: 0;
 }
 
-.week-event {
+.week-view .week-event {
   position: absolute;
-  padding: 0.2rem 0.15rem;
-  border-radius: 0.2rem;
-  font-size: 0.55rem;
+  padding: 0.2em 0.15em;
+  border-radius: 0.2em;
+  font-size: 0.55em;
   overflow: hidden;
   cursor: pointer;
-  border-left: 0.125rem solid;
+  border-left: 0.125em solid;
   transition: all 0.1s;
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: 0.125em;
   pointer-events: auto;
-  box-shadow: 0 0.0625rem 0.125rem rgba(0, 0, 0, 0.4);
-  margin: 0 0.0625rem;
+  box-shadow: 0 0.0625em 0.125em rgba(0, 0, 0, 0.4);
+  margin: 0 0.0625em;
 }
 
 .week-event:hover {
@@ -245,14 +245,14 @@ body {
   z-index: 100;
 }
 
-.event-room {
+.week-view .event-room {
   font-weight: 700;
-  font-size: 0.6rem;
-  letter-spacing: 0.0125rem;
+  font-size: 0.6em;
+  letter-spacing: 0.0125em;
 }
 
-.event-title {
-  font-size: 0.55rem;
+.week-view .event-title {
+  font-size: 0.55em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
