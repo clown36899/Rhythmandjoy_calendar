@@ -165,6 +165,9 @@ class Calendar {
     this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
     console.log(`📅 날짜 변경: ${this.currentDate.toLocaleDateString('ko-KR')}`);
     
+    // 제목 업데이트
+    this.updateCalendarTitle();
+    
     // 트랜지션 비활성화
     slider.classList.add('no-transition');
     
@@ -193,6 +196,14 @@ class Calendar {
     });
   }
   
+  updateCalendarTitle() {
+    const titleElement = document.getElementById('calendarTitle');
+    if (!titleElement) return;
+    
+    const month = this.currentDate.getMonth() + 1;
+    titleElement.textContent = `${month}월`;
+  }
+  
   async prepareAdjacentSlides(direction) {
     const slides = Array.from(this.container.querySelectorAll('.calendar-slide'));
     if (slides.length !== 3) return;
@@ -204,12 +215,18 @@ class Calendar {
     const nextDate = new Date(this.currentDate);
     nextDate.setDate(nextDate.getDate() + 7);
     
-    // 캐시 로드
+    // 3주치 캐시 로드
     await this.loadWeekDataToCache(prevDate);
+    await this.loadWeekDataToCache(this.currentDate);
     await this.loadWeekDataToCache(nextDate);
     
-    // 슬라이드 내용 업데이트
+    // 캐시된 데이터를 합쳐서 this.events에 설정 (getEventsForDay가 이걸 참조함)
+    this.events = this.getMergedEventsFromCache([prevDate, this.currentDate, nextDate]);
+    console.log(`   ✅ 병합된 이벤트: ${this.events.length}개`);
+    
+    // 슬라이드 내용 업데이트 (이제 this.events에 3주치 데이터가 있음)
     slides[0].innerHTML = this.renderWeekViewContent(prevDate);
+    slides[1].innerHTML = this.renderWeekViewContent(this.currentDate);
     slides[2].innerHTML = this.renderWeekViewContent(nextDate);
     
     console.log(`🔄 슬라이드 준비: ${prevDate.toLocaleDateString('ko-KR')} | ${this.currentDate.toLocaleDateString('ko-KR')} | ${nextDate.toLocaleDateString('ko-KR')}`);
