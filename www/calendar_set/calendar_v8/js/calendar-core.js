@@ -138,24 +138,31 @@ class Calendar {
       return;
     }
     
-    // 스와이프 애니메이션
+    // 스와이프 애니메이션 시작
     const targetTransform = direction === 1 ? '-66.666%' : '0%';
     slider.style.transform = `translateX(${targetTransform})`;
     
-    // 애니메이션 완료 후
-    setTimeout(async () => {
+    // transitionend 이벤트를 기다림
+    const handleTransitionEnd = async (e) => {
+      if (e.propertyName !== 'transform') return;
       
+      slider.removeEventListener('transitionend', handleTransitionEnd);
+      
+      // 날짜 업데이트
+      this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
       console.log(`📅 날짜 변경: ${this.currentDate.toLocaleDateString('ko-KR')}`);
       
-      // 안 보이는 슬라이드만 업데이트 (DOM 재배열 없음)
-      await this.updateInvisibleSlide(direction);
+      // 슬라이드 회전
+      await this.rotateSlides(direction);
       
       this.isAnimating = false;
       console.log(`✅ 네비게이션 완료`);
-    }, 300);
+    };
+    
+    slider.addEventListener('transitionend', handleTransitionEnd);
   }
   
-  async updateInvisibleSlide(direction) {
+  async rotateSlides(direction) {
     const slider = this.container.querySelector('.calendar-slider');
     if (!slider) return;
     
