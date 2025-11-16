@@ -32,8 +32,6 @@ class Calendar {
     document.getElementById('prevBtn').addEventListener('click', () => this.navigate(-1));
     document.getElementById('nextBtn').addEventListener('click', () => this.navigate(1));
     document.getElementById('todayBtn').addEventListener('click', () => this.goToToday());
-    document.getElementById('weekBtn').addEventListener('click', () => this.changeView('week'));
-    document.getElementById('monthBtn').addEventListener('click', () => this.changeView('month'));
 
     document.querySelectorAll('.room-btn[data-room]').forEach(btn => {
       btn.addEventListener('click', () => this.toggleRoom(btn.dataset.room));
@@ -52,11 +50,8 @@ class Calendar {
   }
 
   navigate(direction) {
-    if (this.currentView === 'week') {
-      this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
-    } else {
-      this.currentDate.setMonth(this.currentDate.getMonth() + direction);
-    }
+    // 항상 주간 모드
+    this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
     this.render();
   }
 
@@ -67,8 +62,6 @@ class Calendar {
 
   changeView(view) {
     this.currentView = view;
-    document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
-    document.getElementById(view === 'week' ? 'weekBtn' : 'monthBtn').classList.add('active');
     this.render();
   }
 

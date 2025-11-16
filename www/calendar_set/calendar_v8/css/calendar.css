@@ -51,8 +51,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
+  gap: clamp(0.5rem, 1.5vh, 1rem);
+  padding: clamp(0.5rem, 1.5vh, 1rem) clamp(0.75rem, 2vh, 1.5rem);
   background-color: var(--bg-darker);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
@@ -62,8 +62,8 @@ body {
   background: none;
   border: none;
   color: var(--text-primary);
-  font-size: 1.5rem;
-  padding: 0.5rem 1rem;
+  font-size: clamp(1rem, 2.2vh, 1.5rem);
+  padding: clamp(0.25rem, 1vh, 0.5rem) clamp(0.5rem, 1.5vh, 1rem);
   cursor: pointer;
   transition: color 0.2s;
 }
@@ -73,7 +73,7 @@ body {
 }
 
 .calendar-title {
-  font-size: 1.5rem;
+  font-size: clamp(1rem, 2.2vh, 1.5rem);
   font-weight: 600;
   flex: 1;
   text-align: center;
@@ -93,22 +93,16 @@ body {
   opacity: 1;
 }
 
-.view-controls {
-  display: flex;
-  gap: 0.5rem;
-  padding: 1rem 1.5rem;
-  background-color: var(--bg-darker);
-  border-bottom: 1px solid var(--border-color);
-}
-
 .view-btn {
-  padding: 0.5rem 1.5rem;
+  padding: clamp(0.3rem, 1vh, 0.5rem) clamp(0.75rem, 2vh, 1.5rem);
   background-color: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   border-radius: 0.25rem;
   cursor: pointer;
   transition: all 0.2s;
+  font-size: clamp(0.75rem, 1.8vh, 1rem);
+  white-space: nowrap;
 }
 
 .view-btn:hover {
@@ -337,18 +331,20 @@ body {
 .room-selector {
   display: flex;
   gap: 0.5rem;
-  padding: 1rem 1.5rem;
+  padding: clamp(0.5rem, 1.5vh, 1rem) clamp(0.75rem, 2vh, 1.5rem);
   background-color: var(--bg-darker);
   border-top: 1px solid var(--border-color);
   overflow-x: auto;
+  flex-shrink: 0;
 }
 
 .room-btn {
-  padding: 0.75rem 1.5rem;
+  padding: clamp(0.4rem, 1.2vh, 0.75rem) clamp(0.75rem, 2vh, 1.5rem);
   border: 0.125rem solid transparent;
   border-radius: 0.25rem;
   cursor: pointer;
   font-weight: 600;
+  font-size: clamp(0.75rem, 1.8vh, 1rem);
   transition: all 0.2s;
   white-space: nowrap;
   color: #000;
