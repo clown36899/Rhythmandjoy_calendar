@@ -326,6 +326,46 @@ body {
   margin-right: 0.5em;
 }
 
+/* 메뉴 스타일 */
+.nav_line {
+  border-top: 1px solid #353b41;
+}
+
+.nav_image_pop {
+  width: 100%;
+  height: auto;
+  max-height: 300px;
+}
+
+.copyTxt1 {
+  background-color: transparent !important;
+  border: none;
+  color: #03A9F4;
+  font-size: 13px;
+}
+
+.copyTxt2 {
+  background-color: transparent !important;
+  border: 1px solid;
+  color: #03A9F4;
+  font-size: 13px;
+  margin-right: 5px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+#copyTxt:focus {
+  outline: none;
+}
+
+.offcanvas-body-desktop {
+  display: none;
+}
+
+.offcanvas-body-mobile {
+  display: block;
+}
+
 /* 모바일: iframe 숨김 */
 #sideFrame {
   display: none !important;
@@ -376,6 +416,20 @@ body {
   
   /* 오프캔버스 헤더 숨김 (데스크탑) */
   #leftMenu .offcanvas-header {
+    display: none;
+  }
+  
+  /* 데스크탑: 데스크탑용 홈페이지 섹션 표시 */
+  .offcanvas-body-desktop {
+    display: block;
+  }
+  
+  /* 데스크탑: 모바일용 메뉴 숨김 */
+  .offcanvas-body {
+    display: none;
+  }
+  
+  .offcanvas-body-mobile {
     display: none;
   }
 }
