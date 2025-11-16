@@ -349,9 +349,10 @@ body {
 }
 
 .logo-circle {
-  flex: 0 1 auto;
-  width: clamp(20px, 5vw, 36px);
-  height: clamp(20px, 5vw, 36px);
+  flex: 0 1 36px;
+  min-width: 20px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background-color: #fff;
   display: flex;
@@ -360,28 +361,25 @@ body {
 }
 
 .logo-icon {
-  font-size: clamp(10px, 2.5vw, 18px);
+  font-size: 18px;
 }
 
 .logo-text {
   flex: 0 1 auto;
-  min-width: 0;
-  font-size: clamp(9px, 2.2vw, 15px);
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .info-btn {
   flex: 0 1 auto;
-  padding: clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 20px);
+  padding: 8px 20px;
   background-color: #333;
   border: none;
   border-radius: 2rem;
   color: var(--text-primary);
-  font-size: clamp(9px, 2vw, 13px);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -412,15 +410,16 @@ body {
 }
 
 .room-btn {
-  flex: 0 1 auto;
-  width: clamp(22px, 6vw, 40px);
-  height: clamp(22px, 6vw, 40px);
+  flex: 0 1 40px;
+  min-width: 22px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border: none;
   border-radius: 0.5rem;
   cursor: pointer;
   font-weight: 700;
-  font-size: clamp(11px, 2.5vw, 16px);
+  font-size: 16px;
   transition: all 0.2s;
   color: #000;
   opacity: 0.5;
@@ -438,7 +437,9 @@ body {
 }
 
 #allRoomsBtn {
-  width: clamp(26px, 7.5vw, 52px);
+  flex: 0 1 52px;
+  min-width: 26px;
+  width: 52px;
   background-color: #555;
   color: #fff;
   opacity: 0.7;
@@ -450,15 +451,16 @@ body {
 }
 
 .period-btn {
-  flex: 0 1 auto;
-  width: clamp(22px, 6vw, 40px);
-  height: clamp(22px, 6vw, 40px);
+  flex: 0 1 40px;
+  min-width: 22px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   background-color: #333;
   border: none;
   border-radius: 50%;
   color: var(--text-secondary);
-  font-size: clamp(9px, 2vw, 13px);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -474,15 +476,16 @@ body {
 }
 
 .nav-btn-round {
-  flex: 0 1 auto;
-  width: clamp(22px, 6vw, 40px);
-  height: clamp(22px, 6vw, 40px);
+  flex: 0 1 40px;
+  min-width: 22px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   background-color: #222;
   border: none;
   border-radius: 50%;
   color: var(--text-primary);
-  font-size: clamp(12px, 2.8vw, 18px);
+  font-size: 18px;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
@@ -496,12 +499,12 @@ body {
 
 .today-btn {
   flex: 0 1 auto;
-  padding: clamp(4px, 1vw, 7px) clamp(8px, 2vw, 14px);
+  padding: 7px 14px;
   background-color: transparent;
   border: 1px solid var(--border-color);
   border-radius: 1rem;
   color: var(--text-secondary);
-  font-size: clamp(9px, 2vw, 13px);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
