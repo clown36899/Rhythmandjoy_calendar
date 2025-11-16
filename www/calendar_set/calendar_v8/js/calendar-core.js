@@ -99,16 +99,13 @@ class Calendar {
       return;
     }
     
-    // 터치와 마우스 모두 지원
-    this.hammer = new Hammer(slider, {
-      touchAction: 'pan-y'
-    });
+    // 터치와 마우스 모두 지원 (단순 설정)
+    this.hammer = new Hammer(slider);
     
-    // Pan 제스처 설정
+    // Pan 제스처만 활성화
     this.hammer.get('pan').set({ 
       direction: Hammer.DIRECTION_HORIZONTAL,
-      threshold: 10,
-      pointers: 0  // 모든 포인터 유형 허용 (터치, 마우스, 펜)
+      threshold: 10
     });
     
     let swipeStartTime = 0;
