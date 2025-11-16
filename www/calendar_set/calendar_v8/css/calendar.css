@@ -499,7 +499,7 @@ body {
 }
 
 .week-view .event-title {
-  font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
   font-size: 0.95em;
   font-weight: 500;
   letter-spacing: 0;
@@ -511,7 +511,7 @@ body {
 }
 
 .week-view .event-time {
-  font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
   font-size: 0.85em;
   font-weight: 400;
   letter-spacing: 0;
