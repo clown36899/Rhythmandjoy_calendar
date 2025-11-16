@@ -18,7 +18,32 @@ class DataManager {
 
     console.log('✅ Supabase initialized');
     this.setupRealtimeSubscription();
+    this.setupVisibilityHandler();
     return true;
+  }
+
+  setupVisibilityHandler() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        console.log('📱 화면 활성화 - 데이터 새로고침');
+        this.cache.clear();
+        if (window.calendar) {
+          window.calendar.weekDataCache.clear();
+          window.calendar.refresh();
+        }
+      }
+    });
+
+    window.addEventListener('online', () => {
+      console.log('🌐 온라인 복구 - 데이터 새로고침');
+      this.cache.clear();
+      if (window.calendar) {
+        window.calendar.weekDataCache.clear();
+        window.calendar.refresh();
+      }
+    });
+
+    console.log('✅ 모바일 화면 활성화 감지 설정 완료');
   }
 
   setupRealtimeSubscription() {
