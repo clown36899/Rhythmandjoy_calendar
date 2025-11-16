@@ -1018,11 +1018,17 @@ class Calendar {
     const roomName = CONFIG.rooms[event.roomId]?.name || event.roomId.toUpperCase();
     const timeStr = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}-${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
     
-    // 단독 방 선택: 타이틀+시간, ALL 선택: 시간만
-    const eventContent = this.selectedRooms.size === 1 
-      ? `<div class="event-title">${event.title}</div>
-         <div class="event-time">${timeStr}</div>`
-      : `<div class="event-time">${timeStr}</div>`;
+    // 단독 방 선택: 타이틀+시간, ALL 선택: 첫글자+시간
+    let eventContent;
+    if (this.selectedRooms.size === 1) {
+      eventContent = `<div class="event-title">${event.title}</div>
+                      <div class="event-time">${timeStr}</div>`;
+    } else {
+      // 타이틀에서 숫자 다음 첫 글자 추출 (예: "A홀 (2 이****님" → "이")
+      const match = event.title.match(/\d+\s*(\S)/);
+      const firstChar = match ? match[1] : '';
+      eventContent = `<div class="event-time">${firstChar} ${timeStr}</div>`;
+    }
     
     return `<div class="week-event room-${event.roomId}" 
                  style="top: ${startPercent}%; height: ${height}%; width: ${position.width}%; left: ${position.left}%;"
