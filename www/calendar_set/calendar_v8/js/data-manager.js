@@ -85,7 +85,7 @@ class DataManager {
       
       return {
         id: booking.id,
-        title: booking.summary || '예약',
+        title: booking.title || '예약',
         start,
         end,
         roomId: booking.room_id,
