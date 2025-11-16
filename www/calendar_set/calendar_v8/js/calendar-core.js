@@ -73,7 +73,7 @@ class Calendar {
     }
     
     this.hammer = new Hammer(slider, {
-      touchAction: 'none'
+      touchAction: 'pan-y'
     });
     
     // Pan과 Swipe 제스처 모두 활성화 (모바일 호환)
@@ -164,7 +164,10 @@ class Calendar {
 
   async navigate(direction) {
     // Phase 1: Guard
-    if (this.isAnimating) return;
+    if (this.isAnimating) {
+      console.log('⏸️ 네비게이션 중복 방지');
+      return;
+    }
     this.isAnimating = true;
     
     console.log(`🧭 네비게이션 시작: ${direction > 0 ? '다음 주' : '이전 주'}`);
@@ -181,7 +184,7 @@ class Calendar {
     const targetTransform = direction === 1 ? '-66.666%' : '0%';
     slider.style.transform = `translateX(${targetTransform})`;
     
-    // transitionend 대기 (단일 핸들러)
+    // transitionend 대기 (단일 핸들러, 300ms 타임아웃)
     const handleTransitionEnd = async (e) => {
       if (e.propertyName !== 'transform') return;
       slider.removeEventListener('transitionend', handleTransitionEnd);
@@ -193,6 +196,15 @@ class Calendar {
     };
     
     slider.addEventListener('transitionend', handleTransitionEnd, { once: true });
+    
+    // 안전장치: 500ms 후 강제 완료
+    setTimeout(() => {
+      if (this.isAnimating) {
+        console.log('⏱️ 타임아웃으로 강제 완료');
+        slider.removeEventListener('transitionend', handleTransitionEnd);
+        this.isAnimating = false;
+      }
+    }, 500);
   }
   
   async finalizeNavigation(direction, slider) {
