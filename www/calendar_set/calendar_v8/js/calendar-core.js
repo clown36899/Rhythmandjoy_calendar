@@ -612,6 +612,7 @@ class Calendar {
     for (let i = 0; i < 7; i++) {
       const day = new Date(start);
       day.setDate(start.getDate() + i);
+      day.setHours(0, 0, 0, 0);
       days.push(day);
     }
     
