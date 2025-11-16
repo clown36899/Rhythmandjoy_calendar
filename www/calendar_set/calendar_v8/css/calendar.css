@@ -24,7 +24,7 @@
 
 html, body {
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
   margin: 0;
   padding: 0;
 }
@@ -33,9 +33,6 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background-color: var(--bg-dark);
   color: var(--text-primary);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
 }
 
 .scale-wrapper {
