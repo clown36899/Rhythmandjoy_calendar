@@ -201,11 +201,13 @@ class Calendar {
     slider.addEventListener('transitionend', handleTransitionEnd, { once: true });
     
     // 안전장치: 500ms 후 강제 완료
-    setTimeout(() => {
+    setTimeout(async () => {
       if (this.isAnimating) {
         console.log('⏱️ 타임아웃으로 강제 완료');
         slider.removeEventListener('transitionend', handleTransitionEnd);
+        await this.finalizeNavigation(direction, slider);
         this.isAnimating = false;
+        console.log(`✅ 네비게이션 완료 (타임아웃)`);
       }
     }, 500);
   }
