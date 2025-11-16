@@ -66,6 +66,7 @@ class Calendar {
       });
       
       let startTransform = 0;
+      let swipeStartTime = 0;
       
       this.hammer.on('panstart', (e) => {
         if (this.isAnimating) return;
@@ -73,6 +74,8 @@ class Calendar {
         if (slider) {
           slider.classList.add('no-transition');
           startTransform = this.baseTranslate; // 현재 위치에서 시작
+          swipeStartTime = Date.now();
+          console.log('🚀 [스와이프 시작]');
         }
       });
       
@@ -94,13 +97,25 @@ class Calendar {
         if (slider) {
           slider.classList.remove('no-transition');
           
+          // 스와이프 속도 로깅
+          const swipeEndTime = Date.now();
+          const duration = swipeEndTime - swipeStartTime;
+          const distance = Math.abs(e.deltaX);
+          const velocity = Math.abs(e.velocityX);
+          const avgSpeed = duration > 0 ? (distance / duration).toFixed(2) : 0;
+          
+          console.log('📊 [스와이프 속도]', {
+            '이동거리(px)': distance.toFixed(0),
+            '소요시간(ms)': duration,
+            'Hammer속도(px/ms)': velocity.toFixed(3),
+            '평균속도(px/ms)': avgSpeed,
+            '방향': e.deltaX < 0 ? '왼쪽←' : '오른쪽→'
+          });
+          
           // 업계 표준 스와이프 임계값
           const containerWidth = this.container.offsetWidth;
           const distanceThreshold = Math.min(containerWidth * 0.15, 120); // 15% 또는 최대 120px
           const velocityThreshold = 0.35; // px/ms
-          
-          const distance = Math.abs(e.deltaX);
-          const velocity = Math.abs(e.velocityX);
           
           // 거리 조건 OR 속도 조건 (빠른 플링)
           const shouldNavigate = distance >= distanceThreshold || velocity >= velocityThreshold;
