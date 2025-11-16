@@ -784,7 +784,7 @@ class Calendar {
   }
   
   startCurrentTimeUpdater() {
-    // 1분마다 현재 시간 표시 업데이트
+    // 10초마다 현재 시간 표시 업데이트 (더 부드러운 실시간 표시)
     this.updateCurrentTimeIndicator();
     
     if (this.timeUpdateInterval) {
@@ -793,7 +793,7 @@ class Calendar {
     
     this.timeUpdateInterval = setInterval(() => {
       this.updateCurrentTimeIndicator();
-    }, 60000); // 1분마다 업데이트
+    }, 10000); // 10초마다 업데이트
   }
   
   stopCurrentTimeUpdater() {
@@ -853,6 +853,9 @@ class Calendar {
         label.style.minHeight = `${rowHeight}px`;
         label.style.maxHeight = `${rowHeight}px`;
       });
+      
+      // 레이아웃 변경 후 시간 인디케이터 재계산 (화면 크기 변경 대응)
+      this.updateCurrentTimeIndicator();
     };
     
     if (immediate) {
