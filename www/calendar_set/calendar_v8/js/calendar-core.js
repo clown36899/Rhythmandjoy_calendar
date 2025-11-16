@@ -218,10 +218,14 @@ class Calendar {
     // 제목 업데이트
     this.updateCalendarTitle();
     
-    // 트랜지션 비활성화
-    slider.classList.add('no-transition');
+    // 먼저 새 데이터 준비 (화면에 보이기 전에)
+    await this.prepareAdjacentSlides(direction);
     
-    // DOM 재배열
+    // 트랜지션 비활성화 + 슬라이더 숨기기 (깜빡임 방지)
+    slider.classList.add('no-transition');
+    slider.style.opacity = '0';
+    
+    // DOM 재배열 (화면에 안 보이는 상태에서)
     if (direction === 1) {
       const firstSlide = slides[0];
       slider.appendChild(firstSlide);
@@ -234,19 +238,15 @@ class Calendar {
     slider.style.transform = 'translateX(-33.333%)';
     this.baseTranslate = -33.333;
     
-    // 화면이 안정된 후 안 보이는 슬라이드 업데이트
+    // 레이아웃 조정
+    this.adjustWeekViewLayout(true);
+    
+    // 다음 프레임에서 슬라이더 표시 + 트랜지션 재활성화
     await new Promise(resolve => {
-      requestAnimationFrame(async () => {
-        await this.prepareAdjacentSlides(direction);
-        
-        // innerHTML 교체 직후 즉시 레이아웃 조정 (깜빡임 방지)
-        this.adjustWeekViewLayout(true);
-        
-        // 트랜지션 재활성화
-        requestAnimationFrame(() => {
-          slider.classList.remove('no-transition');
-          resolve();
-        });
+      requestAnimationFrame(() => {
+        slider.style.opacity = '1';
+        slider.classList.remove('no-transition');
+        resolve();
       });
     });
   }
