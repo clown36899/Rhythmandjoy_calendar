@@ -1425,63 +1425,37 @@
           });
       }
 
-      // 🔗 URL 쿼리로 섹션 자동 표시 (홈페이지 섹션 내부용)
-      let hasOpenedFromURL = false; // 중복 실행 방지
-      
-      window.openSectionFromURL = function () {
-        if (hasOpenedFromURL) {
-          console.log("⏭️ 이미 URL 섹션 처리됨 - 스킵");
-          return;
-        }
-        
+      // 🔗 URL 쿼리로 섹션 자동 표시 (ver7 방식)
+      window.openSectionFromURL = function() {
         const urlParams = new URLSearchParams(window.location.search);
-        const section = urlParams.get("section");
-
-        console.log("🔍 URL 파라미터 확인:", { section, fullURL: window.location.href });
-
-        if (section) {
-          const navButtons = {
-            howto: document.querySelector('.nav-item[onclick*="howto"]'),
-            info: document.querySelector('.nav-item[onclick*="info"]'),
-            notice: document.querySelector('.nav-item[onclick*="notice"]'),
-            map: document.querySelector('.nav-item[onclick*="map"]'),
-            night: document.querySelector('.nav-item[onclick*="night"]'),
-            pricelist: document.querySelector('.nav-item[onclick*="pricelist"]'),
-            refund: document.querySelector('.nav-item[onclick*="price"]'),
-            price: document.querySelector('.nav-item[onclick*="price"]'),
-          };
-
-          const button = navButtons[section];
-          console.log("🔍 버튼 찾기:", { section, button: button ? "찾음" : "못찾음" });
+        const rawSection = urlParams.get('section');
+        
+        if (rawSection) {
+          // URL 디코딩 (한글 등 특수 문자 지원)
+          const section = decodeURIComponent(rawSection);
           
+          const navButtons = {
+            'howto': document.querySelector('.nav-item[onclick*="howto"]'),
+            'info': document.querySelector('.nav-item[onclick*="info"]'),
+            'notice': document.querySelector('.nav-item[onclick*="notice"]'),
+            'map': document.querySelector('.nav-item[onclick*="map"]'),
+            'night': document.querySelector('.nav-item[onclick*="night"]'),
+            'pricelist': document.querySelector('.nav-item[onclick*="pricelist"]'),
+            'refund': document.querySelector('.nav-item[onclick*="price"]'),
+            'price': document.querySelector('.nav-item[onclick*="price"]'),
+          };
+          
+          const button = navButtons[section];
           if (button) {
             // URL 링크로 첫 로드 시 애니메이션 없이 즉시 표시
             showContent(section, button, true);
-            hasOpenedFromURL = true;
-            console.log(
-              `✅ URL 쿼리로 ${section} 섹션 자동 열기 (애니메이션 없음)`,
-            );
-          } else {
-            console.warn(`⚠️ ${section} 섹션에 해당하는 버튼을 찾을 수 없습니다.`);
           }
-        } else {
-          console.log("ℹ️ URL 파라미터 없음 - 기본 섹션 표시");
         }
       };
-
-      // 📄 페이지 로드 시 URL 쿼리 파라미터 확인
-      document.addEventListener("DOMContentLoaded", function () {
-        // DOM이 완전히 준비될 때까지 대기 (모바일 호환성)
-        setTimeout(() => {
-          openSectionFromURL();
-        }, 100);
-      });
-
-      // 안전장치: window.onload에서도 실행 (모바일 브라우저 대응)
-      window.addEventListener("load", function () {
-        setTimeout(() => {
-          openSectionFromURL();
-        }, 150);
+      
+      // 🚀 페이지 로드 시 딥링크 자동 처리
+      document.addEventListener('DOMContentLoaded', function() {
+        openSectionFromURL();
       });
 
       // 🚀 이미지 프리로드 (백그라운드 캐싱)
