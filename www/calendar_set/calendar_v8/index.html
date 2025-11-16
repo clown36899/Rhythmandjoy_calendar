@@ -26,19 +26,34 @@
         <div class="loading">로딩 중...</div>
       </main>
 
-      <footer class="room-selector">
-        <button class="room-btn active" data-room="a" style="background-color: #F6BF26;">A홀</button>
-        <button class="room-btn active" data-room="b" style="background-color: rgb(87, 150, 200);">B홀</button>
-        <button class="room-btn active" data-room="c" style="background-color: rgb(129, 180, 186);">C홀</button>
-        <button class="room-btn active" data-room="d" style="background-color: rgb(125, 157, 106);">D홀</button>
-        <button class="room-btn active" data-room="e" style="background-color: #4c4c4c; color: #fff;">E홀</button>
+      <footer class="bottom-controls">
+        <div class="logo-section">
+          <div class="logo-circle">
+            <span class="logo-icon">🎵</span>
+          </div>
+          <span class="logo-text">리듬앤조이 연습실</span>
+        </div>
+        
+        <button class="info-btn" id="infoBtn">
+          <span>▶</span> 예약 정보
+        </button>
+      </footer>
+      
+      <nav class="room-selector">
+        <button class="room-btn active" data-room="a" style="background-color: #F6BF26;">A</button>
+        <button class="room-btn active" data-room="b" style="background-color: rgb(87, 150, 200);">B</button>
+        <button class="room-btn active" data-room="c" style="background-color: rgb(129, 180, 186);">C</button>
+        <button class="room-btn active" data-room="d" style="background-color: rgb(125, 157, 106);">D</button>
+        <button class="room-btn active" data-room="e" style="background-color: #4c4c4c; color: #fff;">E</button>
         <button class="room-btn" id="allRoomsBtn">ALL</button>
         <div class="week-nav">
-          <button class="nav-btn" id="prevWeekBtn">&lt;</button>
-          <button class="view-btn" id="todayBtn">오늘</button>
-          <button class="nav-btn" id="nextWeekBtn">&gt;</button>
+          <button class="period-btn active">월</button>
+          <button class="period-btn">주</button>
+          <button class="nav-btn-round" id="prevWeekBtn">&lt;</button>
+          <button class="today-btn" id="todayBtn">오늘</button>
+          <button class="nav-btn-round" id="nextWeekBtn">&gt;</button>
         </div>
-      </footer>
+      </nav>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>

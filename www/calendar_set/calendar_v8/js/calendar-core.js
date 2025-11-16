@@ -208,13 +208,13 @@ class Calendar {
     html += '</div>';
 
     // Time grid
-    CONFIG.hoursDisplay.forEach(hour => {
+    CONFIG.hoursDisplay.forEach((hourLabel, hourIndex) => {
       html += '<div class="time-row">';
-      html += `<div class="time-label">${hour}시</div>`;
+      html += `<div class="time-label">${hourLabel}</div>`;
       
       days.forEach(day => {
-        const timeClass = this.getTimeSlotClass(hour);
-        html += `<div class="time-cell ${timeClass}" data-date="${day.toISOString()}" data-hour="${hour}"></div>`;
+        const timeClass = this.getTimeSlotClass(hourIndex);
+        html += `<div class="time-cell ${timeClass}" data-date="${day.toISOString()}" data-hour="${hourIndex}"></div>`;
       });
       
       html += '</div>';
@@ -322,14 +322,14 @@ class Calendar {
     this.container.innerHTML = html;
   }
 
-  getTimeSlotClass(hour) {
-    if (hour >= CONFIG.timeSlots.dawn.start && hour < CONFIG.timeSlots.dawn.end) {
+  getTimeSlotClass(hourIndex) {
+    if (hourIndex >= CONFIG.timeSlots.dawn.start && hourIndex < CONFIG.timeSlots.dawn.end) {
       return 'dawn';
     }
-    if (hour >= CONFIG.timeSlots.day.start && hour < CONFIG.timeSlots.day.end) {
+    if (hourIndex >= CONFIG.timeSlots.day.start && hourIndex < CONFIG.timeSlots.day.end) {
       return 'day';
     }
-    if (hour >= CONFIG.timeSlots.evening.start && hour < CONFIG.timeSlots.evening.end) {
+    if (hourIndex >= CONFIG.timeSlots.evening.start && hourIndex < CONFIG.timeSlots.evening.end) {
       return 'evening';
     }
     return '';

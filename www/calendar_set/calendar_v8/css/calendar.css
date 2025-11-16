@@ -152,10 +152,10 @@ body {
 .week-view .day-header {
   background-color: var(--bg-darker);
   border: 1px solid var(--border-color);
-  padding: 0.75em 0.5em;
+  padding: 0.5em 0.3em;
   text-align: center;
-  font-weight: 500;
-  font-size: 0.9em;
+  font-weight: 400;
+  font-size: 0.7em;
 }
 
 .time-label {
@@ -167,16 +167,20 @@ body {
 .week-view .day-header {
   display: flex;
   flex-direction: column;
-  gap: 0.25em;
+  gap: 0.1em;
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
 }
 
 .week-view .day-name {
-  font-size: 0.85em;
+  font-size: 0.75em;
   color: var(--text-secondary);
+  font-weight: 400;
 }
 
 .week-view .day-date {
-  font-size: 1.1em;
+  font-size: 1.3em;
+  font-weight: 600;
 }
 
 .day-header.sunday .day-name,
@@ -328,12 +332,64 @@ body {
   cursor: pointer;
 }
 
-.room-selector {
+.bottom-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: clamp(0.5rem, 1.5vh, 0.75rem) clamp(0.75rem, 2vh, 1rem);
+  background-color: #1a1a1a;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.logo-section {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: clamp(0.5rem, 1.5vh, 1rem) clamp(0.75rem, 2vh, 1.5rem);
-  background-color: var(--bg-darker);
+}
+
+.logo-circle {
+  width: clamp(28px, 5vh, 40px);
+  height: clamp(28px, 5vh, 40px);
+  border-radius: 50%;
+  background-color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-icon {
+  font-size: clamp(14px, 2.5vh, 20px);
+}
+
+.logo-text {
+  font-size: clamp(0.75rem, 1.8vh, 1rem);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.info-btn {
+  padding: clamp(0.4rem, 1.2vh, 0.6rem) clamp(1rem, 2.5vh, 1.5rem);
+  background-color: #333;
+  border: none;
+  border-radius: 2rem;
+  color: var(--text-primary);
+  font-size: clamp(0.75rem, 1.8vh, 0.9rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.info-btn:hover {
+  background-color: #444;
+}
+
+.room-selector {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.3rem, 1vh, 0.5rem);
+  padding: clamp(0.5rem, 1.5vh, 0.75rem) clamp(0.75rem, 2vh, 1rem);
+  background-color: #0a0a0a;
   border-top: 1px solid var(--border-color);
   overflow-x: auto;
   flex-shrink: 0;
@@ -342,27 +398,30 @@ body {
 .week-nav {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: clamp(0.3rem, 1vh, 0.5rem);
   margin-left: auto;
   flex-shrink: 0;
 }
 
 .room-btn {
-  padding: clamp(0.4rem, 1.2vh, 0.75rem) clamp(0.75rem, 2vh, 1.5rem);
-  border: 0.125rem solid transparent;
-  border-radius: 0.25rem;
+  min-width: clamp(32px, 6vh, 44px);
+  height: clamp(32px, 6vh, 44px);
+  padding: 0;
+  border: none;
+  border-radius: 0.75rem;
   cursor: pointer;
-  font-weight: 600;
-  font-size: clamp(0.75rem, 1.8vh, 1rem);
+  font-weight: 700;
+  font-size: clamp(0.8rem, 2vh, 1.1rem);
   transition: all 0.2s;
-  white-space: nowrap;
   color: #000;
   opacity: 0.5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .room-btn.active {
   opacity: 1;
-  transform: scale(1.05);
 }
 
 .room-btn:hover {
@@ -370,14 +429,76 @@ body {
 }
 
 #allRoomsBtn {
-  background-color: #666;
+  background-color: #555;
   color: #fff;
   opacity: 0.7;
+  min-width: clamp(40px, 7vh, 56px);
 }
 
 #allRoomsBtn:hover,
 #allRoomsBtn.active {
   opacity: 1;
+}
+
+.period-btn {
+  min-width: clamp(32px, 6vh, 44px);
+  height: clamp(32px, 6vh, 44px);
+  padding: 0;
+  background-color: #333;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: clamp(0.75rem, 1.8vh, 0.9rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.period-btn.active {
+  background-color: #555;
+  color: var(--text-primary);
+}
+
+.period-btn:hover {
+  background-color: #444;
+}
+
+.nav-btn-round {
+  min-width: clamp(32px, 6vh, 44px);
+  height: clamp(32px, 6vh, 44px);
+  padding: 0;
+  background-color: #222;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-primary);
+  font-size: clamp(1rem, 2.2vh, 1.3rem);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-btn-round:hover {
+  background-color: #333;
+}
+
+.today-btn {
+  padding: clamp(0.3rem, 1vh, 0.5rem) clamp(0.75rem, 2vh, 1rem);
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  color: var(--text-secondary);
+  font-size: clamp(0.75rem, 1.8vh, 0.9rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.today-btn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: var(--text-primary);
+  color: var(--text-primary);
 }
 
 /* 미디어 쿼리 제거: viewport 기반 rem 스케일링으로 자동 조절 */
