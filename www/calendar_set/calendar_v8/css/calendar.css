@@ -35,7 +35,7 @@ body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Noto Sans KR', 'Segoe UI', sans-serif;
   background-color: var(--bg-dark);
   color: var(--text-primary);
   position: fixed;
@@ -467,19 +467,20 @@ body {
 
 .week-view .week-event {
   position: absolute;
-  padding: 0.2em 0.15em;
+  padding: 0.1em 0.2em;
   border-radius: 0.2em;
-  font-size: 0.55em;
+  font-size: 0.75em;
   overflow: hidden;
   cursor: pointer;
   border-left: 0.125em solid;
   transition: all 0.1s;
   display: flex;
   flex-direction: column;
-  gap: 0.125em;
+  gap: 0;
   pointer-events: auto;
   box-shadow: 0 0.0625em 0.125em rgba(0, 0, 0, 0.4);
   margin: 0 0.0625em;
+  justify-content: center;
 }
 
 .week-event:hover {
@@ -488,17 +489,23 @@ body {
 }
 
 .week-view .event-room {
-  font-weight: 700;
-  font-size: 0.6em;
-  letter-spacing: 0.0125em;
+  font-family: 'Pretendard', -apple-system, 'SF Pro Display', 'Noto Sans KR', sans-serif;
+  font-weight: 800;
+  font-size: 1.15em;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
 }
 
 .week-view .event-title {
-  font-size: 0.55em;
+  font-family: 'Pretendard', -apple-system, 'SF Pro Display', 'Noto Sans KR', sans-serif;
+  font-size: 1.05em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0.95;
+  opacity: 1;
+  line-height: 1.15;
 }
 
 .week-event.room-a {
