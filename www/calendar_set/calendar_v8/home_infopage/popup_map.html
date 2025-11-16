@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>오시는 길 & 주차 안내</title>
+  <link href="open_popup.js"></script>
+  <link href="popup.css" rel="stylesheet" type="text/css" />
+  <style>
+    .link-box {
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      font-size: 0.95rem;
+    }
+    .link-box a {
+      color: #0066cc;
+      font-weight: bold;
+      text-decoration: none;
+    }
+    .link-box a:hover {
+      text-decoration: underline;
+    }
+    ul.parking-list {
+      padding-left: 20px;
+      line-height: 1.7;
+    }
+    .emphasis {
+      color: #d9534f;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <button type="button" id="xxx_btn" onclick="closePopup()">x</button>
+    <div class="icon-lock"><img class="png_main" src="home_infopage/images/png/map.png"></div>
+    <h1>오시는 길 & 주차 안내</h1>
+
+    <div class="link-box">
+      🔗 <a href="https://naver.me/59vo9MDk" target="_blank">네이버 지도에서 위치 보기</a>
+    </div>
+    <p>📌 사당역 7번출구 도보 1분
+       
+     </p>
+    <p>
+        🏢 <strong>주소:</strong> 서울시 동작구 남부순환로 2077, <strong>지하 2층</strong>
+        <button onclick="copyLink2(this)" class="copy-button">복사</button>
+      </p>
+    <p>📌 <strong>건물 정보:</strong><br>
+       &nbsp;&nbsp;드림디포 문구점 건물 지하<br>
+      
+    </p>
+
+    <h3>🚗 주차 안내</h3>
+    <ul class="parking-list">
+      <li>✅ <strong>기본적으로 제공불가입니다. 다만 문구점 퇴근 후</strong> → 문구점 앞 <strong>한정 주차 가능</strong></li>
+      <li>✅ <strong>네이버 검색 사당역 공영주차장을 이용해주세요!</strong></li>
+      <li>⛔ <span class="emphasis">지하주차 리프트 사용 불가</span></li>
+      <li>⛔ <span class="emphasis">건물 앞 좌측 주차라인 사용 불가</span></li>
+      <li>🚫 <span class="emphasis">카리프트 앞 절대 주차 금지!</span></li>
+    </ul>
+
+    <p>📞 <strong>예약 외 방문 시:</strong> <em>반드시 사전 문의 부탁드립니다.</em></p>
+  </div>
+
+</body>
+<script>
+   
+  </script>
+</html>
