@@ -271,6 +271,42 @@ body {
 
 .day-header.today {
   background-color: rgba(87, 150, 200, 0.15);
+  position: relative;
+}
+
+/* 오늘 날짜 왼쪽 위 빨간 삼각형 */
+.day-header.today::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-left: 1.2em solid #ff4444;
+  border-bottom: 1.2em solid transparent;
+  z-index: 5;
+}
+
+/* 현재 시간 표시 라인 */
+.current-time-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: #ff4444;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.current-time-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #ff4444;
 }
 
 .time-row {

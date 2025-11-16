@@ -11,6 +11,7 @@ class Calendar {
     this.currentSlideIndex = 1; // 0: prev, 1: current, 2: next
     this.weekDataCache = new Map(); // 주간 데이터 캐시
     this.baseTranslate = -33.333; // 현재 slider의 기본 위치 (%)
+    this.timeUpdateInterval = null; // 현재 시간 업데이트 타이머
   }
 
   async init() {
@@ -25,6 +26,7 @@ class Calendar {
     this.setupResizeObserver();
     await this.render();
     this.setupSwipeGestures();
+    this.startCurrentTimeUpdater();
     
     console.log('✅ Realtime subscription active');
   }
@@ -533,6 +535,11 @@ class Calendar {
     
     // DOM 업데이트 후 레이아웃 조정
     this.adjustWeekViewLayout();
+    
+    // 현재 시간 표시 업데이트
+    requestAnimationFrame(() => {
+      this.updateCurrentTimeIndicator();
+    });
   }
   
   getWeekCacheKey(date) {
@@ -687,6 +694,64 @@ class Calendar {
     
     html += '</div>';
     return html;
+  }
+  
+  updateCurrentTimeIndicator() {
+    // 기존 인디케이터 제거
+    const existing = this.container.querySelectorAll('.current-time-indicator');
+    existing.forEach(el => el.remove());
+    
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    
+    // 현재 주의 날짜 범위 확인
+    const { start, end } = this.getWeekRange(this.currentDate);
+    
+    // 현재 시간이 표시된 주에 속하는지 확인
+    if (now < start || now > end) return;
+    
+    // 모든 슬라이드의 week-view에 현재 시간 라인 추가
+    const allWeekViews = this.container.querySelectorAll('.week-view');
+    
+    allWeekViews.forEach(weekView => {
+      const headerElement = weekView.querySelector('.day-header');
+      if (!headerElement) return;
+      
+      const headerHeight = headerElement.getBoundingClientRect().height;
+      const weekViewHeight = weekView.clientHeight;
+      const availableHeight = weekViewHeight - headerHeight;
+      
+      // 시간 위치 계산 (0시 = 0%, 24시 = 100%)
+      const hourProgress = currentHour + (currentMinute / 60);
+      const topPosition = headerHeight + (availableHeight * (hourProgress / 24));
+      
+      // 현재 시간 라인 생성
+      const indicator = document.createElement('div');
+      indicator.className = 'current-time-indicator';
+      indicator.style.top = `${topPosition}px`;
+      weekView.appendChild(indicator);
+    });
+  }
+  
+  startCurrentTimeUpdater() {
+    // 1분마다 현재 시간 표시 업데이트
+    this.updateCurrentTimeIndicator();
+    
+    if (this.timeUpdateInterval) {
+      clearInterval(this.timeUpdateInterval);
+    }
+    
+    this.timeUpdateInterval = setInterval(() => {
+      this.updateCurrentTimeIndicator();
+    }, 60000); // 1분마다 업데이트
+  }
+  
+  stopCurrentTimeUpdater() {
+    if (this.timeUpdateInterval) {
+      clearInterval(this.timeUpdateInterval);
+      this.timeUpdateInterval = null;
+    }
   }
   
   adjustWeekViewLayout(immediate = false) {
