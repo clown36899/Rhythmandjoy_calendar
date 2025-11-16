@@ -98,8 +98,11 @@ class UnifiedHandler(SimpleHTTPRequestHandler):
             self.send_error(404)
     
     def end_headers(self):
-        # CSS, JS 파일 캐시 방지
-        if self.path.endswith(('.css', '.js', '.html')):
+        # 이미지 및 폰트 파일: 긴 캐시 (1년)
+        if self.path.endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.woff', '.woff2', '.ttf', '.eot')):
+            self.send_header('Cache-Control', 'public, max-age=31536000, immutable')
+        # CSS, JS, HTML 파일: 캐시 방지 (개발 중)
+        elif self.path.endswith(('.css', '.js', '.html')):
             self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
             self.send_header('Pragma', 'no-cache')
             self.send_header('Expires', '0')
