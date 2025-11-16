@@ -688,19 +688,22 @@ class Calendar {
   
   adjustWeekViewLayout(immediate = false) {
     const doLayout = () => {
+      // 첫 번째 week-view를 기준으로 높이 계산
+      const firstWeekView = this.container.querySelector('.week-view');
+      if (!firstWeekView) return;
+      
+      const headerElement = firstWeekView.querySelector('.day-header');
+      if (!headerElement) return;
+      
+      const headerHeight = headerElement.getBoundingClientRect().height;
+      const weekViewHeight = firstWeekView.clientHeight;
+      const availableHeight = weekViewHeight - headerHeight;
+      const rowHeight = availableHeight / 24;
+      
       // 모든 슬라이드의 week-view 조정
       const allWeekViews = this.container.querySelectorAll('.week-view');
       
       allWeekViews.forEach(weekView => {
-        const headerElement = weekView.querySelector('.day-header');
-        
-        if (!headerElement) return;
-        
-        const headerHeight = headerElement.getBoundingClientRect().height;
-        const weekViewHeight = weekView.clientHeight;
-        const availableHeight = weekViewHeight - headerHeight;
-        const rowHeight = availableHeight / 24;
-        
         // Grid 행 높이를 동적으로 설정하여 24시간이 항상 fit되도록
         weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px)`;
         
@@ -720,13 +723,19 @@ class Calendar {
         });
       });
       
-      // 고정된 시간 열의 헤더 높이 조정
+      // 고정된 시간 열의 헤더 및 각 시간 라벨 높이 조정
       const timeHeaderSpace = this.container.querySelector('.time-header-space');
-      const firstHeader = this.container.querySelector('.day-header');
-      if (timeHeaderSpace && firstHeader) {
-        const headerHeight = firstHeader.getBoundingClientRect().height;
+      if (timeHeaderSpace) {
         timeHeaderSpace.style.height = `${headerHeight}px`;
       }
+      
+      // 각 시간 라벨의 높이를 week-view의 row 높이와 동일하게 설정
+      const timeLabels = this.container.querySelectorAll('.time-column-fixed .time-label');
+      timeLabels.forEach(label => {
+        label.style.height = `${rowHeight}px`;
+        label.style.minHeight = `${rowHeight}px`;
+        label.style.maxHeight = `${rowHeight}px`;
+      });
     };
     
     if (immediate) {
