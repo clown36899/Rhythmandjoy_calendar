@@ -6,6 +6,8 @@ class Calendar {
     this.selectedRooms = new Set(['a', 'b', 'c', 'd', 'e']);
     this.events = [];
     this.hammer = null;
+    this.isAnimating = false;
+    this.currentSlideIndex = 1; // 0: prev, 1: current, 2: next
   }
 
   async init() {
@@ -48,17 +50,79 @@ class Calendar {
 
   setupSwipeGestures() {
     if (typeof Hammer !== 'undefined') {
-      this.hammer = new Hammer(this.container);
-      this.hammer.on('swipeleft', () => this.navigate(1));
-      this.hammer.on('swiperight', () => this.navigate(-1));
+      this.hammer = new Hammer(this.container, {
+        touchAction: 'pan-y'
+      });
+      
+      this.hammer.get('pan').set({ direction: Hammer.DIRECTION_HORIZONTAL });
+      
+      let startTransform = 0;
+      
+      this.hammer.on('panstart', (e) => {
+        const slider = this.container.querySelector('.calendar-slider');
+        if (slider) {
+          slider.classList.add('no-transition');
+          startTransform = -100; // 항상 중앙(현재주)에서 시작
+        }
+      });
+      
+      this.hammer.on('panmove', (e) => {
+        if (this.isAnimating) return;
+        
+        const slider = this.container.querySelector('.calendar-slider');
+        if (slider) {
+          const percentMove = (e.deltaX / this.container.offsetWidth) * 100;
+          const newTransform = startTransform + percentMove;
+          slider.style.transform = `translateX(${newTransform}%)`;
+        }
+      });
+      
+      this.hammer.on('panend', (e) => {
+        const slider = this.container.querySelector('.calendar-slider');
+        if (slider) {
+          slider.classList.remove('no-transition');
+          
+          const threshold = this.container.offsetWidth * 0.3;
+          
+          if (e.deltaX < -threshold) {
+            // 왼쪽으로 스와이프 -> 다음 주
+            this.navigate(1);
+          } else if (e.deltaX > threshold) {
+            // 오른쪽으로 스와이프 -> 이전 주
+            this.navigate(-1);
+          } else {
+            // 원위치
+            slider.style.transform = 'translateX(-100%)';
+          }
+        }
+      });
+      
       console.log('✅ 스와이프 제스처 설정 완료');
     }
   }
 
   navigate(direction) {
-    // 항상 주간 모드
-    this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
-    this.render();
+    if (this.isAnimating) return;
+    
+    this.isAnimating = true;
+    const slider = this.container.querySelector('.calendar-slider');
+    
+    if (slider) {
+      // 애니메이션 시작
+      const targetTransform = direction === 1 ? '-200%' : '0%';
+      slider.style.transform = `translateX(${targetTransform})`;
+      
+      // 애니메이션 완료 후 날짜 업데이트 및 재렌더링
+      setTimeout(() => {
+        this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
+        this.isAnimating = false;
+        this.render();
+      }, 300);
+    } else {
+      this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
+      this.isAnimating = false;
+      this.render();
+    }
   }
 
   goToToday() {
@@ -172,14 +236,49 @@ class Calendar {
       `${this.currentDate.getMonth() + 1}월`;
     
     if (this.currentView === 'week') {
-      this.renderWeekView();
+      this.renderWeekViewWithSlider();
     } else {
       this.renderMonthView();
     }
   }
+  
+  async renderWeekViewWithSlider() {
+    // 이전주, 현재주, 다음주 데이터 준비
+    const prevDate = new Date(this.currentDate);
+    prevDate.setDate(prevDate.getDate() - 7);
+    
+    const nextDate = new Date(this.currentDate);
+    nextDate.setDate(nextDate.getDate() + 7);
+    
+    // 슬라이더 구조 생성
+    let html = '<div class="calendar-slider" style="transform: translateX(-100%)">';
+    
+    // 이전 주
+    html += '<div class="calendar-slide">';
+    html += this.renderWeekViewContent(prevDate);
+    html += '</div>';
+    
+    // 현재 주
+    html += '<div class="calendar-slide">';
+    html += this.renderWeekViewContent(this.currentDate);
+    html += '</div>';
+    
+    // 다음 주
+    html += '<div class="calendar-slide">';
+    html += this.renderWeekViewContent(nextDate);
+    html += '</div>';
+    
+    html += '</div>';
+    
+    this.container.innerHTML = html;
+  }
 
   renderWeekView() {
-    const { start } = this.getDateRange();
+    return this.renderWeekViewContent(this.currentDate);
+  }
+  
+  renderWeekViewContent(date) {
+    const { start } = this.getWeekRange(date);
     const days = [];
     
     for (let i = 0; i < 7; i++) {
@@ -250,10 +349,8 @@ class Calendar {
     });
 
     html += '</div>';
-    this.container.innerHTML = html;
     
-    // 그리드와 이벤트 레이아웃 동적 조정
-    this.adjustWeekViewLayout();
+    return html;
   }
   
   adjustWeekViewLayout() {
