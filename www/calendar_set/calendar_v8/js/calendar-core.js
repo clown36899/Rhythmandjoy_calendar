@@ -158,6 +158,9 @@ class Calendar {
   }
 
   toggleRoom(roomId) {
+    // 방 선택 변경 시 캐시 무효화
+    this.weekDataCache.clear();
+    
     // 단일 방만 선택
     this.selectedRooms.clear();
     this.selectedRooms.add(roomId);
@@ -175,6 +178,9 @@ class Calendar {
   }
 
   toggleAllRooms() {
+    // 방 선택 변경 시 캐시 무효화
+    this.weekDataCache.clear();
+    
     const allBtn = document.getElementById('allRoomsBtn');
     const allRoomIds = Object.keys(CONFIG.rooms);
     
@@ -271,21 +277,13 @@ class Calendar {
     const nextDate = new Date(this.currentDate);
     nextDate.setDate(nextDate.getDate() + 7);
     
-    // 3주치 이벤트 로드
-    const prevRange = this.getWeekRange(prevDate);
-    const nextRange = this.getWeekRange(nextDate);
-    const roomIds = Array.from(this.selectedRooms);
+    // 3주치 이벤트를 캐시에서 로드 또는 새로 가져오기
+    await this.loadWeekDataToCache(prevDate);
+    await this.loadWeekDataToCache(this.currentDate);
+    await this.loadWeekDataToCache(nextDate);
     
-    if (roomIds.length > 0) {
-      const bookings = await window.dataManager.fetchBookings(
-        roomIds,
-        prevRange.start.toISOString(),
-        nextRange.end.toISOString()
-      );
-      this.events = window.dataManager.convertToEvents(bookings);
-    } else {
-      this.events = [];
-    }
+    // 캐시된 데이터를 합쳐서 this.events에 설정
+    this.events = this.getMergedEventsFromCache([prevDate, this.currentDate, nextDate]);
     
     // 3개 슬라이드 생성: 이전주 | 현재주 | 다음주
     // transform: translateX(-33.333%)로 중앙(현재주)을 보여줌
@@ -306,6 +304,55 @@ class Calendar {
     html += '</div>';
     
     this.container.innerHTML = html;
+  }
+  
+  getWeekCacheKey(date) {
+    const { start } = this.getWeekRange(date);
+    return `${start.toISOString()}_${Array.from(this.selectedRooms).sort().join(',')}`;
+  }
+  
+  async loadWeekDataToCache(date) {
+    const cacheKey = this.getWeekCacheKey(date);
+    
+    // 이미 캐시에 있으면 스킵
+    if (this.weekDataCache.has(cacheKey)) {
+      return;
+    }
+    
+    // 캐시에 없으면 DB에서 로드
+    const { start, end } = this.getWeekRange(date);
+    const roomIds = Array.from(this.selectedRooms);
+    
+    if (roomIds.length > 0) {
+      const bookings = await window.dataManager.fetchBookings(
+        roomIds,
+        start.toISOString(),
+        end.toISOString()
+      );
+      const events = window.dataManager.convertToEvents(bookings);
+      this.weekDataCache.set(cacheKey, events);
+    } else {
+      this.weekDataCache.set(cacheKey, []);
+    }
+  }
+  
+  getMergedEventsFromCache(dates) {
+    const allEvents = [];
+    const seenIds = new Set();
+    
+    dates.forEach(date => {
+      const cacheKey = this.getWeekCacheKey(date);
+      const weekEvents = this.weekDataCache.get(cacheKey) || [];
+      
+      weekEvents.forEach(event => {
+        if (!seenIds.has(event.id)) {
+          seenIds.add(event.id);
+          allEvents.push(event);
+        }
+      });
+    });
+    
+    return allEvents;
   }
 
   renderWeekView() {
@@ -515,16 +562,36 @@ class Calendar {
     const dayEnd = new Date(date);
     dayEnd.setHours(23, 59, 59, 999);
 
-    return this.events.filter(event => {
-      return event.start < dayEnd && event.end > dayStart;
+    // 여러 날에 걸친 이벤트를 하루 단위로 분할
+    const dayEvents = [];
+    
+    this.events.forEach(event => {
+      // 이벤트가 이 날짜와 겹치는지 확인
+      if (event.start < dayEnd && event.end > dayStart) {
+        // 이 날짜에 해당하는 부분만 추출
+        const segmentStart = event.start < dayStart ? dayStart : event.start;
+        const segmentEnd = event.end > dayEnd ? dayEnd : event.end;
+        
+        dayEvents.push({
+          ...event,
+          displayStart: segmentStart,
+          displayEnd: segmentEnd
+        });
+      }
     });
+    
+    return dayEvents;
   }
 
   renderWeekEvent(event) {
-    const startHour = event.start.getHours();
-    const startMin = event.start.getMinutes();
-    const endHour = event.end.getHours();
-    const endMin = event.end.getMinutes();
+    // displayStart/displayEnd가 있으면 사용 (하루 단위로 분할된 경우)
+    const displayStart = event.displayStart || event.start;
+    const displayEnd = event.displayEnd || event.end;
+    
+    const startHour = displayStart.getHours();
+    const startMin = displayStart.getMinutes();
+    const endHour = displayEnd.getHours();
+    const endMin = displayEnd.getMinutes();
     
     // Calculate position as percentage of 24-hour day
     const startPercent = ((startHour * 60 + startMin) / (24 * 60)) * 100;

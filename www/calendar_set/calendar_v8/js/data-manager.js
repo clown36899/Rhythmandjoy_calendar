@@ -35,6 +35,7 @@ class DataManager {
           console.log('📡 실시간 업데이트:', payload);
           this.cache.clear();
           if (window.calendar) {
+            window.calendar.weekDataCache.clear(); // 주간 캐시도 무효화
             window.calendar.refresh();
           }
         }
