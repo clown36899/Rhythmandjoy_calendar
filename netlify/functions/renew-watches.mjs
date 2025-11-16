@@ -83,13 +83,13 @@ export async function handler(event, context) {
   try {
     console.log('🔄 채널 갱신 작업 시작...\n');
 
-    // 24시간 이내 만료 예정 채널 조회
-    const oneDayFromNow = Date.now() + (24 * 60 * 60 * 1000);
+    // 3일 이내 만료 예정 채널 조회 (안전 마진 확보)
+    const threeDaysFromNow = Date.now() + (3 * 24 * 60 * 60 * 1000);
 
     const { data: expiringChannels, error } = await supabase
       .from('calendar_channels')
       .select('*')
-      .lt('expiration', oneDayFromNow);
+      .lt('expiration', threeDaysFromNow);
 
     if (error) throw error;
 
