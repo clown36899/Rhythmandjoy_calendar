@@ -10,11 +10,11 @@
   --text-primary: #ffffff;
   --text-secondary: #888888;
   --border-color: #333333;
-  
+
   --color-dawn: #E3F2FD;
   --color-day: #FFF9C4;
   --color-evening: #FFE0B2;
-  
+
   --room-a: #F6BF26;
   --room-b: rgb(87, 150, 200);
   --room-c: rgb(129, 180, 186);
@@ -26,7 +26,8 @@ html {
   font-size: 16px;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   overflow: hidden;
   margin: 0;
@@ -117,7 +118,7 @@ body {
 
 .calendar-main {
   flex: 1;
-  padding: 0.5rem;
+
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -134,11 +135,11 @@ body {
   position: relative;
   display: grid;
   grid-template-columns: 3.75em repeat(7, 1fr);
-  grid-template-rows: auto repeat(24, 1fr); /* JavaScript에서 동적으로 덮어씀 */
+  grid-template-rows: auto repeat(24, 1fr);
+  /* JavaScript에서 동적으로 덮어씀 */
   width: 100%;
   flex: 1;
-  border: 1px solid var(--border-color);
-  border-radius: 0.5em;
+
   overflow: hidden;
   min-height: 0;
   font-size: clamp(6px, 1.6vh, 16px);
