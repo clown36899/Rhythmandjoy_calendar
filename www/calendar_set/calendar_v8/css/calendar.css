@@ -315,7 +315,7 @@ body {
   display: contents;
 }
 
-/* 메뉴 토글 버튼 - 모바일에서만 표시 */
+/* 메뉴 토글 버튼 - 기본 숨김, 모바일에서만 표시 */
 .menu-toggle-btn {
   background: none;
   border: none;
@@ -324,7 +324,7 @@ body {
   cursor: pointer;
   padding: 0.5em;
   margin-right: 0.5em;
-  display: inline-block;
+  display: none;
 }
 
 /* 메뉴 스타일 */
@@ -372,6 +372,17 @@ body {
   display: none !important;
 }
 
+#leftMenuFrame {
+  display: none;
+}
+
+/* 모바일 (1000px 미만): 메뉴 토글 버튼 표시 */
+@media (max-width: 999px) {
+  .menu-toggle-btn {
+    display: inline-block !important;
+  }
+}
+
 /* 1000px 이상 화면: 3등분 레이아웃 */
 @media (min-width: 1000px) {
   /* 왼쪽 메뉴 iframe */
@@ -413,11 +424,6 @@ body {
     border-left: 1px solid #5e5e5e;
     background: #111;
     z-index: 9;
-  }
-  
-  /* 메뉴 토글 버튼 숨김 (데스크탑에서는 메뉴가 항상 표시됨) */
-  .menu-toggle-btn {
-    display: none !important;
   }
   
   /* 오프캔버스 헤더 숨김 (데스크탑) */
