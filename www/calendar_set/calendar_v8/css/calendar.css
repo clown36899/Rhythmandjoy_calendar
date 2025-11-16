@@ -385,6 +385,12 @@ body {
 
 /* 1000px 이상 화면: 3등분 레이아웃 */
 @media (min-width: 1000px) {
+  /* 메뉴 토글 버튼 완전히 숨김 */
+  .menu-toggle-btn {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  
   /* 왼쪽 메뉴 iframe */
   #leftMenuFrame {
     display: block !important;
