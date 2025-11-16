@@ -703,38 +703,27 @@ class Calendar {
   
   updateCurrentTimeIndicator() {
     // 기존 인디케이터 제거
-    const existing = this.container.querySelectorAll('.current-time-indicator');
+    const existing = this.container.querySelectorAll('.current-time-indicator, .current-time-triangle');
     existing.forEach(el => el.remove());
     
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     
-    console.log('⏰ [시간인디케이터] 현재시각:', now.toLocaleTimeString('ko-KR'));
-    
     // 현재 주의 날짜 범위 확인
     const { start, end } = this.getWeekRange(this.currentDate);
     
-    console.log('📅 [시간인디케이터] 주범위:', start.toLocaleDateString('ko-KR'), '~', end.toLocaleDateString('ko-KR'));
-    
     // 현재 시간이 표시된 주에 속하는지 확인
     if (now < start || now > end) {
-      console.log('❌ [시간인디케이터] 현재 주가 아님');
       return;
     }
     
     // 첫 번째 week-view에서 높이 계산
     const firstWeekView = this.container.querySelector('.week-view');
-    if (!firstWeekView) {
-      console.log('❌ [시간인디케이터] week-view 없음');
-      return;
-    }
+    if (!firstWeekView) return;
     
     const headerElement = firstWeekView.querySelector('.day-header');
-    if (!headerElement) {
-      console.log('❌ [시간인디케이터] 헤더 없음');
-      return;
-    }
+    if (!headerElement) return;
     
     const headerHeight = headerElement.getBoundingClientRect().height;
     const weekViewHeight = firstWeekView.clientHeight;
@@ -744,13 +733,39 @@ class Calendar {
     const hourProgress = currentHour + (currentMinute / 60);
     const topPosition = headerHeight + (availableHeight * (hourProgress / 24));
     
-    // 현재 시간 라인 생성 (calendarContainer에 직접 추가)
-    const indicator = document.createElement('div');
-    indicator.className = 'current-time-indicator';
-    indicator.style.top = `${topPosition}px`;
-    this.container.appendChild(indicator);
+    // 1. 시간 컬럼 위 삼각형만
+    const triangle = document.createElement('div');
+    triangle.className = 'current-time-triangle';
+    triangle.style.top = `${topPosition}px`;
+    this.container.appendChild(triangle);
     
-    console.log(`✅ [시간인디케이터] 생성완료 (top: ${topPosition.toFixed(0)}px, 시각: ${currentHour}:${currentMinute})`);
+    // 2. 오늘 날짜 열 찾기
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const allDayHeaders = firstWeekView.querySelectorAll('.day-header');
+    let todayIndex = -1;
+    
+    allDayHeaders.forEach((header, index) => {
+      if (header.classList.contains('today')) {
+        todayIndex = index;
+      }
+    });
+    
+    // 오늘 날짜가 있으면 해당 열에만 라인 표시
+    if (todayIndex !== -1) {
+      const sliderElement = this.container.querySelector('.calendar-slider');
+      const sliderWidth = sliderElement ? sliderElement.offsetWidth : this.container.offsetWidth;
+      const dayWidth = sliderWidth / 7;
+      const dayLeft = 3.75 * 16 + (dayWidth * todayIndex); // 3.75em ≈ 60px
+      
+      const indicator = document.createElement('div');
+      indicator.className = 'current-time-indicator';
+      indicator.style.top = `${topPosition}px`;
+      indicator.style.left = `${dayLeft}px`;
+      indicator.style.width = `${dayWidth}px`;
+      this.container.appendChild(indicator);
+    }
   }
   
   startCurrentTimeUpdater() {

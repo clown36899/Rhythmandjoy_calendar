@@ -287,30 +287,28 @@ body {
   z-index: 5;
 }
 
-/* 현재 시간 표시 라인 */
-.current-time-indicator {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background-color: #ff4444;
-  z-index: 200;
-  pointer-events: none;
-}
-
-/* 시간 컨테이너 위에 빨간 삼각형 */
-.current-time-indicator::before {
-  content: '';
+/* 시간 컬럼 위 빨간 삼각형 */
+.current-time-triangle {
   position: absolute;
   left: 3.75em;
-  top: 50%;
-  transform: translateY(-50%);
   width: 0;
   height: 0;
   border-top: 6px solid transparent;
   border-bottom: 6px solid transparent;
   border-left: 8px solid #ff4444;
   margin-left: -8px;
+  transform: translateY(-50%);
+  z-index: 200;
+  pointer-events: none;
+}
+
+/* 오늘 날짜 열 위 현재 시간 라인 */
+.current-time-indicator {
+  position: absolute;
+  height: 2px;
+  background-color: #ff4444;
+  z-index: 200;
+  pointer-events: none;
 }
 
 .time-row {
