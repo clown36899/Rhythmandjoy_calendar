@@ -114,8 +114,25 @@
   <script src="js/data-manager.js"></script>
   <script src="js/calendar-core.js"></script>
   <script src="js/main.js"></script>
+  <script src="home_infopage/open_popup.js"></script>
   
   <script>
+    // iframe에서 postMessage로 모달 열기 요청 받기
+    window.addEventListener('message', function(event) {
+      // 보안: 같은 origin인지 확인
+      if (event.origin !== window.location.origin) return;
+      
+      if (event.data.type === 'openPopup') {
+        openPopup(event.data.url);
+      } else if (event.data.type === 'closePopup') {
+        closePopup();
+      } else if (event.data.type === 'openInnerPopup') {
+        openInnerPopup(event.data.url);
+      } else if (event.data.type === 'closeInnerPopup') {
+        closeInnerPopup();
+      }
+    });
+    
     // 연락처 복사 함수
     function copy() {
       var copyTxt = document.getElementById("copyTxt");
