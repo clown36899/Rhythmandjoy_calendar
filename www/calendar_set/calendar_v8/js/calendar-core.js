@@ -215,9 +215,23 @@ class Calendar {
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
       
-      // Group by room for consistent positioning
+      // Build lane map for this day (only rooms with events)
+      const roomsThisDay = [...new Set(dayEvents.map(e => e.roomId))].sort();
+      const laneMap = {};
+      const roomOrder = ['a', 'b', 'c', 'd', 'e'];
+      
+      // Filter to only rooms that have events this day, keeping original order
+      const activeLanes = roomOrder.filter(r => roomsThisDay.includes(r));
+      activeLanes.forEach((roomId, idx) => {
+        laneMap[roomId] = {
+          index: idx,
+          total: activeLanes.length
+        };
+      });
+      
+      // Render events with per-day lane positioning
       dayEvents.forEach(event => {
-        html += this.renderWeekEvent(event, day, dayIndex);
+        html += this.renderWeekEvent(event, day, dayIndex, laneMap);
       });
     });
     html += '</div>';
@@ -305,7 +319,7 @@ class Calendar {
     });
   }
 
-  renderWeekEvent(event, day, dayIndex) {
+  renderWeekEvent(event, day, dayIndex, laneMap) {
     const startHour = event.start.getHours();
     const startMin = event.start.getMinutes();
     const endHour = event.end.getHours();
@@ -319,11 +333,10 @@ class Calendar {
     // Use grid column positioning (column 1 is time, columns 2-8 are days)
     const gridColumn = dayIndex + 2; // +2 to skip time column (1-indexed)
     
-    // Fixed horizontal position based on room (same room = same position)
-    const roomOrder = ['a', 'b', 'c', 'd', 'e'];
-    const roomIndex = roomOrder.indexOf(event.roomId);
-    const roomWidth = 20; // Each room takes 20% of the width
-    const left = roomIndex * roomWidth;
+    // Per-day lane positioning based on rooms active this day
+    const lane = laneMap[event.roomId];
+    const roomWidth = 100 / lane.total;
+    const left = (100 / lane.total) * lane.index;
     
     const roomName = CONFIG.rooms[event.roomId]?.name || event.roomId.toUpperCase();
     const displayTitle = event.title.length > 10 ? event.title.substring(0, 10) + '...' : event.title;
