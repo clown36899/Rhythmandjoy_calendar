@@ -21,9 +21,9 @@ class Calendar {
     }
     
     this.setupEventListeners();
-    this.setupSwipeGestures();
     this.setupResizeObserver();
     await this.render();
+    this.setupSwipeGestures();
     
     console.log('✅ Realtime subscription active');
   }
