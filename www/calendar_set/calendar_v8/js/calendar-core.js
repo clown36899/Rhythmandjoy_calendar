@@ -144,7 +144,7 @@ class Calendar {
     
     // 애니메이션 완료 후
     setTimeout(async () => {
-      this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
+      
       console.log(`📅 날짜 변경: ${this.currentDate.toLocaleDateString('ko-KR')}`);
       
       // 안 보이는 슬라이드만 업데이트 (DOM 재배열 없음)
