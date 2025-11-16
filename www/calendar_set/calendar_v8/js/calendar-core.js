@@ -162,32 +162,35 @@ class Calendar {
     const slides = Array.from(slider.querySelectorAll('.calendar-slide'));
     if (slides.length !== 3) return;
     
-    // 트랜지션 비활성화 (리셋하기 전에)
+    // 트랜지션 비활성화
     slider.classList.add('no-transition');
     
-    // 모든 슬라이드를 새 currentDate 기준으로 업데이트
-    const prevDate = new Date(this.currentDate);
-    prevDate.setDate(prevDate.getDate() - 7);
+    if (direction === 1) {
+      // 다음 주로 이동: 맨 앞 슬라이드를 맨 뒤로 이동하고 새 다음주로 업데이트
+      const firstSlide = slides[0];
+      const newNextDate = new Date(this.currentDate);
+      newNextDate.setDate(newNextDate.getDate() + 7);
+      
+      await this.loadWeekDataToCache(newNextDate);
+      firstSlide.innerHTML = this.renderWeekViewContent(newNextDate);
+      slider.appendChild(firstSlide);
+      console.log(`🔄 슬라이드 회전 → ${newNextDate.toLocaleDateString('ko-KR')}`);
+    } else {
+      // 이전 주로 이동: 맨 뒤 슬라이드를 맨 앞으로 이동하고 새 이전주로 업데이트
+      const lastSlide = slides[2];
+      const newPrevDate = new Date(this.currentDate);
+      newPrevDate.setDate(newPrevDate.getDate() - 7);
+      
+      await this.loadWeekDataToCache(newPrevDate);
+      lastSlide.innerHTML = this.renderWeekViewContent(newPrevDate);
+      slider.insertBefore(lastSlide, slides[0]);
+      console.log(`🔄 슬라이드 회전 → ${newPrevDate.toLocaleDateString('ko-KR')}`);
+    }
     
-    const nextDate = new Date(this.currentDate);
-    nextDate.setDate(nextDate.getDate() + 7);
-    
-    // 캐시 로드
-    await this.loadWeekDataToCache(prevDate);
-    await this.loadWeekDataToCache(this.currentDate);
-    await this.loadWeekDataToCache(nextDate);
-    
-    // 3개 슬라이드 모두 업데이트
-    slides[0].innerHTML = this.renderWeekViewContent(prevDate);
-    slides[1].innerHTML = this.renderWeekViewContent(this.currentDate);
-    slides[2].innerHTML = this.renderWeekViewContent(nextDate);
-    
-    console.log(`🔄 슬라이드 업데이트: ${prevDate.toLocaleDateString('ko-KR')} | ${this.currentDate.toLocaleDateString('ko-KR')} | ${nextDate.toLocaleDateString('ko-KR')}`);
-    
-    // 중앙 위치로 즉시 리셋 (트랜지션 없이)
+    // transform 리셋 (트랜지션 없이)
     slider.style.transform = 'translateX(-33.333%)';
     
-    // 다음 프레임에 트랜지션 재활성화
+    // 트랜지션 재활성화
     requestAnimationFrame(() => {
       slider.classList.remove('no-transition');
       this.adjustWeekViewLayout();
