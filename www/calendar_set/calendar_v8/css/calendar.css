@@ -368,6 +368,11 @@ body {
 
 /* 1000px 이상 화면: 3등분 레이아웃 */
 @media (min-width: 1000px) {
+  /* 예약 정보 버튼 숨김 */
+  .info-btn {
+    display: none !important;
+  }
+  
   /* 왼쪽 메뉴 iframe */
   #leftMenuFrame {
     display: block !important;
