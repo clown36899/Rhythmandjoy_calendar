@@ -140,7 +140,7 @@ body {
   position: relative;
   display: grid;
   grid-template-columns: 3.75em repeat(7, 1fr);
-  grid-template-rows: auto repeat(24, 1fr);
+  grid-template-rows: auto repeat(24, 1fr); /* JavaScript에서 동적으로 덮어씀 */
   width: 100%;
   flex: 1;
   border: 1px solid var(--border-color);

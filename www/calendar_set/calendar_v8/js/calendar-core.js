@@ -12,7 +12,20 @@ class Calendar {
     await window.dataManager.init();
     this.setupEventListeners();
     this.setupSwipeGestures();
+    this.setupResizeObserver();
     await this.render();
+  }
+  
+  setupResizeObserver() {
+    // viewport 크기 변경 시 레이아웃 재조정
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        if (this.currentView === 'week') {
+          this.adjustWeekViewLayout();
+        }
+      });
+      this.resizeObserver.observe(this.container);
+    }
   }
 
   setupEventListeners() {
@@ -229,16 +242,33 @@ class Calendar {
     html += '</div>';
     this.container.innerHTML = html;
     
-    // 헤더 높이 측정 후 이벤트 컨테이너 위치 조정
+    // 그리드와 이벤트 레이아웃 동적 조정
+    this.adjustWeekViewLayout();
+  }
+  
+  adjustWeekViewLayout() {
     requestAnimationFrame(() => {
+      const weekView = this.container.querySelector('.week-view');
       const headerElement = this.container.querySelector('.day-header');
-      if (headerElement) {
-        const headerHeight = headerElement.getBoundingClientRect().height;
-        const eventContainers = this.container.querySelectorAll('.day-events-container');
-        eventContainers.forEach(container => {
-          container.style.paddingTop = `${headerHeight}px`;
-        });
-      }
+      
+      if (!weekView || !headerElement) return;
+      
+      const headerHeight = headerElement.getBoundingClientRect().height;
+      const weekViewHeight = weekView.clientHeight;
+      const availableHeight = weekViewHeight - headerHeight;
+      const rowHeight = availableHeight / 24;
+      
+      // Grid 행 높이를 동적으로 설정하여 24시간이 항상 fit되도록
+      weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px)`;
+      
+      // 이벤트 컨테이너를 헤더 아래에 정확히 배치
+      const eventContainers = this.container.querySelectorAll('.day-events-container');
+      eventContainers.forEach(container => {
+        container.style.top = `${headerHeight}px`;
+        container.style.bottom = '0';
+        container.style.paddingTop = '0';
+        container.style.height = `${availableHeight}px`;
+      });
     });
   }
 
