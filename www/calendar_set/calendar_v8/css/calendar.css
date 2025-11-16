@@ -54,8 +54,8 @@ body {
   justify-content: space-between;
   gap: clamp(0.5rem, 1.5vh, 1rem);
   padding: clamp(0.5rem, 1.5vh, 1rem) clamp(0.75rem, 2vh, 1.5rem);
-  background-color: var(--bg-darker);
-  border-bottom: 1px solid var(--border-color);
+  background-color: #000;
+  border-bottom: none;
   flex-shrink: 0;
 }
 
@@ -74,10 +74,11 @@ body {
 }
 
 .calendar-title {
-  font-size: clamp(1rem, 2.2vh, 1.5rem);
-  font-weight: 600;
+  font-size: clamp(1.5rem, 3.5vh, 2rem);
+  font-weight: 700;
   flex: 1;
   text-align: center;
+  color: #fff;
 }
 
 .admin-btn {
@@ -151,7 +152,8 @@ body {
 
 .week-view .time-label,
 .week-view .day-header {
-  border: 1px solid var(--border-color);
+  border-right: 1px solid #333;
+  border-bottom: 1px solid #333;
   padding: 0.5em 0.3em;
   text-align: center;
   font-weight: 400;
@@ -159,7 +161,8 @@ body {
 }
 
 .week-view .day-header {
-  background-color: var(--bg-darker);
+  background-color: #000;
+  border-top: none;
 }
 
 /* 시간 라벨 배경색 */
@@ -184,29 +187,34 @@ body {
 .week-view .day-header {
   display: flex;
   flex-direction: column;
-  gap: 0.1em;
-  padding-top: 0.5em;
-  padding-bottom: 0.5em;
+  gap: 0.15em;
+  padding-top: 0.6em;
+  padding-bottom: 0.6em;
 }
 
 .week-view .day-name {
-  font-size: 0.75em;
-  color: var(--text-secondary);
+  font-size: 0.65em;
+  color: #999;
   font-weight: 400;
+  letter-spacing: 0.02em;
 }
 
 .week-view .day-date {
-  font-size: 1.3em;
-  font-weight: 600;
+  font-size: 1.6em;
+  font-weight: 700;
+  color: #fff;
 }
 
-.day-header.sunday .day-name,
+.day-header.sunday .day-name {
+  color: #ff6b6b;
+}
+
 .day-header.sunday .day-date {
   color: #ff6b6b;
 }
 
 .day-header.today {
-  background-color: rgba(87, 150, 200, 0.2);
+  background-color: rgba(87, 150, 200, 0.15);
 }
 
 .time-row {
@@ -214,7 +222,8 @@ body {
 }
 
 .time-cell {
-  border: 1px solid var(--border-color);
+  border-right: 1px solid #333;
+  border-bottom: 1px solid #333;
   position: relative;
 }
 
