@@ -89,12 +89,16 @@ class Calendar {
     let swipeStartTime = 0;
     let isPanning = false;
     
+    let slideStarts = [-100, 0, 100]; // 각 슬라이드의 초기 위치
+    
     this.hammer.on('panstart', (e) => {
       if (this.isAnimating) return;
-      const slider = this.container.querySelector('.calendar-slider');
-      if (slider) {
-        slider.classList.add('no-transition');
-        startTransform = this.baseTranslate;
+      const slides = this.container.querySelectorAll('.calendar-slide');
+      if (slides.length === 3) {
+        slides.forEach((slide, i) => {
+          slide.style.transition = 'none';
+        });
+        slideStarts = [-100, 0, 100];
         swipeStartTime = Date.now();
         isPanning = true;
         console.log('🚀 [스와이프 시작]');
@@ -106,11 +110,13 @@ class Calendar {
       
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       
-      const slider = this.container.querySelector('.calendar-slider');
-      if (slider) {
+      const slides = this.container.querySelectorAll('.calendar-slide');
+      if (slides.length === 3) {
         const percentMove = (e.deltaX / this.container.offsetWidth) * 100;
-        const newTransform = startTransform + percentMove;
-        slider.style.transform = `translateX(${newTransform}%)`;
+        slides.forEach((slide, i) => {
+          const newPos = slideStarts[i] + percentMove;
+          slide.style.transform = `translateX(${newPos}%)`;
+        });
       }
     });
     
@@ -118,8 +124,8 @@ class Calendar {
       if (this.isAnimating || !isPanning) return;
       isPanning = false;
       
-      const slider = this.container.querySelector('.calendar-slider');
-      if (slider) {
+      const slides = this.container.querySelectorAll('.calendar-slide');
+      if (slides.length === 3) {
         const swipeEndTime = Date.now();
         const duration = swipeEndTime - swipeStartTime;
         const distance = Math.abs(e.deltaX);
@@ -136,13 +142,17 @@ class Calendar {
         
         const isHorizontalSwipe = Math.abs(e.deltaX) > Math.abs(e.deltaY);
         if (!isHorizontalSwipe) {
-          slider.classList.remove('no-transition');
-          slider.style.transform = 'translateX(-33.333%)';
+          slides.forEach((slide, i) => {
+            slide.style.transition = 'transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)';
+            slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
+          });
           return;
         }
         
         const animationDuration = velocity > 1.5 ? 0.25 : 0.3;
-        slider.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
+        slides.forEach(slide => {
+          slide.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
+        });
         
         const containerWidth = this.container.offsetWidth;
         const distanceThreshold = Math.min(containerWidth * 0.15, 120);
@@ -157,7 +167,9 @@ class Calendar {
             this.navigate(-1);
           }
         } else {
-          slider.style.transform = 'translateX(-33.333%)';
+          slides.forEach((slide, i) => {
+            slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
+          });
         }
       }
     });
@@ -166,7 +178,6 @@ class Calendar {
   }
 
   async navigate(direction) {
-    // Phase 1: Guard
     if (this.isAnimating) {
       console.log('⏸️ 네비게이션 중복 방지');
       return;
@@ -175,45 +186,46 @@ class Calendar {
     
     console.log(`🧭 네비게이션 시작: ${direction > 0 ? '다음 주' : '이전 주'}`);
     
-    const slider = this.container.querySelector('.calendar-slider');
-    if (!slider) {
+    const slides = this.container.querySelectorAll('.calendar-slide');
+    if (slides.length !== 3) {
       this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
       await this.render();
       this.isAnimating = false;
       return;
     }
     
-    // Phase 2: Animate
-    const targetTransform = direction === 1 ? '-66.666%' : '0%';
-    slider.style.transform = `translateX(${targetTransform})`;
+    // 각 슬라이드를 100% 이동
+    const targets = direction === 1 ? [-200, -100, 0] : [0, 100, 200];
+    slides.forEach((slide, i) => {
+      slide.style.transform = `translateX(${targets[i]}%)`;
+    });
     
-    // transitionend 대기 (단일 핸들러, 300ms 타임아웃)
+    // transitionend 대기
     const handleTransitionEnd = async (e) => {
       if (e.propertyName !== 'transform') return;
-      slider.removeEventListener('transitionend', handleTransitionEnd);
+      slides[1].removeEventListener('transitionend', handleTransitionEnd);
       
-      // Phase 3: Finalize
-      await this.finalizeNavigation(direction, slider);
+      await this.finalizeNavigation(direction, slides);
       this.isAnimating = false;
       console.log(`✅ 네비게이션 완료`);
     };
     
-    slider.addEventListener('transitionend', handleTransitionEnd, { once: true });
+    slides[1].addEventListener('transitionend', handleTransitionEnd, { once: true });
     
     // 안전장치: 500ms 후 강제 완료
     setTimeout(async () => {
       if (this.isAnimating) {
         console.log('⏱️ 타임아웃으로 강제 완료');
-        slider.removeEventListener('transitionend', handleTransitionEnd);
-        await this.finalizeNavigation(direction, slider);
+        slides[1].removeEventListener('transitionend', handleTransitionEnd);
+        await this.finalizeNavigation(direction, slides);
         this.isAnimating = false;
         console.log(`✅ 네비게이션 완료 (타임아웃)`);
       }
     }, 500);
   }
   
-  async finalizeNavigation(direction, slider) {
-    const slides = Array.from(slider.querySelectorAll('.calendar-slide'));
+  async finalizeNavigation(direction, slidesArray) {
+    const slides = Array.from(slidesArray);
     if (slides.length !== 3) return;
     
     // 날짜 업데이트
@@ -223,39 +235,38 @@ class Calendar {
     // 제목 업데이트
     this.updateCalendarTitle();
     
-    // 먼저 새 데이터 준비
+    const slider = this.container.querySelector('.calendar-slider');
+    
+    // 트랜지션 비활성화
+    slides.forEach(slide => {
+      slide.style.transition = 'none';
+    });
+    
+    // DOM 재배열
+    if (direction === 1) {
+      slider.appendChild(slides[0]);
+    } else {
+      slider.insertBefore(slides[2], slides[0]);
+    }
+    
+    // 새 데이터 준비
     await this.prepareAdjacentSlides(direction);
     
-    // 트랜지션 완전 비활성화 (inline style 제거)
-    slider.style.transition = 'none';
-    
-    // DOM 재배열과 transform 리셋을 한 프레임에
-    await new Promise(resolve => requestAnimationFrame(() => {
-      // DOM 재배열
-      if (direction === 1) {
-        slider.appendChild(slides[0]);
-      } else {
-        slider.insertBefore(slides[2], slides[0]);
-      }
-      
-      // 브라우저가 DOM 변경을 감지하도록 강제
-      slider.offsetHeight;
-      
-      // 즉시 중앙으로 리셋
-      slider.style.transform = 'translateX(-33.333%)';
-      this.baseTranslate = -33.333;
-      
-      resolve();
-    }));
+    // 각 슬라이드를 원위치로 리셋 (transition 없이)
+    const newSlides = this.container.querySelectorAll('.calendar-slide');
+    newSlides.forEach((slide, i) => {
+      slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
+    });
     
     // 레이아웃 조정
     this.adjustWeekViewLayout(true);
     
-    // 트랜지션 재활성화 (inline style 제거하여 CSS로 복귀)
-    await new Promise(resolve => requestAnimationFrame(() => {
-      slider.style.transition = '';
-      resolve();
-    }));
+    // 다음 프레임에서 트랜지션 재활성화
+    requestAnimationFrame(() => {
+      newSlides.forEach(slide => {
+        slide.style.transition = '';
+      });
+    });
   }
   
   updateCalendarTitle() {
@@ -442,19 +453,18 @@ class Calendar {
     this.events = this.getMergedEventsFromCache([prevDate, this.currentDate, nextDate]);
     console.log(`   ✅ 병합된 이벤트: ${this.events.length}개`);
     
-    // 3개 슬라이드 생성: 이전주 | 현재주 | 다음주
-    // transform: translateX(-33.333%)로 중앙(현재주)을 보여줌
-    let html = '<div class="calendar-slider" style="transform: translateX(-33.333%)">';
+    // 3개 슬라이드 생성: 이전주(-100%) | 현재주(0%) | 다음주(100%)
+    let html = '<div class="calendar-slider">';
     
-    html += '<div class="calendar-slide">';
+    html += '<div class="calendar-slide" style="transform: translateX(-100%)">';
     html += this.renderWeekViewContent(prevDate);
     html += '</div>';
     
-    html += '<div class="calendar-slide">';
+    html += '<div class="calendar-slide" style="transform: translateX(0%)">';
     html += this.renderWeekViewContent(this.currentDate);
     html += '</div>';
     
-    html += '<div class="calendar-slide">';
+    html += '<div class="calendar-slide" style="transform: translateX(100%)">';
     html += this.renderWeekViewContent(nextDate);
     html += '</div>';
     
