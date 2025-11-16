@@ -8,6 +8,7 @@ class Calendar {
     this.hammer = null;
     this.isAnimating = false;
     this.currentSlideIndex = 1; // 0: prev, 1: current, 2: next
+    this.weekDataCache = new Map(); // 주간 데이터 캐시
   }
 
   async init() {
@@ -54,11 +55,19 @@ class Calendar {
         touchAction: 'pan-y'
       });
       
-      this.hammer.get('pan').set({ direction: Hammer.DIRECTION_HORIZONTAL });
+      // Pan과 Swipe 제스처 모두 활성화
+      this.hammer.get('pan').set({ 
+        direction: Hammer.DIRECTION_HORIZONTAL,
+        threshold: 0 // 즉시 반응
+      });
+      this.hammer.get('swipe').set({ 
+        direction: Hammer.DIRECTION_HORIZONTAL 
+      });
       
       let startTransform = 0;
       
       this.hammer.on('panstart', (e) => {
+        if (this.isAnimating) return;
         const slider = this.container.querySelector('.calendar-slider');
         if (slider) {
           slider.classList.add('no-transition');
@@ -78,18 +87,31 @@ class Calendar {
       });
       
       this.hammer.on('panend', (e) => {
+        if (this.isAnimating) return;
+        
         const slider = this.container.querySelector('.calendar-slider');
         if (slider) {
           slider.classList.remove('no-transition');
           
-          const threshold = this.container.offsetWidth * 0.3;
+          // 업계 표준 스와이프 임계값
+          const containerWidth = this.container.offsetWidth;
+          const distanceThreshold = Math.min(containerWidth * 0.15, 120); // 15% 또는 최대 120px
+          const velocityThreshold = 0.35; // px/ms
           
-          if (e.deltaX < -threshold) {
-            // 왼쪽으로 스와이프 -> 다음 주
-            this.navigate(1);
-          } else if (e.deltaX > threshold) {
-            // 오른쪽으로 스와이프 -> 이전 주
-            this.navigate(-1);
+          const distance = Math.abs(e.deltaX);
+          const velocity = Math.abs(e.velocityX);
+          
+          // 거리 조건 OR 속도 조건 (빠른 플링)
+          const shouldNavigate = distance >= distanceThreshold || velocity >= velocityThreshold;
+          
+          if (shouldNavigate) {
+            if (e.deltaX < 0) {
+              // 왼쪽으로 스와이프 -> 다음 주
+              this.navigate(1);
+            } else {
+              // 오른쪽으로 스와이프 -> 이전 주
+              this.navigate(-1);
+            }
           } else {
             // 원위치 (중앙으로 복귀)
             slider.style.transform = 'translateX(-33.333%)';
@@ -97,11 +119,11 @@ class Calendar {
         }
       });
       
-      console.log('✅ 스와이프 제스처 설정 완료');
+      console.log('✅ 스와이프 제스처 설정 완료 (거리: 15%, 속도: 0.35)');
     }
   }
 
-  navigate(direction) {
+  async navigate(direction) {
     if (this.isAnimating) return;
     
     this.isAnimating = true;
@@ -113,15 +135,15 @@ class Calendar {
       slider.style.transform = `translateX(${targetTransform})`;
       
       // 애니메이션 완료 후 날짜 업데이트 및 재렌더링
-      setTimeout(() => {
+      setTimeout(async () => {
         this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
+        await this.render();
         this.isAnimating = false;
-        this.render();
       }, 300);
     } else {
       this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
+      await this.render();
       this.isAnimating = false;
-      this.render();
     }
   }
 
@@ -230,14 +252,13 @@ class Calendar {
   async render() {
     this.container.innerHTML = '<div class="loading">로딩 중...</div>';
     
-    await this.loadEvents();
-    
     document.getElementById('calendarTitle').textContent = 
       `${this.currentDate.getMonth() + 1}월`;
     
     if (this.currentView === 'week') {
-      this.renderWeekViewWithSlider();
+      await this.renderWeekViewWithSlider();
     } else {
+      await this.loadEvents();
       this.renderMonthView();
     }
   }
@@ -303,8 +324,7 @@ class Calendar {
     
     // 해당 주의 이벤트 필터링
     const weekEvents = this.events.filter(event => {
-      const eventStart = new Date(event.start);
-      return eventStart >= start && eventStart < end;
+      return event.start < end && event.end > start;
     });
 
     let html = '<div class="week-view">';
