@@ -218,37 +218,39 @@ class Calendar {
     // 제목 업데이트
     this.updateCalendarTitle();
     
-    // 먼저 새 데이터 준비 (화면에 보이기 전에)
+    // 먼저 새 데이터 준비
     await this.prepareAdjacentSlides(direction);
     
-    // 트랜지션 비활성화 + 슬라이더 숨기기 (깜빡임 방지)
+    // 트랜지션 비활성화
     slider.classList.add('no-transition');
-    slider.style.opacity = '0';
     
-    // DOM 재배열 (화면에 안 보이는 상태에서)
-    if (direction === 1) {
-      const firstSlide = slides[0];
-      slider.appendChild(firstSlide);
-    } else {
-      const lastSlide = slides[2];
-      slider.insertBefore(lastSlide, slides[0]);
-    }
-    
-    // 즉시 중앙(-33.333%)으로 재설정 (트랜지션 없이)
-    slider.style.transform = 'translateX(-33.333%)';
-    this.baseTranslate = -33.333;
+    // DOM 재배열과 transform 리셋을 한 프레임에
+    await new Promise(resolve => requestAnimationFrame(() => {
+      // DOM 재배열
+      if (direction === 1) {
+        slider.appendChild(slides[0]);
+      } else {
+        slider.insertBefore(slides[2], slides[0]);
+      }
+      
+      // 브라우저가 DOM 변경을 감지하도록 강제
+      slider.offsetHeight;
+      
+      // 즉시 중앙으로 리셋
+      slider.style.transform = 'translateX(-33.333%)';
+      this.baseTranslate = -33.333;
+      
+      resolve();
+    }));
     
     // 레이아웃 조정
     this.adjustWeekViewLayout(true);
     
-    // 다음 프레임에서 슬라이더 표시 + 트랜지션 재활성화
-    await new Promise(resolve => {
-      requestAnimationFrame(() => {
-        slider.style.opacity = '1';
-        slider.classList.remove('no-transition');
-        resolve();
-      });
-    });
+    // 트랜지션 재활성화
+    await new Promise(resolve => requestAnimationFrame(() => {
+      slider.classList.remove('no-transition');
+      resolve();
+    }));
   }
   
   updateCalendarTitle() {
