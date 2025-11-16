@@ -349,8 +349,8 @@ body {
 }
 
 .logo-circle {
-  width: clamp(20px, 4vw, 40px);
-  height: clamp(20px, 4vw, 40px);
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background-color: #fff;
   display: flex;
@@ -359,23 +359,23 @@ body {
 }
 
 .logo-icon {
-  font-size: clamp(10px, 2vw, 20px);
+  font-size: 18px;
 }
 
 .logo-text {
-  font-size: clamp(8px, 2vw, 16px);
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
 }
 
 .info-btn {
-  padding: clamp(4px, 1vw, 10px) clamp(8px, 2vw, 24px);
+  padding: 8px 20px;
   background-color: #333;
   border: none;
   border-radius: 2rem;
   color: var(--text-primary);
-  font-size: clamp(8px, 2vw, 14px);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -406,14 +406,14 @@ body {
 }
 
 .room-btn {
-  min-width: clamp(20px, 5vw, 44px);
-  height: clamp(20px, 5vw, 44px);
+  min-width: 40px;
+  height: 40px;
   padding: 0;
   border: none;
   border-radius: 0.5rem;
   cursor: pointer;
   font-weight: 700;
-  font-size: clamp(10px, 2vw, 18px);
+  font-size: 16px;
   transition: all 0.2s;
   color: #000;
   opacity: 0.5;
@@ -434,7 +434,7 @@ body {
   background-color: #555;
   color: #fff;
   opacity: 0.7;
-  min-width: clamp(24px, 6vw, 56px);
+  min-width: 52px;
 }
 
 #allRoomsBtn:hover,
@@ -443,14 +443,14 @@ body {
 }
 
 .period-btn {
-  min-width: clamp(20px, 5vw, 44px);
-  height: clamp(20px, 5vw, 44px);
+  min-width: 40px;
+  height: 40px;
   padding: 0;
   background-color: #333;
   border: none;
   border-radius: 50%;
   color: var(--text-secondary);
-  font-size: clamp(8px, 2vw, 14px);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -466,14 +466,14 @@ body {
 }
 
 .nav-btn-round {
-  min-width: clamp(20px, 5vw, 44px);
-  height: clamp(20px, 5vw, 44px);
+  min-width: 40px;
+  height: 40px;
   padding: 0;
   background-color: #222;
   border: none;
   border-radius: 50%;
   color: var(--text-primary);
-  font-size: clamp(10px, 2.5vw, 20px);
+  font-size: 18px;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
@@ -486,16 +486,63 @@ body {
 }
 
 .today-btn {
-  padding: clamp(4px, 1vw, 8px) clamp(8px, 2vw, 16px);
+  padding: 7px 14px;
   background-color: transparent;
   border: 1px solid var(--border-color);
   border-radius: 1rem;
   color: var(--text-secondary);
-  font-size: clamp(8px, 2vw, 14px);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .logo-circle {
+    width: max(20px, 5vw);
+    height: max(20px, 5vw);
+  }
+  
+  .logo-icon {
+    font-size: max(10px, 2.5vw);
+  }
+  
+  .logo-text {
+    font-size: max(10px, 2.2vw);
+  }
+  
+  .info-btn {
+    padding: max(4px, 1vw) max(10px, 2.5vw);
+    font-size: max(9px, 2vw);
+  }
+  
+  .room-btn {
+    min-width: max(24px, 6vw);
+    height: max(24px, 6vw);
+    font-size: max(11px, 2.5vw);
+  }
+  
+  #allRoomsBtn {
+    min-width: max(28px, 7vw);
+  }
+  
+  .period-btn {
+    min-width: max(24px, 6vw);
+    height: max(24px, 6vw);
+    font-size: max(9px, 2vw);
+  }
+  
+  .nav-btn-round {
+    min-width: max(24px, 6vw);
+    height: max(24px, 6vw);
+    font-size: max(12px, 2.8vw);
+  }
+  
+  .today-btn {
+    padding: max(4px, 1vw) max(8px, 2vw);
+    font-size: max(9px, 2vw);
+  }
 }
 
 .today-btn:hover {
