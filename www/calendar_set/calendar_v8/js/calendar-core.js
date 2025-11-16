@@ -318,6 +318,11 @@ class Calendar {
     // 레이아웃 조정
     this.adjustWeekViewLayout(true);
     
+    // 현재 시간 표시 업데이트
+    requestAnimationFrame(() => {
+      this.updateCurrentTimeIndicator();
+    });
+    
     // 다음 프레임에서 트랜지션 재활성화
     requestAnimationFrame(() => {
       newSlides.forEach(slide => {
