@@ -746,11 +746,17 @@ class Calendar {
     const allDayHeaders = firstWeekView.querySelectorAll('.day-header');
     let todayIndex = -1;
     
+    console.log('📅 [오늘날짜찾기] 헤더 개수:', allDayHeaders.length);
+    
     allDayHeaders.forEach((header, index) => {
-      if (header.classList.contains('today')) {
+      const hasToday = header.classList.contains('today');
+      console.log(`  헤더 ${index}:`, hasToday ? '✅ 오늘' : '일반', header.classList.toString());
+      if (hasToday) {
         todayIndex = index;
       }
     });
+    
+    console.log('📍 [오늘날짜] 인덱스:', todayIndex);
     
     // 오늘 날짜가 있으면 해당 열에만 라인 표시
     if (todayIndex !== -1) {
@@ -759,12 +765,18 @@ class Calendar {
       const dayWidth = sliderWidth / 7;
       const dayLeft = 3.75 * 16 + (dayWidth * todayIndex); // 3.75em ≈ 60px
       
+      console.log('📏 [라인계산] left:', dayLeft, 'width:', dayWidth);
+      
       const indicator = document.createElement('div');
       indicator.className = 'current-time-indicator';
       indicator.style.top = `${topPosition}px`;
       indicator.style.left = `${dayLeft}px`;
       indicator.style.width = `${dayWidth}px`;
       this.container.appendChild(indicator);
+      
+      console.log('✅ [오늘라인] 생성완료');
+    } else {
+      console.log('❌ [오늘라인] 오늘 날짜 없음');
     }
   }
   
