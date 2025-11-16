@@ -73,16 +73,14 @@ class Calendar {
     }
     
     this.hammer = new Hammer(slider, {
-      touchAction: 'pan-y'
+      touchAction: 'pan-y',
+      inputClass: Hammer.SUPPORT_POINTER_EVENTS ? Hammer.PointerEventInput : Hammer.TouchInput
     });
     
-    // Pan과 Swipe 제스처 모두 활성화 (모바일 호환)
+    // Pan 제스처 설정 (모바일 호환)
     this.hammer.get('pan').set({ 
-      direction: Hammer.DIRECTION_ALL, // 모바일에서 터치 인식 향상
-      threshold: 5 // 작은 떨림 무시
-    });
-    this.hammer.get('swipe').set({ 
-      direction: Hammer.DIRECTION_HORIZONTAL 
+      direction: Hammer.DIRECTION_HORIZONTAL,
+      threshold: 10
     });
     
     let startTransform = 0;
@@ -171,6 +169,19 @@ class Calendar {
             slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
           });
         }
+      }
+    });
+    
+    // 터치 중단 시 리셋
+    this.hammer.on('pancancel', (e) => {
+      if (isPanning) {
+        console.log('❌ [스와이프 취소]');
+        isPanning = false;
+        const slides = this.container.querySelectorAll('.calendar-slide');
+        slides.forEach((slide, i) => {
+          slide.style.transition = 'transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)';
+          slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
+        });
       }
     });
     
