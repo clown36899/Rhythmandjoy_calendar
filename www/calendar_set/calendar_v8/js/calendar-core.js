@@ -99,14 +99,14 @@ class Calendar {
       return;
     }
     
-    // 터치와 마우스 모두 활성화 (TouchMouseInput 사용)
-    this.hammer = new Hammer(slider);
+    // 터치: 가로만 Hammer가 처리, 세로는 브라우저 스크롤
+    this.hammer = new Hammer(slider, {
+      touchAction: 'pan-y'
+    });
     this.hammer.get('pan').set({ 
       direction: Hammer.DIRECTION_HORIZONTAL,
       threshold: 10
     });
-    
-    console.log('🔍 Hammer입력:', this.hammer.input);
     
     let swipeStartTime = 0;
     let slideStarts = [-100, 0, 100]; // 각 슬라이드의 초기 위치
