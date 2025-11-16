@@ -1,7 +1,7 @@
 [build]
   base = "www"
   command = "bash build.sh"
-  publish = "calendar_set/full_ver7"
+  publish = "calendar_set/calendar_v8"
   functions = "../netlify/functions"
 
 [[redirects]]
