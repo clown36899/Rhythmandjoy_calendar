@@ -1025,7 +1025,6 @@ class Calendar {
     return `<div class="week-event room-${event.roomId}" 
                  style="top: ${startPercent}%; height: ${height}%; width: ${position.width}%; left: ${position.left}%;"
                  title="${roomName}: ${event.title} (${timeStr})">
-              <div class="event-room">${roomName}</div>
               <div class="event-title">${event.title}</div>
               <div class="event-time">${timeStr}</div>
             </div>`;
