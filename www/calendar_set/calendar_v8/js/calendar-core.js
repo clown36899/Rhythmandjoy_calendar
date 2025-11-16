@@ -318,6 +318,9 @@ class Calendar {
     html += '</div>';
     
     this.container.innerHTML = html;
+    
+    // DOM 업데이트 후 레이아웃 조정
+    this.adjustWeekViewLayout();
   }
   
   getWeekCacheKey(date) {
