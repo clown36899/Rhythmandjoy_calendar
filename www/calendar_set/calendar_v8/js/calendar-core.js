@@ -1027,7 +1027,7 @@ class Calendar {
       // 타이틀에서 숫자 다음 첫 글자 추출 (예: "A홀 (2 이****님" → "이")
       const match = event.title.match(/\d+\s*(\S)/);
       const firstChar = match ? match[1] : '';
-      eventContent = `<div class="event-time">${firstChar} ${timeStr}</div>`;
+      eventContent = `<div class="event-time"><span class="event-initial">${firstChar}</span> ${timeStr}</div>`;
     }
     
     return `<div class="week-event room-${event.roomId}" 

@@ -524,6 +524,12 @@ body {
   color: #ffffff5e;
 }
 
+.week-view .event-initial {
+  font-weight: 700;
+  opacity: 1;
+  color: #ffffff;
+}
+
 .week-event.room-a {
   background-color: rgba(246, 191, 38, 0.9);
   border-left-color: var(--room-a);
