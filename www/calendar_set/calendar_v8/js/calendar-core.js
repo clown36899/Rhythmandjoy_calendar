@@ -52,8 +52,9 @@ class Calendar {
 
   setupSwipeGestures() {
     if (typeof Hammer !== 'undefined') {
-      this.hammer = new Hammer(this.container, {
-        touchAction: 'auto'
+      const slider = this.container.querySelector('.calendar-slider') || this.container;
+      this.hammer = new Hammer(slider, {
+        touchAction: 'none'
       });
       
       // Pan과 Swipe 제스처 모두 활성화 (모바일 호환)

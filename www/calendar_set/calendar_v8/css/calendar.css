@@ -38,14 +38,19 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background-color: var(--bg-dark);
   color: var(--text-primary);
+  position: fixed;
+  width: 100%;
 }
 
 .app-container {
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
+  height: -webkit-fill-available;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 .calendar-header {
@@ -130,7 +135,7 @@ body {
   flex: 1;
   overflow: hidden;
   position: relative;
-  touch-action: auto;
+  touch-action: pan-y;
 }
 
 .calendar-slider {
@@ -139,7 +144,7 @@ body {
   width: 300%;
   transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
-  touch-action: pan-y;
+  touch-action: none;
 }
 
 .calendar-slider.no-transition {
