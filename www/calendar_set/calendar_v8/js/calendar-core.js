@@ -507,8 +507,10 @@ class Calendar {
     this.events = this.getMergedEventsFromCache([prevDate, this.currentDate, nextDate]);
     console.log(`   ✅ 병합된 이벤트: ${this.events.length}개`);
     
-    // 3개 슬라이드 생성: 이전주(-100%) | 현재주(0%) | 다음주(100%)
-    let html = '<div class="calendar-slider">';
+    // 고정 시간 열 + 슬라이더 생성
+    let html = this.renderTimeColumn();
+    
+    html += '<div class="calendar-slider">';
     
     html += '<div class="calendar-slide" style="transform: translateX(-100%)">';
     html += this.renderWeekViewContent(prevDate);
@@ -609,9 +611,8 @@ class Calendar {
 
     let html = '<div class="week-view">';
     
-    // Header
+    // Header (시간 열 제외, 7개 요일만)
     html += '<div class="week-header">';
-    html += '<div class="time-label"></div>';
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -626,21 +627,9 @@ class Calendar {
     });
     html += '</div>';
 
-    // Time grid
+    // Time grid (시간 열 제외, 7개 요일만)
     CONFIG.hoursDisplay.forEach((hourLabel, hourIndex) => {
       html += '<div class="time-row">';
-      
-      // 시간 라벨에도 시간대 클래스 적용
-      let timeLabelClass = '';
-      if (hourIndex >= 0 && hourIndex < 6) {
-        timeLabelClass = 'dawn-time';
-      } else if (hourIndex >= 6 && hourIndex < 16) {
-        timeLabelClass = 'day-time';
-      } else if (hourIndex >= 16 && hourIndex < 24) {
-        timeLabelClass = 'evening-time';
-      }
-      
-      html += `<div class="time-label ${timeLabelClass}">${hourLabel}</div>`;
       
       days.forEach(day => {
         const timeClass = this.getTimeSlotClass(hourIndex, day);
@@ -654,9 +643,9 @@ class Calendar {
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
       
-      // Calculate position for this day column (7 equal columns after 3.75rem time column)
-      const dayWidth = `calc((100% - 3.75rem) / 7)`;
-      const dayLeft = `calc(3.75rem + (100% - 3.75rem) / 7 * ${dayIndex})`;
+      // 7개 요일만 있으므로 전체 너비를 7로 나눔
+      const dayWidth = `calc(100% / 7)`;
+      const dayLeft = `calc(100% / 7 * ${dayIndex})`;
       
       html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
       
@@ -673,6 +662,30 @@ class Calendar {
     return html;
   }
   
+  renderTimeColumn() {
+    let html = '<div class="time-column-fixed">';
+    
+    // 헤더 빈 공간
+    html += '<div class="time-header-space"></div>';
+    
+    // 시간 라벨들
+    CONFIG.hoursDisplay.forEach((hourLabel, hourIndex) => {
+      let timeLabelClass = '';
+      if (hourIndex >= 0 && hourIndex < 6) {
+        timeLabelClass = 'dawn-time';
+      } else if (hourIndex >= 6 && hourIndex < 16) {
+        timeLabelClass = 'day-time';
+      } else if (hourIndex >= 16 && hourIndex < 24) {
+        timeLabelClass = 'evening-time';
+      }
+      
+      html += `<div class="time-label ${timeLabelClass}">${hourLabel}</div>`;
+    });
+    
+    html += '</div>';
+    return html;
+  }
+  
   adjustWeekViewLayout(immediate = false) {
     const doLayout = () => {
       // 모든 슬라이드의 week-view 조정
@@ -680,9 +693,8 @@ class Calendar {
       
       allWeekViews.forEach(weekView => {
         const headerElement = weekView.querySelector('.day-header');
-        const timeLabel = weekView.querySelector('.time-label');
         
-        if (!headerElement || !timeLabel) return;
+        if (!headerElement) return;
         
         const headerHeight = headerElement.getBoundingClientRect().height;
         const weekViewHeight = weekView.clientHeight;
@@ -692,15 +704,12 @@ class Calendar {
         // Grid 행 높이를 동적으로 설정하여 24시간이 항상 fit되도록
         weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px)`;
         
-        // 시간 컬럼의 실제 너비 측정
-        const timeLabelWidth = timeLabel.getBoundingClientRect().width;
-        
-        // 이 weekView 안의 이벤트 컨테이너들 조정
+        // 이 weekView 안의 이벤트 컨테이너들 조정 (7개 요일만)
         const eventContainers = weekView.querySelectorAll('.day-events-container');
         eventContainers.forEach((container, index) => {
           const weekViewWidth = weekView.clientWidth;
-          const dayWidth = (weekViewWidth - timeLabelWidth) / 7;
-          const dayLeft = timeLabelWidth + (dayWidth * index);
+          const dayWidth = weekViewWidth / 7;
+          const dayLeft = dayWidth * index;
           
           container.style.left = `${dayLeft}px`;
           container.style.width = `${dayWidth}px`;
@@ -710,6 +719,14 @@ class Calendar {
           container.style.height = `${availableHeight}px`;
         });
       });
+      
+      // 고정된 시간 열의 헤더 높이 조정
+      const timeHeaderSpace = this.container.querySelector('.time-header-space');
+      const firstHeader = this.container.querySelector('.day-header');
+      if (timeHeaderSpace && firstHeader) {
+        const headerHeight = firstHeader.getBoundingClientRect().height;
+        timeHeaderSpace.style.height = `${headerHeight}px`;
+      }
     };
     
     if (immediate) {
