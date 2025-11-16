@@ -210,8 +210,7 @@ class Calendar {
       html += '</div>';
     });
 
-    // Event layer - render events on top of the grid
-    html += '<div class="week-events">';
+    // Event layer - one container per day
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
       
@@ -229,12 +228,17 @@ class Calendar {
         };
       });
       
+      // Create event container for this day
+      const gridColumn = dayIndex + 2;
+      html += `<div class="day-events-container" style="grid-column: ${gridColumn};">`;
+      
       // Render events with per-day lane positioning
       dayEvents.forEach(event => {
         html += this.renderWeekEvent(event, day, dayIndex, laneMap);
       });
+      
+      html += '</div>';
     });
-    html += '</div>';
 
     html += '</div>';
     this.container.innerHTML = html;
@@ -330,9 +334,6 @@ class Calendar {
     const endPercent = ((endHour * 60 + endMin) / (24 * 60)) * 100;
     const height = endPercent - startPercent;
     
-    // Use grid column positioning (column 1 is time, columns 2-8 are days)
-    const gridColumn = dayIndex + 2; // +2 to skip time column (1-indexed)
-    
     // Per-day lane positioning based on rooms active this day
     const lane = laneMap[event.roomId];
     const roomWidth = 100 / lane.total;
@@ -342,7 +343,7 @@ class Calendar {
     const displayTitle = event.title.length > 10 ? event.title.substring(0, 10) + '...' : event.title;
     
     return `<div class="week-event room-${event.roomId}" 
-                 style="grid-column: ${gridColumn}; top: ${startPercent}%; height: ${height}%; width: ${roomWidth}%; left: ${left}%;"
+                 style="top: ${startPercent}%; height: ${height}%; width: ${roomWidth}%; left: ${left}%;"
                  title="${roomName}: ${event.title}">
               <div class="event-room">${roomName}</div>
               <div class="event-title">${displayTitle}</div>

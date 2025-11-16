@@ -199,15 +199,11 @@ body {
   background-color: rgba(255, 224, 178, 0.05);
 }
 
-.week-events {
+.day-events-container {
   position: absolute;
   top: 60px;
-  left: 0;
-  right: 0;
   bottom: 0;
   pointer-events: none;
-  display: grid;
-  grid-template-columns: 60px repeat(7, 1fr);
 }
 
 .week-event {
