@@ -23,7 +23,7 @@
 }
 
 html {
-  font-size: calc(0.78vw + 1.04vh);
+  font-size: 16px;
 }
 
 html, body {
@@ -139,7 +139,7 @@ body {
 .week-view {
   position: relative;
   display: grid;
-  grid-template-columns: 3.75rem repeat(7, 1fr);
+  grid-template-columns: 4vh repeat(7, 1fr);
   grid-template-rows: auto repeat(24, 1fr);
   width: 100%;
   flex: 1;
@@ -147,6 +147,7 @@ body {
   border-radius: 0.5rem;
   overflow: hidden;
   min-height: 0;
+  font-size: clamp(8px, 1.6vh, 16px);
 }
 
 .week-header {
