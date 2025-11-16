@@ -349,35 +349,39 @@ body {
 }
 
 .logo-circle {
-  width: clamp(28px, 5vh, 40px);
-  height: clamp(28px, 5vh, 40px);
+  width: clamp(20px, 5vh, 40px);
+  height: clamp(20px, 5vh, 40px);
   border-radius: 50%;
   background-color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .logo-icon {
-  font-size: clamp(14px, 2.5vh, 20px);
+  font-size: clamp(10px, 2.5vh, 20px);
 }
 
 .logo-text {
-  font-size: clamp(0.75rem, 1.8vh, 1rem);
+  font-size: clamp(0.5rem, 1.8vh, 1rem);
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .info-btn {
-  padding: clamp(0.4rem, 1.2vh, 0.6rem) clamp(1rem, 2.5vh, 1.5rem);
+  padding: clamp(0.3rem, 1.2vh, 0.6rem) clamp(0.5rem, 2.5vh, 1.5rem);
   background-color: #333;
   border: none;
   border-radius: 2rem;
   color: var(--text-primary);
-  font-size: clamp(0.75rem, 1.8vh, 0.9rem);
+  font-size: clamp(0.5rem, 1.8vh, 0.9rem);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .info-btn:hover {
@@ -404,20 +408,21 @@ body {
 }
 
 .room-btn {
-  min-width: clamp(32px, 6vh, 44px);
-  height: clamp(32px, 6vh, 44px);
+  min-width: clamp(20px, 6vh, 44px);
+  height: clamp(20px, 6vh, 44px);
   padding: 0;
   border: none;
-  border-radius: 0.75rem;
+  border-radius: 0.5rem;
   cursor: pointer;
   font-weight: 700;
-  font-size: clamp(0.8rem, 2vh, 1.1rem);
+  font-size: clamp(0.5rem, 2vh, 1.1rem);
   transition: all 0.2s;
   color: #000;
   opacity: 0.5;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .room-btn.active {
@@ -432,7 +437,7 @@ body {
   background-color: #555;
   color: #fff;
   opacity: 0.7;
-  min-width: clamp(40px, 7vh, 56px);
+  min-width: clamp(24px, 7vh, 56px);
 }
 
 #allRoomsBtn:hover,
@@ -441,17 +446,18 @@ body {
 }
 
 .period-btn {
-  min-width: clamp(32px, 6vh, 44px);
-  height: clamp(32px, 6vh, 44px);
+  min-width: clamp(20px, 6vh, 44px);
+  height: clamp(20px, 6vh, 44px);
   padding: 0;
   background-color: #333;
   border: none;
   border-radius: 50%;
   color: var(--text-secondary);
-  font-size: clamp(0.75rem, 1.8vh, 0.9rem);
+  font-size: clamp(0.5rem, 1.8vh, 0.9rem);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  flex-shrink: 0;
 }
 
 .period-btn.active {
@@ -464,19 +470,20 @@ body {
 }
 
 .nav-btn-round {
-  min-width: clamp(32px, 6vh, 44px);
-  height: clamp(32px, 6vh, 44px);
+  min-width: clamp(20px, 6vh, 44px);
+  height: clamp(20px, 6vh, 44px);
   padding: 0;
   background-color: #222;
   border: none;
   border-radius: 50%;
   color: var(--text-primary);
-  font-size: clamp(1rem, 2.2vh, 1.3rem);
+  font-size: clamp(0.6rem, 2.2vh, 1.3rem);
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .nav-btn-round:hover {
@@ -484,15 +491,17 @@ body {
 }
 
 .today-btn {
-  padding: clamp(0.3rem, 1vh, 0.5rem) clamp(0.75rem, 2vh, 1rem);
+  padding: clamp(0.2rem, 1vh, 0.5rem) clamp(0.4rem, 2vh, 1rem);
   background-color: transparent;
   border: 1px solid var(--border-color);
   border-radius: 1rem;
   color: var(--text-secondary);
-  font-size: clamp(0.75rem, 1.8vh, 0.9rem);
+  font-size: clamp(0.5rem, 1.8vh, 0.9rem);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .today-btn:hover {
