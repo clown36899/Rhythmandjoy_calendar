@@ -75,97 +75,91 @@ class Calendar {
     this.hammer = new Hammer(slider, {
       touchAction: 'none'
     });
+    
+    // Pan과 Swipe 제스처 모두 활성화 (모바일 호환)
+    this.hammer.get('pan').set({ 
+      direction: Hammer.DIRECTION_ALL, // 모바일에서 터치 인식 향상
+      threshold: 5 // 작은 떨림 무시
+    });
+    this.hammer.get('swipe').set({ 
+      direction: Hammer.DIRECTION_HORIZONTAL 
+    });
+    
+    let startTransform = 0;
+    let swipeStartTime = 0;
+    
+    this.hammer.on('panstart', (e) => {
+      if (this.isAnimating) return;
+      const slider = this.container.querySelector('.calendar-slider');
+      if (slider) {
+        slider.classList.add('no-transition');
+        startTransform = this.baseTranslate;
+        swipeStartTime = Date.now();
+        console.log('🚀 [스와이프 시작]');
+      }
+    });
+    
+    this.hammer.on('panmove', (e) => {
+      if (this.isAnimating) return;
       
-      // Pan과 Swipe 제스처 모두 활성화 (모바일 호환)
-      this.hammer.get('pan').set({ 
-        direction: Hammer.DIRECTION_ALL, // 모바일에서 터치 인식 향상
-        threshold: 5 // 작은 떨림 무시
-      });
-      this.hammer.get('swipe').set({ 
-        direction: Hammer.DIRECTION_HORIZONTAL 
-      });
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       
-      let startTransform = 0;
-      let swipeStartTime = 0;
+      const slider = this.container.querySelector('.calendar-slider');
+      if (slider) {
+        const percentMove = (e.deltaX / this.container.offsetWidth) * 100;
+        const newTransform = startTransform + percentMove;
+        slider.style.transform = `translateX(${newTransform}%)`;
+      }
+    });
+    
+    this.hammer.on('panend', (e) => {
+      if (this.isAnimating) return;
       
-      this.hammer.on('panstart', (e) => {
-        if (this.isAnimating) return;
-        const slider = this.container.querySelector('.calendar-slider');
-        if (slider) {
-          slider.classList.add('no-transition');
-          startTransform = this.baseTranslate; // 현재 위치에서 시작
-          swipeStartTime = Date.now();
-          console.log('🚀 [스와이프 시작]');
+      const slider = this.container.querySelector('.calendar-slider');
+      if (slider) {
+        const swipeEndTime = Date.now();
+        const duration = swipeEndTime - swipeStartTime;
+        const distance = Math.abs(e.deltaX);
+        const velocity = Math.abs(e.velocityX);
+        const avgSpeed = duration > 0 ? (distance / duration).toFixed(2) : 0;
+        
+        console.log('📊 [스와이프 속도]', {
+          '이동거리(px)': distance.toFixed(0),
+          '소요시간(ms)': duration,
+          'Hammer속도(px/ms)': velocity.toFixed(3),
+          '평균속도(px/ms)': avgSpeed,
+          '방향': e.deltaX < 0 ? '왼쪽←' : '오른쪽→'
+        });
+        
+        const isHorizontalSwipe = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+        if (!isHorizontalSwipe) {
+          slider.classList.remove('no-transition');
+          slider.style.transform = 'translateX(-33.333%)';
+          return;
         }
-      });
-      
-      this.hammer.on('panmove', (e) => {
-        if (this.isAnimating) return;
         
-        // 수평 스와이프만 허용 (모바일 호환)
-        if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+        const animationDuration = velocity > 1.5 ? 0.25 : 0.3;
+        slider.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
         
-        const slider = this.container.querySelector('.calendar-slider');
-        if (slider) {
-          const percentMove = (e.deltaX / this.container.offsetWidth) * 100;
-          const newTransform = startTransform + percentMove;
-          slider.style.transform = `translateX(${newTransform}%)`;
-        }
-      });
-      
-      this.hammer.on('panend', (e) => {
-        if (this.isAnimating) return;
+        const containerWidth = this.container.offsetWidth;
+        const distanceThreshold = Math.min(containerWidth * 0.15, 120);
+        const velocityThreshold = 0.35;
         
-        const slider = this.container.querySelector('.calendar-slider');
-        if (slider) {
-          // 스와이프 속도 로깅
-          const swipeEndTime = Date.now();
-          const duration = swipeEndTime - swipeStartTime;
-          const distance = Math.abs(e.deltaX);
-          const velocity = Math.abs(e.velocityX);
-          const avgSpeed = duration > 0 ? (distance / duration).toFixed(2) : 0;
-          
-          console.log('📊 [스와이프 속도]', {
-            '이동거리(px)': distance.toFixed(0),
-            '소요시간(ms)': duration,
-            'Hammer속도(px/ms)': velocity.toFixed(3),
-            '평균속도(px/ms)': avgSpeed,
-            '방향': e.deltaX < 0 ? '왼쪽←' : '오른쪽→'
-          });
-          
-          // 수평 스와이프 확인
-          const isHorizontalSwipe = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-          if (!isHorizontalSwipe) {
-            slider.classList.remove('no-transition');
-            slider.style.transform = 'translateX(-33.333%)';
-            return;
-          }
-          
-          // 속도에 따른 동적 애니메이션 속도 (부드러운 느낌)
-          const animationDuration = velocity > 1.5 ? 0.25 : 0.3;
-          slider.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
-          
-          // 업계 표준 스와이프 임계값
-          const containerWidth = this.container.offsetWidth;
-          const distanceThreshold = Math.min(containerWidth * 0.15, 120);
-          const velocityThreshold = 0.35;
-          
-          const shouldNavigate = distance >= distanceThreshold || velocity >= velocityThreshold;
-          
-          if (shouldNavigate) {
-            if (e.deltaX < 0) {
-              this.navigate(1);
-            } else {
-              this.navigate(-1);
-            }
+        const shouldNavigate = distance >= distanceThreshold || velocity >= velocityThreshold;
+        
+        if (shouldNavigate) {
+          if (e.deltaX < 0) {
+            this.navigate(1);
           } else {
-            slider.style.transform = 'translateX(-33.333%)';
+            this.navigate(-1);
           }
+        } else {
+          slider.style.transform = 'translateX(-33.333%)';
         }
-      });
-      
-      console.log('✅ 스와이프 제스처 설정 완료 (거리: 15%, 속도: 0.35)');
-    }
+      }
+    });
+    
+    console.log('✅ 스와이프 제스처 설정 완료 (거리: 15%, 속도: 0.35)');
   }
 
   async navigate(direction) {
