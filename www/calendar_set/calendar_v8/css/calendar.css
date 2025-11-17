@@ -160,8 +160,8 @@ body {
 }
 
 .time-column-fixed .time-label {
-  border-right: 1px solid #333;
-  border-bottom: 1px solid #000;
+  border-right: 1px solid #414141;
+  border-bottom: 1px solid #414141;
   padding: 0.5em 0.3em;
   text-align: center;
   font-weight: 400;
@@ -442,8 +442,8 @@ body {
 }
 
 .time-cell {
-  border-right: 1px solid #171717;
-  border-bottom: 1px solid #171717;
+  border-right: 1px solid #414141;
+  border-bottom: 1px solid #414141;
   position: relative;
 }
 
