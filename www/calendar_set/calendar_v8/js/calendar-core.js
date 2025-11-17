@@ -1387,7 +1387,8 @@ class Calendar {
   }
 
   async refresh() {
-    console.log("🔄 달력 새로고침");
-    await this.render();
+    // 기존 함수는 refreshCurrentView로 대체됨
+    console.log("🔄 [deprecated] refresh() 호출 → refreshCurrentView() 사용");
+    await this.refreshCurrentView();
   }
 }
