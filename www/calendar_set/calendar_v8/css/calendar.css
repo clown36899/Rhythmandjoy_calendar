@@ -481,7 +481,6 @@ body {
   overflow: hidden;
   cursor: pointer;
 
-
   transition: all 0.1s;
   display: flex;
   flex-direction: column;
@@ -489,7 +488,7 @@ body {
   pointer-events: auto;
   box-shadow: 0 0.0625em 0.125em rgba(0, 0, 0, 0.4);
   margin: 0 0.0625em;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   padding: 0;
 }
@@ -534,20 +533,26 @@ body {
   color: #ffffff5e;
 }
 
-/* 주간 보기: 글자만 꽉차게 표시 */
+/* 주간 보기: 글자 세로로 나열 */
 .week-view .event-initial-only {
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
-  font-size: 1.8em;
+  font-size: 1.6em;
   font-weight: 400;
   color: #ffffff;
-  line-height: 1;
-  padding: 0.4em;
+  line-height: 1.1;
+  padding: 0.3em 0;
   margin: 0;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
   width: 100%;
   height: 100%;
-  word-break: keep-all;
+  overflow: hidden;
+}
+
+.week-view .event-initial-only > div {
+  flex-shrink: 0;
 }
 
 .week-event.room-a {
