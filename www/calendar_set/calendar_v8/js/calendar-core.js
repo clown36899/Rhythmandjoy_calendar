@@ -717,7 +717,9 @@ class Calendar {
       return event.start < end && event.end > start;
     });
 
-    let html = '<div class="week-view">';
+    // 일간 보기일 때 클래스 추가
+    const dayViewClass = daysOverride && days.length === 1 ? ' day-view-mode' : '';
+    let html = `<div class="week-view${dayViewClass}">`;
 
     // Header (시간 열 제외, 7개 요일만)
     html += '<div class="week-header">';

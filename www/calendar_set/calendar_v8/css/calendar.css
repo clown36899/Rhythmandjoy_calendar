@@ -788,3 +788,8 @@ body {
 }
 
 /* 미디어 쿼리 제거: viewport 기반 rem 스케일링으로 자동 조절 */
+
+/* 일간 보기: 컬럼 1개 */
+.week-view.day-view-mode {
+  grid-template-columns: repeat(1, 1fr) !important;
+}
