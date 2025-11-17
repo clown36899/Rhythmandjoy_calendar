@@ -793,3 +793,15 @@ body {
 .week-view.day-view-mode {
   grid-template-columns: repeat(1, 1fr) !important;
 }
+
+/* 일간 보기: 이벤트 컨테이너 전체 폭 사용 */
+.week-view.day-view-mode .day-events-container {
+  left: 0 !important;
+  width: 100% !important;
+}
+
+/* 일간 보기: 모든 이벤트 전체 폭 사용 + 겹침 */
+.week-view.day-view-mode .week-event {
+  left: 0 !important;
+  width: 100% !important;
+}
