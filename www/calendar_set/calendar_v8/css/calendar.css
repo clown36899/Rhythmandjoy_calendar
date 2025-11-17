@@ -504,8 +504,8 @@ body {
   font-weight: 500;
   letter-spacing: 0;
   overflow: hidden;
-  white-space: normal;
-  word-break: break-all;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   opacity: 1;
   line-height: 1.2;
   color: #ffffff;
@@ -517,8 +517,8 @@ body {
   font-weight: 400;
   letter-spacing: 0;
   overflow: hidden;
-  white-space: normal;
-  word-break: break-all;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   opacity: 0.95;
   line-height: 1.2;
   color: #ffffff5e;
@@ -802,17 +802,23 @@ body {
 /* 일간 보기: 이벤트 글자 크기 증가 및 스타일 개선 */
 .week-view.day-view-mode .week-event {
   padding: 0.3em 0.4em !important;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0s !important;
 }
 
 .week-view.day-view-mode .event-room {
   font-size: 1.5em !important;
   margin-bottom: 0.2em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .week-view.day-view-mode .event-title {
   font-size: 1.3em !important;
   font-weight: 600 !important;
   margin-bottom: 0.2em;
+  white-space: nowrap;
+  overflow: visible;
 }
 
 .week-view.day-view-mode .event-time {
@@ -820,4 +826,19 @@ body {
   opacity: 1 !important;
   font-weight: 500 !important;
   color: #ffffff !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 일간 보기: 이벤트 확대 효과 */
+.week-view.day-view-mode .week-event.expanded {
+  transform: scale(1.15) !important;
+  z-index: 1000 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+}
+
+.week-view.day-view-mode .week-event.expanded .event-title {
+  white-space: normal !important;
+  word-break: break-word !important;
 }

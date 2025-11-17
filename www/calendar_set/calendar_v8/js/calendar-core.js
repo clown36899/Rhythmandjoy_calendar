@@ -999,6 +999,41 @@ class Calendar {
     requestAnimationFrame(() => {
       this.adjustWeekViewLayout(true);
       this.updateCurrentTimeIndicator();
+      // 일간 보기 이벤트 클릭 핸들러 설정
+      this.setupDayViewEventHandlers();
+    });
+  }
+
+  setupDayViewEventHandlers() {
+    const weekView = this.container.querySelector('.week-view');
+    if (!weekView || !weekView.classList.contains('day-view-mode')) {
+      return; // 일간 보기가 아니면 종료
+    }
+
+    const events = weekView.querySelectorAll('.week-event');
+    
+    // 이벤트 클릭 핸들러
+    events.forEach(event => {
+      event.addEventListener('click', (e) => {
+        e.stopPropagation();
+        
+        // 이미 확대된 이벤트를 다시 클릭하면 축소
+        if (event.classList.contains('expanded')) {
+          event.classList.remove('expanded');
+        } else {
+          // 다른 모든 이벤트 축소
+          events.forEach(e => e.classList.remove('expanded'));
+          // 현재 이벤트 확대
+          event.classList.add('expanded');
+        }
+      });
+    });
+
+    // 다른 곳 클릭 시 모든 이벤트 축소
+    weekView.addEventListener('click', (e) => {
+      if (!e.target.closest('.week-event')) {
+        events.forEach(event => event.classList.remove('expanded'));
+      }
     });
   }
 
