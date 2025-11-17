@@ -180,6 +180,8 @@ class Calendar {
 
     this.hammer.on("panend", (e) => {
       if (this.isAnimating || !this.isPanning) return;
+      
+      // 중복 panend 방지: 즉시 isPanning을 false로 설정
       this.isPanning = false;
 
       const slides = this.container.querySelectorAll(".calendar-slide");
@@ -224,8 +226,6 @@ class Calendar {
           distance >= distanceThreshold || velocity >= velocityThreshold;
 
         if (shouldNavigate) {
-          // 중복 네비게이션 방지: navigate 호출 전에 즉시 플래그 설정
-          this.isAnimating = true;
           if (e.deltaX < 0) {
             this.navigate(1);
           } else {
