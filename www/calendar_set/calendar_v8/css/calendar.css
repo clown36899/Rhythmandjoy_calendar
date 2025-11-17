@@ -939,6 +939,44 @@ body {
   word-break: break-word !important;
 }
 
+/* 단일 방 선택 주간뷰: 데이뷰와 동일한 글자 크기 (일반 주간뷰와 분리) */
+.week-view.single-room-mode .event-room {
+  font-size: 1.5em !important;
+  margin-bottom: 0.2em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
+}
+
+.week-view.single-room-mode .event-room::before {
+  content: "♪";
+  display: inline-block;
+  margin-right: 0.3em;
+  font-size: 1.1em;
+  opacity: 0.9;
+}
+
+.week-view.single-room-mode .event-title {
+  font-size: 1.3em !important;
+  font-weight: 600 !important;
+  margin-bottom: 0.2em;
+  white-space: nowrap;
+  overflow: visible;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
+}
+
+.week-view.single-room-mode .event-time {
+  font-size: 1.1em !important;
+  opacity: 1 !important;
+  font-weight: 500 !important;
+  color: #ffffff !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
+}
+
 /* 주간 보기 돌아가기 버튼 (하단 푸터) */
 .back-to-week-btn {
   padding: 0.5em 1em;

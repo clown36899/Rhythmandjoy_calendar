@@ -800,7 +800,9 @@ class Calendar {
 
     // 일간 보기일 때 클래스 추가
     const dayViewClass = daysOverride && days.length === 1 ? ' day-view-mode' : '';
-    let html = `<div class="week-view${dayViewClass}">`;
+    // 단일 방 선택 시 클래스 추가 (일간 보기가 아닐 때만)
+    const singleRoomClass = this.selectedRooms.size === 1 && !dayViewClass ? ' single-room-mode' : '';
+    let html = `<div class="week-view${dayViewClass}${singleRoomClass}">`;
 
     // Header (시간 열 제외, 7개 요일만)
     html += '<div class="week-header">';
