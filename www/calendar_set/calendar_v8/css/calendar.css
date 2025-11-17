@@ -471,11 +471,11 @@ body {
   position: absolute;
   flex-wrap: wrap;
 
-  border-radius: 0.5em;
+  border-radius: 1em;
   font-size: 0.55em;
   overflow: hidden;
   cursor: pointer;
-  border: 1px solid #000;
+  border: 0.51px solid #4f4f4f;
 
   transition: all 0.1s;
   display: flex;
@@ -811,6 +811,7 @@ body {
 }
 
 .week-view.day-view-mode .event-room {
+  font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif !important;
   font-size: 1.5em !important;
   margin-bottom: 0.2em;
   white-space: nowrap;
@@ -819,6 +820,7 @@ body {
 }
 
 .week-view.day-view-mode .event-title {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif !important;
   font-size: 1.3em !important;
   font-weight: 600 !important;
   margin-bottom: 0.2em;
@@ -827,6 +829,7 @@ body {
 }
 
 .week-view.day-view-mode .event-time {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif !important;
   font-size: 1.1em !important;
   opacity: 1 !important;
   font-weight: 500 !important;
