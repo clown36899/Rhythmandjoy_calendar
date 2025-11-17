@@ -25,21 +25,21 @@ class DataManager {
   setupVisibilityHandler() {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
-        console.log('📱 화면 활성화 - 데이터 새로고침');
+        console.log('📱 화면 활성화 - 현재 주로 이동');
         this.cache.clear();
         if (window.calendar) {
           window.calendar.weekDataCache.clear();
-          window.calendar.refresh();
+          window.calendar.goToToday();
         }
       }
     });
 
     window.addEventListener('online', () => {
-      console.log('🌐 온라인 복구 - 데이터 새로고침');
+      console.log('🌐 온라인 복구 - 현재 주로 이동');
       this.cache.clear();
       if (window.calendar) {
         window.calendar.weekDataCache.clear();
-        window.calendar.refresh();
+        window.calendar.goToToday();
       }
     });
 
