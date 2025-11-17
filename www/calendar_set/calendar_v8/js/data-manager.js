@@ -79,17 +79,38 @@ class DataManager {
   handleRealtimeChange(payload) {
     const { eventType, new: newRecord, old: oldRecord } = payload;
     
-    // INSERT: new만, DELETE: old만, UPDATE: 둘 다
+    console.log(`🔄 [Realtime] ${eventType}`, { new: newRecord, old: oldRecord });
+    
+    // DELETE의 경우 old에 start_time/end_time이 없을 수 있음 (Supabase 기본 동작)
+    // 이 경우 전체 캐시를 무효화
+    const needsFullInvalidation = eventType === 'DELETE' && oldRecord && !oldRecord.start_time;
+    
+    if (needsFullInvalidation) {
+      console.log(`   ⚠️ DELETE 이벤트에 날짜 정보 없음 - 전체 캐시 무효화`);
+      if (window.calendar) {
+        // 모든 캐시 삭제
+        window.calendar.weekDataCache.clear();
+        this.cache.clear();
+        this.cacheTimestamps.clear();
+        console.log(`   🗑️ 전체 캐시 삭제 완료`);
+        window.calendar.refreshCurrentView();
+      }
+      return;
+    }
+    
+    // INSERT: new만, DELETE: old만 (날짜 정보 있을 때), UPDATE: 둘 다
     const affectedRecords = [];
     if (newRecord) affectedRecords.push(newRecord);
-    if (oldRecord && eventType === 'DELETE') affectedRecords.push(oldRecord);
+    if (oldRecord && eventType === 'DELETE' && oldRecord.start_time) affectedRecords.push(oldRecord);
+    if (eventType === 'UPDATE' && oldRecord && oldRecord.start_time) affectedRecords.push(oldRecord);
     
-    console.log(`🔄 [Realtime] ${eventType} - 영향받은 레코드:`, affectedRecords.length);
+    console.log(`   📋 분석할 레코드:`, affectedRecords.length);
     
     // 영향받은 주의 캐시만 무효화
     const affectedWeeks = new Set();
     for (const record of affectedRecords) {
       const weeks = this.getAffectedWeekKeys(record);
+      console.log(`   📅 레코드가 걸친 주:`, weeks);
       weeks.forEach(w => affectedWeeks.add(w));
     }
     
