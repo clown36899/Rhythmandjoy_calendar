@@ -87,11 +87,14 @@ class DataManager {
     const newEvent = this.convertToEvents([record])[0];
     if (!newEvent) return;
 
-    console.log(`   ➕ [증분INSERT] ID: ${record.id}`);
+    console.log(`   ➕ [증분INSERT] ID: ${record.id}, 날짜: ${record.start_time}`);
 
     // 영향받은 모든 주의 캐시에 추가
     const weekKeys = this.getAffectedWeekKeys(record);
     let addedCount = 0;
+
+    console.log(`   🔍 영향받은 주: ${weekKeys.length}개`, weekKeys.map(k => k.substring(0, 10)));
+    console.log(`   📦 현재 캐시 크기: ${window.calendar.weekDataCache.size}개`);
 
     for (const weekKey of weekKeys) {
       // Calendar의 모든 캐시 키 순회 (room signature 포함)
@@ -102,6 +105,10 @@ class DataManager {
           console.log(`   💾 추가: ${cacheKey} (총 ${events.length}개)`);
         }
       }
+    }
+
+    if (addedCount === 0) {
+      console.warn(`   ⚠️ 캐시에 해당 주가 없어서 추가 안 됨! 현재 보는 주를 새로고침하면 보일 것입니다.`);
     }
   }
 
