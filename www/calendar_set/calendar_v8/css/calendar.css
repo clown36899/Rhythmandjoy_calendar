@@ -859,7 +859,7 @@ body {
   background-color: #222;
   /* border: none; */
   /* border-radius: 50%; */
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-size: 1.1em;
   cursor: pointer;
   transition: all 0.2s;
@@ -880,7 +880,7 @@ body {
   background-color: #222;
   /* border: none; */
   /* border-radius: 50%; */
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-size: 1.1em;
   cursor: pointer;
   transition: all 0.2s;
@@ -889,8 +889,10 @@ body {
   justify-content: center;
 }
 
-.nav-btn-round:hover {
+.nav-btn-round:hover,
+.nav-btn-round-right:hover {
   background-color: #333;
+  color: var(--text-primary);
 }
 
 .today-btn {
@@ -912,8 +914,7 @@ body {
 }
 
 .today-btn:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  border-color: var(--text-primary);
+  background-color: #333;
   color: var(--text-primary);
 }
 
