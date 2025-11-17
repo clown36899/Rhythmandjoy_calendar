@@ -128,6 +128,12 @@ class DataManager {
         console.log(`   💾 수정: ${cacheKey}`);
       }
     }
+    
+    // 캐시에 없는 UPDATE는 INSERT처럼 처리 (새 이벤트 추가)
+    if (updatedCount === 0) {
+      console.warn(`   ⚠️ 캐시에 없는 UPDATE → INSERT로 처리`);
+      this.handleIncrementalInsert(newRecord);
+    }
   }
 
   handleIncrementalDelete(deleteId) {
