@@ -1240,7 +1240,7 @@ class Calendar {
       eventContent = `<div class="event-title">${event.title}</div>
                       <div class="event-time">${timeStr}</div>`;
     } else {
-      // 주간 보기: 타이틀에서 글자 하나만 추출
+      // 주간 보기: 타이틀에서 글자 하나만 추출 (시간 표시 안 함)
       // 1순위: "김****님", "박******님", "k*****님" 패턴 → 첫 글자
       // 2순위: 알파벳만 (sc, ka 등)
       let displayChar = "";
@@ -1255,7 +1255,7 @@ class Calendar {
         displayChar = alphaMatch ? alphaMatch[0] : "";
       }
       
-      eventContent = `<div class="event-time"><span class="event-initial">${displayChar}</span> ${timeStr}</div>`;
+      eventContent = `<div class="event-initial-only">${displayChar}</div>`;
     }
 
     const eventDate = new Date(displayStart);
