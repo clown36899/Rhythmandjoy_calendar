@@ -190,10 +190,10 @@ export async function handler(event, context) {
       // 채널 정보 조회
       const channelInfo = await getRoomByChannelId(channelId);
       if (!channelInfo) {
-        console.log('⚠️  알 수 없는 채널 (무시):', channelId);
+        console.error('❌ 알 수 없는 채널:', channelId);
         return {
-          statusCode: 200,
-          body: JSON.stringify({ message: '알 수 없는 채널 (외부 Watch)' })
+          statusCode: 404,
+          body: JSON.stringify({ error: '채널을 찾을 수 없습니다' })
         };
       }
 
