@@ -177,7 +177,8 @@ body {
   position: absolute;
   inset: 0 0 0 3.75em;
   display: flex;
-  overflow: hidden;
+  overflow-y: hidden;
+  overflow-x: visible;
 }
 
 .calendar-slide {
@@ -188,7 +189,7 @@ body {
   will-change: transform;
   flex-shrink: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: visible;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -475,7 +476,7 @@ body {
   overflow: hidden;
   cursor: pointer;
   border: 1px solid #000;
-  border-left: 0.125em solid;
+
   transition: all 0.1s;
   display: flex;
   flex-direction: column;
@@ -534,25 +535,25 @@ body {
 
 .week-event.room-b {
   background-color: rgba(87, 150, 200, 0.9);
- 
+
   color: #fff;
 }
 
 .week-event.room-c {
   background-color: rgba(129, 180, 186, 0.9);
-  border-left-color: var(--room-c);
+
   color: #000;
 }
 
 .week-event.room-d {
   background-color: rgba(125, 157, 106, 0.9);
-  border-left-color: var(--room-d);
+
   color: #fff;
 }
 
 .week-event.room-e {
   background-color: rgba(76, 76, 76, 0.9);
-  border-left-color: var(--room-e);
+
   color: #fff;
 }
 
@@ -794,11 +795,13 @@ body {
 /* 일간 보기: 컬럼 1개, 이벤트는 방 순서대로 균등 분배 (A=0-20%, B=20-40%...) */
 .week-view.day-view-mode {
   grid-template-columns: repeat(1, 1fr) !important;
+  overflow-x: visible !important;
 }
 
 .week-view.day-view-mode .day-events-container {
   left: 0 !important;
   width: 100% !important;
+  overflow-x: visible !important;
 }
 
 /* 일간 보기: 이벤트 글자 크기 증가 및 스타일 개선 */
