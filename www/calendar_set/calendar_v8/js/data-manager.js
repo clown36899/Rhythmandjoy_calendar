@@ -25,35 +25,21 @@ class DataManager {
 
   setupVisibilityHandler() {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        console.log('📱 화면 활성화 - 현재 상태 유지하며 갱신');
-        // 캐시를 stale로 표시 (clear 대신)
-        this.markCachesStale();
-        if (window.calendar) {
-          // 현재 view 유지하며 필요한 주만 갱신
-          window.calendar.refreshCurrentView();
-        }
+      if (document.visibilityState === 'visible' && window.calendar) {
+        console.log('📱 화면 활성화 - UI 갱신 (캐시는 증분 업데이트로 항상 최신)');
+        // ✅ 증분 업데이트로 캐시가 항상 최신이므로 UI만 갱신
+        window.calendar.refreshCurrentView();
       }
     });
 
     window.addEventListener('online', () => {
-      console.log('🌐 온라인 복구 - 현재 상태 유지하며 갱신');
-      this.markCachesStale();
       if (window.calendar) {
+        console.log('🌐 온라인 복구 - UI 갱신');
         window.calendar.refreshCurrentView();
       }
     });
 
     console.log('✅ 모바일 화면 활성화 감지 설정 완료');
-  }
-
-  markCachesStale() {
-    // 모든 캐시를 오래된 것으로 표시 (clear 대신)
-    const now = Date.now();
-    for (const key of this.cache.keys()) {
-      this.cacheTimestamps.set(key, 0); // 0 = stale
-    }
-    console.log('⏰ 캐시를 stale로 표시 (삭제 안 함)');
   }
 
   setupRealtimeSubscription() {
