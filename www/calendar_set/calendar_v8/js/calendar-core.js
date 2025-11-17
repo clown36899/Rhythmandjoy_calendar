@@ -765,9 +765,9 @@ class Calendar {
       if (isWeekView) {
         // 주간 보기: 날짜 사이 1px 간격
         // width: 각 날짜에서 1px 빼기
-        // left: 월요일=0px, 화요일=+1px, 수요일=+2px, ...
+        // left: 일요일=1px, 월요일=14.28%+2px, 화요일=28.57%+3px, ...
         dayWidth = `calc((100% / 7) - 1px)`;
-        dayLeft = `calc((100% / 7 * ${dayIndex}) + ${dayIndex}px)`;
+        dayLeft = `calc((100% / 7 * ${dayIndex}) + ${dayIndex + 1}px)`;
       } else {
         // 일간 보기: 기존대로
         dayWidth = `100%`;
