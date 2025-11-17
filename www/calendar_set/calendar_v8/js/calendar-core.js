@@ -682,15 +682,30 @@ class Calendar {
     return this.renderWeekViewContent(this.currentDate);
   }
 
-  renderWeekViewContent(date) {
-    const { start, end } = this.getWeekRange(date);
-    const days = [];
-
-    for (let i = 0; i < 7; i++) {
-      const day = new Date(start);
-      day.setDate(start.getDate() + i);
-      day.setHours(0, 0, 0, 0);
-      days.push(day);
+  renderWeekViewContent(date, daysOverride = null) {
+    // 일간 보기에서는 daysOverride로 날짜 1개만 전달 가능
+    const days = daysOverride || (() => {
+      const { start } = this.getWeekRange(date);
+      const weekDays = [];
+      for (let i = 0; i < 7; i++) {
+        const day = new Date(start);
+        day.setDate(start.getDate() + i);
+        day.setHours(0, 0, 0, 0);
+        weekDays.push(day);
+      }
+      return weekDays;
+    })();
+    
+    const { start, end } = daysOverride 
+      ? { start: new Date(days[0]), end: new Date(days[days.length - 1]) }
+      : this.getWeekRange(date);
+    
+    if (!daysOverride) {
+      // 주간 보기는 기존대로
+    } else {
+      // 일간 보기는 해당 날짜의 시작/끝
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
     }
 
     // 캐시에서 이벤트 가져오기
@@ -741,9 +756,9 @@ class Calendar {
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
 
-      // 7개 요일만 있으므로 전체 너비를 7로 나눔
-      const dayWidth = `calc(100% / 7)`;
-      const dayLeft = `calc(100% / 7 * ${dayIndex})`;
+      // days.length로 동적 계산 (주간=7, 일간=1)
+      const dayWidth = `calc(100% / ${days.length})`;
+      const dayLeft = `calc(100% / ${days.length} * ${dayIndex})`;
 
       html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
 
@@ -959,67 +974,20 @@ class Calendar {
 
   renderDayView() {
     const date = new Date(this.currentDate);
+    date.setHours(0, 0, 0, 0);
     
-    // 주간 보기와 완전히 동일한 구조, 날짜만 1개
-    const days = [date];
+    // 주간 보기와 완전히 동일한 구조
+    // 1. 왼쪽 고정 시간열
+    let html = this.renderTimeColumn();
     
-    const { start, end } = this.getDayRange(date);
+    // 2. 슬라이더 (주간과 동일하지만 슬라이드 1개만)
+    html += '<div class="calendar-slider">';
+    html += '<div class="calendar-slide" style="transform: translateX(0%)">';
     
-    // 캐시에서 이벤트 가져오기
-    const cacheKey = this.getWeekCacheKey(date);
-    const cachedEvents = this.weekDataCache.get(cacheKey) || [];
+    // 3. renderWeekViewContent를 날짜 1개로 호출
+    html += this.renderWeekViewContent(date, [date]);
     
-    // 해당 날의 이벤트 필터링
-    const dayEvents = cachedEvents.filter((event) => {
-      return event.start < end && event.end > start;
-    });
-
-    let html = '<div class="week-view">';
-
-    // Header (주간 보기와 동일, 날짜 1개)
-    html += '<div class="week-header">';
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    days.forEach((day) => {
-      const isToday = day.getTime() === today.getTime();
-      const isSunday = day.getDay() === 0;
-      html += `<div class="day-header ${isSunday ? "sunday" : ""} ${isToday ? "today" : ""}">
-        <span class="day-name">${CONFIG.dayNames[day.getDay()]}</span>
-        <span class="day-date">${day.getDate()}</span>
-      </div>`;
-    });
     html += "</div>";
-
-    // Time grid (주간 보기와 동일, 날짜 1개)
-    CONFIG.hoursDisplay.forEach((hourLabel, hourIndex) => {
-      html += '<div class="time-row">';
-
-      days.forEach((day) => {
-        const timeClass = this.getTimeSlotClass(hourIndex, day);
-        html += `<div class="time-cell ${timeClass}" data-date="${day.toISOString()}" data-hour="${hourIndex}"></div>`;
-      });
-
-      html += "</div>";
-    });
-
-    // Event layer (주간 보기와 동일, 날짜 1개 = 100% 폭)
-    days.forEach((day, dayIndex) => {
-      const dayEvents = this.getEventsForDay(day);
-
-      const dayWidth = `calc(100% / ${days.length})`;
-      const dayLeft = `calc(100% / ${days.length} * ${dayIndex})`;
-
-      html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
-
-      dayEvents.forEach((event) => {
-        html += this.renderWeekEvent(event);
-      });
-
-      html += "</div>";
-    });
-
     html += "</div>";
 
     this.container.innerHTML = html;
