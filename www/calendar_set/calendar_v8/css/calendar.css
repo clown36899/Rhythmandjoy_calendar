@@ -893,6 +893,14 @@ body {
   text-overflow: ellipsis;
 }
 
+.week-view.day-view-mode .event-room::before {
+  content: "♪";
+  display: inline-block;
+  margin-right: 0.3em;
+  font-size: 1.1em;
+  opacity: 0.9;
+}
+
 .week-view.day-view-mode .event-title {
   font-size: 1.3em !important;
   font-weight: 600 !important;
