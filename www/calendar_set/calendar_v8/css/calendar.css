@@ -788,3 +788,45 @@ body {
 }
 
 /* 미디어 쿼리 제거: viewport 기반 rem 스케일링으로 자동 조절 */
+
+/* 일간 보기 */
+.day-view-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: #2f2f2f;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.back-to-week-btn {
+  padding: 0.5rem 1rem;
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.back-to-week-btn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: var(--text-primary);
+  color: var(--text-primary);
+}
+
+.day-view-header h3 {
+  flex: 1;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* 일간 보기에서 이벤트 클릭 비활성화 */
+.day-view .week-event {
+  cursor: default;
+  pointer-events: none;
+}

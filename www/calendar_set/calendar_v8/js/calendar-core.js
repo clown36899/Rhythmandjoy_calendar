@@ -71,6 +71,17 @@ class Calendar {
     document
       .getElementById("allRoomsBtn")
       .addEventListener("click", () => this.toggleAllRooms());
+
+    // 이벤트 클릭 핸들러 (이벤트 위임)
+    this.container.addEventListener("click", (e) => {
+      const eventEl = e.target.closest(".week-event");
+      if (eventEl && this.currentView === "week") {
+        const eventDate = eventEl.dataset.eventDate;
+        if (eventDate) {
+          this.switchToDayView(new Date(eventDate));
+        }
+      }
+    });
   }
 
   resetSwipeState() {
@@ -398,6 +409,26 @@ class Calendar {
     this.render();
   }
 
+  switchToDayView(date) {
+    this.currentDate = new Date(date);
+    this.currentDate.setHours(0, 0, 0, 0);
+    this.currentView = "day";
+    this.render();
+  }
+
+  switchToWeekView() {
+    this.currentView = "week";
+    this.render();
+  }
+
+  isToday(date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+    return checkDate.getTime() === today.getTime();
+  }
+
   toggleRoom(roomId) {
     // 방 선택 변경 시 캐시 무효화
     console.log(`🗑️ [캐시클리어] 방 선택 변경: ${roomId}`);
@@ -459,9 +490,21 @@ class Calendar {
   getDateRange() {
     if (this.currentView === "week") {
       return this.getWeekRange(this.currentDate);
+    } else if (this.currentView === "day") {
+      return this.getDayRange(this.currentDate);
     } else {
       return this.getMonthRange(this.currentDate);
     }
+  }
+
+  getDayRange(date) {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(date);
+    end.setHours(23, 59, 59, 999);
+
+    return { start, end };
   }
 
   getWeekRange(date) {
@@ -508,6 +551,9 @@ class Calendar {
       await this.renderWeekViewWithSlider();
       // DOM 재생성 후 Hammer.js 재설정
       this.setupSwipeGestures();
+    } else if (this.currentView === "day") {
+      await this.loadEvents();
+      this.renderDayView();
     } else {
       await this.loadEvents();
       this.renderMonthView();
@@ -911,6 +957,106 @@ class Calendar {
     }
   }
 
+  renderDayView() {
+    const date = new Date(this.currentDate);
+    const dayName = CONFIG.dayNames[date.getDay()];
+    const dateStr = `${date.getMonth() + 1}/${date.getDate()} (${dayName})`;
+    
+    let html = `
+      <div class="day-view-header">
+        <button class="back-to-week-btn" onclick="calendar.switchToWeekView()">← 주간보기</button>
+        <h3>${dateStr}</h3>
+      </div>
+      <div class="week-view">
+        <div class="calendar-slider">
+          <div class="calendar-slide" style="transform: translateX(0%);">
+            ${this.renderDayViewContent(date)}
+          </div>
+        </div>
+      </div>
+    `;
+    
+    this.container.innerHTML = html;
+    
+    // 레이아웃 조정
+    requestAnimationFrame(() => {
+      this.adjustWeekViewLayout(true);
+      this.updateCurrentTimeIndicator();
+    });
+  }
+
+  renderDayViewContent(date) {
+    const dayEvents = this.getEventsForDay(date);
+    
+    let html = '<div class="week-content">';
+    
+    // 고정 시간 열
+    html += '<div class="time-column-fixed">';
+    html += '<div class="time-header-space"></div>';
+    for (let hour = 0; hour < 24; hour++) {
+      const timeSlotClass = this.getTimeSlotClass(hour, date);
+      html += `<div class="time-label ${timeSlotClass}">${CONFIG.hoursDisplay[hour]}</div>`;
+    }
+    html += '</div>';
+    
+    // 이벤트 영역 (단일 날짜)
+    html += '<div class="week-days-container">';
+    html += '<div class="week-header">';
+    const dayName = CONFIG.dayNames[date.getDay()];
+    const isToday = this.isToday(date);
+    html += `<div class="day-header ${isToday ? "today" : ""}">${dayName}<br><span class="date">${date.getDate()}</span></div>`;
+    html += '</div>';
+    
+    html += '<div class="week-grid">';
+    
+    // 시간 그리드
+    for (let hour = 0; hour < 24; hour++) {
+      const timeSlotClass = this.getTimeSlotClass(hour, date);
+      html += `<div class="time-slot ${timeSlotClass}"></div>`;
+    }
+    
+    // 현재 시간 인디케이터
+    if (isToday) {
+      html += '<div class="current-time-indicator"></div>';
+    }
+    
+    // 이벤트 컨테이너
+    html += '<div class="day-events-container" style="left: 0; width: 100%;">';
+    dayEvents.forEach((event) => {
+      html += this.renderDayEvent(event);
+    });
+    html += '</div>';
+    
+    html += '</div></div></div>';
+    
+    return html;
+  }
+
+  renderDayEvent(event) {
+    const displayStart = event.displayStart || event.start;
+    const displayEnd = event.displayEnd || event.end;
+
+    const startHour = displayStart.getHours();
+    const startMin = displayStart.getMinutes();
+    const endHour = displayEnd.getHours();
+    const endMin = displayEnd.getMinutes();
+
+    const startPercent = ((startHour * 60 + startMin) / (24 * 60)) * 100;
+    const endPercent = ((endHour * 60 + endMin) / (24 * 60)) * 100;
+    const height = endPercent - startPercent;
+
+    const roomName = CONFIG.rooms[event.roomId]?.name || event.roomId.toUpperCase();
+    const timeStr = `${String(startHour).padStart(2, "0")}:${String(startMin).padStart(2, "0")}-${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
+
+    const eventContent = `<div class="event-title">${roomName}: ${event.title}</div>
+                          <div class="event-time">${timeStr}</div>`;
+
+    return `<div class="week-event room-${event.roomId}" 
+                 style="top: ${startPercent}%; height: ${height}%; width: 100%; left: 0%;">
+              ${eventContent}
+            </div>`;
+  }
+
   renderMonthView() {
     const { start, end } = this.getDateRange();
     const days = [];
@@ -1075,8 +1221,12 @@ class Calendar {
       eventContent = `<div class="event-time"><span class="event-initial">${firstChar}</span> ${timeStr}</div>`;
     }
 
+    const eventDate = new Date(displayStart);
+    eventDate.setHours(0, 0, 0, 0);
+    
     return `<div class="week-event room-${event.roomId}" 
                  style="top: ${startPercent}%; height: ${height}%; width: ${position.width}%; left: ${position.left}%;"
+                 data-event-date="${eventDate.toISOString()}"
                  title="${roomName}: ${event.title} (${timeStr})">
               ${eventContent}
             </div>`;
