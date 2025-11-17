@@ -1245,11 +1245,11 @@ class Calendar {
       // 2순위: 알파벳만 (sc, ka 등) → 그대로
       let displayText = "";
       
-      // 패턴 1: X****님 형식에서 세로로 나열 (예: 박 / * / 님)
+      // 패턴 1: X****님 형식에서 세로로 나열 (예: 박 / ○ / 님)
       const nameMatch = event.title.match(/([^\s()\d])\*+님/);
       if (nameMatch) {
         const firstChar = nameMatch[1];
-        displayText = `<div>${firstChar}</div><div>*</div><div>님</div>`;
+        displayText = `<div>${firstChar}</div><div>○</div><div>님</div>`;
       } else {
         // 패턴 2: 알파벳만 추출 (sc, ka 등)
         const alphaMatch = event.title.match(/[a-zA-Z]+/);
