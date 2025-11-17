@@ -8,6 +8,7 @@ class Calendar {
     this.hammer = null;
     this.isAnimating = false;
     this.isPanning = false; // 스와이프 상태 플래그
+    this.hasPendingGestureNavigation = false; // 제스처 네비게이션 중복 방지
     this.currentSlideIndex = 1; // 0: prev, 1: current, 2: next
     this.weekDataCache = new Map(); // 주간 데이터 캐시
     this.baseTranslate = -33.333; // 현재 slider의 기본 위치 (%)
@@ -136,6 +137,9 @@ class Calendar {
     this.hammer.on("panstart", (e) => {
       if (this.isAnimating) return;
 
+      // 제스처 플래그 초기화
+      this.hasPendingGestureNavigation = false;
+
       // 가로 스와이프인지 확인
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) {
         console.log("⬆️ [세로 스크롤] deltaX:", e.deltaX, "deltaY:", e.deltaY);
@@ -181,10 +185,10 @@ class Calendar {
     this.hammer.on("panend", (e) => {
       if (this.isAnimating || !this.isPanning) return;
       
-      // 중복 panend 방지: 즉시 isPanning을 false로 설정하고 isAnimating도 예비 설정
+      // 중복 panend 방지: 이미 처리된 제스처면 무시
+      if (this.hasPendingGestureNavigation) return;
+      
       this.isPanning = false;
-      if (this.isAnimating) return; // 다시 한 번 체크
-      this.isAnimating = true; // 임시로 잠금
       
       const slides = this.container.querySelectorAll(".calendar-slide");
       if (slides.length === 3) {
@@ -228,14 +232,15 @@ class Calendar {
           distance >= distanceThreshold || velocity >= velocityThreshold;
 
         if (shouldNavigate) {
+          // 제스처 잠금: navigate 호출 전에 플래그 설정
+          this.hasPendingGestureNavigation = true;
           if (e.deltaX < 0) {
             this.navigate(1);
           } else {
             this.navigate(-1);
           }
         } else {
-          // 네비게이션 안 함: 잠금 해제하고 원위치
-          this.isAnimating = false;
+          // 네비게이션 안 함: 원위치
           slides.forEach((slide, i) => {
             slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
           });
@@ -290,6 +295,7 @@ class Calendar {
 
       await this.finalizeNavigation(direction, slides);
       this.isAnimating = false;
+      this.hasPendingGestureNavigation = false;
       console.log(`✅ 네비게이션 완료`);
     };
 
@@ -304,6 +310,7 @@ class Calendar {
         slides[1].removeEventListener("transitionend", handleTransitionEnd);
         await this.finalizeNavigation(direction, slides);
         this.isAnimating = false;
+        this.hasPendingGestureNavigation = false;
         console.log(`✅ 네비게이션 완료 (타임아웃)`);
       }
     }, 500);
