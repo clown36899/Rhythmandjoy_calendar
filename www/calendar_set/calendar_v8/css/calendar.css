@@ -468,6 +468,7 @@ body {
 
 .week-view .week-event {
   position: absolute;
+  flex-wrap: wrap;
 
   border-radius: 0.5em;
   font-size: 0.85em;
@@ -841,4 +842,25 @@ body {
 .week-view.day-view-mode .week-event.expanded .event-title {
   white-space: normal !important;
   word-break: break-word !important;
+}
+
+/* 주간 보기 돌아가기 버튼 */
+.back-to-week-btn {
+  padding: 0.4em 0.8em;
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 0.5em;
+  color: #ffffff;
+  font-size: 0.9em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-left: auto;
+  margin-right: 0.5em;
+}
+
+.back-to-week-btn:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateX(-2px);
 }

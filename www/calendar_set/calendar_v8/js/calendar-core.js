@@ -979,6 +979,9 @@ class Calendar {
     const date = new Date(this.currentDate);
     date.setHours(0, 0, 0, 0);
     
+    // 헤더에 주간 보기 돌아가기 버튼 추가
+    this.addBackToWeekButton();
+    
     // 주간 보기와 완전히 동일한 구조
     // 1. 왼쪽 고정 시간열
     let html = this.renderTimeColumn();
@@ -1002,6 +1005,36 @@ class Calendar {
       // 일간 보기 이벤트 클릭 핸들러 설정
       this.setupDayViewEventHandlers();
     });
+  }
+
+  addBackToWeekButton() {
+    const header = document.querySelector('.calendar-header');
+    if (!header) return;
+
+    // 기존 돌아가기 버튼 제거
+    const existingBtn = header.querySelector('.back-to-week-btn');
+    if (existingBtn) existingBtn.remove();
+
+    // 돌아가기 버튼 생성
+    const backBtn = document.createElement('button');
+    backBtn.className = 'back-to-week-btn';
+    backBtn.innerHTML = '← 주간보기';
+    backBtn.title = '주간 보기로 돌아가기';
+    
+    backBtn.addEventListener('click', () => {
+      this.currentView = 'week';
+      this.render();
+      // 돌아가기 버튼 제거
+      backBtn.remove();
+    });
+
+    // 제목 옆에 삽입 (관리자 버튼 앞)
+    const adminBtn = header.querySelector('.admin-btn');
+    if (adminBtn) {
+      header.insertBefore(backBtn, adminBtn);
+    } else {
+      header.appendChild(backBtn);
+    }
   }
 
   setupDayViewEventHandlers() {
