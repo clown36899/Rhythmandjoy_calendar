@@ -480,8 +480,8 @@ body {
   background-color: #212121;
 }
 
-/* 새벽-아침 경계선 (6시) - 주황색 */
-.time-cell[data-hour="6"] {
+/* 시간대 경계선 (6시: 새벽-아침, 16시: 낮-저녁) - 주황색 */
+.time-cell.time-boundary {
   border-top: 2px solid #FF9800;
 }
 
