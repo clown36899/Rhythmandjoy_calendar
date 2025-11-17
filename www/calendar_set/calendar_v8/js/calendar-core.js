@@ -1240,10 +1240,22 @@ class Calendar {
       eventContent = `<div class="event-title">${event.title}</div>
                       <div class="event-time">${timeStr}</div>`;
     } else {
-      // 타이틀에서 숫자 다음 첫 글자 추출 (예: "A홀 (2 이****님" → "이")
-      const match = event.title.match(/\d+\s*(\S)/);
-      const firstChar = match ? match[1] : "";
-      eventContent = `<div class="event-time"><span class="event-initial">${firstChar}</span> ${timeStr}</div>`;
+      // 주간 보기: 타이틀에서 글자 하나만 추출
+      // 1순위: "김****님", "박******님", "k*****님" 패턴 → 첫 글자
+      // 2순위: 알파벳만 (sc, ka 등)
+      let displayChar = "";
+      
+      // 패턴 1: X****님 형식에서 첫 글자 추출
+      const nameMatch = event.title.match(/([^\s()\d])\*+님/);
+      if (nameMatch) {
+        displayChar = nameMatch[1];
+      } else {
+        // 패턴 2: 알파벳만 추출 (sc, ka 등)
+        const alphaMatch = event.title.match(/[a-zA-Z]+/);
+        displayChar = alphaMatch ? alphaMatch[0] : "";
+      }
+      
+      eventContent = `<div class="event-time"><span class="event-initial">${displayChar}</span> ${timeStr}</div>`;
     }
 
     const eventDate = new Date(displayStart);
