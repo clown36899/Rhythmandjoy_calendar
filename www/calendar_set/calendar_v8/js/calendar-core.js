@@ -1280,12 +1280,15 @@ class Calendar {
       eventContent = `<div class="event-title">${event.title}</div>
                       <div class="event-time">${timeStr}</div>`;
     } else {
-      // 주간 보기: 시간 + 타이틀에서 글자 추출하여 세로로 나열
-      // 시작 시간만 표시 (예: 10:00 / 김 / ○ / 님)
+      // 주간 보기: 시작-종료 시간 + 타이틀에서 글자 추출하여 세로로 나열
+      // 시작-종료 시간 표시 (예: 10:00-11:00 / 김 / ○ / 님)
       const eventStart = new Date(displayStart);
+      const eventEnd = new Date(displayEnd);
       const timeStartHour = eventStart.getHours();
       const timeStartMin = eventStart.getMinutes();
-      const timeDisplay = `${timeStartHour}:${timeStartMin.toString().padStart(2, '0')}`;
+      const timeEndHour = eventEnd.getHours();
+      const timeEndMin = eventEnd.getMinutes();
+      const timeDisplay = `${timeStartHour}:${timeStartMin.toString().padStart(2, '0')}-${timeEndHour}:${timeEndMin.toString().padStart(2, '0')}`;
       
       let displayText = "";
       
