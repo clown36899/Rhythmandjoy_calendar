@@ -1341,7 +1341,7 @@ class Calendar {
       cleanTitle = cleanTitle.replace(/\(/g, ''); // ( 제거
       cleanTitle = cleanTitle.replace(/\d+/g, ''); // 숫자 제거
       cleanTitle = cleanTitle.trim(); // 공백 정리
-      eventContent = `<div class="event-room">${roomName}</div>
+      eventContent = `<div class="event-room">🎵 ${roomName}</div>
                       <div class="event-title">${cleanTitle}</div>
                       <div class="event-time">${timeStr}</div>`;
     } else if (this.selectedRooms.size === 1) {
