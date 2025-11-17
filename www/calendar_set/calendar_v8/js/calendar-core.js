@@ -435,6 +435,16 @@ class Calendar {
     this.render();
   }
 
+  async refreshCurrentView() {
+    // 현재 view와 날짜를 유지하면서 데이터만 갱신
+    console.log('🔄 [갱신] 현재 상태 유지하며 데이터 업데이트');
+    if (this.currentView === "week") {
+      await this.prepareAdjacentSlides(0); // 0 = 방향 없음, 현재 슬라이드들만 갱신
+    } else {
+      await this.render();
+    }
+  }
+
   changeView(view) {
     this.currentView = view;
     this.render();
