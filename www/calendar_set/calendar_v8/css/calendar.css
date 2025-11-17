@@ -537,11 +537,11 @@ body {
 /* 주간 보기: 글자만 꽉차게 표시 */
 .week-view .event-initial-only {
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
-  font-size: clamp(8px, 2.5vw, 14px);
+  font-size: 1.8em;
   font-weight: 400;
   color: #ffffff;
   line-height: 1;
-  padding: 7px;
+  padding: 0.4em;
   margin: 0;
   display: flex;
   justify-content: center;
