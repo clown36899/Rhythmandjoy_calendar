@@ -267,7 +267,7 @@ body {
 
 /* 시간 라벨 배경색 */
 .time-column-fixed .time-label.dawn-time {
-  background-color: #1f1f1f;
+  background-color: #2f2f2f;
 }
 
 .time-column-fixed .time-label.day-time {
