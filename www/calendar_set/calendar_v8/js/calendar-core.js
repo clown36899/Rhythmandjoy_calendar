@@ -766,7 +766,9 @@ class Calendar {
 
       // Render events with fixed room positions
       dayEvents.forEach((event) => {
-        html += this.renderWeekEvent(event);
+        // 일간 보기인지 판단 (days.length === 1)
+        const isDayView = daysOverride && days.length === 1;
+        html += this.renderWeekEvent(event, isDayView);
       });
 
       html += "</div>";
@@ -1117,7 +1119,7 @@ class Calendar {
     return dayEvents;
   }
 
-  renderWeekEvent(event) {
+  renderWeekEvent(event, isDayView = false) {
     // displayStart/displayEnd가 있으면 사용 (하루 단위로 분할된 경우)
     const displayStart = event.displayStart || event.start;
     const displayEnd = event.displayEnd || event.end;
@@ -1132,10 +1134,10 @@ class Calendar {
     const endPercent = ((endHour * 60 + endMin) / (24 * 60)) * 100;
     const height = endPercent - startPercent;
 
-    // 단일 방 필터링된 경우 100% width, 아니면 고정 위치
+    // 단일 방 필터링 또는 일간 보기일 경우 100% width
     let position;
-    if (this.selectedRooms.size === 1) {
-      // 단일 방만 선택된 경우 100% width
+    if (this.selectedRooms.size === 1 || isDayView) {
+      // 단일 방만 선택된 경우 또는 일간 보기에서 100% width
       position = { left: 0, width: 100 };
     } else {
       // 모든 방 표시 시 고정 위치: A=0-20%, B=20-40%, C=40-60%, D=60-80%, E=80-100%
