@@ -959,9 +959,11 @@ class Calendar {
             dayLeft = dayWidth * index;
             dayWidthAdjusted = dayWidth;
           } else {
-            // 주간 보기: 날짜 사이 1px 간격
-            // 일요일=1px, 월요일=dayWidth+2px, 화요일=dayWidth*2+3px, ...
-            dayLeft = (dayWidth * index) + (index + 1);
+            // 주간 보기: 각 컨테이너 좌우 0.5px씩 여백 (컨테이너 사이 1px 간격)
+            // 일요일: left=0.5px, width=dayWidth-1px
+            // 월요일: left=dayWidth+0.5px, width=dayWidth-1px
+            // 화요일: left=dayWidth*2+0.5px, width=dayWidth-1px
+            dayLeft = (dayWidth * index) + 0.5;
             dayWidthAdjusted = dayWidth - 1;
           }
 
