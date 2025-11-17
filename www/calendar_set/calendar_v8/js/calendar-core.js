@@ -765,8 +765,9 @@ class Calendar {
       html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
 
       // Render events with fixed room positions
+      const isDayView = daysOverride && days.length === 1;
       dayEvents.forEach((event) => {
-        html += this.renderWeekEvent(event);
+        html += this.renderWeekEvent(event, isDayView);
       });
 
       html += "</div>";
@@ -1117,7 +1118,7 @@ class Calendar {
     return dayEvents;
   }
 
-  renderWeekEvent(event) {
+  renderWeekEvent(event, isDayView = false) {
     // displayStart/displayEnd가 있으면 사용 (하루 단위로 분할된 경우)
     const displayStart = event.displayStart || event.start;
     const displayEnd = event.displayEnd || event.end;
@@ -1153,9 +1154,16 @@ class Calendar {
       CONFIG.rooms[event.roomId]?.name || event.roomId.toUpperCase();
     const timeStr = `${String(startHour).padStart(2, "0")}:${String(startMin).padStart(2, "0")}-${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
 
-    // 단독 방 선택: 타이틀+시간, ALL 선택: 첫글자+시간
+    // 일간 보기: 방 이름 + 전체 타이틀 + 시간 표시
+    // 단독 방 선택: 타이틀+시간
+    // ALL 선택: 첫글자+시간
     let eventContent;
-    if (this.selectedRooms.size === 1) {
+    if (isDayView) {
+      // 일간 보기: 방 이름, 전체 타이틀, 시간 모두 표시
+      eventContent = `<div class="event-room">${roomName}</div>
+                      <div class="event-title">${event.title}</div>
+                      <div class="event-time">${timeStr}</div>`;
+    } else if (this.selectedRooms.size === 1) {
       eventContent = `<div class="event-title">${event.title}</div>
                       <div class="event-time">${timeStr}</div>`;
     } else {

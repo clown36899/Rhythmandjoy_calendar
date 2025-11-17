@@ -798,3 +798,17 @@ body {
   left: 0 !important;
   width: 100% !important;
 }
+
+/* 일간 보기: 이벤트 글자 크기 증가 */
+.week-view.day-view-mode .event-room {
+  font-size: 1.5em !important;
+}
+
+.week-view.day-view-mode .event-title {
+  font-size: 1.3em !important;
+  font-weight: 600 !important;
+}
+
+.week-view.day-view-mode .event-time {
+  font-size: 1.1em !important;
+}
