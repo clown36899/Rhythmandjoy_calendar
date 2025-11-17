@@ -438,8 +438,33 @@ class Calendar {
   async refreshCurrentView() {
     // 현재 view와 날짜를 유지하면서 데이터만 갱신
     console.log('🔄 [갱신] 현재 상태 유지하며 데이터 업데이트');
+    
     if (this.currentView === "week") {
-      await this.prepareAdjacentSlides(0); // 0 = 방향 없음, 현재 슬라이드들만 갱신
+      const slides = Array.from(this.container.querySelectorAll(".calendar-slide"));
+      if (slides.length === 3) {
+        // 3개 슬라이드가 있으면 내용만 갱신 (위치 유지)
+        const prevDate = new Date(this.currentDate);
+        prevDate.setDate(prevDate.getDate() - 7);
+        const nextDate = new Date(this.currentDate);
+        nextDate.setDate(nextDate.getDate() + 7);
+
+        await this.loadWeekDataToCache(prevDate);
+        await this.loadWeekDataToCache(this.currentDate);
+        await this.loadWeekDataToCache(nextDate);
+
+        this.events = this.getMergedEventsFromCache([prevDate, this.currentDate, nextDate]);
+        console.log(`   ✅ 병합된 이벤트: ${this.events.length}개`);
+
+        // 슬라이드 내용만 업데이트 (transform 유지)
+        slides[0].innerHTML = this.renderWeekViewContent(prevDate);
+        slides[1].innerHTML = this.renderWeekViewContent(this.currentDate);
+        slides[2].innerHTML = this.renderWeekViewContent(nextDate);
+
+        console.log(`🔄 슬라이드 준비: ${prevDate.toLocaleDateString("ko-KR")} | ${this.currentDate.toLocaleDateString("ko-KR")} | ${nextDate.toLocaleDateString("ko-KR")}`);
+      } else {
+        // 슬라이드가 없으면 전체 렌더링
+        await this.render();
+      }
     } else {
       await this.render();
     }
