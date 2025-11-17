@@ -960,12 +960,68 @@ class Calendar {
   renderDayView() {
     const date = new Date(this.currentDate);
     
-    // 주간 보기와 동일한 구조 사용
-    let html = '<div class="week-view"><div class="calendar-slider">';
-    html += '<div class="calendar-slide" style="transform: translateX(0%);">';
-    html += this.renderDayViewContent(date);
-    html += '</div></div></div>';
+    // 주간 보기와 완전히 동일한 구조, 날짜만 1개
+    const days = [date];
     
+    const { start, end } = this.getDayRange(date);
+    
+    // 캐시에서 이벤트 가져오기
+    const cacheKey = this.getWeekCacheKey(date);
+    const cachedEvents = this.weekDataCache.get(cacheKey) || [];
+    
+    // 해당 날의 이벤트 필터링
+    const dayEvents = cachedEvents.filter((event) => {
+      return event.start < end && event.end > start;
+    });
+
+    let html = '<div class="week-view">';
+
+    // Header (주간 보기와 동일, 날짜 1개)
+    html += '<div class="week-header">';
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    days.forEach((day) => {
+      const isToday = day.getTime() === today.getTime();
+      const isSunday = day.getDay() === 0;
+      html += `<div class="day-header ${isSunday ? "sunday" : ""} ${isToday ? "today" : ""}">
+        <span class="day-name">${CONFIG.dayNames[day.getDay()]}</span>
+        <span class="day-date">${day.getDate()}</span>
+      </div>`;
+    });
+    html += "</div>";
+
+    // Time grid (주간 보기와 동일, 날짜 1개)
+    CONFIG.hoursDisplay.forEach((hourLabel, hourIndex) => {
+      html += '<div class="time-row">';
+
+      days.forEach((day) => {
+        const timeClass = this.getTimeSlotClass(hourIndex, day);
+        html += `<div class="time-cell ${timeClass}" data-date="${day.toISOString()}" data-hour="${hourIndex}"></div>`;
+      });
+
+      html += "</div>";
+    });
+
+    // Event layer (주간 보기와 동일, 날짜 1개 = 100% 폭)
+    days.forEach((day, dayIndex) => {
+      const dayEvents = this.getEventsForDay(day);
+
+      const dayWidth = `calc(100% / ${days.length})`;
+      const dayLeft = `calc(100% / ${days.length} * ${dayIndex})`;
+
+      html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
+
+      dayEvents.forEach((event) => {
+        html += this.renderWeekEvent(event);
+      });
+
+      html += "</div>";
+    });
+
+    html += "</div>";
+
     this.container.innerHTML = html;
     
     // 레이아웃 조정
@@ -973,86 +1029,6 @@ class Calendar {
       this.adjustWeekViewLayout(true);
       this.updateCurrentTimeIndicator();
     });
-  }
-
-  renderDayViewContent(date) {
-    const dayEvents = this.getEventsForDay(date);
-    
-    let html = '<div class="week-content">';
-    
-    // 고정 시간 열 (주간 보기와 동일)
-    html += '<div class="time-column-fixed">';
-    html += '<div class="time-header-space"></div>';
-    for (let hour = 0; hour < 24; hour++) {
-      const timeSlotClass = this.getTimeSlotClass(hour, date);
-      html += `<div class="time-label ${timeSlotClass}">${CONFIG.hoursDisplay[hour]}</div>`;
-    }
-    html += '</div>';
-    
-    // 이벤트 영역 (날짜 1개만 표시)
-    html += '<div class="week-days-container">';
-    
-    // 헤더: 날짜 1개만 (← 주간보기 버튼 포함)
-    html += '<div class="week-header day-view-header-inline">';
-    const dayName = CONFIG.dayNames[date.getDay()];
-    const isToday = this.isToday(date);
-    html += `<div class="day-header ${isToday ? "today" : ""} day-view-single">
-               <button class="back-to-week-btn-inline" onclick="calendar.switchToWeekView()">← 주간</button>
-               <div class="day-header-content">
-                 <span class="day-name">${dayName}</span>
-                 <span class="day-date">${date.getDate()}</span>
-               </div>
-             </div>`;
-    html += '</div>';
-    
-    html += '<div class="week-grid">';
-    
-    // 시간 그리드 (주간 보기와 동일)
-    for (let hour = 0; hour < 24; hour++) {
-      const timeSlotClass = this.getTimeSlotClass(hour, date);
-      html += `<div class="time-slot ${timeSlotClass}"></div>`;
-    }
-    
-    // 현재 시간 인디케이터
-    if (isToday) {
-      html += '<div class="current-time-indicator"></div>';
-    }
-    
-    // 이벤트 컨테이너 (전체 폭 사용)
-    html += '<div class="day-events-container" style="left: 0; width: 100%;">';
-    dayEvents.forEach((event) => {
-      html += this.renderDayEvent(event);
-    });
-    html += '</div>';
-    
-    html += '</div></div></div>';
-    
-    return html;
-  }
-
-  renderDayEvent(event) {
-    const displayStart = event.displayStart || event.start;
-    const displayEnd = event.displayEnd || event.end;
-
-    const startHour = displayStart.getHours();
-    const startMin = displayStart.getMinutes();
-    const endHour = displayEnd.getHours();
-    const endMin = displayEnd.getMinutes();
-
-    const startPercent = ((startHour * 60 + startMin) / (24 * 60)) * 100;
-    const endPercent = ((endHour * 60 + endMin) / (24 * 60)) * 100;
-    const height = endPercent - startPercent;
-
-    const roomName = CONFIG.rooms[event.roomId]?.name || event.roomId.toUpperCase();
-    const timeStr = `${String(startHour).padStart(2, "0")}:${String(startMin).padStart(2, "0")}-${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
-
-    const eventContent = `<div class="event-title">${roomName}: ${event.title}</div>
-                          <div class="event-time">${timeStr}</div>`;
-
-    return `<div class="week-event room-${event.roomId}" 
-                 style="top: ${startPercent}%; height: ${height}%; width: 100%; left: 0%;">
-              ${eventContent}
-            </div>`;
   }
 
   renderMonthView() {
