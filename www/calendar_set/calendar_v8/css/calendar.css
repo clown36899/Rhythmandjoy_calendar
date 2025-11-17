@@ -799,16 +799,24 @@ body {
   width: 100% !important;
 }
 
-/* 일간 보기: 이벤트 글자 크기 증가 */
+/* 일간 보기: 이벤트 글자 크기 증가 및 스타일 개선 */
+.week-view.day-view-mode .week-event {
+  padding: 0.5em 0.6em !important;
+}
+
 .week-view.day-view-mode .event-room {
   font-size: 1.5em !important;
+  margin-bottom: 0.2em;
 }
 
 .week-view.day-view-mode .event-title {
   font-size: 1.3em !important;
   font-weight: 600 !important;
+  margin-bottom: 0.2em;
 }
 
 .week-view.day-view-mode .event-time {
   font-size: 1.1em !important;
+  opacity: 1 !important;
+  font-weight: 500 !important;
 }
