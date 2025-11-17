@@ -555,6 +555,17 @@ body {
   flex-shrink: 0;
 }
 
+/* 성/알파벳: 흰색 유지 */
+.week-view .event-initial-only .name-char {
+  opacity: 1;
+}
+
+/* 동그라미와 님: 반투명 */
+.week-view .event-initial-only .name-circle,
+.week-view .event-initial-only .name-suffix {
+  opacity: 0.5;
+}
+
 .week-event.room-a {
   background-color: rgba(246, 191, 38, 0.9);
 

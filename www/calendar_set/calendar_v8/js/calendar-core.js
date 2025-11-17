@@ -1241,19 +1241,22 @@ class Calendar {
                       <div class="event-time">${timeStr}</div>`;
     } else {
       // 주간 보기: 타이틀에서 글자 추출하여 세로로 나열
-      // 1순위: "김****님", "박******님", "k*****님" 패턴 → 글자/*/님 세로로
-      // 2순위: 알파벳만 (sc, ka 등) → 그대로
+      // 모든 패턴: 글자 / ○(반투명) / 님(반투명)
       let displayText = "";
       
       // 패턴 1: X****님 형식에서 세로로 나열 (예: 박 / ○ / 님)
       const nameMatch = event.title.match(/([^\s()\d])\*+님/);
       if (nameMatch) {
         const firstChar = nameMatch[1];
-        displayText = `<div>${firstChar}</div><div>○</div><div>님</div>`;
+        displayText = `<div class="name-char">${firstChar}</div><div class="name-circle">○</div><div class="name-suffix">님</div>`;
       } else {
-        // 패턴 2: 알파벳만 추출 (sc, ka 등)
+        // 패턴 2: 알파벳만 추출 (sc, ka 등) → sc / ○ / 님
         const alphaMatch = event.title.match(/[a-zA-Z]+/);
-        displayText = alphaMatch ? `<div>${alphaMatch[0]}</div>` : "";
+        if (alphaMatch) {
+          displayText = `<div class="name-char">${alphaMatch[0]}</div><div class="name-circle">○</div><div class="name-suffix">님</div>`;
+        } else {
+          displayText = "";
+        }
       }
       
       eventContent = `<div class="event-initial-only">${displayText}</div>`;
