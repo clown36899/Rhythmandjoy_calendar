@@ -886,6 +886,7 @@ body {
 }
 
 .week-view.day-view-mode .event-room {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif !important;
   font-size: 1.5em !important;
   margin-bottom: 0.2em;
   white-space: nowrap;
@@ -894,6 +895,7 @@ body {
 }
 
 .week-view.day-view-mode .event-title {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif !important;
   font-size: 1.3em !important;
   font-weight: 600 !important;
   margin-bottom: 0.2em;
@@ -902,6 +904,7 @@ body {
 }
 
 .week-view.day-view-mode .event-time {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif !important;
   font-size: 1.1em !important;
   opacity: 1 !important;
   font-weight: 500 !important;
