@@ -45,49 +45,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// 마지막 동기화 시간 추적 (과도한 동기화 방지)
-let lastSyncTime = 0;
-const SYNC_COOLDOWN = 5000; // 5초
-
-// Google Calendar Webhook 수신 엔드포인트
-app.post('/api/calendar-webhook', async (req, res) => {
-  try {
-    const channelId = req.headers['x-goog-channel-id'];
-    const resourceState = req.headers['x-goog-resource-state'];
-    
-    console.log('📅 Google Calendar Webhook 수신:', { channelId, resourceState });
-
-    // 초기 동기화 확인 메시지는 무시
-    if (resourceState === 'sync') {
-      return res.status(200).send('OK');
-    }
-
-    // 변경 감지 시 증분 동기화 (변경된 이벤트만!)
-    if (resourceState === 'exists') {
-      const now = Date.now();
-      
-      // 쿨다운 체크 (5초 이내 중복 요청 무시)
-      if (now - lastSyncTime < SYNC_COOLDOWN) {
-        console.log('⏭️ 쿨다운 중, 동기화 생략');
-        return res.status(200).send('OK');
-      }
-      
-      lastSyncTime = now;
-      console.log('🚀 캘린더 변경 감지, 증분 동기화 실행...');
-      
-      // 비동기로 증분 동기화 (변경분만 가져오기!)
-      syncAllCalendarsIncremental().catch(error => {
-        console.error('❌ Webhook 증분 동기화 실패:', error);
-      });
-    }
-
-    res.status(200).send('OK');
-  } catch (error) {
-    console.error('❌ Webhook 처리 오류:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // 수동 초기 동기화 엔드포인트 (최근 3주)
 app.post('/api/sync', async (req, res) => {
   try {
