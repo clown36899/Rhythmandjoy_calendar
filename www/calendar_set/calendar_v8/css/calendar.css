@@ -78,12 +78,36 @@ body {
   color: var(--text-secondary);
 }
 
+.month-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  justify-content: center;
+}
+
 .calendar-title {
   font-size: clamp(1.5rem, 3.5vh, 2rem);
   font-weight: 700;
-  flex: 1;
   text-align: center;
   color: #fff;
+  margin: 0;
+}
+
+.month-nav-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: clamp(1rem, 2vh, 1.3rem);
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  line-height: 1;
+}
+
+.month-nav-btn:hover {
+  opacity: 1;
 }
 
 .admin-btn {
@@ -545,13 +569,13 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  align-items: center;
+  align-items: flex-start;
   width: 100%;
   height: 100%;
   overflow: hidden;
 }
 
-.week-view .event-initial-only > div {
+.week-view .event-initial-only>div {
   flex-shrink: 0;
 }
 

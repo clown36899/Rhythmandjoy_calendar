@@ -48,7 +48,13 @@ class Calendar {
   }
 
   setupEventListeners() {
-    // 헤더 네비게이션
+    // 헤더 월간 네비게이션
+    document.getElementById("prevMonthBtn").addEventListener("click", () => {
+      this.goToPrevMonth();
+    });
+    document.getElementById("nextMonthBtn").addEventListener("click", () => {
+      this.goToNextMonth();
+    });
 
     // 푸터 네비게이션
     document.getElementById("prevWeekBtn").addEventListener("click", () => {
@@ -414,6 +420,18 @@ class Calendar {
 
   goToToday() {
     this.currentDate = new Date();
+    this.render();
+  }
+
+  goToPrevMonth() {
+    this.resetSwipeState();
+    this.currentDate.setMonth(this.currentDate.getMonth() - 1);
+    this.render();
+  }
+
+  goToNextMonth() {
+    this.resetSwipeState();
+    this.currentDate.setMonth(this.currentDate.getMonth() + 1);
     this.render();
   }
 
