@@ -960,7 +960,7 @@ class Calendar {
             dayWidthAdjusted = dayWidth;
           } else {
             // 주간 보기: 컨테이너 좌우 여백으로 날짜 사이 간격 생성
-            const gap = 1.5; // 좌우 및 중간 간격
+            const gap = 1; // 좌우 및 중간 간격
             dayLeft = (dayWidth * index) + gap;
             dayWidthAdjusted = dayWidth - (gap * 3);
           }
