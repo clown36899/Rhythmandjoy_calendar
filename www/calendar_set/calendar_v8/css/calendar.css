@@ -474,6 +474,7 @@ body {
   font-size: 0.85em;
   overflow: hidden;
   cursor: pointer;
+  border: 1px solid #000;
   border-left: 0.125em solid;
   transition: all 0.1s;
   display: flex;
