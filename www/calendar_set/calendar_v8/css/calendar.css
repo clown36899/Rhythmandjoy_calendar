@@ -85,7 +85,7 @@ body {
   align-items: center;
   gap: 0.5rem;
   flex: 1;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .calendar-title {
@@ -480,14 +480,9 @@ body {
   background-color: #212121;
 }
 
-/* 시간대 경계선: 6시 (새벽-아침) */
-.time-cell.time-boundary-dawn {
-  border-top: 3px solid #FF9800;
-}
-
-/* 시간대 경계선: 16시 (낮-저녁) */
-.time-cell.time-boundary-evening {
-  border-top: 2px solid #2196F3;
+/* 시간대 경계선 (6시: 새벽-아침, 16시: 낮-저녁) - 주황색 */
+.time-cell.time-boundary {
+  border-top: 1px solid #1f3e51;
 }
 
 /* 평일 낮 시간대 */
