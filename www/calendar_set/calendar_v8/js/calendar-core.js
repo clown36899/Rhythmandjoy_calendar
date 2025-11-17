@@ -181,9 +181,11 @@ class Calendar {
     this.hammer.on("panend", (e) => {
       if (this.isAnimating || !this.isPanning) return;
       
-      // 중복 panend 방지: 즉시 isPanning을 false로 설정
+      // 중복 panend 방지: 즉시 isPanning을 false로 설정하고 isAnimating도 예비 설정
       this.isPanning = false;
-
+      if (this.isAnimating) return; // 다시 한 번 체크
+      this.isAnimating = true; // 임시로 잠금
+      
       const slides = this.container.querySelectorAll(".calendar-slide");
       if (slides.length === 3) {
         const swipeEndTime = Date.now();
@@ -232,6 +234,8 @@ class Calendar {
             this.navigate(-1);
           }
         } else {
+          // 네비게이션 안 함: 잠금 해제하고 원위치
+          this.isAnimating = false;
           slides.forEach((slide, i) => {
             slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
           });
