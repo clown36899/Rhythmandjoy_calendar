@@ -100,9 +100,11 @@ class DataManager {
       // Calendar의 모든 캐시 키 순회 (room signature 포함)
       for (const [cacheKey, events] of window.calendar.weekDataCache.entries()) {
         if (cacheKey.startsWith(weekKey + '_')) {
-          events.push(newEvent);
+          // 새 배열로 교체 (참조 변경 필수!)
+          const updatedEvents = [...events, newEvent];
+          window.calendar.weekDataCache.set(cacheKey, updatedEvents);
           addedCount++;
-          console.log(`   💾 추가: ${cacheKey} (총 ${events.length}개)`);
+          console.log(`   💾 추가: ${cacheKey} (총 ${updatedEvents.length}개)`);
         }
       }
     }
@@ -123,7 +125,10 @@ class DataManager {
     for (const [cacheKey, events] of window.calendar.weekDataCache.entries()) {
       const index = events.findIndex(e => e.id === oldId);
       if (index !== -1) {
-        events[index] = newEvent;
+        // 새 배열로 교체 (참조 변경 필수!)
+        const updatedEvents = [...events];
+        updatedEvents[index] = newEvent;
+        window.calendar.weekDataCache.set(cacheKey, updatedEvents);
         updatedCount++;
         console.log(`   💾 수정: ${cacheKey}`);
       }
