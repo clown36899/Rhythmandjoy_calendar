@@ -79,85 +79,84 @@ class DataManager {
   handleRealtimeChange(payload) {
     const { eventType, new: newRecord, old: oldRecord } = payload;
     
-    console.log(`🔄 [Realtime] ${eventType}`, { new: newRecord, old: oldRecord });
+    console.log(`🔄 [Realtime] ${eventType}`, { newId: newRecord?.id, oldId: oldRecord?.id });
     
-    // DELETE의 경우 old에 start_time/end_time이 없을 수 있음 (Supabase 기본 동작)
-    // 이 경우 전체 캐시를 무효화
-    const needsFullInvalidation = eventType === 'DELETE' && oldRecord && !oldRecord.start_time;
-    
-    if (needsFullInvalidation) {
-      console.log(`   ⚠️ DELETE 이벤트에 날짜 정보 없음 - 전체 캐시 무효화`);
-      if (window.calendar) {
-        // 모든 캐시 삭제
-        window.calendar.weekDataCache.clear();
-        this.cache.clear();
-        this.cacheTimestamps.clear();
-        console.log(`   🗑️ 전체 캐시 삭제 완료`);
-        window.calendar.refreshCurrentView();
-      }
-      return;
+    if (!window.calendar) return;
+
+    // ✅ 증분 업데이트: ID 기반으로 캐시에서 직접 추가/수정/삭제
+    if (eventType === 'INSERT' && newRecord) {
+      this.handleIncrementalInsert(newRecord);
+    } else if (eventType === 'UPDATE' && newRecord && oldRecord) {
+      this.handleIncrementalUpdate(oldRecord.id, newRecord);
+    } else if (eventType === 'DELETE' && oldRecord) {
+      this.handleIncrementalDelete(oldRecord.id);
     }
-    
-    // INSERT: new만, DELETE: old만 (날짜 정보 있을 때), UPDATE: 둘 다
-    const affectedRecords = [];
-    if (newRecord) affectedRecords.push(newRecord);
-    if (oldRecord && eventType === 'DELETE' && oldRecord.start_time) affectedRecords.push(oldRecord);
-    if (eventType === 'UPDATE' && oldRecord && oldRecord.start_time) affectedRecords.push(oldRecord);
-    
-    console.log(`   📋 분석할 레코드:`, affectedRecords.length);
-    
-    // 영향받은 주의 캐시만 무효화
-    const affectedWeeks = new Set();
-    for (const record of affectedRecords) {
-      const weeks = this.getAffectedWeekKeys(record);
-      console.log(`   📅 레코드가 걸친 주:`, weeks);
-      weeks.forEach(w => affectedWeeks.add(w));
-    }
-    
-    if (window.calendar && affectedWeeks.size > 0) {
-      console.log(`   🗑️ 무효화할 주: ${affectedWeeks.size}개`);
-      
-      // ✅ Calendar의 주간 캐시 무효화 (올바른 키 포맷 사용)
-      window.calendar.invalidateWeeks(Array.from(affectedWeeks));
-      
-      // ✅ DataManager의 범위 캐시도 무효화 (날짜 범위 겹치는 것)
-      this.invalidateOverlappingCaches(affectedWeeks);
-      
-      // 현재 view만 갱신 (날짜 유지)
-      window.calendar.refreshCurrentView();
-    }
+
+    // UI 갱신 (캐시 유지)
+    window.calendar.refreshCurrentView();
   }
 
-  invalidateOverlappingCaches(affectedWeeks) {
-    // affectedWeeks = Set of "YYYY-MM-DD" 문자열
-    const weekDates = Array.from(affectedWeeks).map(w => new Date(w));
-    
-    // cache 키들을 순회하며 날짜 범위가 겹치는 것 삭제
-    for (const cacheKey of Array.from(this.cache.keys())) {
-      // cacheKey 형식: "a,b,c,d,e_2025-11-10T00:00:00.000Z_2025-11-17T00:00:00.000Z"
-      const parts = cacheKey.split('_');
-      if (parts.length >= 3) {
-        const rangeStart = new Date(parts[1]);
-        const rangeEnd = new Date(parts[2]);
-        
-        // 영향받은 주와 겹치는지 확인
-        for (const weekDate of weekDates) {
-          const weekEnd = new Date(weekDate);
-          weekEnd.setDate(weekEnd.getDate() + 7);
-          
-          if (rangeStart < weekEnd && rangeEnd > weekDate) {
-            this.cache.delete(cacheKey);
-            this.cacheTimestamps.delete(cacheKey);
-            console.log(`   🗑️ [DataManager 캐시삭제] ${cacheKey}`);
-            break;
-          }
+  handleIncrementalInsert(record) {
+    // 새 이벤트를 변환
+    const newEvent = this.convertToEvents([record])[0];
+    if (!newEvent) return;
+
+    console.log(`   ➕ [증분INSERT] ID: ${record.id}`);
+
+    // 영향받은 모든 주의 캐시에 추가
+    const weekKeys = this.getAffectedWeekKeys(record);
+    let addedCount = 0;
+
+    for (const weekKey of weekKeys) {
+      // Calendar의 모든 캐시 키 순회 (room signature 포함)
+      for (const [cacheKey, events] of window.calendar.weekDataCache.entries()) {
+        if (cacheKey.startsWith(weekKey + '_')) {
+          events.push(newEvent);
+          addedCount++;
+          console.log(`   💾 추가: ${cacheKey} (총 ${events.length}개)`);
         }
       }
     }
   }
 
+  handleIncrementalUpdate(oldId, newRecord) {
+    const newEvent = this.convertToEvents([newRecord])[0];
+    if (!newEvent) return;
+
+    console.log(`   🔄 [증분UPDATE] ID: ${oldId}`);
+    
+    let updatedCount = 0;
+    // 모든 캐시에서 해당 ID 찾아서 교체
+    for (const [cacheKey, events] of window.calendar.weekDataCache.entries()) {
+      const index = events.findIndex(e => e.id === oldId);
+      if (index !== -1) {
+        events[index] = newEvent;
+        updatedCount++;
+        console.log(`   💾 수정: ${cacheKey}`);
+      }
+    }
+  }
+
+  handleIncrementalDelete(deleteId) {
+    console.log(`   ➖ [증분DELETE] ID: ${deleteId}`);
+    
+    let deletedCount = 0;
+    // 모든 캐시에서 해당 ID 제거
+    for (const [cacheKey, events] of window.calendar.weekDataCache.entries()) {
+      const beforeLength = events.length;
+      const filtered = events.filter(e => e.id !== deleteId);
+      if (filtered.length < beforeLength) {
+        window.calendar.weekDataCache.set(cacheKey, filtered);
+        deletedCount++;
+        console.log(`   💾 삭제: ${cacheKey} (${beforeLength} → ${filtered.length}개)`);
+      }
+    }
+  }
+
+
   getAffectedWeekKeys(record) {
     // booking이 걸쳐있는 모든 주의 시작일 계산
+    // ✅ Calendar.getWeekRange()와 동일한 로직 사용
     const start = new Date(record.start_time);
     const end = new Date(record.end_time);
     const weeks = [];
@@ -165,12 +164,13 @@ class DataManager {
     let current = new Date(start);
     current.setHours(0, 0, 0, 0);
     
-    // 해당 주의 일요일(또는 월요일)로 이동
+    // 해당 주의 일요일로 이동
     const day = current.getDay();
     current.setDate(current.getDate() - day); // 일요일 기준
     
     while (current <= end) {
-      weeks.push(current.toISOString().split('T')[0]);
+      // ✅ toISOString() 사용 (Calendar.getWeekCacheKey()와 일치)
+      weeks.push(current.toISOString());
       current.setDate(current.getDate() + 7);
     }
     
