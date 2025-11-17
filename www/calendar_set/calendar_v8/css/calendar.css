@@ -472,11 +472,6 @@ body {
   padding-top: 0;
 }
 
-/* 주간 보기: 날짜 경계마다 1px 여백 (마지막 제외) */
-.week-view:not(.day-view-mode) .day-events-container:not(:last-child) {
-  margin-right: 1px;
-}
-
 .week-view .week-event {
   position: absolute;
   flex-wrap: wrap;

@@ -758,9 +758,18 @@ class Calendar {
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
 
-      // days.length로 동적 계산 (주간=7, 일간=1)
-      const dayWidth = `calc(100% / ${days.length})`;
-      const dayLeft = `calc(100% / ${days.length} * ${dayIndex})`;
+      // 주간 보기(7일)일 때만 날짜 사이 간격 조정
+      let dayWidth, dayLeft;
+      if (days.length === 7) {
+        // 날짜 사이 1px 간격을 위해 left와 width 조정
+        // 각 날짜: left에 dayIndex * 1px 추가, width에서 1px 빼기
+        dayWidth = `calc((100% / ${days.length}) - 1px)`;
+        dayLeft = `calc((100% / ${days.length} * ${dayIndex}) + ${dayIndex}px)`;
+      } else {
+        // 일간 보기는 기존대로
+        dayWidth = `calc(100% / ${days.length})`;
+        dayLeft = `calc(100% / ${days.length} * ${dayIndex})`;
+      }
 
       html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
 
