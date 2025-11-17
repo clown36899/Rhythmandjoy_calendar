@@ -843,6 +843,11 @@ class Calendar {
     // Event layer - one container per day
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
+      
+      // 🐛 디버깅: 특정 날짜의 이벤트 수 로그
+      if (day.getDate() === 17 && day.getMonth() === 10) {  // 11월 17일
+        console.log(`🐛 [렌더링] 11월 17일 이벤트 수: ${dayEvents.length}개`, dayEvents.map(e => e.title));
+      }
 
       // 주간 보기일 때만 날짜 사이 간격 조정 (일간 보기는 daysOverride 존재)
       let dayWidth, dayLeft;
@@ -1270,6 +1275,12 @@ class Calendar {
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(date);
     dayEnd.setHours(23, 59, 59, 999);
+
+    // 🐛 디버깅: this.events 전체 개수
+    if (date.getDate() === 17 && date.getMonth() === 10) {  // 11월 17일
+      console.log(`🐛 [getEventsForDay] this.events 총 개수: ${this.events.length}개`);
+      console.log(`🐛 [getEventsForDay] 날짜 범위: ${dayStart.toLocaleString('ko-KR')} ~ ${dayEnd.toLocaleString('ko-KR')}`);
+    }
 
     // 여러 날에 걸친 이벤트를 하루 단위로 분할
     const dayEvents = [];
