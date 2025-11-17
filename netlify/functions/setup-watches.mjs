@@ -21,6 +21,30 @@ const WEBHOOK_URL = process.env.WEBHOOK_URL || 'https://xn--xy1b23ggrmm5bfb82ees
 
 // Google Service Account 인증 - lib/google-auth.js에서 import
 
+// 기존 채널 정지
+async function stopExistingWatch(channelId, resourceId, token) {
+  try {
+    const stopUrl = `https://www.googleapis.com/calendar/v3/channels/stop?key=${process.env.GOOGLE_CALENDAR_API_KEY}`;
+    const stopResponse = await fetch(stopUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        id: channelId,
+        resourceId: resourceId
+      })
+    });
+    
+    if (stopResponse.ok) {
+      console.log(`  🛑 기존 채널 정지: ${channelId}`);
+    }
+  } catch (error) {
+    console.log(`  ⚠️  기존 채널 정지 실패 (무시): ${error.message}`);
+  }
+}
+
 // Watch 채널 등록
 async function setupWatch(room) {
   try {
@@ -31,6 +55,18 @@ async function setupWatch(room) {
     await auth.authorize();
     const tokenInfo = await auth.getAccessToken();
     const token = tokenInfo.token;
+    
+    // 1-1. 기존 채널 정보 조회 및 정지
+    const { data: existingChannel } = await supabase
+      .from('calendar_channels')
+      .select('*')
+      .eq('room_id', room.id)
+      .single();
+    
+    if (existingChannel) {
+      console.log(`  📌 기존 채널 발견, 정지 중...`);
+      await stopExistingWatch(existingChannel.channel_id, existingChannel.resource_id, token);
+    }
     
     // 2. 초기 sync token 가져오기 (REST API)
     const listUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events?maxResults=1&singleEvents=true&key=${process.env.GOOGLE_CALENDAR_API_KEY}`;

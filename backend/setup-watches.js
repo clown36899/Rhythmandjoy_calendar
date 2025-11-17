@@ -40,12 +40,50 @@ function getGoogleAuth() {
   });
 }
 
+// 기존 채널 정지
+async function stopExistingWatch(channelId, resourceId, auth) {
+  try {
+    const { token } = await auth.getAccessToken();
+    
+    const stopUrl = `https://www.googleapis.com/calendar/v3/channels/stop?key=${process.env.GOOGLE_CALENDAR_API_KEY}`;
+    const stopResponse = await fetch(stopUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        id: channelId,
+        resourceId: resourceId
+      })
+    });
+    
+    if (stopResponse.ok) {
+      console.log(`  🛑 기존 채널 정지: ${channelId}`);
+    }
+  } catch (error) {
+    console.log(`  ⚠️  기존 채널 정지 실패 (무시): ${error.message}`);
+  }
+}
+
 // Watch 채널 등록
 async function setupWatch(room) {
   const auth = getGoogleAuth();
   
   try {
     console.log(`🔄 ${room.id}홀 Watch 등록 중...`);
+
+    // 0. 기존 채널 정보 조회 및 정지
+    const { data: existingChannel } = await supabase
+      .from('calendar_channels')
+      .select('*')
+      .eq('room_id', room.id)
+      .single();
+    
+    if (existingChannel) {
+      console.log(`  📌 기존 채널 발견, 정지 중...`);
+      await stopExistingWatch(existingChannel.channel_id, existingChannel.resource_id, auth);
+    }
 
     // 1. Access Token 가져오기
     const { token } = await auth.getAccessToken();
