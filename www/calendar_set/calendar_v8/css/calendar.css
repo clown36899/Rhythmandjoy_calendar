@@ -79,12 +79,12 @@ body {
 }
 
 .month-nav-group {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5rem;
-  flex: 1;
-  justify-content: center;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+  flex: 1 !important;
+  justify-content: center !important;
 }
 
 .calendar-title {
@@ -467,7 +467,7 @@ body {
 }
 
 .time-cell {
-  border-right: 1px solid #414141;
+  border-right: 3px solid #414141;
   border-bottom: 1px solid #414141;
   position: relative;
 }
