@@ -560,10 +560,11 @@ body {
   opacity: 1;
 }
 
-/* 동그라미와 님: 반투명 */
+/* 동그라미와 님: 반투명 + 사이즈 절반 */
 .week-view .event-initial-only .name-circle,
 .week-view .event-initial-only .name-suffix {
   opacity: 0.5;
+  font-size: 0.5em;
 }
 
 .week-event.room-a {
