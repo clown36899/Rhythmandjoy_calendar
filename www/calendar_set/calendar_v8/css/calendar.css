@@ -265,11 +265,11 @@ body {
 }
 
 .time-column-fixed .time-label.day-time {
-  background-color: rgb(132 132 132 / 38%);
+  background-color: rgb(0 158 236 / 25%);
 }
 
 .time-column-fixed .time-label.evening-time {
-  background-color: rgba(255, 165, 0, 0.12);
+  background-color: rgb(137 71 51 / 32%);
 }
 
 .week-view .day-header {
@@ -480,15 +480,20 @@ body {
   background-color: #212121;
 }
 
+/* 새벽-아침 경계선 (6시) - 주황색 */
+.time-cell[data-hour="6"] {
+  border-top: 2px solid #FF9800;
+}
+
 /* 평일 낮 시간대 */
 .time-cell.weekday-day {
-  background-color: rgba(255, 249, 196, 0.08);
+  background-color: #212121;
 }
 
 /* 평일 저녁 & 주말 낮 시간대 (통일) */
 .time-cell.weekday-evening,
 .time-cell.weekend-day {
-  background-color: rgba(255, 165, 0, 0.12);
+  background-color: #212121;
 }
 
 .day-events-container {
