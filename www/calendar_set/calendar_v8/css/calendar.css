@@ -177,8 +177,7 @@ body {
   position: absolute;
   inset: 0 0 0 3.75em;
   display: flex;
-  overflow-y: hidden;
-  overflow-x: visible;
+  overflow: hidden;
 }
 
 .calendar-slide {
@@ -188,9 +187,15 @@ body {
   transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
   flex-shrink: 0;
-  overflow: hidden;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden !important;
   touch-action: pan-x;
+  -webkit-overflow-scrolling: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.calendar-slide::-webkit-scrollbar {
+  display: none;
 }
 
 .loading {
