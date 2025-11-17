@@ -1008,11 +1008,11 @@ class Calendar {
   }
 
   addBackToWeekButton() {
-    const header = document.querySelector('.calendar-header');
-    if (!header) return;
+    const footer = document.querySelector('.bottom-controls');
+    if (!footer) return;
 
     // 기존 돌아가기 버튼 제거
-    const existingBtn = header.querySelector('.back-to-week-btn');
+    const existingBtn = footer.querySelector('.back-to-week-btn');
     if (existingBtn) existingBtn.remove();
 
     // 돌아가기 버튼 생성
@@ -1028,12 +1028,12 @@ class Calendar {
       backBtn.remove();
     });
 
-    // 제목 옆에 삽입 (관리자 버튼 앞)
-    const adminBtn = header.querySelector('.admin-btn');
-    if (adminBtn) {
-      header.insertBefore(backBtn, adminBtn);
+    // 예약 정보 버튼 앞에 삽입
+    const infoBtn = footer.querySelector('.info-btn');
+    if (infoBtn) {
+      footer.insertBefore(backBtn, infoBtn);
     } else {
-      header.appendChild(backBtn);
+      footer.appendChild(backBtn);
     }
   }
 

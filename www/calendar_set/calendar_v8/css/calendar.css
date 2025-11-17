@@ -844,23 +844,23 @@ body {
   word-break: break-word !important;
 }
 
-/* 주간 보기 돌아가기 버튼 */
+/* 주간 보기 돌아가기 버튼 (하단 푸터) */
 .back-to-week-btn {
-  padding: 0.4em 0.8em;
-  background-color: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 0.5em;
+  padding: 0.5em 1em;
+  background-color: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 0.6em;
   color: #ffffff;
-  font-size: 0.9em;
+  font-size: 0.95em;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-  margin-left: auto;
-  margin-right: 0.5em;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .back-to-week-btn:hover {
-  background-color: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.5);
-  transform: translateX(-2px);
+  background-color: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: scale(1.05);
 }
