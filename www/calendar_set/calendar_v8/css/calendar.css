@@ -555,6 +555,14 @@ body {
   flex-shrink: 0;
 }
 
+/* 시간: 작은 폰트, 반투명 */
+.week-view .event-initial-only .event-time-short {
+  font-size: 0.6em;
+  opacity: 0.85;
+  font-weight: 500;
+  margin-bottom: 0.1em;
+}
+
 /* 성/알파벳: 흰색 유지 */
 .week-view .event-initial-only .name-char {
   opacity: 1;

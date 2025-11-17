@@ -1280,22 +1280,26 @@ class Calendar {
       eventContent = `<div class="event-title">${event.title}</div>
                       <div class="event-time">${timeStr}</div>`;
     } else {
-      // 주간 보기: 타이틀에서 글자 추출하여 세로로 나열
-      // 모든 패턴: 글자 / ○(반투명) / 님(반투명)
+      // 주간 보기: 시간 + 타이틀에서 글자 추출하여 세로로 나열
+      // 시작 시간만 표시 (예: 10:00 / 김 / ○ / 님)
+      const startHour = start.getHours();
+      const startMin = start.getMinutes();
+      const timeDisplay = `${startHour}:${startMin.toString().padStart(2, '0')}`;
+      
       let displayText = "";
       
       // 패턴 1: X****님 형식에서 세로로 나열 (예: 박 / ○ / 님)
       const nameMatch = event.title.match(/([^\s()\d])\*+님/);
       if (nameMatch) {
         const firstChar = nameMatch[1];
-        displayText = `<div class="name-char">${firstChar}</div><div class="name-circle">○</div><div class="name-suffix">님</div>`;
+        displayText = `<div class="event-time-short">${timeDisplay}</div><div class="name-char">${firstChar}</div><div class="name-circle">○</div><div class="name-suffix">님</div>`;
       } else {
         // 패턴 2: 알파벳만 추출 (sc, ka 등) → sc / ○ / 님
         const alphaMatch = event.title.match(/[a-zA-Z]+/);
         if (alphaMatch) {
-          displayText = `<div class="name-char">${alphaMatch[0]}</div><div class="name-circle">○</div><div class="name-suffix">님</div>`;
+          displayText = `<div class="event-time-short">${timeDisplay}</div><div class="name-char">${alphaMatch[0]}</div><div class="name-circle">○</div><div class="name-suffix">님</div>`;
         } else {
-          displayText = "";
+          displayText = `<div class="event-time-short">${timeDisplay}</div>`;
         }
       }
       
