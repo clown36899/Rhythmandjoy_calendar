@@ -584,7 +584,7 @@ body {
 
 /* 시간: 작은 폰트, 반투명 */
 .week-view .event-initial-only .event-time-short {
-  font-size: 0.6em;
+  font-size: 0.8em;
   opacity: 0.85;
   font-weight: 500;
   margin-bottom: 0.1em;
