@@ -801,7 +801,7 @@ body {
 
 /* 일간 보기: 이벤트 글자 크기 증가 및 스타일 개선 */
 .week-view.day-view-mode .week-event {
-  padding: 0.5em 0.6em !important;
+  padding: 0.3em 0.4em !important;
 }
 
 .week-view.day-view-mode .event-room {
@@ -819,4 +819,5 @@ body {
   font-size: 1.1em !important;
   opacity: 1 !important;
   font-weight: 500 !important;
+  color: #ffffff !important;
 }

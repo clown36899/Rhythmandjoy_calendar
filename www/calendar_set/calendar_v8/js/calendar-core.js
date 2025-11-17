@@ -1159,8 +1159,12 @@ class Calendar {
     // ALL 선택: 첫글자+시간
     let eventContent;
     if (isDayView) {
-      // 일간 보기: 타이틀에서 방 이름(A홀, B홀, C홀, D홀, E홀) 제거
-      const cleanTitle = event.title.replace(/^[A-E]홀\s*/, '');
+      // 일간 보기: 타이틀에서 방 이름, (, 숫자 제거
+      // 예: "A홀 (2 이****님" → "이****님"
+      let cleanTitle = event.title.replace(/^[A-E]홀\s*/, ''); // A홀 제거
+      cleanTitle = cleanTitle.replace(/\(/g, ''); // ( 제거
+      cleanTitle = cleanTitle.replace(/\d+/g, ''); // 숫자 제거
+      cleanTitle = cleanTitle.trim(); // 공백 정리
       eventContent = `<div class="event-room">${roomName}</div>
                       <div class="event-title">${cleanTitle}</div>
                       <div class="event-time">${timeStr}</div>`;
