@@ -95,12 +95,43 @@ class DataManager {
     
     if (window.calendar && affectedWeeks.size > 0) {
       console.log(`   🗑️ 무효화할 주: ${affectedWeeks.size}개`);
-      // 해당 주의 캐시만 삭제
-      affectedWeeks.forEach(weekKey => {
-        window.calendar.weekDataCache.delete(weekKey);
-      });
+      
+      // ✅ Calendar의 주간 캐시 무효화 (올바른 키 포맷 사용)
+      window.calendar.invalidateWeeks(Array.from(affectedWeeks));
+      
+      // ✅ DataManager의 범위 캐시도 무효화 (날짜 범위 겹치는 것)
+      this.invalidateOverlappingCaches(affectedWeeks);
+      
       // 현재 view만 갱신 (날짜 유지)
       window.calendar.refreshCurrentView();
+    }
+  }
+
+  invalidateOverlappingCaches(affectedWeeks) {
+    // affectedWeeks = Set of "YYYY-MM-DD" 문자열
+    const weekDates = Array.from(affectedWeeks).map(w => new Date(w));
+    
+    // cache 키들을 순회하며 날짜 범위가 겹치는 것 삭제
+    for (const cacheKey of Array.from(this.cache.keys())) {
+      // cacheKey 형식: "a,b,c,d,e_2025-11-10T00:00:00.000Z_2025-11-17T00:00:00.000Z"
+      const parts = cacheKey.split('_');
+      if (parts.length >= 3) {
+        const rangeStart = new Date(parts[1]);
+        const rangeEnd = new Date(parts[2]);
+        
+        // 영향받은 주와 겹치는지 확인
+        for (const weekDate of weekDates) {
+          const weekEnd = new Date(weekDate);
+          weekEnd.setDate(weekEnd.getDate() + 7);
+          
+          if (rangeStart < weekEnd && rangeEnd > weekDate) {
+            this.cache.delete(cacheKey);
+            this.cacheTimestamps.delete(cacheKey);
+            console.log(`   🗑️ [DataManager 캐시삭제] ${cacheKey}`);
+            break;
+          }
+        }
+      }
     }
   }
 

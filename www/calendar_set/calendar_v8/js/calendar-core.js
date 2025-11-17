@@ -461,6 +461,12 @@ class Calendar {
         slides[2].innerHTML = this.renderWeekViewContent(nextDate);
 
         console.log(`🔄 슬라이드 준비: ${prevDate.toLocaleDateString("ko-KR")} | ${this.currentDate.toLocaleDateString("ko-KR")} | ${nextDate.toLocaleDateString("ko-KR")}`);
+        
+        // ✅ 날짜 높이 깨짐 방지: innerHTML 업데이트 후 레이아웃 재조정
+        requestAnimationFrame(() => {
+          this.adjustWeekViewLayout(true);
+          this.updateCurrentTimeIndicator();
+        });
       } else {
         // 슬라이드가 없으면 전체 렌더링
         await this.render();
@@ -468,6 +474,15 @@ class Calendar {
     } else {
       await this.render();
     }
+  }
+
+  // 캐시 무효화 헬퍼 (Realtime용)
+  invalidateWeeks(weekStartDates) {
+    weekStartDates.forEach(weekStart => {
+      const weekKey = this.getWeekCacheKey(new Date(weekStart));
+      this.weekDataCache.delete(weekKey);
+      console.log(`   🗑️ [캐시삭제] ${weekKey}`);
+    });
   }
 
   changeView(view) {
