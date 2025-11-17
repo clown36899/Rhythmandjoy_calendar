@@ -945,13 +945,28 @@ class Calendar {
         const eventContainers = weekView.querySelectorAll(
           ".day-events-container",
         );
+        
+        // 주간 보기인지 일간 보기인지 확인
+        const isDayView = weekView.classList.contains('day-view-mode');
+        
         eventContainers.forEach((container, index) => {
           const weekViewWidth = weekView.clientWidth;
           const dayWidth = weekViewWidth / 7;
-          const dayLeft = dayWidth * index;
+          
+          let dayLeft, dayWidthAdjusted;
+          if (isDayView || eventContainers.length === 1) {
+            // 일간 보기: 간격 없이
+            dayLeft = dayWidth * index;
+            dayWidthAdjusted = dayWidth;
+          } else {
+            // 주간 보기: 날짜 사이 1px 간격
+            // 일요일=1px, 월요일=dayWidth+2px, 화요일=dayWidth*2+3px, ...
+            dayLeft = (dayWidth * index) + (index + 1);
+            dayWidthAdjusted = dayWidth - 1;
+          }
 
           container.style.left = `${dayLeft}px`;
-          container.style.width = `${dayWidth}px`;
+          container.style.width = `${dayWidthAdjusted}px`;
           container.style.top = `${headerHeight}px`;
           container.style.bottom = "0";
           container.style.paddingTop = "0";
