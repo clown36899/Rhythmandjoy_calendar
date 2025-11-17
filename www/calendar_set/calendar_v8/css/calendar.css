@@ -528,13 +528,13 @@ body {
 
 .week-event.room-a {
   background-color: rgba(246, 191, 38, 0.9);
-  border-left-color: var(--room-a);
+
   color: #000;
 }
 
 .week-event.room-b {
   background-color: rgba(87, 150, 200, 0.9);
-  border-left-color: var(--room-b);
+ 
   color: #fff;
 }
 
