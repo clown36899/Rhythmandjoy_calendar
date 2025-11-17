@@ -831,7 +831,9 @@ class Calendar {
 
       days.forEach((day) => {
         const timeClass = this.getTimeSlotClass(hourIndex, day);
-        const boundaryClass = (hourIndex === 6 || hourIndex === 16) ? ' time-boundary' : '';
+        let boundaryClass = '';
+        if (hourIndex === 6) boundaryClass = ' time-boundary-dawn';
+        if (hourIndex === 16) boundaryClass = ' time-boundary-evening';
         html += `<div class="time-cell ${timeClass}${boundaryClass}" data-date="${day.toISOString()}" data-hour="${hourIndex}"></div>`;
       });
 
