@@ -758,17 +758,20 @@ class Calendar {
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
 
-      // 주간 보기(7일)일 때만 날짜 사이 간격 조정
+      // 주간 보기일 때만 날짜 사이 간격 조정 (일간 보기는 daysOverride 존재)
       let dayWidth, dayLeft;
-      if (days.length === 7) {
-        // 날짜 사이 1px 간격을 위해 left와 width 조정
-        // 각 날짜: left에 dayIndex * 1px 추가, width에서 1px 빼기
-        dayWidth = `calc((100% / ${days.length}) - 1px)`;
-        dayLeft = `calc((100% / ${days.length} * ${dayIndex}) + ${dayIndex}px)`;
+      const isWeekView = !daysOverride && days.length === 7;
+      
+      if (isWeekView) {
+        // 주간 보기: 날짜 사이 1px 간격
+        // width: 각 날짜에서 1px 빼기
+        // left: 월요일=0px, 화요일=+1px, 수요일=+2px, ...
+        dayWidth = `calc((100% / 7) - 1px)`;
+        dayLeft = `calc((100% / 7 * ${dayIndex}) + ${dayIndex}px)`;
       } else {
-        // 일간 보기는 기존대로
-        dayWidth = `calc(100% / ${days.length})`;
-        dayLeft = `calc(100% / ${days.length} * ${dayIndex})`;
+        // 일간 보기: 기존대로
+        dayWidth = `100%`;
+        dayLeft = `0%`;
       }
 
       html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
