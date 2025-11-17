@@ -1159,9 +1159,10 @@ class Calendar {
     // ALL 선택: 첫글자+시간
     let eventContent;
     if (isDayView) {
-      // 일간 보기: 방 이름, 전체 타이틀, 시간 모두 표시
+      // 일간 보기: 타이틀에서 방 이름(A홀, B홀, C홀, D홀, E홀) 제거
+      const cleanTitle = event.title.replace(/^[A-E]홀\s*/, '');
       eventContent = `<div class="event-room">${roomName}</div>
-                      <div class="event-title">${event.title}</div>
+                      <div class="event-title">${cleanTitle}</div>
                       <div class="event-time">${timeStr}</div>`;
     } else if (this.selectedRooms.size === 1) {
       eventContent = `<div class="event-title">${event.title}</div>
