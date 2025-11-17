@@ -2,7 +2,44 @@ class DataManager {
   constructor() {
     this.supabase = null;
     this.cache = new Map();
-    this.cacheTimestamps = new Map(); // 캐시 freshness 추적
+    this.cacheTimestamps = new Map();
+    this.MAX_CACHE_SIZE = 15; // LRU: 최대 15주 캐시
+    this.CACHE_TTL = 15 * 60 * 1000; // TTL: 15분
+    this.startCacheCleanup();
+  }
+
+  startCacheCleanup() {
+    // 10분마다 오래된 캐시 자동 정리
+    setInterval(() => {
+      this.cleanupOldCache();
+    }, 10 * 60 * 1000);
+  }
+
+  cleanupOldCache() {
+    const now = Date.now();
+    let deletedCount = 0;
+    
+    for (const [key, timestamp] of this.cacheTimestamps.entries()) {
+      if (now - timestamp > this.CACHE_TTL) {
+        this.cache.delete(key);
+        this.cacheTimestamps.delete(key);
+        deletedCount++;
+      }
+    }
+    
+    if (deletedCount > 0) {
+      devLog(`🧹 [캐시정리] ${deletedCount}개 삭제됨 (남은 캐시: ${this.cache.size}개)`);
+    }
+  }
+
+  enforceCacheSizeLimit() {
+    // LRU: 최대 캐시 크기 초과 시 가장 오래된 항목 삭제
+    if (this.cache.size > this.MAX_CACHE_SIZE) {
+      const oldestKey = this.cache.keys().next().value;
+      this.cache.delete(oldestKey);
+      this.cacheTimestamps.delete(oldestKey);
+      devLog(`🧹 [LRU캐시] 최대 크기 초과로 가장 오래된 캐시 삭제: ${oldestKey.substring(0, 30)}...`);
+    }
   }
 
   async init() {
@@ -17,7 +54,7 @@ class DataManager {
     const { createClient } = supabase;
     this.supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('✅ Supabase initialized');
+    devLog('✅ Supabase initialized');
     this.setupRealtimeSubscription();
     this.setupVisibilityHandler();
     return true;
@@ -26,20 +63,19 @@ class DataManager {
   setupVisibilityHandler() {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && window.calendar) {
-        console.log('📱 화면 활성화 - UI 갱신 (캐시는 증분 업데이트로 항상 최신)');
-        // ✅ 증분 업데이트로 캐시가 항상 최신이므로 UI만 갱신
+        devLog('📱 화면 활성화 - UI 갱신 (캐시는 증분 업데이트로 항상 최신)');
         window.calendar.refreshCurrentView();
       }
     });
 
     window.addEventListener('online', () => {
       if (window.calendar) {
-        console.log('🌐 온라인 복구 - UI 갱신');
+        devLog('🌐 온라인 복구 - UI 갱신');
         window.calendar.refreshCurrentView();
       }
     });
 
-    console.log('✅ 모바일 화면 활성화 감지 설정 완료');
+    devLog('✅ 모바일 화면 활성화 감지 설정 완료');
   }
 
   setupRealtimeSubscription() {
@@ -53,23 +89,22 @@ class DataManager {
           table: 'booking_events'
         },
         (payload) => {
-          console.log('📡 실시간 업데이트:', payload);
+          devLog('📡 실시간 업데이트:', payload);
           this.handleRealtimeChange(payload);
         }
       )
       .subscribe();
 
-    console.log('✅ Realtime subscription active');
+    devLog('✅ Realtime subscription active');
   }
 
   handleRealtimeChange(payload) {
     const { eventType, new: newRecord, old: oldRecord } = payload;
     
-    console.log(`🔄 [Realtime] ${eventType}`, { newId: newRecord?.id, oldId: oldRecord?.id });
+    devLog(`🔄 [Realtime] ${eventType}`, { newId: newRecord?.id, oldId: oldRecord?.id });
     
     if (!window.calendar) return;
 
-    // ✅ 증분 업데이트: ID 기반으로 캐시에서 직접 추가/수정/삭제
     if (eventType === 'INSERT' && newRecord) {
       this.handleIncrementalInsert(newRecord);
     } else if (eventType === 'UPDATE' && newRecord && oldRecord) {
@@ -78,39 +113,34 @@ class DataManager {
       this.handleIncrementalDelete(oldRecord.id);
     }
 
-    // UI 갱신 (캐시 유지)
     window.calendar.refreshCurrentView();
   }
 
   handleIncrementalInsert(record) {
-    // 새 이벤트를 변환
     const newEvent = this.convertToEvents([record])[0];
     if (!newEvent) return;
 
-    console.log(`   ➕ [증분INSERT] ID: ${record.id}, 날짜: ${record.start_time}`);
+    devLog(`   ➕ [증분INSERT] ID: ${record.id}, 날짜: ${record.start_time}`);
 
-    // 영향받은 모든 주의 캐시에 추가
     const weekKeys = this.getAffectedWeekKeys(record);
     let addedCount = 0;
 
-    console.log(`   🔍 영향받은 주: ${weekKeys.length}개`, weekKeys.map(k => k.substring(0, 10)));
-    console.log(`   📦 현재 캐시 크기: ${window.calendar.weekDataCache.size}개`);
+    devLog(`   🔍 영향받은 주: ${weekKeys.length}개`, weekKeys.map(k => k.substring(0, 10)));
+    devLog(`   📦 현재 캐시 크기: ${window.calendar.weekDataCache.size}개`);
 
     for (const weekKey of weekKeys) {
-      // Calendar의 모든 캐시 키 순회 (room signature 포함)
       for (const [cacheKey, events] of window.calendar.weekDataCache.entries()) {
         if (cacheKey.startsWith(weekKey + '_')) {
-          // 새 배열로 교체 (참조 변경 필수!)
           const updatedEvents = [...events, newEvent];
           window.calendar.weekDataCache.set(cacheKey, updatedEvents);
           addedCount++;
-          console.log(`   💾 추가: ${cacheKey} (총 ${updatedEvents.length}개)`);
+          devLog(`   💾 추가: ${cacheKey} (총 ${updatedEvents.length}개)`);
         }
       }
     }
 
     if (addedCount === 0) {
-      console.warn(`   ⚠️ 캐시에 해당 주가 없어서 추가 안 됨! 현재 보는 주를 새로고침하면 보일 것입니다.`);
+      devLog(`   ⚠️ 캐시에 해당 주가 없어서 추가 안 됨`);
     }
   }
 
@@ -118,41 +148,37 @@ class DataManager {
     const newEvent = this.convertToEvents([newRecord])[0];
     if (!newEvent) return;
 
-    console.log(`   🔄 [증분UPDATE] ID: ${oldId}`);
+    devLog(`   🔄 [증분UPDATE] ID: ${oldId}`);
     
     let updatedCount = 0;
-    // 모든 캐시에서 해당 ID 찾아서 교체
     for (const [cacheKey, events] of window.calendar.weekDataCache.entries()) {
       const index = events.findIndex(e => e.id === oldId);
       if (index !== -1) {
-        // 새 배열로 교체 (참조 변경 필수!)
         const updatedEvents = [...events];
         updatedEvents[index] = newEvent;
         window.calendar.weekDataCache.set(cacheKey, updatedEvents);
         updatedCount++;
-        console.log(`   💾 수정: ${cacheKey}`);
+        devLog(`   💾 수정: ${cacheKey}`);
       }
     }
     
-    // 캐시에 없는 UPDATE는 INSERT처럼 처리 (새 이벤트 추가)
     if (updatedCount === 0) {
-      console.warn(`   ⚠️ 캐시에 없는 UPDATE → INSERT로 처리`);
+      devLog(`   ⚠️ 캐시에 없는 UPDATE → INSERT로 처리`);
       this.handleIncrementalInsert(newRecord);
     }
   }
 
   handleIncrementalDelete(deleteId) {
-    console.log(`   ➖ [증분DELETE] ID: ${deleteId}`);
+    devLog(`   ➖ [증분DELETE] ID: ${deleteId}`);
     
     let deletedCount = 0;
-    // 모든 캐시에서 해당 ID 제거
     for (const [cacheKey, events] of window.calendar.weekDataCache.entries()) {
       const beforeLength = events.length;
       const filtered = events.filter(e => e.id !== deleteId);
       if (filtered.length < beforeLength) {
         window.calendar.weekDataCache.set(cacheKey, filtered);
         deletedCount++;
-        console.log(`   💾 삭제: ${cacheKey} (${beforeLength} → ${filtered.length}개)`);
+        devLog(`   💾 삭제: ${cacheKey} (${beforeLength} → ${filtered.length}개)`);
       }
     }
   }
@@ -186,15 +212,13 @@ class DataManager {
     const now = Date.now();
     const cacheFreshness = this.cacheTimestamps.get(cacheKey) || 0;
     
-    // 캐시가 있고 fresh하면 재사용 (5분 이내)
     if (this.cache.has(cacheKey) && (now - cacheFreshness) < 300000) {
-      console.log('📦 [캐시HIT-FRESH]:', cacheKey);
+      devLog('📦 [캐시HIT-FRESH]:', cacheKey);
       return this.cache.get(cacheKey);
     }
     
-    // stale하거나 없으면 fetch
     if (this.cache.has(cacheKey)) {
-      console.log('⏰ [캐시STALE] 재조회:', cacheKey);
+      devLog('⏰ [캐시STALE] 재조회:', cacheKey);
     }
 
     try {
@@ -208,9 +232,12 @@ class DataManager {
 
       if (error) throw error;
 
-      console.log(`✅ DB 조회 완료: ${data.length}개 이벤트`);
+      devLog(`✅ DB 조회 완료: ${data.length}개 이벤트`);
       this.cache.set(cacheKey, data);
       this.cacheTimestamps.set(cacheKey, now);
+      
+      this.enforceCacheSizeLimit();
+      
       return data;
     } catch (error) {
       console.error('❌ DB 조회 실패:', error);
@@ -223,9 +250,8 @@ class DataManager {
       const start = new Date(booking.start_time);
       const end = new Date(booking.end_time);
       
-      // 타임존 변환 로그 (첫 이벤트만)
       if (bookings.indexOf(booking) === 0) {
-        console.log(`   🕐 [타임존] DB: ${booking.start_time} → JS: ${start.toLocaleString('ko-KR')}`);
+        devLog(`   🕐 [타임존] DB: ${booking.start_time} → JS: ${start.toLocaleString('ko-KR')}`);
       }
       
       return {
