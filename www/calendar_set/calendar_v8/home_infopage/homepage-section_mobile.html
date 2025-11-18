@@ -24,6 +24,16 @@
         overflow: hidden;
         height: 100vh;
         background: #1f1f1f;
+        animation: slideInFromRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+
+      @keyframes slideInFromRight {
+        from {
+          transform: translateX(100%);
+        }
+        to {
+          transform: translateX(0);
+        }
       }
 
       /* 상단 콘텐츠 영역 */
