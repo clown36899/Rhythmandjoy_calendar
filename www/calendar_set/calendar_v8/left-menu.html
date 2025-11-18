@@ -97,12 +97,9 @@
       const originalCloseInnerPopup = closeInnerPopup;
       
       openPopup = function(url) {
-        console.log('[left-menu] openPopup 호출됨, url:', url);
         if (window.parent !== window && window.parent.openPopup) {
-          console.log('[left-menu] iframe 컨텍스트 - 부모 함수 호출');
           window.parent.openPopup(url);
         } else {
-          console.log('[left-menu] 독립 페이지 - 로컬 함수 호출');
           originalOpenPopup(url);
         }
       };
