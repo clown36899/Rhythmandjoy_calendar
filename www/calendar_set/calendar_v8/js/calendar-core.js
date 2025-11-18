@@ -14,6 +14,7 @@ class Calendar {
     this.baseTranslate = -33.333; // 현재 slider의 기본 위치 (%)
     this.timeUpdateInterval = null; // 현재 시간 업데이트 타이머
     this.renderPromise = null; // render 동시 실행 방지 배리어
+    this.lastSwipeTime = 0; // 마지막 스와이프 시간 (클릭 vs 스와이프 구분)
   }
 
   async init() {
@@ -84,8 +85,16 @@ class Calendar {
     this.container.addEventListener("click", (e) => {
       const eventEl = e.target.closest(".week-event");
       if (eventEl && this.currentView === "week") {
+        // 최근 스와이프 발생 확인 (200ms 이내면 클릭 무시)
+        const timeSinceSwipe = Date.now() - this.lastSwipeTime;
+        if (timeSinceSwipe < 200) {
+          devLog('🚫 [클릭 무시] 최근 스와이프 발생 (' + timeSinceSwipe + 'ms 전)');
+          return;
+        }
+        
         const eventDate = eventEl.dataset.eventDate;
         if (eventDate) {
+          devLog('📅 [이벤트 클릭] 일간 보기로 전환:', eventDate);
           this.switchToDayView(new Date(eventDate));
         }
       }
@@ -239,6 +248,9 @@ class Calendar {
           distance >= distanceThreshold || velocity >= velocityThreshold;
 
         if (shouldNavigate) {
+          // 스와이프 시간 기록 (클릭 vs 스와이프 구분용)
+          this.lastSwipeTime = Date.now();
+          
           // 제스처 잠금: navigate 호출 전에 플래그 설정
           this.hasPendingGestureNavigation = true;
           if (e.deltaX < 0) {
