@@ -10,11 +10,11 @@
     // 캐시에 있으면 즉시 표시
     if (htmlCache.has(url)) {
       document.getElementById('popupContent').innerHTML = htmlCache.get(url);
-      popupOverlay.style.display = 'block';
       
       // 다음 프레임에 애니메이션 시작
       requestAnimationFrame(() => {
-        popupBox.classList.add('show');
+        popupOverlay.classList.add('active');
+        popupBox.classList.add('active');
       });
       return;
     }
@@ -25,12 +25,11 @@
       .then(html => {
         htmlCache.set(url, html); // 캐시에 저장
         document.getElementById('popupContent').innerHTML = html;
-    
-        popupOverlay.style.display = 'block';
         
         // 다음 프레임에 애니메이션 시작
         requestAnimationFrame(() => {
-          popupBox.classList.add('show');
+          popupOverlay.classList.add('active');
+          popupBox.classList.add('active');
         });
       })
       .catch(err => {
@@ -44,16 +43,14 @@
     const popupBox = document.getElementById('popupBox');
     const popupOverlay = document.getElementById('popupOverlay');
     
-    // 닫는 애니메이션 추가
-    popupBox.classList.remove('show');
-    popupBox.classList.add('closing');
+    // 닫는 애니메이션
+    popupBox.classList.remove('active');
+    popupOverlay.classList.remove('active');
     
-    // 애니메이션 끝난 후 숨김
+    // 애니메이션 끝난 후 내용 초기화
     setTimeout(() => {
-      popupOverlay.style.display = 'none';
-      popupBox.classList.remove('closing');
-      document.getElementById('popupContent').innerHTML = ''; // 내용 초기화
-    }, 300);
+      document.getElementById('popupContent').innerHTML = '';
+    }, 400);
   }
 
   // 배경 클릭 시 팝업 닫기
@@ -89,11 +86,10 @@ function openInnerPopup(url) {
         const innerPopupOverlay = document.getElementById('innerPopupOverlay');
         const innerPopupBox = document.getElementById('innerPopupBox');
         
-        innerPopupOverlay.style.display = 'block';
-        
         // 다음 프레임에 애니메이션 시작
         requestAnimationFrame(() => {
-          innerPopupBox.classList.add('show');
+          innerPopupOverlay.classList.add('active');
+          innerPopupBox.classList.add('active');
         });
   
         // folder=roomA 형식에서 folder값 추출
@@ -220,16 +216,14 @@ setTimeout(() => {
     const innerPopupBox = document.getElementById('innerPopupBox');
     const innerPopupOverlay = document.getElementById('innerPopupOverlay');
     
-    // 닫는 애니메이션 추가
-    innerPopupBox.classList.remove('show');
-    innerPopupBox.classList.add('closing');
+    // 닫는 애니메이션
+    innerPopupBox.classList.remove('active');
+    innerPopupOverlay.classList.remove('active');
     
-    // 애니메이션 끝난 후 숨김
+    // 애니메이션 끝난 후 내용 초기화
     setTimeout(() => {
-      innerPopupOverlay.style.display = 'none';
-      innerPopupBox.classList.remove('closing');
-      document.getElementById('innerPopupContent').innerHTML = ''; // 내용 초기화
-    }, 300);
+      document.getElementById('innerPopupContent').innerHTML = '';
+    }, 400);
   }
   // 배경 클릭 시 내부 팝업 닫기
 document.addEventListener('DOMContentLoaded', function () {
