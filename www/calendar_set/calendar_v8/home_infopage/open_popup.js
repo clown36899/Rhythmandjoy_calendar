@@ -1,9 +1,22 @@
 
+  // HTML 캐시
+  const htmlCache = new Map();
+
   // 팝업 열기
   function openPopup(url) {
+    // 캐시에 있으면 즉시 표시
+    if (htmlCache.has(url)) {
+      document.getElementById('popupContent').innerHTML = htmlCache.get(url);
+      document.getElementById('popupOverlay').style.display = 'block';
+      document.getElementById('popupBox').style.display = 'block';
+      return;
+    }
+
+    // 캐시에 없으면 fetch
     fetch(url)
       .then(response => response.text())
       .then(html => {
+        htmlCache.set(url, html); // 캐시에 저장
         document.getElementById('popupContent').innerHTML = html;
     
         document.getElementById('popupOverlay').style.display = 'block';
@@ -35,12 +48,21 @@
 
 
 
+// 이미지 캐시
+const imageCache = new Map();
+
 function openInnerPopup(url) {
     console.log("요청 URL:", url);
   
-    fetch(url)
-      .then(response => response.text())
-      .then(html => {
+    // HTML 캐시 확인
+    const loadHTML = htmlCache.has(url) 
+      ? Promise.resolve(htmlCache.get(url))
+      : fetch(url).then(response => response.text()).then(html => {
+          htmlCache.set(url, html);
+          return html;
+        });
+
+    loadHTML.then(html => {
         // 팝업 내용 삽입
         document.getElementById('innerPopupContent').innerHTML = html;
         document.getElementById('innerPopupOverlay').style.display = 'block';
@@ -52,7 +74,6 @@ function openInnerPopup(url) {
         if (!folder) return;
   
         // 이미지 갤러리 생성
-       // 기존 openInnerPopup 함수 내에서 아래처럼 대체
 const thumbnailContainer = document.getElementById("thumbnailContainer");
 const mainImage = document.getElementById("mainImage");
 
@@ -71,45 +92,93 @@ loader.innerText = "🔄 이미지 로딩 중...";
 thumbnailContainer.before(loader);
 
 const totalImages = 10;
-let firstLoaded = false;
 
-for (let i = 1; i <= totalImages; i++) {
-  const imgPath = `home_infopage/images/${folder}/image${i}.jpeg`;
-        
+// 첫 번째 이미지만 즉시 로드
+const firstImagePath = `home_infopage/images/${folder}/image1.jpeg`;
 
-  const img = new Image();
-  img.src = imgPath;
-
-  img.onload = () => {
+// 캐시 확인
+if (imageCache.has(firstImagePath)) {
+  mainImage.src = firstImagePath;
+  mainImage.style.visibility = "visible";
+  loader.remove();
+  
+  const thumb = document.createElement("img");
+  thumb.src = firstImagePath;
+  thumb.classList.add("thumbnail", "active");
+  thumb.addEventListener("click", () => {
+    mainImage.src = firstImagePath;
+    document.querySelectorAll(".thumbnail").forEach(t => t.classList.remove("active"));
+    thumb.classList.add("active");
+  });
+  thumbnailContainer.appendChild(thumb);
+} else {
+  const firstImg = new Image();
+  firstImg.src = firstImagePath;
+  firstImg.onload = () => {
+    imageCache.set(firstImagePath, true);
+    mainImage.src = firstImagePath;
+    mainImage.style.visibility = "visible";
+    loader.remove();
+    
     const thumb = document.createElement("img");
-    thumb.src = imgPath;
-    thumb.classList.add("thumbnail");
-
-    if (!firstLoaded) {
-      mainImage.src = imgPath;
-      mainImage.onload = () => {
-        mainImage.style.visibility = "visible";
-        loader.remove();
-      };
-      thumb.classList.add("active");
-      firstLoaded = true;
-    }
-
+    thumb.src = firstImagePath;
+    thumb.classList.add("thumbnail", "active");
     thumb.addEventListener("click", () => {
-      mainImage.src = imgPath;
+      mainImage.src = firstImagePath;
       document.querySelectorAll(".thumbnail").forEach(t => t.classList.remove("active"));
       thumb.classList.add("active");
     });
-
     thumbnailContainer.appendChild(thumb);
   };
-
-  img.onerror = () => {
-    console.warn(`이미지 로딩 실패: ${imgPath}`);
-    if (i === totalImages && !firstLoaded) loader.remove();
+  firstImg.onerror = () => {
+    console.warn(`첫 이미지 로딩 실패: ${firstImagePath}`);
+    loader.remove();
   };
+}
 
-        }
+// 나머지 이미지는 순차적으로 로드 (팝업이 이미 열린 후)
+setTimeout(() => {
+  for (let i = 2; i <= totalImages; i++) {
+    const imgPath = `home_infopage/images/${folder}/image${i}.jpeg`;
+    
+    // 캐시에 있으면 즉시 표시
+    if (imageCache.has(imgPath)) {
+      const thumb = document.createElement("img");
+      thumb.src = imgPath;
+      thumb.classList.add("thumbnail");
+      thumb.addEventListener("click", () => {
+        mainImage.src = imgPath;
+        document.querySelectorAll(".thumbnail").forEach(t => t.classList.remove("active"));
+        thumb.classList.add("active");
+      });
+      thumbnailContainer.appendChild(thumb);
+      continue;
+    }
+
+    const img = new Image();
+    img.src = imgPath;
+
+    img.onload = () => {
+      imageCache.set(imgPath, true);
+      const thumb = document.createElement("img");
+      thumb.src = imgPath;
+      thumb.classList.add("thumbnail");
+
+      thumb.addEventListener("click", () => {
+        mainImage.src = imgPath;
+        document.querySelectorAll(".thumbnail").forEach(t => t.classList.remove("active"));
+        thumb.classList.add("active");
+      });
+
+      thumbnailContainer.appendChild(thumb);
+    };
+
+    img.onerror = () => {
+      console.warn(`이미지 로딩 실패: ${imgPath}`);
+    };
+  }
+}, 100); // 100ms 후 나머지 이미지 로드 시작
+
       })
       .catch(err => {
         alert("내부 팝업 로딩 실패: " + err);
