@@ -20,6 +20,9 @@
   --room-c: rgb(129, 180, 186);
   --room-d: rgb(125, 157, 106);
   --room-e: #4c4c4c;
+  
+  --bottom-controls-height: 0px;
+  --room-selector-height: 0px;
 }
 
 html {
@@ -1107,7 +1110,7 @@ body {
 /* 달력 바깥 최하단 방 이름 표시 (A, B, C, D, E) */
 .room-bottom-labels-outside {
   position: fixed;
-  bottom: calc(3em + 4.5em);
+  bottom: calc(var(--bottom-controls-height, 0px) + var(--room-selector-height, 0px));
   height: 2.5em;
   display: flex;
   align-items: center;
