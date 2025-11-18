@@ -925,7 +925,14 @@ class Calendar {
         dayLeft = `0%`;
       }
 
+      const isToday = day.getTime() === today.getTime();
+
       html += `<div class="day-events-container" style="left: ${dayLeft}; width: ${dayWidth};">`;
+
+      // 오늘 날짜이고 주간 보기일 때만 방 구분선 표시
+      if (isToday && isWeekView) {
+        html += this.renderRoomDividers();
+      }
 
       // Render events with fixed room positions
       const isDayView = daysOverride && days.length === 1;
@@ -1369,6 +1376,54 @@ class Calendar {
     });
 
     return dayEvents;
+  }
+
+  renderRoomDividers() {
+    // 5개 방을 구분하는 4개의 세로선 (20%, 40%, 60%, 80% 위치)
+    const dividers = [
+      { position: 20 },
+      { position: 40 },
+      { position: 60 },
+      { position: 80 }
+    ];
+
+    // 5개 방 영역의 중앙에 텍스트 표시
+    const roomLabels = [
+      { position: 10, label: 'A홀\n예약\n가능' },   // A홀: 0-20% 중앙
+      { position: 30, label: 'B홀\n예약\n가능' },   // B홀: 20-40% 중앙
+      { position: 50, label: 'C홀\n예약\n가능' },   // C홀: 40-60% 중앙
+      { position: 70, label: 'D홀\n예약\n가능' },   // D홀: 60-80% 중앙
+      { position: 90, label: 'E홀\n예약\n가능' }    // E홀: 80-100% 중앙
+    ];
+
+    let html = '<div class="room-dividers-container">';
+    
+    // 세로선 렌더링
+    dividers.forEach(divider => {
+      html += `<div class="room-divider-line" style="left: ${divider.position}%;"></div>`;
+    });
+    
+    // 방 라벨 렌더링 (위쪽, 아래쪽 2번)
+    roomLabels.forEach(room => {
+      const lines = room.label.split('\n');
+      
+      // 위쪽 라벨
+      html += `<div class="room-label-container room-label-top" style="left: ${room.position}%;">`;
+      lines.forEach(line => {
+        html += `<div class="room-label-line">${line}</div>`;
+      });
+      html += `</div>`;
+      
+      // 아래쪽 라벨
+      html += `<div class="room-label-container room-label-bottom" style="left: ${room.position}%;">`;
+      lines.forEach(line => {
+        html += `<div class="room-label-line">${line}</div>`;
+      });
+      html += `</div>`;
+    });
+    
+    html += '</div>';
+    return html;
   }
 
   renderWeekEvent(event, isDayView = false) {
