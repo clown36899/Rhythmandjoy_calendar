@@ -93,6 +93,9 @@ class Calendar {
 
   resetSwipeState() {
     this.isPanning = false;
+    this.isAnimating = false;
+    this.hasPendingGestureNavigation = false;
+    
     const slides = this.container.querySelectorAll(".calendar-slide");
     if (slides.length === 3) {
       slides.forEach((slide, i) => {
@@ -1149,6 +1152,7 @@ class Calendar {
     backBtn.title = "주간 보기로 돌아가기";
 
     backBtn.addEventListener("click", () => {
+      this.resetSwipeState();
       this.currentView = "week";
       this.render();
       // 돌아가기 버튼 제거
