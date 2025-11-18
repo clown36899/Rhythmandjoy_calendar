@@ -1,4 +1,0 @@
-# Netlify 리디렉션 설정
-# index.html을 포함한 URL을 디렉토리 경로로 리디렉션 (쿼리 파라미터 유지)
-
-/calendar_set/calendar_v8/index.html  /calendar_set/calendar_v8/  301!

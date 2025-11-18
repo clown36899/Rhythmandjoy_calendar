@@ -11,6 +11,25 @@
       name="apple-mobile-web-app-status-bar-style"
       content="black-translucent"
     />
+    
+    <!-- URL 정규화: index.html이 포함된 경우 디렉토리 경로로 리디렉션 -->
+    <script>
+      (function() {
+        var currentPath = window.location.pathname;
+        var search = window.location.search;
+        var hash = window.location.hash;
+        
+        // URL에 index.html이 포함되어 있는지 확인
+        if (currentPath.endsWith('/index.html')) {
+          // index.html 제거한 디렉토리 경로 생성
+          var newPath = currentPath.replace('/index.html', '/');
+          var newUrl = newPath + search + hash;
+          
+          // 리디렉션 (replace 사용으로 브라우저 히스토리에 중복 기록 방지)
+          window.location.replace(newUrl);
+        }
+      })();
+    </script>
 
     <title>리듬앤조이 일정표</title>
 
