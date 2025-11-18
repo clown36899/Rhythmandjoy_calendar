@@ -4,17 +4,21 @@
 
   // 팝업 열기
   function openPopup(url) {
+    console.log('[open_popup.js] openPopup 호출됨, url:', url);
     const popupBox = document.getElementById('popupBox');
     const popupOverlay = document.getElementById('popupOverlay');
+    console.log('[open_popup.js] popupBox:', popupBox, 'popupOverlay:', popupOverlay);
     
     // 캐시에 있으면 즉시 표시
     if (htmlCache.has(url)) {
+      console.log('[open_popup.js] 캐시에서 로드');
       document.getElementById('popupContent').innerHTML = htmlCache.get(url);
       
       // 다음 프레임에 애니메이션 시작
       requestAnimationFrame(() => {
         popupOverlay.classList.add('active');
         popupBox.classList.add('active');
+        console.log('[open_popup.js] active 클래스 추가됨');
       });
       return;
     }
