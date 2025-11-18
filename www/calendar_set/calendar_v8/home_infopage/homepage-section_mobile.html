@@ -1358,13 +1358,13 @@
           window.location.hostname.includes("xn--xy1b23ggrmm5bfb82ees967e.com") ||
           window.location.hostname.includes("rhythmandjoy")
         ) {
-          baseUrl = "https://리듬앤조이일정표.com/home_infopage/homepage-section_mobile.html";
+          baseUrl = "https://리듬앤조이일정표.com/calendar_set/calendar_v8/index.html";
         } else {
           // 개발 환경 (Replit 등)
-          baseUrl = window.location.origin + "/calendar_set/calendar_v8/home_infopage/homepage-section_mobile.html";
+          baseUrl = window.location.origin + "/calendar_set/calendar_v8/index.html";
         }
 
-        const url = `${baseUrl}?section=${encodeURIComponent(targetSection)}`;
+        const url = `${baseUrl}?openInfo=true&section=${encodeURIComponent(targetSection)}`;
         const title = `리듬앤조이 - ${sectionName}`;
 
         console.log("🔗 공유 URL 생성:", url);
@@ -1494,6 +1494,15 @@
           window.location.href = "../index.html";
         }
       }
+
+      // 부모 창에서 섹션 전환 메시지 받기
+      window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'showSection' && event.data.section) {
+          const sectionId = event.data.section;
+          const button = document.querySelector(`.nav-item[onclick*="${sectionId}"]`);
+          showContent(sectionId, button, true);
+        }
+      });
     </script>
   </body>
 </html>

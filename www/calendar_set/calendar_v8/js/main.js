@@ -11,6 +11,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupAdminButton();
   setupInfoButton();
   setupBottomLayoutObserver();
+  
+  // URL 파라미터 확인하여 예약정보 자동 열기
+  checkAndOpenInfoPage();
 
   console.log("✅ 초기화 완료");
 });
@@ -59,6 +62,49 @@ window.addEventListener("message", (event) => {
 // 전역 함수로 노출
 window.openInfoPage = openInfoPage;
 window.closeInfoPage = closeInfoPage;
+
+// URL 파라미터로 예약정보 페이지 자동 열기
+function checkAndOpenInfoPage() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const shouldOpen = urlParams.get('openInfo');
+  const section = urlParams.get('section');
+  
+  if (shouldOpen === 'true') {
+    // iframe이 로드될 때까지 대기 후 열기
+    const iframe = document.getElementById('infoPageFrame');
+    
+    iframe.addEventListener('load', function onLoad() {
+      // iframe 로드 완료 후 열기
+      openInfoPage();
+      
+      // section 파라미터가 있으면 iframe 내부로 전달
+      if (section && iframe.contentWindow) {
+        setTimeout(() => {
+          iframe.contentWindow.postMessage({ 
+            type: 'showSection', 
+            section: section 
+          }, '*');
+        }, 500);
+      }
+      
+      iframe.removeEventListener('load', onLoad);
+    });
+    
+    // 이미 로드되어 있을 수 있으므로 체크
+    if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+      openInfoPage();
+      
+      if (section && iframe.contentWindow) {
+        setTimeout(() => {
+          iframe.contentWindow.postMessage({ 
+            type: 'showSection', 
+            section: section 
+          }, '*');
+        }, 500);
+      }
+    }
+  }
+}
 
 function setupBottomLayoutObserver() {
   const updateBottomHeights = () => {
