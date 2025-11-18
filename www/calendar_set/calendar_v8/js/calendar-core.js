@@ -1387,13 +1387,13 @@ class Calendar {
       { position: 80 }
     ];
 
-    // 5개 방 영역의 중앙에 텍스트 표시
+    // 5개 방 영역의 중앙에 텍스트 표시 (한 글자씩)
     const roomLabels = [
-      { position: 10, label: 'A홀\n예약\n가능' },   // A홀: 0-20% 중앙
-      { position: 30, label: 'B홀\n예약\n가능' },   // B홀: 20-40% 중앙
-      { position: 50, label: 'C홀\n예약\n가능' },   // C홀: 40-60% 중앙
-      { position: 70, label: 'D홀\n예약\n가능' },   // D홀: 60-80% 중앙
-      { position: 90, label: 'E홀\n예약\n가능' }    // E홀: 80-100% 중앙
+      { position: 10, label: 'A홀예약가능' },   // A홀: 0-20% 중앙
+      { position: 30, label: 'B홀예약가능' },   // B홀: 20-40% 중앙
+      { position: 50, label: 'C홀예약가능' },   // C홀: 40-60% 중앙
+      { position: 70, label: 'D홀예약가능' },   // D홀: 60-80% 중앙
+      { position: 90, label: 'E홀예약가능' }    // E홀: 80-100% 중앙
     ];
 
     let html = '<div class="room-dividers-container">';
@@ -1405,19 +1405,20 @@ class Calendar {
     
     // 방 라벨 렌더링 (위쪽, 아래쪽 2번)
     roomLabels.forEach(room => {
-      const lines = room.label.split('\n');
+      // 한 글자씩 분리
+      const chars = Array.from(room.label);
       
       // 위쪽 라벨
       html += `<div class="room-label-container room-label-top" style="left: ${room.position}%;">`;
-      lines.forEach(line => {
-        html += `<div class="room-label-line">${line}</div>`;
+      chars.forEach(char => {
+        html += `<div class="room-label-char">${char}</div>`;
       });
       html += `</div>`;
       
       // 아래쪽 라벨
       html += `<div class="room-label-container room-label-bottom" style="left: ${room.position}%;">`;
-      lines.forEach(line => {
-        html += `<div class="room-label-line">${line}</div>`;
+      chars.forEach(char => {
+        html += `<div class="room-label-char">${char}</div>`;
       });
       html += `</div>`;
     });
