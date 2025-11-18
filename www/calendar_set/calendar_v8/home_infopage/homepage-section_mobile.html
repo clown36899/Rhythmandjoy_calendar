@@ -24,16 +24,6 @@
         overflow: hidden;
         height: 100vh;
         background: #1f1f1f;
-        animation: slideInFromRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-      }
-
-      @keyframes slideInFromRight {
-        from {
-          transform: translateX(100%);
-        }
-        to {
-          transform: translateX(0);
-        }
       }
 
       /* 상단 콘텐츠 영역 */
@@ -1066,7 +1056,7 @@
 
       <button
         class="nav-item"
-        onclick="window.location.href='../index.html'"
+        onclick="closeAndGoBack()"
         style="background: #404040"
       >
         <i class="fas fa-calendar"></i>
@@ -1494,6 +1484,16 @@
           });
         }, 500); // 페이지 로드 후 0.5초 뒤 시작 (초기 렌더링 우선)
       });
+      // 일정표로 돌아가기
+      function closeAndGoBack() {
+        // iframe 안에 있으면 부모에게 닫기 메시지 전송
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: "closeInfo" }, "*");
+        } else {
+          // 독립 페이지로 열렸으면 직접 이동
+          window.location.href = "../index.html";
+        }
+      }
     </script>
   </body>
 </html>
