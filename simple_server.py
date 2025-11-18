@@ -6,6 +6,8 @@ import subprocess
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 class UnifiedHandler(SimpleHTTPRequestHandler):
+    sync_script: str = ''
+    watch_script: str = ''
     
     # ETag 완전 비활성화 (캐싱 방지)
     def send_header(self, keyword, value):
