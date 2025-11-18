@@ -63,14 +63,16 @@ class DataManager {
   setupVisibilityHandler() {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && window.calendar) {
-        devLog('📱 화면 활성화 - UI 갱신 (캐시는 증분 업데이트로 항상 최신)');
+        devLog('🥇 [화면 복귀] 전체 캐시 리셋 후 현재 3주 재조회');
+        window.calendar.weekDataCache.clear();
         window.calendar.refreshCurrentView();
       }
     });
 
     window.addEventListener('online', () => {
       if (window.calendar) {
-        devLog('🌐 온라인 복구 - UI 갱신');
+        devLog('🌐 [온라인 복구] 전체 캐시 리셋 후 재조회');
+        window.calendar.weekDataCache.clear();
         window.calendar.refreshCurrentView();
       }
     });

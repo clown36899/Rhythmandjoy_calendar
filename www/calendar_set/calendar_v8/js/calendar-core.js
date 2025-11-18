@@ -275,7 +275,8 @@ class Calendar {
     this.isAnimating = true;
     this.isPanning = false; // 네비게이션 시작 시 스와이프 상태 리셋
 
-    devLog(`🧭 네비게이션 시작: ${direction > 0 ? "다음 주" : "이전 주"}`);
+    devLog(`🧭 [주 이동] 전체 캐시 리셋 - 방향: ${direction > 0 ? "다음 주" : "이전 주"}`);
+    this.weekDataCache.clear();
 
     const slides = this.container.querySelectorAll(".calendar-slide");
     if (slides.length !== 3) {
@@ -414,17 +415,23 @@ class Calendar {
   }
 
   goToToday() {
+    devLog('🏠 [오늘로 이동] 전체 캐시 리셋');
+    this.weekDataCache.clear();
     this.currentDate = new Date();
     this.render();
   }
 
   goToPrevMonth() {
+    devLog('◀️ [이전 월] 전체 캐시 리셋');
+    this.weekDataCache.clear();
     this.resetSwipeState();
     this.currentDate.setMonth(this.currentDate.getMonth() - 1);
     this.render();
   }
 
   goToNextMonth() {
+    devLog('▶️ [다음 월] 전체 캐시 리셋');
+    this.weekDataCache.clear();
     this.resetSwipeState();
     this.currentDate.setMonth(this.currentDate.getMonth() + 1);
     this.render();
