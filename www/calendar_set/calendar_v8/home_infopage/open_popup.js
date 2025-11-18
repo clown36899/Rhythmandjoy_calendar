@@ -271,3 +271,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// 전역으로 노출 (iframe에서 접근 가능하도록)
+window.openPopup = openPopup;
+window.closePopup = closePopup;
+window.openInnerPopup = openInnerPopup;
+window.closeInnerPopup = closeInnerPopup;
+
