@@ -88,13 +88,15 @@ class Calendar {
         // 최근 스와이프 발생 확인 (200ms 이내면 클릭 무시)
         const timeSinceSwipe = Date.now() - this.lastSwipeTime;
         if (timeSinceSwipe < 200) {
-          devLog('🚫 [클릭 무시] 최근 스와이프 발생 (' + timeSinceSwipe + 'ms 전)');
+          devLog(
+            "🚫 [클릭 무시] 최근 스와이프 발생 (" + timeSinceSwipe + "ms 전)",
+          );
           return;
         }
-        
+
         const eventDate = eventEl.dataset.eventDate;
         if (eventDate) {
-          devLog('📅 [이벤트 클릭] 일간 보기로 전환:', eventDate);
+          devLog("📅 [이벤트 클릭] 일간 보기로 전환:", eventDate);
           this.switchToDayView(new Date(eventDate));
         }
       }
@@ -105,7 +107,7 @@ class Calendar {
     this.isPanning = false;
     this.isAnimating = false;
     this.hasPendingGestureNavigation = false;
-    
+
     const slides = this.container.querySelectorAll(".calendar-slide");
     if (slides.length === 3) {
       slides.forEach((slide, i) => {
@@ -250,7 +252,7 @@ class Calendar {
         if (shouldNavigate) {
           // 스와이프 시간 기록 (클릭 vs 스와이프 구분용)
           this.lastSwipeTime = Date.now();
-          
+
           // 제스처 잠금: navigate 호출 전에 플래그 설정
           this.hasPendingGestureNavigation = true;
           if (e.deltaX < 0) {
@@ -280,7 +282,9 @@ class Calendar {
       }
     });
 
-    devLog("✅ 스와이프 제스처 설정 완료 (threshold: 25px, 거리: 20%, 속도: 0.6)");
+    devLog(
+      "✅ 스와이프 제스처 설정 완료 (threshold: 25px, 거리: 20%, 속도: 0.6)",
+    );
   }
 
   async navigate(direction) {
@@ -291,7 +295,7 @@ class Calendar {
 
     // render 진행 중이면 대기
     if (this.renderPromise) {
-      devLog('⏸️ [렌더 대기] navigate 시작 전 render 완료 대기...');
+      devLog("⏸️ [렌더 대기] navigate 시작 전 render 완료 대기...");
       await this.renderPromise;
     }
 
@@ -299,12 +303,16 @@ class Calendar {
     this.isPanning = false;
 
     try {
-      devLog(`🧭 [주 이동] 전체 캐시 리셋 - 방향: ${direction > 0 ? "다음 주" : "이전 주"}`);
+      devLog(
+        `🧭 [주 이동] 전체 캐시 리셋 - 방향: ${direction > 0 ? "다음 주" : "이전 주"}`,
+      );
       this.weekDataCache.clear();
 
       const slides = this.container.querySelectorAll(".calendar-slide");
       if (slides.length !== 3) {
-        devLog('⚠️ [슬라이드 부족] slides.length !== 3, render만 호출 (currentDate 수정 안함)');
+        devLog(
+          "⚠️ [슬라이드 부족] slides.length !== 3, render만 호출 (currentDate 수정 안함)",
+        );
         await this.render();
         return;
       }
@@ -439,14 +447,14 @@ class Calendar {
   }
 
   goToToday() {
-    devLog('🏠 [오늘로 이동] 전체 캐시 리셋');
+    devLog("🏠 [오늘로 이동] 전체 캐시 리셋");
     this.weekDataCache.clear();
     this.currentDate = new Date();
     this.render();
   }
 
   goToPrevMonth() {
-    devLog('◀️ [이전 월] 전체 캐시 리셋');
+    devLog("◀️ [이전 월] 전체 캐시 리셋");
     this.weekDataCache.clear();
     this.resetSwipeState();
     this.currentDate.setMonth(this.currentDate.getMonth() - 1);
@@ -454,7 +462,7 @@ class Calendar {
   }
 
   goToNextMonth() {
-    devLog('▶️ [다음 월] 전체 캐시 리셋');
+    devLog("▶️ [다음 월] 전체 캐시 리셋");
     this.weekDataCache.clear();
     this.resetSwipeState();
     this.currentDate.setMonth(this.currentDate.getMonth() + 1);
@@ -528,25 +536,25 @@ class Calendar {
     this.currentDate = new Date(date);
     this.currentDate.setHours(0, 0, 0, 0);
     this.currentView = "day";
-    
+
     // 일간 보기에서 Hammer 제스처 비활성화
     if (this.hammer) {
       this.hammer.set({ enable: false });
-      devLog('🔒 [일간 보기] Hammer 제스처 비활성화');
+      devLog("🔒 [일간 보기] Hammer 제스처 비활성화");
     }
-    
+
     this.render();
   }
 
   switchToWeekView() {
     this.currentView = "week";
-    
+
     // 주간 보기로 복귀 시 Hammer 제스처 재활성화
     if (this.hammer) {
       this.hammer.set({ enable: true });
-      devLog('🔓 [주간 보기] Hammer 제스처 활성화');
+      devLog("🔓 [주간 보기] Hammer 제스처 활성화");
     }
-    
+
     this.render();
   }
 
@@ -673,7 +681,7 @@ class Calendar {
   async render() {
     // 이미 render 진행 중이면 대기
     if (this.renderPromise) {
-      devLog('⏸️ [렌더 배리어] 진행 중인 render 대기...');
+      devLog("⏸️ [렌더 배리어] 진행 중인 render 대기...");
       await this.renderPromise;
     }
 
@@ -753,8 +761,10 @@ class Calendar {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const { start: weekStart } = this.getWeekRange(this.currentDate);
-    const todayDayIndex = Math.floor((today - weekStart) / (1000 * 60 * 60 * 24));
-    
+    const todayDayIndex = Math.floor(
+      (today - weekStart) / (1000 * 60 * 60 * 24),
+    );
+
     // 오늘이 현재 주에 있을 때만 방 라벨 표시
     if (todayDayIndex >= 0 && todayDayIndex < 7) {
       html += this.renderRoomBottomLabels(todayDayIndex);
@@ -1218,10 +1228,14 @@ class Calendar {
     backBtn.title = "주간 보기로 돌아가기";
 
     // 터치 시작 시 Hammer로 전파 차단 (클릭 보호)
-    backBtn.addEventListener("touchstart", (e) => {
-      e.stopPropagation();
-      devLog('🛡️ [버튼 보호] 터치 이벤트 전파 차단');
-    }, { passive: false });
+    backBtn.addEventListener(
+      "touchstart",
+      (e) => {
+        e.stopPropagation();
+        devLog("🛡️ [버튼 보호] 터치 이벤트 전파 차단");
+      },
+      { passive: false },
+    );
 
     backBtn.addEventListener("click", () => {
       this.resetSwipeState();
@@ -1395,73 +1409,75 @@ class Calendar {
       { position: 20 },
       { position: 40 },
       { position: 60 },
-      { position: 80 }
+      { position: 80 },
     ];
 
     // 5개 방 영역의 중앙에 텍스트 표시 (한 글자씩)
     const roomLabels = [
-      { position: 10, label: 'A홀예약가능', roomName: 'A' },   // A홀: 0-20% 중앙
-      { position: 30, label: 'B홀예약가능', roomName: 'B' },   // B홀: 20-40% 중앙
-      { position: 50, label: 'C홀예약가능', roomName: 'C' },   // C홀: 40-60% 중앙
-      { position: 70, label: 'D홀예약가능', roomName: 'D' },   // D홀: 60-80% 중앙
-      { position: 90, label: 'E홀예약가능', roomName: 'E' }    // E홀: 80-100% 중앙
+      { position: 10, label: "A홀예약가능", roomName: "A" }, // A홀: 0-20% 중앙
+      { position: 30, label: "B홀예약가능", roomName: "B" }, // B홀: 20-40% 중앙
+      { position: 50, label: "C홀예약가능", roomName: "C" }, // C홀: 40-60% 중앙
+      { position: 70, label: "D홀예약가능", roomName: "D" }, // D홀: 60-80% 중앙
+      { position: 90, label: "E홀예약가능", roomName: "E" }, // E홀: 80-100% 중앙
     ];
 
     let html = '<div class="room-dividers-container">';
-    
+
     // 세로선 렌더링
-    dividers.forEach(divider => {
+    dividers.forEach((divider) => {
       html += `<div class="room-divider-line" style="left: ${divider.position}%;"></div>`;
     });
-    
+
     // 방 라벨 렌더링 (위쪽, 아래쪽 2번)
-    roomLabels.forEach(room => {
+    roomLabels.forEach((room) => {
       // 한 글자씩 분리
       const chars = Array.from(room.label);
-      
+
       // 위쪽 라벨
       html += `<div class="room-label-container room-label-top" style="left: ${room.position}%;">`;
-      chars.forEach(char => {
+      chars.forEach((char) => {
         html += `<div class="room-label-char">${char}</div>`;
       });
       html += `</div>`;
-      
+
       // 아래쪽 라벨
       html += `<div class="room-label-container room-label-bottom" style="left: ${room.position}%;">`;
-      chars.forEach(char => {
+      chars.forEach((char) => {
         html += `<div class="room-label-char">${char}</div>`;
       });
       html += `</div>`;
     });
-    
-    html += '</div>';
+
+    html += "</div>";
     return html;
   }
 
   renderRoomBottomLabels(todayDayIndex) {
     // 5개 방 이름
     const roomLabels = [
-      { position: 10, roomName: 'A' },
-      { position: 30, roomName: 'B' },
-      { position: 50, roomName: 'C' },
-      { position: 70, roomName: 'D' },
-      { position: 90, roomName: 'E' }
+      { position: 10, roomName: "A" },
+      { position: 30, roomName: "B" },
+      { position: 50, roomName: "C" },
+      { position: 70, roomName: "D" },
+      { position: 90, roomName: "E" },
     ];
 
     // 오늘 날짜 컬럼의 위치 계산
     const dayWidth = 100 / 7;
     const todayLeft = dayWidth * todayDayIndex;
-    
+
     // calendar-slider는 3.75em을 제외한 나머지 공간이므로, 정확한 계산 필요
     // left: 3.75em + (전체 너비 - 3.75em) * todayLeft%
     // width: (전체 너비 - 3.75em) * dayWidth%
     let html = `<div class="room-bottom-labels-outside" style="left: calc(3.75em + (100% - 3.75em) * ${todayLeft / 100}); width: calc((100% - 3.75em) * ${dayWidth / 100});">`;
-    
-    roomLabels.forEach(room => {
-      html += `<div class="room-bottom-label" style="left: ${room.position}%;">${room.roomName}</div>`;
+
+    roomLabels.forEach((room) => {
+      const roomClass = `room-${room.roomName.toLowerCase()}`;
+
+      html += `<div class="room-bottom-label ${roomClass}" style="left: ${room.position}%;">${room.roomName}</div>`;
     });
-    
-    html += '</div>';
+
+    html += "</div>";
     return html;
   }
 
