@@ -121,7 +121,7 @@ class Calendar {
     const roomLabels = document.querySelector(".room-bottom-labels-outside");
     if (roomLabels) {
       roomLabels.style.transition = "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
-      roomLabels.style.transform = "translateX(0%)";
+      roomLabels.style.transform = "translateX(0px)";
     }
   }
 
@@ -210,11 +210,10 @@ class Calendar {
           slide.style.transform = `translateX(${newPos}%)`;
         });
         
-        // room-bottom-labels-outside도 같이 이동 (현재 슬라이드와 동일)
+        // room-bottom-labels-outside도 같이 이동 (픽셀 단위로)
         const roomLabels = document.querySelector(".room-bottom-labels-outside");
         if (roomLabels) {
-          const currentSlidePos = slideStarts[1] + percentMove; // 중간 슬라이드 위치
-          roomLabels.style.transform = `translateX(${currentSlidePos}%)`;
+          roomLabels.style.transform = `translateX(${e.deltaX}px)`;
         }
       }
     });
@@ -255,7 +254,7 @@ class Calendar {
           const roomLabels = document.querySelector(".room-bottom-labels-outside");
           if (roomLabels) {
             roomLabels.style.transition = "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
-            roomLabels.style.transform = "translateX(0%)";
+            roomLabels.style.transform = "translateX(0px)";
           }
           return;
         }
@@ -303,7 +302,7 @@ class Calendar {
           // room-bottom-labels-outside도 원위치
           const roomLabels = document.querySelector(".room-bottom-labels-outside");
           if (roomLabels) {
-            roomLabels.style.transform = "translateX(0%)";
+            roomLabels.style.transform = "translateX(0px)";
           }
         }
       }
@@ -363,11 +362,14 @@ class Calendar {
         slide.style.transform = `translateX(${targets[i]}%)`;
       });
       
-      // room-bottom-labels-outside도 같이 이동 (중간 슬라이드와 동일)
+      // room-bottom-labels-outside도 같이 이동 (슬라이더 전체 너비 기준)
       const roomLabels = document.querySelector(".room-bottom-labels-outside");
       if (roomLabels) {
-        const currentSlideTarget = targets[1]; // 중간 슬라이드 타겟
-        roomLabels.style.transform = `translateX(${currentSlideTarget}%)`;
+        const slider = this.container.querySelector(".calendar-slider");
+        const sliderWidth = slider ? slider.offsetWidth : this.container.offsetWidth;
+        const currentSlideTarget = targets[1]; // -100% 또는 100%
+        const pixelMove = (sliderWidth * currentSlideTarget) / 100;
+        roomLabels.style.transform = `translateX(${pixelMove}px)`;
       }
 
       // transitionend 대기
@@ -441,7 +443,7 @@ class Calendar {
     
     // room-bottom-labels-outside도 원위치로 리셋
     if (roomLabels) {
-      roomLabels.style.transform = "translateX(0%)";
+      roomLabels.style.transform = "translateX(0px)";
     }
 
     // 레이아웃 조정
