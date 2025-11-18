@@ -669,12 +669,14 @@ class Calendar {
 
     this.render();
     
-    // room-bottom-labels 숨김 (단일 방 선택 시)
-    const roomLabels = document.querySelector(".room-bottom-labels-outside");
-    if (roomLabels) {
-      roomLabels.style.display = "none";
-      devLog(`📍 [toggleRoom] room-bottom-labels 숨김`);
-    }
+    // render 후 room-bottom-labels 숨김 (단일 방 선택 시)
+    requestAnimationFrame(() => {
+      const roomLabels = document.querySelector(".room-bottom-labels-outside");
+      if (roomLabels) {
+        roomLabels.style.display = "none";
+        devLog(`📍 [toggleRoom] room-bottom-labels 숨김`);
+      }
+    });
   }
 
   toggleAllRooms() {
@@ -694,6 +696,22 @@ class Calendar {
     allBtn.classList.remove("active");
 
     this.render();
+    
+    // render 후 room-bottom-labels 표시 (전체 방 선택 시)
+    requestAnimationFrame(() => {
+      const roomLabels = document.querySelector(".room-bottom-labels-outside");
+      if (roomLabels) {
+        // 오늘이 현재 주에 있는지 확인
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const { start: weekStart } = this.getWeekRange(this.currentDate);
+        const todayDayIndex = Math.floor((today - weekStart) / (1000 * 60 * 60 * 24));
+        const isTodayInWeek = todayDayIndex >= 0 && todayDayIndex < 7;
+        
+        roomLabels.style.display = isTodayInWeek ? "flex" : "none";
+        devLog(`📍 [toggleAllRooms] room-bottom-labels ${isTodayInWeek ? "표시" : "숨김"}`);
+      }
+    });
   }
 
   async loadEvents() {
