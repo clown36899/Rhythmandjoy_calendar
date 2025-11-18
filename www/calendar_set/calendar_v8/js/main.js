@@ -36,12 +36,6 @@ function setupInfoButton() {
 // 예약정보 페이지 열기
 function openInfoPage() {
   const overlay = document.getElementById("infoPageOverlay");
-  const iframe = document.getElementById("infoPageFrame");
-  
-  // iframe src 설정 (처음 열 때만)
-  if (!iframe.src) {
-    iframe.src = "./home_infopage/homepage-section_mobile.html";
-  }
   
   // 슬라이드 인
   requestAnimationFrame(() => {
