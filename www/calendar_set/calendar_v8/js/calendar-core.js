@@ -1452,7 +1452,7 @@ class Calendar {
     const dayWidth = 100 / 7;
     const todayLeft = dayWidth * todayDayIndex;
     
-    let html = `<div class="room-bottom-labels-outside" style="left: calc(3em + ${todayLeft}%); width: calc(${dayWidth}% - 1px);">`;
+    let html = `<div class="room-bottom-labels-outside" style="left: calc(3.75em + ${todayLeft}%); width: calc(${dayWidth}% - 1px);">`;
     
     roomLabels.forEach(room => {
       html += `<div class="room-bottom-label" style="left: ${room.position}%;">${room.roomName}</div>`;
