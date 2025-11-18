@@ -52,7 +52,6 @@ body {
 
 /* 팝업 배경 (반투명 블랙) */
 .popup-overlay {
-  display: none;
   position: fixed;
   top: 0;
   left: 0;
@@ -61,34 +60,14 @@ body {
   background: linear-gradient(135deg, rgba(0, 0, 0, 0.7), rgba(20, 20, 40, 0.8));
   z-index: 10000;
   backdrop-filter: blur(8px);
-  animation: fadeIn 0.3s ease;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideInFromRight {
-  from { 
-    opacity: 0;
-    transform: translate(100%, -50%);
-  }
-  to { 
-    opacity: 1;
-    transform: translate(-50%, -50%);
-  }
-}
-
-@keyframes slideOutToRight {
-  from { 
-    opacity: 1;
-    transform: translate(-50%, -50%);
-  }
-  to { 
-    opacity: 0;
-    transform: translate(100%, -50%);
-  }
+.popup-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* 팝업 본체 */
@@ -97,7 +76,6 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(100%, -50%);
-  opacity: 0;
   background: linear-gradient(145deg, #ffffff, #f8f9fa);
   padding: 32px 24px 24px;
   border-radius: 24px;
@@ -108,17 +86,11 @@ body {
   width: 90%;
   overflow-y: auto;
   overflow-x: hidden;
-  visibility: hidden;
-  transition: none;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.popup.show {
-  visibility: visible;
-  animation: slideInFromRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-.popup.closing {
-  animation: slideOutToRight 0.3s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards;
+.popup.active {
+  transform: translate(-50%, -50%);
 }
 
 .popup::-webkit-scrollbar {
