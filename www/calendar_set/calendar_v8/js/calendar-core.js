@@ -462,10 +462,12 @@ class Calendar {
       (today - weekStart) / (1000 * 60 * 60 * 24),
     );
     const isTodayInWeek = todayDayIndex >= 0 && todayDayIndex < 7;
+    const isSingleRoom = this.selectedRooms.size === 1;
     
     if (roomLabels) {
-      roomLabels.style.display = isTodayInWeek ? "flex" : "none";
-      devLog(`📍 [room-labels] 오늘이 현재 주에 ${isTodayInWeek ? "있음" : "없음"} (todayDayIndex: ${todayDayIndex})`);
+      // 단일 방 선택 시 또는 오늘이 현재 주에 없으면 숨김
+      roomLabels.style.display = (isTodayInWeek && !isSingleRoom) ? "flex" : "none";
+      devLog(`📍 [room-labels] 오늘이 현재 주에 ${isTodayInWeek ? "있음" : "없음"}, 단일방: ${isSingleRoom} (todayDayIndex: ${todayDayIndex})`);
     }
 
     // 다음 프레임에서 트랜지션 재활성화
