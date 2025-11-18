@@ -80,27 +80,6 @@ class Calendar {
     document
       .getElementById("allRoomsBtn")
       .addEventListener("click", () => this.toggleAllRooms());
-
-    // 이벤트 클릭 핸들러 (이벤트 위임)
-    this.container.addEventListener("click", (e) => {
-      const eventEl = e.target.closest(".week-event");
-      if (eventEl && this.currentView === "week") {
-        // 최근 스와이프 발생 확인 (200ms 이내면 클릭 무시)
-        const timeSinceSwipe = Date.now() - this.lastSwipeTime;
-        if (timeSinceSwipe < 200) {
-          devLog(
-            "🚫 [클릭 무시] 최근 스와이프 발생 (" + timeSinceSwipe + "ms 전)",
-          );
-          return;
-        }
-
-        const eventDate = eventEl.dataset.eventDate;
-        if (eventDate) {
-          devLog("📅 [이벤트 클릭] 일간 보기로 전환:", eventDate);
-          this.switchToDayView(new Date(eventDate));
-        }
-      }
-    });
   }
 
   resetSwipeState() {
@@ -321,8 +300,22 @@ class Calendar {
       }
     });
 
+    // 이벤트 클릭 핸들러 (tap 사용: 스와이프와 명확히 구분)
+    this.hammer.on("tap", (e) => {
+      if (this.currentView !== "week") return;
+
+      const eventEl = e.target.closest(".week-event");
+      if (eventEl) {
+        const eventDate = eventEl.dataset.eventDate;
+        if (eventDate) {
+          devLog("📅 [이벤트 탭] 일간 보기로 전환:", eventDate);
+          this.switchToDayView(new Date(eventDate));
+        }
+      }
+    });
+
     devLog(
-      "✅ 스와이프 제스처 설정 완료 (threshold: 25px, 거리: 20%, 속도: 0.6)",
+      "✅ 스와이프 제스처 설정 완료 (threshold: 25px, 거리: 20%, 속도: 0.6, tap 활성화)",
     );
   }
 
