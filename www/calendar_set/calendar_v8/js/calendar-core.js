@@ -524,7 +524,10 @@ class Calendar {
     devLog("◀️ [이전 월] 전체 캐시 리셋");
     this.weekDataCache.clear();
     this.resetSwipeState();
-    this.currentDate.setMonth(this.currentDate.getMonth() - 1);
+    const prevMonth = new Date(this.currentDate);
+    prevMonth.setMonth(prevMonth.getMonth() - 1);
+    prevMonth.setDate(1);
+    this.currentDate = prevMonth;
     this.render();
   }
 
@@ -532,7 +535,10 @@ class Calendar {
     devLog("▶️ [다음 월] 전체 캐시 리셋");
     this.weekDataCache.clear();
     this.resetSwipeState();
-    this.currentDate.setMonth(this.currentDate.getMonth() + 1);
+    const nextMonth = new Date(this.currentDate);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    nextMonth.setDate(1);
+    this.currentDate = nextMonth;
     this.render();
   }
 
