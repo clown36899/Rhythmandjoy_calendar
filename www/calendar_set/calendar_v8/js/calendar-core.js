@@ -666,17 +666,12 @@ class Calendar {
 
     const btn = document.querySelector(`.room-btn[data-room="${roomId}"]`);
     btn.classList.add("active");
+    
+    // body에 single-room-view 클래스 추가
+    document.body.classList.add("single-room-view");
+    devLog(`📍 [toggleRoom] body에 single-room-view 클래스 추가`);
 
     this.render();
-    
-    // render 후 room-bottom-labels 숨김 (단일 방 선택 시)
-    requestAnimationFrame(() => {
-      const roomLabels = document.querySelector(".room-bottom-labels-outside");
-      if (roomLabels) {
-        roomLabels.style.display = "none";
-        devLog(`📍 [toggleRoom] room-bottom-labels 숨김`);
-      }
-    });
   }
 
   toggleAllRooms() {
@@ -694,24 +689,12 @@ class Calendar {
       btn.classList.add("active");
     });
     allBtn.classList.remove("active");
+    
+    // body에서 single-room-view 클래스 제거
+    document.body.classList.remove("single-room-view");
+    devLog(`📍 [toggleAllRooms] body에서 single-room-view 클래스 제거`);
 
     this.render();
-    
-    // render 후 room-bottom-labels 표시 (전체 방 선택 시)
-    requestAnimationFrame(() => {
-      const roomLabels = document.querySelector(".room-bottom-labels-outside");
-      if (roomLabels) {
-        // 오늘이 현재 주에 있는지 확인
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const { start: weekStart } = this.getWeekRange(this.currentDate);
-        const todayDayIndex = Math.floor((today - weekStart) / (1000 * 60 * 60 * 24));
-        const isTodayInWeek = todayDayIndex >= 0 && todayDayIndex < 7;
-        
-        roomLabels.style.display = isTodayInWeek ? "flex" : "none";
-        devLog(`📍 [toggleAllRooms] room-bottom-labels ${isTodayInWeek ? "표시" : "숨김"}`);
-      }
-    });
   }
 
   async loadEvents() {

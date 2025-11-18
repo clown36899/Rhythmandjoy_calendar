@@ -1092,6 +1092,11 @@ body {
   display: none;
 }
 
+/* 단일 방 선택 시 room-bottom-labels 숨김 */
+body.single-room-view .room-bottom-labels-outside {
+  display: none !important;
+}
+
 /* 세로 구분선 컬러 (여기서 수정) */
 .room-divider-line {
   position: absolute;
