@@ -160,12 +160,7 @@ class Calendar {
         slideStarts = [-100, 0, 100];
         swipeStartTime = Date.now();
         this.isPanning = true;
-        devLog(
-          "🚀 [스와이프 시작] deltaX:",
-          e.deltaX,
-          "deltaY:",
-          e.deltaY,
-        );
+        devLog("🚀 [스와이프 시작] deltaX:", e.deltaX, "deltaY:", e.deltaY);
       }
     });
 
@@ -190,12 +185,12 @@ class Calendar {
 
     this.hammer.on("panend", (e) => {
       if (this.isAnimating || !this.isPanning) return;
-      
+
       // 중복 panend 방지: 이미 처리된 제스처면 무시
       if (this.hasPendingGestureNavigation) return;
-      
+
       this.isPanning = false;
-      
+
       const slides = this.container.querySelectorAll(".calendar-slide");
       if (slides.length === 3) {
         const swipeEndTime = Date.now();
@@ -231,8 +226,10 @@ class Calendar {
         const sliderWidth = sliderElement
           ? sliderElement.offsetWidth
           : this.container.offsetWidth;
-        const distanceThreshold = Math.min(sliderWidth * 0.15, 120);
-        const velocityThreshold = 0.35;
+        // const distanceThreshold = Math.min(sliderWidth * 0.15, 120);
+        // const velocityThreshold = 0.35;
+        const distanceThreshold = sliderWidth * 0.2; // 20%로 상향
+        const velocityThreshold = 0.6; // 플링 속도 임계값을 높여 빠른 터치 방지
 
         const shouldNavigate =
           distance >= distanceThreshold || velocity >= velocityThreshold;
@@ -328,9 +325,7 @@ class Calendar {
 
     // 날짜 업데이트
     this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
-    devLog(
-      `📅 날짜 변경: ${this.currentDate.toLocaleDateString("ko-KR")}`,
-    );
+    devLog(`📅 날짜 변경: ${this.currentDate.toLocaleDateString("ko-KR")}`);
 
     // 제목 업데이트
     this.updateCalendarTitle();
@@ -437,10 +432,12 @@ class Calendar {
 
   async refreshCurrentView() {
     // 현재 view와 날짜를 유지하면서 데이터만 갱신
-    devLog('🔄 [갱신] 현재 상태 유지하며 데이터 업데이트');
-    
+    devLog("🔄 [갱신] 현재 상태 유지하며 데이터 업데이트");
+
     if (this.currentView === "week") {
-      const slides = Array.from(this.container.querySelectorAll(".calendar-slide"));
+      const slides = Array.from(
+        this.container.querySelectorAll(".calendar-slide"),
+      );
       if (slides.length === 3) {
         // 3개 슬라이드가 있으면 내용만 갱신 (위치 유지)
         const prevDate = new Date(this.currentDate);
@@ -452,7 +449,11 @@ class Calendar {
         await this.loadWeekDataToCache(this.currentDate);
         await this.loadWeekDataToCache(nextDate);
 
-        this.events = this.getMergedEventsFromCache([prevDate, this.currentDate, nextDate]);
+        this.events = this.getMergedEventsFromCache([
+          prevDate,
+          this.currentDate,
+          nextDate,
+        ]);
         devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
         // 슬라이드 내용만 업데이트 (transform 유지)
@@ -460,8 +461,10 @@ class Calendar {
         slides[1].innerHTML = this.renderWeekViewContent(this.currentDate);
         slides[2].innerHTML = this.renderWeekViewContent(nextDate);
 
-        devLog(`🔄 슬라이드 준비: ${prevDate.toLocaleDateString("ko-KR")} | ${this.currentDate.toLocaleDateString("ko-KR")} | ${nextDate.toLocaleDateString("ko-KR")}`);
-        
+        devLog(
+          `🔄 슬라이드 준비: ${prevDate.toLocaleDateString("ko-KR")} | ${this.currentDate.toLocaleDateString("ko-KR")} | ${nextDate.toLocaleDateString("ko-KR")}`,
+        );
+
         // ✅ 날짜 높이 깨짐 방지: innerHTML 업데이트 후 레이아웃 재조정
         requestAnimationFrame(() => {
           this.adjustWeekViewLayout(true);
@@ -478,7 +481,7 @@ class Calendar {
 
   // 캐시 무효화 헬퍼 (Realtime용)
   invalidateWeeks(weekStartDates) {
-    weekStartDates.forEach(weekStart => {
+    weekStartDates.forEach((weekStart) => {
       const weekKey = this.getWeekCacheKey(new Date(weekStart));
       this.weekDataCache.delete(weekKey);
       devLog(`   🗑️ [캐시삭제] ${weekKey}`);
@@ -765,22 +768,24 @@ class Calendar {
 
   renderWeekViewContent(date, daysOverride = null) {
     // 일간 보기에서는 daysOverride로 날짜 1개만 전달 가능
-    const days = daysOverride || (() => {
-      const { start } = this.getWeekRange(date);
-      const weekDays = [];
-      for (let i = 0; i < 7; i++) {
-        const day = new Date(start);
-        day.setDate(start.getDate() + i);
-        day.setHours(0, 0, 0, 0);
-        weekDays.push(day);
-      }
-      return weekDays;
-    })();
-    
-    const { start, end } = daysOverride 
+    const days =
+      daysOverride ||
+      (() => {
+        const { start } = this.getWeekRange(date);
+        const weekDays = [];
+        for (let i = 0; i < 7; i++) {
+          const day = new Date(start);
+          day.setDate(start.getDate() + i);
+          day.setHours(0, 0, 0, 0);
+          weekDays.push(day);
+        }
+        return weekDays;
+      })();
+
+    const { start, end } = daysOverride
       ? { start: new Date(days[0]), end: new Date(days[days.length - 1]) }
       : this.getWeekRange(date);
-    
+
     if (!daysOverride) {
       // 주간 보기는 기존대로
     } else {
@@ -799,9 +804,11 @@ class Calendar {
     });
 
     // 일간 보기일 때 클래스 추가
-    const dayViewClass = daysOverride && days.length === 1 ? ' day-view-mode' : '';
+    const dayViewClass =
+      daysOverride && days.length === 1 ? " day-view-mode" : "";
     // 단일 방 선택 시 클래스 추가 (일간 보기가 아닐 때만)
-    const singleRoomClass = this.selectedRooms.size === 1 && !dayViewClass ? ' single-room-mode' : '';
+    const singleRoomClass =
+      this.selectedRooms.size === 1 && !dayViewClass ? " single-room-mode" : "";
     let html = `<div class="week-view${dayViewClass}${singleRoomClass}">`;
 
     // Header (시간 열 제외, 7개 요일만)
@@ -831,9 +838,9 @@ class Calendar {
 
       days.forEach((day) => {
         const timeClass = this.getTimeSlotClass(hourIndex, day);
-        let boundaryClass = '';
-        if (hourIndex === 6) boundaryClass = ' time-boundary-dawn';
-        if (hourIndex === 16) boundaryClass = ' time-boundary-evening';
+        let boundaryClass = "";
+        if (hourIndex === 6) boundaryClass = " time-boundary-dawn";
+        if (hourIndex === 16) boundaryClass = " time-boundary-evening";
         html += `<div class="time-cell ${timeClass}${boundaryClass}" data-date="${day.toISOString()}" data-hour="${hourIndex}"></div>`;
       });
 
@@ -847,7 +854,7 @@ class Calendar {
       // 주간 보기일 때만 날짜 사이 간격 조정 (일간 보기는 daysOverride 존재)
       let dayWidth, dayLeft;
       const isWeekView = !daysOverride && days.length === 7;
-      
+
       if (isWeekView) {
         // 주간 보기: 날짜 사이 1px 간격
         // width: 각 날짜에서 1px 빼기
@@ -1031,14 +1038,14 @@ class Calendar {
         const eventContainers = weekView.querySelectorAll(
           ".day-events-container",
         );
-        
+
         // 주간 보기인지 일간 보기인지 확인
-        const isDayView = weekView.classList.contains('day-view-mode');
-        
+        const isDayView = weekView.classList.contains("day-view-mode");
+
         eventContainers.forEach((container, index) => {
           const weekViewWidth = weekView.clientWidth;
           const dayWidth = weekViewWidth / 7;
-          
+
           let dayLeft, dayWidthAdjusted;
           if (isDayView || eventContainers.length === 1) {
             // 일간 보기: 간격 없이
@@ -1047,8 +1054,8 @@ class Calendar {
           } else {
             // 주간 보기: 컨테이너 좌우 여백으로 날짜 사이 간격 생성
             const gap = 1; // 좌우 및 중간 간격
-            dayLeft = (dayWidth * index) + gap;
-            dayWidthAdjusted = dayWidth - (gap * 3);
+            dayLeft = dayWidth * index + gap;
+            dayWidthAdjusted = dayWidth - gap * 3;
           }
 
           container.style.left = `${dayLeft}px`;
@@ -1091,26 +1098,26 @@ class Calendar {
   renderDayView() {
     const date = new Date(this.currentDate);
     date.setHours(0, 0, 0, 0);
-    
+
     // 헤더에 주간 보기 돌아가기 버튼 추가
     this.addBackToWeekButton();
-    
+
     // 주간 보기와 완전히 동일한 구조
     // 1. 왼쪽 고정 시간열
     let html = this.renderTimeColumn();
-    
+
     // 2. 슬라이더 (주간과 동일하지만 슬라이드 1개만)
     html += '<div class="calendar-slider">';
     html += '<div class="calendar-slide" style="transform: translateX(0%)">';
-    
+
     // 3. renderWeekViewContent를 날짜 1개로 호출
     html += this.renderWeekViewContent(date, [date]);
-    
+
     html += "</div>";
     html += "</div>";
 
     this.container.innerHTML = html;
-    
+
     // 레이아웃 조정
     requestAnimationFrame(() => {
       this.adjustWeekViewLayout(true);
@@ -1121,28 +1128,28 @@ class Calendar {
   }
 
   addBackToWeekButton() {
-    const footer = document.querySelector('.bottom-controls');
+    const footer = document.querySelector(".bottom-controls");
     if (!footer) return;
 
     // 기존 돌아가기 버튼 제거
-    const existingBtn = footer.querySelector('.back-to-week-btn');
+    const existingBtn = footer.querySelector(".back-to-week-btn");
     if (existingBtn) existingBtn.remove();
 
     // 돌아가기 버튼 생성
-    const backBtn = document.createElement('button');
-    backBtn.className = 'back-to-week-btn';
-    backBtn.innerHTML = '← 주간보기';
-    backBtn.title = '주간 보기로 돌아가기';
-    
-    backBtn.addEventListener('click', () => {
-      this.currentView = 'week';
+    const backBtn = document.createElement("button");
+    backBtn.className = "back-to-week-btn";
+    backBtn.innerHTML = "← 주간보기";
+    backBtn.title = "주간 보기로 돌아가기";
+
+    backBtn.addEventListener("click", () => {
+      this.currentView = "week";
       this.render();
       // 돌아가기 버튼 제거
       backBtn.remove();
     });
 
     // 예약 정보 버튼 앞에 삽입
-    const infoBtn = footer.querySelector('.info-btn');
+    const infoBtn = footer.querySelector(".info-btn");
     if (infoBtn) {
       footer.insertBefore(backBtn, infoBtn);
     } else {
@@ -1151,34 +1158,34 @@ class Calendar {
   }
 
   setupDayViewEventHandlers() {
-    const weekView = this.container.querySelector('.week-view');
-    if (!weekView || !weekView.classList.contains('day-view-mode')) {
+    const weekView = this.container.querySelector(".week-view");
+    if (!weekView || !weekView.classList.contains("day-view-mode")) {
       return; // 일간 보기가 아니면 종료
     }
 
-    const events = weekView.querySelectorAll('.week-event');
-    
+    const events = weekView.querySelectorAll(".week-event");
+
     // 이벤트 클릭 핸들러
-    events.forEach(event => {
-      event.addEventListener('click', (e) => {
+    events.forEach((event) => {
+      event.addEventListener("click", (e) => {
         e.stopPropagation();
-        
+
         // 이미 확대된 이벤트를 다시 클릭하면 축소
-        if (event.classList.contains('expanded')) {
-          event.classList.remove('expanded');
+        if (event.classList.contains("expanded")) {
+          event.classList.remove("expanded");
         } else {
           // 다른 모든 이벤트 축소
-          events.forEach(e => e.classList.remove('expanded'));
+          events.forEach((e) => e.classList.remove("expanded"));
           // 현재 이벤트 확대
-          event.classList.add('expanded');
+          event.classList.add("expanded");
         }
       });
     });
 
     // 다른 곳 클릭 시 모든 이벤트 축소
-    weekView.addEventListener('click', (e) => {
-      if (!e.target.closest('.week-event')) {
-        events.forEach(event => event.classList.remove('expanded'));
+    weekView.addEventListener("click", (e) => {
+      if (!e.target.closest(".week-event")) {
+        events.forEach((event) => event.classList.remove("expanded"));
       }
     });
   }
@@ -1342,9 +1349,9 @@ class Calendar {
     if (isDayView) {
       // 일간 보기: 타이틀에서 방 이름, (, 숫자 제거
       // 예: "A홀 (2 이****님" → "이****님"
-      let cleanTitle = event.title.replace(/^[A-E]홀\s*/, ''); // A홀 제거
-      cleanTitle = cleanTitle.replace(/\(/g, ''); // ( 제거
-      cleanTitle = cleanTitle.replace(/\d+/g, ''); // 숫자 제거
+      let cleanTitle = event.title.replace(/^[A-E]홀\s*/, ""); // A홀 제거
+      cleanTitle = cleanTitle.replace(/\(/g, ""); // ( 제거
+      cleanTitle = cleanTitle.replace(/\d+/g, ""); // 숫자 제거
       cleanTitle = cleanTitle.trim(); // 공백 정리
       eventContent = `<div class="event-room">${roomName}</div>
                       <div class="event-title">${cleanTitle}</div>
@@ -1361,10 +1368,10 @@ class Calendar {
       const timeStartMin = eventStart.getMinutes();
       const timeEndHour = eventEnd.getHours();
       const timeEndMin = eventEnd.getMinutes();
-      const timeDisplay = `${timeStartHour}:${timeStartMin.toString().padStart(2, '0')}-${timeEndHour}:${timeEndMin.toString().padStart(2, '0')}`;
-      
+      const timeDisplay = `${timeStartHour}:${timeStartMin.toString().padStart(2, "0")}-${timeEndHour}:${timeEndMin.toString().padStart(2, "0")}`;
+
       let displayText = "";
-      
+
       // 패턴 1: X****님 형식에서 세로로 나열 (예: 박 / ○ / 님)
       const nameMatch = event.title.match(/([^\s()\d])\*+님/);
       if (nameMatch) {
@@ -1379,13 +1386,13 @@ class Calendar {
           displayText = `<div class="event-time-short">${timeDisplay}</div>`;
         }
       }
-      
+
       eventContent = `<div class="event-initial-only">${displayText}</div>`;
     }
 
     const eventDate = new Date(displayStart);
     eventDate.setHours(0, 0, 0, 0);
-    
+
     return `<div class="week-event room-${event.roomId}" 
                  style="top: ${startPercent}%; height: ${height}%; width: ${position.width}%; left: ${position.left}%;"
                  data-event-date="${eventDate.toISOString()}"
