@@ -1118,6 +1118,7 @@ body {
 .room-bottom-label {
   position: absolute;
   transform: translateX(-50%);
+  width: 20%;
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 1em;
   font-weight: 600;
