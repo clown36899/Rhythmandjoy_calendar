@@ -749,6 +749,24 @@ class Calendar {
 
     html += "</div>";
 
+    // 오늘 날짜 계산하여 방 라벨 추가
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const { start: weekStart } = this.getWeekRange(this.currentDate);
+    const todayDayIndex = Math.floor((today - weekStart) / (1000 * 60 * 60 * 24));
+    
+    console.log('🏷️ [방라벨] 오늘:', today.toLocaleDateString('ko-KR'));
+    console.log('🏷️ [방라벨] 주시작:', weekStart.toLocaleDateString('ko-KR'));
+    console.log('🏷️ [방라벨] 오늘 인덱스:', todayDayIndex);
+    
+    // 오늘이 현재 주에 있을 때만 방 라벨 표시
+    if (todayDayIndex >= 0 && todayDayIndex < 7) {
+      console.log('🏷️ [방라벨] 렌더링 시작');
+      html += this.renderRoomBottomLabels(todayDayIndex);
+    } else {
+      console.log('🏷️ [방라벨] 오늘이 현재 주에 없음');
+    }
+
     this.container.innerHTML = html;
 
     // DOM 업데이트 후 레이아웃 조정
@@ -1423,14 +1441,36 @@ class Calendar {
       html += `</div>`;
     });
     
-    // 최하단 방 이름 표시 (A, B, C, D, E)
-    html += '<div class="room-bottom-labels">';
+    html += '</div>';
+    return html;
+  }
+
+  renderRoomBottomLabels(todayDayIndex) {
+    // 5개 방 이름
+    const roomLabels = [
+      { position: 10, roomName: 'A' },
+      { position: 30, roomName: 'B' },
+      { position: 50, roomName: 'C' },
+      { position: 70, roomName: 'D' },
+      { position: 90, roomName: 'E' }
+    ];
+
+    // 오늘 날짜 컬럼의 위치 계산
+    const dayWidth = 100 / 7;
+    const todayLeft = dayWidth * todayDayIndex;
+    
+    console.log('🏷️ [방라벨렌더] dayWidth:', dayWidth);
+    console.log('🏷️ [방라벨렌더] todayLeft:', todayLeft);
+    
+    let html = `<div class="room-bottom-labels-outside" style="left: calc(3em + ${todayLeft}%); width: calc(${dayWidth}% - 1px);">`;
+    
     roomLabels.forEach(room => {
       html += `<div class="room-bottom-label" style="left: ${room.position}%;">${room.roomName}</div>`;
     });
-    html += '</div>';
     
     html += '</div>';
+    
+    console.log('🏷️ [방라벨렌더] HTML:', html);
     return html;
   }
 
