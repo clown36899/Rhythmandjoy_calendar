@@ -135,7 +135,7 @@ class Calendar {
     });
     this.hammer.get("pan").set({
       direction: Hammer.DIRECTION_HORIZONTAL,
-      threshold: 10,
+      threshold: 25,
       enable: true,
     });
 
@@ -268,7 +268,7 @@ class Calendar {
       }
     });
 
-    devLog("✅ 스와이프 제스처 설정 완료 (거리: 15%, 속도: 0.35)");
+    devLog("✅ 스와이프 제스처 설정 완료 (threshold: 25px, 거리: 20%, 속도: 0.6)");
   }
 
   async navigate(direction) {
@@ -516,11 +516,25 @@ class Calendar {
     this.currentDate = new Date(date);
     this.currentDate.setHours(0, 0, 0, 0);
     this.currentView = "day";
+    
+    // 일간 보기에서 Hammer 제스처 비활성화
+    if (this.hammer) {
+      this.hammer.set({ enable: false });
+      devLog('🔒 [일간 보기] Hammer 제스처 비활성화');
+    }
+    
     this.render();
   }
 
   switchToWeekView() {
     this.currentView = "week";
+    
+    // 주간 보기로 복귀 시 Hammer 제스처 재활성화
+    if (this.hammer) {
+      this.hammer.set({ enable: true });
+      devLog('🔓 [주간 보기] Hammer 제스처 활성화');
+    }
+    
     this.render();
   }
 
@@ -1172,6 +1186,12 @@ class Calendar {
     backBtn.className = "back-to-week-btn";
     backBtn.innerHTML = "← 주간보기";
     backBtn.title = "주간 보기로 돌아가기";
+
+    // 터치 시작 시 Hammer로 전파 차단 (클릭 보호)
+    backBtn.addEventListener("touchstart", (e) => {
+      e.stopPropagation();
+      devLog('🛡️ [버튼 보호] 터치 이벤트 전파 차단');
+    }, { passive: false });
 
     backBtn.addEventListener("click", () => {
       this.resetSwipeState();
