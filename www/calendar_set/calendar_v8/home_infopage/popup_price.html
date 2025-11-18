@@ -1,93 +1,118 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>취소변경, 환불규정</title>
+    <link href="home_infopage/popup.css" rel="stylesheet" type="text/css" />
+    <style>
+      .price-box {
+        background: linear-gradient(145deg, #fff9f0, #ffffff);
+        border: 2px solid #ffa500;
+        border-radius: 12px;
+        padding: 16px;
+        margin: 16px 0;
+        border-left: 6px solid #ff8800;
+      }
 
-<head>
-  <meta charset="UTF-8" />
-  <title>취소변경, 환불규정</title>
-  <link href="home_infopage/popup.css" rel="stylesheet" type="text/css" />
-  <style>
-    .price-box {
-      background: linear-gradient(145deg, #fff9f0, #ffffff);
-      border: 2px solid #ffa500;
-      border-radius: 12px;
-      padding: 16px;
-      margin: 16px 0;
-      border-left: 6px solid #ff8800;
-    }
+      .price-box strong {
+        color: #1a1a1a;
+        font-size: 1rem;
+        display: block;
+        margin-bottom: 8px;
+      }
 
-    .price-box strong {
-      color: #1a1a1a;
-      font-size: 1rem;
-      display: block;
-      margin-bottom: 8px;
-    }
+      .price-box p {
+        color: #555;
+        margin: 8px 0;
+        line-height: 1.7;
+      }
 
-    .price-box p {
-      color: #555;
-      margin: 8px 0;
-      line-height: 1.7;
-    }
+      img.refund-image {
+        display: block;
+        max-width: 80%;
+        height: auto;
+        margin: 20px auto;
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
 
-    img.refund-image {
-      display: block;
-      max-width: 80%;
-      height: auto;
-      margin: 20px auto;
-      border: 2px solid #e0e0e0;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    }
+      h3 {
+        color: #1a1a1a;
+        font-size: 1.15rem;
+        margin: 24px 0 12px;
+        padding-left: 8px;
+        border-left: 4px solid #00a859;
+      }
+    </style>
+  </head>
 
-    h3 {
-      color: #1a1a1a;
-      font-size: 1.15rem;
-      margin: 24px 0 12px;
-      padding-left: 8px;
-      border-left: 4px solid #00A859;
-    }
-  </style>
-</head>
+  <body>
+    <div class="container">
+      <button type="button" id="xxx_btn" onclick="closePopup()">x</button>
+      <div class="icon-lock">
+        <img class="png_main" src="home_infopage/images/png/pay.png" />
+      </div>
+      <h1>취소변경, 환불규정</h1>
 
-<body>
-  <div class="container">
-    <button type="button" id="xxx_btn" onclick="closePopup()">x</button>
-    <div class="icon-lock">
-      <img class="png_main" src="home_infopage/images/png/pay.png">
+      <h3>1. 잘못 예약한 경우</h3>
+      <div class="price-box">
+        <strong>⏱️ 예약 신청 2시간 안 변심 취소는 무료</strong>
+        <p>그 외에는 환불규정에 따릅니다</p>
+        <p>
+          문의:
+          <a href="sms:01048017180" style="color: #00a859; font-weight: 600"
+            >010-4801-7180 (문자)</a
+          >
+        </p>
+      </div>
+
+      <h3>2. 단순 취소</h3>
+      <div class="price-box">
+        <strong>⚠️ 신청 2시간 경과 후</strong>
+        <p>아래 환불규정에 따릅니다</p>
+      </div>
+
+      <h3>3. 변경</h3>
+      <div class="price-box">
+        <strong>🔄 변경은 취소 후 재예약만 가능</strong>
+        <button
+          onclick="openPopup('home_infopage/popup_password.html')"
+          style="
+            margin-top: 12px;
+            padding: 10px 16px;
+            background: #00a859;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+          "
+        >
+          🔐 예약정보 확인·취소
+        </button>
+      </div>
+
+      <h3>4. 환불 규정</h3>
+      <p style="color: #555; margin-bottom: 16px">
+        💰 환불은 네이버에서 설정되어 있는 기준으로 작동합니다.
+      </p>
+
+      <img src="home_infopage/images/image.jpg" alt="환불규정" class="refund-image" />
+
+      <p style="text-align: center; margin-top: 20px">
+        문의:
+        <a
+          href="sms:01048017180"
+          style="
+            color: #00a859;
+            font-weight: 600;
+            border-bottom: 2px solid #00a859;
+            text-decoration: none;
+          "
+          >010-4801-7180 (문자)</a
+        >
+      </p>
     </div>
-    <h1>취소변경, 환불규정</h1>
-
-    <h3>1. 잘못 예약한 경우</h3>
-    <div class="price-box">
-      <strong>⏱️ 예약 신청 2시간 안 변심 취소는 무료</strong>
-      <p>그 외에는 환불규정에 따릅니다</p>
-      <p>문의: <a href="sms:01048017180" style="color: #00A859; font-weight: 600;">010-4801-7180 (문자)</a></p>
-    </div>
-
-    <h3>2. 단순 취소</h3>
-    <div class="price-box">
-      <strong>⚠️ 신청 2시간 경과 후</strong>
-      <p>아래 환불규정에 따릅니다</p>
-    </div>
-
-    <h3>3. 변경</h3>
-    <div class="price-box">
-      <strong>🔄 변경은 취소 후 재예약만 가능</strong>
-      <button onclick="openPopup('home_infopage/popup_password.html')" style="margin-top: 12px; padding: 10px 16px; background: #00A859; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">
-        🔐 예약정보 확인·취소
-      </button>
-    </div>
-
-    <h3>4. 환불 규정</h3>
-    <p style="color: #555; margin-bottom: 16px;">
-      💰 환불은 네이버에서 설정되어 있는 기준으로 작동합니다.
-    </p>
-
-    <img src="images/image.jpg" alt="환불규정" class="refund-image" />
-    
-    <p style="text-align: center; margin-top: 20px;">
-      문의: <a href="sms:01048017180" style="color: #00A859; font-weight: 600; border-bottom: 2px solid #00A859; text-decoration: none;">010-4801-7180 (문자)</a>
-    </p>
-  </div>
-</body>
-
+  </body>
 </html>
