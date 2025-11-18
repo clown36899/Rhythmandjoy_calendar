@@ -118,7 +118,7 @@ thumbnailContainer.before(loader);
 const totalImages = 10;
 
 // 첫 번째 이미지만 즉시 로드
-const firstImagePath = `home_infopage/images/${folder}/image1.jpeg`;
+const firstImagePath = `home_infopage/images/${folder}/image1.webp`;
 
 // 캐시 확인
 if (imageCache.has(firstImagePath)) {
@@ -163,7 +163,7 @@ if (imageCache.has(firstImagePath)) {
 // 나머지 이미지는 순차적으로 로드 (팝업이 이미 열린 후)
 setTimeout(() => {
   for (let i = 2; i <= totalImages; i++) {
-    const imgPath = `home_infopage/images/${folder}/image${i}.jpeg`;
+    const imgPath = `home_infopage/images/${folder}/image${i}.webp`;
     
     // 캐시에 있으면 즉시 표시
     if (imageCache.has(imgPath)) {

@@ -1,153 +1,148 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
-<head>
-  <meta charset="UTF-8" />
-  <title>오시는 길 & 주차 안내</title>
-  <link href="home_infopage/popup.css" rel="stylesheet" type="text/css" />
-  <style>
-    .map-link-box {
-      background: linear-gradient(145deg, #e3f2fd, #ffffff);
-      border: 2px solid #2196F3;
-      padding: 16px;
-      border-radius: 12px;
-      margin: 20px 0;
-      text-align: center;
-    }
+  <head>
+    <meta charset="UTF-8" />
+    <title>오시는 길 & 주차 안내</title>
+    <link href="home_infopage/popup.css" rel="stylesheet" type="text/css" />
+    <style>
+      /* --- 다크 모드 대비 개선 --- */
 
-    .map-link-box a {
-      color: #1976D2;
-      font-weight: 600;
-      font-size: 1.05rem;
-      text-decoration: none;
-      border-bottom: 2px solid #2196F3;
-      padding-bottom: 2px;
-      transition: all 0.3s ease;
-    }
+      /* 팝업 창 전체 배경 (만약 다크 모드 배경이 어둡다면) */
+      body {
+        background-color: #121212; /* 다크 모드 표준 배경 */
+        color: #e0e0e0; /* 기본 텍스트 색상을 밝게 설정 */
+      }
 
-    .map-link-box a:hover {
-      color: #0D47A1;
-      border-bottom-color: #0D47A1;
-    }
+      /* 1. 지도 링크 박스 (Map Link Box) */
+      .map-link-box {
+        /* 어두운 배경에서 대비되는 어두운 회색으로 변경 */
+        background: #1e1e1e;
+        border: 2px solid #64b5f6; /* 테두리 색상을 밝게 조정 */
+      }
 
-    .parking-list {
-      padding-left: 8px;
-      list-style: none;
-      margin: 20px 0;
-    }
+      /* 2. 섹션 헤더 (h3) */
+      h3 {
+        /* 글자색을 어두운색에서 밝은색으로 변경 */
+        color: #90caf9;
+        /* 왼쪽 경계선 색상을 밝게 조정 */
+        border-left: 4px solid #90caf9;
+        margin: 30px 0 16px;
+        padding-left: 8px;
+      }
 
-    .parking-list li {
-      margin-bottom: 18px;
-      color: #2c3e50;
-      font-size: 0.95rem;
-      line-height: 1.8;
-      padding-left: 32px;
-      position: relative;
-    }
+      /* 3. 주소 박스 (Address Box) */
+      .address-box {
+        /* 배경색을 밝은 회색에서 구분되는 어두운색으로 변경 */
+        background: #2c2c2c;
+        margin: 16px 0;
+        border-left: 4px solid #00e676; /* 초록색 경계선 대비 강화 */
+      }
 
-    .parking-list li:before {
-      content: "✓";
-      position: absolute;
-      left: 0;
-      top: 2px;
-      width: 22px;
-      height: 22px;
-      background: linear-gradient(135deg, #2196F3, #42A5F5);
-      color: white;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.8rem;
-      font-weight: bold;
-    }
+      /* 주소 박스 내부 텍스트 및 버튼 */
+      .address-box p {
+        color: #e0e0e0 !important; /* 텍스트를 밝게 */
+      }
 
-    .emphasis {
-      color: #c0392b;
-      font-weight: 600;
-      background-color: #fee;
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
+      .copy-button {
+        /* 복사 버튼의 기본 배경과 텍스트 대비 */
+        background-color: #424242;
+        color: #ffffff;
+        border: 1px solid #616161;
+      }
 
-    h3 {
-      color: #1a1a1a;
-      font-size: 1.2rem;
-      margin: 30px 0 16px;
-      padding-left: 8px;
-      border-left: 4px solid #2196F3;
-    }
+      /* 4. 주차 리스트 (Parking List) */
+      .parking-list li {
+        /* 글자색을 어두운색에서 밝은색으로 변경 */
+        color: #e0e0e0;
+      }
 
-    .address-box {
-      background: #f8f9fa;
-      padding: 16px;
-      border-radius: 10px;
-      margin: 16px 0;
-      border-left: 4px solid #00A859;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <button type="button" id="xxx_btn" onclick="closePopup()">x</button>
-    <div class="icon-lock">
-      <img class="png_main" src="home_infopage/images/png/map.png">
-    </div>
-    <h1>오시는 길 & 주차 안내</h1>
+      /* 5. 강조 텍스트 (emphasis) */
+      .emphasis {
+        /* 배경색이 어두워도 대비되도록 배경을 어둡게 */
+        background-color: #3b3b3b;
+        /* 텍스트는 밝은 빨간색으로 유지하여 강조 */
+        color: #ff8a80;
+      }
 
-    <div class="map-link-box">
-      🔗 <a href="https://naver.me/59vo9MDk" target="_blank">네이버 지도에서 위치 보기</a>
-    </div>
+      /* 6. 일반 p 태그 및 상세 텍스트 */
+      p,
+      p strong {
+        color: #e0e0e0 !important; /* 모든 일반 텍스트를 밝게 */
+      }
 
-    <p style="font-size: 1.05rem; color: #1a1a1a; font-weight: 600;">
-      📌 사당역 7번출구 도보 1분
-    </p>
+      /* 마지막 주의사항 박스 */
+      p[style*="background: #fff3cd"] {
+        background: #424242 !important; /* 배경 어둡게 */
+        border: 1px solid #616161 !important;
+        color: #ffffff !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <button type="button" id="xxx_btn" onclick="closePopup()">x</button>
+      <div class="icon-lock">
+        <img class="png_main" src="home_infopage/images/png/map.png" />
+      </div>
+      <h1>오시는 길 & 주차 안내</h1>
 
-    <div class="address-box">
-      <p style="margin: 0; color: #2c3e50; font-size: 0.95rem;">
-        🏢 <strong>주소:</strong> 서울시 동작구 남부순환로 2077, <strong style="color: #c0392b;">지하 2층</strong>
-        <button onclick="copyLink2(this)" class="copy-button">복사</button>
+      <p style="font-size: 1.05rem; color: #1a1a1a; font-weight: 600">
+        📌 사당역 7번출구 도보 1분
+      </p>
+
+      <div class="address-box">
+        <p style="margin: 0; color: #2c3e50; font-size: 0.95rem">
+          🏢 <strong>주소:</strong> 서울시 동작구 남부순환로 2077,
+          <strong style="color: #c0392b">지하 2층</strong>
+        </p>
+      </div>
+
+      <p style="color: #555; line-height: 1.8">
+        📌 <strong>건물 정보:</strong><br />
+        드림디포 문구점 건물 지하
+      </p>
+
+      <h3>🚗 주차 안내</h3>
+      <ul class="parking-list">
+        <li>
+          <strong>기본적으로 제공 불가</strong><br />
+          단, 문구점 퇴근 후 → 문구점 앞 한정 주차 가능
+        </li>
+        <li><strong>네이버 검색:</strong> "사당역 공영주차장" 이용 권장</li>
+        <li>
+          <span class="emphasis">⛔ 지하주차 리프트 사용 불가</span>
+        </li>
+        <li>
+          <span class="emphasis">⛔ 건물 앞 좌측 주차라인 사용 불가</span>
+        </li>
+        <li>
+          <span class="emphasis">🚫 카리프트 앞 절대 주차 금지!</span>
+        </li>
+      </ul>
+
+      <p
+        style="
+          color: #555;
+          margin-top: 30px;
+          padding: 16px;
+          background: #fff3cd;
+          border-radius: 10px;
+          border: 1px solid #ffeeba;
+        "
+      >
+        📞 <strong>예약 외 방문 시:</strong> 반드시 사전 문의 부탁드립니다.
       </p>
     </div>
-
-    <p style="color: #555; line-height: 1.8;">
-      📌 <strong>건물 정보:</strong><br>
-      드림디포 문구점 건물 지하
-    </p>
-
-    <h3>🚗 주차 안내</h3>
-    <ul class="parking-list">
-      <li>
-        <strong>기본적으로 제공 불가</strong><br>
-        단, 문구점 퇴근 후 → 문구점 앞 한정 주차 가능
-      </li>
-      <li>
-        <strong>네이버 검색:</strong> "사당역 공영주차장" 이용 권장
-      </li>
-      <li>
-        <span class="emphasis">⛔ 지하주차 리프트 사용 불가</span>
-      </li>
-      <li>
-        <span class="emphasis">⛔ 건물 앞 좌측 주차라인 사용 불가</span>
-      </li>
-      <li>
-        <span class="emphasis">🚫 카리프트 앞 절대 주차 금지!</span>
-      </li>
-    </ul>
-
-    <p style="color: #555; margin-top: 30px; padding: 16px; background: #fff3cd; border-radius: 10px; border: 1px solid #ffeeba;">
-      📞 <strong>예약 외 방문 시:</strong> 반드시 사전 문의 부탁드립니다.
-    </p>
-  </div>
-</body>
-<script>
-  function copyLink2(button) {
-    const address = "서울시 동작구 남부순환로 2077";
-    navigator.clipboard.writeText(address).then(() => {
-      button.textContent = "✓ 복사됨";
-      setTimeout(() => {
-        button.textContent = "복사";
-      }, 2000);
-    });
-  }
-</script>
+  </body>
+  <script>
+    function copyLink2(button) {
+      const address = "서울시 동작구 남부순환로 2077";
+      navigator.clipboard.writeText(address).then(() => {
+        button.textContent = "✓ 복사됨";
+        setTimeout(() => {
+          button.textContent = "복사";
+        }, 2000);
+      });
+    }
+  </script>
 </html>
