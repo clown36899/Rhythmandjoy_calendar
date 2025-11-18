@@ -1364,7 +1364,9 @@
           baseUrl = window.location.origin + "/calendar_set/calendar_v8/index.html";
         }
 
-        const url = `${baseUrl}?openInfo=true&section=${encodeURIComponent(targetSection)}`;
+        // index.html 제거하고 디렉토리 경로만 사용
+        const cleanBaseUrl = baseUrl.replace('/index.html', '/');
+        const url = `${cleanBaseUrl}?openInfo=true&section=${encodeURIComponent(targetSection)}`;
         const title = `리듬앤조이 - ${sectionName}`;
 
         console.log("🔗 공유 URL 생성:", url);
