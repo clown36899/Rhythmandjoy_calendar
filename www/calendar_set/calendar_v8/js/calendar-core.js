@@ -453,6 +453,20 @@ class Calendar {
     requestAnimationFrame(() => {
       this.updateCurrentTimeIndicator();
     });
+    
+    // 오늘이 현재 주에 있는지 확인하여 room-bottom-labels 표시/숨김
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const { start: weekStart } = this.getWeekRange(this.currentDate);
+    const todayDayIndex = Math.floor(
+      (today - weekStart) / (1000 * 60 * 60 * 24),
+    );
+    const isTodayInWeek = todayDayIndex >= 0 && todayDayIndex < 7;
+    
+    if (roomLabels) {
+      roomLabels.style.display = isTodayInWeek ? "flex" : "none";
+      devLog(`📍 [room-labels] 오늘이 현재 주에 ${isTodayInWeek ? "있음" : "없음"} (todayDayIndex: ${todayDayIndex})`);
+    }
 
     // 다음 프레임에서 트랜지션 재활성화
     requestAnimationFrame(() => {
