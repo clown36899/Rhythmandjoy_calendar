@@ -499,12 +499,6 @@ body {
   .offcanvas-body-mobile {
     display: none;
   }
-
-  /* room-bottom-labels: 가운데 영역(33.3%)에 맞게 조정 */
-  .room-bottom-labels-outside {
-    /* left 값은 JavaScript에서 계산되지만, 기준점을 가운데 영역으로 변경 */
-    transform: translateX(33.3vw);
-  }
 }
 
 /* 캘린더 영역의 시간 셀 (헤더와 격리) */

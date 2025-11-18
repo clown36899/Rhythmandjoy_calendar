@@ -449,28 +449,12 @@ class Calendar {
     // 레이아웃 조정
     this.adjustWeekViewLayout(true);
 
-    // 현재 시간 표시 업데이트
+    // 현재 시간 표시 및 방 라벨 위치 업데이트
     requestAnimationFrame(() => {
       this.updateCurrentTimeIndicator();
+      this.updateRoomBottomLabelsPosition();
     });
     
-    // 오늘이 현재 주에 있는지 확인하여 room-bottom-labels 표시/숨김
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const { start: weekStart } = this.getWeekRange(this.currentDate);
-    const todayDayIndex = Math.floor(
-      (today - weekStart) / (1000 * 60 * 60 * 24),
-    );
-    const isTodayInWeek = todayDayIndex >= 0 && todayDayIndex < 7;
-    const isSingleRoom = this.selectedRooms.size === 1;
-    
-    if (roomLabels) {
-      // 단일 방 선택 시 또는 오늘이 현재 주에 없으면 숨김
-      roomLabels.style.display = (isTodayInWeek && !isSingleRoom) ? "flex" : "none";
-      devLog(`📍 [room-labels] 오늘이 현재 주에 ${isTodayInWeek ? "있음" : "없음"}, 단일방: ${isSingleRoom} (todayDayIndex: ${todayDayIndex})`);
-    }
-    
-
     // 다음 프레임에서 트랜지션 재활성화
     requestAnimationFrame(() => {
       newSlides.forEach((slide) => {
@@ -866,9 +850,10 @@ class Calendar {
     // DOM 업데이트 후 레이아웃 조정
     this.adjustWeekViewLayout();
 
-    // 현재 시간 표시 업데이트
+    // 현재 시간 표시 및 방 라벨 위치 업데이트
     requestAnimationFrame(() => {
       this.updateCurrentTimeIndicator();
+      this.updateRoomBottomLabelsPosition();
     });
   }
 
@@ -1171,8 +1156,14 @@ class Calendar {
   }
 
   startCurrentTimeUpdater() {
+    // 현재 렌더링된 날짜 키 저장
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    this.lastRenderedDayKey = today.toDateString();
+
     // 10초마다 현재 시간 표시 업데이트 (더 부드러운 실시간 표시)
     this.updateCurrentTimeIndicator();
+    this.updateRoomBottomLabelsPosition();
 
     if (this.timeUpdateInterval) {
       clearInterval(this.timeUpdateInterval);
@@ -1180,6 +1171,18 @@ class Calendar {
 
     this.timeUpdateInterval = setInterval(() => {
       this.updateCurrentTimeIndicator();
+      this.updateRoomBottomLabelsPosition();
+      
+      // 날짜가 바뀌었는지 확인
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const currentDayKey = now.toDateString();
+      
+      if (this.lastRenderedDayKey !== currentDayKey) {
+        devLog(`📅 [날짜 변경 감지] ${this.lastRenderedDayKey} → ${currentDayKey}, 자동 렌더링`);
+        this.lastRenderedDayKey = currentDayKey;
+        this.goToToday();
+      }
     }, 10000); // 10초마다 업데이트
   }
 
@@ -1261,8 +1264,9 @@ class Calendar {
         label.style.maxHeight = `${rowHeight}px`;
       });
 
-      // 레이아웃 변경 후 시간 인디케이터 재계산 (화면 크기 변경 대응)
+      // 레이아웃 변경 후 시간 인디케이터 및 방 라벨 위치 재계산 (화면 크기 변경 대응)
       this.updateCurrentTimeIndicator();
+      this.updateRoomBottomLabelsPosition();
     };
 
     if (immediate) {
@@ -1546,6 +1550,45 @@ class Calendar {
     return html;
   }
 
+  updateRoomBottomLabelsPosition() {
+    const roomLabels = document.querySelector(".room-bottom-labels-outside");
+    if (!roomLabels) return;
+    
+    const slider = this.container.querySelector(".calendar-slider");
+    if (!slider) return;
+    
+    // 오늘이 현재 주에 있는지 확인
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const { start: weekStart } = this.getWeekRange(this.currentDate);
+    const todayDayIndex = Math.floor((today - weekStart) / (1000 * 60 * 60 * 24));
+    
+    if (todayDayIndex < 0 || todayDayIndex >= 7) {
+      roomLabels.style.display = "none";
+      return;
+    }
+    
+    // 단일 방 선택 시 숨김
+    if (this.selectedRooms.size === 1) {
+      roomLabels.style.display = "none";
+      return;
+    }
+    
+    // 슬라이더의 실제 픽셀 크기 가져오기
+    const sliderRect = slider.getBoundingClientRect();
+    
+    // 오늘 날짜 컬럼의 위치 계산 (픽셀 단위)
+    const dayWidth = sliderRect.width / 7;
+    const todayLeft = sliderRect.left + (dayWidth * todayDayIndex);
+    
+    // 픽셀 단위로 위치 설정
+    roomLabels.style.left = `${todayLeft}px`;
+    roomLabels.style.width = `${dayWidth}px`;
+    roomLabels.style.display = "flex";
+    
+    devLog(`📍 [라벨 위치 업데이트] left: ${todayLeft}px, width: ${dayWidth}px, 요일: ${todayDayIndex}`);
+  }
+
   renderRoomBottomLabels(todayDayIndex) {
     // 5개 방 이름과 색상
     const roomLabels = [
@@ -1556,14 +1599,8 @@ class Calendar {
       { position: 90, roomName: "E", roomId: "e" },
     ];
 
-    // 오늘 날짜 컬럼의 위치 계산
-    const dayWidth = 100 / 7;
-    const todayLeft = dayWidth * todayDayIndex;
-
-    // calendar-slider는 3.75em을 제외한 나머지 공간이므로, 정확한 계산 필요
-    // left: 3.75em + (전체 너비 - 3.75em) * todayLeft%
-    // width: (전체 너비 - 3.75em) * dayWidth%
-    let html = `<div class="room-bottom-labels-outside" style="left: calc(3.75em + (100% - 3.75em) * ${todayLeft / 100}); width: calc((100% - 3.75em) * ${dayWidth / 100});">`;
+    // 초기 HTML만 생성 (위치는 updateRoomBottomLabelsPosition에서 설정)
+    let html = `<div class="room-bottom-labels-outside">`;
 
     roomLabels.forEach((room) => {
       const roomColor = CONFIG.rooms[room.roomId]?.color || "rgba(255, 255, 255, 0.15)";
