@@ -116,6 +116,13 @@ class Calendar {
         slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
       });
     }
+    
+    // room-bottom-labels-outside도 원위치
+    const roomLabels = document.querySelector(".room-bottom-labels-outside");
+    if (roomLabels) {
+      roomLabels.style.transition = "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
+      roomLabels.style.transform = "translateX(0%)";
+    }
   }
 
   setupSwipeGestures() {
@@ -175,6 +182,13 @@ class Calendar {
         slideStarts = [-100, 0, 100];
         swipeStartTime = Date.now();
         this.isPanning = true;
+        
+        // room-bottom-labels-outside도 transition 제거
+        const roomLabels = document.querySelector(".room-bottom-labels-outside");
+        if (roomLabels) {
+          roomLabels.style.transition = "none";
+        }
+        
         devLog("🚀 [스와이프 시작] deltaX:", e.deltaX, "deltaY:", e.deltaY);
       }
     });
@@ -195,6 +209,13 @@ class Calendar {
           const newPos = slideStarts[i] + percentMove;
           slide.style.transform = `translateX(${newPos}%)`;
         });
+        
+        // room-bottom-labels-outside도 같이 이동 (현재 슬라이드와 동일)
+        const roomLabels = document.querySelector(".room-bottom-labels-outside");
+        if (roomLabels) {
+          const currentSlidePos = slideStarts[1] + percentMove; // 중간 슬라이드 위치
+          roomLabels.style.transform = `translateX(${currentSlidePos}%)`;
+        }
       }
     });
 
@@ -229,6 +250,13 @@ class Calendar {
               "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
             slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
           });
+          
+          // room-bottom-labels-outside도 원위치
+          const roomLabels = document.querySelector(".room-bottom-labels-outside");
+          if (roomLabels) {
+            roomLabels.style.transition = "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
+            roomLabels.style.transform = "translateX(0%)";
+          }
           return;
         }
 
@@ -236,6 +264,12 @@ class Calendar {
         slides.forEach((slide) => {
           slide.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
         });
+        
+        // room-bottom-labels-outside도 transition 적용
+        const roomLabels = document.querySelector(".room-bottom-labels-outside");
+        if (roomLabels) {
+          roomLabels.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
+        }
 
         const sliderElement = this.container.querySelector(".calendar-slider");
         const sliderWidth = sliderElement
@@ -265,6 +299,12 @@ class Calendar {
           slides.forEach((slide, i) => {
             slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
           });
+          
+          // room-bottom-labels-outside도 원위치
+          const roomLabels = document.querySelector(".room-bottom-labels-outside");
+          if (roomLabels) {
+            roomLabels.style.transform = "translateX(0%)";
+          }
         }
       }
     });
@@ -322,6 +362,13 @@ class Calendar {
       slides.forEach((slide, i) => {
         slide.style.transform = `translateX(${targets[i]}%)`;
       });
+      
+      // room-bottom-labels-outside도 같이 이동 (중간 슬라이드와 동일)
+      const roomLabels = document.querySelector(".room-bottom-labels-outside");
+      if (roomLabels) {
+        const currentSlideTarget = targets[1]; // 중간 슬라이드 타겟
+        roomLabels.style.transform = `translateX(${currentSlideTarget}%)`;
+      }
 
       // transitionend 대기
       const handleTransitionEnd = async (e) => {
@@ -369,6 +416,12 @@ class Calendar {
     slides.forEach((slide) => {
       slide.style.transition = "none";
     });
+    
+    // room-bottom-labels-outside도 transition 제거
+    const roomLabels = document.querySelector(".room-bottom-labels-outside");
+    if (roomLabels) {
+      roomLabels.style.transition = "none";
+    }
 
     // DOM 재배열
     if (direction === 1) {
@@ -385,6 +438,11 @@ class Calendar {
     newSlides.forEach((slide, i) => {
       slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
     });
+    
+    // room-bottom-labels-outside도 원위치로 리셋
+    if (roomLabels) {
+      roomLabels.style.transform = "translateX(0%)";
+    }
 
     // 레이아웃 조정
     this.adjustWeekViewLayout(true);
@@ -399,6 +457,12 @@ class Calendar {
       newSlides.forEach((slide) => {
         slide.style.transition = "";
       });
+      
+      // room-bottom-labels-outside도 transition 재활성화
+      const roomLabels = document.querySelector(".room-bottom-labels-outside");
+      if (roomLabels) {
+        roomLabels.style.transition = "";
+      }
     });
   }
 
