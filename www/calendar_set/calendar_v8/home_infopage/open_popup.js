@@ -30,9 +30,19 @@
   // 팝업 닫기
   function closePopup() {
     console.log("close");
-    document.getElementById('popupOverlay').style.display = 'none';
-    document.getElementById('popupBox').style.display = 'none';
-    document.getElementById('popupContent').innerHTML = ''; // 내용 초기화
+    const popupBox = document.getElementById('popupBox');
+    const popupOverlay = document.getElementById('popupOverlay');
+    
+    // 닫는 애니메이션 추가
+    popupBox.classList.add('closing');
+    
+    // 애니메이션 끝난 후 숨김
+    setTimeout(() => {
+      popupOverlay.style.display = 'none';
+      popupBox.style.display = 'none';
+      popupBox.classList.remove('closing');
+      document.getElementById('popupContent').innerHTML = ''; // 내용 초기화
+    }, 300);
   }
 
   // 배경 클릭 시 팝업 닫기
@@ -189,9 +199,19 @@ setTimeout(() => {
   // 두 번째 팝업 닫기
   function closeInnerPopup() {
     console.log("?내부 팝업 닫기 실행");
-    document.getElementById('innerPopupOverlay').style.display = 'none';
-    document.getElementById('innerPopupBox').style.display = 'none';
-    document.getElementById('innerPopupContent').innerHTML = ''; // 내용 초기화
+    const innerPopupBox = document.getElementById('innerPopupBox');
+    const innerPopupOverlay = document.getElementById('innerPopupOverlay');
+    
+    // 닫는 애니메이션 추가
+    innerPopupBox.classList.add('closing');
+    
+    // 애니메이션 끝난 후 숨김
+    setTimeout(() => {
+      innerPopupOverlay.style.display = 'none';
+      innerPopupBox.style.display = 'none';
+      innerPopupBox.classList.remove('closing');
+      document.getElementById('innerPopupContent').innerHTML = ''; // 내용 초기화
+    }, 300);
   }
   // 배경 클릭 시 내부 팝업 닫기
 document.addEventListener('DOMContentLoaded', function () {
