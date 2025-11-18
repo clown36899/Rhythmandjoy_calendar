@@ -1452,7 +1452,10 @@ class Calendar {
     const dayWidth = 100 / 7;
     const todayLeft = dayWidth * todayDayIndex;
     
-    let html = `<div class="room-bottom-labels-outside" style="left: calc(3.75em + ${todayLeft}%); width: calc(${dayWidth}% - 1px);">`;
+    // calendar-slider는 3.75em을 제외한 나머지 공간이므로, 정확한 계산 필요
+    // left: 3.75em + (전체 너비 - 3.75em) * todayLeft%
+    // width: (전체 너비 - 3.75em) * dayWidth%
+    let html = `<div class="room-bottom-labels-outside" style="left: calc(3.75em + (100% - 3.75em) * ${todayLeft / 100}); width: calc((100% - 3.75em) * ${dayWidth / 100});">`;
     
     roomLabels.forEach(room => {
       html += `<div class="room-bottom-label" style="left: ${room.position}%;">${room.roomName}</div>`;
