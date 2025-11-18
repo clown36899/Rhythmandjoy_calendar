@@ -668,6 +668,13 @@ class Calendar {
     btn.classList.add("active");
 
     this.render();
+    
+    // room-bottom-labels 숨김 (단일 방 선택 시)
+    const roomLabels = document.querySelector(".room-bottom-labels-outside");
+    if (roomLabels) {
+      roomLabels.style.display = "none";
+      devLog(`📍 [toggleRoom] room-bottom-labels 숨김`);
+    }
   }
 
   toggleAllRooms() {
