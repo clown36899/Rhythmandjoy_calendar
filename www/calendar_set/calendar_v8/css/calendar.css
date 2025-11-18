@@ -1106,13 +1106,13 @@ body {
 
 /* 달력 바깥 최하단 방 이름 표시 (A, B, C, D, E) */
 .room-bottom-labels-outside {
-  position: absolute;
-  bottom: 0;
+  position: fixed;
+  bottom: calc(3em + 4.5em);
   height: 2.5em;
   display: flex;
   align-items: center;
   pointer-events: none;
-  z-index: 1000;
+  z-index: 500;
 }
 
 /* 방별 색상 지정 */
