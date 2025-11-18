@@ -1,13 +1,13 @@
 [build]
   base = "www"
   command = "bash build.sh"
-  publish = "calendar_set/calendar_v8"
+  publish = "."
   functions = "../netlify/functions"
 
 [[redirects]]
   from = "/*"
   to = "/index.html"
-  status = 200
+  status = 404
   force = false
 
 [build.environment]
