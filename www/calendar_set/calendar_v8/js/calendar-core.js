@@ -1389,11 +1389,11 @@ class Calendar {
 
     // 5개 방 영역의 중앙에 텍스트 표시 (한 글자씩)
     const roomLabels = [
-      { position: 10, label: 'A홀예약가능' },   // A홀: 0-20% 중앙
-      { position: 30, label: 'B홀예약가능' },   // B홀: 20-40% 중앙
-      { position: 50, label: 'C홀예약가능' },   // C홀: 40-60% 중앙
-      { position: 70, label: 'D홀예약가능' },   // D홀: 60-80% 중앙
-      { position: 90, label: 'E홀예약가능' }    // E홀: 80-100% 중앙
+      { position: 10, label: 'A홀예약가능', roomName: 'A' },   // A홀: 0-20% 중앙
+      { position: 30, label: 'B홀예약가능', roomName: 'B' },   // B홀: 20-40% 중앙
+      { position: 50, label: 'C홀예약가능', roomName: 'C' },   // C홀: 40-60% 중앙
+      { position: 70, label: 'D홀예약가능', roomName: 'D' },   // D홀: 60-80% 중앙
+      { position: 90, label: 'E홀예약가능', roomName: 'E' }    // E홀: 80-100% 중앙
     ];
 
     let html = '<div class="room-dividers-container">';
@@ -1422,6 +1422,13 @@ class Calendar {
       });
       html += `</div>`;
     });
+    
+    // 최하단 방 이름 표시 (A, B, C, D, E)
+    html += '<div class="room-bottom-labels">';
+    roomLabels.forEach(room => {
+      html += `<div class="room-bottom-label" style="left: ${room.position}%;">${room.roomName}</div>`;
+    });
+    html += '</div>';
     
     html += '</div>';
     return html;
