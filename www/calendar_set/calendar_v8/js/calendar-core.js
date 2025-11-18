@@ -1453,13 +1453,13 @@ class Calendar {
   }
 
   renderRoomBottomLabels(todayDayIndex) {
-    // 5개 방 이름
+    // 5개 방 이름과 색상
     const roomLabels = [
-      { position: 10, roomName: "A" },
-      { position: 30, roomName: "B" },
-      { position: 50, roomName: "C" },
-      { position: 70, roomName: "D" },
-      { position: 90, roomName: "E" },
+      { position: 10, roomName: "A", roomId: "a" },
+      { position: 30, roomName: "B", roomId: "b" },
+      { position: 50, roomName: "C", roomId: "c" },
+      { position: 70, roomName: "D", roomId: "d" },
+      { position: 90, roomName: "E", roomId: "e" },
     ];
 
     // 오늘 날짜 컬럼의 위치 계산
@@ -1472,9 +1472,8 @@ class Calendar {
     let html = `<div class="room-bottom-labels-outside" style="left: calc(3.75em + (100% - 3.75em) * ${todayLeft / 100}); width: calc((100% - 3.75em) * ${dayWidth / 100});">`;
 
     roomLabels.forEach((room) => {
-      const roomClass = `room-${room.roomName.toLowerCase()}`;
-
-      html += `<div class="room-bottom-label ${roomClass}" style="left: ${room.position}%;">${room.roomName}</div>`;
+      const roomColor = CONFIG.rooms[room.roomId]?.color || "rgba(255, 255, 255, 0.15)";
+      html += `<div class="room-bottom-label" style="left: ${room.position}%; background-color: ${roomColor};">${room.roomName}</div>`;
     });
 
     html += "</div>";

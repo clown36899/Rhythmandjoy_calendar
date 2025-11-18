@@ -1106,8 +1106,8 @@ body {
 
 /* 달력 바깥 최하단 방 이름 표시 (A, B, C, D, E) */
 .room-bottom-labels-outside {
-  position: fixed;
-  bottom: 6.5em;
+  position: absolute;
+  bottom: 0;
   height: 2.5em;
   display: flex;
   align-items: center;
