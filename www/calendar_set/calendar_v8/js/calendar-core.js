@@ -13,6 +13,7 @@ class Calendar {
     this.weekDataCache = new Map(); // 주간 데이터 캐시
     this.baseTranslate = -33.333; // 현재 slider의 기본 위치 (%)
     this.timeUpdateInterval = null; // 현재 시간 업데이트 타이머
+    this.renderPromise = null; // render 동시 실행 방지 배리어
   }
 
   async init() {
@@ -275,52 +276,60 @@ class Calendar {
       devLog("⏸️ 네비게이션 중복 방지");
       return;
     }
-    this.isAnimating = true;
-    this.isPanning = false; // 네비게이션 시작 시 스와이프 상태 리셋
 
-    devLog(`🧭 [주 이동] 전체 캐시 리셋 - 방향: ${direction > 0 ? "다음 주" : "이전 주"}`);
-    this.weekDataCache.clear();
-
-    const slides = this.container.querySelectorAll(".calendar-slide");
-    if (slides.length !== 3) {
-      this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
-      await this.render();
-      this.isAnimating = false;
-      return;
+    // render 진행 중이면 대기
+    if (this.renderPromise) {
+      devLog('⏸️ [렌더 대기] navigate 시작 전 render 완료 대기...');
+      await this.renderPromise;
     }
 
-    // 각 슬라이드를 100% 이동
-    const targets = direction === 1 ? [-200, -100, 0] : [0, 100, 200];
-    slides.forEach((slide, i) => {
-      slide.style.transform = `translateX(${targets[i]}%)`;
-    });
+    this.isAnimating = true;
+    this.isPanning = false;
 
-    // transitionend 대기
-    const handleTransitionEnd = async (e) => {
-      if (e.propertyName !== "transform") return;
-      slides[1].removeEventListener("transitionend", handleTransitionEnd);
+    try {
+      devLog(`🧭 [주 이동] 전체 캐시 리셋 - 방향: ${direction > 0 ? "다음 주" : "이전 주"}`);
+      this.weekDataCache.clear();
 
-      await this.finalizeNavigation(direction, slides);
+      const slides = this.container.querySelectorAll(".calendar-slide");
+      if (slides.length !== 3) {
+        devLog('⚠️ [슬라이드 부족] slides.length !== 3, render만 호출 (currentDate 수정 안함)');
+        await this.render();
+        return;
+      }
+
+      // 각 슬라이드를 100% 이동
+      const targets = direction === 1 ? [-200, -100, 0] : [0, 100, 200];
+      slides.forEach((slide, i) => {
+        slide.style.transform = `translateX(${targets[i]}%)`;
+      });
+
+      // transitionend 대기
+      const handleTransitionEnd = async (e) => {
+        if (e.propertyName !== "transform") return;
+        slides[1].removeEventListener("transitionend", handleTransitionEnd);
+
+        await this.finalizeNavigation(direction, slides);
+        devLog(`✅ 네비게이션 완료`);
+      };
+
+      slides[1].addEventListener("transitionend", handleTransitionEnd, {
+        once: true,
+      });
+
+      // 안전장치: 500ms 후 강제 완료
+      setTimeout(async () => {
+        if (this.isAnimating) {
+          devLog("⏱️ 타임아웃으로 강제 완료");
+          slides[1].removeEventListener("transitionend", handleTransitionEnd);
+          await this.finalizeNavigation(direction, slides);
+          devLog(`✅ 네비게이션 완료 (타임아웃)`);
+        }
+      }, 500);
+    } finally {
+      // 모든 종료 경로에서 플래그 리셋
       this.isAnimating = false;
       this.hasPendingGestureNavigation = false;
-      devLog(`✅ 네비게이션 완료`);
-    };
-
-    slides[1].addEventListener("transitionend", handleTransitionEnd, {
-      once: true,
-    });
-
-    // 안전장치: 500ms 후 강제 완료
-    setTimeout(async () => {
-      if (this.isAnimating) {
-        devLog("⏱️ 타임아웃으로 강제 완료");
-        slides[1].removeEventListener("transitionend", handleTransitionEnd);
-        await this.finalizeNavigation(direction, slides);
-        this.isAnimating = false;
-        this.hasPendingGestureNavigation = false;
-        devLog(`✅ 네비게이션 완료 (타임아웃)`);
-      }
-    }, 500);
+    }
   }
 
   async finalizeNavigation(direction, slidesArray) {
@@ -636,6 +645,19 @@ class Calendar {
   }
 
   async render() {
+    // 이미 render 진행 중이면 대기
+    if (this.renderPromise) {
+      devLog('⏸️ [렌더 배리어] 진행 중인 render 대기...');
+      await this.renderPromise;
+    }
+
+    // 새로운 render 시작
+    this.renderPromise = this._doRender();
+    await this.renderPromise;
+    this.renderPromise = null;
+  }
+
+  async _doRender() {
     this.container.innerHTML = '<div class="loading">로딩 중...</div>';
 
     document.getElementById("calendarTitle").textContent =
