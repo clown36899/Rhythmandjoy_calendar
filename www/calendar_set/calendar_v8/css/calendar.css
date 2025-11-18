@@ -1086,6 +1086,12 @@ body {
   z-index: 0;
 }
 
+/* 단일 방 선택 시 세로선과 라벨만 숨김 (배경색은 유지) */
+.room-dividers-container.hide-content .room-divider-line,
+.room-dividers-container.hide-content .room-label-container {
+  display: none;
+}
+
 /* 세로 구분선 컬러 (여기서 수정) */
 .room-divider-line {
   position: absolute;

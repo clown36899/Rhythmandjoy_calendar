@@ -1494,10 +1494,7 @@ class Calendar {
   }
 
   renderRoomDividers() {
-    // 단일 방 선택 시 dividers 안 그림
-    if (this.selectedRooms.size === 1) {
-      return '';
-    }
+    const isSingleRoom = this.selectedRooms.size === 1;
     
     // 5개 방을 구분하는 4개의 세로선 (20%, 40%, 60%, 80% 위치)
     const dividers = [
@@ -1516,7 +1513,8 @@ class Calendar {
       { position: 90, label: "E홀예약가능", roomName: "E" }, // E홀: 80-100% 중앙
     ];
 
-    let html = '<div class="room-dividers-container">';
+    // 단일 방 선택 시 hide-content 클래스 추가 (배경색만 보이고 내용은 숨김)
+    let html = `<div class="room-dividers-container${isSingleRoom ? ' hide-content' : ''}">`;
 
     // 세로선 렌더링
     dividers.forEach((divider) => {
