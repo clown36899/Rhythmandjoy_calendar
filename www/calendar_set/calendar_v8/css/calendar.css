@@ -648,8 +648,11 @@ body {
 
 .week-event.room-a {
   background-color: rgba(246, 191, 38, 0.9);
-  border-bottom-left-radius: 5px;
   color: #000;
+}
+
+.week-view .week-event.room-a {
+  border-bottom-left-radius: 5px !important;
 }
 
 .week-event.room-b {
@@ -1157,7 +1160,7 @@ body.single-room-view .room-bottom-labels-outside {
 /* 방별 색상 지정 */
 .room-a {
   /* 🎨 왼쪽 아래 모서리에 5px 라운드 추가 */
-  border-bottom-left-radius: 5px;
+  border-bottom-left-radius: 65px;
   background-color: rgba(246, 191, 38, 0.9);
   /* 빨간 계열 */
 }
