@@ -1202,3 +1202,8 @@ body.single-room-view .room-bottom-labels-outside {
   border: 0px solid rgba(255, 255, 255, 0.25);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
+
+/* A홀 라벨 (첫 번째)만 왼쪽 아래 둥글게 */
+.room-bottom-label:first-child {
+  border-bottom-left-radius: 5px;
+}
