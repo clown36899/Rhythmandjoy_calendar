@@ -95,6 +95,7 @@ function openInnerPopup(url) {
         // folder=roomA 형식에서 folder값 추출
         const folderMatch = url.match(/folder=([^&]+)/);
         const folder = folderMatch ? folderMatch[1] : '';
+        console.log('[갤러리] folder 추출:', folder);
         if (!folder) return;
   
         // 이미지 갤러리 생성
@@ -106,6 +107,7 @@ if (!thumbnailContainer || !mainImage) {
   return;
 }
 
+console.log('[갤러리] 초기화 시작');
 thumbnailContainer.innerHTML = "";
 mainImage.src = "";
 mainImage.style.visibility = "hidden";
@@ -119,9 +121,11 @@ const totalImages = 10;
 
 // 첫 번째 이미지만 즉시 로드
 const firstImagePath = `home_infopage/images/${folder}/image1.webp`;
+console.log('[갤러리] 첫 이미지 로드:', firstImagePath);
 
 // 캐시 확인
 if (imageCache.has(firstImagePath)) {
+  console.log('[갤러리] 캐시에서 로드됨:', firstImagePath);
   mainImage.src = firstImagePath;
   mainImage.style.visibility = "visible";
   loader.remove();
@@ -136,9 +140,11 @@ if (imageCache.has(firstImagePath)) {
   });
   thumbnailContainer.appendChild(thumb);
 } else {
+  console.log('[갤러리] 새로 로드 시작:', firstImagePath);
   const firstImg = new Image();
   firstImg.src = firstImagePath;
   firstImg.onload = () => {
+    console.log('[갤러리] ✅ 첫 이미지 로드 성공:', firstImagePath);
     imageCache.set(firstImagePath, true);
     mainImage.src = firstImagePath;
     mainImage.style.visibility = "visible";
@@ -155,18 +161,20 @@ if (imageCache.has(firstImagePath)) {
     thumbnailContainer.appendChild(thumb);
   };
   firstImg.onerror = () => {
-    console.warn(`첫 이미지 로딩 실패: ${firstImagePath}`);
+    console.error('[갤러리] ❌ 첫 이미지 로딩 실패:', firstImagePath);
     loader.remove();
   };
 }
 
 // 나머지 이미지는 순차적으로 로드 (팝업이 이미 열린 후)
 setTimeout(() => {
+  console.log('[갤러리] 나머지 이미지 로드 시작 (2~10)');
   for (let i = 2; i <= totalImages; i++) {
     const imgPath = `home_infopage/images/${folder}/image${i}.webp`;
     
     // 캐시에 있으면 즉시 표시
     if (imageCache.has(imgPath)) {
+      console.log(`[갤러리] 캐시에서 로드 #${i}:`, imgPath);
       const thumb = document.createElement("img");
       thumb.src = imgPath;
       thumb.classList.add("thumbnail");
@@ -183,6 +191,7 @@ setTimeout(() => {
     img.src = imgPath;
 
     img.onload = () => {
+      console.log(`[갤러리] ✅ 이미지 로드 성공 #${i}:`, imgPath);
       imageCache.set(imgPath, true);
       const thumb = document.createElement("img");
       thumb.src = imgPath;
@@ -198,7 +207,7 @@ setTimeout(() => {
     };
 
     img.onerror = () => {
-      console.warn(`이미지 로딩 실패: ${imgPath}`);
+      console.error(`[갤러리] ❌ 이미지 로딩 실패 #${i}:`, imgPath);
     };
   }
 }, 100); // 100ms 후 나머지 이미지 로드 시작
