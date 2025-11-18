@@ -755,16 +755,9 @@ class Calendar {
     const { start: weekStart } = this.getWeekRange(this.currentDate);
     const todayDayIndex = Math.floor((today - weekStart) / (1000 * 60 * 60 * 24));
     
-    console.log('🏷️ [방라벨] 오늘:', today.toLocaleDateString('ko-KR'));
-    console.log('🏷️ [방라벨] 주시작:', weekStart.toLocaleDateString('ko-KR'));
-    console.log('🏷️ [방라벨] 오늘 인덱스:', todayDayIndex);
-    
     // 오늘이 현재 주에 있을 때만 방 라벨 표시
     if (todayDayIndex >= 0 && todayDayIndex < 7) {
-      console.log('🏷️ [방라벨] 렌더링 시작');
       html += this.renderRoomBottomLabels(todayDayIndex);
-    } else {
-      console.log('🏷️ [방라벨] 오늘이 현재 주에 없음');
     }
 
     this.container.innerHTML = html;
@@ -1459,9 +1452,6 @@ class Calendar {
     const dayWidth = 100 / 7;
     const todayLeft = dayWidth * todayDayIndex;
     
-    console.log('🏷️ [방라벨렌더] dayWidth:', dayWidth);
-    console.log('🏷️ [방라벨렌더] todayLeft:', todayLeft);
-    
     let html = `<div class="room-bottom-labels-outside" style="left: calc(3em + ${todayLeft}%); width: calc(${dayWidth}% - 1px);">`;
     
     roomLabels.forEach(room => {
@@ -1469,8 +1459,6 @@ class Calendar {
     });
     
     html += '</div>';
-    
-    console.log('🏷️ [방라벨렌더] HTML:', html);
     return html;
   }
 
