@@ -42,6 +42,10 @@ function setupBottomLayoutObserver() {
       const bottomControlsHeight = bottomControls.offsetHeight;
       const roomSelectorHeight = roomSelector.offsetHeight;
       
+      console.log("📏 [높이측정] bottom-controls:", bottomControlsHeight + "px");
+      console.log("📏 [높이측정] room-selector:", roomSelectorHeight + "px");
+      console.log("📏 [높이측정] 합계:", (bottomControlsHeight + roomSelectorHeight) + "px");
+      
       document.documentElement.style.setProperty("--bottom-controls-height", `${bottomControlsHeight}px`);
       document.documentElement.style.setProperty("--room-selector-height", `${roomSelectorHeight}px`);
     }
