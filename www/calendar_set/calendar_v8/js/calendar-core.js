@@ -469,6 +469,13 @@ class Calendar {
       roomLabels.style.display = (isTodayInWeek && !isSingleRoom) ? "flex" : "none";
       devLog(`📍 [room-labels] 오늘이 현재 주에 ${isTodayInWeek ? "있음" : "없음"}, 단일방: ${isSingleRoom} (todayDayIndex: ${todayDayIndex})`);
     }
+    
+    // room-dividers도 단일 방 선택 시 숨김
+    const roomDividers = document.querySelector(".room-dividers-container");
+    if (roomDividers) {
+      roomDividers.style.display = isSingleRoom ? "none" : "block";
+      devLog(`📍 [room-dividers] 단일방: ${isSingleRoom} - ${isSingleRoom ? "숨김" : "표시"}`);
+    }
 
     // 다음 프레임에서 트랜지션 재활성화
     requestAnimationFrame(() => {
