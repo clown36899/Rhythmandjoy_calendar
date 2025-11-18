@@ -1207,3 +1207,8 @@ body.single-room-view .room-bottom-labels-outside {
 .room-bottom-label:first-child {
   border-bottom-left-radius: 5px;
 }
+
+/* E홀 라벨 (마지막)만 오른쪽 아래 둥글게 */
+.room-bottom-label:last-child {
+  border-bottom-right-radius: 5px;
+}
