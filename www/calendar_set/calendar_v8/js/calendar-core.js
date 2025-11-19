@@ -774,9 +774,9 @@ class Calendar {
 
     try {
       devLog(
-        `🧭 [주 이동] 전체 캐시 리셋 - 방향: ${direction > 0 ? "다음 주" : "이전 주"}`,
+        `🧭 [주 이동] - 방향: ${direction > 0 ? "다음 주" : "이전 주"} (캐시 유지)`,
       );
-      this.weekDataCache.clear();
+      // ✅ 캐시를 지우지 않음 - 이미 로드된 데이터 재사용!
 
       const slides = this.container.querySelectorAll(".calendar-slide");
       if (slides.length !== 7) {
