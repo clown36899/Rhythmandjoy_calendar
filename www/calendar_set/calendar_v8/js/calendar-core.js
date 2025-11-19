@@ -15,6 +15,14 @@ class Calendar {
     this.timeUpdateInterval = null; // 현재 시간 업데이트 타이머
     this.renderPromise = null; // render 동시 실행 방지 배리어
     this.lastSwipeTime = 0; // 마지막 스와이프 시간 (클릭 vs 스와이프 구분)
+    
+    // 네이티브 터치 이벤트 리스너 참조 저장 (제거용)
+    this.currentSlider = null;
+    this.touchStartHandler = null;
+    this.touchMoveHandler = null;
+    this.touchEndHandler = null;
+    this.touchCancelHandler = null;
+    this.setupSwipeGesturesCallCount = 0; // 호출 횟수 추적
   }
 
   async init() {
@@ -105,6 +113,24 @@ class Calendar {
   }
 
   setupSwipeGestures() {
+    this.setupSwipeGesturesCallCount++;
+    
+    console.log(
+      `%c🔧 [SETUP] setupSwipeGestures 호출 #${this.setupSwipeGesturesCallCount}`,
+      "background: #ff00ff; color: white; font-weight: bold; padding: 3px 8px; font-size: 13px;",
+      {
+        시각: new Date().toLocaleTimeString("ko-KR", { 
+          hour12: false, 
+          hour: "2-digit", 
+          minute: "2-digit", 
+          second: "2-digit", 
+          fractionalSecondDigits: 3 
+        }),
+        "이전 slider 존재": !!this.currentSlider,
+        "이전 Hammer 존재": !!this.hammer,
+      }
+    );
+
     devLog("🔍 Hammer.js 확인:", typeof Hammer);
 
     if (typeof Hammer === "undefined") {
@@ -112,9 +138,33 @@ class Calendar {
       return;
     }
 
+    // ========================================
+    // 기존 네이티브 터치 리스너 제거
+    // ========================================
+    if (this.currentSlider && this.touchStartHandler) {
+      console.log(
+        `%c🧹 [CLEANUP] 기존 네이티브 터치 리스너 제거`,
+        "color: #ff9900; font-weight: bold;",
+        { slider: this.currentSlider }
+      );
+      
+      this.currentSlider.removeEventListener("touchstart", this.touchStartHandler);
+      this.currentSlider.removeEventListener("touchmove", this.touchMoveHandler);
+      this.currentSlider.removeEventListener("touchend", this.touchEndHandler);
+      this.currentSlider.removeEventListener("touchcancel", this.touchCancelHandler);
+      
+      this.touchStartHandler = null;
+      this.touchMoveHandler = null;
+      this.touchEndHandler = null;
+      this.touchCancelHandler = null;
+    }
+
     // 기존 Hammer 인스턴스 제거
     if (this.hammer) {
-      devLog("🔄 기존 Hammer 제거");
+      console.log(
+        `%c🧹 [CLEANUP] 기존 Hammer 인스턴스 제거`,
+        "color: #ff9900; font-weight: bold;"
+      );
       this.hammer.destroy();
       this.hammer = null;
     }
@@ -125,18 +175,28 @@ class Calendar {
       return;
     }
 
+    // 현재 slider 참조 저장
+    this.currentSlider = slider;
+    
+    console.log(
+      `%c✅ [SETUP] 새 slider 요소 발견`,
+      "background: #00ff00; color: black; padding: 2px 5px;",
+      { slider: slider }
+    );
+
     // ========================================
     // 네이티브 터치 이벤트 리스너 추가 (디버깅용)
     // ========================================
     let nativeTouchStartTime = 0;
     let nativeTouchCount = 0;
     
-    slider.addEventListener("touchstart", (e) => {
+    // 리스너 함수 정의 및 저장
+    this.touchStartHandler = (e) => {
       nativeTouchStartTime = Date.now();
       nativeTouchCount++;
       const touch = e.touches[0];
       console.log(
-        `%c🟢 [NATIVE TOUCH] touchstart #${nativeTouchCount}`,
+        `%c🟢 [NATIVE TOUCH] touchstart #${nativeTouchCount} (setup호출 #${this.setupSwipeGesturesCallCount})`,
         "color: #00ff00; font-weight: bold; font-size: 12px;",
         {
           시각: new Date().toLocaleTimeString("ko-KR", { 
@@ -150,11 +210,12 @@ class Calendar {
           "X좌표": touch ? Math.round(touch.clientX) : "N/A",
           "Y좌표": touch ? Math.round(touch.clientY) : "N/A",
           타겟: e.target.className,
+          sliderID: slider === this.currentSlider ? "현재" : "이전",
         }
       );
-    }, { passive: true });
+    };
 
-    slider.addEventListener("touchmove", (e) => {
+    this.touchMoveHandler = (e) => {
       const touch = e.touches[0];
       const elapsed = Date.now() - nativeTouchStartTime;
       console.log(
@@ -167,9 +228,9 @@ class Calendar {
           "Y좌표": touch ? Math.round(touch.clientY) : "N/A",
         }
       );
-    }, { passive: true });
+    };
 
-    slider.addEventListener("touchend", (e) => {
+    this.touchEndHandler = (e) => {
       const duration = Date.now() - nativeTouchStartTime;
       console.log(
         `%c🔴 [NATIVE TOUCH] touchend`,
@@ -179,9 +240,9 @@ class Calendar {
           남은터치: e.touches.length,
         }
       );
-    }, { passive: true });
+    };
 
-    slider.addEventListener("touchcancel", (e) => {
+    this.touchCancelHandler = (e) => {
       console.log(
         `%c⚠️ [NATIVE TOUCH] touchcancel`,
         "color: #ff9900; font-weight: bold; font-size: 12px;",
@@ -190,7 +251,18 @@ class Calendar {
           남은터치: e.touches.length,
         }
       );
-    }, { passive: true });
+    };
+
+    // 리스너 등록
+    slider.addEventListener("touchstart", this.touchStartHandler, { passive: true });
+    slider.addEventListener("touchmove", this.touchMoveHandler, { passive: true });
+    slider.addEventListener("touchend", this.touchEndHandler, { passive: true });
+    slider.addEventListener("touchcancel", this.touchCancelHandler, { passive: true });
+    
+    console.log(
+      `%c✅ [SETUP] 네이티브 터치 리스너 등록 완료`,
+      "background: #00ff00; color: black; padding: 2px 5px;"
+    );
 
     // ========================================
     // Hammer.js 설정
