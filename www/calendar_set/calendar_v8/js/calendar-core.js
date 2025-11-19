@@ -410,14 +410,6 @@ class Calendar {
         swipeStartTime = Date.now();
         this.isPanning = true;
 
-        // ✅ 7개 room-label-container transition 제거
-        const labelContainers = document.querySelectorAll(".room-label-container");
-        if (labelContainers.length === 7) {
-          labelContainers.forEach((container) => {
-            container.style.transition = "none";
-          });
-        }
-
         console.log(
           `%c✅ [HAMMER] 스와이프 시작 승인`,
           "background: #00ff00; color: black; font-weight: bold; padding: 2px 5px;",
@@ -821,14 +813,6 @@ class Calendar {
         slide.style.transform = `translateX(${targets[i]}%)`;
       });
 
-      // ✅ 7개 room-label-container도 슬라이드와 함께 이동
-      const labelContainers = document.querySelectorAll(".room-label-container");
-      if (labelContainers.length === 7) {
-        labelContainers.forEach((container, i) => {
-          container.style.transform = `translateX(${targets[i]}%)`;
-        });
-      }
-
       console.log(
         `%c📍 [NAVIGATE] Step 3: transitionend 리스너 등록`,
         "color: #666; font-size: 11px;",
@@ -906,12 +890,6 @@ class Calendar {
       slide.style.transition = "none";
     });
 
-    // ✅ 7개 라벨 컨테이너도 transition 제거
-    const labelContainers = document.querySelectorAll(".room-label-container");
-    labelContainers.forEach((container) => {
-      container.style.transition = "none";
-    });
-
     // DOM 재배열 (7개 슬라이드)
     if (direction === 1) {
       // 다음 주: 첫 슬라이드를 끝으로
@@ -919,18 +897,6 @@ class Calendar {
     } else {
       // 이전 주: 끝 슬라이드를 처음으로
       slider.insertBefore(slides[6], slides[0]);
-    }
-
-    // ✅ 7개 라벨 컨테이너도 DOM 재배열
-    if (labelsSlider && labelContainers.length === 7) {
-      const labelArray = Array.from(labelContainers);
-      if (direction === 1) {
-        // 다음 주: 첫 컨테이너를 끝으로
-        labelsSlider.appendChild(labelArray[0]);
-      } else {
-        // 이전 주: 끝 컨테이너를 처음으로
-        labelsSlider.insertBefore(labelArray[6], labelArray[0]);
-      }
     }
 
     console.log(
@@ -1322,10 +1288,8 @@ class Calendar {
     this.events = this.getMergedEventsFromCache(dates);
     devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
-    // 고정 시간 열 + wrapper로 감싸기
+    // 고정 시간 열 + 슬라이더 생성
     let html = this.renderTimeColumn();
-
-    html += '<div class="calendar-slider-wrapper">';  // ✅ wrapper 추가
 
     html += '<div class="calendar-slider">';
 
@@ -1337,35 +1301,7 @@ class Calendar {
       html += "</div>";
     });
 
-    html += "</div>";  // calendar-slider 닫기
-
-    // ✅ 7개 room-label-container 생성 (같은 wrapper 안)
-    html += '<div class="room-labels-slider">';
-
-    dates.forEach((date, i) => {
-      const { start: weekStart } = this.getWeekRange(date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayDayIndex = Math.floor(
-        (today - weekStart) / (1000 * 60 * 60 * 24),
-      );
-      
-      // 오늘이 이 주에 포함되어 있는지 확인
-      const isCurrentWeek = todayDayIndex >= 0 && todayDayIndex < 7;
-      
-      html += `<div class="room-label-container" style="transform: translateX(${translateValues[i]}%)">`;
-      
-      // 오늘이 있는 주이고, 모든 방 표시(ALL) 상태일 때만 라벨 표시
-      if (isCurrentWeek && this.selectedRooms.size !== 1) {
-        html += this.renderRoomBottomLabelsContent(todayDayIndex);
-      }
-      
-      html += "</div>";
-    });
-
-    html += "</div>";  // room-labels-slider 닫기
-
-    html += "</div>";  // ✅ wrapper 닫기
+    html += "</div>";
 
     this.container.innerHTML = html;
 
@@ -1524,6 +1460,20 @@ class Calendar {
       html += "</div>";
     });
 
+    // ✅ 라벨 행 추가 (24시 아래)
+    html += '<div class="time-row room-label-row">';
+    days.forEach((day) => {
+      const isToday = day.getTime() === today.getTime();
+      // 오늘 날짜이고 모든 방 표시(ALL)일 때만 A B C D E 라벨 표시
+      if (isToday && this.selectedRooms.size !== 1) {
+        html += `<div class="time-cell weekday-evening room-labels-cell">${this.renderRoomLabelsInCell()}</div>`;
+      } else {
+        // 나머지는 회색 바
+        html += `<div class="time-cell weekday-evening"></div>`;
+      }
+    });
+    html += "</div>";
+
     // Event layer - one container per day
     days.forEach((day, dayIndex) => {
       const dayEvents = this.getEventsForDay(day);
@@ -1586,6 +1536,9 @@ class Calendar {
 
       html += `<div class="time-label ${timeLabelClass}">${hourLabel}</div>`;
     });
+
+    // ✅ 24시 아래에 라벨용 셀 추가
+    html += '<div class="time-label room-label-row"></div>';
 
     html += "</div>";
     return html;
@@ -2117,8 +2070,8 @@ class Calendar {
     );
   }
 
-  renderRoomBottomLabelsContent(todayDayIndex) {
-    // 5개 방 이름과 색상
+  renderRoomLabelsInCell() {
+    // 5개 방 이름과 색상 (A B C D E)
     const roomLabels = [
       { position: 10, roomName: "A", roomId: "a" },
       { position: 30, roomName: "B", roomId: "b" },
@@ -2127,16 +2080,12 @@ class Calendar {
       { position: 90, roomName: "E", roomId: "e" },
     ];
 
-    // ✅ left를 제거! room-label-container가 이미 위치를 담당
-    // 오늘 날짜 컬럼의 너비만 설정
-    const dayWidth = 100 / 7; // 14.28%
-
-    let html = `<div class="room-bottom-labels" style="width: ${dayWidth}%; margin-left: ${todayDayIndex * dayWidth}%;">`;
+    let html = '<div class="room-labels-in-cell">';
 
     roomLabels.forEach((room) => {
       const roomColor =
         CONFIG.rooms[room.roomId]?.color || "rgba(255, 255, 255, 0.15)";
-      html += `<div class="room-bottom-label" style="left: ${room.position}%; background-color: ${roomColor};">${room.roomName}</div>`;
+      html += `<div class="room-label-badge" style="left: ${room.position}%; background-color: ${roomColor};">${room.roomName}</div>`;
     });
 
     html += "</div>";
