@@ -1157,7 +1157,7 @@ body.single-room-view .room-bottom-labels-outside {
 /* ✅ 새로운 구조: absolute로 변경, wrapper 안에서 위치 */
 .room-labels-slider {
   position: absolute;
-  bottom: calc(var(--bottom-controls-height, 0px) + var(--room-selector-height, 0px) - 2.5em + 6px);
+  bottom: 20px;  /* ✅ 테스트: 간단한 값으로 시작 */
   left: 0;
   right: 0;
   height: 2.5em;
