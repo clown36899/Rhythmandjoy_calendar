@@ -466,15 +466,7 @@ class Calendar {
           const newPos = slideStarts[i] + percentMove;
           slide.style.transform = `translateX(${newPos}%)`;
         });
-
-        // ✅ 각 슬라이드 내의 라벨 컨테이너도 함께 드래그
-        slides.forEach((slide, i) => {
-          const slideLabels = slide.querySelectorAll(".room-label-container");
-          const newPos = slideStarts[i] + percentMove;
-          slideLabels.forEach((container) => {
-            container.style.transform = `translateX(${newPos}%)`;
-          });
-        });
+        // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
       }
     });
 
@@ -555,16 +547,7 @@ class Calendar {
               "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
             slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
           });
-
-          // ✅ 각 슬라이드 내의 라벨 컨테이너도 원위치로
-          slides.forEach((slide, i) => {
-            const slideLabels = slide.querySelectorAll(".room-label-container");
-            slideLabels.forEach((container) => {
-              container.style.transition =
-                "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
-              container.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
-            });
-          });
+          // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
           return;
         }
 
@@ -572,14 +555,7 @@ class Calendar {
         slides.forEach((slide) => {
           slide.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
         });
-
-        // ✅ 각 슬라이드 내의 라벨 컨테이너도 transition 설정
-        slides.forEach((slide) => {
-          const slideLabels = slide.querySelectorAll(".room-label-container");
-          slideLabels.forEach((container) => {
-            container.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
-          });
-        });
+        // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
 
         const sliderElement = this.container.querySelector(".calendar-slider");
         const sliderWidth = sliderElement
@@ -662,13 +638,7 @@ class Calendar {
           slides.forEach((slide, i) => {
             slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
           });
-
-          const roomLabels = document.querySelector(
-            ".room-bottom-labels-outside",
-          );
-          if (roomLabels) {
-            roomLabels.style.transform = "translateX(0px)";
-          }
+          // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
         }
       }
     });
@@ -913,12 +883,7 @@ class Calendar {
     const newSlides = this.container.querySelectorAll(".calendar-slide");
     newSlides.forEach((slide, i) => {
       slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
-      
-      // ✅ 이 슬라이드 내의 라벨 컨테이너도 원위치로 리셋
-      const slideLabels = slide.querySelectorAll(".room-label-container");
-      slideLabels.forEach((container) => {
-        container.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
-      });
+      // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
     });
 
     // 레이아웃 조정
@@ -934,12 +899,7 @@ class Calendar {
     requestAnimationFrame(() => {
       newSlides.forEach((slide) => {
         slide.style.transition = "";
-        
-        // ✅ 이 슬라이드 내의 라벨 컨테이너도 transition 재활성화
-        const slideLabels = slide.querySelectorAll(".room-label-container");
-        slideLabels.forEach((container) => {
-          container.style.transition = "";
-        });
+        // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
       });
     });
 
