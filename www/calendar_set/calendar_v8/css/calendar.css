@@ -1168,7 +1168,7 @@ body.single-room-view .room-bottom-labels-outside {
 }
 
 .room-bottom-labels {
-  position: absolute;
+  position: relative;  /* ✅ relative로 변경 - 컨테이너 내부에서만 상대적 위치 */
   height: 100%;
   display: flex;
   align-items: center;

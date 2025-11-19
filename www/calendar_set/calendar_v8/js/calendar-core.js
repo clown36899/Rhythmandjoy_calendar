@@ -2122,11 +2122,11 @@ class Calendar {
       { position: 90, roomName: "E", roomId: "e" },
     ];
 
-    // 오늘 날짜 컬럼에 맞춰 위치 계산 (7개 중 몇 번째)
+    // ✅ left를 제거! room-label-container가 이미 위치를 담당
+    // 오늘 날짜 컬럼의 너비만 설정
     const dayWidth = 100 / 7; // 14.28%
-    const baseLeft = dayWidth * todayDayIndex;
 
-    let html = `<div class="room-bottom-labels" style="left: ${baseLeft}%; width: ${dayWidth}%;">`;
+    let html = `<div class="room-bottom-labels" style="width: ${dayWidth}%; margin-left: ${todayDayIndex * dayWidth}%;">`;
 
     roomLabels.forEach((room) => {
       const roomColor =
