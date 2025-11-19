@@ -1734,13 +1734,21 @@ class Calendar {
 
       // 각 시간 라벨의 높이를 week-view의 row 높이와 동일하게 설정
       const timeLabels = this.container.querySelectorAll(
-        ".time-column-fixed .time-label",
+        ".time-column-fixed .time-label:not(.room-label-row)",
       );
       timeLabels.forEach((label) => {
         label.style.height = `${rowHeight}px`;
         label.style.minHeight = `${rowHeight}px`;
         label.style.maxHeight = `${rowHeight}px`;
       });
+      
+      // 라벨 행은 고정 높이 설정
+      const labelRow = this.container.querySelector(".time-label.room-label-row");
+      if (labelRow) {
+        labelRow.style.height = `${labelRowHeight}px`;
+        labelRow.style.minHeight = `${labelRowHeight}px`;
+        labelRow.style.maxHeight = `${labelRowHeight}px`;
+      }
 
       // 레이아웃 변경 후 시간 인디케이터 및 방 라벨 위치 재계산 (화면 크기 변경 대응)
       this.updateCurrentTimeIndicator();
