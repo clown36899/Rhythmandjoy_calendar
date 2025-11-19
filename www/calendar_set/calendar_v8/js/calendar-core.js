@@ -320,12 +320,12 @@ class Calendar {
     });
     this.hammer.get("pan").set({
       direction: Hammer.DIRECTION_HORIZONTAL,
-      threshold: 10, // 업계 표준 (Hammer 기본값)
+      threshold: 5, // 모든 터치에 반응
       enable: true,
     });
 
     console.log(
-      `%c✅ [SETUP] Hammer 생성 완료 (threshold: 10px - 업계 표준)`,
+      `%c✅ [SETUP] Hammer 생성 완료 (threshold: 5px - 초민감)`,
       "background: #00ff00; color: black; padding: 2px 5px;"
     );
     devLog("✅ Hammer 새로 생성 (touchAction: auto):", slider);
@@ -564,17 +564,17 @@ class Calendar {
         const sliderWidth = sliderElement
           ? sliderElement.offsetWidth
           : this.container.offsetWidth;
-        const distanceThreshold = sliderWidth * 0.3; // 느린 드래그용
+        const distanceThreshold = sliderWidth * 0.5; // 느린 드래그: 50% 이상
         const velocityThreshold = 0.5;
         
         // 플링 vs 드래그 구분
-        const fastSwipeTimeLimit = 300; // 300ms 미만이면 빠른 스와이프(플링)
+        const fastSwipeTimeLimit = 200; // 200ms 미만이면 빠른 스와이프(플링)
         const isFastSwipe = duration < fastSwipeTimeLimit;
         
         let shouldNavigate;
         if (isFastSwipe) {
-          // 빠른 스와이프(플링): 조금만 움직여도 넘어감
-          const minFlickDistance = 10; // 최소 10px
+          // 빠른 스와이프(플링): 아주 조금만 움직여도 넘어감
+          const minFlickDistance = 5; // 최소 5px
           shouldNavigate = distance >= minFlickDistance;
           
           console.log(
@@ -583,7 +583,7 @@ class Calendar {
             {
               판정: shouldNavigate ? "✅ 넘어감" : "❌ 안넘어감",
               "이동거리": `${distance.toFixed(0)}px`,
-              "최소거리": `${minFlickDistance}px`,
+              "최소거리": `${minFlickDistance}px (초민감)`,
               조건: `${distance.toFixed(0)} >= ${minFlickDistance} = ${shouldNavigate}`,
             }
           );
@@ -722,12 +722,11 @@ class Calendar {
       `%c✅ 터치 이벤트 로깅 설정 완료`,
       "background: #00ff00; color: black; font-weight: bold; padding: 5px 10px; font-size: 14px;",
       {
-        "Hammer threshold": "10px (업계 표준)",
-        "네비게이션 거리": "30% (업계 표준)",
-        "네비게이션 속도": "0.5 (업계 표준)",
+        "Hammer threshold": "5px (초민감)",
+        "빠른 플링": "200ms 미만, 5px 이상 → 넘어감",
+        "느린 드래그": "200ms 이상, 50% 이상 → 넘어감",
         "네이티브 이벤트": "활성화",
         "Hammer 이벤트": "활성화",
-        "참고": "Instagram/iOS Safari 수준",
       }
     );
   }
