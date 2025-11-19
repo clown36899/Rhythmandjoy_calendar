@@ -1681,9 +1681,9 @@ class Calendar {
 
       const headerHeight = headerElement.getBoundingClientRect().height;
       const weekViewHeight = firstWeekView.clientHeight;
-      const availableHeight = weekViewHeight - headerHeight;
-      const rowHeight = availableHeight / 24; // 원래대로: 24시간 행 높이 유지
       const labelRowHeight = 32; // 라벨 행 고정 높이
+      const availableHeight = weekViewHeight - headerHeight - labelRowHeight; // 라벨 행 공간 확보
+      const rowHeight = availableHeight / 24; // 24시간을 남은 공간에 맞춤
 
       // 모든 슬라이드의 week-view 조정
       const allWeekViews = this.container.querySelectorAll(".week-view");
