@@ -463,7 +463,7 @@ class Calendar {
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
 
       const slides = this.container.querySelectorAll(".calendar-slide");
-      if (slides.length === 3) {
+      if (slides.length === 7) {
         const sliderElement = this.container.querySelector(".calendar-slider");
         const sliderWidth = sliderElement
           ? sliderElement.offsetWidth
@@ -529,7 +529,7 @@ class Calendar {
       this.isPanning = false;
 
       const slides = this.container.querySelectorAll(".calendar-slide");
-      if (slides.length === 3) {
+      if (slides.length === 7) {
         const swipeEndTime = Date.now();
         const duration = swipeEndTime - swipeStartTime;
         const distance = Math.abs(e.deltaX);
@@ -558,7 +558,7 @@ class Calendar {
           slides.forEach((slide, i) => {
             slide.style.transition =
               "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
-            slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
+            slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
           });
 
           const roomLabels = document.querySelector(
@@ -588,11 +588,11 @@ class Calendar {
         const sliderWidth = sliderElement
           ? sliderElement.offsetWidth
           : this.container.offsetWidth;
-        const distanceThreshold = sliderWidth * 0.6; // 느린 드래그: 50% 이상
+        const distanceThreshold = sliderWidth * 0.5; // 느린 드래그: 50% 이상
         const velocityThreshold = 0.5;
 
         // 플링 vs 드래그 구분
-        const fastSwipeTimeLimit = 100; // 200ms 미만이면 빠른 스와이프(플링)
+        const fastSwipeTimeLimit = 200; // 200ms 미만이면 빠른 스와이프(플링)
         const isFastSwipe = duration < fastSwipeTimeLimit;
 
         let shouldNavigate;
@@ -663,7 +663,7 @@ class Calendar {
             "color: #ff9900; font-weight: bold;",
           );
           slides.forEach((slide, i) => {
-            slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
+            slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
           });
 
           const roomLabels = document.querySelector(
