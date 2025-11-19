@@ -1321,8 +1321,10 @@ class Calendar {
     this.events = this.getMergedEventsFromCache(dates);
     devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
-    // 고정 시간 열 + 슬라이더 생성
+    // 고정 시간 열 + wrapper로 감싸기
     let html = this.renderTimeColumn();
+
+    html += '<div class="calendar-slider-wrapper">';  // ✅ wrapper 추가
 
     html += '<div class="calendar-slider">';
 
@@ -1334,9 +1336,9 @@ class Calendar {
       html += "</div>";
     });
 
-    html += "</div>";
+    html += "</div>";  // calendar-slider 닫기
 
-    // ✅ 7개 room-label-container 생성 (슬라이드와 동일한 구조)
+    // ✅ 7개 room-label-container 생성 (같은 wrapper 안)
     html += '<div class="room-labels-slider">';
 
     dates.forEach((date, i) => {
@@ -1360,7 +1362,9 @@ class Calendar {
       html += "</div>";
     });
 
-    html += "</div>";
+    html += "</div>";  // room-labels-slider 닫기
+
+    html += "</div>";  // ✅ wrapper 닫기
 
     this.container.innerHTML = html;
 

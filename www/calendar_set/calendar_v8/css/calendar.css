@@ -1146,11 +1146,19 @@ body.single-room-view .room-bottom-labels-outside {
   /* ← 오늘 날짜 배경 컬러 */
 }
 
-/* ✅ 새로운 구조: 7개 라벨 컨테이너 슬라이더 */
+/* ✅ wrapper: calendar-slider와 room-labels-slider를 함께 감싸기 */
+.calendar-slider-wrapper {
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+  width: 100%;
+}
+
+/* ✅ 새로운 구조: absolute로 변경, wrapper 안에서 위치 */
 .room-labels-slider {
-  position: fixed;
+  position: absolute;
   bottom: calc(var(--bottom-controls-height, 0px) + var(--room-selector-height, 0px) - 2.5em + 6px);
-  left: var(--time-column-width, 40px);
+  left: 0;
   right: 0;
   height: 2.5em;
   overflow: hidden;
