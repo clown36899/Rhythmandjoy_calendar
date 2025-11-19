@@ -1681,16 +1681,16 @@ class Calendar {
 
       const headerHeight = headerElement.getBoundingClientRect().height;
       const weekViewHeight = firstWeekView.clientHeight;
-      const labelRowHeight = 32; // 라벨 행 고정 높이
       const availableHeight = weekViewHeight - headerHeight;
-      const rowHeight = (availableHeight - labelRowHeight) / 24; // 24시간 행에서 라벨 높이만큼 빼기
+      const rowHeight = availableHeight / 24; // 원래대로: 24시간 행 높이 유지
+      const labelRowHeight = 32; // 라벨 행 고정 높이
 
       // 모든 슬라이드의 week-view 조정
       const allWeekViews = this.container.querySelectorAll(".week-view");
 
       allWeekViews.forEach((weekView) => {
-        // Grid 행 높이를 동적으로 설정: 헤더 + 24시간 + 라벨행
-        weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px) ${labelRowHeight}px`;
+        // Grid 행 높이를 원래대로: 헤더 + 24시간만
+        weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px)`;
 
         // 이 weekView 안의 이벤트 컨테이너들 조정 (7개 요일만)
         const eventContainers = weekView.querySelectorAll(
@@ -1719,11 +1719,17 @@ class Calendar {
           container.style.left = `${dayLeft}px`;
           container.style.width = `${dayWidthAdjusted}px`;
           container.style.top = `${headerHeight}px`;
-          container.style.bottom = "0";
+          container.style.bottom = `${labelRowHeight}px`; // 라벨 행 높이만큼 여백
           container.style.paddingTop = "0";
           container.style.height = `${availableHeight}px`;
         });
       });
+
+      // calendar-slider의 bottom을 라벨 행 높이만큼 늘림
+      const slider = this.container.querySelector(".calendar-slider");
+      if (slider) {
+        slider.style.bottom = `${labelRowHeight}px`;
+      }
 
       // 고정된 시간 열의 헤더 및 각 시간 라벨 높이 조정
       const timeHeaderSpace =
@@ -1734,21 +1740,21 @@ class Calendar {
 
       // 각 시간 라벨의 높이를 week-view의 row 높이와 동일하게 설정
       const timeLabels = this.container.querySelectorAll(
-        ".time-column-fixed .time-label:not(.room-label-row)",
+        ".time-column-fixed .time-label",
       );
       timeLabels.forEach((label) => {
-        label.style.height = `${rowHeight}px`;
-        label.style.minHeight = `${rowHeight}px`;
-        label.style.maxHeight = `${rowHeight}px`;
+        // 라벨 행이 아닌 시간 라벨만 조정
+        if (!label.classList.contains("room-label-row")) {
+          label.style.height = `${rowHeight}px`;
+          label.style.minHeight = `${rowHeight}px`;
+          label.style.maxHeight = `${rowHeight}px`;
+        } else {
+          // 라벨 행은 고정 높이
+          label.style.height = `${labelRowHeight}px`;
+          label.style.minHeight = `${labelRowHeight}px`;
+          label.style.maxHeight = `${labelRowHeight}px`;
+        }
       });
-      
-      // 라벨 행은 고정 높이 설정
-      const labelRow = this.container.querySelector(".time-label.room-label-row");
-      if (labelRow) {
-        labelRow.style.height = `${labelRowHeight}px`;
-        labelRow.style.minHeight = `${labelRowHeight}px`;
-        labelRow.style.maxHeight = `${labelRowHeight}px`;
-      }
 
       // 레이아웃 변경 후 시간 인디케이터 및 방 라벨 위치 재계산 (화면 크기 변경 대응)
       this.updateCurrentTimeIndicator();
