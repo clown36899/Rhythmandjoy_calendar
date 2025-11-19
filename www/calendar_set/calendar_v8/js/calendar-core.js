@@ -1689,8 +1689,8 @@ class Calendar {
       const allWeekViews = this.container.querySelectorAll(".week-view");
 
       allWeekViews.forEach((weekView) => {
-        // Grid 행 높이를 원래대로: 헤더 + 24시간만
-        weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px)`;
+        // Grid 행 높이: 헤더 + 24시간 + 라벨행
+        weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px) ${labelRowHeight}px`;
 
         // 이 weekView 안의 이벤트 컨테이너들 조정 (7개 요일만)
         const eventContainers = weekView.querySelectorAll(
@@ -1719,17 +1719,11 @@ class Calendar {
           container.style.left = `${dayLeft}px`;
           container.style.width = `${dayWidthAdjusted}px`;
           container.style.top = `${headerHeight}px`;
-          container.style.bottom = `${labelRowHeight}px`; // 라벨 행 높이만큼 여백
+          container.style.bottom = "0";
           container.style.paddingTop = "0";
           container.style.height = `${availableHeight}px`;
         });
       });
-
-      // calendar-slider의 bottom을 라벨 행 높이만큼 늘림
-      const slider = this.container.querySelector(".calendar-slider");
-      if (slider) {
-        slider.style.bottom = `${labelRowHeight}px`;
-      }
 
       // 고정된 시간 열의 헤더 및 각 시간 라벨 높이 조정
       const timeHeaderSpace =
