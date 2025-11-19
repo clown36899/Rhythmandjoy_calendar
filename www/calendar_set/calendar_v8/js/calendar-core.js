@@ -15,7 +15,7 @@ class Calendar {
     this.timeUpdateInterval = null; // 현재 시간 업데이트 타이머
     this.renderPromise = null; // render 동시 실행 방지 배리어
     this.lastSwipeTime = 0; // 마지막 스와이프 시간 (클릭 vs 스와이프 구분)
-    
+
     // 네이티브 터치 이벤트 리스너 참조 저장 (제거용)
     this.currentSlider = null;
     this.touchStartHandler = null;
@@ -103,32 +103,33 @@ class Calendar {
         slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
       });
     }
-    
+
     // room-bottom-labels-outside도 원위치
     const roomLabels = document.querySelector(".room-bottom-labels-outside");
     if (roomLabels) {
-      roomLabels.style.transition = "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
+      roomLabels.style.transition =
+        "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
       roomLabels.style.transform = "translateX(0px)";
     }
   }
 
   setupSwipeGestures() {
     this.setupSwipeGesturesCallCount++;
-    
+
     console.log(
       `%c🔧 [SETUP] setupSwipeGestures 호출 #${this.setupSwipeGesturesCallCount}`,
       "background: #ff00ff; color: white; font-weight: bold; padding: 3px 8px; font-size: 13px;",
       {
-        시각: new Date().toLocaleTimeString("ko-KR", { 
-          hour12: false, 
-          hour: "2-digit", 
-          minute: "2-digit", 
-          second: "2-digit", 
-          fractionalSecondDigits: 3 
+        시각: new Date().toLocaleTimeString("ko-KR", {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          fractionalSecondDigits: 3,
         }),
         "이전 slider 존재": !!this.currentSlider,
         "이전 Hammer 존재": !!this.hammer,
-      }
+      },
     );
 
     devLog("🔍 Hammer.js 확인:", typeof Hammer);
@@ -145,14 +146,23 @@ class Calendar {
       console.log(
         `%c🧹 [CLEANUP] 기존 네이티브 터치 리스너 제거`,
         "color: #ff9900; font-weight: bold;",
-        { slider: this.currentSlider }
+        { slider: this.currentSlider },
       );
-      
-      this.currentSlider.removeEventListener("touchstart", this.touchStartHandler);
-      this.currentSlider.removeEventListener("touchmove", this.touchMoveHandler);
+
+      this.currentSlider.removeEventListener(
+        "touchstart",
+        this.touchStartHandler,
+      );
+      this.currentSlider.removeEventListener(
+        "touchmove",
+        this.touchMoveHandler,
+      );
       this.currentSlider.removeEventListener("touchend", this.touchEndHandler);
-      this.currentSlider.removeEventListener("touchcancel", this.touchCancelHandler);
-      
+      this.currentSlider.removeEventListener(
+        "touchcancel",
+        this.touchCancelHandler,
+      );
+
       this.touchStartHandler = null;
       this.touchMoveHandler = null;
       this.touchEndHandler = null;
@@ -163,7 +173,7 @@ class Calendar {
     if (this.hammer) {
       console.log(
         `%c🧹 [CLEANUP] 기존 Hammer 인스턴스 제거`,
-        "color: #ff9900; font-weight: bold;"
+        "color: #ff9900; font-weight: bold;",
       );
       this.hammer.destroy();
       this.hammer = null;
@@ -177,11 +187,11 @@ class Calendar {
 
     // 현재 slider 참조 저장
     this.currentSlider = slider;
-    
+
     console.log(
       `%c✅ [SETUP] 새 slider 요소 발견`,
       "background: #00ff00; color: black; padding: 2px 5px;",
-      { slider: slider }
+      { slider: slider },
     );
 
     // ========================================
@@ -191,35 +201,35 @@ class Calendar {
     let nativeTouchCount = 0;
     let lastTouchId = 0;
     let orphanedTouchTimer = null;
-    
+
     // 리스너 함수 정의 및 저장
     this.touchStartHandler = (e) => {
       nativeTouchStartTime = Date.now();
       nativeTouchCount++;
       lastTouchId = nativeTouchCount;
       const touch = e.touches[0];
-      
+
       console.log(
         `%c🟢 [NATIVE TOUCH] touchstart #${nativeTouchCount} (setup호출 #${this.setupSwipeGesturesCallCount})`,
         "color: #00ff00; font-weight: bold; font-size: 12px;",
         {
-          시각: new Date().toLocaleTimeString("ko-KR", { 
-            hour12: false, 
-            hour: "2-digit", 
-            minute: "2-digit", 
-            second: "2-digit", 
-            fractionalSecondDigits: 3 
+          시각: new Date().toLocaleTimeString("ko-KR", {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            fractionalSecondDigits: 3,
           }),
           터치개수: e.touches.length,
-          "X좌표": touch ? Math.round(touch.clientX) : "N/A",
-          "Y좌표": touch ? Math.round(touch.clientY) : "N/A",
+          X좌표: touch ? Math.round(touch.clientX) : "N/A",
+          Y좌표: touch ? Math.round(touch.clientY) : "N/A",
           타겟: e.target.className,
           sliderID: slider === this.currentSlider ? "현재" : "이전",
           "🚨isAnimating": this.isAnimating,
           "🚨isPanning": this.isPanning,
-        }
+        },
       );
-      
+
       // 유령 터치 감지: 200ms 내에 touchmove나 touchend가 안 오면 경고
       if (orphanedTouchTimer) clearTimeout(orphanedTouchTimer);
       const currentTouchId = lastTouchId;
@@ -229,10 +239,11 @@ class Calendar {
           "background: #ff0000; color: white; font-weight: bold; padding: 3px 8px; font-size: 13px;",
           {
             경과시간: "200ms+",
-            "예상원인": "터치했지만 움직이지 않았거나, 브라우저가 이벤트를 무시함",
+            예상원인:
+              "터치했지만 움직이지 않았거나, 브라우저가 이벤트를 무시함",
             "🚨isAnimating": this.isAnimating,
             "🚨isPanning": this.isPanning,
-          }
+          },
         );
       }, 200);
     };
@@ -243,7 +254,7 @@ class Calendar {
         clearTimeout(orphanedTouchTimer);
         orphanedTouchTimer = null;
       }
-      
+
       const touch = e.touches[0];
       const elapsed = Date.now() - nativeTouchStartTime;
       console.log(
@@ -252,9 +263,9 @@ class Calendar {
         {
           경과시간: `${elapsed}ms`,
           터치개수: e.touches.length,
-          "X좌표": touch ? Math.round(touch.clientX) : "N/A",
-          "Y좌표": touch ? Math.round(touch.clientY) : "N/A",
-        }
+          X좌표: touch ? Math.round(touch.clientX) : "N/A",
+          Y좌표: touch ? Math.round(touch.clientY) : "N/A",
+        },
       );
     };
 
@@ -264,22 +275,22 @@ class Calendar {
         clearTimeout(orphanedTouchTimer);
         orphanedTouchTimer = null;
       }
-      
+
       const duration = Date.now() - nativeTouchStartTime;
       const wasShortTouch = duration < 100;
       console.log(
-        wasShortTouch 
-          ? `%c🔴 [NATIVE TOUCH] touchend (짧은터치 ${duration}ms)` 
+        wasShortTouch
+          ? `%c🔴 [NATIVE TOUCH] touchend (짧은터치 ${duration}ms)`
           : `%c🔴 [NATIVE TOUCH] touchend`,
-        wasShortTouch 
-          ? "color: #ff0000; font-weight: bold; font-size: 12px; background: yellow;" 
+        wasShortTouch
+          ? "color: #ff0000; font-weight: bold; font-size: 12px; background: yellow;"
           : "color: #ff0000; font-weight: bold; font-size: 12px;",
         {
           총소요시간: `${duration}ms`,
           남은터치: e.touches.length,
           "🚨isAnimating": this.isAnimating,
           "🚨isPanning": this.isPanning,
-        }
+        },
       );
     };
 
@@ -289,26 +300,34 @@ class Calendar {
         clearTimeout(orphanedTouchTimer);
         orphanedTouchTimer = null;
       }
-      
+
       console.log(
         `%c⚠️ [NATIVE TOUCH] touchcancel`,
         "color: #ff9900; font-weight: bold; font-size: 12px;",
         {
           이유: "시스템이 터치를 취소함",
           남은터치: e.touches.length,
-        }
+        },
       );
     };
 
     // 리스너 등록
-    slider.addEventListener("touchstart", this.touchStartHandler, { passive: true });
-    slider.addEventListener("touchmove", this.touchMoveHandler, { passive: true });
-    slider.addEventListener("touchend", this.touchEndHandler, { passive: true });
-    slider.addEventListener("touchcancel", this.touchCancelHandler, { passive: true });
-    
+    slider.addEventListener("touchstart", this.touchStartHandler, {
+      passive: true,
+    });
+    slider.addEventListener("touchmove", this.touchMoveHandler, {
+      passive: true,
+    });
+    slider.addEventListener("touchend", this.touchEndHandler, {
+      passive: true,
+    });
+    slider.addEventListener("touchcancel", this.touchCancelHandler, {
+      passive: true,
+    });
+
     console.log(
       `%c✅ [SETUP] 네이티브 터치 리스너 등록 완료`,
-      "background: #00ff00; color: black; padding: 2px 5px;"
+      "background: #00ff00; color: black; padding: 2px 5px;",
     );
 
     // ========================================
@@ -326,7 +345,7 @@ class Calendar {
 
     console.log(
       `%c✅ [SETUP] Hammer 생성 완료 (threshold: 5px - 초민감)`,
-      "background: #00ff00; color: black; padding: 2px 5px;"
+      "background: #00ff00; color: black; padding: 2px 5px;",
     );
     devLog("✅ Hammer 새로 생성 (touchAction: auto):", slider);
 
@@ -343,12 +362,12 @@ class Calendar {
         `%c🟩 [HAMMER] panstart #${hammerEventCount}`,
         "background: #00ff00; color: black; font-weight: bold; padding: 2px 5px;",
         {
-          시각: new Date().toLocaleTimeString("ko-KR", { 
-            hour12: false, 
-            hour: "2-digit", 
-            minute: "2-digit", 
-            second: "2-digit", 
-            fractionalSecondDigits: 3 
+          시각: new Date().toLocaleTimeString("ko-KR", {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            fractionalSecondDigits: 3,
           }),
           deltaX: e.deltaX.toFixed(1),
           deltaY: e.deltaY.toFixed(1),
@@ -357,13 +376,13 @@ class Calendar {
           isPanning: this.isPanning,
           이벤트타입: e.type,
           포인터타입: e.pointerType,
-        }
+        },
       );
 
       if (this.isAnimating) {
         console.log(
           `%c⏸️ [HAMMER] panstart 무시 (애니메이션 중)`,
-          "color: #ff9900; font-weight: bold;"
+          "color: #ff9900; font-weight: bold;",
         );
         return;
       }
@@ -377,7 +396,7 @@ class Calendar {
           {
             deltaX: e.deltaX.toFixed(1),
             deltaY: e.deltaY.toFixed(1),
-          }
+          },
         );
         return;
       }
@@ -390,19 +409,21 @@ class Calendar {
         slideStarts = [-100, 0, 100];
         swipeStartTime = Date.now();
         this.isPanning = true;
-        
-        const roomLabels = document.querySelector(".room-bottom-labels-outside");
+
+        const roomLabels = document.querySelector(
+          ".room-bottom-labels-outside",
+        );
         if (roomLabels) {
           roomLabels.style.transition = "none";
         }
-        
+
         console.log(
           `%c✅ [HAMMER] 스와이프 시작 승인`,
           "background: #00ff00; color: black; font-weight: bold; padding: 2px 5px;",
           {
             isPanning: this.isPanning,
             slideCount: slides.length,
-          }
+          },
         );
       }
     });
@@ -413,7 +434,7 @@ class Calendar {
     let panmoveCount = 0;
     this.hammer.on("panmove", (e) => {
       panmoveCount++;
-      
+
       if (panmoveCount % 5 === 1) {
         console.log(
           `%c🔷 [HAMMER] panmove #${panmoveCount}`,
@@ -425,17 +446,16 @@ class Calendar {
             velocityY: e.velocityY.toFixed(3),
             isAnimating: this.isAnimating,
             isPanning: this.isPanning,
-          }
+          },
         );
       }
 
       if (this.isAnimating || !this.isPanning) {
         if (panmoveCount % 10 === 1) {
-          console.log(
-            `%c⏸️ [HAMMER] panmove 무시`,
-            "color: #888;",
-            { isAnimating: this.isAnimating, isPanning: this.isPanning }
-          );
+          console.log(`%c⏸️ [HAMMER] panmove 무시`, "color: #888;", {
+            isAnimating: this.isAnimating,
+            isPanning: this.isPanning,
+          });
         }
         return;
       }
@@ -453,8 +473,10 @@ class Calendar {
           const newPos = slideStarts[i] + percentMove;
           slide.style.transform = `translateX(${newPos}%)`;
         });
-        
-        const roomLabels = document.querySelector(".room-bottom-labels-outside");
+
+        const roomLabels = document.querySelector(
+          ".room-bottom-labels-outside",
+        );
         if (roomLabels) {
           roomLabels.style.transform = `translateX(${e.deltaX}px)`;
         }
@@ -469,12 +491,12 @@ class Calendar {
         `%c🟥 [HAMMER] panend`,
         "background: #ff0000; color: white; font-weight: bold; padding: 2px 5px;",
         {
-          시각: new Date().toLocaleTimeString("ko-KR", { 
-            hour12: false, 
-            hour: "2-digit", 
-            minute: "2-digit", 
-            second: "2-digit", 
-            fractionalSecondDigits: 3 
+          시각: new Date().toLocaleTimeString("ko-KR", {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            fractionalSecondDigits: 3,
           }),
           deltaX: e.deltaX.toFixed(1),
           deltaY: e.deltaY.toFixed(1),
@@ -485,25 +507,22 @@ class Calendar {
           isPanning: this.isPanning,
           hasPendingNav: this.hasPendingGestureNavigation,
           panmove호출수: panmoveCount,
-        }
+        },
       );
-      
+
       panmoveCount = 0;
 
       if (this.isAnimating || !this.isPanning) {
         console.log(
           `%c⏸️ [HAMMER] panend 무시 (상태 플래그)`,
           "color: #ff9900;",
-          { isAnimating: this.isAnimating, isPanning: this.isPanning }
+          { isAnimating: this.isAnimating, isPanning: this.isPanning },
         );
         return;
       }
 
       if (this.hasPendingGestureNavigation) {
-        console.log(
-          `%c⏸️ [HAMMER] panend 무시 (중복 방지)`,
-          "color: #ff9900;"
-        );
+        console.log(`%c⏸️ [HAMMER] panend 무시 (중복 방지)`, "color: #ff9900;");
         return;
       }
 
@@ -526,25 +545,28 @@ class Calendar {
             "Hammer속도(px/ms)": velocity.toFixed(3),
             "평균속도(px/ms)": avgSpeed,
             방향: e.deltaX < 0 ? "왼쪽←" : "오른쪽→",
-            "가로여부": Math.abs(e.deltaX) > Math.abs(e.deltaY),
-          }
+            가로여부: Math.abs(e.deltaX) > Math.abs(e.deltaY),
+          },
         );
 
         const isHorizontalSwipe = Math.abs(e.deltaX) > Math.abs(e.deltaY);
         if (!isHorizontalSwipe) {
           console.log(
             `%c❌ [HAMMER] 세로 스와이프로 판단 - 원위치`,
-            "color: #ff0000; font-weight: bold;"
+            "color: #ff0000; font-weight: bold;",
           );
           slides.forEach((slide, i) => {
             slide.style.transition =
               "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
             slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
           });
-          
-          const roomLabels = document.querySelector(".room-bottom-labels-outside");
+
+          const roomLabels = document.querySelector(
+            ".room-bottom-labels-outside",
+          );
           if (roomLabels) {
-            roomLabels.style.transition = "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
+            roomLabels.style.transition =
+              "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
             roomLabels.style.transform = "translateX(0px)";
           }
           return;
@@ -554,8 +576,10 @@ class Calendar {
         slides.forEach((slide) => {
           slide.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
         });
-        
-        const roomLabels = document.querySelector(".room-bottom-labels-outside");
+
+        const roomLabels = document.querySelector(
+          ".room-bottom-labels-outside",
+        );
         if (roomLabels) {
           roomLabels.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
         }
@@ -564,42 +588,42 @@ class Calendar {
         const sliderWidth = sliderElement
           ? sliderElement.offsetWidth
           : this.container.offsetWidth;
-        const distanceThreshold = sliderWidth * 0.5; // 느린 드래그: 50% 이상
+        const distanceThreshold = sliderWidth * 0.6; // 느린 드래그: 50% 이상
         const velocityThreshold = 0.5;
-        
+
         // 플링 vs 드래그 구분
-        const fastSwipeTimeLimit = 200; // 200ms 미만이면 빠른 스와이프(플링)
+        const fastSwipeTimeLimit = 100; // 200ms 미만이면 빠른 스와이프(플링)
         const isFastSwipe = duration < fastSwipeTimeLimit;
-        
+
         let shouldNavigate;
         if (isFastSwipe) {
           // 빠른 스와이프(플링): 아주 조금만 움직여도 넘어감
-          const minFlickDistance = 5; // 최소 5px
+          const minFlickDistance = 3; // 최소 5px
           shouldNavigate = distance >= minFlickDistance;
-          
+
           console.log(
             `%c⚡ [빠른 플링] ${duration}ms < ${fastSwipeTimeLimit}ms`,
             "background: #ffff00; color: black; font-weight: bold; padding: 3px 8px;",
             {
               판정: shouldNavigate ? "✅ 넘어감" : "❌ 안넘어감",
-              "이동거리": `${distance.toFixed(0)}px`,
-              "최소거리": `${minFlickDistance}px (초민감)`,
+              이동거리: `${distance.toFixed(0)}px`,
+              최소거리: `${minFlickDistance}px (초민감)`,
               조건: `${distance.toFixed(0)} >= ${minFlickDistance} = ${shouldNavigate}`,
-            }
+            },
           );
         } else {
           // 느린 드래그: 거리나 속도 조건 적용
           shouldNavigate =
             distance >= distanceThreshold || velocity >= velocityThreshold;
-          
+
           console.log(
             `%c🐌 [느린 드래그] ${duration}ms >= ${fastSwipeTimeLimit}ms`,
             "background: #ff9900; color: black; font-weight: bold; padding: 3px 8px;",
             {
               판정: shouldNavigate ? "✅ 넘어감" : "❌ 안넘어감",
-              "거리조건": `${distance.toFixed(0)} >= ${distanceThreshold.toFixed(0)} = ${distance >= distanceThreshold}`,
-              "속도조건": `${velocity.toFixed(3)} >= ${velocityThreshold} = ${velocity >= velocityThreshold}`,
-            }
+              거리조건: `${distance.toFixed(0)} >= ${distanceThreshold.toFixed(0)} = ${distance >= distanceThreshold}`,
+              속도조건: `${velocity.toFixed(3)} >= ${velocityThreshold} = ${velocity >= velocityThreshold}`,
+            },
           );
         }
 
@@ -609,25 +633,25 @@ class Calendar {
           {
             타입: isFastSwipe ? "⚡ 빠른 플링" : "🐌 느린 드래그",
             shouldNavigate,
-            "소요시간": `${duration}ms`,
-            "이동거리": `${distance.toFixed(0)}px`,
-            "속도": `${velocity.toFixed(3)}`,
-          }
+            소요시간: `${duration}ms`,
+            이동거리: `${distance.toFixed(0)}px`,
+            속도: `${velocity.toFixed(3)}`,
+          },
         );
 
         if (shouldNavigate) {
           this.lastSwipeTime = Date.now();
           this.hasPendingGestureNavigation = true;
-          
+
           const direction = e.deltaX < 0 ? 1 : -1;
           console.log(
             `%c✅ [HAMMER] 네비게이션 실행`,
             "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;",
             {
               방향: direction === 1 ? "다음 주 →" : "이전 주 ←",
-            }
+            },
           );
-          
+
           if (e.deltaX < 0) {
             this.navigate(1);
           } else {
@@ -636,13 +660,15 @@ class Calendar {
         } else {
           console.log(
             `%c↩️ [HAMMER] 네비게이션 취소 - 원위치`,
-            "color: #ff9900; font-weight: bold;"
+            "color: #ff9900; font-weight: bold;",
           );
           slides.forEach((slide, i) => {
             slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
           });
-          
-          const roomLabels = document.querySelector(".room-bottom-labels-outside");
+
+          const roomLabels = document.querySelector(
+            ".room-bottom-labels-outside",
+          );
           if (roomLabels) {
             roomLabels.style.transform = "translateX(0px)";
           }
@@ -658,25 +684,25 @@ class Calendar {
         `%c⚠️ [HAMMER] pancancel`,
         "background: #ff9900; color: black; font-weight: bold; padding: 2px 5px;",
         {
-          시각: new Date().toLocaleTimeString("ko-KR", { 
-            hour12: false, 
-            hour: "2-digit", 
-            minute: "2-digit", 
-            second: "2-digit", 
-            fractionalSecondDigits: 3 
+          시각: new Date().toLocaleTimeString("ko-KR", {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            fractionalSecondDigits: 3,
           }),
           deltaX: e.deltaX,
           deltaY: e.deltaY,
           velocityX: e.velocityX,
           velocityY: e.velocityY,
           isPanning: this.isPanning,
-        }
+        },
       );
-      
+
       if (this.isPanning) {
         console.log(
           `%c🔄 [HAMMER] 스와이프 상태 리셋`,
-          "color: #ff9900; font-weight: bold;"
+          "color: #ff9900; font-weight: bold;",
         );
         this.resetSwipeState();
       }
@@ -690,16 +716,16 @@ class Calendar {
         `%c👆 [HAMMER] tap`,
         "background: #00ffff; color: black; padding: 2px 5px;",
         {
-          시각: new Date().toLocaleTimeString("ko-KR", { 
-            hour12: false, 
-            hour: "2-digit", 
-            minute: "2-digit", 
-            second: "2-digit", 
-            fractionalSecondDigits: 3 
+          시각: new Date().toLocaleTimeString("ko-KR", {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            fractionalSecondDigits: 3,
           }),
           타겟: e.target.className,
           center: `(${Math.round(e.center.x)}, ${Math.round(e.center.y)})`,
-        }
+        },
       );
 
       if (this.currentView !== "week") return;
@@ -711,7 +737,7 @@ class Calendar {
           console.log(
             `%c📅 [HAMMER] 이벤트 탭 → 일간 보기 전환`,
             "background: #0088ff; color: white; font-weight: bold; padding: 2px 5px;",
-            { eventDate }
+            { eventDate },
           );
           this.switchToDayView(new Date(eventDate));
         }
@@ -727,7 +753,7 @@ class Calendar {
         "느린 드래그": "200ms 이상, 50% 이상 → 넘어감",
         "네이티브 이벤트": "활성화",
         "Hammer 이벤트": "활성화",
-      }
+      },
     );
   }
 
@@ -766,12 +792,14 @@ class Calendar {
       slides.forEach((slide, i) => {
         slide.style.transform = `translateX(${targets[i]}%)`;
       });
-      
+
       // room-bottom-labels-outside도 같이 이동 (슬라이더 전체 너비 기준)
       const roomLabels = document.querySelector(".room-bottom-labels-outside");
       if (roomLabels) {
         const slider = this.container.querySelector(".calendar-slider");
-        const sliderWidth = slider ? slider.offsetWidth : this.container.offsetWidth;
+        const sliderWidth = slider
+          ? slider.offsetWidth
+          : this.container.offsetWidth;
         const currentSlideTarget = targets[1]; // -100% 또는 100%
         const pixelMove = (sliderWidth * currentSlideTarget) / 100;
         roomLabels.style.transform = `translateX(${pixelMove}px)`;
@@ -823,7 +851,7 @@ class Calendar {
     slides.forEach((slide) => {
       slide.style.transition = "none";
     });
-    
+
     // room-bottom-labels-outside도 transition 제거
     const roomLabels = document.querySelector(".room-bottom-labels-outside");
     if (roomLabels) {
@@ -845,7 +873,7 @@ class Calendar {
     newSlides.forEach((slide, i) => {
       slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
     });
-    
+
     // room-bottom-labels-outside도 원위치로 리셋
     if (roomLabels) {
       roomLabels.style.transform = "translateX(0px)";
@@ -859,13 +887,13 @@ class Calendar {
       this.updateCurrentTimeIndicator();
       this.updateRoomBottomLabelsPosition();
     });
-    
+
     // 다음 프레임에서 트랜지션 재활성화
     requestAnimationFrame(() => {
       newSlides.forEach((slide) => {
         slide.style.transition = "";
       });
-      
+
       // room-bottom-labels-outside도 transition 재활성화
       const roomLabels = document.querySelector(".room-bottom-labels-outside");
       if (roomLabels) {
@@ -1061,7 +1089,7 @@ class Calendar {
 
     const btn = document.querySelector(`.room-btn[data-room="${roomId}"]`);
     btn.classList.add("active");
-    
+
     // body에 single-room-view 클래스 추가
     document.body.classList.add("single-room-view");
     devLog(`📍 [toggleRoom] body에 single-room-view 클래스 추가`);
@@ -1084,7 +1112,7 @@ class Calendar {
       btn.classList.add("active");
     });
     allBtn.classList.remove("active");
-    
+
     // body에서 single-room-view 클래스 제거
     document.body.classList.remove("single-room-view");
     devLog(`📍 [toggleAllRooms] body에서 single-room-view 클래스 제거`);
@@ -1583,14 +1611,16 @@ class Calendar {
     this.timeUpdateInterval = setInterval(() => {
       this.updateCurrentTimeIndicator();
       this.updateRoomBottomLabelsPosition();
-      
+
       // 날짜가 바뀌었는지 확인
       const now = new Date();
       now.setHours(0, 0, 0, 0);
       const currentDayKey = now.toDateString();
-      
+
       if (this.lastRenderedDayKey !== currentDayKey) {
-        devLog(`📅 [날짜 변경 감지] ${this.lastRenderedDayKey} → ${currentDayKey}, 자동 렌더링`);
+        devLog(
+          `📅 [날짜 변경 감지] ${this.lastRenderedDayKey} → ${currentDayKey}, 자동 렌더링`,
+        );
         this.lastRenderedDayKey = currentDayKey;
         this.goToToday();
       }
@@ -1911,7 +1941,7 @@ class Calendar {
 
   renderRoomDividers() {
     const isSingleRoom = this.selectedRooms.size === 1;
-    
+
     // 5개 방을 구분하는 4개의 세로선 (20%, 40%, 60%, 80% 위치)
     const dividers = [
       { position: 20 },
@@ -1930,7 +1960,7 @@ class Calendar {
     ];
 
     // 단일 방 선택 시 hide-content 클래스 추가 (배경색만 보이고 내용은 숨김)
-    let html = `<div class="room-dividers-container${isSingleRoom ? ' hide-content' : ''}">`;
+    let html = `<div class="room-dividers-container${isSingleRoom ? " hide-content" : ""}">`;
 
     // 세로선 렌더링
     dividers.forEach((divider) => {
@@ -1964,40 +1994,44 @@ class Calendar {
   updateRoomBottomLabelsPosition() {
     const roomLabels = document.querySelector(".room-bottom-labels-outside");
     if (!roomLabels) return;
-    
+
     const slider = this.container.querySelector(".calendar-slider");
     if (!slider) return;
-    
+
     // 오늘이 현재 주에 있는지 확인
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const { start: weekStart } = this.getWeekRange(this.currentDate);
-    const todayDayIndex = Math.floor((today - weekStart) / (1000 * 60 * 60 * 24));
-    
+    const todayDayIndex = Math.floor(
+      (today - weekStart) / (1000 * 60 * 60 * 24),
+    );
+
     if (todayDayIndex < 0 || todayDayIndex >= 7) {
       roomLabels.style.display = "none";
       return;
     }
-    
+
     // 단일 방 선택 시 숨김
     if (this.selectedRooms.size === 1) {
       roomLabels.style.display = "none";
       return;
     }
-    
+
     // 슬라이더의 실제 픽셀 크기 가져오기
     const sliderRect = slider.getBoundingClientRect();
-    
+
     // 오늘 날짜 컬럼의 위치 계산 (픽셀 단위)
     const dayWidth = sliderRect.width / 7;
-    const todayLeft = sliderRect.left + (dayWidth * todayDayIndex);
-    
+    const todayLeft = sliderRect.left + dayWidth * todayDayIndex;
+
     // 픽셀 단위로 위치 설정
     roomLabels.style.left = `${todayLeft}px`;
     roomLabels.style.width = `${dayWidth}px`;
     roomLabels.style.display = "flex";
-    
-    devLog(`📍 [라벨 위치 업데이트] left: ${todayLeft}px, width: ${dayWidth}px, 요일: ${todayDayIndex}`);
+
+    devLog(
+      `📍 [라벨 위치 업데이트] left: ${todayLeft}px, width: ${dayWidth}px, 요일: ${todayDayIndex}`,
+    );
   }
 
   renderRoomBottomLabels(todayDayIndex) {
@@ -2014,7 +2048,8 @@ class Calendar {
     let html = `<div class="room-bottom-labels-outside">`;
 
     roomLabels.forEach((room) => {
-      const roomColor = CONFIG.rooms[room.roomId]?.color || "rgba(255, 255, 255, 0.15)";
+      const roomColor =
+        CONFIG.rooms[room.roomId]?.color || "rgba(255, 255, 255, 0.15)";
       html += `<div class="room-bottom-label" style="left: ${room.position}%; background-color: ${roomColor};">${room.roomName}</div>`;
     });
 
