@@ -410,11 +410,12 @@ class Calendar {
         swipeStartTime = Date.now();
         this.isPanning = true;
 
-        const roomLabels = document.querySelector(
-          ".room-bottom-labels-outside",
-        );
-        if (roomLabels) {
-          roomLabels.style.transition = "none";
+        // ✅ 7개 room-label-container transition 제거
+        const labelContainers = document.querySelectorAll(".room-label-container");
+        if (labelContainers.length === 7) {
+          labelContainers.forEach((container) => {
+            container.style.transition = "none";
+          });
         }
 
         console.log(
