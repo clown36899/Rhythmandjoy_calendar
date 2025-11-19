@@ -1147,9 +1147,24 @@ body.single-room-view .room-bottom-labels-outside {
 }
 
 
-/* ✅ 새로운 구조: 각 날짜 셀 안에 라벨 표시 */
+/* ✅ 새로운 구조: 마지막 행 전체 스타일 */
+.time-row.room-label-row {
+  background-color: #2f2f2f !important;
+}
+
+.time-row.room-label-row > * {
+  background-color: #2f2f2f !important;
+  border: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  border-top: none !important;
+}
+
 .room-labels-cell {
   position: relative !important;
+  background-color: #2f2f2f !important;
+  border: none !important;
 }
 
 .room-labels-in-cell {
@@ -1184,6 +1199,8 @@ body.single-room-view .room-bottom-labels-outside {
 /* 라벨 행 높이 조정 */
 .time-label.room-label-row {
   min-height: 32px;
+  background-color: #2f2f2f !important;
+  border: none !important;
 }
 
 /* 기존 구조 (하위 호환, 사용 안 함) */
