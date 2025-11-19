@@ -1681,15 +1681,16 @@ class Calendar {
 
       const headerHeight = headerElement.getBoundingClientRect().height;
       const weekViewHeight = firstWeekView.clientHeight;
+      const labelRowHeight = 32; // 라벨 행 고정 높이
       const availableHeight = weekViewHeight - headerHeight;
-      const rowHeight = availableHeight / 24;
+      const rowHeight = (availableHeight - labelRowHeight) / 24; // 24시간 행에서 라벨 높이만큼 빼기
 
       // 모든 슬라이드의 week-view 조정
       const allWeekViews = this.container.querySelectorAll(".week-view");
 
       allWeekViews.forEach((weekView) => {
-        // Grid 행 높이를 동적으로 설정하여 24시간이 항상 fit되도록
-        weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px)`;
+        // Grid 행 높이를 동적으로 설정: 헤더 + 24시간 + 라벨행
+        weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px) ${labelRowHeight}px`;
 
         // 이 weekView 안의 이벤트 컨테이너들 조정 (7개 요일만)
         const eventContainers = weekView.querySelectorAll(
