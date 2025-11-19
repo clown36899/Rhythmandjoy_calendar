@@ -211,6 +211,8 @@ class Calendar {
           "Y좌표": touch ? Math.round(touch.clientY) : "N/A",
           타겟: e.target.className,
           sliderID: slider === this.currentSlider ? "현재" : "이전",
+          "🚨isAnimating": this.isAnimating,
+          "🚨isPanning": this.isPanning,
         }
       );
     };
@@ -232,12 +234,19 @@ class Calendar {
 
     this.touchEndHandler = (e) => {
       const duration = Date.now() - nativeTouchStartTime;
+      const wasShortTouch = duration < 100;
       console.log(
-        `%c🔴 [NATIVE TOUCH] touchend`,
-        "color: #ff0000; font-weight: bold; font-size: 12px;",
+        wasShortTouch 
+          ? `%c🔴 [NATIVE TOUCH] touchend (짧은터치 ${duration}ms)` 
+          : `%c🔴 [NATIVE TOUCH] touchend`,
+        wasShortTouch 
+          ? "color: #ff0000; font-weight: bold; font-size: 12px; background: yellow;" 
+          : "color: #ff0000; font-weight: bold; font-size: 12px;",
         {
           총소요시간: `${duration}ms`,
           남은터치: e.touches.length,
+          "🚨isAnimating": this.isAnimating,
+          "🚨isPanning": this.isPanning,
         }
       );
     };
