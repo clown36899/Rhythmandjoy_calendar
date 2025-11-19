@@ -927,22 +927,22 @@ class Calendar {
       dates.push(date);
     }
 
-    // 7주치 캐시 로드
-    for (const date of dates) {
-      await this.loadWeekDataToCache(date);
-    }
+    // 변경된 경계 슬라이드만 찾기
+    const boundaryIndex = direction === 1 ? 6 : 0; // 다음 주면 마지막, 이전 주면 첫번째
+    const boundaryDate = dates[boundaryIndex];
+
+    // 경계 슬라이드 데이터만 로드
+    await this.loadWeekDataToCache(boundaryDate);
 
     // 캐시된 데이터를 합쳐서 this.events에 설정
     this.events = this.getMergedEventsFromCache(dates);
     devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
-    // 7개 슬라이드 내용 업데이트
-    slides.forEach((slide, i) => {
-      slide.innerHTML = this.renderWeekViewContent(dates[i]);
-    });
+    // ✅ 변경된 1개 슬라이드만 업데이트 (나머지 6개는 재사용!)
+    slides[boundaryIndex].innerHTML = this.renderWeekViewContent(boundaryDate);
 
     devLog(
-      `🔄 슬라이드 준비 완료: -3주 ~ +3주`,
+      `🔄 슬라이드 준비 완료: 경계 슬라이드만 업데이트 (인덱스 ${boundaryIndex})`,
     );
   }
 
