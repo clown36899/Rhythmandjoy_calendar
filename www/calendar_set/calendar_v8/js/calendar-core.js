@@ -767,6 +767,10 @@ class Calendar {
       return;
     }
     
+    // ✅ 즉시 플래그 설정 (async await 전에!)
+    this.isAnimating = true;
+    this.isPanning = false;
+    
     console.log(
       `%c🚀 [NAVIGATE] 시작`,
       "background: #00ffff; color: black; font-weight: bold; padding: 3px 8px;",
@@ -778,9 +782,6 @@ class Calendar {
       devLog("⏸️ [렌더 대기] navigate 시작 전 render 완료 대기...");
       await this.renderPromise;
     }
-
-    this.isAnimating = true;
-    this.isPanning = false;
 
     try {
       devLog(
