@@ -1348,8 +1348,8 @@ class Calendar {
       
       html += `<div class="room-label-container" style="transform: translateX(${translateValues[i]}%)">`;
       
-      if (isCurrentWeek) {
-        // 오늘이 있는 주만 라벨 표시
+      // 오늘이 있는 주이고, 모든 방 표시(ALL) 상태일 때만 라벨 표시
+      if (isCurrentWeek && this.selectedRooms.size !== 1) {
         html += this.renderRoomBottomLabelsContent(todayDayIndex);
       }
       
