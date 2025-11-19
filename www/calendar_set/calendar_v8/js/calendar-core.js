@@ -474,11 +474,13 @@ class Calendar {
           slide.style.transform = `translateX(${newPos}%)`;
         });
 
-        const roomLabels = document.querySelector(
-          ".room-bottom-labels-outside",
-        );
-        if (roomLabels) {
-          roomLabels.style.transform = `translateX(${e.deltaX}px)`;
+        // ✅ 7개 라벨 컨테이너도 함께 드래그
+        const labelContainers = document.querySelectorAll(".room-label-container");
+        if (labelContainers.length === 7) {
+          labelContainers.forEach((container, i) => {
+            const newPos = slideStarts[i] + percentMove;
+            container.style.transform = `translateX(${newPos}%)`;
+          });
         }
       }
     });
@@ -561,13 +563,14 @@ class Calendar {
             slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
           });
 
-          const roomLabels = document.querySelector(
-            ".room-bottom-labels-outside",
-          );
-          if (roomLabels) {
-            roomLabels.style.transition =
-              "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
-            roomLabels.style.transform = "translateX(0px)";
+          // ✅ 7개 라벨 컨테이너도 원위치로
+          const labelContainers = document.querySelectorAll(".room-label-container");
+          if (labelContainers.length === 7) {
+            labelContainers.forEach((container, i) => {
+              container.style.transition =
+                "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
+              container.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
+            });
           }
           return;
         }
@@ -577,11 +580,12 @@ class Calendar {
           slide.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
         });
 
-        const roomLabels = document.querySelector(
-          ".room-bottom-labels-outside",
-        );
-        if (roomLabels) {
-          roomLabels.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
+        // ✅ 7개 라벨 컨테이너도 transition 설정
+        const labelContainers = document.querySelectorAll(".room-label-container");
+        if (labelContainers.length === 7) {
+          labelContainers.forEach((container) => {
+            container.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
+          });
         }
 
         const sliderElement = this.container.querySelector(".calendar-slider");
