@@ -320,12 +320,12 @@ class Calendar {
     });
     this.hammer.get("pan").set({
       direction: Hammer.DIRECTION_HORIZONTAL,
-      threshold: 5, // 5px로 낮춰서 모든 터치에 반응
+      threshold: 10, // 업계 표준 (Hammer 기본값)
       enable: true,
     });
 
     console.log(
-      `%c✅ [SETUP] Hammer 생성 완료 (threshold: 5px - 모든 터치 반응)`,
+      `%c✅ [SETUP] Hammer 생성 완료 (threshold: 10px - 업계 표준)`,
       "background: #00ff00; color: black; padding: 2px 5px;"
     );
     devLog("✅ Hammer 새로 생성 (touchAction: auto):", slider);
@@ -564,8 +564,8 @@ class Calendar {
         const sliderWidth = sliderElement
           ? sliderElement.offsetWidth
           : this.container.offsetWidth;
-        const distanceThreshold = sliderWidth * 0.2;
-        const velocityThreshold = 0.6;
+        const distanceThreshold = sliderWidth * 0.3; // 업계 표준 30%
+        const velocityThreshold = 0.5; // 업계 표준
 
         const shouldNavigate =
           distance >= distanceThreshold || velocity >= velocityThreshold;
@@ -687,11 +687,12 @@ class Calendar {
       `%c✅ 터치 이벤트 로깅 설정 완료`,
       "background: #00ff00; color: black; font-weight: bold; padding: 5px 10px; font-size: 14px;",
       {
-        "Hammer threshold": "5px ← 모든 터치 반응",
-        "네비게이션 거리": "20%",
-        "네비게이션 속도": "0.6",
+        "Hammer threshold": "10px (업계 표준)",
+        "네비게이션 거리": "30% (업계 표준)",
+        "네비게이션 속도": "0.5 (업계 표준)",
         "네이티브 이벤트": "활성화",
         "Hammer 이벤트": "활성화",
+        "참고": "Instagram/iOS Safari 수준",
       }
     );
   }
