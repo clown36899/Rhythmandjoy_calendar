@@ -588,7 +588,7 @@ class Calendar {
         const sliderWidth = sliderElement
           ? sliderElement.offsetWidth
           : this.container.offsetWidth;
-        const distanceThreshold = sliderWidth * 0.5; // 느린 드래그: 50% 이상
+        const distanceThreshold = sliderWidth * 0.25; // 느린 드래그: 50% 이상
         const velocityThreshold = 0.5;
 
         // 플링 vs 드래그 구분
@@ -759,9 +759,19 @@ class Calendar {
 
   async navigate(direction) {
     if (this.isAnimating) {
-      devLog("⏸️ 네비게이션 중복 방지");
+      console.log(
+        `%c⏸️ [NAVIGATE] 중복 방지 - 애니메이션 진행 중`,
+        "background: #ff9900; color: black; font-weight: bold; padding: 3px 8px;",
+        { isAnimating: this.isAnimating }
+      );
       return;
     }
+    
+    console.log(
+      `%c🚀 [NAVIGATE] 시작`,
+      "background: #00ffff; color: black; font-weight: bold; padding: 3px 8px;",
+      { direction: direction === 1 ? "다음 주 →" : "이전 주 ←", isAnimating: this.isAnimating }
+    );
 
     // render 진행 중이면 대기
     if (this.renderPromise) {
@@ -789,7 +799,9 @@ class Calendar {
 
       // 각 슬라이드를 100% 이동 (7개)
       const currentPositions = [-300, -200, -100, 0, 100, 200, 300];
-      const targets = currentPositions.map(pos => pos + (direction === 1 ? -100 : 100));
+      const targets = currentPositions.map(
+        (pos) => pos + (direction === 1 ? -100 : 100),
+      );
       slides.forEach((slide, i) => {
         slide.style.transform = `translateX(${targets[i]}%)`;
       });
@@ -1230,7 +1242,9 @@ class Calendar {
       const date = new Date(this.currentDate);
       date.setDate(date.getDate() + i * 7);
       dates.push(date);
-      devLog(`   ${i === 0 ? '현재주' : (i > 0 ? `+${i}주` : `${i}주`)}: ${date.toLocaleDateString("ko-KR")}`);
+      devLog(
+        `   ${i === 0 ? "현재주" : i > 0 ? `+${i}주` : `${i}주`}: ${date.toLocaleDateString("ko-KR")}`,
+      );
     }
 
     // 7주치 이벤트를 캐시에서 로드 또는 새로 가져오기
