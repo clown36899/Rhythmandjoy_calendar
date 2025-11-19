@@ -183,7 +183,7 @@ body {
   flex-direction: column;
   min-height: 0;
   position: relative;
-  padding-bottom: 32px;
+  margin-bottom: -32px;
 }
 
 #calendarContainer {
