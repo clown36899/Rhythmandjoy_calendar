@@ -467,14 +467,14 @@ class Calendar {
           slide.style.transform = `translateX(${newPos}%)`;
         });
 
-        // ✅ 7개 라벨 컨테이너도 함께 드래그
-        const labelContainers = document.querySelectorAll(".room-label-container");
-        if (labelContainers.length === 7) {
-          labelContainers.forEach((container, i) => {
-            const newPos = slideStarts[i] + percentMove;
+        // ✅ 각 슬라이드 내의 라벨 컨테이너도 함께 드래그
+        slides.forEach((slide, i) => {
+          const slideLabels = slide.querySelectorAll(".room-label-container");
+          const newPos = slideStarts[i] + percentMove;
+          slideLabels.forEach((container) => {
             container.style.transform = `translateX(${newPos}%)`;
           });
-        }
+        });
       }
     });
 
@@ -556,15 +556,15 @@ class Calendar {
             slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
           });
 
-          // ✅ 7개 라벨 컨테이너도 원위치로
-          const labelContainers = document.querySelectorAll(".room-label-container");
-          if (labelContainers.length === 7) {
-            labelContainers.forEach((container, i) => {
+          // ✅ 각 슬라이드 내의 라벨 컨테이너도 원위치로
+          slides.forEach((slide, i) => {
+            const slideLabels = slide.querySelectorAll(".room-label-container");
+            slideLabels.forEach((container) => {
               container.style.transition =
                 "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
               container.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
             });
-          }
+          });
           return;
         }
 
@@ -573,13 +573,13 @@ class Calendar {
           slide.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
         });
 
-        // ✅ 7개 라벨 컨테이너도 transition 설정
-        const labelContainers = document.querySelectorAll(".room-label-container");
-        if (labelContainers.length === 7) {
-          labelContainers.forEach((container) => {
+        // ✅ 각 슬라이드 내의 라벨 컨테이너도 transition 설정
+        slides.forEach((slide) => {
+          const slideLabels = slide.querySelectorAll(".room-label-container");
+          slideLabels.forEach((container) => {
             container.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
           });
-        }
+        });
 
         const sliderElement = this.container.querySelector(".calendar-slider");
         const sliderWidth = sliderElement
@@ -913,12 +913,12 @@ class Calendar {
     const newSlides = this.container.querySelectorAll(".calendar-slide");
     newSlides.forEach((slide, i) => {
       slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
-    });
-
-    // ✅ 7개 라벨 컨테이너도 원위치로 리셋
-    const newLabelContainers = document.querySelectorAll(".room-label-container");
-    newLabelContainers.forEach((container, i) => {
-      container.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
+      
+      // ✅ 이 슬라이드 내의 라벨 컨테이너도 원위치로 리셋
+      const slideLabels = slide.querySelectorAll(".room-label-container");
+      slideLabels.forEach((container) => {
+        container.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
+      });
     });
 
     // 레이아웃 조정
@@ -934,12 +934,12 @@ class Calendar {
     requestAnimationFrame(() => {
       newSlides.forEach((slide) => {
         slide.style.transition = "";
-      });
-
-      // ✅ 7개 라벨 컨테이너도 transition 재활성화
-      const finalLabelContainers = document.querySelectorAll(".room-label-container");
-      finalLabelContainers.forEach((container) => {
-        container.style.transition = "";
+        
+        // ✅ 이 슬라이드 내의 라벨 컨테이너도 transition 재활성화
+        const slideLabels = slide.querySelectorAll(".room-label-container");
+        slideLabels.forEach((container) => {
+          container.style.transition = "";
+        });
       });
     });
 
