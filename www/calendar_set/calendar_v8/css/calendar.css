@@ -1146,7 +1146,36 @@ body.single-room-view .room-bottom-labels-outside {
   /* ← 오늘 날짜 배경 컬러 */
 }
 
-/* 달력 바깥 최하단 방 이름 표시 (A, B, C, D, E) */
+/* ✅ 새로운 구조: 7개 라벨 컨테이너 슬라이더 */
+.room-labels-slider {
+  position: fixed;
+  bottom: calc(var(--bottom-controls-height, 0px) + var(--room-selector-height, 0px) - 2.5em + 6px);
+  left: var(--time-column-width, 40px);
+  right: 0;
+  height: 2.5em;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 500;
+}
+
+.room-label-container {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+  pointer-events: none;
+}
+
+.room-bottom-labels {
+  position: absolute;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+/* 기존 구조 (하위 호환, 사용 안 함) */
 .room-bottom-labels-outside {
   position: fixed;
   bottom: calc(var(--bottom-controls-height, 0px) + var(--room-selector-height, 0px) - 2.5em + 6px);

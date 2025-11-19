@@ -816,16 +816,12 @@ class Calendar {
         slide.style.transform = `translateX(${targets[i]}%)`;
       });
 
-      // room-bottom-labels-outside도 같이 이동 (슬라이더 전체 너비 기준)
-      const roomLabels = document.querySelector(".room-bottom-labels-outside");
-      if (roomLabels) {
-        const slider = this.container.querySelector(".calendar-slider");
-        const sliderWidth = slider
-          ? slider.offsetWidth
-          : this.container.offsetWidth;
-        const currentSlideTarget = targets[3]; // 중앙 슬라이드 (인덱스 3)
-        const pixelMove = (sliderWidth * currentSlideTarget) / 100;
-        roomLabels.style.transform = `translateX(${pixelMove}px)`;
+      // ✅ 7개 room-label-container도 슬라이드와 함께 이동
+      const labelContainers = document.querySelectorAll(".room-label-container");
+      if (labelContainers.length === 7) {
+        labelContainers.forEach((container, i) => {
+          container.style.transform = `translateX(${targets[i]}%)`;
+        });
       }
 
       console.log(
@@ -898,25 +894,38 @@ class Calendar {
     this.updateCalendarTitle();
 
     const slider = this.container.querySelector(".calendar-slider");
+    const labelsSlider = document.querySelector(".room-labels-slider");
 
     // 트랜지션 비활성화
     slides.forEach((slide) => {
       slide.style.transition = "none";
     });
 
-    // room-bottom-labels-outside도 transition 제거
-    const roomLabels = document.querySelector(".room-bottom-labels-outside");
-    if (roomLabels) {
-      roomLabels.style.transition = "none";
-    }
+    // ✅ 7개 라벨 컨테이너도 transition 제거
+    const labelContainers = document.querySelectorAll(".room-label-container");
+    labelContainers.forEach((container) => {
+      container.style.transition = "none";
+    });
 
-    // DOM 재배열 (7개)
+    // DOM 재배열 (7개 슬라이드)
     if (direction === 1) {
       // 다음 주: 첫 슬라이드를 끝으로
       slider.appendChild(slides[0]);
     } else {
       // 이전 주: 끝 슬라이드를 처음으로
       slider.insertBefore(slides[6], slides[0]);
+    }
+
+    // ✅ 7개 라벨 컨테이너도 DOM 재배열
+    if (labelsSlider && labelContainers.length === 7) {
+      const labelArray = Array.from(labelContainers);
+      if (direction === 1) {
+        // 다음 주: 첫 컨테이너를 끝으로
+        labelsSlider.appendChild(labelArray[0]);
+      } else {
+        // 이전 주: 끝 컨테이너를 처음으로
+        labelsSlider.insertBefore(labelArray[6], labelArray[0]);
+      }
     }
 
     console.log(
@@ -935,18 +944,19 @@ class Calendar {
       slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
     });
 
-    // room-bottom-labels-outside도 원위치로 리셋
-    if (roomLabels) {
-      roomLabels.style.transform = "translateX(0px)";
-    }
+    // ✅ 7개 라벨 컨테이너도 원위치로 리셋
+    const newLabelContainers = document.querySelectorAll(".room-label-container");
+    newLabelContainers.forEach((container, i) => {
+      container.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
+    });
 
     // 레이아웃 조정
     this.adjustWeekViewLayout(true);
 
-    // 현재 시간 표시 및 방 라벨 위치 업데이트
+    // 현재 시간 표시
     requestAnimationFrame(() => {
       this.updateCurrentTimeIndicator();
-      this.updateRoomBottomLabelsPosition();
+      // ✅ 새로운 구조에서는 라벨 위치가 자동으로 계산되므로 updateRoomBottomLabelsPosition() 불필요
     });
 
     // 다음 프레임에서 트랜지션 재활성화
@@ -955,11 +965,11 @@ class Calendar {
         slide.style.transition = "";
       });
 
-      // room-bottom-labels-outside도 transition 재활성화
-      const roomLabels = document.querySelector(".room-bottom-labels-outside");
-      if (roomLabels) {
-        roomLabels.style.transition = "";
-      }
+      // ✅ 7개 라벨 컨테이너도 transition 재활성화
+      const finalLabelContainers = document.querySelectorAll(".room-label-container");
+      finalLabelContainers.forEach((container) => {
+        container.style.transition = "";
+      });
     });
 
     console.log(
@@ -1322,28 +1332,41 @@ class Calendar {
 
     html += "</div>";
 
-    // 오늘 날짜 계산하여 방 라벨 추가
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const { start: weekStart } = this.getWeekRange(this.currentDate);
-    const todayDayIndex = Math.floor(
-      (today - weekStart) / (1000 * 60 * 60 * 24),
-    );
+    // ✅ 7개 room-label-container 생성 (슬라이드와 동일한 구조)
+    html += '<div class="room-labels-slider">';
 
-    // 오늘이 현재 주에 있을 때만 방 라벨 표시
-    if (todayDayIndex >= 0 && todayDayIndex < 7) {
-      html += this.renderRoomBottomLabels(todayDayIndex);
-    }
+    dates.forEach((date, i) => {
+      const { start: weekStart } = this.getWeekRange(date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayDayIndex = Math.floor(
+        (today - weekStart) / (1000 * 60 * 60 * 24),
+      );
+      
+      // 오늘이 이 주에 포함되어 있는지 확인
+      const isCurrentWeek = todayDayIndex >= 0 && todayDayIndex < 7;
+      
+      html += `<div class="room-label-container" style="transform: translateX(${translateValues[i]}%)">`;
+      
+      if (isCurrentWeek) {
+        // 오늘이 있는 주만 라벨 표시
+        html += this.renderRoomBottomLabelsContent(todayDayIndex);
+      }
+      
+      html += "</div>";
+    });
+
+    html += "</div>";
 
     this.container.innerHTML = html;
 
     // DOM 업데이트 후 레이아웃 조정
     this.adjustWeekViewLayout();
 
-    // 현재 시간 표시 및 방 라벨 위치 업데이트
+    // 현재 시간 표시
     requestAnimationFrame(() => {
       this.updateCurrentTimeIndicator();
-      this.updateRoomBottomLabelsPosition();
+      // ✅ 새로운 구조에서는 라벨 위치가 자동으로 계산되므로 updateRoomBottomLabelsPosition() 불필요
     });
   }
 
@@ -2085,7 +2108,7 @@ class Calendar {
     );
   }
 
-  renderRoomBottomLabels(todayDayIndex) {
+  renderRoomBottomLabelsContent(todayDayIndex) {
     // 5개 방 이름과 색상
     const roomLabels = [
       { position: 10, roomName: "A", roomId: "a" },
@@ -2095,8 +2118,11 @@ class Calendar {
       { position: 90, roomName: "E", roomId: "e" },
     ];
 
-    // 초기 HTML만 생성 (위치는 updateRoomBottomLabelsPosition에서 설정)
-    let html = `<div class="room-bottom-labels-outside">`;
+    // 오늘 날짜 컬럼에 맞춰 위치 계산 (7개 중 몇 번째)
+    const dayWidth = 100 / 7; // 14.28%
+    const baseLeft = dayWidth * todayDayIndex;
+
+    let html = `<div class="room-bottom-labels" style="left: ${baseLeft}%; width: ${dayWidth}%;">`;
 
     roomLabels.forEach((room) => {
       const roomColor =
