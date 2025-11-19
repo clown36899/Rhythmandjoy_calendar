@@ -189,12 +189,16 @@ class Calendar {
     // ========================================
     let nativeTouchStartTime = 0;
     let nativeTouchCount = 0;
+    let lastTouchId = 0;
+    let orphanedTouchTimer = null;
     
     // 리스너 함수 정의 및 저장
     this.touchStartHandler = (e) => {
       nativeTouchStartTime = Date.now();
       nativeTouchCount++;
+      lastTouchId = nativeTouchCount;
       const touch = e.touches[0];
+      
       console.log(
         `%c🟢 [NATIVE TOUCH] touchstart #${nativeTouchCount} (setup호출 #${this.setupSwipeGesturesCallCount})`,
         "color: #00ff00; font-weight: bold; font-size: 12px;",
@@ -215,9 +219,31 @@ class Calendar {
           "🚨isPanning": this.isPanning,
         }
       );
+      
+      // 유령 터치 감지: 200ms 내에 touchmove나 touchend가 안 오면 경고
+      if (orphanedTouchTimer) clearTimeout(orphanedTouchTimer);
+      const currentTouchId = lastTouchId;
+      orphanedTouchTimer = setTimeout(() => {
+        console.log(
+          `%c👻 [유령 터치] touchstart #${currentTouchId} 후 200ms 동안 아무 이벤트 없음!`,
+          "background: #ff0000; color: white; font-weight: bold; padding: 3px 8px; font-size: 13px;",
+          {
+            경과시간: "200ms+",
+            "예상원인": "터치했지만 움직이지 않았거나, 브라우저가 이벤트를 무시함",
+            "🚨isAnimating": this.isAnimating,
+            "🚨isPanning": this.isPanning,
+          }
+        );
+      }, 200);
     };
 
     this.touchMoveHandler = (e) => {
+      // 유령 터치 타이머 취소 (정상 터치)
+      if (orphanedTouchTimer) {
+        clearTimeout(orphanedTouchTimer);
+        orphanedTouchTimer = null;
+      }
+      
       const touch = e.touches[0];
       const elapsed = Date.now() - nativeTouchStartTime;
       console.log(
@@ -233,6 +259,12 @@ class Calendar {
     };
 
     this.touchEndHandler = (e) => {
+      // 유령 터치 타이머 취소 (정상 터치)
+      if (orphanedTouchTimer) {
+        clearTimeout(orphanedTouchTimer);
+        orphanedTouchTimer = null;
+      }
+      
       const duration = Date.now() - nativeTouchStartTime;
       const wasShortTouch = duration < 100;
       console.log(
@@ -252,6 +284,12 @@ class Calendar {
     };
 
     this.touchCancelHandler = (e) => {
+      // 유령 터치 타이머 취소
+      if (orphanedTouchTimer) {
+        clearTimeout(orphanedTouchTimer);
+        orphanedTouchTimer = null;
+      }
+      
       console.log(
         `%c⚠️ [NATIVE TOUCH] touchcancel`,
         "color: #ff9900; font-weight: bold; font-size: 12px;",
