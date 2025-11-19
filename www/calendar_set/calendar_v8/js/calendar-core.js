@@ -1586,7 +1586,7 @@ class Calendar {
 
     // 2. 오늘 날짜 열 찾기 - 중간 슬라이드(현재 주)에서 찾기
     const allSlides = this.container.querySelectorAll(".calendar-slide");
-    const currentSlide = allSlides[1]; // 중간 슬라이드 = 현재 주
+    const currentSlide = allSlides[3]; // 중간 슬라이드 = 현재 주 (7개 중 인덱스 3)
 
     if (!currentSlide) {
       devLog("❌ [오늘라인] 중간 슬라이드 없음");
