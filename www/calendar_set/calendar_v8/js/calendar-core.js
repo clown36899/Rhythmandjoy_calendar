@@ -784,19 +784,25 @@ class Calendar {
     }
 
     try {
-      devLog(
-        `🧭 [주 이동] - 방향: ${direction > 0 ? "다음 주" : "이전 주"} (캐시 유지)`,
+      console.log(
+        `%c📍 [NAVIGATE] Step 1: 슬라이드 확인`,
+        "color: #666; font-size: 11px;"
       );
-      // ✅ 캐시를 지우지 않음 - 이미 로드된 데이터 재사용!
 
       const slides = this.container.querySelectorAll(".calendar-slide");
       if (slides.length !== 7) {
-        devLog(
-          "⚠️ [슬라이드 부족] slides.length !== 7, render만 호출 (currentDate 수정 안함)",
+        console.log(
+          `%c⚠️ [NAVIGATE] 슬라이드 부족 ${slides.length}/7`,
+          "color: orange;"
         );
         await this.render();
         return;
       }
+
+      console.log(
+        `%c📍 [NAVIGATE] Step 2: 애니메이션 시작 (transform 적용)`,
+        "color: #666; font-size: 11px;"
+      );
 
       // 각 슬라이드를 100% 이동 (7개)
       const currentPositions = [-300, -200, -100, 0, 100, 200, 300];
@@ -819,29 +825,49 @@ class Calendar {
         roomLabels.style.transform = `translateX(${pixelMove}px)`;
       }
 
+      console.log(
+        `%c📍 [NAVIGATE] Step 3: transitionend 리스너 등록`,
+        "color: #666; font-size: 11px;"
+      );
+
       // transitionend 대기 (중앙 슬라이드 = 인덱스 3)
       const handleTransitionEnd = async (e) => {
         if (e.propertyName !== "transform") return;
+        console.log(
+          `%c🎬 [NAVIGATE] transitionend 발생!`,
+          "background: #00ff00; color: black; padding: 2px 5px;"
+        );
         slides[3].removeEventListener("transitionend", handleTransitionEnd);
 
         await this.finalizeNavigation(direction, slides);
-        devLog(`✅ 네비게이션 완료`);
+        console.log(
+          `%c✅ [NAVIGATE] Step 4: finalizeNavigation 완료`,
+          "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;"
+        );
       };
 
       slides[3].addEventListener("transitionend", handleTransitionEnd, {
         once: true,
       });
 
+      console.log(
+        `%c📍 [NAVIGATE] Step 5: finally 블록 실행됨 (곧 isAnimating=false 됨!)`,
+        "color: red; font-weight: bold; font-size: 11px;"
+      );
+
       // 안전장치: 500ms 후 강제 완료
       setTimeout(async () => {
         if (this.isAnimating) {
-          devLog("⏱️ 타임아웃으로 강제 완료");
+          console.log(`%c⏱️ [NAVIGATE] 타임아웃 강제 완료`, "color: orange;");
           slides[3].removeEventListener("transitionend", handleTransitionEnd);
           await this.finalizeNavigation(direction, slides);
-          devLog(`✅ 네비게이션 완료 (타임아웃)`);
         }
       }, 500);
     } finally {
+      console.log(
+        `%c🔚 [NAVIGATE] finally 블록 - isAnimating=false 설정!`,
+        "background: red; color: white; font-weight: bold; padding: 3px 8px;"
+      );
       // 모든 종료 경로에서 플래그 리셋
       this.isAnimating = false;
       this.hasPendingGestureNavigation = false;
@@ -849,12 +875,21 @@ class Calendar {
   }
 
   async finalizeNavigation(direction, slidesArray) {
+    console.log(
+      `%c🔄 [FINALIZE] 시작`,
+      "background: #ffff00; color: black; font-weight: bold; padding: 3px 8px;",
+      { direction: direction === 1 ? "다음 주" : "이전 주" }
+    );
+
     const slides = Array.from(slidesArray);
     if (slides.length !== 7) return;
 
     // 날짜 업데이트
     this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
-    devLog(`📅 날짜 변경: ${this.currentDate.toLocaleDateString("ko-KR")}`);
+    console.log(
+      `%c📅 [FINALIZE] 날짜 변경: ${this.currentDate.toLocaleDateString("ko-KR")}`,
+      "color: #0088ff;"
+    );
 
     // 제목 업데이트
     this.updateCalendarTitle();
@@ -881,8 +916,18 @@ class Calendar {
       slider.insertBefore(slides[6], slides[0]);
     }
 
+    console.log(
+      `%c🔄 [FINALIZE] DOM 재배열 완료, 데이터 준비 중...`,
+      "color: #0088ff;"
+    );
+
     // 새 데이터 준비
     await this.prepareAdjacentSlides(direction);
+
+    console.log(
+      `%c🔄 [FINALIZE] 슬라이드 원위치 복원`,
+      "color: #0088ff;"
+    );
 
     // 각 슬라이드를 원위치로 리셋 (transition 없이)
     const newSlides = this.container.querySelectorAll(".calendar-slide");
@@ -916,6 +961,11 @@ class Calendar {
         roomLabels.style.transition = "";
       }
     });
+
+    console.log(
+      `%c✅ [FINALIZE] 완료!`,
+      "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;"
+    );
   }
 
   updateCalendarTitle() {
