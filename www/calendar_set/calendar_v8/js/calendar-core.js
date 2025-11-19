@@ -564,19 +564,54 @@ class Calendar {
         const sliderWidth = sliderElement
           ? sliderElement.offsetWidth
           : this.container.offsetWidth;
-        const distanceThreshold = sliderWidth * 0.3; // 업계 표준 30%
-        const velocityThreshold = 0.5; // 업계 표준
-
-        const shouldNavigate =
-          distance >= distanceThreshold || velocity >= velocityThreshold;
+        const distanceThreshold = sliderWidth * 0.3; // 느린 드래그용
+        const velocityThreshold = 0.5;
+        
+        // 플링 vs 드래그 구분
+        const fastSwipeTimeLimit = 300; // 300ms 미만이면 빠른 스와이프(플링)
+        const isFastSwipe = duration < fastSwipeTimeLimit;
+        
+        let shouldNavigate;
+        if (isFastSwipe) {
+          // 빠른 스와이프(플링): 조금만 움직여도 넘어감
+          const minFlickDistance = 10; // 최소 10px
+          shouldNavigate = distance >= minFlickDistance;
+          
+          console.log(
+            `%c⚡ [빠른 플링] ${duration}ms < ${fastSwipeTimeLimit}ms`,
+            "background: #ffff00; color: black; font-weight: bold; padding: 3px 8px;",
+            {
+              판정: shouldNavigate ? "✅ 넘어감" : "❌ 안넘어감",
+              "이동거리": `${distance.toFixed(0)}px`,
+              "최소거리": `${minFlickDistance}px`,
+              조건: `${distance.toFixed(0)} >= ${minFlickDistance} = ${shouldNavigate}`,
+            }
+          );
+        } else {
+          // 느린 드래그: 거리나 속도 조건 적용
+          shouldNavigate =
+            distance >= distanceThreshold || velocity >= velocityThreshold;
+          
+          console.log(
+            `%c🐌 [느린 드래그] ${duration}ms >= ${fastSwipeTimeLimit}ms`,
+            "background: #ff9900; color: black; font-weight: bold; padding: 3px 8px;",
+            {
+              판정: shouldNavigate ? "✅ 넘어감" : "❌ 안넘어감",
+              "거리조건": `${distance.toFixed(0)} >= ${distanceThreshold.toFixed(0)} = ${distance >= distanceThreshold}`,
+              "속도조건": `${velocity.toFixed(3)} >= ${velocityThreshold} = ${velocity >= velocityThreshold}`,
+            }
+          );
+        }
 
         console.log(
-          `%c🎯 [HAMMER] 네비게이션 판정`,
+          `%c🎯 [최종 판정]`,
           "background: #ff00ff; color: white; font-weight: bold; padding: 3px 8px;",
           {
+            타입: isFastSwipe ? "⚡ 빠른 플링" : "🐌 느린 드래그",
             shouldNavigate,
-            "거리조건": `${distance.toFixed(0)} >= ${distanceThreshold.toFixed(0)} = ${distance >= distanceThreshold}`,
-            "속도조건": `${velocity.toFixed(3)} >= ${velocityThreshold} = ${velocity >= velocityThreshold}`,
+            "소요시간": `${duration}ms`,
+            "이동거리": `${distance.toFixed(0)}px`,
+            "속도": `${velocity.toFixed(3)}`,
           }
         );
 
