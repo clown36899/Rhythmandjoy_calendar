@@ -320,10 +320,14 @@ class Calendar {
     });
     this.hammer.get("pan").set({
       direction: Hammer.DIRECTION_HORIZONTAL,
-      threshold: 25,
+      threshold: 5, // 5px로 낮춰서 모든 터치에 반응
       enable: true,
     });
 
+    console.log(
+      `%c✅ [SETUP] Hammer 생성 완료 (threshold: 5px - 모든 터치 반응)`,
+      "background: #00ff00; color: black; padding: 2px 5px;"
+    );
     devLog("✅ Hammer 새로 생성 (touchAction: auto):", slider);
 
     let swipeStartTime = 0;
@@ -683,7 +687,7 @@ class Calendar {
       `%c✅ 터치 이벤트 로깅 설정 완료`,
       "background: #00ff00; color: black; font-weight: bold; padding: 5px 10px; font-size: 14px;",
       {
-        "Hammer threshold": "25px",
+        "Hammer threshold": "5px ← 모든 터치 반응",
         "네비게이션 거리": "20%",
         "네비게이션 속도": "0.6",
         "네이티브 이벤트": "활성화",
