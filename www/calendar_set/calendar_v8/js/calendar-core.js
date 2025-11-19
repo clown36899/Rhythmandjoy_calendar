@@ -572,7 +572,7 @@ class Calendar {
           return;
         }
 
-        const animationDuration = velocity > 1.5 ? 0.25 : 0.3;
+        const animationDuration = velocity > 1.5 ? 0.05 : 0.1;
         slides.forEach((slide) => {
           slide.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
         });
@@ -762,19 +762,22 @@ class Calendar {
       console.log(
         `%c⏸️ [NAVIGATE] 중복 방지 - 애니메이션 진행 중`,
         "background: #ff9900; color: black; font-weight: bold; padding: 3px 8px;",
-        { isAnimating: this.isAnimating }
+        { isAnimating: this.isAnimating },
       );
       return;
     }
-    
+
     // ✅ 즉시 플래그 설정 (async await 전에!)
     this.isAnimating = true;
     this.isPanning = false;
-    
+
     console.log(
       `%c🚀 [NAVIGATE] 시작`,
       "background: #00ffff; color: black; font-weight: bold; padding: 3px 8px;",
-      { direction: direction === 1 ? "다음 주 →" : "이전 주 ←", isAnimating: this.isAnimating }
+      {
+        direction: direction === 1 ? "다음 주 →" : "이전 주 ←",
+        isAnimating: this.isAnimating,
+      },
     );
 
     // render 진행 중이면 대기
@@ -786,14 +789,14 @@ class Calendar {
     try {
       console.log(
         `%c📍 [NAVIGATE] Step 1: 슬라이드 확인`,
-        "color: #666; font-size: 11px;"
+        "color: #666; font-size: 11px;",
       );
 
       const slides = this.container.querySelectorAll(".calendar-slide");
       if (slides.length !== 7) {
         console.log(
           `%c⚠️ [NAVIGATE] 슬라이드 부족 ${slides.length}/7`,
-          "color: orange;"
+          "color: orange;",
         );
         await this.render();
         return;
@@ -801,7 +804,7 @@ class Calendar {
 
       console.log(
         `%c📍 [NAVIGATE] Step 2: 애니메이션 시작 (transform 적용)`,
-        "color: #666; font-size: 11px;"
+        "color: #666; font-size: 11px;",
       );
 
       // 각 슬라이드를 100% 이동 (7개)
@@ -827,7 +830,7 @@ class Calendar {
 
       console.log(
         `%c📍 [NAVIGATE] Step 3: transitionend 리스너 등록`,
-        "color: #666; font-size: 11px;"
+        "color: #666; font-size: 11px;",
       );
 
       // transitionend 대기 (중앙 슬라이드 = 인덱스 3)
@@ -835,14 +838,14 @@ class Calendar {
         if (e.propertyName !== "transform") return;
         console.log(
           `%c🎬 [NAVIGATE] transitionend 발생!`,
-          "background: #00ff00; color: black; padding: 2px 5px;"
+          "background: #00ff00; color: black; padding: 2px 5px;",
         );
         slides[3].removeEventListener("transitionend", handleTransitionEnd);
 
         await this.finalizeNavigation(direction, slides);
         console.log(
           `%c✅ [NAVIGATE] Step 4: finalizeNavigation 완료`,
-          "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;"
+          "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;",
         );
       };
 
@@ -852,7 +855,7 @@ class Calendar {
 
       console.log(
         `%c📍 [NAVIGATE] Step 5: finally 블록 실행됨 (곧 isAnimating=false 됨!)`,
-        "color: red; font-weight: bold; font-size: 11px;"
+        "color: red; font-weight: bold; font-size: 11px;",
       );
 
       // 안전장치: 500ms 후 강제 완료
@@ -866,7 +869,7 @@ class Calendar {
     } finally {
       console.log(
         `%c🔚 [NAVIGATE] finally 블록 - isAnimating=false 설정!`,
-        "background: red; color: white; font-weight: bold; padding: 3px 8px;"
+        "background: red; color: white; font-weight: bold; padding: 3px 8px;",
       );
       // 모든 종료 경로에서 플래그 리셋
       this.isAnimating = false;
@@ -878,7 +881,7 @@ class Calendar {
     console.log(
       `%c🔄 [FINALIZE] 시작`,
       "background: #ffff00; color: black; font-weight: bold; padding: 3px 8px;",
-      { direction: direction === 1 ? "다음 주" : "이전 주" }
+      { direction: direction === 1 ? "다음 주" : "이전 주" },
     );
 
     const slides = Array.from(slidesArray);
@@ -888,7 +891,7 @@ class Calendar {
     this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
     console.log(
       `%c📅 [FINALIZE] 날짜 변경: ${this.currentDate.toLocaleDateString("ko-KR")}`,
-      "color: #0088ff;"
+      "color: #0088ff;",
     );
 
     // 제목 업데이트
@@ -918,16 +921,13 @@ class Calendar {
 
     console.log(
       `%c🔄 [FINALIZE] DOM 재배열 완료, 데이터 준비 중...`,
-      "color: #0088ff;"
+      "color: #0088ff;",
     );
 
     // 새 데이터 준비
     await this.prepareAdjacentSlides(direction);
 
-    console.log(
-      `%c🔄 [FINALIZE] 슬라이드 원위치 복원`,
-      "color: #0088ff;"
-    );
+    console.log(`%c🔄 [FINALIZE] 슬라이드 원위치 복원`, "color: #0088ff;");
 
     // 각 슬라이드를 원위치로 리셋 (transition 없이)
     const newSlides = this.container.querySelectorAll(".calendar-slide");
@@ -964,7 +964,7 @@ class Calendar {
 
     console.log(
       `%c✅ [FINALIZE] 완료!`,
-      "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;"
+      "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;",
     );
   }
 
