@@ -1681,7 +1681,7 @@ class Calendar {
 
       const headerHeight = headerElement.getBoundingClientRect().height;
       const weekViewHeight = firstWeekView.clientHeight;
-      const labelRowHeight = 40; // 2.5em ≈ 40px (라벨 행 높이)
+      const labelRowHeight = 32; // 라벨 행 높이 (작게 설정)
       const availableHeight = weekViewHeight - headerHeight - labelRowHeight;
       const rowHeight = availableHeight / 24;
 
