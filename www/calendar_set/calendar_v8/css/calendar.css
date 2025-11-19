@@ -446,7 +446,7 @@ body {
     position: fixed;
     left: 0;
     top: 0;
-    width: 33.3%;
+    width: 25%;
     height: 100vh;
     border: none;
     border-right: 1px solid #5e5e5e;
@@ -462,8 +462,8 @@ body {
   /* 가운데 달력 */
   .app-container {
     position: absolute;
-    width: 33.3%;
-    left: 33.3%;
+    width: 50%;
+    left: 25%;
     height: 100vh;
   }
 
@@ -473,7 +473,7 @@ body {
     position: absolute;
     right: 0;
     top: 0;
-    width: 33.3%;
+    width: 25%;
     height: 100vh;
     border: none;
     border-left: 1px solid #5e5e5e;
