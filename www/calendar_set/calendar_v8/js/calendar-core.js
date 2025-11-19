@@ -1681,7 +1681,11 @@ class Calendar {
 
       const headerHeight = headerElement.getBoundingClientRect().height;
       const weekViewHeight = firstWeekView.clientHeight;
-      const labelRowHeight = 32; // 라벨 행 고정 높이
+      
+      // badge 높이를 기준으로 라벨 행 높이 계산 (width 20% = height with aspect-ratio 1/1)
+      const dayWidth = firstWeekView.clientWidth / 7;
+      const labelRowHeight = dayWidth * 0.2; // badge width 20%와 동일
+      
       const availableHeight = weekViewHeight - headerHeight - labelRowHeight; // 라벨 행 공간 확보
       const rowHeight = availableHeight / 24; // 24시간을 남은 공간에 맞춤
 

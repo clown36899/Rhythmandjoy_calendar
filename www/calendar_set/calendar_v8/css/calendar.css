@@ -1159,21 +1159,26 @@ body.single-room-view .room-bottom-labels-outside {
   display: flex;
   align-items: center;
   pointer-events: none;
+  padding: 0;
+  margin: 0;
 }
+
 
 .room-label-badge {
   position: absolute;
-  height: 24px;
-  width: 24px;
+  width: 20%;
+  aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
   font-size: 11px;
   font-weight: bold;
   color: white;
   transform: translateX(-50%);
   pointer-events: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
 }
 
 /* 라벨 행 높이 조정 */
