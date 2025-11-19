@@ -1690,7 +1690,7 @@ class Calendar {
 
       allWeekViews.forEach((weekView) => {
         // Grid 행 높이를 동적으로 설정하여 24시간 + 라벨행이 항상 fit되도록
-        weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px) 2.5em`;
+        weekView.style.gridTemplateRows = `${headerHeight}px repeat(24, ${rowHeight}px) ${labelRowHeight}px`;
 
         // 이 weekView 안의 이벤트 컨테이너들 조정 (7개 요일만)
         const eventContainers = weekView.querySelectorAll(
