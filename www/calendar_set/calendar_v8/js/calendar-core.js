@@ -9,9 +9,9 @@ class Calendar {
     this.isAnimating = false;
     this.isPanning = false; // 스와이프 상태 플래그
     this.hasPendingGestureNavigation = false; // 제스처 네비게이션 중복 방지
-    this.currentSlideIndex = 1; // 0: prev, 1: current, 2: next
+    this.currentSlideIndex = 3; // 0-6 중 중앙 (7개 슬라이드)
     this.weekDataCache = new Map(); // 주간 데이터 캐시
-    this.baseTranslate = -33.333; // 현재 slider의 기본 위치 (%)
+    this.baseTranslate = -14.2857; // 현재 slider의 기본 위치 (% = 100/7)
     this.timeUpdateInterval = null; // 현재 시간 업데이트 타이머
     this.renderPromise = null; // render 동시 실행 방지 배리어
     this.lastSwipeTime = 0; // 마지막 스와이프 시간 (클릭 vs 스와이프 구분)
@@ -96,11 +96,11 @@ class Calendar {
     this.hasPendingGestureNavigation = false;
 
     const slides = this.container.querySelectorAll(".calendar-slide");
-    if (slides.length === 3) {
+    if (slides.length === 7) {
       slides.forEach((slide, i) => {
         slide.style.transition =
           "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
-        slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
+        slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
       });
     }
 
@@ -350,7 +350,7 @@ class Calendar {
     devLog("✅ Hammer 새로 생성 (touchAction: auto):", slider);
 
     let swipeStartTime = 0;
-    let slideStarts = [-100, 0, 100];
+    let slideStarts = [-300, -200, -100, 0, 100, 200, 300];
     let hammerEventCount = 0;
 
     // ========================================
@@ -402,11 +402,11 @@ class Calendar {
       }
 
       const slides = this.container.querySelectorAll(".calendar-slide");
-      if (slides.length === 3) {
+      if (slides.length === 7) {
         slides.forEach((slide, i) => {
           slide.style.transition = "none";
         });
-        slideStarts = [-100, 0, 100];
+        slideStarts = [-300, -200, -100, 0, 100, 200, 300];
         swipeStartTime = Date.now();
         this.isPanning = true;
 
@@ -779,16 +779,17 @@ class Calendar {
       this.weekDataCache.clear();
 
       const slides = this.container.querySelectorAll(".calendar-slide");
-      if (slides.length !== 3) {
+      if (slides.length !== 7) {
         devLog(
-          "⚠️ [슬라이드 부족] slides.length !== 3, render만 호출 (currentDate 수정 안함)",
+          "⚠️ [슬라이드 부족] slides.length !== 7, render만 호출 (currentDate 수정 안함)",
         );
         await this.render();
         return;
       }
 
-      // 각 슬라이드를 100% 이동
-      const targets = direction === 1 ? [-200, -100, 0] : [0, 100, 200];
+      // 각 슬라이드를 100% 이동 (7개)
+      const currentPositions = [-300, -200, -100, 0, 100, 200, 300];
+      const targets = currentPositions.map(pos => pos + (direction === 1 ? -100 : 100));
       slides.forEach((slide, i) => {
         slide.style.transform = `translateX(${targets[i]}%)`;
       });
@@ -800,21 +801,21 @@ class Calendar {
         const sliderWidth = slider
           ? slider.offsetWidth
           : this.container.offsetWidth;
-        const currentSlideTarget = targets[1]; // -100% 또는 100%
+        const currentSlideTarget = targets[3]; // 중앙 슬라이드 (인덱스 3)
         const pixelMove = (sliderWidth * currentSlideTarget) / 100;
         roomLabels.style.transform = `translateX(${pixelMove}px)`;
       }
 
-      // transitionend 대기
+      // transitionend 대기 (중앙 슬라이드 = 인덱스 3)
       const handleTransitionEnd = async (e) => {
         if (e.propertyName !== "transform") return;
-        slides[1].removeEventListener("transitionend", handleTransitionEnd);
+        slides[3].removeEventListener("transitionend", handleTransitionEnd);
 
         await this.finalizeNavigation(direction, slides);
         devLog(`✅ 네비게이션 완료`);
       };
 
-      slides[1].addEventListener("transitionend", handleTransitionEnd, {
+      slides[3].addEventListener("transitionend", handleTransitionEnd, {
         once: true,
       });
 
@@ -822,7 +823,7 @@ class Calendar {
       setTimeout(async () => {
         if (this.isAnimating) {
           devLog("⏱️ 타임아웃으로 강제 완료");
-          slides[1].removeEventListener("transitionend", handleTransitionEnd);
+          slides[3].removeEventListener("transitionend", handleTransitionEnd);
           await this.finalizeNavigation(direction, slides);
           devLog(`✅ 네비게이션 완료 (타임아웃)`);
         }
@@ -836,7 +837,7 @@ class Calendar {
 
   async finalizeNavigation(direction, slidesArray) {
     const slides = Array.from(slidesArray);
-    if (slides.length !== 3) return;
+    if (slides.length !== 7) return;
 
     // 날짜 업데이트
     this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
@@ -858,11 +859,13 @@ class Calendar {
       roomLabels.style.transition = "none";
     }
 
-    // DOM 재배열
+    // DOM 재배열 (7개)
     if (direction === 1) {
+      // 다음 주: 첫 슬라이드를 끝으로
       slider.appendChild(slides[0]);
     } else {
-      slider.insertBefore(slides[2], slides[0]);
+      // 이전 주: 끝 슬라이드를 처음으로
+      slider.insertBefore(slides[6], slides[0]);
     }
 
     // 새 데이터 준비
@@ -871,7 +874,7 @@ class Calendar {
     // 각 슬라이드를 원위치로 리셋 (transition 없이)
     const newSlides = this.container.querySelectorAll(".calendar-slide");
     newSlides.forEach((slide, i) => {
-      slide.style.transform = `translateX(${[-100, 0, 100][i]}%)`;
+      slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
     });
 
     // room-bottom-labels-outside도 원위치로 리셋
@@ -914,35 +917,32 @@ class Calendar {
     const slides = Array.from(
       this.container.querySelectorAll(".calendar-slide"),
     );
-    if (slides.length !== 3) return;
+    if (slides.length !== 7) return;
 
-    // 이제 slides = [이전주, 현재주, 다음주]
-    const prevDate = new Date(this.currentDate);
-    prevDate.setDate(prevDate.getDate() - 7);
+    // 7주 날짜 계산 (-3주 ~ +3주)
+    const dates = [];
+    for (let i = -3; i <= 3; i++) {
+      const date = new Date(this.currentDate);
+      date.setDate(date.getDate() + i * 7);
+      dates.push(date);
+    }
 
-    const nextDate = new Date(this.currentDate);
-    nextDate.setDate(nextDate.getDate() + 7);
+    // 7주치 캐시 로드
+    for (const date of dates) {
+      await this.loadWeekDataToCache(date);
+    }
 
-    // 3주치 캐시 로드
-    await this.loadWeekDataToCache(prevDate);
-    await this.loadWeekDataToCache(this.currentDate);
-    await this.loadWeekDataToCache(nextDate);
-
-    // 캐시된 데이터를 합쳐서 this.events에 설정 (getEventsForDay가 이걸 참조함)
-    this.events = this.getMergedEventsFromCache([
-      prevDate,
-      this.currentDate,
-      nextDate,
-    ]);
+    // 캐시된 데이터를 합쳐서 this.events에 설정
+    this.events = this.getMergedEventsFromCache(dates);
     devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
-    // 슬라이드 내용 업데이트 (이제 this.events에 3주치 데이터가 있음)
-    slides[0].innerHTML = this.renderWeekViewContent(prevDate);
-    slides[1].innerHTML = this.renderWeekViewContent(this.currentDate);
-    slides[2].innerHTML = this.renderWeekViewContent(nextDate);
+    // 7개 슬라이드 내용 업데이트
+    slides.forEach((slide, i) => {
+      slide.innerHTML = this.renderWeekViewContent(dates[i]);
+    });
 
     devLog(
-      `🔄 슬라이드 준비: ${prevDate.toLocaleDateString("ko-KR")} | ${this.currentDate.toLocaleDateString("ko-KR")} | ${nextDate.toLocaleDateString("ko-KR")}`,
+      `🔄 슬라이드 준비 완료: -3주 ~ +3주`,
     );
   }
 
@@ -983,32 +983,28 @@ class Calendar {
       const slides = Array.from(
         this.container.querySelectorAll(".calendar-slide"),
       );
-      if (slides.length === 3) {
-        // 3개 슬라이드가 있으면 내용만 갱신 (위치 유지)
-        const prevDate = new Date(this.currentDate);
-        prevDate.setDate(prevDate.getDate() - 7);
-        const nextDate = new Date(this.currentDate);
-        nextDate.setDate(nextDate.getDate() + 7);
+      if (slides.length === 7) {
+        // 7개 슬라이드가 있으면 내용만 갱신 (위치 유지)
+        const dates = [];
+        for (let i = -3; i <= 3; i++) {
+          const date = new Date(this.currentDate);
+          date.setDate(date.getDate() + i * 7);
+          dates.push(date);
+        }
 
-        await this.loadWeekDataToCache(prevDate);
-        await this.loadWeekDataToCache(this.currentDate);
-        await this.loadWeekDataToCache(nextDate);
+        for (const date of dates) {
+          await this.loadWeekDataToCache(date);
+        }
 
-        this.events = this.getMergedEventsFromCache([
-          prevDate,
-          this.currentDate,
-          nextDate,
-        ]);
+        this.events = this.getMergedEventsFromCache(dates);
         devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
-        // 슬라이드 내용만 업데이트 (transform 유지)
-        slides[0].innerHTML = this.renderWeekViewContent(prevDate);
-        slides[1].innerHTML = this.renderWeekViewContent(this.currentDate);
-        slides[2].innerHTML = this.renderWeekViewContent(nextDate);
+        // 7개 슬라이드 내용만 업데이트 (transform 유지)
+        slides.forEach((slide, i) => {
+          slide.innerHTML = this.renderWeekViewContent(dates[i]);
+        });
 
-        devLog(
-          `🔄 슬라이드 준비: ${prevDate.toLocaleDateString("ko-KR")} | ${this.currentDate.toLocaleDateString("ko-KR")} | ${nextDate.toLocaleDateString("ko-KR")}`,
-        );
+        devLog(`🔄 슬라이드 준비 완료: -3주 ~ +3주`);
 
         // ✅ 날짜 높이 깨짐 방지: innerHTML 업데이트 후 레이아웃 재조정
         requestAnimationFrame(() => {
@@ -1225,31 +1221,25 @@ class Calendar {
   }
 
   async renderWeekViewWithSlider() {
-    devLog(`\n🎨 [렌더] 3슬라이드 렌더링 시작`);
+    devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작`);
     devLog(`   현재 캐시 크기: ${this.weekDataCache.size}개`);
 
-    // 이전주, 현재주, 다음주 날짜 계산
-    const prevDate = new Date(this.currentDate);
-    prevDate.setDate(prevDate.getDate() - 7);
+    // -3주부터 +3주까지 7주 계산
+    const dates = [];
+    for (let i = -3; i <= 3; i++) {
+      const date = new Date(this.currentDate);
+      date.setDate(date.getDate() + i * 7);
+      dates.push(date);
+      devLog(`   ${i === 0 ? '현재주' : (i > 0 ? `+${i}주` : `${i}주`)}: ${date.toLocaleDateString("ko-KR")}`);
+    }
 
-    const nextDate = new Date(this.currentDate);
-    nextDate.setDate(nextDate.getDate() + 7);
-
-    devLog(`   이전주: ${prevDate.toLocaleDateString("ko-KR")}`);
-    devLog(`   현재주: ${this.currentDate.toLocaleDateString("ko-KR")}`);
-    devLog(`   다음주: ${nextDate.toLocaleDateString("ko-KR")}`);
-
-    // 3주치 이벤트를 캐시에서 로드 또는 새로 가져오기
-    await this.loadWeekDataToCache(prevDate);
-    await this.loadWeekDataToCache(this.currentDate);
-    await this.loadWeekDataToCache(nextDate);
+    // 7주치 이벤트를 캐시에서 로드 또는 새로 가져오기
+    for (const date of dates) {
+      await this.loadWeekDataToCache(date);
+    }
 
     // 캐시된 데이터를 합쳐서 this.events에 설정
-    this.events = this.getMergedEventsFromCache([
-      prevDate,
-      this.currentDate,
-      nextDate,
-    ]);
+    this.events = this.getMergedEventsFromCache(dates);
     devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
     // 고정 시간 열 + 슬라이더 생성
@@ -1257,17 +1247,13 @@ class Calendar {
 
     html += '<div class="calendar-slider">';
 
-    html += '<div class="calendar-slide" style="transform: translateX(-100%)">';
-    html += this.renderWeekViewContent(prevDate);
-    html += "</div>";
-
-    html += '<div class="calendar-slide" style="transform: translateX(0%)">';
-    html += this.renderWeekViewContent(this.currentDate);
-    html += "</div>";
-
-    html += '<div class="calendar-slide" style="transform: translateX(100%)">';
-    html += this.renderWeekViewContent(nextDate);
-    html += "</div>";
+    // 7개 슬라이드 생성: -300%, -200%, -100%, 0%, 100%, 200%, 300%
+    const translateValues = [-300, -200, -100, 0, 100, 200, 300];
+    dates.forEach((date, i) => {
+      html += `<div class="calendar-slide" style="transform: translateX(${translateValues[i]}%)">`;
+      html += this.renderWeekViewContent(date);
+      html += "</div>";
+    });
 
     html += "</div>";
 
