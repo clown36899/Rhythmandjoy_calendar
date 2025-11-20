@@ -85,12 +85,21 @@ class Logger {
 }
 
 const logger = new Logger();
+window.logger = logger;
+
+const originalConsoleTable = console.table;
+const originalConsoleLog = console.log;
 
 window.downloadLogs = () => logger.download();
 window.viewLogs = (level = null) => {
-  console.table(logger.getLogs(level, 50));
+  const logs = logger.getLogs(level, 50);
+  if (logs.length === 0) {
+    originalConsoleLog('로그가 없습니다.');
+  } else {
+    originalConsoleTable(logs);
+  }
 };
 window.clearLogs = () => {
   logger.clear();
-  console.log('로그가 삭제되었습니다.');
+  originalConsoleLog('로그가 삭제되었습니다.');
 };
