@@ -48,7 +48,8 @@ const CONFIG = {
   dayNames: ['일', '월', '화', '수', '목', '금', '토']
 };
 
-const originalConsole = {
+// 원본 console이 logger.js에서 이미 저장되었으므로 여기서는 단순히 오버라이드만
+const originalConsole = window._originalConsole || {
   log: console.log,
   error: console.error,
   warn: console.warn,

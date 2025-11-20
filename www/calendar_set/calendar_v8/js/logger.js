@@ -84,33 +84,33 @@ class Logger {
   }
 }
 
-// 즉시 실행하여 원본 console 저장
-(function() {
-  const logger = new Logger();
-  window.logger = logger;
+// 전역 logger 인스턴스 생성
+window.logger = new Logger();
 
-  const originalConsoleTable = console.table ? console.table.bind(console) : console.log.bind(console);
-  const originalConsoleLog = console.log.bind(console);
+// 원본 console 함수 저장 (config.js가 오버라이드하기 전)
+window._originalConsole = window._originalConsole || {
+  log: console.log.bind(console),
+  error: console.error.bind(console),
+  warn: console.warn.bind(console),
+  info: console.info.bind(console),
+  table: console.table ? console.table.bind(console) : console.log.bind(console)
+};
 
-  window.downloadLogs = function() {
-    logger.download();
-  };
-  
-  window.viewLogs = function(level) {
-    const logs = logger.getLogs(level, 50);
-    if (logs.length === 0) {
-      originalConsoleLog('로그가 없습니다.');
-    } else {
-      if (console.table) {
-        originalConsoleTable(logs);
-      } else {
-        logs.forEach(log => originalConsoleLog(log));
-      }
-    }
-  };
-  
-  window.clearLogs = function() {
-    logger.clear();
-    originalConsoleLog('로그가 삭제되었습니다.');
-  };
-})();
+// 전역 함수로 노출
+window.downloadLogs = function() {
+  window.logger.download();
+};
+
+window.viewLogs = function(level) {
+  const logs = window.logger.getLogs(level, 50);
+  if (logs.length === 0) {
+    window._originalConsole.log('로그가 없습니다.');
+  } else {
+    window._originalConsole.table(logs);
+  }
+};
+
+window.clearLogs = function() {
+  window.logger.clear();
+  window._originalConsole.log('로그가 삭제되었습니다.');
+};
