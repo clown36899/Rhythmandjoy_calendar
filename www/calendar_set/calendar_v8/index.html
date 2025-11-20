@@ -207,8 +207,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+    <script>
+      class Logger{constructor(){this.logs=[];this.maxLogs=1000;this.logKey='rhythmjoy_logs';this.loadLogs()}loadLogs(){try{const stored=localStorage.getItem(this.logKey);if(stored){this.logs=JSON.parse(stored)}}catch(e){}}saveLogs(){try{if(this.logs.length>this.maxLogs){this.logs=this.logs.slice(-this.maxLogs)}localStorage.setItem(this.logKey,JSON.stringify(this.logs))}catch(e){}}log(level,message,data=null){const entry={timestamp:new Date().toISOString(),level,message,data};this.logs.push(entry);this.saveLogs();if(level==='ERROR'){console.error(`[${level}] ${message}`,data||'')}}error(message,data=null){this.log('ERROR',message,data)}warn(message,data=null){this.log('WARN',message,data)}info(message,data=null){this.log('INFO',message,data)}getLogs(level=null,limit=100){let filtered=level?this.logs.filter(log=>log.level===level):this.logs;return filtered.slice(-limit)}clear(){this.logs=[];localStorage.removeItem(this.logKey)}download(){const content=this.logs.map(log=>`[${log.timestamp}] ${log.level}: ${log.message}${log.data?'\n  '+JSON.stringify(log.data):''}`).join('\n');const blob=new Blob([content],{type:'text/plain'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`rhythmjoy-logs-${new Date().toISOString().slice(0,10)}.txt`;a.click();URL.revokeObjectURL(url)}}
+      window.logger=new Logger();
+      window._originalConsole={log:console.log.bind(console),error:console.error.bind(console),warn:console.warn.bind(console),info:console.info.bind(console),table:console.table?console.table.bind(console):console.log.bind(console)};
+      window.downloadLogs=function(){window.logger.download()};
+      window.viewLogs=function(level){const logs=window.logger.getLogs(level,50);if(logs.length===0){window._originalConsole.log('로그가 없습니다.')}else{window._originalConsole.table(logs)}};
+      window.clearLogs=function(){window.logger.clear();window._originalConsole.log('로그가 삭제되었습니다.')};
+    </script>
+
     <script src="env.js"></script>
-    <script src="js/logger.js"></script>
     <script src="js/config.js"></script>
     <script src="js/data-manager.js"></script>
     <script src="js/calendar-core.js"></script>
