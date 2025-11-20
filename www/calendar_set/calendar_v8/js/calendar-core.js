@@ -1641,11 +1641,11 @@ class Calendar {
 
       const headerHeight = headerElement.getBoundingClientRect().height;
       const weekViewHeight = firstWeekView.clientHeight;
-      
+
       // badge 높이를 기준으로 라벨 행 높이 계산 (width 20% = height with aspect-ratio 1/1)
       const dayWidth = firstWeekView.clientWidth / 7;
       const labelRowHeight = dayWidth * 0.2; // badge width 20%와 동일
-      
+
       const availableHeight = weekViewHeight - headerHeight - labelRowHeight; // 라벨 행 공간 확보
       const rowHeight = availableHeight / 24; // 24시간을 남은 공간에 맞춤
 
@@ -2135,7 +2135,7 @@ class Calendar {
       const nameMatch = event.title.match(/([^\s()\d])\*+님/);
       if (nameMatch) {
         const firstChar = nameMatch[1];
-        displayText = `<div class="event-time-short">${timeDisplay}</div><div class="name-char">${firstChar}</div><div class="name-circle">○</div><div class="name-suffix">님</div>`;
+        displayText = `<div class="event-time-short">${timeDisplay}</div><div class="name-char">${firstChar}</div><div class="name-circle">*</div><div class="name-suffix">님</div>`;
       } else {
         // 패턴 2: 알파벳만 추출 (sc, ka 등) → sc / ○ / 님
         const alphaMatch = event.title.match(/[a-zA-Z]+/);
