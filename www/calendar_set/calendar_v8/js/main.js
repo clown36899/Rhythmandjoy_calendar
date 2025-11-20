@@ -1,7 +1,7 @@
 let calendar;
 
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log("🚀 리듬앤조이 일정표 v8 시작");
+  if (window.logger) logger.info('App starting');
 
   calendar = new Calendar("calendarContainer");
   window.calendar = calendar;
@@ -12,10 +12,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupInfoButton();
   setupBottomLayoutObserver();
   
-  // URL 파라미터 확인하여 예약정보 자동 열기
   checkAndOpenInfoPage();
 
-  console.log("✅ 초기화 완료");
+  if (window.logger) logger.info('App initialized');
 });
 
 function setupAdminButton() {
@@ -114,10 +113,6 @@ function setupBottomLayoutObserver() {
     if (bottomControls && roomSelector) {
       const bottomControlsHeight = bottomControls.offsetHeight;
       const roomSelectorHeight = roomSelector.offsetHeight;
-      
-      console.log("📏 [높이측정] bottom-controls:", bottomControlsHeight + "px");
-      console.log("📏 [높이측정] room-selector:", roomSelectorHeight + "px");
-      console.log("📏 [높이측정] 합계:", (bottomControlsHeight + roomSelectorHeight) + "px");
       
       document.documentElement.style.setProperty("--bottom-controls-height", `${bottomControlsHeight}px`);
       document.documentElement.style.setProperty("--room-selector-height", `${roomSelectorHeight}px`);

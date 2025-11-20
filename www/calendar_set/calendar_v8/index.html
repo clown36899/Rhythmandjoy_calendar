@@ -208,6 +208,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <script src="env.js"></script>
+    <script src="js/logger.js"></script>
     <script src="js/config.js"></script>
     <script src="js/data-manager.js"></script>
     <script src="js/calendar-core.js"></script>
@@ -229,7 +230,7 @@
               copyTxt.blur();
             })
             .catch((err) => {
-              console.error("복사 실패:", err);
+              if (window.logger) logger.error("복사 실패", { error: err });
               alert("복사에 실패했습니다.");
             });
         } else {
@@ -238,7 +239,7 @@
             alert("010-4801-7180 복사되었습니다.");
             copyTxt.blur();
           } catch (err) {
-            console.error("복사 실패:", err);
+            if (window.logger) logger.error("복사 실패", { error: err });
             alert("복사에 실패했습니다. 수동으로 복사해주세요.");
           }
         }

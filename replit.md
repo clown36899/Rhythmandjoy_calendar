@@ -4,6 +4,14 @@ This project is a mobile-friendly room booking calendar application for "Rhythmj
 
 # Recent Changes
 
+**2025-11-20: File-based Logging System**
+- Implemented localStorage-based logging system (`js/logger.js`)
+- Disabled console output for all debug logs to reduce browser load
+- Only ERROR, WARN, INFO logs are recorded to localStorage
+- Console logs can be viewed with `viewLogs()`, downloaded with `downloadLogs()`, or cleared with `clearLogs()`
+- Maximum 1,000 log entries retained automatically
+- Room label swipe synchronization fixed - labels now move with parent slides automatically
+
 **2025-11-14: Mobile Reservation Info Page Separation**
 - Created independent `info.html` page for reservation information (separate from calendar offcanvas)
 - Added top header with back-to-calendar and home buttons
@@ -33,6 +41,13 @@ Preferred communication style: Simple, everyday language.
 **Data Management**
 - Data caching strategy loads all booking events (1,000+) once on page load and caches them in browser memory for instant navigation.
 - Supabase Realtime automatically refreshes the cache upon data changes, eliminating network requests when navigating months/rooms.
+
+**Logging System**
+- File-based logging using localStorage (`js/logger.js`)
+- Console output disabled for performance optimization
+- Error tracking and important events logged automatically
+- Logs accessible via browser console: `viewLogs()`, `downloadLogs()`, `clearLogs()`
+- See `LOG_GUIDE.md` for detailed usage instructions
 
 ## Backend Architecture
 

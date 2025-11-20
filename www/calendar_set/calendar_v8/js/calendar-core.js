@@ -28,12 +28,9 @@ class Calendar {
   async init() {
     try {
       await window.dataManager.init();
-      devLog("✅ Supabase initialized");
+      if (window.logger) logger.info('Calendar initialized');
     } catch (error) {
-      console.error(
-        "⚠️ Supabase 초기화 실패, 캐시 데이터로 진행:",
-        error.message,
-      );
+      if (window.logger) logger.error('Supabase 초기화 실패', { message: error.message });
     }
 
     this.setupEventListeners();
@@ -41,8 +38,6 @@ class Calendar {
     await this.render();
     this.setupSwipeGestures();
     this.startCurrentTimeUpdater();
-
-    devLog("✅ Realtime subscription active");
   }
 
   setupResizeObserver() {

@@ -47,3 +47,26 @@ const CONFIG = {
   
   dayNames: ['일', '월', '화', '수', '목', '금', '토']
 };
+
+const originalConsole = {
+  log: console.log,
+  error: console.error,
+  warn: console.warn,
+  info: console.info
+};
+
+console.log = function() {};
+console.info = function() {};
+console.warn = function() {};
+
+console.error = function(...args) {
+  if (window.logger) {
+    const message = args.map(arg => 
+      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+    ).join(' ');
+    window.logger.error(message);
+  }
+  originalConsole.error.apply(console, args);
+};
+
+function devLog() {}
