@@ -256,6 +256,155 @@ app.get('/api/bookings/:roomId', async (req, res) => {
   }
 });
 
+// ✨ NEW: 월별 매출 조회 API (캘린더 조회 + 계산 + 저장)
+app.get('/api/admin/revenue', requireAuth, async (req, res) => {
+  try {
+    initCalendar();
+
+    const now = new Date();
+    const year = parseInt(req.query.year || now.getFullYear(), 10);
+    const month = parseInt(req.query.month || now.getMonth() + 1, 10);
+
+    console.log(`💰 [매출 조회] ${year}-${String(month).padStart(2, '0')} 요청`);
+
+    // 조회 대상 월의 시작일과 종료일
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 0);
+    
+    // 저번달 이전인지 확인 (현재 월/이후 달 = 캘린더 조회, 그 이전 = DB 조회)
+    const isCurrentOrFuture = year > now.getFullYear() || 
+                             (year === now.getFullYear() && month >= now.getMonth() + 1);
+
+    let revenue = 0;
+    let bookings = 0;
+    const byRoom = { a: 0, b: 0, c: 0, d: 0, e: 0 };
+
+    if (isCurrentOrFuture) {
+      // 🔥 Google Calendar에서 조회 + 계산
+      console.log(`   📡 [Google Calendar 조회] ${year}-${String(month).padStart(2, '0')}`);
+      
+      const events = {};
+      const roomIdList = ['a', 'b', 'c', 'd', 'e'];
+      
+      // 모든 룸의 이벤트 조회
+      for (const roomId of roomIdList) {
+        const room = rooms.find(r => r.id === roomId);
+        if (!room) continue;
+
+        events[roomId] = [];
+        let pageToken = null;
+
+        try {
+          do {
+            const response = await calendar.events.list({
+              calendarId: room.calendarId,
+              timeMin: monthStart.toISOString(),
+              timeMax: monthEnd.toISOString(),
+              singleEvents: true,
+              orderBy: 'startTime',
+              pageToken: pageToken
+            });
+
+            const items = response.data.items || [];
+            for (const event of items) {
+              if (!event.start || !event.start.dateTime) continue;
+              
+              events[roomId].push({
+                roomId: roomId,
+                title: event.summary || '(제목 없음)',
+                start: event.start.dateTime,
+                end: event.end?.dateTime,
+                description: event.description || null
+              });
+            }
+
+            pageToken = response.data.nextPageToken;
+          } while (pageToken);
+
+          console.log(`   ✅ 룸 ${roomId}: ${events[roomId].length}개 이벤트`);
+        } catch (error) {
+          console.error(`   ❌ 룸 ${roomId} 조회 실패:`, error.message);
+          events[roomId] = [];
+        }
+      }
+
+      // 계산: 간단한 시간 기반 가격 (30분당 10,000원)
+      for (const roomId in events) {
+        for (const event of events[roomId]) {
+          const startTime = new Date(event.start);
+          const endTime = new Date(event.end);
+          const durationMinutes = (endTime - startTime) / (1000 * 60);
+          const price = Math.ceil(durationMinutes / 30) * 10000;
+          
+          revenue += price;
+          byRoom[roomId] += price;
+          bookings++;
+        }
+      }
+
+      // DB에 저장 (statistics 또는 monthly_revenue 테이블)
+      if (revenue > 0 || bookings > 0) {
+        const { error: saveError } = await supabase
+          .from('monthly_revenue')
+          .upsert({
+            year,
+            month,
+            total_revenue: revenue,
+            total_bookings: bookings,
+            by_room: byRoom,
+            source: 'calendar', // 캘린더에서 계산
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'year,month'
+          });
+
+        if (saveError) {
+          console.warn(`   ⚠️ DB 저장 실패 (계속 진행):`, saveError.message);
+        } else {
+          console.log(`   💾 DB 저장 완료`);
+        }
+      }
+    } else {
+      // DB에서 조회 (저번달 이전)
+      console.log(`   🗄️ [DB 조회] ${year}-${String(month).padStart(2, '0')} (이전 데이터)`);
+      
+      const { data, error } = await supabase
+        .from('monthly_revenue')
+        .select('*')
+        .eq('year', year)
+        .eq('month', month)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // 404가 아닌 다른 에러
+        console.error('   ❌ DB 조회 실패:', error.message);
+        throw error;
+      }
+
+      if (data) {
+        revenue = data.total_revenue || 0;
+        bookings = data.total_bookings || 0;
+        Object.assign(byRoom, data.by_room || byRoom);
+        console.log(`   ✅ DB에서 조회: ${revenue.toLocaleString()}원`);
+      } else {
+        console.log(`   ℹ️ DB에 데이터 없음 (이전 데이터 미수집)`);
+      }
+    }
+
+    res.json({
+      success: true,
+      year,
+      month,
+      revenue,
+      bookings,
+      byRoom,
+      isCurrentOrFuture
+    });
+  } catch (error) {
+    console.error('❌ 매출 조회 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 수동 리셋 엔드포인트 (모든 데이터 삭제 + 전체 재동기화) - 관리자 전용
 app.post('/api/reset-sync', requireAuth, async (req, res) => {
   try {
