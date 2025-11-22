@@ -993,7 +993,7 @@ class Calendar {
     devLog(`   ✅ [Step 2] 슬라이드 업데이트 완료: ${this.events.length}개 이벤트`);
 
     // Step 3: 나머지 주는 백그라운드 순차 로드 (비블로킹)
-    devLog(`   🔄 [Step 3] 백그라운드 로드 시작 - ${otherDates.length}주 비동기`);
+    devLog(`   🔄 [Step 3] 백그라운드 순차 로드 시작 - ${otherDates.length}주 비동기`);
     
     // 🆕 현재 height 정보 저장 (높이 튀지 않게 하기)
     const slideHeights = new Map();
@@ -1007,29 +1007,26 @@ class Calendar {
       }
     });
     
-    otherDates.forEach(date => {
-      this.loadWeekDataToCache(date).then(() => {
+    // 🆕 순차 로드 (2개씩)
+    (async () => {
+      for (const date of otherDates) {
+        await this.loadWeekDataToCache(date);
         const slideIdx = dates.findIndex(d => d.toDateString() === date.toDateString());
+        
         if (slideIdx !== -1 && slides[slideIdx]) {
-          // 🆕 콘텐츠 업데이트
+          // 콘텐츠 업데이트
           slides[slideIdx].innerHTML = this.renderWeekViewContent(dates[slideIdx]);
           
-          // 🆕 높이 정보 복원 (높이 일관성 유지)
-          const savedHeight = slideHeights.get(slideIdx);
-          if (savedHeight) {
-            const weekView = slides[slideIdx].querySelector('.week-view');
-            if (weekView) {
-              weekView.style.gridTemplateRows = savedHeight.gridTemplateRows;
-              devLog(`   📦 [높이유지] ${date.toLocaleDateString("ko-KR")} - 그리드 복원`);
-            }
-          } else {
-            devLog(`   📦 백그라운드 완료: ${date.toLocaleDateString("ko-KR")}`);
-          }
+          // 🆕 높이 강제 고정 - adjustWeekViewLayout 호출
+          requestAnimationFrame(() => {
+            this.adjustWeekViewLayout(true);
+            devLog(`   📦 [높이고정] ${date.toLocaleDateString("ko-KR")} - 레이아웃 재계산`);
+          });
         }
-      });
-    });
+      }
+    })();
 
-    devLog(`✅ [무한스크롤] 7주 유지: 우선 3주(${priorityTime}ms) → 나머지 4주 백그라운드 중...`);
+    devLog(`✅ [무한스크롤] 7주 유지: 우선 3주(${priorityTime}ms) → 나머지 4주 백그라운드 순차 중...`);
   }
 
   goToToday() {
@@ -1310,7 +1307,7 @@ class Calendar {
   async renderWeekViewWithSlider() {
     // 🆕 초기 로드 시작
     this.isInitialLoading = true;
-    devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작 (스와이프 DISABLED)`);
+    devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작 (로딩 표시 중)`);
     devLog(`   현재 캐시 크기: ${this.weekDataCache.size}개`);
 
     const dates = [];
@@ -1318,32 +1315,35 @@ class Calendar {
       const date = new Date(this.currentDate);
       date.setDate(date.getDate() + i * 7);
       dates.push(date);
-      devLog(
-        `   ${i === 0 ? "현재주" : i > 0 ? `+${i}주` : `${i}주`}: ${date.toLocaleDateString("ko-KR")}`,
-      );
     }
 
-    // ⚡ 3주 우선 로드 (블로킹) - 이 동안 스와이프 불가
+    // ⚡ STEP 1: 3주 우선 로드 (현주 + ±1주)
     const currentWeekDate = dates[3];
     const adjWeekDates = [dates[2], dates[4]];
+    const priorityDates = [currentWeekDate, ...adjWeekDates];
     
-    devLog(`   🚀 [현주 로드] ${currentWeekDate.toLocaleDateString("ko-KR")}`);
+    devLog(`   🚀 [STEP1] 우선 3주: ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(" | ")}`);
     const t1 = Date.now();
-    await this.loadWeekDataToCache(currentWeekDate);
-    devLog(`   ✅ 현주 로드: ${Date.now() - t1}ms`);
+    await Promise.all(priorityDates.map(date => this.loadWeekDataToCache(date)));
+    devLog(`   ✅ 우선 3주 완료: ${Date.now() - t1}ms`);
+
+    // ⚡ STEP 2: 추가 2주 순차 로드 (로딩 UI 유지 중)
+    const additionalDates = [dates[1], dates[5]];
+    devLog(`   🚀 [STEP2] 추가 2주 순차: ${additionalDates.map(d => d.toLocaleDateString("ko-KR")).join(" → ")}`);
     
-    devLog(`   🚀 [±1주 병렬] ${adjWeekDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
-    const t2 = Date.now();
-    await Promise.all(adjWeekDates.map(date => this.loadWeekDataToCache(date)));
-    devLog(`   ✅ ±1주 로드: ${Date.now() - t2}ms`);
+    for (const date of additionalDates) {
+      const t2 = Date.now();
+      await this.loadWeekDataToCache(date);
+      devLog(`   ✅ [+${Date.now() - t2}ms] ${date.toLocaleDateString("ko-KR")}`);
+    }
+    devLog(`   ✅ 5주 로드 완료 - 이제 스와이프 활성화됨!`);
 
     // 캐시된 데이터를 합쳐서 this.events에 설정
     this.events = this.getMergedEventsFromCache(dates);
-    devLog(`   ✅ 초기 이벤트 설정: ${this.events.length}개`);
+    devLog(`   ✅ 이벤트 병합: ${this.events.length}개`);
 
     // 고정 시간 열 + 슬라이더 생성
     let html = this.renderTimeColumn();
-
     html += '<div class="calendar-slider">';
 
     const translateValues = [-300, -200, -100, 0, 100, 200, 300];
@@ -1355,28 +1355,27 @@ class Calendar {
 
     html += "</div>";
 
+    // DOM 교체 + 높이 고정
     this.container.innerHTML = html;
-
     this.adjustWeekViewLayout();
 
     requestAnimationFrame(() => {
       this.updateCurrentTimeIndicator();
     });
 
-    // 🆕 초기 3주 로드 완료 → 스와이프 활성화
+    // 🆕 5주 로드 완료 → 로딩 표시 제거 + 스와이프 활성화
     this.isInitialLoading = false;
-    devLog(`   ✅ 초기 3주 로드 완료 - 스와이프 ENABLED`);
+    devLog(`   ✅ 로딩 UI 제거 - 스와이프 ENABLED`);
 
-    // 🔄 나머지 4주 백그라운드 로드 (비블로킹)
-    const otherDates = [dates[0], dates[1], dates[5], dates[6]];
-    devLog(`   📊 백그라운드 로드 시작: ${otherDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    // 🔄 STEP 3: 나머지 2주 백그라운드 로드 (비블로킹)
+    const bgDates = [dates[0], dates[6]];
+    devLog(`   📦 [STEP3] BG 로드 시작: ${bgDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
     
     (async () => {
-      for (const date of otherDates) {
+      for (const date of bgDates) {
         const t1 = Date.now();
         await this.loadWeekDataToCache(date);
-        const t2 = Date.now() - t1;
-        devLog(`   📊 [BG+${t2}ms] ${date.toLocaleDateString("ko-KR")}`);
+        devLog(`   📦 [+${Date.now() - t1}ms] ${date.toLocaleDateString("ko-KR")}`);
       }
     })();
   }
