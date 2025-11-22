@@ -95,9 +95,41 @@ class DataManager {
           this.handleRealtimeChange(payload);
         }
       )
-      .subscribe();
+      .on('system', { event: 'join' }, () => {
+        if (window.logger) logger.info('Realtime connection established');
+        devLog('✅ Realtime 연결 성공');
+      })
+      .on('system', { event: 'leave' }, () => {
+        if (window.logger) logger.warn('Realtime connection disconnected', { timestamp: new Date().toISOString() });
+        devLog('⚠️ Realtime 연결 끊김');
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          if (window.logger) logger.info('Realtime subscription active');
+          devLog('✅ Realtime subscription 활성화');
+        } else if (status === 'CHANNEL_ERROR') {
+          if (window.logger) logger.error('Realtime channel error', { status });
+          devLog('❌ Realtime 채널 에러');
+        } else if (status === 'TIMED_OUT') {
+          if (window.logger) logger.error('Realtime subscription timed out', { status });
+          devLog('❌ Realtime 타임아웃');
+        } else {
+          devLog(`🔄 Realtime 상태 변화: ${status}`);
+        }
+      });
 
-    devLog('✅ Realtime subscription active');
+    // 에러 핸들러 추가
+    if (channel && channel.on) {
+      channel.on('error', (err) => {
+        if (window.logger) logger.error('Realtime subscription error', { 
+          error: err?.message || String(err),
+          timestamp: new Date().toISOString()
+        });
+        devLog('❌ Realtime 에러:', err);
+      });
+    }
+
+    devLog('🔧 Realtime 구독 설정 중...');
   }
 
   handleRealtimeChange(payload) {
