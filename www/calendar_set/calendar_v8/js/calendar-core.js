@@ -1328,7 +1328,12 @@ class Calendar {
           endDate: end.toISOString()
         });
 
-        const apiUrl = `/.netlify/functions/get-week-events?${params}`;
+        // 환경에 따라 다른 경로 사용 (개발: /api/get-week-events, 배포: /.netlify/functions/get-week-events)
+        const isDevelopment = window.location.hostname.includes('replit') || window.location.hostname === 'localhost';
+        const apiUrl = isDevelopment 
+          ? `/api/get-week-events?${params}`
+          : `/.netlify/functions/get-week-events?${params}`;
+        
         const response = await fetch(apiUrl);
         
         if (!response.ok) {
