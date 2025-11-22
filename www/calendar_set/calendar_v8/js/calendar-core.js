@@ -1268,13 +1268,19 @@ class Calendar {
       );
     }
 
-    // ⚡ 순차 로딩: 현재주(0) + 좌우(±1) = 총 3주 먼저 로드
-    const priorityDates = [dates[2], dates[3], dates[4]]; // -1주, 현재주(0), +1주
-    devLog(`   ⚡ 우선 로드 (스와이프 반응성 위해): ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    // ⚡ 현주 우선 로드 + ±1주 병렬 로드 (최고 속도 최적화)
+    const currentWeekDate = dates[3]; // 현재주
+    const adjWeekDates = [dates[2], dates[4]]; // -1주, +1주
     
-    for (const date of priorityDates) {
-      await this.loadWeekDataToCache(date);
-    }
+    devLog(`   🚀 [초고속] 현주 우선 로드: ${currentWeekDate.toLocaleDateString("ko-KR")}`);
+    const t1 = Date.now();
+    await this.loadWeekDataToCache(currentWeekDate);
+    devLog(`   ✅ 현주 로드 완료: ${Date.now() - t1}ms`);
+    
+    devLog(`   🚀 [병렬] ±1주 동시 로드: ${adjWeekDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    const t2 = Date.now();
+    await Promise.all(adjWeekDates.map(date => this.loadWeekDataToCache(date)));
+    devLog(`   ✅ ±1주 병렬 로드 완료: ${Date.now() - t2}ms`);
 
     // 캐시된 데이터를 합쳐서 this.events에 설정
     this.events = this.getMergedEventsFromCache(dates);
