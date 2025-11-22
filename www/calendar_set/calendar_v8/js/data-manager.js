@@ -5,6 +5,7 @@ class DataManager {
     this.cacheTimestamps = new Map();
     this.MAX_CACHE_SIZE = 15; // LRU: 최대 15주 캐시
     this.CACHE_TTL = 15 * 60 * 1000; // TTL: 15분
+    this.realtimeStatus = null; // 상태 중복 로그 방지
     this.startCacheCleanup();
   }
 
@@ -104,17 +105,22 @@ class DataManager {
         devLog('⚠️ Realtime 연결 끊김');
       })
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          if (window.logger) logger.info('Realtime subscription active');
-          devLog('✅ Realtime subscription 활성화');
-        } else if (status === 'CHANNEL_ERROR') {
-          if (window.logger) logger.error('Realtime channel error', { status });
-          devLog('❌ Realtime 채널 에러');
-        } else if (status === 'TIMED_OUT') {
-          if (window.logger) logger.error('Realtime subscription timed out', { status });
-          devLog('❌ Realtime 타임아웃');
-        } else {
-          devLog(`🔄 Realtime 상태 변화: ${status}`);
+        // 상태 변화가 있을 때만 로그 (중복 방지)
+        if (status !== this.realtimeStatus) {
+          this.realtimeStatus = status;
+          
+          if (status === 'SUBSCRIBED') {
+            if (window.logger) logger.info('Realtime subscription active');
+            devLog('✅ Realtime subscription 활성화');
+          } else if (status === 'CHANNEL_ERROR') {
+            if (window.logger) logger.error('Realtime channel error', { status });
+            devLog('❌ Realtime 채널 에러');
+          } else if (status === 'TIMED_OUT') {
+            if (window.logger) logger.error('Realtime subscription timed out', { status });
+            devLog('❌ Realtime 타임아웃');
+          } else {
+            devLog(`🔄 Realtime 상태 변화: ${status}`);
+          }
         }
       });
 
