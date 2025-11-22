@@ -55,7 +55,6 @@ async function syncRoomCalendar(room) {
           calendarId: room.calendarId,
           timeMin: timeMin.toISOString(),
           timeMax: timeMax.toISOString(),
-          maxResults: 2500, // ✅ 명시적으로 최대값 설정 (기본값 250 → 2500)
           singleEvents: true,
           orderBy: 'startTime',
           pageToken: pageToken
@@ -88,19 +87,15 @@ async function syncRoomCalendar(room) {
     const pricesData = []; // event_prices용 데이터
     
     for (const event of allEvents) {
-      // ✅ dateTime (시간대 지정) 또는 date (종일) 모두 처리
-      const startTime = event.start?.dateTime || event.start?.date;
-      const endTime = event.end?.dateTime || event.end?.date;
-      
-      if (!startTime || !endTime) continue;
+      if (!event.start || !event.start.dateTime) continue;
 
       // booking_events에는 메타데이터만 저장
       eventsToUpsert.push({
         room_id: room.id,
         google_event_id: event.id,
         title: event.summary || '(제목 없음)',
-        start_time: startTime,  // ISO 형식 유지
-        end_time: endTime,      // ISO 형식 유지
+        start_time: event.start.dateTime,
+        end_time: event.end.dateTime,
         description: event.description || null,
         updated_at: new Date().toISOString()
       });
