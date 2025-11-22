@@ -221,8 +221,9 @@
       class Logger {
         constructor() {
           this.logs = [];
-          this.maxLogs = 50; // 메모리: 최근 50개만 (DB에 모두 저장)
+          this.maxLogs = 500; // ERROR만: 5일 × ~100개/일 ≈ 500개
           this.logKey = 'rhythmjoy_logs';
+          this.maxAge = 5 * 24 * 60 * 60 * 1000; // 5일 (밀리초)
           this.loadLogs();
           this.serverUrl = this.getServerUrl();
         }
@@ -243,11 +244,22 @@
         
         saveLogs() {
           try {
-            // 메모리에는 최근 50개만 유지
-            if (this.logs.length > this.maxLogs) {
-              this.logs = this.logs.slice(-this.maxLogs);
+            // ERROR 레벨만 필터링
+            let errorLogs = this.logs.filter(log => log.level === 'ERROR');
+            
+            // 5일 이상 된 로그 제거
+            const now = Date.now();
+            errorLogs = errorLogs.filter(log => {
+              const logTime = new Date(log.timestamp).getTime();
+              return (now - logTime) < this.maxAge;
+            });
+            
+            // 최대 개수 제한
+            if (errorLogs.length > this.maxLogs) {
+              errorLogs = errorLogs.slice(-this.maxLogs);
             }
-            localStorage.setItem(this.logKey, JSON.stringify(this.logs));
+            
+            localStorage.setItem(this.logKey, JSON.stringify(errorLogs));
           } catch(e) {
             window._originalConsole.error('로그 저장 실패:', e);
           }
