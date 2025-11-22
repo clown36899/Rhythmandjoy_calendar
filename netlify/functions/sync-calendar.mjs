@@ -212,14 +212,18 @@ async function syncAllCalendars(selectedRoomIds = null) {
     ? rooms.filter(room => selectedRoomIds.includes(room.id))
     : rooms;
   
-  console.log(`🚀 캘린더 동기화 시작 (${roomsToSync.map(r => r.id.toUpperCase()).join(', ')}) - 병렬 처리...\n`);
+  console.log(`🚀 캘린더 동기화 시작 (${roomsToSync.map(r => r.id.toUpperCase()).join(', ')}) - 순차 처리...\n`);
   
   // 클라이언트 초기화
   initClients();
   
-  // 병렬 처리로 속도 향상
-  const promises = roomsToSync.map(room => syncRoomCalendar(room));
-  const results = await Promise.all(promises);
+  // 순차 처리로 안정성 향상 (배포 환경에서 타임아웃 방지)
+  const results = [];
+  for (const room of roomsToSync) {
+    const result = await syncRoomCalendar(room);
+    results.push(result);
+    console.log(`[${room.id}] 완료, 다음 룸 진행...\n`);
+  }
   
   const overallTime = Date.now() - overallStartTime;
   console.log(`\n✅ 동기화 완료! 총 ${(overallTime/1000).toFixed(1)}초`);
