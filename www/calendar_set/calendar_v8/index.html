@@ -53,8 +53,8 @@
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
-    <link rel="stylesheet" href="css/calendar.css?t=20251122-1300" />
-    <link rel="stylesheet" href="home_infopage/popup.css?t=20251122-1300" />
+    <link rel="stylesheet" href="css/calendar.css?t=20251122-1400" />
+    <link rel="stylesheet" href="home_infopage/popup.css?t=20251122-1400" />
   </head>
   <body>
     <!-- 팝업 배경 -->
@@ -292,8 +292,12 @@
         }
         
         log(level, message, data = null) {
+          // 한국시간(KST, UTC+9) 기준 timestamp
+          const now = new Date();
+          const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+          
           const entry = {
-            timestamp: new Date().toISOString(),
+            timestamp: kst.toISOString(),
             level,
             message,
             data
@@ -336,7 +340,10 @@
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `rhythmjoy-logs-${new Date().toISOString().slice(0,10)}.txt`;
+          // 한국시간 기준 파일명
+          const now = new Date();
+          const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+          a.download = `rhythmjoy-logs-${kst.toISOString().slice(0,10)}.txt`;
           a.click();
           URL.revokeObjectURL(url);
         }
@@ -359,12 +366,12 @@
       };
     </script>
 
-    <script src="env.js?t=20251122-1300"></script>
-    <script src="js/config.js?t=20251122-1300"></script>
-    <script src="js/data-manager.js?t=20251122-1300"></script>
-    <script src="js/calendar-core.js?t=20251122-1300"></script>
-    <script src="js/main.js?t=20251122-1300"></script>
-    <script src="home_infopage/open_popup.js?t=20251122-1300"></script>
+    <script src="env.js?t=20251122-1400"></script>
+    <script src="js/config.js?t=20251122-1400"></script>
+    <script src="js/data-manager.js?t=20251122-1400"></script>
+    <script src="js/calendar-core.js?t=20251122-1400"></script>
+    <script src="js/main.js?t=20251122-1400"></script>
+    <script src="home_infopage/open_popup.js?t=20251122-1400"></script>
 
     <script>
       // 연락처 복사 함수
