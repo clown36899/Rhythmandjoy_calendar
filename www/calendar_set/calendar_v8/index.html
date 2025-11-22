@@ -221,7 +221,7 @@
       class Logger {
         constructor() {
           this.logs = [];
-          this.maxLogs = 1000;
+          this.maxLogs = 300; // 1000 → 300으로 줄임 (용량 안정화)
           this.logKey = 'rhythmjoy_logs';
           this.loadLogs();
         }
