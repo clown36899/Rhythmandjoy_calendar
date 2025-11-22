@@ -1254,7 +1254,7 @@ class Calendar {
   }
 
   async renderWeekViewWithSlider() {
-    devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작 (순차 로딩 모드: 현재주 중심 3주)`);
+    devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작 (극초단 로딩: 현재주 우선 표시)`);
     devLog(`   현재 캐시 크기: ${this.weekDataCache.size}개`);
 
     // -3주부터 +3주까지 7주 계산
@@ -1268,24 +1268,18 @@ class Calendar {
       );
     }
 
-    // 🔄 순차 로딩: 현재주(0) + 좌우(±1) = 총 3주만 먼저 로드
-    const priorityDates = [dates[2], dates[3], dates[4]]; // -1주, 현재주(0), +1주
-    devLog(`   ⚡ 우선 로드: ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    // 🔥 극초단 로딩: 현재주(중앙)만 먼저 로드 → 즉시 표시
+    const centerDate = dates[3]; // 현재주(0)
+    const startTime = Date.now();
+    devLog(`   ⚡⚡⚡ 극우선 로드: ${centerDate.toLocaleDateString("ko-KR")}`);
     
-    for (const date of priorityDates) {
-      await this.loadWeekDataToCache(date);
-    }
+    await this.loadWeekDataToCache(centerDate);
+    const loadTime = Date.now() - startTime;
+    devLog(`   ✅ 현재주 로드 완료: ${loadTime}ms`);
 
-    // 나머지 주는 백그라운드에서 비동기로 로드 (UI 블로킹 없음)
-    const otherDates = [dates[0], dates[1], dates[5], dates[6]]; // -3주, -2주, +2주, +3주
-    devLog(`   📊 백그라운드 로드 시작: ${otherDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
-    otherDates.forEach(date => {
-      this.loadWeekDataToCache(date); // await 하지 않음 - 백그라운드 로드
-    });
-
-    // 캐시된 데이터를 합쳐서 this.events에 설정 (현재 3주 데이터만 포함)
-    this.events = this.getMergedEventsFromCache(priorityDates);
-    devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
+    // 캐시된 데이터를 합쳐서 this.events에 설정
+    this.events = this.getMergedEventsFromCache(dates);
+    devLog(`   ✅ 초기 이벤트 설정: ${this.events.length}개`);
 
     // 고정 시간 열 + 슬라이더 생성
     let html = this.renderTimeColumn();
@@ -1312,6 +1306,27 @@ class Calendar {
       this.updateCurrentTimeIndicator();
       // ✅ 새로운 구조에서는 라벨 위치가 자동으로 계산되므로 updateRoomBottomLabelsPosition() 불필요
     });
+
+    // 🔄 나머지 6주는 백그라운드에서 비동기로 로드 (UI 블로킹 없음)
+    const otherDates = [dates[2], dates[4], dates[0], dates[1], dates[5], dates[6]]; // 순서: -1주, +1주, -3주, -2주, +2주, +3주
+    devLog(`   📊 백그라운드 순차 로드 시작: ${otherDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    
+    (async () => {
+      for (const date of otherDates) {
+        const t1 = Date.now();
+        await this.loadWeekDataToCache(date);
+        const t2 = Date.now() - t1;
+        
+        // 새로운 데이터가 로드되면 이벤트 업데이트
+        const updatedEvents = this.getMergedEventsFromCache(dates);
+        if (updatedEvents.length !== this.events.length) {
+          this.events = updatedEvents;
+          devLog(`   📊 [백그라운드+${t2}ms] ${date.toLocaleDateString("ko-KR")} 로드 완료 → 총 ${this.events.length}개 이벤트`);
+        } else {
+          devLog(`   📊 [백그라운드+${t2}ms] ${date.toLocaleDateString("ko-KR")} 로드 완료`);
+        }
+      }
+    })();
   }
 
   getWeekCacheKey(date) {
