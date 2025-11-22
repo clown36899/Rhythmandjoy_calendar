@@ -4,38 +4,26 @@ This project is a mobile-friendly room booking calendar application for "Rhythmj
 
 # Recent Changes
 
-**2025-11-22: System Cleanup & Optimization**
-- ✅ **Removed unnecessary backend functions**: Deleted sync-calendar.js, setup-watches.js (no longer needed)
-- ✅ **Removed unnecessary Netlify functions**: Deleted sync-calendar.mjs, setup-watches.mjs, renew-watches.mjs (DB-free architecture)
-- ✅ **Removed sync/watch endpoints**: POST /api/sync, /api/sync-incremental, /api/setup-watches (not used)
-- **Confirmed**: Webhook (google-webhook.mjs) replaces Watch mechanism - receives real-time signals from Google Calendar → broadcasts to Frontend via Supabase Realtime
-- **3-week priority loading**: Initial render loads current week ±1 week for instant swipe response
-- **Background loading**: Remaining 4 weeks load in background (no UI blocking)
+**2025-11-22: 매출 시스템 개선 - 온디맨드 계산 + DB 저장**
+- ✅ **Google Calendar 직접 조회**: `/api/admin/revenue` 새 엔드포인트 추가
+- ✅ **하이브리드 매출 조회**:
+  - 현재/이후 달: Google Calendar 조회 → 시간 기반 계산 (30분 = 10,000원) → DB 저장
+  - 이전 달: `monthly_revenue` 테이블에서 직접 조회
+- ✅ **초기 진입 시**: DB에 데이터 없으면 구글캘린더에서 조회 후 계산해서 저장
+- ✅ **저번달 이전**: 변경 없음, DB에서만 조회
+- `monthly_revenue` 테이블: year, month, total_revenue, total_bookings, by_room 저장
 
-**2025-11-22: Architecture Redesign - On-Demand Google Calendar Loading**
-- Removed dependency on full database sync - now loads only visible weeks from Google Calendar
-- New API endpoint `get-week-events.mjs` - queries Google Calendar directly for specific date ranges
-- Webhook simplified - sends signal via Realtime broadcast (no DB needed)
-- Frontend receives Webhook signal instantly via Realtime → refreshes current view without page reload
-- Navigation (week/month changes) automatically fetches fresh data from Google Calendar
-- **No database needed for calendar display** - only Webhook → Realtime broadcast → Frontend
-- Result: Ultra-simplified architecture, no 500 errors, real-time updates
+**2025-11-22: 시스템 정리 - 불필요한 함수 제거**
+- ✅ **Removed**: sync-calendar.js, setup-watches.js (backend)
+- ✅ **Removed**: sync-calendar.mjs, setup-watches.mjs, renew-watches.mjs (netlify)
+- ✅ **Removed**: /api/sync, /api/sync-incremental, /api/setup-watches 엔드포인트
+- **Confirmed**: Webhook (google-webhook.mjs)이 Watch 메커니즘을 완벽히 대체
+- 결과: DB-free 아키텍처 확정, Webhook만 필요
 
-**2025-11-20: File-based Logging System**
-- Implemented localStorage-based logging system (`js/logger.js`)
-- Disabled console output for all debug logs to reduce browser load
-- Only ERROR, WARN, INFO logs are recorded to localStorage
-- Console logs can be viewed with `viewLogs()`, downloaded with `downloadLogs()`, or cleared with `clearLogs()`
-- Maximum 1,000 log entries retained automatically
-- Room label swipe synchronization fixed - labels now move with parent slides automatically
-
-**2025-11-14: Mobile Reservation Info Page Separation**
-- Created independent `info.html` page for reservation information (separate from calendar offcanvas)
-- Added top header with back-to-calendar and home buttons
-- Implemented deep linking with URL encoding/decoding (info.html?section=xxx)
-- Added DOMContentLoaded event for automatic deep link processing
-- Updated share URLs from calendar_7.html?section=xxx to info.html?section=xxx
-- Added "📱 예약정보" link in calendar_7.html offcanvas menu
+**2025-11-22: 초기 로드 최적화 - 3주 우선 로드**
+- ✅ **3-week priority loading**: 현재주 ±1주만 먼저 로드 (스와이프 반응성)
+- ✅ **Background loading**: 나머지 4주는 백그라운드에서 순차로드 (UI 블로킹 없음)
+- ✅ **Swipe optimization**: 인접한 주 데이터가 이미 로드됨
 
 # User Preferences
 
@@ -74,10 +62,10 @@ Preferred communication style: Simple, everyday language. Approval required for 
 
 **Replit Backend (Development)**
 - `GET /api/get-week-events`: Queries Google Calendar for specific date ranges (testing)
+- `GET /api/admin/revenue`: ✨ NEW - Monthly revenue calculation (calendar query + calculation + DB save)
 - `POST /api/admin/login`: Admin authentication
 - `POST /api/logs`: Log storage API
 - `GET /api/logs`: Log retrieval API (auth required)
-- `POST /api/reset-sync`: Clear all event data (admin only, for testing)
 - `GET /api/health`: Health check endpoint
 
 **Netlify Functions (Production)**
@@ -92,7 +80,11 @@ Preferred communication style: Simple, everyday language. Approval required for 
 - sync-calendar.js/mjs: No longer needed (on-demand loading only)
 - setup-watches.js/mjs: Webhook replaces Watch mechanism
 - renew-watches.mjs: Webhook handles updates
-- cleanup-watches.mjs: Not needed
+
+**Revenue System (매출)**
+- **현재/이후 달**: Google Calendar 직접 조회 → 시간 기반 계산 (30분=10,000원) → `monthly_revenue` 저장
+- **이전 달**: `monthly_revenue` 테이블에서 조회 (변경 없음)
+- **초기 진입**: DB 없으면 Google Calendar에서 조회해서 계산 후 저장
 
 **Environment Variables**
 - Managed via Replit Secrets (development) and Netlify environment variables (production)
@@ -107,13 +99,13 @@ Preferred communication style: Simple, everyday language. Approval required for 
 - **3-Week Priority Loading**: Current week loads first, ±1 weeks next (for swipe responsiveness), remaining 4 weeks background
 - **Client-Side Processing**: Data comparison and rendering happens on Frontend, zero server load
 - **Room Management**: Five distinct practice rooms, each linked to specific Google Calendar ID
-- **Admin Dashboard**: Login-protected dashboard provides revenue statistics, visualized with Chart.js
+- **Revenue System**: Hybrid (현재=Google Calendar, 과거=DB) + auto-save on first access
 
 # External Dependencies
 
 - **Google Calendar API**: Utilized for five distinct practice room calendars, read-only access for event/availability display
 - **Supabase**:
-    - **PostgreSQL Database**: Stores room configurations (`rooms`) and admin revenue statistics (not calendar events)
+    - **PostgreSQL Database**: Stores room configurations (`rooms`), monthly revenue statistics (`monthly_revenue`), and event prices (`event_prices`)
     - **Realtime**: Provides WebSocket-based signals when Google Calendar changes
 - **Third-Party JavaScript Libraries**:
     - jQuery 2.1.3 & jQuery UI 1.12.1: DOM manipulation
@@ -129,5 +121,6 @@ Preferred communication style: Simple, everyday language. Approval required for 
 
 ✅ **Ready for Production Deployment**
 - Netlify Functions prepared: `netlify.toml` configured, `get-week-events.mjs` ready
+- New revenue endpoint: `/api/admin/revenue` ready (hybrid calendar+DB)
 - Next steps: Git push → GitHub → Netlify auto-deploy
 - Required: Set Netlify environment variables (GOOGLE_CALENDAR_API_KEY, etc.)
