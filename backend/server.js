@@ -97,6 +97,56 @@ app.post('/api/admin/login', (req, res) => {
   }
 });
 
+// 로그 저장 API (클라이언트에서 전송)
+app.post('/api/logs', async (req, res) => {
+  try {
+    const { level, message, data, userAgent, url } = req.body;
+    
+    const { error } = await supabase
+      .from('logs')
+      .insert([{
+        level,
+        message,
+        data,
+        user_agent: userAgent,
+        url
+      }]);
+    
+    if (error) {
+      console.error('❌ 로그 저장 실패:', error);
+      return res.status(500).json({ error: error.message });
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ 로그 API 실패:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 로그 조회 API (최근 N개)
+app.get('/api/logs', requireAuth, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    
+    const { data, error } = await supabase
+      .from('logs')
+      .select('*')
+      .order('timestamp', { ascending: false })
+      .limit(limit);
+    
+    if (error) {
+      console.error('❌ 로그 조회 실패:', error);
+      return res.status(500).json({ error: error.message });
+    }
+    
+    res.json({ success: true, logs: data, count: data.length });
+  } catch (error) {
+    console.error('❌ 로그 조회 API 실패:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 관리자 로그아웃 API
 app.post('/api/admin/logout', requireAuth, (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');

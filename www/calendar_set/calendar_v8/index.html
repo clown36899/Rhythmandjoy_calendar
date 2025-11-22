@@ -217,13 +217,19 @@
         table: console.table ? console.table.bind(console) : console.log.bind(console)
       };
       
-      // Logger 클래스 - 무한루프 방지를 위해 _originalConsole 사용
+      // Logger 클래스 - Supabase DB + localStorage 저장
       class Logger {
         constructor() {
           this.logs = [];
-          this.maxLogs = 300; // 1000 → 300으로 줄임 (용량 안정화)
+          this.maxLogs = 50; // 메모리: 최근 50개만 (DB에 모두 저장)
           this.logKey = 'rhythmjoy_logs';
           this.loadLogs();
+          this.serverUrl = this.getServerUrl();
+        }
+        
+        getServerUrl() {
+          const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          return isDev ? 'http://localhost:5000' : window.location.origin;
         }
         
         loadLogs() {
@@ -237,12 +243,36 @@
         
         saveLogs() {
           try {
+            // 메모리에는 최근 50개만 유지
             if (this.logs.length > this.maxLogs) {
               this.logs = this.logs.slice(-this.maxLogs);
             }
             localStorage.setItem(this.logKey, JSON.stringify(this.logs));
           } catch(e) {
             window._originalConsole.error('로그 저장 실패:', e);
+          }
+        }
+        
+        // 서버로 로그 전송 (비동기)
+        async sendToServer(level, message, data) {
+          try {
+            const response = await fetch(`${this.serverUrl}/api/logs`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                level,
+                message,
+                data,
+                userAgent: navigator.userAgent,
+                url: window.location.href
+              })
+            });
+            
+            if (!response.ok) {
+              window._originalConsole.error(`로그 서버 전송 실패: ${response.status}`);
+            }
+          } catch(e) {
+            // 서버 연결 실패는 무시 (오프라인 상태)
           }
         }
         
@@ -253,8 +283,13 @@
             message,
             data
           };
+          
+          // 메모리에 저장
           this.logs.push(entry);
           this.saveLogs();
+          
+          // 서버로 비동기 전송 (오류 무시)
+          this.sendToServer(level, message, data);
           
           // 무한루프 방지: _originalConsole 직접 사용
           if (level === 'ERROR') {
