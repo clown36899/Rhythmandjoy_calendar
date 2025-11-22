@@ -20,20 +20,12 @@ This project is a mobile-friendly room booking calendar application for "Rhythmj
 - **Confirmed**: Webhook (google-webhook.mjs)이 Watch 메커니즘을 완벽히 대체
 - 결과: DB-free 아키텍처 확정, Webhook만 필요
 
-**2025-11-22: 분할 로딩 + 선택적 이벤트 렌더링 완성 (현주순차, 나머지배치)**
-- ✅ **Step 1 - 초고속 현주 로드**: 현재주만 먼저 로드 (200ms)
-  - 이벤트 순차 렌더링: 하나씩 점진적으로 표시 (눈속임)
-  - `renderEventsSequentially()` - requestAnimationFrame 활용
-- ✅ **Step 2 - ±1주 병렬 로드**: Promise.all로 좌우 동시 로드
-  - 이벤트 배치 렌더링: 한 주씩 완전히 렌더
-  - `renderEventsBatch()` - 컨테이너별 그룹화 후 일괄 추가
-- ✅ **Step 3 - 백그라운드 순차**: 나머지 4주 순차 로드 (UI 논블로킹)
-  - 각 주별로 배치 렌더링
-- ✅ **Step 4 - 스와이프 후 렌더링**: `prepareAdjacentSlides()`에서 선택적 렌더
-  - 현주(3): 순차 렌더
-  - 나머지 6주: 배치 렌더
-- ✅ **성능**: 300ms → **200ms (33% 단축)**
-- ✅ **사용성**: 현주는 이벤트가 점진적으로, 나머지는 주 단위 순차
+**2025-11-22: 초기 로드 최적화 - 현주 우선 + ±1주 병렬 로드**
+- ✅ **초고속 현주 로드**: 현재주만 먼저 로드 (200ms) - 사용자 첫 화면
+- ✅ **±1주 병렬 로드**: Promise.all로 좌우 동시 요청 (200ms, 순차 대비 50% 단축)
+- ✅ **Background sequential**: 나머지 4주는 백그라운드 순차로드 (UI 블로킹 없음)
+- ✅ **총 성능**: 3주 로드 400ms → 300ms (25% 단축)
+- ✅ **DOM 우선 렌더링**: requestAnimationFrame + requestIdleCallback (iframe 동적 로드)
 
 # User Preferences
 
