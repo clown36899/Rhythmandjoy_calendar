@@ -55,7 +55,7 @@ async function syncRoomCalendar(room) {
           calendarId: room.calendarId,
           timeMin: timeMin.toISOString(),
           timeMax: timeMax.toISOString(),
-          maxResults: 1000, // 최적화된 페이지 크기
+          // maxResults 제한 없음 - 모든 이벤트 가져오기 (Google API 최대값 자동 사용)
           singleEvents: true,
           orderBy: 'startTime',
           pageToken: pageToken,
