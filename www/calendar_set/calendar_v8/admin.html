@@ -142,7 +142,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="env.js?t=20251122-1200"></script>
   <script>
-    let authToken = localStorage.getItem('adminToken');
+    const SESSION_TIMEOUT = 30 * 60 * 1000; // 30분
+    
+    let authToken = sessionStorage.getItem('adminToken');
     let supabase = null;
 
     // 페이지 로드 시 Supabase 초기화
@@ -154,10 +156,31 @@
       console.log('✅ Supabase 클라이언트 초기화 완료');
     }
 
-    // 토큰 확인
-    if (authToken) {
+    // 토큰 및 세션 시간 확인
+    function checkAuthSession() {
+      authToken = sessionStorage.getItem('adminToken');
+      const loginTime = localStorage.getItem('adminLoginTime');
+      
+      if (!authToken || !loginTime) {
+        showLoginSection();
+        return false;
+      }
+      
+      // 30분 이상 지났으면 세션 만료
+      const elapsed = Date.now() - parseInt(loginTime);
+      if (elapsed > SESSION_TIMEOUT) {
+        clearAuthSession();
+        alert('⏰ 30분 동안 활동이 없어 자동 로그아웃되었습니다.');
+        showLoginSection();
+        return false;
+      }
+      
       showAdminSection();
+      return true;
     }
+
+    // 초기 로드 시 인증 확인
+    checkAuthSession();
 
     function getBaseUrl() {
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
@@ -188,7 +211,10 @@
 
       if (password === correctPassword) {
         authToken = 'admin-' + Date.now();
-        localStorage.setItem('adminToken', authToken);
+        // sessionStorage: 탭/창 닫으면 자동 삭제
+        sessionStorage.setItem('adminToken', authToken);
+        // localStorage: 로그인 시간 기록 (30분 타임아웃 확인용)
+        localStorage.setItem('adminLoginTime', Date.now().toString());
         showAdminSection();
       } else {
         errorDiv.textContent = '비밀번호가 틀렸습니다';
@@ -196,9 +222,15 @@
       }
     }
 
-    function logout() {
-      localStorage.removeItem('adminToken');
+    // 인증 정보 정리
+    function clearAuthSession() {
+      sessionStorage.removeItem('adminToken');
+      localStorage.removeItem('adminLoginTime');
       authToken = null;
+    }
+
+    function logout() {
+      clearAuthSession();
       showLoginSection();
     }
 

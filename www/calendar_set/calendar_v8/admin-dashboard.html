@@ -348,7 +348,8 @@
 
     // 로그아웃
     function logout() {
-      localStorage.removeItem('adminToken');
+      sessionStorage.removeItem('adminToken');
+      localStorage.removeItem('adminLoginTime');
       window.location.href = 'admin.html';
     }
 
@@ -502,10 +503,34 @@
       }
     }
 
-    // 인증 확인
-    const authToken = localStorage.getItem('adminToken');
-    if (!authToken) {
-      window.location.href = 'admin.html';
+    // 인증 및 세션 확인
+    const SESSION_TIMEOUT = 30 * 60 * 1000; // 30분
+    
+    function checkAuthAndRedirect() {
+      const authToken = sessionStorage.getItem('adminToken');
+      const loginTime = localStorage.getItem('adminLoginTime');
+      
+      if (!authToken || !loginTime) {
+        window.location.href = 'admin.html';
+        return false;
+      }
+      
+      // 30분 이상 지났으면 세션 만료
+      const elapsed = Date.now() - parseInt(loginTime);
+      if (elapsed > SESSION_TIMEOUT) {
+        sessionStorage.removeItem('adminToken');
+        localStorage.removeItem('adminLoginTime');
+        alert('⏰ 30분 동안 활동이 없어 자동 로그아웃되었습니다.');
+        window.location.href = 'admin.html';
+        return false;
+      }
+      
+      return true;
+    }
+    
+    // 초기 진입 시 인증 확인
+    if (!checkAuthAndRedirect()) {
+      // 리다이렉트 진행 중
     }
 
     // 숫자 포맷팅 (천 단위 쉼표)
