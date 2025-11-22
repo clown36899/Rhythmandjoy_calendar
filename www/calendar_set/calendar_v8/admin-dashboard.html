@@ -308,8 +308,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config-loader.js?t=20251122-1200"></script>
-  <script src="js/price-calculator.js?t=20251122-1200"></script>
+  <script src="config-loader.js?t=20251122-1300"></script>
+  <script src="js/price-calculator.js?t=20251122-1300"></script>
   <script>
     const IS_REPLIT = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
     const API_BASE = '/.netlify/functions';
@@ -1075,10 +1075,14 @@
         e: '#4c4c4c'
       };
 
-      // 날짜별 매출 계산
+      // 날짜별 매출 계산 (한국시간 기준)
       const dailyRevenue = {};
       allEvents.forEach(event => {
-        const dateKey = event.start_time.substring(0, 10); // 'YYYY-MM-DD'
+        // UTC 기반 start_time을 한국시간(KST, UTC+9)으로 변환
+        const date = new Date(event.start_time);
+        const kstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+        const dateKey = kstDate.toISOString().substring(0, 10); // 'YYYY-MM-DD' (KST)
+        
         if (!dailyRevenue[dateKey]) {
           dailyRevenue[dateKey] = 0;
         }
@@ -1123,7 +1127,10 @@
         dayCellContent: function(info) {
           // 날짜 번호 표시
           const dateNumber = info.dayNumberText.replace('일', '');
-          const dateStr = info.date.toISOString().substring(0, 10);
+          
+          // FullCalendar의 info.date를 한국시간 기준 'YYYY-MM-DD'로 변환
+          const kstDate = new Date(info.date.getTime() + 9 * 60 * 60 * 1000);
+          const dateStr = kstDate.toISOString().substring(0, 10);
           const revenue = dailyRevenue[dateStr] || 0;
           
           const content = document.createElement('div');
@@ -1147,8 +1154,13 @@
             revenueDiv.innerHTML = `${revenue.toLocaleString()}원`;
             content.appendChild(revenueDiv);
             
-            // 예약 건수 표시
-            const dateEvents = allEvents.filter(e => e.start_time.substring(0, 10) === dateStr);
+            // 예약 건수 표시 (한국시간 기준)
+            const dateEvents = allEvents.filter(e => {
+              const eventDate = new Date(e.start_time);
+              const eventKst = new Date(eventDate.getTime() + 9 * 60 * 60 * 1000);
+              const eventDateStr = eventKst.toISOString().substring(0, 10);
+              return eventDateStr === dateStr;
+            });
             if (dateEvents.length > 0) {
               const countDiv = document.createElement('div');
               countDiv.style.cssText = 'font-size: 11px; color: #888; margin-top: 3px;';
