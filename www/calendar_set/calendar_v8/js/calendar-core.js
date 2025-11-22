@@ -1254,7 +1254,7 @@ class Calendar {
   }
 
   async renderWeekViewWithSlider() {
-    devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작 (3주 우선 로드: 스와이프 반응성 최적화)`);
+    devLog(`\n🎨 [렌더] 7슬라이드 분할 로딩 시작 (현주 우선 → 화면 즉시 표시)`);
     devLog(`   현재 캐시 크기: ${this.weekDataCache.size}개`);
 
     // -3주부터 +3주까지 7주 계산
@@ -1268,53 +1268,63 @@ class Calendar {
       );
     }
 
-    // ⚡ 현주 우선 로드 + ±1주 병렬 로드 (최고 속도 최적화)
     const currentWeekDate = dates[3]; // 현재주
     const adjWeekDates = [dates[2], dates[4]]; // -1주, +1주
-    
-    devLog(`   🚀 [초고속] 현주 우선 로드: ${currentWeekDate.toLocaleDateString("ko-KR")}`);
+    const otherDates = [dates[0], dates[1], dates[5], dates[6]]; // -3주, -2주, +2주, +3주
+
+    // 🚀 [Step 1] 현주 우선 로드 + 즉시 렌더
+    devLog(`   🚀 [Step 1] 현주 우선 로드: ${currentWeekDate.toLocaleDateString("ko-KR")}`);
     const t1 = Date.now();
     await this.loadWeekDataToCache(currentWeekDate);
     devLog(`   ✅ 현주 로드 완료: ${Date.now() - t1}ms`);
-    
-    devLog(`   🚀 [병렬] ±1주 동시 로드: ${adjWeekDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
-    const t2 = Date.now();
-    await Promise.all(adjWeekDates.map(date => this.loadWeekDataToCache(date)));
-    devLog(`   ✅ ±1주 병렬 로드 완료: ${Date.now() - t2}ms`);
 
-    // 캐시된 데이터를 합쳐서 this.events에 설정
-    this.events = this.getMergedEventsFromCache(dates);
-    devLog(`   ✅ 초기 이벤트 설정: ${this.events.length}개`);
-
-    // 고정 시간 열 + 슬라이더 생성
+    // 현주만 먼저 화면에 렌더
+    this.events = this.getMergedEventsFromCache([currentWeekDate]);
     let html = this.renderTimeColumn();
-
     html += '<div class="calendar-slider">';
-
-    // 7개 슬라이드 생성: -300%, -200%, -100%, 0%, 100%, 200%, 300%
     const translateValues = [-300, -200, -100, 0, 100, 200, 300];
     dates.forEach((date, i) => {
-      html += `<div class="calendar-slide" style="transform: translateX(${translateValues[i]}%)">`;
-      html += this.renderWeekViewContent(date);
+      html += `<div class="calendar-slide" data-slide-index="${i}" style="transform: translateX(${translateValues[i]}%)">`;
+      if (i === 3) {
+        // 현주만 렌더 (이벤트 있음)
+        html += this.renderWeekViewContent(date);
+      } else {
+        // 다른 주는 "로딩 중..." 표시
+        html += `<div class="week-view loading-placeholder" style="opacity: 0.5; display: flex; align-items: center; justify-content: center;">
+          <div style="font-size: 14px; color: #999;">로딩 중...</div>
+        </div>`;
+      }
       html += "</div>";
     });
-
     html += "</div>";
 
     this.container.innerHTML = html;
-
-    // DOM 업데이트 후 레이아웃 조정
     this.adjustWeekViewLayout();
 
     // 현재 시간 표시
     requestAnimationFrame(() => {
       this.updateCurrentTimeIndicator();
-      // ✅ 새로운 구조에서는 라벨 위치가 자동으로 계산되므로 updateRoomBottomLabelsPosition() 불필요
     });
 
-    // 🔄 나머지 4주는 백그라운드에서 비동기로 로드 (UI 블로킹 없음)
-    const otherDates = [dates[0], dates[1], dates[5], dates[6]]; // -3주, -2주, +2주, +3주
-    devLog(`   📊 백그라운드 순차 로드 시작: ${otherDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    // 🚀 [Step 2] ±1주 병렬 로드 + 화면 업데이트
+    devLog(`   🚀 [Step 2] ±1주 동시 로드: ${adjWeekDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    const t2 = Date.now();
+    
+    // 각 주를 로드하고 완료되면 해당 슬라이드 업데이트
+    adjWeekDates.forEach((date, idx) => {
+      this.loadWeekDataToCache(date).then(() => {
+        const slideIdx = idx === 0 ? 2 : 4; // -1주는 2, +1주는 4
+        this.updateSlideContent(slideIdx, date);
+        devLog(`   ✅ [슬라이드 업데이트] ${date.toLocaleDateString("ko-KR")} (인덱스: ${slideIdx})`);
+      });
+    });
+    
+    // Promise.all로 대기하되, 완료 후 로그 출력
+    await Promise.all(adjWeekDates.map(date => this.loadWeekDataToCache(date)));
+    devLog(`   ✅ ±1주 병렬 로드 완료: ${Date.now() - t2}ms`);
+
+    // 🔄 [Step 3] 나머지 4주는 백그라운드에서 비동기로 로드 (UI 블로킹 없음)
+    devLog(`   📊 [Step 3] 백그라운드 순차 로드 시작: ${otherDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
     
     (async () => {
       for (const date of otherDates) {
@@ -1324,6 +1334,15 @@ class Calendar {
         devLog(`   📊 [백그라운드+${t2}ms] ${date.toLocaleDateString("ko-KR")} 로드 완료`);
       }
     })();
+  }
+
+  // 슬라이드 콘텐츠 업데이트 (분할 로딩)
+  updateSlideContent(slideIdx, date) {
+    const slides = this.container.querySelectorAll('.calendar-slide');
+    if (slides[slideIdx]) {
+      slides[slideIdx].innerHTML = this.renderWeekViewContent(date);
+      devLog(`   🎨 [렌더업데이트] 슬라이드 ${slideIdx}: ${date.toLocaleDateString("ko-KR")}`);
+    }
   }
 
   getWeekCacheKey(date) {

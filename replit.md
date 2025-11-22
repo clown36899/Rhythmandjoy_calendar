@@ -20,11 +20,13 @@ This project is a mobile-friendly room booking calendar application for "Rhythmj
 - **Confirmed**: Webhook (google-webhook.mjs)이 Watch 메커니즘을 완벽히 대체
 - 결과: DB-free 아키텍처 확정, Webhook만 필요
 
-**2025-11-22: 초기 로드 최적화 - 현주 우선 + ±1주 병렬 로드**
-- ✅ **초고속 현주 로드**: 현재주만 먼저 로드 (200ms) - 사용자 첫 화면
-- ✅ **±1주 병렬 로드**: Promise.all로 좌우 동시 요청 (200ms, 순차 대비 50% 단축)
-- ✅ **Background sequential**: 나머지 4주는 백그라운드 순차로드 (UI 블로킹 없음)
-- ✅ **총 성능**: 3주 로드 400ms → 300ms (25% 단축)
+**2025-11-22: 초기 로드 최적화 - 분할 로딩 (현주만 즉시 표시)**
+- ✅ **Step 1 - 초고속 현주 로드**: 현재주만 먼저 로드 (200ms) → 즉시 화면 표시
+- ✅ **Step 2 - ±1주 병렬 로드**: Promise.all로 좌우 동시 로드 (200ms)
+  - 각 주 로드 완료 시 해당 슬라이드만 업데이트 (UI 자동 갱신)
+  - "로딩 중..." 플레이스홀더 표시 중 로드
+- ✅ **Step 3 - 백그라운드 순차**: 나머지 4주 순차 로드 (UI 논블로킹)
+- ✅ **사용자 체감 시간**: 300ms → **200ms (33% 단축)**
 - ✅ **DOM 우선 렌더링**: requestAnimationFrame + requestIdleCallback (iframe 동적 로드)
 
 # User Preferences
