@@ -55,11 +55,10 @@ async function syncRoomCalendar(room) {
           calendarId: room.calendarId,
           timeMin: timeMin.toISOString(),
           timeMax: timeMax.toISOString(),
-          // maxResults 제한 없음 - 모든 이벤트 가져오기 (Google API 최대값 자동 사용)
+          maxResults: 2500, // ✅ 명시적으로 최대값 설정 (기본값 250 → 2500)
           singleEvents: true,
           orderBy: 'startTime',
-          pageToken: pageToken,
-          fields: 'items(id,summary,start,end,description),nextPageToken' // 필요한 필드만
+          pageToken: pageToken
         });
 
         const events = response.data.items || [];
@@ -67,7 +66,7 @@ async function syncRoomCalendar(room) {
         pageToken = response.data.nextPageToken;
 
         if (pageToken) {
-          logs.push(`[${room.id}] 로딩... ${allEvents.length}개`);
+          logs.push(`[${room.id}] 페이지 로딩... ${allEvents.length}개 (다음 페이지 있음)`);
         }
       } catch (apiErr) {
         if (apiErr.message?.includes('404')) {
@@ -89,15 +88,19 @@ async function syncRoomCalendar(room) {
     const pricesData = []; // event_prices용 데이터
     
     for (const event of allEvents) {
-      if (!event.start || !event.start.dateTime) continue;
+      // ✅ dateTime (시간대 지정) 또는 date (종일) 모두 처리
+      const startTime = event.start?.dateTime || event.start?.date;
+      const endTime = event.end?.dateTime || event.end?.date;
+      
+      if (!startTime || !endTime) continue;
 
       // booking_events에는 메타데이터만 저장
       eventsToUpsert.push({
         room_id: room.id,
         google_event_id: event.id,
         title: event.summary || '(제목 없음)',
-        start_time: event.start.dateTime,
-        end_time: event.end.dateTime,
+        start_time: startTime,  // ISO 형식 유지
+        end_time: endTime,      // ISO 형식 유지
         description: event.description || null,
         updated_at: new Date().toISOString()
       });
@@ -230,8 +233,8 @@ export async function handler(event, context) {
     };
   }
 
-  // Netlify 타임아웃 대비: 최대 8초로 제한
-  const timeoutMs = 8000;
+  // Netlify 타임아웃 대비: 최대 20초로 제한 (Netlify Pro: 26초, 안전 마진)
+  const timeoutMs = 20000;
   const startTime = Date.now();
   
   try {
@@ -249,7 +252,7 @@ export async function handler(event, context) {
     const { results, overallTime } = await Promise.race([
       syncAllCalendars(selectedRoomIds),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('동기화 타임아웃 (8초 초과)')), timeoutMs)
+        setTimeout(() => reject(new Error(`동기화 타임아웃 (${timeoutMs/1000}초 초과)`)), timeoutMs)
       )
     ]);
     
