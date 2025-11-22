@@ -17,12 +17,18 @@ let calendar = null;
 
 function initClients() {
   if (!supabase) {
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error(`❌ Supabase 환경 변수 미설정: URL=${!!process.env.SUPABASE_URL}, KEY=${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
+    }
     supabase = createClient(
       process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
   }
   if (!calendar) {
+    if (!process.env.GOOGLE_CALENDAR_API_KEY) {
+      throw new Error(`❌ Google API KEY 환경 변수 미설정`);
+    }
     calendar = google.calendar({
       version: 'v3',
       auth: process.env.GOOGLE_CALENDAR_API_KEY
@@ -192,8 +198,9 @@ async function syncRoomCalendar(room) {
     return { room: room.id, count: eventsToUpsert.length, logs, totalTime };
   } catch (error) {
     logs.push(`[${room.id}] ❌ 오류: ${error.message}`);
+    logs.push(`[${room.id}] Stack: ${error.stack}`);
     console.error(logs.join('\n'));
-    return { room: room.id, count: 0, logs, error: error.message };
+    return { room: room.id, count: 0, logs, error: error.message, stack: error.stack };
   }
 }
 
@@ -268,13 +275,16 @@ export async function handler(event, context) {
       })
     };
   } catch (error) {
-    console.error('동기화 오류:', error);
+    console.error('❌ Handler 동기화 오류:', error);
+    console.error('Stack:', error.stack);
     return {
       statusCode: 500,
       body: JSON.stringify({ 
         success: false,
         error: error.message,
-        stack: error.stack
+        errorType: error.constructor.name,
+        stack: error.stack,
+        timestamp: new Date().toISOString()
       })
     };
   }
