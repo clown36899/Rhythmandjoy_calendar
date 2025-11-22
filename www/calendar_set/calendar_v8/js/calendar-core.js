@@ -29,43 +29,52 @@ class Calendar {
   }
 
   async init() {
-    if (window.logger) logger.info('Calendar init starting');
-    devLog('🚀 [CALENDAR_INIT] 시작');
-    
+    if (window.logger) logger.info("Calendar init starting");
+    devLog("🚀 [CALENDAR_INIT] 시작");
+
     try {
       const dmStart = Date.now();
       await window.dataManager.init();
       const dmTime = Date.now() - dmStart;
-      if (window.logger) logger.info('DataManager initialized', { time: dmTime });
+      if (window.logger)
+        logger.info("DataManager initialized", { time: dmTime });
       devLog(`✅ [DataManager] 초기화 완료 (${dmTime}ms)`);
     } catch (error) {
-      if (window.logger) logger.error('DataManager init failed', { message: error.message });
+      if (window.logger)
+        logger.error("DataManager init failed", { message: error.message });
       devLog(`❌ [DataManager] 초기화 실패: ${error.message}`);
     }
 
-    if (window.logger) logger.info('Setting up calendar listeners and observers');
-    devLog('🔧 [SETUP] 이벤트 리스너 및 옵저버 설정 중');
-    
+    if (window.logger)
+      logger.info("Setting up calendar listeners and observers");
+    devLog("🔧 [SETUP] 이벤트 리스너 및 옵저버 설정 중");
+
     this.setupEventListeners();
     this.setupResizeObserver();
-    
-    if (window.logger) logger.info('Rendering calendar');
-    devLog('🎨 [RENDER] 달력 렌더링 시작');
+
+    if (window.logger) logger.info("Rendering calendar");
+    devLog("🎨 [RENDER] 달력 렌더링 시작");
     const renderStart = Date.now();
     await this.render();
     const renderTime = Date.now() - renderStart;
-    if (window.logger) logger.info('Calendar rendered', { time: renderTime, cacheSize: this.weekDataCache.size });
-    devLog(`✅ [RENDER] 달력 렌더링 완료 (${renderTime}ms, 캐시: ${this.weekDataCache.size}개)`);
-    
-    if (window.logger) logger.info('Setting up swipe gestures');
-    devLog('👆 [SWIPE] 스와이프 제스처 설정 중');
+    if (window.logger)
+      logger.info("Calendar rendered", {
+        time: renderTime,
+        cacheSize: this.weekDataCache.size,
+      });
+    devLog(
+      `✅ [RENDER] 달력 렌더링 완료 (${renderTime}ms, 캐시: ${this.weekDataCache.size}개)`,
+    );
+
+    if (window.logger) logger.info("Setting up swipe gestures");
+    devLog("👆 [SWIPE] 스와이프 제스처 설정 중");
     this.setupSwipeGestures();
-    if (window.logger) logger.info('Swipe gestures ready');
-    
-    if (window.logger) logger.info('Starting current time updater');
+    if (window.logger) logger.info("Swipe gestures ready");
+
+    if (window.logger) logger.info("Starting current time updater");
     this.startCurrentTimeUpdater();
-    if (window.logger) logger.info('Calendar initialized successfully');
-    devLog('✅ [CALENDAR_INIT] 완료');
+    if (window.logger) logger.info("Calendar initialized successfully");
+    devLog("✅ [CALENDAR_INIT] 완료");
   }
 
   setupResizeObserver() {
@@ -950,12 +959,12 @@ class Calendar {
     if (!titleElement) return;
 
     const month = this.currentDate.getMonth() + 1;
-    
+
     // 🆕 캐시: 같은 달이면 DOM 업데이트 안 함
     if (this.cachedTitleMonth === month) {
       return;
     }
-    
+
     this.cachedTitleMonth = month;
     titleElement.textContent = `${month}월`;
   }
@@ -977,15 +986,19 @@ class Calendar {
     // 오른쪽 → (dates[3]=새 현재, dates[4]=+1주, dates[5]=+2주) 중 ±1주 우선
     // 왼쪽 ← (dates[1]=-2주, dates[2]=-1주, dates[3]=새 현재) 중 ±1주 우선
     let priorityDates, otherDates;
-    
+
     if (direction === 1) {
       priorityDates = [dates[3], dates[4], dates[5]];
       otherDates = [dates[0], dates[1], dates[2], dates[6]];
-      devLog(`   ⚡ 오른쪽(→) 스와이프: 우선 로드 ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(" → ")}`);
+      devLog(
+        `   ⚡ 오른쪽(→) 스와이프: 우선 로드 ${priorityDates.map((d) => d.toLocaleDateString("ko-KR")).join(" → ")}`,
+      );
     } else {
       priorityDates = [dates[1], dates[2], dates[3]];
       otherDates = [dates[0], dates[4], dates[5], dates[6]];
-      devLog(`   ⚡ 왼쪽(←) 스와이프: 우선 로드 ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(" ← ")}`);
+      devLog(
+        `   ⚡ 왼쪽(←) 스와이프: 우선 로드 ${priorityDates.map((d) => d.toLocaleDateString("ko-KR")).join(" ← ")}`,
+      );
     }
 
     // Step 1: 우선 로드 (3주 블로킹)
@@ -1002,43 +1015,55 @@ class Calendar {
     slides.forEach((slide, i) => {
       slide.innerHTML = this.renderWeekViewContent(dates[i]);
     });
-    devLog(`   ✅ [Step 2] 슬라이드 업데이트 완료: ${this.events.length}개 이벤트`);
+    devLog(
+      `   ✅ [Step 2] 슬라이드 업데이트 완료: ${this.events.length}개 이벤트`,
+    );
 
     // Step 3: 나머지 주는 백그라운드 순차 로드 (비블로킹)
-    devLog(`   🔄 [Step 3] 백그라운드 순차 로드 시작 - ${otherDates.length}주 비동기`);
-    
+    devLog(
+      `   🔄 [Step 3] 백그라운드 순차 로드 시작 - ${otherDates.length}주 비동기`,
+    );
+
     // 🆕 현재 height 정보 저장 (높이 튀지 않게 하기)
     const slideHeights = new Map();
     slides.forEach((slide, idx) => {
-      const weekView = slide.querySelector('.week-view');
+      const weekView = slide.querySelector(".week-view");
       if (weekView) {
         slideHeights.set(idx, {
           height: weekView.clientHeight,
-          gridTemplateRows: weekView.style.gridTemplateRows
+          gridTemplateRows: weekView.style.gridTemplateRows,
         });
       }
     });
-    
+
     // 🆕 순차 로드 (2개씩)
     (async () => {
       for (const date of otherDates) {
         await this.loadWeekDataToCache(date);
-        const slideIdx = dates.findIndex(d => d.toDateString() === date.toDateString());
-        
+        const slideIdx = dates.findIndex(
+          (d) => d.toDateString() === date.toDateString(),
+        );
+
         if (slideIdx !== -1 && slides[slideIdx]) {
           // 콘텐츠 업데이트
-          slides[slideIdx].innerHTML = this.renderWeekViewContent(dates[slideIdx]);
-          
+          slides[slideIdx].innerHTML = this.renderWeekViewContent(
+            dates[slideIdx],
+          );
+
           // 🆕 높이 강제 고정 - adjustWeekViewLayout 호출
           requestAnimationFrame(() => {
             this.adjustWeekViewLayout(true);
-            devLog(`   📦 [높이고정] ${date.toLocaleDateString("ko-KR")} - 레이아웃 재계산`);
+            devLog(
+              `   📦 [높이고정] ${date.toLocaleDateString("ko-KR")} - 레이아웃 재계산`,
+            );
           });
         }
       }
     })();
 
-    devLog(`✅ [무한스크롤] 7주 유지: 우선 3주(${priorityTime}ms) → 나머지 4주 백그라운드 순차 중...`);
+    devLog(
+      `✅ [무한스크롤] 7주 유지: 우선 3주(${priorityTime}ms) → 나머지 4주 백그라운드 순차 중...`,
+    );
   }
 
   goToToday() {
@@ -1333,20 +1358,28 @@ class Calendar {
     const currentWeekDate = dates[3];
     const adjWeekDates = [dates[2], dates[4]];
     const priorityDates = [currentWeekDate, ...adjWeekDates];
-    
-    devLog(`   🚀 [STEP1] 우선 3주: ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(" | ")}`);
+
+    devLog(
+      `   🚀 [STEP1] 우선 3주: ${priorityDates.map((d) => d.toLocaleDateString("ko-KR")).join(" | ")}`,
+    );
     const t1 = Date.now();
-    await Promise.all(priorityDates.map(date => this.loadWeekDataToCache(date)));
+    await Promise.all(
+      priorityDates.map((date) => this.loadWeekDataToCache(date)),
+    );
     devLog(`   ✅ 우선 3주 완료: ${Date.now() - t1}ms`);
 
     // ⚡ STEP 2: 추가 2주 순차 로드 (로딩 UI 유지 중)
     const additionalDates = [dates[1], dates[5]];
-    devLog(`   🚀 [STEP2] 추가 2주 순차: ${additionalDates.map(d => d.toLocaleDateString("ko-KR")).join(" → ")}`);
-    
+    devLog(
+      `   🚀 [STEP2] 추가 2주 순차: ${additionalDates.map((d) => d.toLocaleDateString("ko-KR")).join(" → ")}`,
+    );
+
     for (const date of additionalDates) {
       const t2 = Date.now();
       await this.loadWeekDataToCache(date);
-      devLog(`   ✅ [+${Date.now() - t2}ms] ${date.toLocaleDateString("ko-KR")}`);
+      devLog(
+        `   ✅ [+${Date.now() - t2}ms] ${date.toLocaleDateString("ko-KR")}`,
+      );
     }
     devLog(`   ✅ 5주 로드 완료 - 이제 스와이프 활성화됨!`);
 
@@ -1381,13 +1414,17 @@ class Calendar {
 
     // 🔄 STEP 3: 나머지 2주 백그라운드 로드 (비블로킹)
     const bgDates = [dates[0], dates[6]];
-    devLog(`   📦 [STEP3] BG 로드 시작: ${bgDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
-    
+    devLog(
+      `   📦 [STEP3] BG 로드 시작: ${bgDates.map((d) => d.toLocaleDateString("ko-KR")).join(", ")}`,
+    );
+
     (async () => {
       for (const date of bgDates) {
         const t1 = Date.now();
         await this.loadWeekDataToCache(date);
-        devLog(`   📦 [+${Date.now() - t1}ms] ${date.toLocaleDateString("ko-KR")}`);
+        devLog(
+          `   📦 [+${Date.now() - t1}ms] ${date.toLocaleDateString("ko-KR")}`,
+        );
       }
     })();
   }
@@ -1420,25 +1457,27 @@ class Calendar {
       try {
         // ✅ Google Calendar API 직접 호출
         const params = new URLSearchParams({
-          roomIds: roomIds.join(','),
+          roomIds: roomIds.join(","),
           startDate: start.toISOString(),
-          endDate: end.toISOString()
+          endDate: end.toISOString(),
         });
 
         // 환경에 따라 다른 경로 사용 (개발: /api/get-week-events, 배포: /.netlify/functions/get-week-events)
-        const isDevelopment = window.location.hostname.includes('replit') || window.location.hostname === 'localhost';
-        const apiUrl = isDevelopment 
+        const isDevelopment =
+          window.location.hostname.includes("replit") ||
+          window.location.hostname === "localhost";
+        const apiUrl = isDevelopment
           ? `/api/get-week-events?${params}`
           : `/.netlify/functions/get-week-events?${params}`;
-        
+
         const response = await fetch(apiUrl);
-        
+
         if (!response.ok) {
           throw new Error(`API 응답 오류: ${response.status}`);
         }
 
         const data = await response.json();
-        
+
         // Google Calendar 이벤트를 Calendar 포맷으로 변환
         const events = [];
         if (data.events) {
@@ -1451,7 +1490,7 @@ class Calendar {
                 end: new Date(event.end),
                 roomId: roomId,
                 description: event.description,
-                googleEventId: event.id
+                googleEventId: event.id,
               });
             }
           }
@@ -1895,7 +1934,7 @@ class Calendar {
     html += '<div class="calendar-slider">';
     html += '<div class="calendar-slide" style="transform: translateX(0%)">';
 
-    // 3. renderWeekViewContent를 날짜 1개로 호출
+    // 3. renderWeekViewContent를 날짜 1개a�� 호출
     html += this.renderWeekViewContent(date, [date]);
 
     html += "</div>";
