@@ -1245,7 +1245,7 @@ class Calendar {
   }
 
   async renderWeekViewWithSlider() {
-    devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작`);
+    devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작 (순차 로딩 모드: 현재주 중심 3주)`);
     devLog(`   현재 캐시 크기: ${this.weekDataCache.size}개`);
 
     // -3주부터 +3주까지 7주 계산
@@ -1259,13 +1259,23 @@ class Calendar {
       );
     }
 
-    // 7주치 이벤트를 캐시에서 로드 또는 새로 가져오기
-    for (const date of dates) {
+    // 🔄 순차 로딩: 현재주(0) + 좌우(±1) = 총 3주만 먼저 로드
+    const priorityDates = [dates[2], dates[3], dates[4]]; // -1주, 현재주(0), +1주
+    devLog(`   ⚡ 우선 로드: ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    
+    for (const date of priorityDates) {
       await this.loadWeekDataToCache(date);
     }
 
-    // 캐시된 데이터를 합쳐서 this.events에 설정
-    this.events = this.getMergedEventsFromCache(dates);
+    // 나머지 주는 백그라운드에서 비동기로 로드 (UI 블로킹 없음)
+    const otherDates = [dates[0], dates[1], dates[5], dates[6]]; // -3주, -2주, +2주, +3주
+    devLog(`   📊 백그라운드 로드 시작: ${otherDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    otherDates.forEach(date => {
+      this.loadWeekDataToCache(date); // await 하지 않음 - 백그라운드 로드
+    });
+
+    // 캐시된 데이터를 합쳐서 this.events에 설정 (현재 3주 데이터만 포함)
+    this.events = this.getMergedEventsFromCache(priorityDates);
     devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
     // 고정 시간 열 + 슬라이더 생성
