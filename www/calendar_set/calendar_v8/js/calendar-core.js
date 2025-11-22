@@ -26,18 +26,43 @@ class Calendar {
   }
 
   async init() {
+    if (window.logger) logger.info('Calendar init starting');
+    devLog('🚀 [CALENDAR_INIT] 시작');
+    
     try {
+      const dmStart = Date.now();
       await window.dataManager.init();
-      if (window.logger) logger.info('Calendar initialized');
+      const dmTime = Date.now() - dmStart;
+      if (window.logger) logger.info('DataManager initialized', { time: dmTime });
+      devLog(`✅ [DataManager] 초기화 완료 (${dmTime}ms)`);
     } catch (error) {
-      if (window.logger) logger.error('Supabase 초기화 실패', { message: error.message });
+      if (window.logger) logger.error('DataManager init failed', { message: error.message });
+      devLog(`❌ [DataManager] 초기화 실패: ${error.message}`);
     }
 
+    if (window.logger) logger.info('Setting up calendar listeners and observers');
+    devLog('🔧 [SETUP] 이벤트 리스너 및 옵저버 설정 중');
+    
     this.setupEventListeners();
     this.setupResizeObserver();
+    
+    if (window.logger) logger.info('Rendering calendar');
+    devLog('🎨 [RENDER] 달력 렌더링 시작');
+    const renderStart = Date.now();
     await this.render();
+    const renderTime = Date.now() - renderStart;
+    if (window.logger) logger.info('Calendar rendered', { time: renderTime, cacheSize: this.weekDataCache.size });
+    devLog(`✅ [RENDER] 달력 렌더링 완료 (${renderTime}ms, 캐시: ${this.weekDataCache.size}개)`);
+    
+    if (window.logger) logger.info('Setting up swipe gestures');
+    devLog('👆 [SWIPE] 스와이프 제스처 설정 중');
     this.setupSwipeGestures();
+    if (window.logger) logger.info('Swipe gestures ready');
+    
+    if (window.logger) logger.info('Starting current time updater');
     this.startCurrentTimeUpdater();
+    if (window.logger) logger.info('Calendar initialized successfully');
+    devLog('✅ [CALENDAR_INIT] 완료');
   }
 
   setupResizeObserver() {

@@ -52,14 +52,24 @@ class DataManager {
     const supabaseKey = window.SUPABASE_ANON_KEY || window.ENV?.SUPABASE_ANON_KEY;
     
     if (!supabaseUrl || !supabaseKey) {
+      if (window.logger) logger.error('Supabase config missing', { url: !!supabaseUrl, key: !!supabaseKey });
       console.error('❌ ENV not loaded properly');
       return false;
     }
 
+    if (window.logger) logger.info('Supabase config loaded', { 
+      url: supabaseUrl.substring(0, 30) + '...', 
+      keyLength: supabaseKey.length 
+    });
+    devLog('📡 Supabase 설정 로드됨', { url: supabaseUrl.substring(0, 30), keyLen: supabaseKey.length });
+
     const { createClient } = supabase;
     this.supabase = createClient(supabaseUrl, supabaseKey);
 
-    devLog('✅ Supabase initialized');
+    if (window.logger) logger.info('Supabase initialized', { url: supabaseUrl.substring(0, 30) });
+    devLog('✅ Supabase 클라이언트 생성됨');
+    
+    // Realtime 구독 전 상태 확인
     this.setupRealtimeSubscription();
     this.setupVisibilityHandler();
     return true;
@@ -91,6 +101,9 @@ class DataManager {
   }
 
   _connectRealtime() {
+    if (window.logger) logger.info('Realtime connecting', { retryCount: this.realtimeRetryCount });
+    devLog(`🔌 [REALTIME] 연결 시도 중 (재시도: ${this.realtimeRetryCount})`);
+    
     const channel = this.supabase
       .channel('booking_events_changes')
       .on(
@@ -101,24 +114,31 @@ class DataManager {
           table: 'booking_events'
         },
         (payload) => {
-          devLog('📡 실시간 업데이트:', payload);
+          if (window.logger) logger.info('Realtime data received', { 
+            eventType: payload.eventType,
+            newId: payload.new?.id,
+            oldId: payload.old?.id 
+          });
+          devLog('📡 [Realtime이벤트] ', payload.eventType, { id: payload.new?.id || payload.old?.id });
           this.handleRealtimeChange(payload);
           // 성공 시 재시도 횟수 초기화
           this.realtimeRetryCount = 0;
         }
       )
       .on('system', { event: 'join' }, () => {
-        if (window.logger) logger.info('Realtime connection established');
-        devLog('✅ Realtime 연결 성공');
+        const timestamp = new Date().toISOString();
+        if (window.logger) logger.info('Realtime join event', { timestamp });
+        devLog(`✅ [JOIN] Realtime 채널 조인됨 @ ${timestamp}`);
         this.realtimeRetryCount = 0; // 재시도 횟수 초기화
       })
       .on('system', { event: 'leave' }, () => {
-        if (window.logger) logger.warn('Realtime connection disconnected - attempting reconnect');
-        devLog('⚠️ Realtime 연결 끊김 - 자동 재연결 시도 예정');
+        const timestamp = new Date().toISOString();
+        if (window.logger) logger.warn('Realtime leave event', { timestamp, retryCount: this.realtimeRetryCount });
+        devLog(`⚠️ [LEAVE] Realtime 채널 이탈 @ ${timestamp} (이유: 미정의)`);
         // 연결 끊김 시 자동 재연결 시도
         setTimeout(() => {
-          if (window.logger) logger.info('Realtime reconnect starting', { retryCount: this.realtimeRetryCount });
-          devLog(`🔄 Realtime 자동 재연결 시작 (재시도: ${this.realtimeRetryCount})`);
+          if (window.logger) logger.info('Realtime reconnect starting after leave', { retryCount: this.realtimeRetryCount });
+          devLog(`🔄 [RECONNECT_TRIGGERED] Realtime 자동 재연결 시작 (재시도: ${this.realtimeRetryCount})`);
           this._scheduleRealtimeReconnect();
         }, 500);
       })
@@ -126,21 +146,37 @@ class DataManager {
         // 상태 변화가 있을 때만 로그 (중복 방지)
         if (status !== this.realtimeStatus) {
           this.realtimeStatus = status;
+          const timestamp = new Date().toISOString();
           
           if (status === 'SUBSCRIBED') {
-            if (window.logger) logger.info('Realtime subscription active');
-            devLog('✅ Realtime subscription 활성화');
+            if (window.logger) logger.info('Realtime subscribed', { 
+              status,
+              timestamp,
+              retryCount: this.realtimeRetryCount
+            });
+            devLog(`✅ [SUBSCRIBED] Realtime subscription 활성화 @ ${timestamp}`);
             this.realtimeRetryCount = 0; // 성공 시 초기화
           } else if (status === 'CHANNEL_ERROR') {
-            if (window.logger) logger.error('Realtime channel error', { status });
-            devLog(`❌ Realtime 채널 에러 (${this.realtimeRetryCount + 1}/${this.realtimeMaxRetries})`);
+            if (window.logger) logger.error('Realtime channel error', { 
+              status,
+              timestamp,
+              retryCount: this.realtimeRetryCount + 1,
+              maxRetries: this.realtimeMaxRetries
+            });
+            devLog(`❌ [CHANNEL_ERROR] Realtime 채널 에러 (${this.realtimeRetryCount + 1}/${this.realtimeMaxRetries})`);
             this._scheduleRealtimeReconnect();
           } else if (status === 'TIMED_OUT') {
-            if (window.logger) logger.error('Realtime subscription timed out', { status });
-            devLog(`❌ Realtime 타임아웃 (${this.realtimeRetryCount + 1}/${this.realtimeMaxRetries})`);
+            if (window.logger) logger.error('Realtime timed out', { 
+              status,
+              timestamp,
+              retryCount: this.realtimeRetryCount + 1,
+              maxRetries: this.realtimeMaxRetries
+            });
+            devLog(`❌ [TIMED_OUT] Realtime 타임아웃 (${this.realtimeRetryCount + 1}/${this.realtimeMaxRetries})`);
             this._scheduleRealtimeReconnect();
           } else {
-            devLog(`🔄 Realtime 상태 변화: ${status}`);
+            if (window.logger) logger.info('Realtime status change', { status, timestamp });
+            devLog(`🔄 [STATUS] Realtime 상태: ${status} @ ${timestamp}`);
           }
         }
       });
@@ -148,16 +184,23 @@ class DataManager {
     // 에러 핸들러 추가
     if (channel && channel.on) {
       channel.on('error', (err) => {
-        if (window.logger) logger.error('Realtime subscription error', { 
-          error: err?.message || String(err)
+        if (window.logger) logger.error('Realtime error handler', { 
+          error: err?.message || String(err),
+          errorType: err?.constructor?.name,
+          timestamp: new Date().toISOString()
         });
-        devLog(`❌ Realtime 에러: ${err?.message || String(err)}`);
+        devLog(`❌ [ERROR_HANDLER] Realtime 에러: ${err?.message || String(err)}`);
         this._scheduleRealtimeReconnect();
       });
     }
 
     this.realtimeChannel = channel;
-    devLog('🔧 Realtime 구독 설정 중...');
+    if (window.logger) logger.info('Realtime setup complete', { 
+      channelName: 'booking_events_changes',
+      retryCount: this.realtimeRetryCount,
+      status: 'SUBSCRIBING'
+    });
+    devLog(`🔧 [SETUP] Realtime 구독 설정 완료 → SUBSCRIBING 상태로 전환 중...`);
   }
 
   _scheduleRealtimeReconnect() {
@@ -317,17 +360,33 @@ class DataManager {
     const cacheKey = `${roomIds.join(',')}_${startDate}_${endDate}`;
     const now = Date.now();
     const cacheFreshness = this.cacheTimestamps.get(cacheKey) || 0;
+    const cacheAge = now - cacheFreshness;
     
-    if (this.cache.has(cacheKey) && (now - cacheFreshness) < 300000) {
-      devLog('📦 [캐시HIT-FRESH]:', cacheKey);
-      return this.cache.get(cacheKey);
+    if (this.cache.has(cacheKey) && cacheAge < 300000) {
+      const data = this.cache.get(cacheKey);
+      if (window.logger) logger.info('Cache hit fresh', { cacheKey, eventCount: data.length, age: cacheAge });
+      devLog(`📦 [캐시HIT-FRESH] ${cacheKey} (나이: ${(cacheAge/1000).toFixed(0)}초, 이벤트: ${data.length}개)`);
+      return data;
     }
     
     if (this.cache.has(cacheKey)) {
-      devLog('⏰ [캐시STALE] 재조회:', cacheKey);
+      if (window.logger) logger.info('Cache stale, fetching', { cacheKey, age: cacheAge });
+      devLog(`⏰ [캐시STALE] 재조회 중: ${cacheKey} (나이: ${(cacheAge/1000).toFixed(0)}초)`);
+    } else {
+      if (window.logger) logger.info('Cache miss, fetching', { cacheKey });
+      devLog(`❌ [캐시MISS] 첫 조회: ${cacheKey}`);
     }
 
     try {
+      if (window.logger) logger.info('DB fetch starting', { 
+        rooms: roomIds, 
+        startDate, 
+        endDate,
+        cacheSize: this.cache.size
+      });
+      devLog(`🔍 [DB쿼리] 시작 - 방: ${roomIds.join(',')}, 기간: ${startDate}~${endDate}, 현재캐시크기: ${this.cache.size}`);
+      
+      const queryStart = Date.now();
       const { data, error } = await this.supabase
         .from('booking_events')
         .select('*')
@@ -336,17 +395,51 @@ class DataManager {
         .lte('end_time', endDate)
         .order('start_time', { ascending: true });
 
-      if (error) throw error;
+      const queryTime = Date.now() - queryStart;
 
-      devLog(`✅ DB 조회 완료: ${data.length}개 이벤트`);
+      if (error) {
+        if (window.logger) logger.error('DB fetch error', { 
+          error: error.message,
+          code: error.code,
+          queryTime
+        });
+        throw error;
+      }
+
+      if (window.logger) logger.info('DB fetch complete', { 
+        eventCount: data.length,
+        queryTime,
+        cacheKey
+      });
+      devLog(`✅ [DB조회완료] ${data.length}개 이벤트 로드 (${queryTime}ms)`);
+      
       this.cache.set(cacheKey, data);
       this.cacheTimestamps.set(cacheKey, now);
       
       this.enforceCacheSizeLimit();
       
+      if (window.logger) logger.info('Cache updated', { 
+        cacheKey,
+        eventCount: data.length,
+        totalCacheSize: this.cache.size
+      });
+      
       return data;
     } catch (error) {
+      if (window.logger) logger.error('DB fetch failed', { 
+        error: error?.message || String(error),
+        cacheKey,
+        fallbackEventCount: this.cache.get(cacheKey)?.length || 0
+      });
       console.error('❌ DB 조회 실패:', error);
+      
+      // 캐시가 있으면 사용
+      if (this.cache.has(cacheKey)) {
+        const fallback = this.cache.get(cacheKey);
+        devLog(`⚠️ [FALLBACK] DB 조회 실패 → 캐시 사용 (${fallback.length}개)`);
+        return fallback;
+      }
+      
       return [];
     }
   }
