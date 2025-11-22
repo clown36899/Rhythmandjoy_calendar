@@ -994,12 +994,37 @@ class Calendar {
 
     // Step 3: 나머지 주는 백그라운드 순차 로드 (비블로킹)
     devLog(`   🔄 [Step 3] 백그라운드 로드 시작 - ${otherDates.length}주 비동기`);
+    
+    // 🆕 현재 height 정보 저장 (높이 튀지 않게 하기)
+    const slideHeights = new Map();
+    slides.forEach((slide, idx) => {
+      const weekView = slide.querySelector('.week-view');
+      if (weekView) {
+        slideHeights.set(idx, {
+          height: weekView.clientHeight,
+          gridTemplateRows: weekView.style.gridTemplateRows
+        });
+      }
+    });
+    
     otherDates.forEach(date => {
       this.loadWeekDataToCache(date).then(() => {
         const slideIdx = dates.findIndex(d => d.toDateString() === date.toDateString());
         if (slideIdx !== -1 && slides[slideIdx]) {
+          // 🆕 콘텐츠 업데이트
           slides[slideIdx].innerHTML = this.renderWeekViewContent(dates[slideIdx]);
-          devLog(`   📦 백그라운드 완료: ${date.toLocaleDateString("ko-KR")}`);
+          
+          // 🆕 높이 정보 복원 (높이 일관성 유지)
+          const savedHeight = slideHeights.get(slideIdx);
+          if (savedHeight) {
+            const weekView = slides[slideIdx].querySelector('.week-view');
+            if (weekView) {
+              weekView.style.gridTemplateRows = savedHeight.gridTemplateRows;
+              devLog(`   📦 [높이유지] ${date.toLocaleDateString("ko-KR")} - 그리드 복원`);
+            }
+          } else {
+            devLog(`   📦 백그라운드 완료: ${date.toLocaleDateString("ko-KR")}`);
+          }
         }
       });
     });
