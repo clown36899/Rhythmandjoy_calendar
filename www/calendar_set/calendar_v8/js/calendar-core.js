@@ -646,15 +646,18 @@ class Calendar {
         );
 
         if (shouldNavigate) {
+          // 🆕 업계 표준: 즉시 애니메이션 잠금 (새로운 스와이프 완전 차단)
+          this.isAnimating = true;
           this.lastSwipeTime = Date.now();
           this.hasPendingGestureNavigation = true;
 
           const direction = e.deltaX < 0 ? 1 : -1;
           console.log(
-            `%c✅ [HAMMER] 네비게이션 실행`,
+            `%c✅ [HAMMER] 네비게이션 실행 + 애니메이션 잠금`,
             "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;",
             {
               방향: direction === 1 ? "다음 주 →" : "이전 주 ←",
+              isAnimating: this.isAnimating,
             },
           );
 
