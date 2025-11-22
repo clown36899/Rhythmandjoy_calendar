@@ -1313,24 +1313,56 @@ class Calendar {
     }
 
     devLog(
-      `   🔍 [캐시MISS] ${date.toLocaleDateString("ko-KR")} - DB 조회 시작`,
+      `   🔍 [캐시MISS] ${date.toLocaleDateString("ko-KR")} - Google Calendar 조회 시작`,
     );
 
-    // 캐시에 없으면 DB에서 로드
     const { start, end } = this.getWeekRange(date);
     const roomIds = Array.from(this.selectedRooms);
 
     if (roomIds.length > 0) {
-      const bookings = await window.dataManager.fetchBookings(
-        roomIds,
-        start.toISOString(),
-        end.toISOString(),
-      );
-      const events = window.dataManager.convertToEvents(bookings);
-      this.weekDataCache.set(cacheKey, events);
-      devLog(
-        `   💾 [캐시저장] ${date.toLocaleDateString("ko-KR")} - ${events.length}개 이벤트 저장`,
-      );
+      try {
+        // ✅ Google Calendar API 직접 호출
+        const params = new URLSearchParams({
+          roomIds: roomIds.join(','),
+          startDate: start.toISOString(),
+          endDate: end.toISOString()
+        });
+
+        const apiUrl = `/.netlify/functions/get-week-events?${params}`;
+        const response = await fetch(apiUrl);
+        
+        if (!response.ok) {
+          throw new Error(`API 응답 오류: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        // Google Calendar 이벤트를 Calendar 포맷으로 변환
+        const events = [];
+        if (data.events) {
+          for (const [roomId, roomEvents] of Object.entries(data.events)) {
+            for (const event of roomEvents) {
+              events.push({
+                id: `${roomId}_${event.id}`, // 고유 ID 생성
+                title: event.title,
+                start: new Date(event.start),
+                end: new Date(event.end),
+                roomId: roomId,
+                description: event.description,
+                googleEventId: event.id
+              });
+            }
+          }
+        }
+
+        this.weekDataCache.set(cacheKey, events);
+        devLog(
+          `   💾 [캐시저장] ${date.toLocaleDateString("ko-KR")} - ${events.length}개 이벤트 저장 (Google Calendar)`,
+        );
+      } catch (error) {
+        devLog(`   ❌ Google Calendar 조회 실패: ${error.message}`);
+        this.weekDataCache.set(cacheKey, []);
+      }
     } else {
       this.weekDataCache.set(cacheKey, []);
     }

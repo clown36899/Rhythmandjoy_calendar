@@ -192,45 +192,45 @@ export async function handler(event, context) {
       if (!channelInfo) {
         console.error('❌ 알 수 없는 채널:', channelId);
         return {
-          statusCode: 404,
-          body: JSON.stringify({ error: '채널을 찾을 수 없습니다' })
+          statusCode: 200,
+          body: JSON.stringify({ message: 'Channel not found, but webhook acknowledged' })
         };
       }
 
-      console.log(`🔔 ${channelInfo.room_id}홀 변경 감지`);
+      console.log(`🔔 ${channelInfo.room_id}홀 변경 감지 - Frontend에 신호 전송`);
 
-      // Sync Token 조회
-      const { data: syncState } = await supabase
-        .from('calendar_sync_state')
-        .select('sync_token')
-        .eq('room_id', channelInfo.room_id)
-        .single();
-
-      // 증분 동기화 실행
-      const result = await incrementalSync(
-        channelInfo.room_id,
-        channelInfo.calendar_id,
-        syncState?.sync_token
-      );
-
-      console.log(`✅ ${channelInfo.room_id}홀 동기화 완료:`, result);
+      // ✅ 신호 전송 (Frontend가 현재 주 재조회하도록 알림)
+      // notification 테이블에 INSERT → Realtime 이벤트 발생
+      try {
+        await supabase
+          .from('notifications')
+          .insert({
+            room_id: channelInfo.room_id,
+            type: 'calendar_update',
+            created_at: new Date().toISOString()
+          });
+        console.log(`✅ ${channelInfo.room_id}홀 신호 전송 완료`);
+      } catch (notifError) {
+        // notification 테이블이 없어도 무시 (Frontend는 주기적으로 확인)
+        console.warn(`⚠️ notification 테이블 없음 (무시됨):`, notifError.message);
+      }
 
       return {
         statusCode: 200,
         body: JSON.stringify({
-          message: '변경 감지 및 동기화 완료',
-          room: channelInfo.room_id,
-          changes: result.changes
+          message: '변경 감지, 신호 전송 완료',
+          room: channelInfo.room_id
         })
       };
 
     } catch (error) {
       console.error('❌ Webhook 처리 실패:', error);
+      // Webhook 실패해도 200 반환 (Google이 재시도하지 않도록)
       return {
-        statusCode: 500,
+        statusCode: 200,
         body: JSON.stringify({ 
-          error: error.message,
-          stack: error.stack
+          message: 'Webhook acknowledged but processing failed',
+          error: error.message
         })
       };
     }
