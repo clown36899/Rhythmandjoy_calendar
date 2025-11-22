@@ -1278,22 +1278,14 @@ class Calendar {
     await this.loadWeekDataToCache(currentWeekDate);
     devLog(`   ✅ 현주 로드 완료: ${Date.now() - t1}ms`);
 
-    // 현주만 먼저 화면에 렌더
-    this.events = this.getMergedEventsFromCache([currentWeekDate]);
+    // 모든 7주를 렌더링하되, 캐시된 데이터만 표시
+    this.events = this.getMergedEventsFromCache(dates);
     let html = this.renderTimeColumn();
     html += '<div class="calendar-slider">';
     const translateValues = [-300, -200, -100, 0, 100, 200, 300];
     dates.forEach((date, i) => {
       html += `<div class="calendar-slide" data-slide-index="${i}" style="transform: translateX(${translateValues[i]}%)">`;
-      if (i === 3) {
-        // 현주만 렌더 (이벤트 있음)
-        html += this.renderWeekViewContent(date);
-      } else {
-        // 다른 주는 "로딩 중..." 표시
-        html += `<div class="week-view loading-placeholder" style="opacity: 0.5; display: flex; align-items: center; justify-content: center;">
-          <div style="font-size: 14px; color: #999;">로딩 중...</div>
-        </div>`;
-      }
+      html += this.renderWeekViewContent(date);
       html += "</div>";
     });
     html += "</div>";
