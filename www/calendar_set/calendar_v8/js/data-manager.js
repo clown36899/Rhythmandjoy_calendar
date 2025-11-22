@@ -113,10 +113,14 @@ class DataManager {
         this.realtimeRetryCount = 0; // 재시도 횟수 초기화
       })
       .on('system', { event: 'leave' }, () => {
-        if (window.logger) logger.warn('Realtime connection disconnected');
-        devLog('⚠️ Realtime 연결 끊김');
+        if (window.logger) logger.warn('Realtime connection disconnected - attempting reconnect');
+        devLog('⚠️ Realtime 연결 끊김 - 자동 재연결 시도 예정');
         // 연결 끊김 시 자동 재연결 시도
-        this._scheduleRealtimeReconnect();
+        setTimeout(() => {
+          if (window.logger) logger.info('Realtime reconnect starting', { retryCount: this.realtimeRetryCount });
+          devLog(`🔄 Realtime 자동 재연결 시작 (재시도: ${this.realtimeRetryCount})`);
+          this._scheduleRealtimeReconnect();
+        }, 500);
       })
       .subscribe((status) => {
         // 상태 변화가 있을 때만 로그 (중복 방지)
@@ -159,8 +163,9 @@ class DataManager {
   _scheduleRealtimeReconnect() {
     // 최대 재시도 횟수 확인
     if (this.realtimeRetryCount >= this.realtimeMaxRetries) {
-      if (window.logger) logger.error('Realtime 최대 재시도 횟수 초과', { retries: this.realtimeRetryCount });
-      devLog(`❌ Realtime 최대 재시도 횟수 초과 (${this.realtimeRetryCount}회)`);
+      const msg = `❌ Realtime 최대 재시도 횟수 초과 (${this.realtimeRetryCount}회)`;
+      if (window.logger) logger.error('Realtime max retries exceeded', { retries: this.realtimeRetryCount });
+      devLog(msg);
       return;
     }
 
@@ -168,20 +173,33 @@ class DataManager {
     const delay = this.realtimeRetryDelay * Math.pow(2, this.realtimeRetryCount);
     this.realtimeRetryCount++;
 
-    if (window.logger) logger.info('Realtime 재연결 예약', { retries: this.realtimeRetryCount, delaySeconds: delay / 1000 });
-    devLog(`🔄 ${(delay / 1000).toFixed(0)}초 후 Realtime 재연결 시도... (${this.realtimeRetryCount}/${this.realtimeMaxRetries})`);
+    const delaySeconds = (delay / 1000).toFixed(0);
+    if (window.logger) logger.info('Realtime reconnect scheduled', { 
+      retries: this.realtimeRetryCount, 
+      delaySeconds: parseFloat(delaySeconds),
+      maxRetries: this.realtimeMaxRetries
+    });
+    devLog(`🔄 [${delaySeconds}초 후] Realtime 재연결 예약 (${this.realtimeRetryCount}/${this.realtimeMaxRetries})`);
 
     setTimeout(() => {
-      devLog(`🔄 Realtime 재연결 시도 (${this.realtimeRetryCount}/${this.realtimeMaxRetries})`);
+      devLog(`🔄 [NOW] Realtime 재연결 시도 중... (${this.realtimeRetryCount}/${this.realtimeMaxRetries})`);
+      if (window.logger) logger.info('Realtime reconnect attempting', { retries: this.realtimeRetryCount });
       
       // 이전 채널 언서브스크라이브
       if (this.realtimeChannel) {
-        this.realtimeChannel.unsubscribe().catch(err => {
-          devLog(`⚠️ 기존 채널 언서브 실패:`, err);
-        });
+        try {
+          this.realtimeChannel.unsubscribe().catch(err => {
+            if (window.logger) logger.warn('Failed to unsubscribe from old channel', { error: err?.message });
+            devLog(`⚠️ 기존 채널 언서브 실패: ${err?.message}`);
+          });
+        } catch (e) {
+          if (window.logger) logger.warn('Error unsubscribing', { error: e?.message });
+          devLog(`⚠️ 언서브 중 에러: ${e?.message}`);
+        }
       }
       
       // 새로 연결
+      devLog(`🔄 [NEW_CONNECTION] Realtime 새 연결 시작`);
       this._connectRealtime();
     }, delay);
   }
