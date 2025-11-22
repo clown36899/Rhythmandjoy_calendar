@@ -105,43 +105,22 @@ class DataManager {
     devLog(`🔌 [REALTIME] 연결 시도 중 (재시도: ${this.realtimeRetryCount})`);
     
     const channel = this.supabase
-      .channel('app_changes')
+      .channel('calendar_updates')
       .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'booking_events'
-        },
+        'broadcast',
+        { event: 'calendar_changed' },
         (payload) => {
-          if (window.logger) logger.info('Realtime data received', { 
-            eventType: payload.eventType,
-            newId: payload.new?.id,
-            oldId: payload.old?.id 
+          if (window.logger) logger.info('Webhook broadcast received', { 
+            roomId: payload.payload?.room_id,
+            timestamp: payload.payload?.timestamp
           });
-          devLog('📡 [Realtime이벤트] ', payload.eventType, { id: payload.new?.id || payload.old?.id });
-          this.handleRealtimeChange(payload);
-          // 성공 시 재시도 횟수 초기화
-          this.realtimeRetryCount = 0;
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications'
-        },
-        (payload) => {
-          if (window.logger) logger.info('Webhook notification received', { 
-            roomId: payload.new?.room_id,
-            type: payload.new?.type
-          });
-          devLog(`🔔 [WEBHOOK신호] 룸 ${payload.new?.room_id}에서 변경 감지 → 현재 주 재조회`);
+          devLog(`🔔 [WEBHOOK신호] 룸 ${payload.payload?.room_id}에서 변경 감지 → 현재 주 재조회`);
           // Webhook 신호: 현재 보는 주 데이터 재조회
           if (window.calendar) {
             window.calendar.refreshCurrentView();
           }
+          // 성공 시 재시도 횟수 초기화
+          this.realtimeRetryCount = 0;
         }
       )
       .on('system', { event: 'join' }, () => {

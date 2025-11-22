@@ -7,11 +7,11 @@ This project is a mobile-friendly room booking calendar application for "Rhythmj
 **2025-11-22: Architecture Redesign - On-Demand Google Calendar Loading**
 - Removed dependency on full database sync - now loads only visible weeks from Google Calendar
 - New API endpoint `get-week-events.mjs` - queries Google Calendar directly for specific date ranges
-- Webhook simplified - sends signal to Frontend (notifications table) instead of syncing entire DB
-- Frontend now refreshes current view on Webhook signal without page reload
+- Webhook simplified - sends signal via Realtime broadcast (no DB needed)
+- Frontend receives Webhook signal instantly via Realtime → refreshes current view without page reload
 - Navigation (week/month changes) automatically fetches fresh data from Google Calendar
-- Data comparison done client-side - only changed events are patched to screen
-- Result: Simplified architecture, no 500 errors, real-time updates without DB sync complexity
+- **No database needed** - only Webhook → Realtime broadcast → Frontend
+- Result: Ultra-simplified architecture, no 500 errors, real-time updates
 
 **2025-11-20: File-based Logging System**
 - Implemented localStorage-based logging system (`js/logger.js`)

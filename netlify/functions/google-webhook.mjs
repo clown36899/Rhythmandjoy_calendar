@@ -193,26 +193,26 @@ export async function handler(event, context) {
         console.error('❌ 알 수 없는 채널:', channelId);
         return {
           statusCode: 200,
-          body: JSON.stringify({ message: 'Channel not found, but webhook acknowledged' })
+          body: JSON.stringify({ message: 'Channel not found, webhook acknowledged' })
         };
       }
 
-      console.log(`🔔 ${channelInfo.room_id}홀 변경 감지 - Frontend에 신호 전송`);
+      console.log(`🔔 ${channelInfo.room_id}홀 변경 감지 → Realtime 브로드캐스트 전송`);
 
-      // ✅ 신호 전송 (Frontend가 현재 주 재조회하도록 알림)
-      // notification 테이블에 INSERT → Realtime 이벤트 발생
+      // ✅ 바로 Realtime으로 신호 브로드캐스트 (DB 저장 없음)
       try {
-        await supabase
-          .from('notifications')
-          .insert({
+        await supabase.channel('calendar_updates').send({
+          type: 'broadcast',
+          event: 'calendar_changed',
+          payload: {
             room_id: channelInfo.room_id,
-            type: 'calendar_update',
-            created_at: new Date().toISOString()
-          });
-        console.log(`✅ ${channelInfo.room_id}홀 신호 전송 완료`);
-      } catch (notifError) {
-        // notification 테이블이 없어도 무시 (Frontend는 주기적으로 확인)
-        console.warn(`⚠️ notification 테이블 없음 (무시됨):`, notifError.message);
+            timestamp: new Date().toISOString()
+          }
+        });
+        console.log(`✅ ${channelInfo.room_id}홀 신호 브로드캐스트 완료`);
+      } catch (broadcastError) {
+        console.error(`❌ Realtime 브로드캐스트 실패:`, broadcastError.message);
+        // 브로드캐스트 실패해도 무시 (Webhook은 성공 처리)
       }
 
       return {
@@ -224,12 +224,12 @@ export async function handler(event, context) {
       };
 
     } catch (error) {
-      console.error('❌ Webhook 처리 실패:', error);
-      // Webhook 실패해도 200 반환 (Google이 재시도하지 않도록)
+      console.error('❌ Webhook 처리 중 에러:', error);
+      // Webhook 실패해도 200 반환
       return {
         statusCode: 200,
         body: JSON.stringify({ 
-          message: 'Webhook acknowledged but processing failed',
+          message: 'Webhook acknowledged',
           error: error.message
         })
       };
