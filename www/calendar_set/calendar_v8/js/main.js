@@ -3,18 +3,41 @@ let calendar;
 document.addEventListener("DOMContentLoaded", async () => {
   if (window.logger) logger.info('App starting');
 
+  // DOM 렌더링 완료 후 초기 로드 최적화
+  // requestIdleCallback으로 우선순위 낮춘 작업은 나중에 실행
+  // 이를 통해 초기 렌더링이 완료된 후 바로 Google Calendar 조회 시작
+  
+  // 1️⃣ 즉시 실행 (UI 렌더링)
   calendar = new Calendar("calendarContainer");
   window.calendar = calendar;
-
-  await calendar.init();
 
   setupAdminButton();
   setupInfoButton();
   setupBottomLayoutObserver();
-  
-  checkAndOpenInfoPage();
 
-  if (window.logger) logger.info('App initialized');
+  // 2️⃣ 초기 렌더링 완료 후 (requestAnimationFrame로 다음 프레임)
+  // 그 다음 유휴 시간에 Google Calendar 조회 시작 (requestIdleCallback)
+  requestAnimationFrame(() => {
+    if (window.requestIdleCallback) {
+      // 브라우저가 유휴 시간을 가질 때까지 대기
+      window.requestIdleCallback(async () => {
+        if (window.logger) logger.info('Initializing calendar data');
+        await calendar.init();
+        if (window.logger) logger.info('Calendar data initialized');
+        checkAndOpenInfoPage();
+        if (window.logger) logger.info('App initialized');
+      }, { timeout: 3000 }); // 최대 3초 대기
+    } else {
+      // 폴백 (Safari 등에서 requestIdleCallback 미지원)
+      setTimeout(async () => {
+        if (window.logger) logger.info('Initializing calendar data');
+        await calendar.init();
+        if (window.logger) logger.info('Calendar data initialized');
+        checkAndOpenInfoPage();
+        if (window.logger) logger.info('App initialized');
+      }, 0);
+    }
+  });
 });
 
 function setupAdminButton() {
