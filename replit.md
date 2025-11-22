@@ -4,6 +4,15 @@ This project is a mobile-friendly room booking calendar application for "Rhythmj
 
 # Recent Changes
 
+**2025-11-22: Architecture Redesign - On-Demand Google Calendar Loading**
+- Removed dependency on full database sync - now loads only visible weeks from Google Calendar
+- New API endpoint `get-week-events.mjs` - queries Google Calendar directly for specific date ranges
+- Webhook simplified - sends signal to Frontend (notifications table) instead of syncing entire DB
+- Frontend now refreshes current view on Webhook signal without page reload
+- Navigation (week/month changes) automatically fetches fresh data from Google Calendar
+- Data comparison done client-side - only changed events are patched to screen
+- Result: Simplified architecture, no 500 errors, real-time updates without DB sync complexity
+
 **2025-11-20: File-based Logging System**
 - Implemented localStorage-based logging system (`js/logger.js`)
 - Disabled console output for all debug logs to reduce browser load
@@ -52,8 +61,8 @@ Preferred communication style: Simple, everyday language.
 ## Backend Architecture
 
 **Serverless Functions (Netlify Functions)**
-- `sync-calendar`: Full synchronization from Google Calendar to Supabase.
-- `google-webhook`: Receives Google Calendar webhooks for real-time updates.
+- `get-week-events`: ✨ NEW - Queries Google Calendar directly for specific weeks/rooms
+- `google-webhook`: Receives Google Calendar webhooks, broadcasts signal to Frontend via Realtime
 - `admin-stats`: API for various revenue statistics (annual, monthly, room-specific, daily, weekly, hourly).
 - `price-parser`: Extracts pricing information from Google Calendar event descriptions.
 
@@ -62,10 +71,12 @@ Preferred communication style: Simple, everyday language.
 
 ## System Design
 
-- **Real-time Synchronization**: Google Calendar changes trigger webhooks, leading to incremental synchronization with Supabase, which then updates the frontend via Realtime subscriptions. This ensures immediate updates without page reloads.
-- **Data Persistence**: All past and future booking data are stored in Supabase for historical analysis and forecasting.
-- **Room Management**: Five distinct practice rooms, each linked to a specific Google Calendar ID, with individual pricing structures and visual identification.
-- **Admin Dashboard**: A login-protected dashboard provides detailed revenue statistics, including monthly comparisons, room-specific performance, and time-based booking trends, visualized with Chart.js. Price parsing logic automatically extracts and categorizes event prices from calendar descriptions.
+- **On-Demand Data Loading**: Frontend requests only visible weeks from Google Calendar API → data compared with existing cache → only changes rendered
+- **Webhook Signaling**: Google Calendar changes trigger Webhook → signal sent to all viewing clients via Realtime → each client refreshes only their current view
+- **No Full Database Sync**: Eliminated unnecessary monthly ALL-event synchronization → replaced with targeted per-week API calls
+- **Client-Side Processing**: Data comparison and patching happens on Frontend, reducing server load
+- **Room Management**: Five distinct practice rooms, each linked to a specific Google Calendar ID
+- **Admin Dashboard**: Login-protected dashboard provides detailed revenue statistics, visualized with Chart.js
 
 # External Dependencies
 
