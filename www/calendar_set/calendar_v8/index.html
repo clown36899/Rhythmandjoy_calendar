@@ -77,10 +77,10 @@
       <div id="innerPopupContent"></div>
     </div>
 
-    <!-- 왼쪽 메뉴 iframe (데스크탑) -->
+    <!-- 왼쪽 메뉴 iframe (데스크탑) - 달력 로드 후 동적 로드 -->
     <iframe
       id="leftMenuFrame"
-      src="left-menu.html"
+      data-src="left-menu.html"
       style="display: none"
     ></iframe>
 
@@ -101,25 +101,26 @@
         ></button>
       </div>
 
-      <!-- 모바일용 메뉴 iframe -->
+      <!-- 모바일용 메뉴 iframe - 달력 로드 후 동적 로드 -->
       <div class="offcanvas-body" style="padding: 0">
         <iframe
-          src="left-menu.html"
+          id="leftMenuFrameMobile"
+          data-src="left-menu.html"
           style="width: 100%; height: 100%; border: none"
         ></iframe>
       </div>
     </div>
 
-    <!-- 오른쪽 iframe -->
+    <!-- 오른쪽 iframe - 달력 로드 후 동적 로드 -->
     <iframe
       id="sideFrame"
-      src="https://voluble-mochi-a91544.netlify.app/"
+      data-src="https://voluble-mochi-a91544.netlify.app/"
       style="display: none"
     ></iframe>
 
-    <!-- 예약정보 페이지 오버레이 -->
+    <!-- 예약정보 페이지 오버레이 - 달력 로드 후 동적 로드 -->
     <div id="infoPageOverlay" class="info-page-overlay">
-      <iframe id="infoPageFrame" class="info-page-frame" src="./home_infopage/homepage-section_mobile.html"></iframe>
+      <iframe id="infoPageFrame" class="info-page-frame" data-src="./home_infopage/homepage-section_mobile.html"></iframe>
     </div>
 
     <div class="app-container">

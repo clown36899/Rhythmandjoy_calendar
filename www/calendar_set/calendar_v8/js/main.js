@@ -24,6 +24,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (window.logger) logger.info('Initializing calendar data');
         await calendar.init();
         if (window.logger) logger.info('Calendar data initialized');
+        
+        // 달력 초기화 완료 후 iframe 동적 로드
+        loadIframesAfterCalendar();
+        
         checkAndOpenInfoPage();
         if (window.logger) logger.info('App initialized');
       }, { timeout: 3000 }); // 최대 3초 대기
@@ -33,12 +37,29 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (window.logger) logger.info('Initializing calendar data');
         await calendar.init();
         if (window.logger) logger.info('Calendar data initialized');
+        
+        // 달력 초기화 완료 후 iframe 동적 로드
+        loadIframesAfterCalendar();
+        
         checkAndOpenInfoPage();
         if (window.logger) logger.info('App initialized');
       }, 0);
     }
   });
 });
+
+// 달력 초기화 완료 후 iframe 동적 로드
+function loadIframesAfterCalendar() {
+  // data-src를 src로 변경하여 iframe 로드 시작
+  const iframes = document.querySelectorAll('iframe[data-src]');
+  iframes.forEach(iframe => {
+    const dataSrc = iframe.getAttribute('data-src');
+    if (dataSrc && !iframe.getAttribute('src')) {
+      iframe.setAttribute('src', dataSrc);
+      if (window.logger) logger.info('iframe loaded', { id: iframe.id, src: dataSrc.substring(0, 50) });
+    }
+  });
+}
 
 function setupAdminButton() {
   const adminBtn = document.getElementById("adminBtn");
