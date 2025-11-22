@@ -141,9 +141,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="env.js"></script>
-  <script src="sync-manager.js"></script>
   <script>
-    let authToken = localStorage.getItem('adminToken');
+    let authToken = sessionStorage.getItem('adminToken');
     let supabase = null;
 
     // 페이지 로드 시 Supabase 초기화
@@ -189,7 +188,7 @@
 
       if (password === correctPassword) {
         authToken = 'admin-' + Date.now();
-        localStorage.setItem('adminToken', authToken);
+        sessionStorage.setItem('adminToken', authToken);
         showAdminSection();
       } else {
         errorDiv.textContent = '비밀번호가 틀렸습니다';
@@ -198,7 +197,7 @@
     }
 
     function logout() {
-      localStorage.removeItem('adminToken');
+      sessionStorage.removeItem('adminToken');
       authToken = null;
       showLoginSection();
     }
