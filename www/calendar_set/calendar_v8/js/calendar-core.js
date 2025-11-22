@@ -943,7 +943,6 @@ class Calendar {
     );
     if (slides.length !== 7) return;
 
-    // 7주 날짜 계산 (-3주 ~ +3주)
     const dates = [];
     for (let i = -3; i <= 3; i++) {
       const date = new Date(this.currentDate);
@@ -951,32 +950,50 @@ class Calendar {
       dates.push(date);
     }
 
-    // 🔄 스와이프 후 새로운 우선 로드 영역: 현재주 ±1주 (인덱스 2, 3, 4)
-    const priorityDates = [dates[2], dates[3], dates[4]]; // -1주, 현재주(0), +1주
-    devLog(`   ⚡ 스와이프 후 우선 로드: ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    // 🚀 무한 스크롤 최적화: 스와이프 방향에 따라 우선 로드 영역 결정
+    // 오른쪽 → (dates[3]=새 현재, dates[4]=+1주, dates[5]=+2주) 중 ±1주 우선
+    // 왼쪽 ← (dates[1]=-2주, dates[2]=-1주, dates[3]=새 현재) 중 ±1주 우선
+    let priorityDates, otherDates;
     
+    if (direction === 1) {
+      priorityDates = [dates[3], dates[4], dates[5]];
+      otherDates = [dates[0], dates[1], dates[2], dates[6]];
+      devLog(`   ⚡ 오른쪽(→) 스와이프: 우선 로드 ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(" → ")}`);
+    } else {
+      priorityDates = [dates[1], dates[2], dates[3]];
+      otherDates = [dates[0], dates[4], dates[5], dates[6]];
+      devLog(`   ⚡ 왼쪽(←) 스와이프: 우선 로드 ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(" ← ")}`);
+    }
+
+    // Step 1: 우선 로드 (3주 블로킹)
+    devLog(`   ⏱️ [Step 1] 우선 로드 시작 - ${priorityDates.length}주 즉시`);
+    const priorityStart = Date.now();
     for (const date of priorityDates) {
       await this.loadWeekDataToCache(date);
     }
+    const priorityTime = Date.now() - priorityStart;
+    devLog(`   ✅ 우선 로드 완료: ${priorityTime}ms`);
 
-    // 나머지 주는 백그라운드에서 비동기로 로드 (UI 블로킹 없음)
-    const otherDates = [dates[0], dates[1], dates[5], dates[6]]; // -3주, -2주, +2주, +3주
-    otherDates.forEach(date => {
-      this.loadWeekDataToCache(date); // await 하지 않음
-    });
-
-    // 캐시된 데이터를 합쳐서 this.events에 설정
+    // Step 2: 이벤트 병합 + 슬라이드 업데이트
     this.events = this.getMergedEventsFromCache(dates);
-    devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
-
-    // ✅ 모든 슬라이드 업데이트 (새로운 events 기준)
     slides.forEach((slide, i) => {
       slide.innerHTML = this.renderWeekViewContent(dates[i]);
     });
+    devLog(`   ✅ [Step 2] 슬라이드 업데이트 완료: ${this.events.length}개 이벤트`);
 
-    devLog(
-      `🔄 슬라이드 준비 완료: 현재주 ±1주 즉시 로드, 나머지는 백그라운드 로드`,
-    );
+    // Step 3: 나머지 주는 백그라운드 순차 로드 (비블로킹)
+    devLog(`   🔄 [Step 3] 백그라운드 로드 시작 - ${otherDates.length}주 비동기`);
+    otherDates.forEach(date => {
+      this.loadWeekDataToCache(date).then(() => {
+        const slideIdx = dates.findIndex(d => d.toDateString() === date.toDateString());
+        if (slideIdx !== -1 && slides[slideIdx]) {
+          slides[slideIdx].innerHTML = this.renderWeekViewContent(dates[slideIdx]);
+          devLog(`   📦 백그라운드 완료: ${date.toLocaleDateString("ko-KR")}`);
+        }
+      });
+    });
+
+    devLog(`✅ [무한스크롤] 7주 유지: 우선 3주(${priorityTime}ms) → 나머지 4주 백그라운드 중...`);
   }
 
   goToToday() {
