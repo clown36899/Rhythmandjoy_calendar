@@ -1,14 +1,8 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
-import cron from 'node-cron';
 import crypto from 'crypto';
 import { google } from 'googleapis';
-import { 
-  syncAllCalendarsInitial,
-  syncAllCalendarsIncremental
-} from './sync-calendar.js';
-import { setupAllWatches } from './setup-watches.js';
 
 dotenv.config();
 
@@ -46,41 +40,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// 수동 초기 동기화 엔드포인트 (최근 3주)
-app.post('/api/sync', async (req, res) => {
-  try {
-    console.log('🔄 수동 초기 동기화 요청 받음 (최근 3주)');
-    await syncAllCalendarsInitial();
-    res.json({ success: true, message: '초기 동기화 완료 (최근 3주)' });
-  } catch (error) {
-    console.error('❌ 수동 동기화 실패:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 수동 증분 동기화 엔드포인트 (테스트용)
-app.post('/api/sync-incremental', async (req, res) => {
-  try {
-    console.log('🔄 수동 증분 동기화 요청 받음');
-    await syncAllCalendarsIncremental();
-    res.json({ success: true, message: '증분 동기화 완료' });
-  } catch (error) {
-    console.error('❌ 증분 동기화 실패:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Watch 채널 등록 엔드포인트 (테스트용)
-app.post('/api/setup-watches', async (req, res) => {
-  try {
-    console.log('🔔 Watch 채널 등록 요청 받음');
-    const results = await setupAllWatches();
-    res.json({ success: true, message: 'Watch 채널 등록 완료', results });
-  } catch (error) {
-    console.error('❌ Watch 등록 실패:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // Google Calendar 주간 이벤트 조회 (get-week-events)
 const rooms = [
@@ -328,11 +287,8 @@ app.post('/api/reset-sync', requireAuth, async (req, res) => {
     
     console.log('✅ 모든 Sync Token 삭제 완료');
     
-    // 3. 전체 재동기화
-    await syncAllCalendarsIncremental();
-    
-    console.log('✅ [수동 리셋] 전체 동기화 완료!\n');
-    res.json({ success: true, message: '전체 데이터 리셋 및 재동기화 완료' });
+    console.log('✅ [수동 리셋] 전체 데이터 삭제 완료!\n');
+    res.json({ success: true, message: '전체 데이터 리셋 완료' });
   } catch (error) {
     console.error('❌ [수동 리셋] 실패:', error);
     res.status(500).json({ error: error.message });
