@@ -951,22 +951,31 @@ class Calendar {
       dates.push(date);
     }
 
-    // 변경된 경계 슬라이드만 찾기
-    const boundaryIndex = direction === 1 ? 6 : 0; // 다음 주면 마지막, 이전 주면 첫번째
-    const boundaryDate = dates[boundaryIndex];
+    // 🔄 스와이프 후 새로운 우선 로드 영역: 현재주 ±1주 (인덱스 2, 3, 4)
+    const priorityDates = [dates[2], dates[3], dates[4]]; // -1주, 현재주(0), +1주
+    devLog(`   ⚡ 스와이프 후 우선 로드: ${priorityDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    
+    for (const date of priorityDates) {
+      await this.loadWeekDataToCache(date);
+    }
 
-    // 경계 슬라이드 데이터만 로드
-    await this.loadWeekDataToCache(boundaryDate);
+    // 나머지 주는 백그라운드에서 비동기로 로드 (UI 블로킹 없음)
+    const otherDates = [dates[0], dates[1], dates[5], dates[6]]; // -3주, -2주, +2주, +3주
+    otherDates.forEach(date => {
+      this.loadWeekDataToCache(date); // await 하지 않음
+    });
 
     // 캐시된 데이터를 합쳐서 this.events에 설정
     this.events = this.getMergedEventsFromCache(dates);
     devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
-    // ✅ 변경된 1개 슬라이드만 업데이트 (나머지 6개는 재사용!)
-    slides[boundaryIndex].innerHTML = this.renderWeekViewContent(boundaryDate);
+    // ✅ 모든 슬라이드 업데이트 (새로운 events 기준)
+    slides.forEach((slide, i) => {
+      slide.innerHTML = this.renderWeekViewContent(dates[i]);
+    });
 
     devLog(
-      `🔄 슬라이드 준비 완료: 경계 슬라이드만 업데이트 (인덱스 ${boundaryIndex})`,
+      `🔄 슬라이드 준비 완료: 현재주 ±1주 즉시 로드, 나머지는 백그라운드 로드`,
     );
   }
 
