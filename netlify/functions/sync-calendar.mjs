@@ -37,14 +37,12 @@ async function syncRoomCalendar(room) {
   try {
     logs.push(`[${room.id}] 시작`);
     
-    // 🚀 최근 6개월 + 향후 6개월 예약만 동기화 (성능 최적화)
-    const timeMin = new Date();
-    timeMin.setMonth(timeMin.getMonth() - 6); // 6개월 전
-    
+    // 🚀 모든 예약 이벤트 (매출 정보 필요) - 효율성 최적화
+    const timeMin = new Date('2020-01-01T00:00:00Z');
     const timeMax = new Date();
-    timeMax.setMonth(timeMax.getMonth() + 6); // 6개월 후
+    timeMax.setFullYear(timeMax.getFullYear() + 2);
 
-    logs.push(`[${room.id}] Google Calendar API 호출 시작`);
+    logs.push(`[${room.id}] Google Calendar API 호출 시작 (전체 동기화)`);
     const apiStartTime = Date.now();
     
     // 페이지네이션으로 모든 이벤트 가져오기
@@ -52,22 +50,31 @@ async function syncRoomCalendar(room) {
     let pageToken = null;
 
     do {
-      const response = await calendar.events.list({
-        calendarId: room.calendarId,
-        timeMin: timeMin.toISOString(),
-        timeMax: timeMax.toISOString(),
-        maxResults: 500, // 페이지 크기 감소로 응답 속도 향상
-        singleEvents: true,
-        orderBy: 'startTime',
-        pageToken: pageToken
-      });
+      try {
+        const response = await calendar.events.list({
+          calendarId: room.calendarId,
+          timeMin: timeMin.toISOString(),
+          timeMax: timeMax.toISOString(),
+          maxResults: 1000, // 최적화된 페이지 크기
+          singleEvents: true,
+          orderBy: 'startTime',
+          pageToken: pageToken,
+          fields: 'items(id,summary,start,end,description),nextPageToken' // 필요한 필드만
+        });
 
-      const events = response.data.items || [];
-      allEvents = allEvents.concat(events);
-      pageToken = response.data.nextPageToken;
+        const events = response.data.items || [];
+        allEvents = allEvents.concat(events);
+        pageToken = response.data.nextPageToken;
 
-      if (pageToken) {
-        logs.push(`[${room.id}] 페이지 로드... (현재: ${allEvents.length}개)`);
+        if (pageToken) {
+          logs.push(`[${room.id}] 로딩... ${allEvents.length}개`);
+        }
+      } catch (apiErr) {
+        if (apiErr.message?.includes('404')) {
+          logs.push(`[${room.id}] 이벤트 없음 (API 404)`);
+          break;
+        }
+        throw apiErr;
       }
     } while (pageToken);
 
@@ -99,12 +106,12 @@ async function syncRoomCalendar(room) {
     const prepTime = Date.now() - calcStartTime;
     logs.push(`[${room.id}] 이벤트 준비 완료: ${eventsToUpsert.length}개, ${(prepTime/1000).toFixed(1)}초`);
     
-    // 100개씩 배치 upsert (booking_events)
-    logs.push(`[${room.id}] booking_events 저장 시작`);
+    // 200개씩 배치 upsert (booking_events) - 더 큰 배치로 속도 향상
+    logs.push(`[${room.id}] booking_events 저장 시작 (${eventsToUpsert.length}개)`);
     const dbStartTime = Date.now();
     
-    for (let i = 0; i < eventsToUpsert.length; i += 100) {
-      const batch = eventsToUpsert.slice(i, i + 100);
+    for (let i = 0; i < eventsToUpsert.length; i += 200) {
+      const batch = eventsToUpsert.slice(i, i + 200);
       const { error } = await supabase
         .from('booking_events')
         .upsert(batch, {
@@ -162,9 +169,9 @@ async function syncRoomCalendar(room) {
         });
       }
       
-      // event_prices 저장 (100개씩)
-      for (let i = 0; i < pricesToUpsert.length; i += 100) {
-        const batch = pricesToUpsert.slice(i, i + 100);
+      // event_prices 저장 (200개씩)
+      for (let i = 0; i < pricesToUpsert.length; i += 200) {
+        const batch = pricesToUpsert.slice(i, i + 200);
         const { error: priceError } = await supabase
           .from('event_prices')
           .upsert(batch, {
