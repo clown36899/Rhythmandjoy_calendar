@@ -314,22 +314,30 @@
     const IS_REPLIT = window.location.hostname === 'localhost' || window.location.hostname.includes('replit');
     const API_BASE = '/.netlify/functions';
 
-    // Supabase 클라이언트 초기화 (config-loader.js 로드 대기)
+    // Supabase 클라이언트 초기화
     let supabase = null;
     async function initSupabase() {
-      // config-loader.js가 로드될 때까지 대기
-      let retries = 0;
-      while (!window.SUPABASE_URL && retries < 10) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        retries++;
-      }
-      
-      if (window.SUPABASE_URL) {
+      try {
+        // config-loader.js가 로드될 때까지 대기
+        let retries = 0;
+        while (!window.SUPABASE_URL && retries < 20) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          retries++;
+        }
+        
+        if (!window.SUPABASE_URL) {
+          throw new Error('Supabase 환경 변수를 찾을 수 없습니다. 관리자 페이지로 돌아갑니다.');
+        }
+        
         supabase = window.supabase.createClient(
           window.SUPABASE_URL,
           window.SUPABASE_ANON_KEY
         );
         console.log('✅ Supabase 클라이언트 초기화 완료');
+      } catch (error) {
+        console.error('❌ Supabase 초기화 실패:', error.message);
+        alert('설정 로드 실패. 관리자 페이지로 돌아갑니다.');
+        window.location.href = 'admin.html';
       }
     }
     
