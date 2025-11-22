@@ -969,10 +969,12 @@ class Calendar {
     this.events = this.getMergedEventsFromCache(dates);
     devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
-    // ✅ 모든 슬라이드 업데이트 (새로운 events 기준)
+    // ✅ 모든 슬라이드 업데이트 (새로운 events 기준) + 이벤트 순차 렌더링
     slides.forEach((slide, i) => {
       const result = this.renderWeekViewContent(dates[i]);
       slide.innerHTML = result.html;
+      // 이벤트를 순차적으로 렌더링 (UI 블로킹 없음)
+      this.renderEventsSequentially(result.events, i);
     });
 
     devLog(
@@ -1326,15 +1328,19 @@ class Calendar {
     await Promise.all(adjWeekDates.map(date => this.loadWeekDataToCache(date)));
     devLog(`   ✅ ±1주 병렬 로드 완료: ${Date.now() - t2}ms`);
 
-    // 🔄 [Step 3] 나머지 4주는 백그라운드에서 비동기로 로드
+    // 🔄 [Step 3] 나머지 4주는 백그라운드에서 비동기로 로드 + 이벤트 순차 렌더
     devLog(`   📊 [Step 3] 백그라운드 순차 로드 시작: ${otherDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
     
     (async () => {
-      for (const date of otherDates) {
+      for (let i = 0; i < otherDates.length; i++) {
+        const date = otherDates[i];
+        const slideIdx = i < 2 ? i : i + 3; // -3주(0), -2주(1), +2주(5), +3주(6)
         const t1 = Date.now();
         await this.loadWeekDataToCache(date);
+        const slideData = allSlideData[slideIdx];
+        await this.renderEventsSequentially(slideData.events, slideIdx);
         const t2 = Date.now() - t1;
-        devLog(`   📊 [백그라운드+${t2}ms] ${date.toLocaleDateString("ko-KR")} 로드 완료`);
+        devLog(`   📊 [백그라운드+${t2}ms] ${date.toLocaleDateString("ko-KR")} 이벤트 추가 완료`);
       }
     })();
   }
