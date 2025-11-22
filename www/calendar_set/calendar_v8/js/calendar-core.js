@@ -969,16 +969,20 @@ class Calendar {
     this.events = this.getMergedEventsFromCache(dates);
     devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
 
-    // ✅ 모든 슬라이드 업데이트 (새로운 events 기준) + 이벤트 순차 렌더링
+    // ✅ 모든 슬라이드 업데이트 (현주만 순차, 나머지는 배치 렌더링)
     slides.forEach((slide, i) => {
       const result = this.renderWeekViewContent(dates[i]);
       slide.innerHTML = result.html;
-      // 이벤트를 순차적으로 렌더링 (UI 블로킹 없음)
-      this.renderEventsSequentially(result.events, i);
+      // 현주(3)만 순차 렌더, 나머지는 한 주씩 완전히 렌더
+      if (i === 3) {
+        this.renderEventsSequentially(result.events, i);
+      } else {
+        this.renderEventsBatch(result.events, i);
+      }
     });
 
     devLog(
-      `🔄 슬라이드 준비 완료: 현재주 ±1주 즉시 로드, 나머지는 백그라운드 로드`,
+      `🔄 슬라이드 준비 완료: 현주 순차, 나머지 주 단위 순차 렌더`,
     );
   }
 
@@ -1311,7 +1315,7 @@ class Calendar {
       this.updateCurrentTimeIndicator();
     });
 
-    // 🚀 [Step 2] ±1주 병렬 로드 + 이벤트 순차 렌더
+    // 🚀 [Step 2] ±1주 병렬 로드 + 한 주씩 완전히 렌더 (주 단위 순차)
     devLog(`   🚀 [Step 2] ±1주 동시 로드: ${adjWeekDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
     const t2 = Date.now();
     
@@ -1319,16 +1323,15 @@ class Calendar {
       this.loadWeekDataToCache(date).then(() => {
         const slideIdx = idx === 0 ? 2 : 4;
         const slideData = allSlideData[slideIdx];
-        this.renderEventsSequentially(slideData.events, slideIdx).then(() => {
-          devLog(`   ✅ [슬라이드 업데이트] ${date.toLocaleDateString("ko-KR")} (인덱스: ${slideIdx})`);
-        });
+        this.renderEventsBatch(slideData.events, slideIdx);
+        devLog(`   ✅ [슬라이드 업데이트] ${date.toLocaleDateString("ko-KR")} (인덱스: ${slideIdx})`);
       });
     });
     
     await Promise.all(adjWeekDates.map(date => this.loadWeekDataToCache(date)));
     devLog(`   ✅ ±1주 병렬 로드 완료: ${Date.now() - t2}ms`);
 
-    // 🔄 [Step 3] 나머지 4주는 백그라운드에서 비동기로 로드 + 이벤트 순차 렌더
+    // 🔄 [Step 3] 나머지 4주는 백그라운드에서 비동기로 로드 (주 단위 순차)
     devLog(`   📊 [Step 3] 백그라운드 순차 로드 시작: ${otherDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
     
     (async () => {
@@ -1338,9 +1341,9 @@ class Calendar {
         const t1 = Date.now();
         await this.loadWeekDataToCache(date);
         const slideData = allSlideData[slideIdx];
-        await this.renderEventsSequentially(slideData.events, slideIdx);
+        this.renderEventsBatch(slideData.events, slideIdx);
         const t2 = Date.now() - t1;
-        devLog(`   📊 [백그라운드+${t2}ms] ${date.toLocaleDateString("ko-KR")} 이벤트 추가 완료`);
+        devLog(`   📊 [백그라운드+${t2}ms] ${date.toLocaleDateString("ko-KR")} 이벤트 로드 완료`);
       }
     })();
   }
@@ -1382,6 +1385,36 @@ class Calendar {
 
       requestAnimationFrame(addNextEvent);
     });
+  }
+
+  // 이벤트를 한 주씩 완전히 DOM에 추가 (주 단위 순차용)
+  renderEventsBatch(eventsData, slideIdx = 3) {
+    if (!eventsData || eventsData.length === 0) {
+      return;
+    }
+
+    const slides = this.container.querySelectorAll('.calendar-slide');
+    const slide = slides[slideIdx];
+    if (!slide) return;
+
+    // 이벤트들을 컨테이너별로 그룹화
+    const eventsByContainer = {};
+    for (const { event, isDayView, container } of eventsData) {
+      if (!eventsByContainer[container]) {
+        eventsByContainer[container] = [];
+      }
+      eventsByContainer[container].push(this.renderWeekEvent(event, isDayView));
+    }
+
+    // 각 컨테이너에 이벤트들 한 번에 추가
+    const dayContainers = slide.querySelectorAll('.day-events-container');
+    for (const [containerIdx, eventHtmls] of Object.entries(eventsByContainer)) {
+      if (dayContainers[containerIdx]) {
+        dayContainers[containerIdx].insertAdjacentHTML('beforeend', eventHtmls.join(''));
+      }
+    }
+
+    devLog(`   📦 [이벤트배치] ${eventsData.length}개 이벤트 완료 (슬라이드 ${slideIdx})`);
   }
 
   // 슬라이드 콘텐츠 업데이트 (분할 로딩)

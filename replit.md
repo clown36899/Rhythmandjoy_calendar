@@ -20,19 +20,20 @@ This project is a mobile-friendly room booking calendar application for "Rhythmj
 - **Confirmed**: Webhook (google-webhook.mjs)이 Watch 메커니즘을 완벽히 대체
 - 결과: DB-free 아키텍처 확정, Webhook만 필요
 
-**2025-11-22: 분할 로딩 + 이벤트 순차 렌더링 완성 + 스와이프 후 이벤트 추가**
-- ✅ **Step 1 - 초고속 현주 로드**: 현재주만 먼저 로드 (200ms) → 이벤트 순차 추가 시작
+**2025-11-22: 분할 로딩 + 선택적 이벤트 렌더링 완성 (현주순차, 나머지배치)**
+- ✅ **Step 1 - 초고속 현주 로드**: 현재주만 먼저 로드 (200ms)
+  - 이벤트 순차 렌더링: 하나씩 점진적으로 표시 (눈속임)
+  - `renderEventsSequentially()` - requestAnimationFrame 활용
 - ✅ **Step 2 - ±1주 병렬 로드**: Promise.all로 좌우 동시 로드
-  - 각 주 이벤트를 하나씩 순차적으로 DOM에 추가 (requestAnimationFrame)
-  - 사용자가 이벤트를 점진적으로 볼 수 있음
+  - 이벤트 배치 렌더링: 한 주씩 완전히 렌더
+  - `renderEventsBatch()` - 컨테이너별 그룹화 후 일괄 추가
 - ✅ **Step 3 - 백그라운드 순차**: 나머지 4주 순차 로드 (UI 논블로킹)
-- ✅ **Step 4 - 스와이프 후 모든 주 이벤트**: `prepareAdjacentSlides()`에서 7주 전체 렌더링
-  - 스와이프 후 DOM 재배열 시 각 슬라이드에 이벤트 순차 추가
-  - 다른 주로 이동했을 때도 이벤트가 하나씩 나타남
-- ✅ **사용자 체감 시간**: 300ms → **200ms (33% 단축)**
-- ✅ **이벤트 순차 렌더링**: `renderEventsSequentially()` 함수
-  - 이벤트를 배열로 받아서 하나씩 DOM에 추가
-  - 각 이벤트 추가 시 requestAnimationFrame으로 UI 반응성 유지
+  - 각 주별로 배치 렌더링
+- ✅ **Step 4 - 스와이프 후 렌더링**: `prepareAdjacentSlides()`에서 선택적 렌더
+  - 현주(3): 순차 렌더
+  - 나머지 6주: 배치 렌더
+- ✅ **성능**: 300ms → **200ms (33% 단축)**
+- ✅ **사용성**: 현주는 이벤트가 점진적으로, 나머지는 주 단위 순차
 
 # User Preferences
 
