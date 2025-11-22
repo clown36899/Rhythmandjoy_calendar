@@ -6,6 +6,10 @@ class DataManager {
     this.MAX_CACHE_SIZE = 15; // LRU: 최대 15주 캐시
     this.CACHE_TTL = 15 * 60 * 1000; // TTL: 15분
     this.realtimeStatus = null; // 상태 중복 로그 방지
+    this.realtimeRetryCount = 0; // Realtime 재연결 시도 횟수
+    this.realtimeMaxRetries = 5; // 최대 5회 시도
+    this.realtimeRetryDelay = 3000; // 초기 재시도 간격 (3초)
+    this.realtimeChannel = null; // 현재 Realtime 채널
     this.startCacheCleanup();
   }
 
@@ -82,6 +86,11 @@ class DataManager {
   }
 
   setupRealtimeSubscription() {
+    this.realtimeRetryCount = 0; // 재시도 횟수 초기화
+    this._connectRealtime();
+  }
+
+  _connectRealtime() {
     const channel = this.supabase
       .channel('booking_events_changes')
       .on(
@@ -94,15 +103,20 @@ class DataManager {
         (payload) => {
           devLog('📡 실시간 업데이트:', payload);
           this.handleRealtimeChange(payload);
+          // 성공 시 재시도 횟수 초기화
+          this.realtimeRetryCount = 0;
         }
       )
       .on('system', { event: 'join' }, () => {
         if (window.logger) logger.info('Realtime connection established');
         devLog('✅ Realtime 연결 성공');
+        this.realtimeRetryCount = 0; // 재시도 횟수 초기화
       })
       .on('system', { event: 'leave' }, () => {
-        if (window.logger) logger.warn('Realtime connection disconnected', { timestamp: new Date().toISOString() });
+        if (window.logger) logger.warn('Realtime connection disconnected');
         devLog('⚠️ Realtime 연결 끊김');
+        // 연결 끊김 시 자동 재연결 시도
+        this._scheduleRealtimeReconnect();
       })
       .subscribe((status) => {
         // 상태 변화가 있을 때만 로그 (중복 방지)
@@ -112,12 +126,15 @@ class DataManager {
           if (status === 'SUBSCRIBED') {
             if (window.logger) logger.info('Realtime subscription active');
             devLog('✅ Realtime subscription 활성화');
+            this.realtimeRetryCount = 0; // 성공 시 초기화
           } else if (status === 'CHANNEL_ERROR') {
             if (window.logger) logger.error('Realtime channel error', { status });
-            devLog('❌ Realtime 채널 에러');
+            devLog(`❌ Realtime 채널 에러 (${this.realtimeRetryCount + 1}/${this.realtimeMaxRetries})`);
+            this._scheduleRealtimeReconnect();
           } else if (status === 'TIMED_OUT') {
             if (window.logger) logger.error('Realtime subscription timed out', { status });
-            devLog('❌ Realtime 타임아웃');
+            devLog(`❌ Realtime 타임아웃 (${this.realtimeRetryCount + 1}/${this.realtimeMaxRetries})`);
+            this._scheduleRealtimeReconnect();
           } else {
             devLog(`🔄 Realtime 상태 변화: ${status}`);
           }
@@ -128,14 +145,45 @@ class DataManager {
     if (channel && channel.on) {
       channel.on('error', (err) => {
         if (window.logger) logger.error('Realtime subscription error', { 
-          error: err?.message || String(err),
-          timestamp: new Date().toISOString()
+          error: err?.message || String(err)
         });
-        devLog('❌ Realtime 에러:', err);
+        devLog(`❌ Realtime 에러: ${err?.message || String(err)}`);
+        this._scheduleRealtimeReconnect();
       });
     }
 
+    this.realtimeChannel = channel;
     devLog('🔧 Realtime 구독 설정 중...');
+  }
+
+  _scheduleRealtimeReconnect() {
+    // 최대 재시도 횟수 확인
+    if (this.realtimeRetryCount >= this.realtimeMaxRetries) {
+      if (window.logger) logger.error('Realtime 최대 재시도 횟수 초과', { retries: this.realtimeRetryCount });
+      devLog(`❌ Realtime 최대 재시도 횟수 초과 (${this.realtimeRetryCount}회)`);
+      return;
+    }
+
+    // Exponential backoff: 3초, 6초, 12초, 24초, 48초
+    const delay = this.realtimeRetryDelay * Math.pow(2, this.realtimeRetryCount);
+    this.realtimeRetryCount++;
+
+    if (window.logger) logger.info('Realtime 재연결 예약', { retries: this.realtimeRetryCount, delaySeconds: delay / 1000 });
+    devLog(`🔄 ${(delay / 1000).toFixed(0)}초 후 Realtime 재연결 시도... (${this.realtimeRetryCount}/${this.realtimeMaxRetries})`);
+
+    setTimeout(() => {
+      devLog(`🔄 Realtime 재연결 시도 (${this.realtimeRetryCount}/${this.realtimeMaxRetries})`);
+      
+      // 이전 채널 언서브스크라이브
+      if (this.realtimeChannel) {
+        this.realtimeChannel.unsubscribe().catch(err => {
+          devLog(`⚠️ 기존 채널 언서브 실패:`, err);
+        });
+      }
+      
+      // 새로 연결
+      this._connectRealtime();
+    }, delay);
   }
 
   handleRealtimeChange(payload) {
