@@ -37,10 +37,12 @@ async function syncRoomCalendar(room) {
   try {
     logs.push(`[${room.id}] 시작`);
     
-    // 🚀 모든 예약 이벤트 가져오기 (제한 없음)
-    const timeMin = new Date('2020-01-01T00:00:00Z');
+    // 🚀 최근 6개월 + 향후 6개월 예약만 동기화 (성능 최적화)
+    const timeMin = new Date();
+    timeMin.setMonth(timeMin.getMonth() - 6); // 6개월 전
+    
     const timeMax = new Date();
-    timeMax.setFullYear(timeMax.getFullYear() + 2);
+    timeMax.setMonth(timeMax.getMonth() + 6); // 6개월 후
 
     logs.push(`[${room.id}] Google Calendar API 호출 시작`);
     const apiStartTime = Date.now();
@@ -54,7 +56,7 @@ async function syncRoomCalendar(room) {
         calendarId: room.calendarId,
         timeMin: timeMin.toISOString(),
         timeMax: timeMax.toISOString(),
-        maxResults: 2500,
+        maxResults: 500, // 페이지 크기 감소로 응답 속도 향상
         singleEvents: true,
         orderBy: 'startTime',
         pageToken: pageToken
@@ -65,7 +67,7 @@ async function syncRoomCalendar(room) {
       pageToken = response.data.nextPageToken;
 
       if (pageToken) {
-        logs.push(`[${room.id}] 페이지 ${Math.ceil(allEvents.length / 2500)} 로드 중... (현재: ${allEvents.length}개)`);
+        logs.push(`[${room.id}] 페이지 로드... (현재: ${allEvents.length}개)`);
       }
     } while (pageToken);
 
@@ -221,6 +223,10 @@ export async function handler(event, context) {
     };
   }
 
+  // Netlify 타임아웃 대비: 최대 8초로 제한
+  const timeoutMs = 8000;
+  const startTime = Date.now();
+  
   try {
     // 요청 body에서 선택된 연습실 확인
     let selectedRoomIds = null;
@@ -233,7 +239,12 @@ export async function handler(event, context) {
       }
     }
     
-    const { results, overallTime } = await syncAllCalendars(selectedRoomIds);
+    const { results, overallTime } = await Promise.race([
+      syncAllCalendars(selectedRoomIds),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('동기화 타임아웃 (8초 초과)')), timeoutMs)
+      )
+    ]);
     
     // 모든 로그 수집
     const allLogs = [];
