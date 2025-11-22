@@ -16,6 +16,8 @@ class Calendar {
     this.timeUpdateInterval = null; // 현재 시간 업데이트 타이머
     this.renderPromise = null; // render 동시 실행 방지 배리어
     this.lastSwipeTime = 0; // 마지막 스와이프 시간 (클릭 vs 스와이프 구분)
+    this.pendingNavigationDirection = null; // 🆕 대기 중인 스와이프 방향
+    this.cachedTitleMonth = null; // 🆕 캐시된 월 (불필요한 DOM 업데이트 방지)
 
     // 네이티브 터치 이벤트 리스너 참조 저장 (제거용)
     this.currentSlider = null;
@@ -805,6 +807,14 @@ class Calendar {
         "color: #666; font-size: 11px;",
       );
 
+      // 🆕 애니메이션 시작 직후 날짜 미리 계산 + 제목 즉시 업데이트
+      this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
+      this.updateCalendarTitle();
+      console.log(
+        `%c📅 [NAVIGATE] 날짜 즉시 업데이트: ${this.currentDate.toLocaleDateString("ko-KR")}`,
+        "background: #00ffff; color: black; padding: 2px 5px;",
+      );
+
       // 각 슬라이드를 100% 이동 (7개)
       const currentPositions = [-300, -200, -100, 0, 100, 200, 300];
       const targets = currentPositions.map(
@@ -873,15 +883,9 @@ class Calendar {
     const slides = Array.from(slidesArray);
     if (slides.length !== 7) return;
 
-    // 날짜 업데이트
-    this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
-    console.log(
-      `%c📅 [FINALIZE] 날짜 변경: ${this.currentDate.toLocaleDateString("ko-KR")}`,
-      "color: #0088ff;",
-    );
-
-    // 제목 업데이트
-    this.updateCalendarTitle();
+    // 🆕 주석: 날짜는 navigate에서 이미 업데이트됨 (빠른 표시를 위해)
+    // this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
+    // this.updateCalendarTitle();
 
     const slider = this.container.querySelector(".calendar-slider");
     const labelsSlider = document.querySelector(".room-labels-slider");
@@ -945,6 +949,13 @@ class Calendar {
     if (!titleElement) return;
 
     const month = this.currentDate.getMonth() + 1;
+    
+    // 🆕 캐시: 같은 달이면 DOM 업데이트 안 함
+    if (this.cachedTitleMonth === month) {
+      return;
+    }
+    
+    this.cachedTitleMonth = month;
     titleElement.textContent = `${month}월`;
   }
 
