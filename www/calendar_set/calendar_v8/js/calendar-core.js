@@ -1288,7 +1288,8 @@ class Calendar {
   }
 
   async _doRender() {
-    this.container.innerHTML = '<div class="loading">로딩 중...</div>';
+    // ✅ HTML의 로딩 UI 유지 (중복 방지)
+    // this.container.innerHTML = '<div class="loading">로딩 중...</div>';
 
     document.getElementById("calendarTitle").textContent =
       `${this.currentDate.getMonth() + 1}월`;
