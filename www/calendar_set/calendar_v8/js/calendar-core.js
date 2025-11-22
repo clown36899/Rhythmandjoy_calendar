@@ -9,6 +9,7 @@ class Calendar {
     this.isAnimating = false;
     this.isPanning = false; // 스와이프 상태 플래그
     this.hasPendingGestureNavigation = false; // 제스처 네비게이션 중복 방지
+    this.isInitialLoading = true; // 🆕 초기 3주 로드 중 스와이프 차단
     this.currentSlideIndex = 3; // 0-6 중 중앙 (7개 슬라이드)
     this.weekDataCache = new Map(); // 주간 데이터 캐시
     this.baseTranslate = -14.2857; // 현재 slider의 기본 위치 (% = 100/7)
@@ -404,6 +405,16 @@ class Calendar {
           `%c⏸️ [HAMMER] panstart 무시 (애니메이션 중)`,
           "color: #ff9900; font-weight: bold;",
         );
+        return;
+      }
+
+      // 🆕 초기 로딩 중 스와이프 차단
+      if (this.isInitialLoading) {
+        console.log(
+          `%c🚫 [HAMMER] panstart 무시 (초기 3주 로드 중)`,
+          "background: #ff0000; color: white; font-weight: bold;",
+        );
+        devLog(`🚫 초기 로드 중: 스와이프 차단됨`);
         return;
       }
 
@@ -1271,10 +1282,11 @@ class Calendar {
   }
 
   async renderWeekViewWithSlider() {
-    devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작 (3주 우선 로드: 스와이프 반응성 최적화)`);
+    // 🆕 초기 로드 시작
+    this.isInitialLoading = true;
+    devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작 (스와이프 DISABLED)`);
     devLog(`   현재 캐시 크기: ${this.weekDataCache.size}개`);
 
-    // -3주부터 +3주까지 7주 계산
     const dates = [];
     for (let i = -3; i <= 3; i++) {
       const date = new Date(this.currentDate);
@@ -1285,19 +1297,19 @@ class Calendar {
       );
     }
 
-    // ⚡ 현주 우선 로드 + ±1주 병렬 로드 (최고 속도 최적화)
-    const currentWeekDate = dates[3]; // 현재주
-    const adjWeekDates = [dates[2], dates[4]]; // -1주, +1주
+    // ⚡ 3주 우선 로드 (블로킹) - 이 동안 스와이프 불가
+    const currentWeekDate = dates[3];
+    const adjWeekDates = [dates[2], dates[4]];
     
-    devLog(`   🚀 [초고속] 현주 우선 로드: ${currentWeekDate.toLocaleDateString("ko-KR")}`);
+    devLog(`   🚀 [현주 로드] ${currentWeekDate.toLocaleDateString("ko-KR")}`);
     const t1 = Date.now();
     await this.loadWeekDataToCache(currentWeekDate);
-    devLog(`   ✅ 현주 로드 완료: ${Date.now() - t1}ms`);
+    devLog(`   ✅ 현주 로드: ${Date.now() - t1}ms`);
     
-    devLog(`   🚀 [병렬] ±1주 동시 로드: ${adjWeekDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    devLog(`   🚀 [±1주 병렬] ${adjWeekDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
     const t2 = Date.now();
     await Promise.all(adjWeekDates.map(date => this.loadWeekDataToCache(date)));
-    devLog(`   ✅ ±1주 병렬 로드 완료: ${Date.now() - t2}ms`);
+    devLog(`   ✅ ±1주 로드: ${Date.now() - t2}ms`);
 
     // 캐시된 데이터를 합쳐서 this.events에 설정
     this.events = this.getMergedEventsFromCache(dates);
@@ -1308,7 +1320,6 @@ class Calendar {
 
     html += '<div class="calendar-slider">';
 
-    // 7개 슬라이드 생성: -300%, -200%, -100%, 0%, 100%, 200%, 300%
     const translateValues = [-300, -200, -100, 0, 100, 200, 300];
     dates.forEach((date, i) => {
       html += `<div class="calendar-slide" style="transform: translateX(${translateValues[i]}%)">`;
@@ -1320,25 +1331,26 @@ class Calendar {
 
     this.container.innerHTML = html;
 
-    // DOM 업데이트 후 레이아웃 조정
     this.adjustWeekViewLayout();
 
-    // 현재 시간 표시
     requestAnimationFrame(() => {
       this.updateCurrentTimeIndicator();
-      // ✅ 새로운 구조에서는 라벨 위치가 자동으로 계산되므로 updateRoomBottomLabelsPosition() 불필요
     });
 
-    // 🔄 나머지 4주는 백그라운드에서 비동기로 로드 (UI 블로킹 없음)
-    const otherDates = [dates[0], dates[1], dates[5], dates[6]]; // -3주, -2주, +2주, +3주
-    devLog(`   📊 백그라운드 순차 로드 시작: ${otherDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
+    // 🆕 초기 3주 로드 완료 → 스와이프 활성화
+    this.isInitialLoading = false;
+    devLog(`   ✅ 초기 3주 로드 완료 - 스와이프 ENABLED`);
+
+    // 🔄 나머지 4주 백그라운드 로드 (비블로킹)
+    const otherDates = [dates[0], dates[1], dates[5], dates[6]];
+    devLog(`   📊 백그라운드 로드 시작: ${otherDates.map(d => d.toLocaleDateString("ko-KR")).join(", ")}`);
     
     (async () => {
       for (const date of otherDates) {
         const t1 = Date.now();
         await this.loadWeekDataToCache(date);
         const t2 = Date.now() - t1;
-        devLog(`   📊 [백그라운드+${t2}ms] ${date.toLocaleDateString("ko-KR")} 로드 완료`);
+        devLog(`   📊 [BG+${t2}ms] ${date.toLocaleDateString("ko-KR")}`);
       }
     })();
   }
