@@ -78,20 +78,18 @@ class DataManager {
   setupVisibilityHandler() {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && window.calendar) {
-        devLog('🥇 [화면 복귀] 현재 뷰 데이터 갱신');
-        // 💡 [개선] 전체 캐시를 지우는 대신, refreshCurrentView만 호출합니다.
-        // refreshCurrentView는 화면에 보이는 7주를 다시 그리지만, 데이터는 캐시에서 가져오므로 매우 빠릅니다.
-        // 만약 백그라운드에 있는 동안 데이터 변경이 있었다면, Webhook이 이미 처리했거나,
-        // 연결이 끊겼었다면 Realtime 재연결 로직이 처리해 줄 것입니다.
-        // 전체 캐시 삭제는 불필요한 네트워크 요청을 유발하는 원인이었습니다.
+        devLog('🥇 [화면 복귀] 전체 캐시 리셋 후 현재 뷰 재조회');
+        window.calendar.weekDataCache.clear();
+        // 💡 [버그 수정] 화면 복귀 시에는 7주 전체를 새로고침하는 것이 가장 안전하고 올바른 방법입니다.
         window.calendar.refreshCurrentView();
       }
     });
 
     window.addEventListener('online', () => {
       if (window.calendar) {
-        devLog('🌐 [온라인 복구] 현재 뷰 데이터 갱신');
-        // 💡 [개선] 온라인 상태 복구 시에도 전체 캐시 삭제 없이 뷰만 새로고침합니다.
+        devLog('🌐 [온라인 복구] 전체 캐시 리셋 후 현재 뷰 재조회');
+        window.calendar.weekDataCache.clear();
+        // 💡 [버그 수정] 온라인 복구 시에도 전체 뷰를 새로고침합니다.
         window.calendar.refreshCurrentView();
       }
     });
