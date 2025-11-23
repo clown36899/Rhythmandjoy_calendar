@@ -1,13 +1,20 @@
 [build]
-  base = "www"
   command = "bash build.sh"
-  publish = "."
-  functions = "../netlify/functions"
+  publish = "www" # 1. 사이트 파일들은 'www' 폴더에 있습니다.
+  functions = "netlify/functions" # 2. 백엔드 함수들은 'netlify/functions' 폴더에 있습니다.
 
+# API 프록시: /api/ 로 오는 모든 요청을 Netlify 함수로 전달합니다.
+# 이 규칙은 반드시 아래의 일반 SPA 규칙보다 먼저 와야 합니다.
+[[redirects]] 
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200 # 성공적으로 넘겨줍니다.
+
+# SPA 라우팅 규칙: 파일이 없는 모든 요청은 메인 페이지로 보냅니다.
 [[redirects]]
   from = "/*"
-  to = "/index.html"
-  status = 404
+  to = "/calendar_set/calendar_v8/index.html" # 3. 우리 앱의 진짜 시작 페이지 경로입니다.
+  status = 200 # 페이지를 찾았으므로 200 OK 입니다.
   force = false
 
 [build.environment]

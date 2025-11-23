@@ -50,3 +50,6 @@ build/
 
 # Attached assets (screenshots, pasted text)
 attached_assets/
+
+# Local Netlify folder
+.netlify

@@ -796,91 +796,76 @@ class Calendar {
       await this.renderPromise;
     }
 
-    try {
+    console.log(
+      `%c📍 [NAVIGATE] Step 1: 슬라이드 확인`,
+      "color: #666; font-size: 11px;",
+    );
+
+    const slides = this.container.querySelectorAll(".calendar-slide");
+    if (slides.length !== 7) {
       console.log(
-        `%c📍 [NAVIGATE] Step 1: 슬라이드 확인`,
-        "color: #666; font-size: 11px;",
+        `%c⚠️ [NAVIGATE] 슬라이드 부족 ${slides.length}/7`,
+        "color: orange;",
       );
-
-      const slides = this.container.querySelectorAll(".calendar-slide");
-      if (slides.length !== 7) {
-        console.log(
-          `%c⚠️ [NAVIGATE] 슬라이드 부족 ${slides.length}/7`,
-          "color: orange;",
-        );
-        await this.render();
-        return;
-      }
-
-      console.log(
-        `%c📍 [NAVIGATE] Step 2: 애니메이션 시작 (transform 적용)`,
-        "color: #666; font-size: 11px;",
-      );
-
-      // 🆕 애니메이션 시작 직후 날짜 미리 계산 + 제목 즉시 업데이트
-      this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
-      this.updateCalendarTitle();
-      console.log(
-        `%c📅 [NAVIGATE] 날짜 즉시 업데이트: ${this.currentDate.toLocaleDateString("ko-KR")}`,
-        "background: #00ffff; color: black; padding: 2px 5px;",
-      );
-
-      // 각 슬라이드를 100% 이동 (7개)
-      const currentPositions = [-300, -200, -100, 0, 100, 200, 300];
-      const targets = currentPositions.map(
-        (pos) => pos + (direction === 1 ? -100 : 100),
-      );
-      slides.forEach((slide, i) => {
-        slide.style.transform = `translateX(${targets[i]}%)`;
-      });
-
-      console.log(
-        `%c📍 [NAVIGATE] Step 3: transitionend 리스너 등록`,
-        "color: #666; font-size: 11px;",
-      );
-
-      // transitionend 대기 (중앙 슬라이드 = 인덱스 3)
-      const handleTransitionEnd = async (e) => {
-        if (e.propertyName !== "transform") return;
-        console.log(
-          `%c🎬 [NAVIGATE] transitionend 발생!`,
-          "background: #00ff00; color: black; padding: 2px 5px;",
-        );
-        slides[3].removeEventListener("transitionend", handleTransitionEnd);
-
-        await this.finalizeNavigation(direction, slides);
-        console.log(
-          `%c✅ [NAVIGATE] Step 4: finalizeNavigation 완료`,
-          "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;",
-        );
-      };
-
-      slides[3].addEventListener("transitionend", handleTransitionEnd, {
-        once: true,
-      });
-
-      console.log(
-        `%c📍 [NAVIGATE] Step 5: finally 블록 실행됨 (곧 isAnimating=false 됨!)`,
-        "color: red; font-weight: bold; font-size: 11px;",
-      );
-
-      // 안전장치: 500ms 후 강제 완료
-      setTimeout(async () => {
-        if (this.isAnimating) {
-          console.log(`%c⏱️ [NAVIGATE] 타임아웃 강제 완료`, "color: orange;");
-          slides[3].removeEventListener("transitionend", handleTransitionEnd);
-          await this.finalizeNavigation(direction, slides);
-        }
-      }, 500);
-    } finally {
-      console.log(
-        `%c🔚 [NAVIGATE] finally 블록 - isAnimating=false 설정!`,
-        "background: red; color: white; font-weight: bold; padding: 3px 8px;",
-      );
-      // 모든 종료 경로에서 플래그 리셋
-      this.isAnimating = false;
-      this.hasPendingGestureNavigation = false;
+      await this.render();
+      return;
     }
+
+    console.log(
+      `%c📍 [NAVIGATE] Step 2: 애니메이션 시작 (transform 적용)`,
+      "color: #666; font-size: 11px;",
+    );
+
+    // 🆕 애니메이션 시작 직후 날짜 미리 계산 + 제목 즉시 업데이트
+    this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
+    this.updateCalendarTitle();
+    console.log(
+      `%c📅 [NAVIGATE] 날짜 즉시 업데이트: ${this.currentDate.toLocaleDateString("ko-KR")}`,
+      "background: #00ffff; color: black; padding: 2px 5px;",
+    );
+
+    // 각 슬라이드를 100% 이동 (7개)
+    const currentPositions = [-300, -200, -100, 0, 100, 200, 300];
+    const targets = currentPositions.map(
+      (pos) => pos + (direction === 1 ? -100 : 100),
+    );
+    slides.forEach((slide, i) => {
+      slide.style.transform = `translateX(${targets[i]}%)`;
+    });
+
+    console.log(
+      `%c📍 [NAVIGATE] Step 3: transitionend 리스너 등록`,
+      "color: #666; font-size: 11px;",
+    );
+
+    // transitionend 대기 (중앙 슬라이드 = 인덱스 3)
+    const handleTransitionEnd = async (e) => {
+      if (e.propertyName !== "transform") return;
+      console.log(
+        `%c🎬 [NAVIGATE] transitionend 발생!`,
+        "background: #00ff00; color: black; padding: 2px 5px;",
+      );
+      slides[3].removeEventListener("transitionend", handleTransitionEnd);
+
+      await this.finalizeNavigation(direction, slides);
+      console.log(
+        `%c✅ [NAVIGATE] Step 4: finalizeNavigation 완료`,
+        "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;",
+      );
+    };
+
+    slides[3].addEventListener("transitionend", handleTransitionEnd, {
+      once: true,
+    });
+
+    // 안전장치: 500ms 후 강제 완료
+    setTimeout(async () => {
+      if (this.isAnimating) {
+        console.log(`%c⏱️ [NAVIGATE] 타임아웃 강제 완료`, "color: orange;");
+        slides[3].removeEventListener("transitionend", handleTransitionEnd);
+        await this.finalizeNavigation(direction, slides);
+      }
+    }, 500);
   }
 
   async finalizeNavigation(direction, slidesArray) {
@@ -952,6 +937,10 @@ class Calendar {
       `%c✅ [FINALIZE] 완료!`,
       "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;",
     );
+
+    // ✅ 중요: 모든 애니메이션과 DOM 조작이 끝난 후 플래그 리셋
+    this.isAnimating = false;
+    this.hasPendingGestureNavigation = false;
   }
 
   updateCalendarTitle() {
@@ -1462,12 +1451,13 @@ class Calendar {
           endDate: end.toISOString(),
         });
 
-        // 환경에 따라 다른 경로 사용 (개발: /api/get-week-events, 배포: /.netlify/functions/get-week-events)
-        const isDevelopment =
-          window.location.hostname.includes("replit") ||
-          window.location.hostname === "localhost";
-        const apiUrl = isDevelopment
-          ? `/api/get-week-events?${params}`
+        // 💡 로컬 개발 환경(localhost)에서는 운영 서버의 함수를 직접 호출합니다.
+        //    운영 서버에서는 기존처럼 상대 경로를 사용합니다.
+        const isLocal = window.location.hostname === 'localhost';
+        const productionUrl = 'https://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/get-week-events';
+        
+        const apiUrl = isLocal
+          ? `${productionUrl}?${params}`
           : `/.netlify/functions/get-week-events?${params}`;
 
         const response = await fetch(apiUrl);
