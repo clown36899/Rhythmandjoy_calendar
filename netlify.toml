@@ -1,5 +1,4 @@
 [build]
-  command = "bash build.sh"
   publish = "www" # 1. 사이트 파일들은 'www' 폴더에 있습니다.
   functions = "netlify/functions" # 2. 백엔드 함수들은 'netlify/functions' 폴더에 있습니다.
 
