@@ -70,4 +70,10 @@ console.error = function(...args) {
   originalConsole.error.apply(console, args);
 };
 
-function devLog() {}
+function devLog(...args) {
+  // 개발 환경에서만 상세 로그를 출력합니다.
+  // 운영 서버에서는 이 함수를 비워두거나, 조건부로 실행할 수 있습니다.
+  if (window._originalConsole) {
+    window._originalConsole.log.apply(console, ['%c[DEV]', 'color: #777;', ...args]);
+  }
+}

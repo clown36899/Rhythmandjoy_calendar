@@ -22,10 +22,28 @@ function initCalendar() {
   }
 }
 
+// 모든 응답에 일관되게 적용할 CORS 헤더
+const corsHeaders = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*', // 모든 출처 허용
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+};
+
 export async function handler(event, context) {
+  // 브라우저가 보내는 사전 요청(preflight) 처리
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 204, // No Content
+      headers: corsHeaders,
+      body: '',
+    };
+  }
+  
   if (event.httpMethod !== 'GET') {
     return {
       statusCode: 405,
+      headers: corsHeaders,
       body: JSON.stringify({ error: 'Method not allowed' })
     };
   }
@@ -39,6 +57,7 @@ export async function handler(event, context) {
     if (!roomIds || !startDate || !endDate) {
       return {
         statusCode: 400,
+        headers: corsHeaders,
         body: JSON.stringify({ 
           error: 'Missing required parameters: roomIds, startDate, endDate' 
         })
@@ -105,10 +124,7 @@ export async function handler(event, context) {
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      },
+      headers: corsHeaders,
       body: JSON.stringify({
         success: true,
         startDate,
@@ -121,6 +137,7 @@ export async function handler(event, context) {
     console.error('❌ 에러:', error);
     return {
       statusCode: 500,
+      headers: corsHeaders,
       body: JSON.stringify({
         success: false,
         error: error.message,

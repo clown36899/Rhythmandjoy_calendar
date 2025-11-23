@@ -78,16 +78,20 @@ class DataManager {
   setupVisibilityHandler() {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && window.calendar) {
-        devLog('🥇 [화면 복귀] 전체 캐시 리셋 후 현재 3주 재조회');
-        window.calendar.weekDataCache.clear();
+        devLog('🥇 [화면 복귀] 현재 뷰 데이터 갱신');
+        // 💡 [개선] 전체 캐시를 지우는 대신, refreshCurrentView만 호출합니다.
+        // refreshCurrentView는 화면에 보이는 7주를 다시 그리지만, 데이터는 캐시에서 가져오므로 매우 빠릅니다.
+        // 만약 백그라운드에 있는 동안 데이터 변경이 있었다면, Webhook이 이미 처리했거나,
+        // 연결이 끊겼었다면 Realtime 재연결 로직이 처리해 줄 것입니다.
+        // 전체 캐시 삭제는 불필요한 네트워크 요청을 유발하는 원인이었습니다.
         window.calendar.refreshCurrentView();
       }
     });
 
     window.addEventListener('online', () => {
       if (window.calendar) {
-        devLog('🌐 [온라인 복구] 전체 캐시 리셋 후 재조회');
-        window.calendar.weekDataCache.clear();
+        devLog('🌐 [온라인 복구] 현재 뷰 데이터 갱신');
+        // 💡 [개선] 온라인 상태 복구 시에도 전체 캐시 삭제 없이 뷰만 새로고침합니다.
         window.calendar.refreshCurrentView();
       }
     });
@@ -114,10 +118,17 @@ class DataManager {
             roomId: payload.payload?.room_id,
             timestamp: payload.payload?.timestamp
           });
-          devLog(`🔔 [WEBHOOK신호] 룸 ${payload.payload?.room_id}에서 변경 감지 → 현재 주 재조회`);
-          // Webhook 신호: 현재 보는 주 데이터 재조회
+          
+          // Webhook 신호: 현재 보는 주 데이터만 정교하게 재조회
           if (window.calendar) {
-            window.calendar.refreshCurrentView();
+            // 💡 [버그 수정] 정의되지 않은 weekStartDates를 사용하는 대신, 현재 보고 있는 주(week)만 특정하여 새로고침을 요청합니다.
+            // 이렇게 하면 불필요하게 7주 전체를 로드하는 비효율을 막을 수 있습니다.
+            const currentWeekStartDate = window.calendar.getWeekRange(window.calendar.currentDate).start;
+            const affectedWeeks = [currentWeekStartDate.toISOString()];
+            
+            devLog(`🔔 [WEBHOOK신호] 룸 ${payload.payload?.room_id}에서 변경 감지 → 현재 주(${affectedWeeks[0].substring(0,10)})만 재조회`);
+            
+            window.calendar.invalidateAndRefreshWeeks(affectedWeeks);
           }
           // 성공 시 재시도 횟수 초기화
           this.realtimeRetryCount = 0;
@@ -260,7 +271,12 @@ class DataManager {
       this.handleIncrementalDelete(oldRecord.id);
     }
 
-    window.calendar.refreshCurrentView();
+    // 💡 [버그 수정] 이 함수는 현재 사용되지 않지만, 만약을 위해 버그를 수정합니다.
+    const recordForWeeks = newRecord || oldRecord;
+    if (recordForWeeks) {
+        const affectedWeeks = this.getAffectedWeekKeys(recordForWeeks);
+        window.calendar.invalidateAndRefreshWeeks(affectedWeeks);
+    }
   }
 
   handleIncrementalInsert(record) {

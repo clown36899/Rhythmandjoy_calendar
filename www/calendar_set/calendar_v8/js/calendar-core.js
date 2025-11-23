@@ -3,29 +3,23 @@ class Calendar {
     this.container = document.getElementById(containerId);
     this.currentDate = new Date();
     this.currentView = "week";
-    this.selectedRooms = new Set(["a", "b", "c", "d", "e"]);
+    this.selectedRooms = new Set(Object.keys(CONFIG.rooms));
     this.events = [];
     this.hammer = null;
-    this.isAnimating = false;
-    this.isPanning = false; // 스와이프 상태 플래그
+
+    // 💡 [개선] 상태 머신: 'IDLE', 'PANNING', 'ANIMATING'
+    this.swipeState = 'IDLE'; 
+
     this.hasPendingGestureNavigation = false; // 제스처 네비게이션 중복 방지
     this.isInitialLoading = true; // 🆕 초기 3주 로드 중 스와이프 차단
     this.currentSlideIndex = 3; // 0-6 중 중앙 (7개 슬라이드)
     this.weekDataCache = new Map(); // 주간 데이터 캐시
+    this.weekDataPromises = new Map(); // 💡 진행 중인 주간 데이터 요청을 추적
     this.baseTranslate = -14.2857; // 현재 slider의 기본 위치 (% = 100/7)
     this.timeUpdateInterval = null; // 현재 시간 업데이트 타이머
     this.renderPromise = null; // render 동시 실행 방지 배리어
     this.lastSwipeTime = 0; // 마지막 스와이프 시간 (클릭 vs 스와이프 구분)
     this.pendingNavigationDirection = null; // 🆕 대기 중인 스와이프 방향
-    this.cachedTitleMonth = null; // 🆕 캐시된 월 (불필요한 DOM 업데이트 방지)
-
-    // 네이티브 터치 이벤트 리스너 참조 저장 (제거용)
-    this.currentSlider = null;
-    this.touchStartHandler = null;
-    this.touchMoveHandler = null;
-    this.touchEndHandler = null;
-    this.touchCancelHandler = null;
-    this.setupSwipeGesturesCallCount = 0; // 호출 횟수 추적
   }
 
   async init() {
@@ -66,10 +60,10 @@ class Calendar {
       `✅ [RENDER] 달력 렌더링 완료 (${renderTime}ms, 캐시: ${this.weekDataCache.size}개)`,
     );
 
-    if (window.logger) logger.info("Setting up swipe gestures");
-    devLog("👆 [SWIPE] 스와이프 제스처 설정 중");
-    this.setupSwipeGestures();
-    if (window.logger) logger.info("Swipe gestures ready");
+    // 💡 [개선] 앱 초기화 시 단 한 번만 스와이프 제스처를 설정합니다.
+    if (window.logger) logger.info("Setting up persistent swipe gestures");
+    this.setupPersistentSwipeGestures();
+    if (window.logger) logger.info("Persistent swipe gestures ready");
 
     if (window.logger) logger.info("Starting current time updater");
     this.startCurrentTimeUpdater();
@@ -92,23 +86,32 @@ class Calendar {
   setupEventListeners() {
     // 헤더 월간 네비게이션
     document.getElementById("prevMonthBtn").addEventListener("click", () => {
+      // 💡 [개선] 애니메이션 중에는 재렌더링 버튼 동작 방지
+      if (this.swipeState !== 'IDLE') return;
       this.goToPrevMonth();
     });
     document.getElementById("nextMonthBtn").addEventListener("click", () => {
+      // 💡 [개선] 애니메이션 중에는 재렌더링 버튼 동작 방지
+      if (this.swipeState !== 'IDLE') return;
       this.goToNextMonth();
     });
 
     // 푸터 네비게이션
     document.getElementById("prevWeekBtn").addEventListener("click", () => {
-      this.resetSwipeState();
+      // 💡 [수정] 상태 머신에 맞춰 수정: IDLE 상태일 때만 애니메이션 시작
+      if (this.swipeState !== 'IDLE' || this.isInitialLoading) return;
+      this.swipeState = 'ANIMATING';
       this.navigate(-1);
     });
     document.getElementById("nextWeekBtn").addEventListener("click", () => {
-      this.resetSwipeState();
+      // 💡 [수정] 상태 머신에 맞춰 수정: IDLE 상태일 때만 애니메이션 시작
+      if (this.swipeState !== 'IDLE' || this.isInitialLoading) return;
+      this.swipeState = 'ANIMATING';
       this.navigate(1);
     });
     document.getElementById("todayBtn").addEventListener("click", () => {
-      this.resetSwipeState();
+      // 💡 [개선] 애니메이션 중에는 재렌더링 버튼 동작 방지
+      if (this.swipeState !== 'IDLE') return;
       this.goToToday();
     });
 
@@ -122,381 +125,78 @@ class Calendar {
       .addEventListener("click", () => this.toggleAllRooms());
   }
 
-  resetSwipeState() {
-    this.isPanning = false;
-    this.isAnimating = false;
-    this.hasPendingGestureNavigation = false;
-
-    const slides = this.container.querySelectorAll(".calendar-slide");
-    if (slides.length === 7) {
-      slides.forEach((slide, i) => {
-        slide.style.transition =
-          "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
-        slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
-      });
-    }
-
-    // room-bottom-labels-outside도 원위치
-    const roomLabels = document.querySelector(".room-bottom-labels-outside");
-    if (roomLabels) {
-      roomLabels.style.transition =
-        "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
-      roomLabels.style.transform = "translateX(0px)";
-    }
-  }
-
-  setupSwipeGestures() {
-    this.setupSwipeGesturesCallCount++;
-
-    console.log(
-      `%c🔧 [SETUP] setupSwipeGestures 호출 #${this.setupSwipeGesturesCallCount}`,
-      "background: #ff00ff; color: white; font-weight: bold; padding: 3px 8px; font-size: 13px;",
-      {
-        시각: new Date().toLocaleTimeString("ko-KR", {
-          hour12: false,
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          fractionalSecondDigits: 3,
-        }),
-        "이전 slider 존재": !!this.currentSlider,
-        "이전 Hammer 존재": !!this.hammer,
-      },
-    );
-
+  /**
+   * 💡 [개선] 영구적인 스와이프 제스처 설정
+   * 앱 초기화 시 단 한 번만 호출되어 안정성을 높입니다.
+   */
+  setupPersistentSwipeGestures() {
     devLog("🔍 Hammer.js 확인:", typeof Hammer);
-
     if (typeof Hammer === "undefined") {
       console.error("❌ Hammer.js가 로드되지 않았습니다!");
       return;
     }
 
-    // ========================================
-    // 기존 네이티브 터치 리스너 제거
-    // ========================================
-    if (this.currentSlider && this.touchStartHandler) {
-      console.log(
-        `%c🧹 [CLEANUP] 기존 네이티브 터치 리스너 제거`,
-        "color: #ff9900; font-weight: bold;",
-        { slider: this.currentSlider },
-      );
-
-      this.currentSlider.removeEventListener(
-        "touchstart",
-        this.touchStartHandler,
-      );
-      this.currentSlider.removeEventListener(
-        "touchmove",
-        this.touchMoveHandler,
-      );
-      this.currentSlider.removeEventListener("touchend", this.touchEndHandler);
-      this.currentSlider.removeEventListener(
-        "touchcancel",
-        this.touchCancelHandler,
-      );
-
-      this.touchStartHandler = null;
-      this.touchMoveHandler = null;
-      this.touchEndHandler = null;
-      this.touchCancelHandler = null;
-    }
-
-    // 기존 Hammer 인스턴스 제거
-    if (this.hammer) {
-      console.log(
-        `%c🧹 [CLEANUP] 기존 Hammer 인스턴스 제거`,
-        "color: #ff9900; font-weight: bold;",
-      );
-      this.hammer.destroy();
-      this.hammer = null;
-    }
-
-    const slider = this.container.querySelector(".calendar-slider");
-    if (!slider) {
-      console.error("❌ .calendar-slider 요소를 찾을 수 없습니다!");
-      return;
-    }
-
-    // 현재 slider 참조 저장
-    this.currentSlider = slider;
-
-    console.log(
-      `%c✅ [SETUP] 새 slider 요소 발견`,
-      "background: #00ff00; color: black; padding: 2px 5px;",
-      { slider: slider },
-    );
-
-    // ========================================
-    // 네이티브 터치 이벤트 리스너 추가 (디버깅용)
-    // ========================================
-    let nativeTouchStartTime = 0;
-    let nativeTouchCount = 0;
-    let lastTouchId = 0;
-    let orphanedTouchTimer = null;
-
-    // 리스너 함수 정의 및 저장
-    this.touchStartHandler = (e) => {
-      nativeTouchStartTime = Date.now();
-      nativeTouchCount++;
-      lastTouchId = nativeTouchCount;
-      const touch = e.touches[0];
-
-      console.log(
-        `%c🟢 [NATIVE TOUCH] touchstart #${nativeTouchCount} (setup호출 #${this.setupSwipeGesturesCallCount})`,
-        "color: #00ff00; font-weight: bold; font-size: 12px;",
-        {
-          시각: new Date().toLocaleTimeString("ko-KR", {
-            hour12: false,
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            fractionalSecondDigits: 3,
-          }),
-          터치개수: e.touches.length,
-          X좌표: touch ? Math.round(touch.clientX) : "N/A",
-          Y좌표: touch ? Math.round(touch.clientY) : "N/A",
-          타겟: e.target.className,
-          sliderID: slider === this.currentSlider ? "현재" : "이전",
-          "🚨isAnimating": this.isAnimating,
-          "🚨isPanning": this.isPanning,
-        },
-      );
-
-      // 유령 터치 감지: 200ms 내에 touchmove나 touchend가 안 오면 경고
-      if (orphanedTouchTimer) clearTimeout(orphanedTouchTimer);
-      const currentTouchId = lastTouchId;
-      orphanedTouchTimer = setTimeout(() => {
-        console.log(
-          `%c👻 [유령 터치] touchstart #${currentTouchId} 후 200ms 동안 아무 이벤트 없음!`,
-          "background: #ff0000; color: white; font-weight: bold; padding: 3px 8px; font-size: 13px;",
-          {
-            경과시간: "200ms+",
-            예상원인:
-              "터치했지만 움직이지 않았거나, 브라우저가 이벤트를 무시함",
-            "🚨isAnimating": this.isAnimating,
-            "🚨isPanning": this.isPanning,
-          },
-        );
-      }, 200);
-    };
-
-    this.touchMoveHandler = (e) => {
-      // 유령 터치 타이머 취소 (정상 터치)
-      if (orphanedTouchTimer) {
-        clearTimeout(orphanedTouchTimer);
-        orphanedTouchTimer = null;
-      }
-
-      const touch = e.touches[0];
-      const elapsed = Date.now() - nativeTouchStartTime;
-      console.log(
-        `%c🔵 [NATIVE TOUCH] touchmove`,
-        "color: #0088ff; font-size: 11px;",
-        {
-          경과시간: `${elapsed}ms`,
-          터치개수: e.touches.length,
-          X좌표: touch ? Math.round(touch.clientX) : "N/A",
-          Y좌표: touch ? Math.round(touch.clientY) : "N/A",
-        },
-      );
-    };
-
-    this.touchEndHandler = (e) => {
-      // 유령 터치 타이머 취소 (정상 터치)
-      if (orphanedTouchTimer) {
-        clearTimeout(orphanedTouchTimer);
-        orphanedTouchTimer = null;
-      }
-
-      const duration = Date.now() - nativeTouchStartTime;
-      const wasShortTouch = duration < 100;
-      console.log(
-        wasShortTouch
-          ? `%c🔴 [NATIVE TOUCH] touchend (짧은터치 ${duration}ms)`
-          : `%c🔴 [NATIVE TOUCH] touchend`,
-        wasShortTouch
-          ? "color: #ff0000; font-weight: bold; font-size: 12px; background: yellow;"
-          : "color: #ff0000; font-weight: bold; font-size: 12px;",
-        {
-          총소요시간: `${duration}ms`,
-          남은터치: e.touches.length,
-          "🚨isAnimating": this.isAnimating,
-          "🚨isPanning": this.isPanning,
-        },
-      );
-    };
-
-    this.touchCancelHandler = (e) => {
-      // 유령 터치 타이머 취소
-      if (orphanedTouchTimer) {
-        clearTimeout(orphanedTouchTimer);
-        orphanedTouchTimer = null;
-      }
-
-      console.log(
-        `%c⚠️ [NATIVE TOUCH] touchcancel`,
-        "color: #ff9900; font-weight: bold; font-size: 12px;",
-        {
-          이유: "시스템이 터치를 취소함",
-          남은터치: e.touches.length,
-        },
-      );
-    };
-
-    // 리스너 등록
-    slider.addEventListener("touchstart", this.touchStartHandler, {
-      passive: true,
-    });
-    slider.addEventListener("touchmove", this.touchMoveHandler, {
-      passive: true,
-    });
-    slider.addEventListener("touchend", this.touchEndHandler, {
-      passive: true,
-    });
-    slider.addEventListener("touchcancel", this.touchCancelHandler, {
-      passive: true,
-    });
-
-    console.log(
-      `%c✅ [SETUP] 네이티브 터치 리스너 등록 완료`,
-      "background: #00ff00; color: black; padding: 2px 5px;",
-    );
-
-    // ========================================
-    // Hammer.js 설정
-    // ========================================
-    this.hammer = new Hammer(slider, {
+    // 이벤트 위임(Event Delegation)을 위해 상위 컨테이너에 Hammer를 연결합니다.
+    this.hammer = new Hammer(this.container, {
       touchAction: "auto",
       inputClass: Hammer.TouchMouseInput,
     });
+
     this.hammer.get("pan").set({
       direction: Hammer.DIRECTION_HORIZONTAL,
-      threshold: 5, // 모든 터치에 반응
+      threshold: 10, // 10px 이상 움직여야 pan 시작
       enable: true,
     });
 
     console.log(
-      `%c✅ [SETUP] Hammer 생성 완료 (threshold: 5px - 초민감)`,
+      `%c✅ [SWIPE] 영구적인 Hammer 리스너 설정 완료 (컨테이너 기준)`,
       "background: #00ff00; color: black; padding: 2px 5px;",
     );
-    devLog("✅ Hammer 새로 생성 (touchAction: auto):", slider);
 
     let swipeStartTime = 0;
     let slideStarts = [-300, -200, -100, 0, 100, 200, 300];
-    let hammerEventCount = 0;
 
-    // ========================================
-    // Hammer 이벤트: panstart
-    // ========================================
     this.hammer.on("panstart", (e) => {
-      hammerEventCount++;
-      console.log(
-        `%c🟩 [HAMMER] panstart #${hammerEventCount}`,
-        "background: #00ff00; color: black; font-weight: bold; padding: 2px 5px;",
-        {
-          시각: new Date().toLocaleTimeString("ko-KR", {
-            hour12: false,
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            fractionalSecondDigits: 3,
-          }),
-          deltaX: e.deltaX.toFixed(1),
-          deltaY: e.deltaY.toFixed(1),
-          center: `(${Math.round(e.center.x)}, ${Math.round(e.center.y)})`,
-          isAnimating: this.isAnimating,
-          isPanning: this.isPanning,
-          이벤트타입: e.type,
-          포인터타입: e.pointerType,
-        },
-      );
-
-      if (this.isAnimating) {
-        console.log(
-          `%c⏸️ [HAMMER] panstart 무시 (애니메이션 중)`,
-          "color: #ff9900; font-weight: bold;",
-        );
+      // 1. 상태 확인: IDLE 상태가 아니면 아무것도 하지 않음
+      if (this.swipeState !== 'IDLE') {
+        devLog(`🚫 [panstart] 무시 (현재 상태: ${this.swipeState})`);
         return;
       }
 
-      // 🆕 초기 로딩 중 스와이프 차단
+      // 2. 초기 로딩 중 스와이프 차단
       if (this.isInitialLoading) {
-        console.log(
-          `%c🚫 [HAMMER] panstart 무시 (초기 3주 로드 중)`,
-          "background: #ff0000; color: white; font-weight: bold;",
-        );
         devLog(`🚫 초기 로드 중: 스와이프 차단됨`);
         return;
       }
 
-      this.hasPendingGestureNavigation = false;
-
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) {
-        console.log(
-          `%c⬆️ [HAMMER] 세로 스크롤 감지 - panstart 무시`,
-          "color: #0088ff;",
-          {
-            deltaX: e.deltaX.toFixed(1),
-            deltaY: e.deltaY.toFixed(1),
-          },
-        );
+      // 3. 스와이프 시작점 확인: calendar-slider 안에서 시작했는지 확인
+      if (!e.target.closest('.calendar-slider')) {
+        devLog(`🚫 [panstart] 무시 (스와이프 시작점이 슬라이더 외부)`);
         return;
       }
 
+      // 4. 스와이프 시작 처리
+      this.swipeState = 'PANNING';
+      devLog(`👉 [panstart] 스와이프 시작. 상태: ${this.swipeState}`);
+
       const slides = this.container.querySelectorAll(".calendar-slide");
       if (slides.length === 7) {
+        // 드래그하는 동안 부드럽게 움직이도록 transition 제거
         slides.forEach((slide, i) => {
           slide.style.transition = "none";
         });
         slideStarts = [-300, -200, -100, 0, 100, 200, 300];
         swipeStartTime = Date.now();
-        this.isPanning = true;
-
-        console.log(
-          `%c✅ [HAMMER] 스와이프 시작 승인`,
-          "background: #00ff00; color: black; font-weight: bold; padding: 2px 5px;",
-          {
-            isPanning: this.isPanning,
-            slideCount: slides.length,
-          },
-        );
       }
     });
 
-    // ========================================
-    // Hammer 이벤트: panmove
-    // ========================================
-    let panmoveCount = 0;
     this.hammer.on("panmove", (e) => {
-      panmoveCount++;
-
-      if (panmoveCount % 5 === 1) {
-        console.log(
-          `%c🔷 [HAMMER] panmove #${panmoveCount}`,
-          "color: #0088ff; font-size: 10px;",
-          {
-            deltaX: e.deltaX.toFixed(1),
-            deltaY: e.deltaY.toFixed(1),
-            velocityX: e.velocityX.toFixed(3),
-            velocityY: e.velocityY.toFixed(3),
-            isAnimating: this.isAnimating,
-            isPanning: this.isPanning,
-          },
-        );
-      }
-
-      if (this.isAnimating || !this.isPanning) {
-        if (panmoveCount % 10 === 1) {
-          console.log(`%c⏸️ [HAMMER] panmove 무시`, "color: #888;", {
-            isAnimating: this.isAnimating,
-            isPanning: this.isPanning,
-          });
-        }
+      // 1. 상태 확인: PANNING 상태가 아니면 무시
+      if (this.swipeState !== 'PANNING') {
         return;
       }
 
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-
+      // 2. 슬라이드 이동
       const slides = this.container.querySelectorAll(".calendar-slide");
       if (slides.length === 7) {
         const sliderElement = this.container.querySelector(".calendar-slider");
@@ -508,236 +208,70 @@ class Calendar {
           const newPos = slideStarts[i] + percentMove;
           slide.style.transform = `translateX(${newPos}%)`;
         });
-        // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
       }
     });
 
-    // ========================================
-    // Hammer 이벤트: panend
-    // ========================================
     this.hammer.on("panend", (e) => {
-      console.log(
-        `%c🟥 [HAMMER] panend`,
-        "background: #ff0000; color: white; font-weight: bold; padding: 2px 5px;",
-        {
-          시각: new Date().toLocaleTimeString("ko-KR", {
-            hour12: false,
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            fractionalSecondDigits: 3,
-          }),
-          deltaX: e.deltaX.toFixed(1),
-          deltaY: e.deltaY.toFixed(1),
-          velocityX: e.velocityX.toFixed(3),
-          velocityY: e.velocityY.toFixed(3),
-          distance: Math.abs(e.deltaX).toFixed(1),
-          isAnimating: this.isAnimating,
-          isPanning: this.isPanning,
-          hasPendingNav: this.hasPendingGestureNavigation,
-          panmove호출수: panmoveCount,
-        },
-      );
-
-      panmoveCount = 0;
-
-      if (this.isAnimating || !this.isPanning) {
-        console.log(
-          `%c⏸️ [HAMMER] panend 무시 (상태 플래그)`,
-          "color: #ff9900;",
-          { isAnimating: this.isAnimating, isPanning: this.isPanning },
-        );
+      // 1. 상태 확인: PANNING 상태가 아니면 무시
+      if (this.swipeState !== 'PANNING') {
+        devLog(`🚫 [panend] 무시 (현재 상태: ${this.swipeState})`);
         return;
       }
 
-      if (this.hasPendingGestureNavigation) {
-        console.log(`%c⏸️ [HAMMER] panend 무시 (중복 방지)`, "color: #ff9900;");
-        return;
-      }
-
-      this.isPanning = false;
+      // 2. 상태 변경: 애니메이션 시작
+      this.swipeState = 'ANIMATING';
+      devLog(`🔚 [panend] 스와이프 종료. 상태: ${this.swipeState}`);
 
       const slides = this.container.querySelectorAll(".calendar-slide");
+      // 💡 [개선] 예외 상황 방어: 슬라이드가 7개가 아니면 강제로 복귀시켜 멈춤 현상 방지
+      if (slides.length !== 7) {
+        devLog(`❌ [panend] 슬라이드 개수 오류 (${slides.length}/7). 강제 복귀.`);
+        this.snapBack();
+        return;
+      }
+
       if (slides.length === 7) {
         const swipeEndTime = Date.now();
         const duration = swipeEndTime - swipeStartTime;
         const distance = Math.abs(e.deltaX);
-        const velocity = Math.abs(e.velocityX);
-        const avgSpeed = duration > 0 ? (distance / duration).toFixed(2) : 0;
+        const velocity = e.velocityX;
 
-        console.log(
-          `%c📊 [HAMMER] 스와이프 분석`,
-          "background: #ffff00; color: black; font-weight: bold; padding: 3px 8px;",
-          {
-            "이동거리(px)": distance.toFixed(0),
-            "소요시간(ms)": duration,
-            "Hammer속도(px/ms)": velocity.toFixed(3),
-            "평균속도(px/ms)": avgSpeed,
-            방향: e.deltaX < 0 ? "왼쪽←" : "오른쪽→",
-            가로여부: Math.abs(e.deltaX) > Math.abs(e.deltaY),
-          },
-        );
-
-        const isHorizontalSwipe = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-        if (!isHorizontalSwipe) {
-          console.log(
-            `%c❌ [HAMMER] 세로 스와이프로 판단 - 원위치`,
-            "color: #ff0000; font-weight: bold;",
-          );
-          slides.forEach((slide, i) => {
-            slide.style.transition =
-              "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)";
-            slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
-          });
-          // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
-          return;
-        }
-
-        const animationDuration = velocity > 1.5 ? 0.05 : 0.1;
+        // 3. 애니메이션 활성화
         slides.forEach((slide) => {
-          slide.style.transition = `transform ${animationDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
+          slide.style.transition = `transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)`;
         });
-        // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
 
-        const sliderElement = this.container.querySelector(".calendar-slider");
-        const sliderWidth = sliderElement
-          ? sliderElement.offsetWidth
-          : this.container.offsetWidth;
-        const distanceThreshold = sliderWidth * 0.25; // 느린 드래그: 50% 이상
-        const velocityThreshold = 0.5;
+        // 4. 이동 결정 로직
+        const sliderWidth = this.container.querySelector('.calendar-slider').offsetWidth;
+         // 💡 [개선] 민감도 재조정: 빠른 플링(fling)에 더 민감하게 반응하도록 속도 기준을 낮추고, 의도치 않은 이동을 줄이기 위해 거리 기준을 약간 높입니다.
+         const distanceThreshold = sliderWidth * 0.15; 
+         const velocityThreshold = 0.1;
+ 
+        const shouldNavigate = distance > distanceThreshold || Math.abs(velocity) > velocityThreshold;
 
-        // 플링 vs 드래그 구분
-        const fastSwipeTimeLimit = 200; // 200ms 미만이면 빠른 스와이프(플링)
-        const isFastSwipe = duration < fastSwipeTimeLimit;
-
-        let shouldNavigate;
-        if (isFastSwipe) {
-          // 빠른 스와이프(플링): 아주 조금만 움직여도 넘어감
-          const minFlickDistance = 3; // 최소 5px
-          shouldNavigate = distance >= minFlickDistance;
-
-          console.log(
-            `%c⚡ [빠른 플링] ${duration}ms < ${fastSwipeTimeLimit}ms`,
-            "background: #ffff00; color: black; font-weight: bold; padding: 3px 8px;",
-            {
-              판정: shouldNavigate ? "✅ 넘어감" : "❌ 안넘어감",
-              이동거리: `${distance.toFixed(0)}px`,
-              최소거리: `${minFlickDistance}px (초민감)`,
-              조건: `${distance.toFixed(0)} >= ${minFlickDistance} = ${shouldNavigate}`,
-            },
-          );
-        } else {
-          // 느린 드래그: 거리나 속도 조건 적용
-          shouldNavigate =
-            distance >= distanceThreshold || velocity >= velocityThreshold;
-
-          console.log(
-            `%c🐌 [느린 드래그] ${duration}ms >= ${fastSwipeTimeLimit}ms`,
-            "background: #ff9900; color: black; font-weight: bold; padding: 3px 8px;",
-            {
-              판정: shouldNavigate ? "✅ 넘어감" : "❌ 안넘어감",
-              거리조건: `${distance.toFixed(0)} >= ${distanceThreshold.toFixed(0)} = ${distance >= distanceThreshold}`,
-              속도조건: `${velocity.toFixed(3)} >= ${velocityThreshold} = ${velocity >= velocityThreshold}`,
-            },
-          );
-        }
-
-        console.log(
-          `%c🎯 [최종 판정]`,
-          "background: #ff00ff; color: white; font-weight: bold; padding: 3px 8px;",
-          {
-            타입: isFastSwipe ? "⚡ 빠른 플링" : "🐌 느린 드래그",
-            shouldNavigate,
-            소요시간: `${duration}ms`,
-            이동거리: `${distance.toFixed(0)}px`,
-            속도: `${velocity.toFixed(3)}`,
-          },
-        );
+        devLog(`[panend] 분석: 이동거리=${distance.toFixed(0)}px (기준:${distanceThreshold.toFixed(0)}px), 속도=${velocity.toFixed(2)} (기준:${velocityThreshold}) -> ${shouldNavigate ? '이동' : '복귀'}`);
 
         if (shouldNavigate) {
-          // navigate 함수에서 자동으로 isAnimating = true 설정됨 (774번 줄)
-          this.lastSwipeTime = Date.now();
-          this.hasPendingGestureNavigation = true;
-
           const direction = e.deltaX < 0 ? 1 : -1;
-          console.log(
-            `%c✅ [HAMMER] 네비게이션 실행`,
-            "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;",
-            {
-              방향: direction === 1 ? "다음 주 →" : "이전 주 ←",
-            },
-          );
-
-          if (e.deltaX < 0) {
-            this.navigate(1);
-          } else {
-            this.navigate(-1);
-          }
+          this.navigate(direction);
         } else {
-          console.log(
-            `%c↩️ [HAMMER] 네비게이션 취소 - 원위치`,
-            "color: #ff9900; font-weight: bold;",
-          );
-          slides.forEach((slide, i) => {
-            slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
-          });
-          // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
+             // 💡 [개선] 스와이프가 무시된 이유를 명확히 로깅
+             devLog(`[panend] 복귀: 이동거리(${distance.toFixed(0)}px)와 속도(${Math.abs(velocity).toFixed(2)})가 기준치에 미달`);
+     
+          this.snapBack();
         }
       }
     });
 
-    // ========================================
-    // Hammer 이벤트: pancancel
-    // ========================================
     this.hammer.on("pancancel", (e) => {
-      console.log(
-        `%c⚠️ [HAMMER] pancancel`,
-        "background: #ff9900; color: black; font-weight: bold; padding: 2px 5px;",
-        {
-          시각: new Date().toLocaleTimeString("ko-KR", {
-            hour12: false,
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            fractionalSecondDigits: 3,
-          }),
-          deltaX: e.deltaX,
-          deltaY: e.deltaY,
-          velocityX: e.velocityX,
-          velocityY: e.velocityY,
-          isPanning: this.isPanning,
-        },
-      );
-
-      if (this.isPanning) {
-        console.log(
-          `%c🔄 [HAMMER] 스와이프 상태 리셋`,
-          "color: #ff9900; font-weight: bold;",
-        );
-        this.resetSwipeState();
+      if (this.swipeState === 'PANNING') {
+        devLog(`[pancancel] 스와이프 취소됨. 상태: ${this.swipeState} -> ANIMATING`);
+        this.swipeState = 'ANIMATING';
+        this.snapBack();
       }
     });
 
-    // ========================================
-    // Hammer 이벤트: tap
-    // ========================================
     this.hammer.on("tap", (e) => {
-      console.log(
-        `%c👆 [HAMMER] tap`,
-        "background: #00ffff; color: black; padding: 2px 5px;",
-        {
-          시각: new Date().toLocaleTimeString("ko-KR", {
-            hour12: false,
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            fractionalSecondDigits: 3,
-          }),
-          타겟: e.target.className,
-          center: `(${Math.round(e.center.x)}, ${Math.round(e.center.y)})`,
-        },
-      );
-
       if (this.currentView !== "week") return;
 
       const eventEl = e.target.closest(".week-event");
@@ -745,48 +279,70 @@ class Calendar {
         const eventDate = eventEl.dataset.eventDate;
         if (eventDate) {
           console.log(
-            `%c📅 [HAMMER] 이벤트 탭 → 일간 보기 전환`,
+            `%c📅 [tap] 이벤트 탭 → 일간 보기 전환`,
             "background: #0088ff; color: white; font-weight: bold; padding: 2px 5px;",
             { eventDate },
           );
           this.switchToDayView(new Date(eventDate));
         }
       }
-    });
-
-    console.log(
-      `%c✅ 터치 이벤트 로깅 설정 완료`,
-      "background: #00ff00; color: black; font-weight: bold; padding: 5px 10px; font-size: 14px;",
-      {
-        "Hammer threshold": "5px (초민감)",
-        "빠른 플링": "200ms 미만, 5px 이상 → 넘어감",
-        "느린 드래그": "200ms 이상, 50% 이상 → 넘어감",
-        "네이티브 이벤트": "활성화",
-        "Hammer 이벤트": "활성화",
-      },
-    );
+    });    
   }
 
-  async navigate(direction) {
-    if (this.isAnimating) {
-      console.log(
-        `%c⏸️ [NAVIGATE] 중복 방지 - 애니메이션 진행 중`,
-        "background: #ff9900; color: black; font-weight: bold; padding: 3px 8px;",
-        { isAnimating: this.isAnimating },
-      );
+  /**
+   * 💡 [개선] 제자리로 돌아가는 애니메이션
+   */
+  snapBack() {
+    devLog(`↩️ [snapBack] 원위치로 복귀`);
+    const slides = this.container.querySelectorAll(".calendar-slide");
+    if (slides.length !== 7) {
+      this.swipeState = 'IDLE';
       return;
     }
 
-    // ✅ 즉시 플래그 설정 (async await 전에!)
-    this.isAnimating = true;
-    this.isPanning = false;
+    slides.forEach((slide, i) => {
+      slide.style.transition = "transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)";
+      slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
+    });
+
+    let finalized = false;
+    const onFinish = () => {
+      if (finalized) return;
+      finalized = true;
+      clearTimeout(timeoutId);
+
+      if (this.swipeState === "ANIMATING") {
+        this.swipeState = 'IDLE';
+        devLog(`✅ [snapBack] 복귀 완료. 상태: ${this.swipeState}`);
+      }
+    };
+
+    const transitionEndHandler = (e) => {
+      if (e.propertyName !== "transform") return;
+      onFinish();
+    };
+
+    slides[3].addEventListener("transitionend", transitionEndHandler, { once: true });
+
+    const timeoutId = setTimeout(() => {
+      devLog(`⏱️ [snapBack] 타임아웃 강제 완료`);
+      onFinish();
+    }, 400);
+  }
+
+  async navigate(direction) {
+    // 💡 [개선] 상태 머신으로 중복 실행 방지
+    if (this.swipeState !== 'ANIMATING') {
+      devLog(`🚫 [navigate] 잘못된 호출 (현재 상태: ${this.swipeState})`);
+      return;
+    }
 
     console.log(
       `%c🚀 [NAVIGATE] 시작`,
       "background: #00ffff; color: black; font-weight: bold; padding: 3px 8px;",
       {
         direction: direction === 1 ? "다음 주 →" : "이전 주 ←",
-        isAnimating: this.isAnimating,
+        swipeState: this.swipeState,
       },
     );
 
@@ -807,6 +363,8 @@ class Calendar {
         `%c⚠️ [NAVIGATE] 슬라이드 부족 ${slides.length}/7`,
         "color: orange;",
       );
+      // 슬라이드가 부족하면 상태를 리셋하고 다시 렌더링
+      this.swipeState = 'IDLE';
       await this.render();
       return;
     }
@@ -838,33 +396,36 @@ class Calendar {
       "color: #666; font-size: 11px;",
     );
 
+    // 💡 [수정] transitionend와 setTimeout의 경합(Race Condition)을 방지하는 '게이트키퍼' 로직
+    let finalized = false;
+    const onFinish = async () => {
+      if (finalized) return; // 중복 실행 방지
+      finalized = true;
+
+      // 타이머가 실행되지 않도록 정리
+      clearTimeout(timeoutId);
+
+      await this.finalizeNavigation(direction, slides);
+    };
+
     // transitionend 대기 (중앙 슬라이드 = 인덱스 3)
-    const handleTransitionEnd = async (e) => {
+    const handleTransitionEnd = (e) => {
+      // transform 애니메이션이 끝났을 때만 반응
       if (e.propertyName !== "transform") return;
       console.log(
         `%c🎬 [NAVIGATE] transitionend 발생!`,
         "background: #00ff00; color: black; padding: 2px 5px;",
       );
-      slides[3].removeEventListener("transitionend", handleTransitionEnd);
-
-      await this.finalizeNavigation(direction, slides);
-      console.log(
-        `%c✅ [NAVIGATE] Step 4: finalizeNavigation 완료`,
-        "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;",
-      );
+      onFinish();
     };
 
-    slides[3].addEventListener("transitionend", handleTransitionEnd, {
-      once: true,
-    });
+    // { once: true } 옵션으로 리스너가 단 한 번만 실행되도록 보장
+    slides[3].addEventListener("transitionend", handleTransitionEnd, { once: true });
 
     // 안전장치: 500ms 후 강제 완료
-    setTimeout(async () => {
-      if (this.isAnimating) {
-        console.log(`%c⏱️ [NAVIGATE] 타임아웃 강제 완료`, "color: orange;");
-        slides[3].removeEventListener("transitionend", handleTransitionEnd);
-        await this.finalizeNavigation(direction, slides);
-      }
+    const timeoutId = setTimeout(() => {
+      console.log(`%c⏱️ [NAVIGATE] 타임아웃 강제 완료`, "color: orange;");
+      onFinish();
     }, 500);
   }
 
@@ -875,12 +436,11 @@ class Calendar {
       { direction: direction === 1 ? "다음 주" : "이전 주" },
     );
 
-    const slides = Array.from(slidesArray);
-    if (slides.length !== 7) return;
-
-    // 🆕 주석: 날짜는 navigate에서 이미 업데이트됨 (빠른 표시를 위해)
-    // this.currentDate.setDate(this.currentDate.getDate() + direction * 7);
-    // this.updateCalendarTitle();
+    const slides = Array.from(slidesArray); // NodeList를 Array로 변환
+    if (slides.length !== 7) {
+      this.swipeState = 'IDLE'; // 비정상 상태에서 복구
+      return;
+    }
 
     const slider = this.container.querySelector(".calendar-slider");
     const labelsSlider = document.querySelector(".room-labels-slider");
@@ -890,13 +450,14 @@ class Calendar {
       slide.style.transition = "none";
     });
 
-    // DOM 재배열 (7개 슬라이드)
+    // 💡 [개선] DOM 재배열: 슬라이드를 실제로 옮겨 무한 스크롤 구현
     if (direction === 1) {
       // 다음 주: 첫 슬라이드를 끝으로
       slider.appendChild(slides[0]);
     } else {
       // 이전 주: 끝 슬라이드를 처음으로
       slider.insertBefore(slides[6], slides[0]);
+
     }
 
     console.log(
@@ -904,8 +465,10 @@ class Calendar {
       "color: #0088ff;",
     );
 
-    // 새 데이터 준비
-    await this.prepareAdjacentSlides(direction);
+    // 💡 [개선] 데이터 로딩을 기다리지 않고 즉시 다음 스와이프가 가능하도록 변경
+    // UI의 반응성을 높이기 위해 데이터 로딩(네트워크 요청)을 백그라운드에서 처리하고,
+    // 애니메이션과 상태 업데이트는 즉시 완료시킵니다.
+    this.prepareAdjacentSlides(direction);
 
     console.log(`%c🔄 [FINALIZE] 슬라이드 원위치 복원`, "color: #0088ff;");
 
@@ -913,7 +476,6 @@ class Calendar {
     const newSlides = this.container.querySelectorAll(".calendar-slide");
     newSlides.forEach((slide, i) => {
       slide.style.transform = `translateX(${[-300, -200, -100, 0, 100, 200, 300][i]}%)`;
-      // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
     });
 
     // 레이아웃 조정
@@ -922,14 +484,12 @@ class Calendar {
     // 현재 시간 표시
     requestAnimationFrame(() => {
       this.updateCurrentTimeIndicator();
-      // ✅ 새로운 구조에서는 라벨 위치가 자동으로 계산되므로 updateRoomBottomLabelsPosition() 불필요
     });
 
     // 다음 프레임에서 트랜지션 재활성화
     requestAnimationFrame(() => {
       newSlides.forEach((slide) => {
         slide.style.transition = "";
-        // 라벨은 슬라이드의 자식 요소이므로 자동으로 따라갑니다
       });
     });
 
@@ -938,24 +498,16 @@ class Calendar {
       "background: #00ff00; color: black; font-weight: bold; padding: 3px 8px;",
     );
 
-    // ✅ 중요: 모든 애니메이션과 DOM 조작이 끝난 후 플래그 리셋
-    this.isAnimating = false;
-    this.hasPendingGestureNavigation = false;
+    // ✅ 중요: 모든 작업이 끝난 후 상태를 IDLE로 되돌려 다음 입력을 받을 준비를 합니다.
+    this.swipeState = 'IDLE';
+    devLog(`✅ [FINALIZE] 완료. 상태: ${this.swipeState}`);
   }
 
   updateCalendarTitle() {
     const titleElement = document.getElementById("calendarTitle");
     if (!titleElement) return;
 
-    const month = this.currentDate.getMonth() + 1;
-
-    // 🆕 캐시: 같은 달이면 DOM 업데이트 안 함
-    if (this.cachedTitleMonth === month) {
-      return;
-    }
-
-    this.cachedTitleMonth = month;
-    titleElement.textContent = `${month}월`;
+    titleElement.textContent = `${this.currentDate.getMonth() + 1}월`;
   }
 
   async prepareAdjacentSlides(direction) {
@@ -971,121 +523,87 @@ class Calendar {
       dates.push(date);
     }
 
-    // 🚀 무한 스크롤 최적화: 스와이프 방향에 따라 우선 로드 영역 결정
-    // 오른쪽 → (dates[3]=새 현재, dates[4]=+1주, dates[5]=+2주) 중 ±1주 우선
-    // 왼쪽 ← (dates[1]=-2주, dates[2]=-1주, dates[3]=새 현재) 중 ±1주 우선
-    let priorityDates, otherDates;
+    // 💡 [개선] 스와이프 후 새로 보이게 될 슬라이드의 데이터만 로드
+    let dateToLoad;
 
     if (direction === 1) {
-      priorityDates = [dates[3], dates[4], dates[5]];
-      otherDates = [dates[0], dates[1], dates[2], dates[6]];
+      // 오른쪽으로 스와이프: 가장 오른쪽에 새로 나타날 주 (+3주)
+      dateToLoad = dates[6];
       devLog(
-        `   ⚡ 오른쪽(→) 스와이프: 우선 로드 ${priorityDates.map((d) => d.toLocaleDateString("ko-KR")).join(" → ")}`,
+        `   ⚡ 오른쪽(→) 스와이프: +3주차(${dateToLoad.toLocaleDateString("ko-KR")}) 데이터 로드`,
       );
     } else {
-      priorityDates = [dates[1], dates[2], dates[3]];
-      otherDates = [dates[0], dates[4], dates[5], dates[6]];
+      // 왼쪽으로 스와이프: 가장 왼쪽에 새로 나타날 주 (-3주)
+      dateToLoad = dates[0];
       devLog(
-        `   ⚡ 왼쪽(←) 스와이프: 우선 로드 ${priorityDates.map((d) => d.toLocaleDateString("ko-KR")).join(" ← ")}`,
+        `   ⚡ 왼쪽(←) 스와이프: -3주차(${dateToLoad.toLocaleDateString("ko-KR")}) 데이터 로드`,
       );
     }
 
-    // Step 1: 우선 로드 (3주 블로킹)
-    devLog(`   ⏱️ [Step 1] 우선 로드 시작 - ${priorityDates.length}주 즉시`);
-    const priorityStart = Date.now();
-    for (const date of priorityDates) {
-      await this.loadWeekDataToCache(date);
-    }
-    const priorityTime = Date.now() - priorityStart;
-    devLog(`   ✅ 우선 로드 완료: ${priorityTime}ms`);
+    await this.loadWeekDataToCache(dateToLoad);
 
-    // Step 2: 이벤트 병합 + 슬라이드 업데이트
-    this.events = this.getMergedEventsFromCache(dates);
-    slides.forEach((slide, i) => {
-      slide.innerHTML = this.renderWeekViewContent(dates[i]);
-    });
-    devLog(
-      `   ✅ [Step 2] 슬라이드 업데이트 완료: ${this.events.length}개 이벤트`,
-    );
-
-    // Step 3: 나머지 주는 백그라운드 순차 로드 (비블로킹)
-    devLog(
-      `   🔄 [Step 3] 백그라운드 순차 로드 시작 - ${otherDates.length}주 비동기`,
-    );
-
-    // 🆕 현재 height 정보 저장 (높이 튀지 않게 하기)
-    const slideHeights = new Map();
-    slides.forEach((slide, idx) => {
-      const weekView = slide.querySelector(".week-view");
-      if (weekView) {
-        slideHeights.set(idx, {
-          height: weekView.clientHeight,
-          gridTemplateRows: weekView.style.gridTemplateRows,
-        });
-      }
-    });
-
-    // 🆕 순차 로드 (2개씩)
-    (async () => {
-      for (const date of otherDates) {
-        await this.loadWeekDataToCache(date);
-        const slideIdx = dates.findIndex(
-          (d) => d.toDateString() === date.toDateString(),
-        );
-
-        if (slideIdx !== -1 && slides[slideIdx]) {
-          // 콘텐츠 업데이트
-          slides[slideIdx].innerHTML = this.renderWeekViewContent(
-            dates[slideIdx],
-          );
-
-          // 🆕 높이 강제 고정 - adjustWeekViewLayout 호출
-          requestAnimationFrame(() => {
-            this.adjustWeekViewLayout(true);
-            devLog(
-              `   📦 [높이고정] ${date.toLocaleDateString("ko-KR")} - 레이아웃 재계산`,
-            );
-          });
-        }
-      }
-    })();
-
-    devLog(
-      `✅ [무한스크롤] 7주 유지: 우선 3주(${priorityTime}ms) → 나머지 4주 백그라운드 순차 중...`,
-    );
+    // 새로 로드된 슬라이드의 내용만 업데이트
+    const slideToUpdate = direction === 1 ? slides[6] : slides[0];
+    slideToUpdate.innerHTML = this.renderWeekViewContent(dateToLoad);
   }
 
-  goToToday() {
+  async goToToday() {
     devLog("🏠 [오늘로 이동] 전체 캐시 리셋");
-    this.weekDataCache.clear();
+    this.weekDataCache.clear(); // 캐시 비우기
     this.currentDate = new Date();
-    this.render();
+    await this.render(); // 다시 그리기
   }
 
-  goToPrevMonth() {
+  async goToPrevMonth() {
     devLog("◀️ [이전 월] 전체 캐시 리셋");
     this.weekDataCache.clear();
-    this.resetSwipeState();
     const prevMonth = new Date(this.currentDate);
     prevMonth.setMonth(prevMonth.getMonth() - 1);
     prevMonth.setDate(1);
     this.currentDate = prevMonth;
-    this.render();
+    await this.render();
   }
 
-  goToNextMonth() {
+  async goToNextMonth() {
     devLog("▶️ [다음 월] 전체 캐시 리셋");
     this.weekDataCache.clear();
-    this.resetSwipeState();
     const nextMonth = new Date(this.currentDate);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
     nextMonth.setDate(1);
     this.currentDate = nextMonth;
-    this.render();
+    await this.render();
   }
 
   async refreshCurrentView() {
-    // 현재 view와 날짜를 유지하면서 데이터만 갱신
+    // 💡 [개선] 진단 로그가 추가된 잠금(Lock) 메커니즘
+    // 여러 번의 시도에도 불구하고 경쟁 상태가 지속되어, 문제의 원인을 정확히 파악하기 위해 잠금의 모든 단계를 상세히 기록합니다.
+    if (this.renderPromise) {
+      devLog(`[LOCK] ⏸️ 'refreshCurrentView' 대기 시작. 현재 잠금 보유자: ${this.renderPromise.owner}`);
+      await this.renderPromise;
+      devLog(`[LOCK] ✅ 'refreshCurrentView' 대기 완료. 추가 작업 건너뜁니다.`);
+      return;
+    }
+
+    let releaseLock;
+    const myPromise = new Promise(resolve => {
+      releaseLock = resolve;
+    });
+    myPromise.owner = 'refreshCurrentView'; // 디버깅을 위한 잠금 소유자 정보
+    this.renderPromise = myPromise;
+    devLog(`[LOCK] 🔒 'refreshCurrentView'가 잠금을 획득했습니다.`);
+
+    try {
+      // 실제 갱신 작업 수행
+      await this._doRefreshCurrentView();
+    } finally {
+      devLog(`[LOCK] 🔑 'refreshCurrentView'가 잠금 해제를 시작합니다.`);
+      releaseLock();
+      this.renderPromise = null;
+      devLog(`[LOCK] 🔓 'refreshCurrentView'가 잠금을 완전히 해제했습니다.`);
+    }
+  }
+
+  async _doRefreshCurrentView() {
     devLog("🔄 [갱신] 현재 상태 유지하며 데이터 업데이트");
 
     if (this.currentView === "week") {
@@ -1101,9 +619,12 @@ class Calendar {
           dates.push(date);
         }
 
-        for (const date of dates) {
-          await this.loadWeekDataToCache(date);
-        }
+        // 💡 [개선] 7주 데이터를 병렬로 로드하여 속도 향상
+        devLog(`   🚀 [갱신] 7주 데이터 동시 로드 시작...`);
+        const t1 = Date.now();
+        const loadPromises = dates.map((date) => this.loadWeekDataToCache(date));
+        await Promise.all(loadPromises);
+        devLog(`   ✅ 7주 데이터 로드 완료 (${Date.now() - t1}ms)`);
 
         this.events = this.getMergedEventsFromCache(dates);
         devLog(`   ✅ 병합된 이벤트: ${this.events.length}개`);
@@ -1115,13 +636,11 @@ class Calendar {
 
         devLog(`🔄 슬라이드 준비 완료: -3주 ~ +3주`);
 
-        // ✅ 날짜 높이 깨짐 방지: innerHTML 업데이트 후 레이아웃 재조정
         requestAnimationFrame(() => {
           this.adjustWeekViewLayout(true);
           this.updateCurrentTimeIndicator();
         });
       } else {
-        // 슬라이드가 없으면 전체 렌더링
         await this.render();
       }
     } else {
@@ -1129,21 +648,63 @@ class Calendar {
     }
   }
 
-  // 캐시 무효화 헬퍼 (Realtime용)
-  invalidateWeeks(weekStartDates) {
+  /**
+   * 💡 [신규] Webhook을 위한 정교한 새로고침 함수
+   * 특정 주(week)의 캐시만 무효화하고, 화면의 해당 슬라이드만 "수술적으로" 업데이트합니다.
+   * 전체 7주를 리로드하는 비효율적인 refreshCurrentView()를 대체합니다.
+   * @param {string[]} weekStartDates - ISO 문자열 형식의 주 시작 날짜 배열
+   */
+  async invalidateAndRefreshWeeks(weekStartDates) {
+    devLog(`🎯 [정교한 갱신] Webhook 신호 수신: ${weekStartDates.length}개 주 업데이트 시작`);
+
+    // 1. 해당 주의 캐시만 무효화
     weekStartDates.forEach((weekStart) => {
       const weekKey = this.getWeekCacheKey(new Date(weekStart));
       this.weekDataCache.delete(weekKey);
       devLog(`   🗑️ [캐시삭제] ${weekKey}`);
     });
-  }
 
+    // 2. 변경된 주의 데이터만 병렬로 다시 로드
+    const datesToRefresh = weekStartDates.map(ws => new Date(ws));
+    const loadPromises = datesToRefresh.map(date => this.loadWeekDataToCache(date));
+    await Promise.all(loadPromises);
+    devLog(`   ✅ 데이터 재로드 완료`);
+
+    // 3. 현재 화면에 보이는 슬라이드 중, 변경된 슬라이드만 찾아 내용 업데이트
+    const allSlides = Array.from(this.container.querySelectorAll(".calendar-slide"));
+    if (allSlides.length !== 7) return;
+
+    const currentSlideDates = [];
+    for (let i = -3; i <= 3; i++) {
+      const date = new Date(this.currentDate);
+      date.setDate(date.getDate() + i * 7);
+      currentSlideDates.push(date);
+    }
+
+    datesToRefresh.forEach(refreshDate => {
+      const refreshWeekKey = this.getWeekCacheKey(refreshDate).split('_')[0]; // 날짜 부분만 비교
+      
+      const slideIndex = currentSlideDates.findIndex(slideDate => {
+        const slideWeekKey = this.getWeekCacheKey(slideDate).split('_')[0];
+        return slideWeekKey === refreshWeekKey;
+      });
+
+      if (slideIndex !== -1) {
+        const slideToUpdate = allSlides[slideIndex];
+        slideToUpdate.innerHTML = this.renderWeekViewContent(refreshDate);
+        devLog(`   🔄 슬라이드 업데이트 완료: ${refreshDate.toLocaleDateString("ko-KR")}`);
+      }
+    });
+
+    // 4. 레이아웃 재조정
+    this.adjustWeekViewLayout(true);
+  }
   changeView(view) {
     this.currentView = view;
     this.render();
   }
 
-  switchToDayView(date) {
+  async switchToDayView(date) {
     this.currentDate = new Date(date);
     this.currentDate.setHours(0, 0, 0, 0);
     this.currentView = "day";
@@ -1154,10 +715,12 @@ class Calendar {
       devLog("🔒 [일간 보기] Hammer 제스처 비활성화");
     }
 
-    this.render();
+    // 💡 [버그 수정] 중복된 render() 호출을 하나로 통합합니다.
+    // 이전 코드에서는 첫 번째 render()가 await되지 않아 의도치 않은 동작을 유발할 수 있었습니다.
+    await this.render();
   }
 
-  switchToWeekView() {
+  async switchToWeekView() {
     this.currentView = "week";
 
     // 주간 보기로 복귀 시 Hammer 제스처 재활성화
@@ -1166,7 +729,7 @@ class Calendar {
       devLog("🔓 [주간 보기] Hammer 제스처 활성화");
     }
 
-    this.render();
+    await this.render();
   }
 
   isToday(date) {
@@ -1177,7 +740,7 @@ class Calendar {
     return checkDate.getTime() === today.getTime();
   }
 
-  toggleRoom(roomId) {
+  async toggleRoom(roomId) {
     // 방 선택 변경 시 캐시 무효화
     devLog(`🗑️ [캐시클리어] 방 선택 변경: ${roomId}`);
     this.weekDataCache.clear();
@@ -1199,10 +762,10 @@ class Calendar {
     document.body.classList.add("single-room-view");
     devLog(`📍 [toggleRoom] body에 single-room-view 클래스 추가`);
 
-    this.render();
+    await this.render();
   }
 
-  toggleAllRooms() {
+  async toggleAllRooms() {
     // 방 선택 변경 시 캐시 무효화
     devLog(`🗑️ [캐시클리어] 전체 방 선택`);
     this.weekDataCache.clear();
@@ -1222,7 +785,7 @@ class Calendar {
     document.body.classList.remove("single-room-view");
     devLog(`📍 [toggleAllRooms] body에서 single-room-view 클래스 제거`);
 
-    this.render();
+    await this.render();
   }
 
   async loadEvents() {
@@ -1298,16 +861,31 @@ class Calendar {
   }
 
   async render() {
-    // 이미 render 진행 중이면 대기
+    // 💡 [개선] 진단 로그가 추가된 잠금(Lock) 메커니즘
     if (this.renderPromise) {
-      devLog("⏸️ [렌더 배리어] 진행 중인 render 대기...");
+      devLog(`[LOCK] ⏸️ 'render' 대기 시작. 현재 잠금 보유자: ${this.renderPromise.owner}`);
       await this.renderPromise;
+      devLog(`[LOCK] ✅ 'render' 대기 완료. 추가 작업 건너뜁니다.`);
+      return;
     }
 
-    // 새로운 render 시작
-    this.renderPromise = this._doRender();
-    await this.renderPromise;
-    this.renderPromise = null;
+    let releaseLock;
+    const myPromise = new Promise(resolve => {
+      releaseLock = resolve;
+    });
+    myPromise.owner = 'render'; // 디버깅을 위한 잠금 소유자 정보
+    this.renderPromise = myPromise;
+    devLog(`[LOCK] 🔒 'render'가 잠금을 획득했습니다.`);
+
+    try {
+      // 실제 렌더링 작업 수행
+      await this._doRender();
+    } finally {
+      devLog(`[LOCK] 🔑 'render'가 잠금 해제를 시작합니다.`);
+      releaseLock();
+      this.renderPromise = null;
+      devLog(`[LOCK] 🔓 'render'가 잠금을 완전히 해제했습니다.`);
+    }
   }
 
   async _doRender() {
@@ -1319,8 +897,7 @@ class Calendar {
 
     if (this.currentView === "week") {
       await this.renderWeekViewWithSlider();
-      // DOM 재생성 후 Hammer.js 재설정
-      this.setupSwipeGestures();
+      // 💡 [개선] setupSwipeGestures()는 더 이상 여기서 호출하지 않습니다.
     } else if (this.currentView === "day") {
       await this.loadEvents();
       this.renderDayView();
@@ -1331,91 +908,50 @@ class Calendar {
   }
 
   async renderWeekViewWithSlider() {
-    // 🆕 초기 로드 시작
     this.isInitialLoading = true;
     devLog(`\n🎨 [렌더] 7슬라이드 렌더링 시작 (로딩 표시 중)`);
     devLog(`   현재 캐시 크기: ${this.weekDataCache.size}개`);
 
+    // 1. 렌더링에 필요한 7개 주의 날짜를 모두 계산합니다.
     const dates = [];
     for (let i = -3; i <= 3; i++) {
       const date = new Date(this.currentDate);
       date.setDate(date.getDate() + i * 7);
       dates.push(date);
     }
-
-    // ⚡ STEP 1: 3주 우선 로드 (현주 + ±1주)
-    const currentWeekDate = dates[3];
-    const adjWeekDates = [dates[2], dates[4]];
-    const priorityDates = [currentWeekDate, ...adjWeekDates];
-
-    devLog(
-      `   🚀 [STEP1] 우선 3주: ${priorityDates.map((d) => d.toLocaleDateString("ko-KR")).join(" | ")}`,
-    );
+    
+    // 2. 7개 주에 필요한 모든 데이터를 Promise.all을 사용해 병렬로 한 번에 불러옵니다.
+    devLog(`   🚀 [STEP 1] 7주 데이터 동시 로드 시작...`);
     const t1 = Date.now();
-    await Promise.all(
-      priorityDates.map((date) => this.loadWeekDataToCache(date)),
-    );
-    devLog(`   ✅ 우선 3주 완료: ${Date.now() - t1}ms`);
+    const loadPromises = dates.map(date => this.loadWeekDataToCache(date));
+    await Promise.all(loadPromises);
+    devLog(`   ✅ 7주 데이터 로드 완료 (${Date.now() - t1}ms)`);
 
-    // ⚡ STEP 2: 추가 2주 순차 로드 (로딩 UI 유지 중)
-    const additionalDates = [dates[1], dates[5]];
-    devLog(
-      `   🚀 [STEP2] 추가 2주 순차: ${additionalDates.map((d) => d.toLocaleDateString("ko-KR")).join(" → ")}`,
-    );
-
-    for (const date of additionalDates) {
-      const t2 = Date.now();
-      await this.loadWeekDataToCache(date);
-      devLog(
-        `   ✅ [+${Date.now() - t2}ms] ${date.toLocaleDateString("ko-KR")}`,
-      );
-    }
-    devLog(`   ✅ 5주 로드 완료 - 이제 스와이프 활성화됨!`);
-
-    // 캐시된 데이터를 합쳐서 this.events에 설정
+    // 3. 모든 데이터가 준비되면, 캐시에서 이벤트를 병합합니다.
     this.events = this.getMergedEventsFromCache(dates);
-    devLog(`   ✅ 이벤트 병합: ${this.events.length}개`);
+    devLog(`   ✅ [STEP 2] 이벤트 병합: ${this.events.length}개`);
 
-    // 고정 시간 열 + 슬라이더 생성
+    // 4. 모든 데이터가 채워진 상태로 7개의 슬라이드 HTML을 생성합니다.
     let html = this.renderTimeColumn();
     html += '<div class="calendar-slider">';
-
     const translateValues = [-300, -200, -100, 0, 100, 200, 300];
     dates.forEach((date, i) => {
       html += `<div class="calendar-slide" style="transform: translateX(${translateValues[i]}%)">`;
       html += this.renderWeekViewContent(date);
       html += "</div>";
     });
-
     html += "</div>";
 
-    // DOM 교체 + 높이 고정
+    // 5. 생성된 HTML을 DOM에 한 번에 렌더링합니다.
     this.container.innerHTML = html;
     this.adjustWeekViewLayout();
-
     requestAnimationFrame(() => {
       this.updateCurrentTimeIndicator();
     });
 
-    // 🆕 5주 로드 완료 → 로딩 표시 제거 + 스와이프 활성화
+    // 6. 모든 렌더링이 완료된 후, 스와이프를 허용합니다.
     this.isInitialLoading = false;
-    devLog(`   ✅ 로딩 UI 제거 - 스와이프 ENABLED`);
-
-    // 🔄 STEP 3: 나머지 2주 백그라운드 로드 (비블로킹)
-    const bgDates = [dates[0], dates[6]];
-    devLog(
-      `   📦 [STEP3] BG 로드 시작: ${bgDates.map((d) => d.toLocaleDateString("ko-KR")).join(", ")}`,
-    );
-
-    (async () => {
-      for (const date of bgDates) {
-        const t1 = Date.now();
-        await this.loadWeekDataToCache(date);
-        devLog(
-          `   📦 [+${Date.now() - t1}ms] ${date.toLocaleDateString("ko-KR")}`,
-        );
-      }
-    })();
+    devLog(`   ✅ [STEP 3] 로딩 UI 제거 - 스와이프 활성화됨`);
   }
 
   getWeekCacheKey(date) {
@@ -1426,7 +962,7 @@ class Calendar {
   async loadWeekDataToCache(date) {
     const cacheKey = this.getWeekCacheKey(date);
 
-    // 이미 캐시에 있으면 스킵
+    // 1. 이미 캐시에 데이터가 있으면 즉시 반환
     if (this.weekDataCache.has(cacheKey)) {
       const cachedEvents = this.weekDataCache.get(cacheKey);
       devLog(
@@ -1435,67 +971,81 @@ class Calendar {
       return;
     }
 
-    devLog(
-      `   🔍 [캐시MISS] ${date.toLocaleDateString("ko-KR")} - Google Calendar 조회 시작`,
-    );
+    // 2. 💡 진행 중인 요청이 있으면, 새로운 요청을 보내지 않고 기존 요청이 끝나기를 기다림
+    if (this.weekDataPromises.has(cacheKey)) {
+      devLog(`   ⏳ [요청대기] ${date.toLocaleDateString("ko-KR")} - 이미 진행 중인 요청을 기다립니다.`);
+      return this.weekDataPromises.get(cacheKey);
+    }
 
-    const { start, end } = this.getWeekRange(date);
-    const roomIds = Array.from(this.selectedRooms);
+    // 3. 💡 새로운 요청을 시작하고, 다른 곳에서 이 요청을 기다릴 수 있도록 Promise를 등록
+    const loadPromise = this._fetchAndCacheWeekData(date, cacheKey);
+    this.weekDataPromises.set(cacheKey, loadPromise);
 
-    if (roomIds.length > 0) {
-      try {
-        // ✅ Google Calendar API 직접 호출
-        const params = new URLSearchParams({
-          roomIds: roomIds.join(","),
-          startDate: start.toISOString(),
-          endDate: end.toISOString(),
-        });
+    return loadPromise;
+  }
 
-        // 💡 로컬 개발 환경(localhost)에서는 운영 서버의 함수를 직접 호출합니다.
-        //    운영 서버에서는 기존처럼 상대 경로를 사용합니다.
-        const isLocal = window.location.hostname === 'localhost';
-        const productionUrl = 'https://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/get-week-events';
-        
-        const apiUrl = isLocal
-          ? `${productionUrl}?${params}`
-          : `/.netlify/functions/get-week-events?${params}`;
+  /**
+   * 💡 [신규] 실제 네트워크 요청 및 캐시 저장을 담당하는 내부 함수
+   * loadWeekDataToCache의 경쟁 상태를 해결하기 위해 분리되었습니다.
+   */
+  async _fetchAndCacheWeekData(date, cacheKey) {
+    try {
+      devLog(
+        `   🔍 [캐시MISS] ${date.toLocaleDateString("ko-KR")} - Google Calendar 조회 시작`,
+      );
 
-        const response = await fetch(apiUrl);
+      const { start, end } = this.getWeekRange(date);
+      const roomIds = Array.from(this.selectedRooms);
 
-        if (!response.ok) {
-          throw new Error(`API 응답 오류: ${response.status}`);
-        }
+      if (roomIds.length > 0) {
+          // ✅ Google Calendar API 직접 호출
+          const params = new URLSearchParams({
+            roomIds: roomIds.join(","),
+            startDate: start.toISOString(),
+            endDate: end.toISOString(),
+          });
 
-        const data = await response.json();
+          const isLocal = window.location.hostname === 'localhost';
+          const productionUrl = 'https://xn--xy1b23ggrmm5bfb82ees967e.com/.netlify/functions/get-week-events';
+          
+          const apiUrl = isLocal
+            ? `${productionUrl}?${params}`
+            : `/.netlify/functions/get-week-events?${params}`;
 
-        // Google Calendar 이벤트를 Calendar 포맷으로 변환
-        const events = [];
-        if (data.events) {
-          for (const [roomId, roomEvents] of Object.entries(data.events)) {
-            for (const event of roomEvents) {
-              events.push({
-                id: `${roomId}_${event.id}`, // 고유 ID 생성
-                title: event.title,
-                start: new Date(event.start),
-                end: new Date(event.end),
-                roomId: roomId,
-                description: event.description,
-                googleEventId: event.id,
-              });
+          const response = await fetch(apiUrl);
+
+          if (!response.ok) {
+            throw new Error(`API 응답 오류: ${response.status}`);
+          }
+
+          const data = await response.json();
+          const events = [];
+          if (data.events) {
+            for (const [roomId, roomEvents] of Object.entries(data.events)) {
+              for (const event of roomEvents) {
+                events.push({
+                  id: `${roomId}_${event.id}`,
+                  title: event.title,
+                  start: new Date(event.start),
+                  end: new Date(event.end),
+                  roomId: roomId,
+                  description: event.description,
+                  googleEventId: event.id,
+                });
+              }
             }
           }
-        }
-
-        this.weekDataCache.set(cacheKey, events);
-        devLog(
-          `   💾 [캐시저장] ${date.toLocaleDateString("ko-KR")} - ${events.length}개 이벤트 저장 (Google Calendar)`,
-        );
-      } catch (error) {
-        devLog(`   ❌ Google Calendar 조회 실패: ${error.message}`);
+          this.weekDataCache.set(cacheKey, events);
+          devLog(`   💾 [캐시저장] ${date.toLocaleDateString("ko-KR")} - ${events.length}개 이벤트 저장 (Google Calendar)`);
+      } else {
         this.weekDataCache.set(cacheKey, []);
       }
-    } else {
+    } catch (error) {
+      devLog(`   ❌ Google Calendar 조회 실패: ${error.message}`);
       this.weekDataCache.set(cacheKey, []);
+    } finally {
+      // 요청이 성공하든 실패하든, 추적하던 Promise를 반드시 제거
+      this.weekDataPromises.delete(cacheKey);
     }
   }
 
@@ -1619,7 +1169,8 @@ class Calendar {
 
     // Event layer - one container per day
     days.forEach((day, dayIndex) => {
-      const dayEvents = this.getEventsForDay(day);
+      const dayEvents = this.getEventsForDay(day, cachedEvents);
+
 
       // 주간 보기일 때만 날짜 사이 간격 조정 (일간 보기는 daysOverride 존재)
       let dayWidth, dayLeft;
@@ -1965,10 +1516,12 @@ class Calendar {
       { passive: false },
     );
 
-    backBtn.addEventListener("click", () => {
-      this.resetSwipeState();
+    backBtn.addEventListener("click", async () => { // 💡 async 추가
+      // 💡 [버그 수정] 정의되지 않은 함수(resetSwipeState) 호출을 수정하고, 비동기 렌더링을 기다립니다.
+      this.swipeState = 'IDLE';
+      devLog(`🔄 [상태리셋] 주간 보기로 복귀하며 스와이프 상태를 IDLE로 강제 설정합니다.`);
       this.currentView = "week";
-      this.render();
+      await this.render(); // 💡 await 추가
       // 돌아가기 버튼 제거
       backBtn.remove();
     });
@@ -2097,16 +1650,16 @@ class Calendar {
       });
   }
 
-  getEventsForDay(date) {
-    const dayStart = new Date(date);
+  getEventsForDay(day, eventsSource) {
+    const dayStart = new Date(day);
     dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(date);
+    const dayEnd = new Date(day);
     dayEnd.setHours(23, 59, 59, 999);
 
     // 여러 날에 걸친 이벤트를 하루 단위로 분할
     const dayEvents = [];
 
-    this.events.forEach((event) => {
+    eventsSource.forEach((event) => {
       // 이벤트가 이 날짜와 겹치는지 확인
       if (event.start < dayEnd && event.end > dayStart) {
         // 이 날짜에 해당하는 부분만 추출
