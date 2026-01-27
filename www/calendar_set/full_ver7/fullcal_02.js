@@ -86,39 +86,39 @@ function select_room_btn_function(aroom_name_key) {
 
   const allSlides = getLegacySlideCalendars(); // ✅ 모든 슬라이드 인스턴스를 가져옴
 
-roomKeys.forEach(key => {
-  allSlides.forEach(calInst => {
-    const sources = calInst.getEventSources().filter(src => src._raw?.id === key || src.id === key);
-    sources.forEach(src => src.remove());
+  roomKeys.forEach(key => {
+    allSlides.forEach(calInst => {
+      const sources = calInst.getEventSources().filter(src => src._raw?.id === key || src.id === key);
+      sources.forEach(src => src.remove());
+    });
   });
-});
 
   // 1. 기존 모든 소스 제거
   // roomKeys.forEach(key => {
   //   const existingSources = cal.getEventSources().filter(src => src._raw?.id === key || src.id === key);
   //   existingSources.forEach(src => src.remove());
   // });
-// 2. 선택한 룸 다시 로드 (모든 슬라이드에 적용)
+  // 2. 선택한 룸 다시 로드 (모든 슬라이드에 적용)
 
 
-if (aroom_name_key === 'all') {
-  roomKeys.forEach(key => {
-    const newSource = makeSource(key);
+  if (aroom_name_key === 'all') {
+    roomKeys.forEach(key => {
+      const newSource = makeSource(key);
+      allSlides.forEach(inst => inst.addEventSource(newSource));
+      currentRoomSelections[key] = true;
+    });
+    console.log("✅ 모든 룸 이벤트 로드 완료");
+  } else if (roomConfigs[aroom_name_key]) {
+    const newSource = makeSource(aroom_name_key);
     allSlides.forEach(inst => inst.addEventSource(newSource));
-    currentRoomSelections[key] = true;
-  });
-  console.log("✅ 모든 룸 이벤트 로드 완료");
-} else if (roomConfigs[aroom_name_key]) {
-  const newSource = makeSource(aroom_name_key);
-  allSlides.forEach(inst => inst.addEventSource(newSource));
-  currentRoomSelections[aroom_name_key] = true;
-  console.log("✅", aroom_name_key, "이벤트 로드 완료");
-} else {
-  console.warn("존재하지 않는 룸:", aroom_name_key);
-}
+    currentRoomSelections[aroom_name_key] = true;
+    console.log("✅", aroom_name_key, "이벤트 로드 완료");
+  } else {
+    console.warn("존재하지 않는 룸:", aroom_name_key);
+  }
 
 
-  
+
   // 🔁 체크박스 상태 업데이트
   const checkboxes = document.querySelectorAll('.room-toggle');
   checkboxes.forEach(checkbox => {
@@ -131,7 +131,7 @@ if (aroom_name_key === 'all') {
 
 function updateLayoutClass(aroom_name_key) {
   const body = document.body;
-console.log("css제어")
+  console.log("css제어")
   // 기존 클래스 제거
   body.classList.remove('view-all');
 
@@ -144,7 +144,7 @@ console.log("css제어")
 const roomOrder = ['Ahall', 'Bhall', 'Chall', 'Dhall', 'Ehall'];
 
 function initCalendar() {
- 
+
   calendar = new SwipeCalendar(calendarEl, {
     swipeLicenseKey: "9VHD7-R6WHI-MYE4S-KHDS8",
     swipeEffect: "slide",
@@ -159,18 +159,18 @@ function initCalendar() {
     slotEventOverlap: false,
     defaultView: "timeGridWeek",
 
-    googleCalendarApiKey: "AIzaSyBbUM1xQyvlqXCjVg-4W-ejFl_lqvPml24",
+    googleCalendarApiKey: "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8",
     plugins: ["interaction", "dayGrid", "googleCalendar", "timeGrid"],
-    contentHeight: 400,
+    height: 'parent',
     eventSources: roomKeys.filter(k => currentRoomSelections[k]).map(makeSource),
     customButtons: {
       weekview: {
         text: '주간',
         click: function () {
           calendar.changeView('timeGridWeek');
-         
+
         },
-        
+
       },
       monthview: {
         text: '월간',
@@ -203,41 +203,41 @@ function initCalendar() {
       right: 'nextMonth'
     },
     views: {
-      timeGridWeek: { 
-        
+      timeGridWeek: {
+
         columnHeaderHtml: (date) => {
           const days = ["일", "월", "화", "수", "목", "금", "토"];
           return `
             <span class='column-header-week'>${days[date.getDay()]}</span>
             <span class='column-header-day'>${date.getDate()}</span>`;
         },
-        
+
         titleFormat: { month: 'long' }, // "4월"
-        columnHeaderFormat: { weekday: "short", day: "numeric" } ,
+        columnHeaderFormat: { weekday: "short", day: "numeric" },
         dayMaxEvents: true,
         eventOrderStrict: true,  // eventOrder 기준을 엄격하게 적용
-        eventOrderStrict:false,
+        eventOrderStrict: false,
         // eventOrder: (a, b) => {
         //   const orderA = a.extendedProps.sortKey || a.extendedProps.roomKey || '';
         //   const orderB = b.extendedProps.sortKey || b.extendedProps.roomKey || '';
-        
+
         //   if (orderA < orderB) return -1;
         //   if (orderA > orderB) return 1;
-        
+
         //   return a.start - b.start;
         // },
       },
-        
+
       dayGridMonth: {
-        
+
         columnHeaderHtml: (date) => {
           const days = ["일", "월", "화", "수", "목", "금", "토"];
           const isSunday = date.getDay() === 0;
           return `<span class='month-header-weekday${isSunday ? ' sunday' : ''}'>${days[date.getDay()]}</span>`;
         },
-        eventLimit:1,
-        
-        eventLimitText: function(n) {
+        eventLimit: true,
+
+        eventLimitText: function (n) {
           return '+' + n; // "+15" 형식
         },
         eventOrder: (a, b) => {
@@ -249,19 +249,19 @@ function initCalendar() {
         }
       }
     },
-    
+
     eventClick: (info) => {
       info.jsEvent.preventDefault();
 
       animateEventClick(info); // ✨ 여기
 
 
-  
+
     },
-    
+
     datesRender: (info) => {
-         
-      
+
+
       try {
         const titleElement = document.querySelector("#calendarAll .fc-toolbar-view-title");
         if (titleElement) {
@@ -269,7 +269,7 @@ function initCalendar() {
           const parts = currentTitle.split(' ');
           console.log("현재 타이틀:", currentTitle);
           console.log("분리된 parts:", parts);
-    
+
           if (parts.length > 0) {
             // 배열의 마지막 요소가 월 정보일 가능성이 높음
             const lastPart = parts[parts.length - 1];
@@ -280,48 +280,48 @@ function initCalendar() {
         } else {
           console.warn("⚠️ 타이틀 요소를 찾을 수 없습니다.");
         }
-    
+
       } catch (err) {
         console.error("❌ 타이틀 처리 중 오류:", err);
       }
-    
-// ⭐ [FullCalendar 내장 콜백을 활용한 스타일 제어] ⭐
-      
+
+      // ⭐ [FullCalendar 내장 콜백을 활용한 스타일 제어] ⭐
+
       // 화면 폭 기준 설정 (1000px)
-      const DESKTOP_THRESHOLD = 1000; 
+      const DESKTOP_THRESHOLD = 1000;
       const isLargeScreen = window.innerWidth > DESKTOP_THRESHOLD; // 1000px 초과인지 확인
-      
+
       // 캘린더 tbody 요소 선택
       const tbodyEl = document.querySelector("#calendarAll .fc-timeGridWeek-view .fc-timeGrid .fc-body tbody, #calendarAll .fc-dayGridMonth-view .fc-body");
-      
+
       if (info.view.type === 'dayGridMonth') {
         console.log('월간');
         if (tbodyEl) {
           if (isLargeScreen) {
             // 🟢 월간 뷰 AND 1000px 초과일 때 50% 적용
-            tbodyEl.style.width = '33.3%'; 
-            console.log("✅ 월간 뷰 (1000px 초과): .fc tbody width 50% 적용");
+            // tbodyEl.style.width = '33.3%';
+            // console.log("✅ 월간 뷰 (1000px 초과): .fc tbody width 50% 적용");
           } else {
             // 🟡 월간 뷰 AND 1000px 이하일 때 width 초기화 (100%로 동작)
-            tbodyEl.style.width = ''; 
+            tbodyEl.style.width = '';
             console.log("✅ 월간 뷰 (1000px 이하): .fc tbody width 초기화 (100%)");
           }
         }
       } else if (info.view.type === 'timeGridWeek') {
-        console.log('주간'); 
+        console.log('주간');
         if (tbodyEl) {
           // 🔵 주간 뷰일 때는 항상 width 초기화 (100%로 동작)
-          tbodyEl.style.width = ''; 
+          tbodyEl.style.width = '';
           console.log("✅ 주간 뷰: .fc tbody width 초기화 (100%)");
         }
       }
 
       setTimeout(updateSourcesDynamicallyAllSlides, 0);
     },
-    eventRender: function(info) {
+    eventRender: function (info) {
       const viewType = info.view.type;  // 'timeGridWeek', 'dayGridMonth' 등
 
-  
+
       if (viewType === 'dayGridMonth') {
         // 월간 뷰에서는 .fc-day.fc-today에 삼각형 표시
         document.querySelectorAll('.fc-day.fc-today').forEach((el) => {
@@ -330,7 +330,7 @@ function initCalendar() {
           el.appendChild(triangle);
         });
       }
-      
+
       if (viewType === 'timeGridWeek') {
         // 주간 뷰에서는 .fc-day-header.fc-today에만 삼각형 표시
         document.querySelectorAll('.fc-day-header.fc-today').forEach((el) => {
@@ -348,18 +348,18 @@ function initCalendar() {
       const roomName = ev.extendedProps.roomName || '';
       const desc = ev.extendedProps.description || '';
       const fmt = (d) => d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
-    
+
       // 정규식으로 description에서 정보 추출
-  
-    
+
+
       const extract = (label) => {
         const match = desc.match(new RegExp(`${label}:\\s*([^\n]+)`));
         return match ? match[1].trim() : '';
       };
-      
+
       let 예약자명 = extract("예약자명");
       예약자명 = 예약자명.replace(/님+$/, '') + '님';  // ⭐중복 처리
-      
+
       const 예약상품 = extract("예약상품");
       const 사용일자 = extract("사용일자");
       const 시작시간 = extract("시작시간");
@@ -382,13 +382,13 @@ function initCalendar() {
           <div class="custom-info"> ${예약정보}</div>
         </div>
       `;
-    
+
       info.el.innerHTML = html;
     },
-   
-    eventLimitClick: function(cellInfo) {
+
+    eventLimitClick: function (cellInfo) {
       console.log("More clicked!", cellInfo);
-    
+
       const popup = document.createElement('div');
       popup.className = 'fc-more-popover';
       popup.style.position = 'fixed';
@@ -405,7 +405,7 @@ function initCalendar() {
       popup.style.transform = 'translate(-50%, -50%)';
       popup.style.display = 'flex';
       popup.style.flexDirection = 'column';
-    
+
       const backdrop = document.createElement('div');
       backdrop.className = 'fc-more-backdrop';
       backdrop.style.position = 'fixed';
@@ -415,11 +415,11 @@ function initCalendar() {
       backdrop.style.height = '100vh';
       backdrop.style.backgroundColor = 'rgba(0, 0, 0, 0.56)';
       backdrop.style.zIndex = 9998;
-    
+
       const getColor = (roomKey) => {
         return roomConfigs[roomKey]?.color || '#ccc';
       };
-    
+
       const fmt = (d) => {
         if (!d) return '';
         const localDate = new Date(d);
@@ -430,7 +430,7 @@ function initCalendar() {
           hour12: false
         });
       };
-    
+
       const formatKoreanDate = (dateInput) => {
         if (!dateInput) return '';
         let dateObj;
@@ -444,11 +444,11 @@ function initCalendar() {
         const day = dateObj.getDate();
         return `${month}월 ${day}일`;
       };
-    
+
       const rawDate = cellInfo.date || (cellInfo.dayEl?.getAttribute('data-date')) || '';
       const dateObj = new Date(rawDate);
       const dateText = formatKoreanDate(rawDate);
-    
+
       // ✨ 날짜+버튼 컨테이너
       const dateContainer = document.createElement('div');
       dateContainer.style.padding = '10px';
@@ -460,10 +460,10 @@ function initCalendar() {
       dateContainer.style.display = 'flex';
       dateContainer.style.justifyContent = 'space-between';
       dateContainer.style.alignItems = 'center';
-    
+
       const dateSpan = document.createElement('span');
       dateSpan.innerText = `📅 ${dateText}`;
-    
+
       const weekBtn = document.createElement('button');
       weekBtn.innerText = "주간 보기";
       weekBtn.style.padding = '2px 6px';
@@ -473,7 +473,7 @@ function initCalendar() {
       weekBtn.style.color = 'white';
       weekBtn.style.border = 'none';
       weekBtn.style.borderRadius = '4px';
-    
+
       // ✨ 버튼 클릭 시 해당 날짜로 이동 후 주간뷰로
       weekBtn.addEventListener('click', () => {
         calendar.gotoDate(dateObj); // 해당 날짜로 이동
@@ -481,16 +481,16 @@ function initCalendar() {
         popup.remove();
         backdrop.remove();
       });
-      
-    
+
+
       dateContainer.appendChild(dateSpan);
       dateContainer.appendChild(weekBtn);
-    
+
       const eventListDiv = document.createElement('div');
       eventListDiv.style.flexGrow = '1';
       eventListDiv.style.overflowY = 'auto';
       eventListDiv.style.padding = '10px';
-    
+
       const eventListHTML = (cellInfo.segs || []).map(seg => {
         const roomKey = seg.eventRange.def.extendedProps?.roomKey || '';
         const color = getColor(roomKey);
@@ -498,14 +498,14 @@ function initCalendar() {
         const roomName = seg.eventRange.def.extendedProps?.roomName || '';
         const start = seg.eventRange.instance?.range?.start;
         const end = seg.eventRange.instance?.range?.end;
-    
+
         let timeText = '';
         if (start && end) {
           timeText = `${fmt(new Date(start))} ~ ${fmt(new Date(end))}`;
         } else {
           timeText = '시간정보 없음';
         }
-    
+
         return `
           <div style="font-size:10px;margin-bottom:8px;padding:6px;background-color:${color};color:#000;border-radius:6px;">
             <div style="font-size:14px;font-weight:bold;">🕒 ${timeText} ${roomName}</div>
@@ -513,15 +513,15 @@ function initCalendar() {
           </div>
         `;
       }).join('');
-    
+
       eventListDiv.innerHTML = eventListHTML;
-    
+
       popup.appendChild(dateContainer);
       popup.appendChild(eventListDiv);
-    
+
       document.body.appendChild(backdrop);
       document.body.appendChild(popup);
-    
+
       setTimeout(() => {
         document.addEventListener('click', function once() {
           popup.remove();
@@ -529,7 +529,7 @@ function initCalendar() {
           document.removeEventListener('click', once);
         });
       }, 100);
-    
+
       return false;
     },
     eventTimeFormat: { hour: '2-digit', minute: '2-digit', meridiem: false }

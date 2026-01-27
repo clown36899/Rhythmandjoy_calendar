@@ -1,7 +1,7 @@
 @media (max-width:700px) {
 
   /*가로 너비가 600px 이하일 때 아래 스타일 적용*/
-  
+
 
   html,
 
@@ -25,7 +25,7 @@
 
 
   #fixed-top {
-     display: flex;
+    display: flex;
     height: 8vh;
     height: calc(var(--vh, 1vh) * 8);
     flex-direction: row;
@@ -138,10 +138,7 @@
     /* box-shadow: 0 -2px 1px 0px #0000006b inset; */
 
   }
-  .fc-body{
-    top:calc(var(--vh, 1vh) * 7) !important;
-    position: absolute;
-  }
+
   #loading_bar_base {
     position: absolute;
     width: 100%;
@@ -152,6 +149,7 @@
     background: #000000;
     z-index: 999;
   }
+
   #bottom {
     position: fixed;
     background-color: #414141;
@@ -171,24 +169,26 @@
     z-index: 99;
     align-items: center;
   }
-  .daylisttop1{
+
+  .daylisttop1 {
     display: flex;
     /* height: 100%; */
     /* z-index: 9999; */
     position: relative;
-    
+
     /* top: 15vh; */
     flex-wrap: nowrap;
     align-content: space-around;
     flex-direction: row;
     justify-content: space-around;
-    
-  }   
+
+  }
+
   /* .fc-widget-header{
     height: 0px !important;
     width: 0px !important;
   } */
-  #daylisttop2{
+  #daylisttop2 {
     width: 100%;
     overflow: hidden;
     position: fixed;
@@ -199,9 +199,9 @@
     top: calc(var(--vh, 1vh) * 8);
     flex-wrap: nowrap;
     height: calc(var(--vh, 1vh) * 7);
-    }
-  
-  .daylisttop3{
+  }
+
+  .daylisttop3 {
     display: flex;
     background: #353535;
     color: #ffffff;
@@ -213,13 +213,14 @@
     margin: 0;
     width: 100%;
     /* top: calc(var(--vh, 1vh) * 8.05); */
-    
+
     height: calc(var(--vh, 1vh) * 7);
     flex-direction: row;
     justify-content: space-between;
   }
-  #emptyspase{
-  width: calc(var(--vh, 1vh) * 8) !important; 
+
+  #emptyspase {
+    width: calc(var(--vh, 1vh) * 8) !important;
     position: relative;
     height: calc(var(--vh, 1vh) * 24) !important;
     vertical-align: middle;
@@ -228,16 +229,18 @@
     white-space: nowrap;
     background: #2f2f2f;
 
-    
+
   }
+
   /*달력시간표시부 내용넓이*/
-  .edithetimelistleft{
+  .edithetimelistleft {
     pointer-events: none;
     overflow: hidden;
 
-    
+
   }
-  .leftmenutime{
+
+  .leftmenutime {
     border: 0px solid #000000;
     position: relative;
     left: 0;
@@ -255,34 +258,42 @@
     z-index: 9;
     flex-direction: column;
     pointer-events: none;
-    
+
   }
-  .lefttfffime{
+
+  .lefttfffime {
     border-color: #404040;
     border-bottom-width: 1px;
     border-bottom-style: solid;
     height: 10px;
   }
-  .leftslogbigt{}
 
- .fc-axis{
-  width: calc(var(--vh, 1vh) * 8) !important;
+  .leftslogbigt {}
+
+  .fc-axis {
+    width: calc(var(--vh, 1vh) * 8) !important;
     vertical-align: middle;
     white-space: nowrap;
     font-size: 0.5em;
-    color: #202020; /*지워진 뒷쪽 글자색 시간 타임*/
+    color: #202020;
+    /*지워진 뒷쪽 글자색 시간 타임*/
     /* background: #191919 !important; */
     border-color: #1d1d1d !important;
-    
-}
-.fc-time-grid td /*본문 세로줄*/ {
-  border: 1px solid #252525 !important;
-}
+
+  }
+
+  .fc-time-grid td
+
+  /*본문 세로줄*/
+    {
+    border: 1px solid #252525 !important;
+  }
 
 }
+
 /*///////////////////////////////////////////////////////////////////////////////////////////////////////////*/
 
-.center-modal{
+.center-modal {
   visibility: hidden;
   transition: 700ms;
   opacity: 0;
@@ -304,25 +315,28 @@
   flex-direction: row;
   box-shadow: 1px 14px 6px 3px #0000004d;
 }
-.logobackground{
+
+.logobackground {
   width: 100%;
   height: 100%;
   opacity: 0;
   transition: 700ms;
   position: absolute;
-  visibility:hidden;
+  visibility: hidden;
   top: 0;
   left: 0;
   z-index: 9999;
   background: #000000e3;
 }
-#logoimga{
+
+#logoimga {
   overflow: hidden;
-  width: 20px;  
+  width: 20px;
   width: 100%;
   height: 100%;
 }
-.imgsignexid img{
+
+.imgsignexid img {
   position: fixed;
   /* top: calc(var(--vh, 1vh) * 91); */
   /* left: 0; */
@@ -473,19 +487,19 @@
   z-index: 1;
 }
 
-.fc-time{
+.fc-time {
   background: #00cf0700;
-  
+
 }
 
 /* 달력높이조절*/
-.fc-scroller { 
+.fc-scroller {
   background: #202020;
   height: calc(var(--vh, 1vh) * 75) !important;
   margin: 3px 0 0 0;
 }
 
-.fc-slats td {  
+.fc-slats td {
   height: calc(var(--vh, 1vh) * 3) !important;
 }
 
@@ -494,7 +508,7 @@
   overflow: hidden;
   height: calc(var(--vh, 1vh) * 75) !important;
 }
- 
+
 .fc-head .fc-row .fc-widget-header {
   /* box-shadow: 0px 2px 5px #9e9e9e !important;
   z-index: 98999999999999999999;
@@ -513,47 +527,57 @@
 .fc-view-container .fc-view,
 .fc-view>table {
   height: 74vh !important;
-  height: calc(var(--vh, 1vh) * 74) !important;
+  height: calc(var(--vh, 1vh) * 78) !important;
 }
 
- .fc-head tr{
+.fc-head tr {
   border-color: #bbff00;
-  
+
 }
 
 /* 해더칼라*/
 .fc th {
-  
-  border: 0 solid #0048fd ;
+
+  border: 0 solid #0048fd;
   text-align: center;
   color: white;
   background-color: #2f2f2f;
-  
-  
+
+
 }
+
 .fc-head {
-  box-shadow: 0px 13px 6px -6px  #1a1a1a;
-    z-index: 999999999999;
-    position: absolute;
-    background: #2f2f2f;
+  box-shadow: 0px 13px 6px -6px #1a1a1a;
+  z-index: 999999999999;
+  position: absolute;
+  background: #2f2f2f;
 }
+
 /*top툴바 그림자*/
 .navbar-dark {
   /* box-shadow: 0px 2px 3px 0px #a2a2a2; */
   border: 0px solid black;
   background-color: #2f2f2f !important;
-}/*해더 라인*/
+}
 
- .fc td/*전체라인*/ {
+/*해더 라인*/
+
+.fc td
+
+/*전체라인*/
+  {
   /* border-style: solid; */
   /* border-width: 1px; */
   padding: 0;
   border: 0px solid #02ffc8 !important;
   vertical-align: top;
 }
-.fc-time-grid .fc-slats td{ /*본문 가로줄 해더영향안주는*/
+
+.fc-time-grid .fc-slats td {
+  /*본문 가로줄 해더영향안주는*/
   border: 1px solid #252525 !important;
 }
+
 .fc tbody {
   /* border-style: solid; */
   /* border-width: 1px; */
@@ -562,55 +586,78 @@
   border: 0px solid #7b69c9 !important;
   vertical-align: top;
 }
+
 /* tbody, td, tfoot, th, thead, tr {  
 } */
-.fc th /*해더세로줄*/ {
+.fc th
+
+/*해더세로줄*/
+  {
   border-color: inherit;
   border-style: solid;
   border-width: 0;
   border: 0px solid #bd0707 !important;
 }
-.fc tbody/* 달력 바디 전체외곽선*/ {
+
+.fc tbody
+
+/* 달력 바디 전체외곽선*/
+  {
   border-color: inherit;
   border-style: solid;
   border-width: 0;
   border: 0px solid #bd0707 !important;
 }
-.fc-unthemed th/*본문줄 해더상단까지닿아서 안씀*/ {
- 
+
+.fc-unthemed th
+
+/*본문줄 해더상단까지닿아서 안씀*/
+  {
+
   border-color: #f203ff;
 }
-.fc-widget-content{
+
+.fc-widget-content {
   border: 1px solid rgb(0, 204, 255);
 }
- .fc-unthemed td{
+
+.fc-unthemed td {
   border-color: #60a1a600;
 }
-.fc-time-grid-event-inset{
-       box-shadow: 0px 0px 0px 1px rgba(255, 255, 255, 0) !important;
+
+.fc-time-grid-event-inset {
+  box-shadow: 0px 0px 0px 1px rgba(255, 255, 255, 0) !important;
 }
-.fc-unthemed td.fc-today{
-  background: #3737372d; /*오늘날 표기색바꿈*/
+
+.fc-unthemed td.fc-today {
+  background: #3737372d;
+  /*오늘날 표기색바꿈*/
 }
+
 /*time left*/
-.textcolorA{
+.textcolorA {
   color: #c1c1c1 !important;
-    background: #2f2f2f;
-    font-size: 0.5rem !important;
-    
+  background: #2f2f2f;
+  font-size: 0.5rem !important;
+
 }
-.fc-view, .fc-view>table {
+
+.fc-view,
+.fc-view>table {
   position: relative;
   z-index: 1;
   background-color: #252525 !important;
 }
-.fc-row .fc-today {  /* 오늘날짜 배경 라운드*/
+
+.fc-row .fc-today {
+  /* 오늘날짜 배경 라운드*/
   border-radius: 13px !important;
   background-color: rgb(88, 129, 167) !important;
   color: rgb(250, 250, 250) !important;
 }
+
 /* 해더폰트사이즈 위치조정*/
-.column-header-week{
+.column-header-week {
   font-size: 0.6rem;
   /* padding: 0; */
   /* display: block; */
@@ -618,19 +665,23 @@
   top: 5px;
   margin: -2px;
 }
-.column-header-day{
+
+.column-header-day {
   font-size: 1rem;
 }
-.fc-widget-header span{
-  display: block;/* 이게 블럭이어야 span이 위아래로 나뉨*/
-  
+
+.fc-widget-header span {
+  display: block;
+  /* 이게 블럭이어야 span이 위아래로 나뉨*/
+
 }
-#indicatorid{
-  top:10px;
-border-width: 5px 0 5px 6px;
-border-top-color: transparent;
-border-bottom-color: transparent;
-z-index: 99;
+
+#indicatorid {
+  top: 10px;
+  border-width: 5px 0 5px 6px;
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  z-index: 99;
 }
 
 @media (min-width:700px) {
@@ -644,6 +695,7 @@ z-index: 99;
     background: #000000;
     z-index: 999;
   }
+
   #bottom {
     position: fixed;
     background-color: #545454;
@@ -662,72 +714,77 @@ z-index: 99;
     z-index: 99;
     align-items: center;
   }
-.daylisttop1{
-  display: flex;
-  /* height: 100%; */
-  /* z-index: 9999; */
-  position: relative;
-  /* top: 15vh; */
-  flex-wrap: nowrap;
-  align-content: space-around;
-  flex-direction: row;
-  justify-content: space-around;
-}   
-#daylisttop2{
-  width: 700px;
-  /* overflow: hidden; */
-  position: fixed;
-  z-index: 99;
-  display: flex;
-  justify-content: flex-start;
-  flex-direction: row;
-  top: calc(var(--vh, 1vh) * 8);
-  flex-wrap: nowrap;
-  height: calc(var(--vh, 1vh) * 7);
+
+  .daylisttop1 {
+    display: flex;
+    /* height: 100%; */
+    /* z-index: 9999; */
+    position: relative;
+    /* top: 15vh; */
+    flex-wrap: nowrap;
+    align-content: space-around;
+    flex-direction: row;
+    justify-content: space-around;
   }
 
-.daylisttop3{
-  display: flex;
-  background: #353535;
-  color: #ffffff;
-  font-size: 82%;
-  right: 0;
-  text-align: center;
-  /* left: 0; */
-  position: relative;
-  /* padding: 9px 0 6px 0; */
-  /* margin: 0; */
-  width: 100%;
-  /* top: calc(var(--vh, 1vh) * 8.05); */
-  /* height: calc(var(--vh, 1vh) * 7) !important; */
-  justify-content: space-between;
-  align-items: center;
-  flex-direction: row;
-  flex-wrap: nowrap;
-}
-#emptyspase{
-  width: calc(var(--vh, 1vh) * 8) !important;
-  position: relative;
-  vertical-align: middle;
-  white-space: nowrap;
-  background: #3f3f3f;
-}
-/*달력시간표시부 내용넓이*/
+  #daylisttop2 {
+    width: 700px;
+    /* overflow: hidden; */
+    position: fixed;
+    z-index: 99;
+    display: flex;
+    justify-content: flex-start;
+    flex-direction: row;
+    top: calc(var(--vh, 1vh) * 8);
+    flex-wrap: nowrap;
+    height: calc(var(--vh, 1vh) * 7);
+  }
 
-.fc .fc-axis{
-  width: 55px !important;
-  vertical-align: middle;
-  padding: 0 3px;
-  white-space: nowrap;
-  font-size: 0.5em;
-  background: #2f2f2f !important;
+  .daylisttop3 {
+    display: flex;
+    background: #353535;
+    color: #ffffff;
+    font-size: 82%;
+    right: 0;
+    text-align: center;
+    /* left: 0; */
+    position: relative;
+    /* padding: 9px 0 6px 0; */
+    /* margin: 0; */
+    width: 100%;
+    /* top: calc(var(--vh, 1vh) * 8.05); */
+    /* height: calc(var(--vh, 1vh) * 7) !important; */
+    justify-content: space-between;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: nowrap;
+  }
+
+  #emptyspase {
+    width: calc(var(--vh, 1vh) * 8) !important;
+    position: relative;
+    vertical-align: middle;
+    white-space: nowrap;
+    background: #3f3f3f;
+  }
+
+  /*달력시간표시부 내용넓이*/
+
+  .fc .fc-axis {
+    width: 55px !important;
+    vertical-align: middle;
+    padding: 0 3px;
+    white-space: nowrap;
+    font-size: 0.5em;
+    background: #2f2f2f !important;
     color: #c1c1c1;
- border: 1px solid #353535 !important;
-    border-color: #1d1d1d !important; /*달력 시간표시 오른쪽 볼더라인*/
-}
+    border: 1px solid #353535 !important;
+    border-color: #1d1d1d !important;
+    /*달력 시간표시 오른쪽 볼더라인*/
+  }
 }
 
-.daylistv{
+.daylistv {
   background: #353535;
   width: 14.2%;
   text-align: center;
@@ -743,7 +800,7 @@ z-index: 99;
   display: flex;
   /* margin-left: 1px; */
   font-size: 1rem;
-  margin-right:0;
+  margin-right: 0;
   color: var(--bs-navbar-brand-color);
   text-decoration: none;
   white-space: nowrap;
@@ -753,15 +810,24 @@ z-index: 99;
   justify-content: flex-start;
   align-items: flex-end;
 }
+
 /* 해드툴바패딩영역*/
 .swc .swc-toolbar {
   padding: 0px !important;
 }
-#titleMonth{
-  color:#ffffff;
+
+#titleMonth {
+  color: #ffffff;
   /* margin-right: 3px; */
 }
-.navbar>.container, .navbar>.container-fluid, .navbar>.container-lg, .navbar>.container-md, .navbar>.container-sm, .navbar>.container-xl, .navbar>.container-xxl {
+
+.navbar>.container,
+.navbar>.container-fluid,
+.navbar>.container-lg,
+.navbar>.container-md,
+.navbar>.container-sm,
+.navbar>.container-xl,
+.navbar>.container-xxl {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -769,13 +835,15 @@ z-index: 99;
   align-content: space-around;
   flex-wrap: wrap;
 }
+
 .navbar-toggler:focus {
   text-decoration: none;
   outline: 0;
   box-shadow: 0 0 0 var(--bs-navbar-toggler-focus-width);
 }
+
 .navbar-toggler {
-  padding: 0px;  
+  padding: 0px;
   position: relative;
   font-size: 1rem;
   line-height: 1;
@@ -791,9 +859,11 @@ z-index: 99;
   font-weight: 600;
   margin: 0;
 }
-.jo-right{
+
+.jo-right {
   display: flex;
 }
+
 #loading_bar {
 
   -webkit-transform: translateZ(0);
@@ -840,7 +910,7 @@ z-index: 99;
 @media (min-width:700px) {
 
   /*가로 너비가 600px 이하일 때 아래 스타일 적용*/
-  
+
 
   html,
 
@@ -864,7 +934,7 @@ z-index: 99;
 
 
   #fixed-top {
-     display: flex;
+    display: flex;
     height: 8vh;
     height: calc(var(--vh, 1vh) * 8);
     flex-direction: row;
@@ -977,10 +1047,12 @@ z-index: 99;
     /* box-shadow: 0 -2px 1px 0px #0000006b inset; */
 
   }
-  .fc-body{
-    top:calc(var(--vh, 1vh) * 7) !important;
+
+  .fc-body {
+    top: calc(var(--vh, 1vh) * 7) !important;
     position: absolute;
   }
+
   #loading_bar_base {
     position: absolute;
     width: 100%;
@@ -991,6 +1063,7 @@ z-index: 99;
     background: #000000;
     z-index: 999;
   }
+
   #bottom {
     position: fixed;
     background-color: #414141;
@@ -1011,24 +1084,26 @@ z-index: 99;
     z-index: 99;
     align-items: center;
   }
-  .daylisttop1{
+
+  .daylisttop1 {
     display: flex;
     /* height: 100%; */
     /* z-index: 9999; */
     position: relative;
-    
+
     /* top: 15vh; */
     flex-wrap: nowrap;
     align-content: space-around;
     flex-direction: row;
     justify-content: space-around;
-    
-  }   
+
+  }
+
   /* .fc-widget-header{
     height: 0px !important;
     width: 0px !important;
   } */
-  #daylisttop2{
+  #daylisttop2 {
     width: 100%;
     overflow: hidden;
     position: fixed;
@@ -1039,9 +1114,9 @@ z-index: 99;
     top: calc(var(--vh, 1vh) * 8);
     flex-wrap: nowrap;
     height: calc(var(--vh, 1vh) * 7);
-    }
-  
-  .daylisttop3{
+  }
+
+  .daylisttop3 {
     display: flex;
     background: #353535;
     color: #ffffff;
@@ -1053,13 +1128,14 @@ z-index: 99;
     margin: 0;
     width: 100%;
     /* top: calc(var(--vh, 1vh) * 8.05); */
-    
+
     height: calc(var(--vh, 1vh) * 7);
     flex-direction: row;
     justify-content: space-between;
   }
-  #emptyspase{
-  width: calc(var(--vh, 1vh) * 8) !important; 
+
+  #emptyspase {
+    width: calc(var(--vh, 1vh) * 8) !important;
     position: relative;
     height: calc(var(--vh, 1vh) * 24) !important;
     vertical-align: middle;
@@ -1068,16 +1144,18 @@ z-index: 99;
     white-space: nowrap;
     background: #2f2f2f;
 
-    
+
   }
+
   /*달력시간표시부 내용넓이*/
-  .edithetimelistleft{
+  .edithetimelistleft {
     pointer-events: none;
     overflow: hidden;
 
-    
+
   }
-  .leftmenutime{
+
+  .leftmenutime {
     border: 0px solid #000000;
     position: relative;
     left: 0;
@@ -1095,27 +1173,35 @@ z-index: 99;
     z-index: 9;
     flex-direction: column;
     pointer-events: none;
-    
+
   }
-  .lefttfffime{
+
+  .lefttfffime {
     border-color: #404040;
     border-bottom-width: 1px;
     border-bottom-style: solid;
     height: 10px;
   }
-  .leftslogbigt{}
 
- .fc-axis{
-  width: calc(var(--vh, 1vh) * 8) !important;
+  .leftslogbigt {}
+
+  .fc-axis {
+    width: calc(var(--vh, 1vh) * 8) !important;
     vertical-align: middle;
     white-space: nowrap;
     font-size: 0.5em;
-    color: #202020; /*지워진 뒷쪽 글자색 시간 타임*/
+    color: #202020;
+    /*지워진 뒷쪽 글자색 시간 타임*/
     /* background: #191919 !important; */
     border-color: #1d1d1d !important;
-    
+
+  }
+
 }
 
-}.fc-time-grid td /*본문 세로줄*/ {
+.fc-time-grid td
+
+/*본문 세로줄*/
+  {
   border: 1px solid #252525 !important;
 }
