@@ -67,7 +67,7 @@
 
   <link href="style.css" rel="stylesheet" />
   <link href="./packages/timegrid/main.css" rel="stylesheet" />
- 
+
   <link href="./home_infopage/popup.css" rel="stylesheet" type="text/css" />
 
   <script src="./packages/timegrid/main.js"></script>
@@ -139,14 +139,10 @@
 
   <div id="main_room_title"></div>
   <div id="calendarWrapper" style="width: 100%; height: 100%;">
-  <div id="calendarAll" class="itemflex"></div>
+    <div id="calendarAll" class="itemflex"></div>
 
-    <!-- ✅ 새로 추가: 오른쪽 영역 iframe -->
-    <iframe 
-      id="sideFrame"
-      src="https://voluble-mochi-a91544.netlify.app/" 
-      style="flex: 1; border: none; width: 33.33%; height: 100%; background: #111; right: 0;position: absolute;z-index: 9;border-left: 1px solid #5e5e5e;"
-    ></iframe>
+    <iframe id="sideFrame" src="./left-menu.html"
+      style="flex: 1; border: none; width: 33.33%; height: 100%; background: #111; right: 0;position: absolute;z-index: 9;border-left: 1px solid #5e5e5e;"></iframe>
   </div>
   <div class="offcanvas offcanvas-end text-bg-dark" tabindex="-1" id="offcanvasDarkNavbar"
     aria-labelledby="offcanvasDarkNavbarLabel">
@@ -197,7 +193,7 @@
         <br />
         <br />
 
- 
+
       </ul>
     </div>
   </div>
@@ -563,30 +559,30 @@
       calendar.changeView("dayGridMonth");
       //기능설명 풀캘린더에서 쓸수있는 기능 찾는 코드
       console.log(Object.getOwnPropertyNames(Object.getPrototypeOf(calendar?._curCal)));
-    
+
 
     });
 
     document.getElementById("weekview").addEventListener("click", function () {
       calendar.changeView("timeGridWeek");
-  
+
     });
 
     document.getElementById("prev").addEventListener("click", function () {
       calendar.prev();
-    
+
       close_bottom()
     });
     document.getElementById("todaybtn").addEventListener("click", function () {
       calendar.today();
       console.log(Object.getOwnPropertyNames(Object.getPrototypeOf(calendar)));
-     
+
       close_bottom()
     });
     document.getElementById("nextbtn").addEventListener("click", function () {
       calendar.next();
       close_bottom()
-     
+
 
     });
 
@@ -782,45 +778,45 @@
 
 
   <script>// ⭐ [새 함수: 월간 뷰 width 적용 로직 - datesRender와 resize 이벤트에서 모두 사용] ⭐
-   // ⭐ [새 함수: 월간 뷰 width 적용 로직 - datesRender와 resize 이벤트에서 모두 사용] ⭐
-function applyMonthViewWidth() {
-    // 캘린더 인스턴스가 존재하고 뷰 정보가 있는지 확인
-    if (typeof calendar === 'undefined' || !calendar || !calendar.view) {
+    // ⭐ [새 함수: 월간 뷰 width 적용 로직 - datesRender와 resize 이벤트에서 모두 사용] ⭐
+    function applyMonthViewWidth() {
+      // 캘린더 인스턴스가 존재하고 뷰 정보가 있는지 확인
+      if (typeof calendar === 'undefined' || !calendar || !calendar.view) {
         return;
-    }
-    
-    const currentView = calendar.view;
-    const DESKTOP_THRESHOLD = 1000; 
-    const isLargeScreen = window.innerWidth > DESKTOP_THRESHOLD; // 1000px 초과인지 확인
-    
-    // 💡 수정된 선택자: 모든 슬라이드에서 캘린더 tbody 요소를 모두 가져옴
-    // SwipeCalendar는 기본 캘린더 외에 이전/다음 캘린더를 DOM에 미리 로드합니다.
-    // 따라서 #calendarAll 내부의 모든 뷰 컨테이너의 .fc-body를 선택합니다.
-    const tbodyEls = document.querySelectorAll("#calendarAll .fc-body"); 
-    
-    // 선택된 요소의 개수를 확인합니다. (기대값: 3개 또는 그 이상)
-    console.log(`⭐ 발견된 캘린더 tbody/fc-body 요소 개수: ${tbodyEls.length}개`);
-    
-    // 3개의 요소에 모두 스타일을 적용하기 위해 반복문을 사용합니다.
-    tbodyEls.forEach((tbodyEl, index) => {
+      }
+
+      const currentView = calendar.view;
+      const DESKTOP_THRESHOLD = 1000;
+      const isLargeScreen = window.innerWidth > DESKTOP_THRESHOLD; // 1000px 초과인지 확인
+
+      // 💡 수정된 선택자: 모든 슬라이드에서 캘린더 tbody 요소를 모두 가져옴
+      // SwipeCalendar는 기본 캘린더 외에 이전/다음 캘린더를 DOM에 미리 로드합니다.
+      // 따라서 #calendarAll 내부의 모든 뷰 컨테이너의 .fc-body를 선택합니다.
+      const tbodyEls = document.querySelectorAll("#calendarAll .fc-body");
+
+      // 선택된 요소의 개수를 확인합니다. (기대값: 3개 또는 그 이상)
+      console.log(`⭐ 발견된 캘린더 tbody/fc-body 요소 개수: ${tbodyEls.length}개`);
+
+      // 3개의 요소에 모두 스타일을 적용하기 위해 반복문을 사용합니다.
+      tbodyEls.forEach((tbodyEl, index) => {
         // 스타일을 적용할 기본값 (초기화)
-        let newWidth = ''; 
+        let newWidth = '';
         let logMessage = '';
 
         if (currentView.type === 'dayGridMonth') {
-            if (isLargeScreen) {
-                // 🟢 월간 뷰 AND 1000px 초과일 때 50% 적용
-                newWidth = '33.3%'; 
-                logMessage = `✅ 월간 뷰 (1000px 초과): 50% 적용`;
-            } else {
-                // 🟡 월간 뷰 AND 1000px 이하일 때 width 초기화 (100%로 동작)
-                newWidth = ''; 
-                logMessage = `✅ 월간 뷰 (1000px 이하): 초기화 (100%)`;
-            }
+          if (isLargeScreen) {
+            // 🟢 월간 뷰 AND 1000px 초과일 때 50% 적용
+            newWidth = '33.3%';
+            logMessage = `✅ 월간 뷰 (1000px 초과): 50% 적용`;
+          } else {
+            // 🟡 월간 뷰 AND 1000px 이하일 때 width 초기화 (100%로 동작)
+            newWidth = '';
+            logMessage = `✅ 월간 뷰 (1000px 이하): 초기화 (100%)`;
+          }
         } else if (currentView.type === 'timeGridWeek') {
-            // 🔵 주간 뷰일 때는 항상 width 초기화 (100%로 동작)
-            newWidth = ''; 
-            logMessage = `✅ 주간 뷰: 초기화 (100%)`;
+          // 🔵 주간 뷰일 때는 항상 width 초기화 (100%로 동작)
+          newWidth = '';
+          logMessage = `✅ 주간 뷰: 초기화 (100%)`;
         }
 
         // 선택된 모든 요소에 스타일 적용
@@ -830,47 +826,47 @@ function applyMonthViewWidth() {
         tbodyEl.style.marginRight = newWidth === '50%' ? 'auto' : '';
 
         if (logMessage) {
-             console.log(`[${index + 1}번째 슬라이드] ${logMessage}`);
+          console.log(`[${index + 1}번째 슬라이드] ${logMessage}`);
         }
-    });
+      });
 
-    console.log(`⭐ 최종 적용 폭: ${window.innerWidth}px`);
-}
-    
-    
+      console.log(`⭐ 최종 적용 폭: ${window.innerWidth}px`);
+    }
+
+
     // ⭐ [디바운스 함수 정의] ⭐
     function debounce(func, timeout = 100) {
-        let timer;
-        return (...args) => {
-            clearTimeout(timer);
-            timer = setTimeout(() => { func.apply(this, args); }, timeout);
-        };
+      let timer;
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { func.apply(this, args); }, timeout);
+      };
     }
-    
-    
+
+
     // ⭐ [리사이즈 핸들러: 캘린더 업데이트 및 스타일 적용] ⭐
     const handleResizeLog = debounce(() => {
-        const currentWidth = window.innerWidth;
-        // console.log(`↔️ 리사이즈 감지 (Debounce): Width = ${currentWidth}px`);
-    
-        if (typeof calendar !== 'undefined' && calendar && typeof calendar.render === 'function') {
-            // 1. FullCalendar 자체 렌더링/리사이즈 메서드 호출
-            calendar.render(); 
-    
-            // 2. 렌더링 후 스타일 적용 함수 호출 (지연 없이 즉시 호출)
-            applyMonthViewWidth(); 
-        }
+      const currentWidth = window.innerWidth;
+      // console.log(`↔️ 리사이즈 감지 (Debounce): Width = ${currentWidth}px`);
+
+      if (typeof calendar !== 'undefined' && calendar && typeof calendar.render === 'function') {
+        // 1. FullCalendar 자체 렌더링/리사이즈 메서드 호출
+        calendar.render();
+
+        // 2. 렌더링 후 스타일 적용 함수 호출 (지연 없이 즉시 호출)
+        applyMonthViewWidth();
+      }
     }, 100); // 100ms 동안 리사이즈 멈춘 후 실행
-    
+
     window.addEventListener('resize', handleResizeLog);
-    
+
     console.log("✅ 리사이즈 감지 및 스타일 통합 리스너 등록 완료");
-    </script>
+  </script>
 
 
 
   <script>
-    
+
     var windowWidth = window.innerWidth;
     var windowheight = window.innerHeight;
     var calendarAllheight = document.querySelector("body").getBoundingClientRect().height;
