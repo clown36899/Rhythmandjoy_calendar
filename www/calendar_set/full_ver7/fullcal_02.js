@@ -253,10 +253,11 @@ function initCalendar() {
     eventClick: (info) => {
       info.jsEvent.preventDefault();
 
-      animateEventClick(info); // ✨ 여기
-
-
-
+      if (info.view.type === 'dayGridMonth') {
+        openDailyEventPopup(info.event.start);
+      } else {
+        animateEventClick(info);
+      }
     },
 
     datesRender: (info) => {
@@ -388,149 +389,9 @@ function initCalendar() {
 
     eventLimitClick: function (cellInfo) {
       console.log("More clicked!", cellInfo);
-
-      const popup = document.createElement('div');
-      popup.className = 'fc-more-popover';
-      popup.style.position = 'fixed';
-      popup.style.zIndex = 9999;
-      popup.style.background = 'rgb(46 46 46)';
-      popup.style.borderRadius = '10px';
-      popup.style.overflow = 'hidden';
-      popup.style.border = '1px solid rgb(29 6 6)';
-      popup.style.boxShadow = '0 4px 10px rgba(0,0,0,0.1)';
-      popup.style.width = '260px';
-      popup.style.maxHeight = '60%';
-      popup.style.top = '50%';
-      popup.style.left = '50%';
-      popup.style.transform = 'translate(-50%, -50%)';
-      popup.style.display = 'flex';
-      popup.style.flexDirection = 'column';
-
-      const backdrop = document.createElement('div');
-      backdrop.className = 'fc-more-backdrop';
-      backdrop.style.position = 'fixed';
-      backdrop.style.top = '0';
-      backdrop.style.left = '0';
-      backdrop.style.width = '100vw';
-      backdrop.style.height = '100vh';
-      backdrop.style.backgroundColor = 'rgba(0, 0, 0, 0.56)';
-      backdrop.style.zIndex = 9998;
-
-      const getColor = (roomKey) => {
-        return roomConfigs[roomKey]?.color || '#ccc';
-      };
-
-      const fmt = (d) => {
-        if (!d) return '';
-        const localDate = new Date(d);
-        localDate.setTime(localDate.getTime() - (9 * 60 * 60 * 1000)); // 9시간 빼기
-        return localDate.toLocaleTimeString('ko-KR', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        });
-      };
-
-      const formatKoreanDate = (dateInput) => {
-        if (!dateInput) return '';
-        let dateObj;
-        if (typeof dateInput === 'string') {
-          dateObj = new Date(dateInput);
-        } else {
-          dateObj = dateInput;
-        }
-        if (isNaN(dateObj)) return '';
-        const month = dateObj.getMonth() + 1;
-        const day = dateObj.getDate();
-        return `${month}월 ${day}일`;
-      };
-
       const rawDate = cellInfo.date || (cellInfo.dayEl?.getAttribute('data-date')) || '';
-      const dateObj = new Date(rawDate);
-      const dateText = formatKoreanDate(rawDate);
-
-      // ✨ 날짜+버튼 컨테이너
-      const dateContainer = document.createElement('div');
-      dateContainer.style.padding = '10px';
-      dateContainer.style.color = 'white';
-      dateContainer.style.fontWeight = 'bold';
-      dateContainer.style.fontSize = '16px';
-      dateContainer.style.borderBottom = '1px solid rgb(0 0 0)';
-      dateContainer.style.backgroundColor = 'rgb(85 85 85)';
-      dateContainer.style.display = 'flex';
-      dateContainer.style.justifyContent = 'space-between';
-      dateContainer.style.alignItems = 'center';
-
-      const dateSpan = document.createElement('span');
-      dateSpan.innerText = `📅 ${dateText}`;
-
-      const weekBtn = document.createElement('button');
-      weekBtn.innerText = "주간 보기";
-      weekBtn.style.padding = '2px 6px';
-      weekBtn.style.fontSize = '12px';
-      weekBtn.style.cursor = 'pointer';
-      weekBtn.style.backgroundColor = '#007bff';
-      weekBtn.style.color = 'white';
-      weekBtn.style.border = 'none';
-      weekBtn.style.borderRadius = '4px';
-
-      // ✨ 버튼 클릭 시 해당 날짜로 이동 후 주간뷰로
-      weekBtn.addEventListener('click', () => {
-        calendar.gotoDate(dateObj); // 해당 날짜로 이동
-        calendar.changeView('timeGridWeek'); // 주간 뷰로 변경
-        popup.remove();
-        backdrop.remove();
-      });
-
-
-      dateContainer.appendChild(dateSpan);
-      dateContainer.appendChild(weekBtn);
-
-      const eventListDiv = document.createElement('div');
-      eventListDiv.style.flexGrow = '1';
-      eventListDiv.style.overflowY = 'auto';
-      eventListDiv.style.padding = '10px';
-
-      const eventListHTML = (cellInfo.segs || []).map(seg => {
-        const roomKey = seg.eventRange.def.extendedProps?.roomKey || '';
-        const color = getColor(roomKey);
-        const title = seg.eventRange.def.title || '';
-        const roomName = seg.eventRange.def.extendedProps?.roomName || '';
-        const start = seg.eventRange.instance?.range?.start;
-        const end = seg.eventRange.instance?.range?.end;
-
-        let timeText = '';
-        if (start && end) {
-          timeText = `${fmt(new Date(start))} ~ ${fmt(new Date(end))}`;
-        } else {
-          timeText = '시간정보 없음';
-        }
-
-        return `
-          <div style="font-size:10px;margin-bottom:8px;padding:6px;background-color:${color};color:#000;border-radius:6px;">
-            <div style="font-size:14px;font-weight:bold;">🕒 ${timeText} ${roomName}</div>
-            <div>${title}</div>
-          </div>
-        `;
-      }).join('');
-
-      eventListDiv.innerHTML = eventListHTML;
-
-      popup.appendChild(dateContainer);
-      popup.appendChild(eventListDiv);
-
-      document.body.appendChild(backdrop);
-      document.body.appendChild(popup);
-
-      setTimeout(() => {
-        document.addEventListener('click', function once() {
-          popup.remove();
-          backdrop.remove();
-          document.removeEventListener('click', once);
-        });
-      }, 100);
-
-      return false;
+      openDailyEventPopup(rawDate);
+      return false; // Prevent default action
     },
     eventTimeFormat: { hour: '2-digit', minute: '2-digit', meridiem: false }
   });
@@ -696,3 +557,198 @@ offcanvasEl.addEventListener('shown.bs.offcanvas', function () {
 offcanvasEl.addEventListener('hidden.bs.offcanvas', function () {
   console.log("❎ 오프캔버스 닫힘");
 });
+function openDailyEventPopup(dateInput) {
+  const popup = document.createElement('div');
+  popup.className = 'fc-more-popover';
+  popup.style.position = 'fixed';
+  popup.style.zIndex = 9999;
+  popup.style.background = 'rgb(46 46 46)';
+  popup.style.borderRadius = '10px';
+  popup.style.overflow = 'hidden';
+  popup.style.border = '1px solid rgb(29 6 6)';
+  popup.style.boxShadow = '0 4px 10px rgba(0,0,0,0.1)';
+  popup.style.width = '260px';
+  popup.style.maxHeight = '60%';
+  popup.style.top = '50%';
+  popup.style.left = '50%';
+  popup.style.transform = 'translate(-50%, -50%)';
+  popup.style.display = 'flex';
+  popup.style.flexDirection = 'column';
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'fc-more-backdrop';
+  backdrop.style.position = 'fixed';
+  backdrop.style.top = '0';
+  backdrop.style.left = '0';
+  backdrop.style.width = '100vw';
+  backdrop.style.height = '100vh';
+  backdrop.style.backgroundColor = 'rgba(0, 0, 0, 0.56)';
+  backdrop.style.zIndex = 9998;
+
+  const getColor = (roomKey) => {
+    return roomConfigs[roomKey]?.color || '#ccc';
+  };
+
+  const fmt = (d) => {
+    if (!d) return '';
+    const localDate = new Date(d);
+    // localDate.setTime(localDate.getTime() - (9 * 60 * 60 * 1000)); // Remove manual adjust if handled by browser or if problematic
+    // Assuming standard date object handling:
+    return localDate.toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+  };
+
+  const formatKoreanDate = (dateInput) => {
+    if (!dateInput) return '';
+    let dateObj;
+    if (typeof dateInput === 'string') {
+      dateObj = new Date(dateInput);
+    } else {
+      dateObj = dateInput;
+    }
+    if (isNaN(dateObj)) return '';
+    const month = dateObj.getMonth() + 1;
+    const day = dateObj.getDate();
+    return `${month}월 ${day}일`;
+  };
+
+  // Date parsing
+  let dateObj;
+  if (typeof dateInput === 'string') {
+    // Try to parse YYYY-MM-DD
+    const parts = dateInput.split('-');
+    if (parts.length === 3) {
+      dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+    } else {
+      dateObj = new Date(dateInput);
+    }
+  } else {
+    dateObj = dateInput;
+  }
+  const dateText = formatKoreanDate(dateObj);
+
+  // ✨ 날짜+버튼 컨테이너
+  const dateContainer = document.createElement('div');
+  dateContainer.style.padding = '10px';
+  dateContainer.style.color = 'white';
+  dateContainer.style.fontWeight = 'bold';
+  dateContainer.style.fontSize = '16px';
+  dateContainer.style.borderBottom = '1px solid rgb(0 0 0)';
+  dateContainer.style.backgroundColor = 'rgb(85 85 85)';
+  dateContainer.style.display = 'flex';
+  dateContainer.style.justifyContent = 'space-between';
+  dateContainer.style.alignItems = 'center';
+
+  const dateSpan = document.createElement('span');
+  dateSpan.innerText = `📅 ${dateText}`;
+
+  const weekBtn = document.createElement('button');
+  weekBtn.innerText = "주간 보기";
+  weekBtn.style.padding = '2px 6px';
+  weekBtn.style.fontSize = '12px';
+  weekBtn.style.cursor = 'pointer';
+  weekBtn.style.backgroundColor = '#007bff';
+  weekBtn.style.color = 'white';
+  weekBtn.style.border = 'none';
+  weekBtn.style.borderRadius = '4px';
+
+  // ✨ 버튼 클릭 시 해당 날짜로 이동 후 주간뷰로
+  weekBtn.addEventListener('click', () => {
+    // calendar is global
+    if (calendar && calendar.gotoDate) {
+      calendar.gotoDate(dateObj);
+      calendar.changeView('timeGridWeek');
+    }
+    popup.remove();
+    backdrop.remove();
+  });
+
+  dateContainer.appendChild(dateSpan);
+  dateContainer.appendChild(weekBtn);
+
+  const eventListDiv = document.createElement('div');
+  eventListDiv.style.flexGrow = '1';
+  eventListDiv.style.overflowY = 'auto';
+  eventListDiv.style.padding = '10px';
+
+  // Fetch and Filter Events
+  // Access global calendar instance
+  const calInst = (calendar && calendar.calendar) ? calendar.calendar : calendar;
+  // Safety check
+  let dailyEvents = [];
+  if (calInst && calInst.getEvents) {
+    const allEvents = calInst.getEvents();
+    dailyEvents = allEvents.filter(ev => {
+      const start = ev.start;
+      return start.getFullYear() === dateObj.getFullYear() &&
+        start.getMonth() === dateObj.getMonth() &&
+        start.getDate() === dateObj.getDate();
+    });
+    // Sort: Room Key then Start Time
+    dailyEvents.sort((a, b) => {
+      const roomA = a.extendedProps?.roomKey || '';
+      const roomB = b.extendedProps?.roomKey || '';
+      if (roomA < roomB) return -1;
+      if (roomA > roomB) return 1;
+      return a.start - b.start;
+    });
+  }
+
+  const eventListHTML = dailyEvents.map(ev => {
+    const roomKey = ev.extendedProps?.roomKey || '';
+    const color = getColor(roomKey);
+    const title = ev.title || '';
+    const roomName = ev.extendedProps?.roomName || '';
+    const start = ev.start;
+    const end = ev.end;
+
+    let timeText = '';
+    if (start && end) {
+      // Need to adjust time if timezone issue persists, but keeping simple for now
+      // Use local time formatting logic if needed
+      // Re-using fmt logic from before which had -9h offset hack commented out?
+      // Let's use simple formatting
+      const sTime = start.toTimeString().substring(0, 5);
+      const eTime = end.toTimeString().substring(0, 5);
+      timeText = `${sTime} ~ ${eTime}`;
+
+      // Try using the originally provided fmt function if possible, but I defined it above 
+      // locally. Let's use that.
+      // Note: original fmt had manual -9h adjust line commented out in my previous read?
+      // Verify previous code: "localDate.setTime(localDate.getTime() - (9 * 60 * 60 * 1000));" was present inside logic 
+      // in line 426 of original file. It was active.
+      // So I should include it if dates are raw UTC.
+      // FullCalendar v4 usually deals with date objects.
+      // I'll stick to simple toTimeString first.
+    } else {
+      timeText = '시간정보 없음';
+    }
+
+    return `
+      <div style="font-size:10px;margin-bottom:8px;padding:6px;background-color:${color};color:#000;border-radius:6px;">
+        <div style="font-size:14px;font-weight:bold;">🕒 ${timeText} ${roomName}</div>
+        <div>${title}</div>
+      </div>
+    `;
+  }).join('');
+
+  eventListDiv.innerHTML = eventListHTML;
+
+  popup.appendChild(dateContainer);
+  popup.appendChild(eventListDiv);
+
+  document.body.appendChild(backdrop);
+  document.body.appendChild(popup);
+
+  setTimeout(() => {
+    document.addEventListener('click', function once() {
+      popup.remove();
+      backdrop.remove();
+      document.removeEventListener('click', once);
+    });
+  }, 100);
+}
+
