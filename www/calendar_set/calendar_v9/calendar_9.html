@@ -809,7 +809,7 @@
         console.log(`⭐ .fc 없음, .fc-view-harness 시도: ${harnessEls.length}개`);
         // (여기서 harnessEls를 사용하도록 로직을 확장할 수도 있지만, 보통 .fc는 반드시 존재함)
       }
-      viewContainers.forEach((containerEl, index) => {
+      tbodyEls.forEach((containerEl, index) => {
         // 스타일 초기화
         let newWidth = '';
         let marginLeft = '';
@@ -818,12 +818,18 @@
 
         if (currentView.type === 'dayGridMonth') {
           if (isLargeScreen) {
-            // 🟢 월간 뷰 AND 1000px 초과일 때 33.3% 적용
-            // 컨테이너 너비를 강제로 줄임
+            // 🟢 [수정] 월간 뷰 AND 1000px 초과일 때: 100% 유지 (33.3% 로직 비활성화)
+            // 기존 33.3% 로직이 화면을 깨뜨리므로 기본값으로 설정
+            newWidth = '';
+            marginLeft = '';
+            marginRight = '';
+            logMessage = `✅ 월간 뷰 (1000px 초과): 100% 유지 (PC 최적화)`;
+
+            /* 기존 깨짐 유발 코드 (비활성화됨)
             newWidth = '33.3%';
-            marginLeft = 'auto'; // 가운데 정렬
+            marginLeft = 'auto'; 
             marginRight = 'auto';
-            logMessage = `✅ 월간 뷰 (1000px 초과): 33.3% 적용 (margin: auto)`;
+            */
           } else {
             // 🟡 월간 뷰 AND 1000px 이하일 때 초기화
             newWidth = '';
