@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Webhook Incremental Sync Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+            background: #0e639c;
+            color: white;
+            border: none;
+        }
+
+        button:hover {
+            background: #1177bb;
+        }
+
+        pre {
+            background: #252526;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+
+        .success {
+            color: #4ec9b0;
+        }
+
+        .error {
+            color: #f48771;
+        }
+
+        .info {
+            color: #569cd6;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🔔 Webhook Incremental Sync Test</h1>
+
+    <h2>Test Steps:</h2>
+    <ol>
+        <li>Check current IndexedDB state (lastSync time)</li>
+        <li>Simulate Webhook signal</li>
+        <li>Verify incremental sync (updatedMin parameter)</li>
+        <li>Check IndexedDB updated data</li>
+    </ol>
+
+    <button onclick="step1()">1️⃣ Check Current State</button>
+    <button onclick="step2()">2️⃣ Simulate Webhook</button>
+    <button onclick="step3()">3️⃣ Verify Network Request</button>
+    <button onclick="step4()">4️⃣ Check Updated Data</button>
+
+    <h2>Results:</h2>
+    <pre id="output">Ready to test...</pre>
+
+    <script src="./js/env.js"></script>
+    <script type="module">
+        import { IndexedDBManager } from './js/indexed-db-manager.js';
+
+        window.dbManager = new IndexedDBManager();
+        await window.dbManager.init();
+
+        window.output = document.getElementById('output');
+
+        window.step1 = async function () {
+            try {
+                output.innerHTML = '<span class="info">📊 Checking IndexedDB state...</span>\n\n';
+
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = now.getMonth();
+
+                // Get lastSync time
+                const lastSync = await window.dbManager.getLastSync(year, month);
+                output.innerHTML += `<span class="success">✅ Last Sync Time:</span> ${lastSync || 'Never synced'}\n\n`;
+
+                // Get event count
+                const start = new Date(year, month, 1);
+                const end = new Date(year, month + 1, 1);
+                const events = await window.dbManager.getEvents(start, end);
+                output.innerHTML += `<span class="success">✅ Current Events:</span> ${events.length} events\n\n`;
+
+                // Show first 3 events
+                output.innerHTML += `<span class="info">Sample Events:</span>\n`;
+                events.slice(0, 3).forEach((e, i) => {
+                    output.innerHTML += `  ${i + 1}. ${e.title} (${e.start})\n`;
+                });
+
+            } catch (error) {
+                output.innerHTML += `<span class="error">❌ Error:</span> ${error.message}\n`;
+            }
+        };
+
+        window.step2 = async function () {
+            try {
+                output.innerHTML = '<span class="info">🔔 Simulating Webhook signal...</span>\n\n';
+
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = now.getMonth();
+
+                // Get lastSync before webhook
+                const lastSync = await window.dbManager.getLastSync(year, month);
+                output.innerHTML += `<span class="info">📅 Using lastSync as updatedMin:</span> ${lastSync}\n\n`;
+
+                // Simulate webhook by calling syncMonth with force=true
+                output.innerHTML += '<span class="info">🔄 Triggering force sync...</span>\n';
+
+                // Intercept fetch to show the request
+                const originalFetch = window.fetch;
+                window.fetch = async function (...args) {
+                    const url = args[0];
+                    if (url.includes('/api/calendar/sync')) {
+                        output.innerHTML += `\n<span class="success">📡 API Request:</span>\n${url}\n\n`;
+
+                        // Check if updatedMin is in the URL
+                        if (url.includes('updatedMin')) {
+                            output.innerHTML += '<span class="success">✅ updatedMin parameter found!</span>\n';
+                            const urlObj = new URL(url, window.location.origin);
+                            output.innerHTML += `   updatedMin = ${urlObj.searchParams.get('updatedMin')}\n\n`;
+                        } else {
+                            output.innerHTML += '<span class="error">❌ updatedMin parameter NOT found!</span>\n\n';
+                        }
+                    }
+                    return originalFetch.apply(this, args);
+                };
+
+                // Trigger sync (this should use updatedMin since lastSync exists)
+                if (window.syncManager) {
+                    await window.syncManager.syncMonth(year, month, false); // force=false to use updatedMin
+                    output.innerHTML += '<span class="success">✅ Sync completed!</span>\n';
+                } else {
+                    output.innerHTML += '<span class="error">❌ SyncManager not found. Please load main app first.</span>\n';
+                }
+
+                // Restore fetch
+                window.fetch = originalFetch;
+
+            } catch (error) {
+                output.innerHTML += `<span class="error">❌ Error:</span> ${error.message}\n`;
+            }
+        };
+
+        window.step3 = function () {
+            output.innerHTML = '<span class="info">📋 Instructions:</span>\n\n';
+            output.innerHTML += '1. Open DevTools (F12)\n';
+            output.innerHTML += '2. Go to Network tab\n';
+            output.innerHTML += '3. Filter: "calendar/sync"\n';
+            output.innerHTML += '4. Click "2️⃣ Simulate Webhook" again\n';
+            output.innerHTML += '5. Check the request URL for "updatedMin" parameter\n\n';
+            output.innerHTML += '<span class="success">✅ If you see updatedMin in the URL, incremental sync is working!</span>\n';
+        };
+
+        window.step4 = async function () {
+            try {
+                output.innerHTML = '<span class="info">🔍 Checking updated IndexedDB...</span>\n\n';
+
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = now.getMonth();
+
+                // Get new lastSync time
+                const newLastSync = await window.dbManager.getLastSync(year, month);
+                output.innerHTML += `<span class="success">✅ New Last Sync:</span> ${newLastSync}\n\n`;
+
+                // Get updated event count
+                const start = new Date(year, month, 1);
+                const end = new Date(year, month + 1, 1);
+                const events = await window.dbManager.getEvents(start, end);
+                output.innerHTML += `<span class="success">✅ Updated Events:</span> ${events.length} events\n\n`;
+
+                output.innerHTML += '<span class="info">💡 Note:</span> If no changes in Google Calendar, count stays same.\n';
+                output.innerHTML += 'But lastSync timestamp should be updated!\n';
+
+            } catch (error) {
+                output.innerHTML += `<span class="error">❌ Error:</span> ${error.message}\n`;
+            }
+        };
+    </script>
+</body>
+
+</html>

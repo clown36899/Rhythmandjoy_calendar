@@ -1,0 +1,5 @@
+/* 🔴 [신규] 터치 스와이프 개선: 브라우저의 가로 스크롤/제스처 차단 */
+#calendarContainer,
+.month-slider {
+    touch-action: pan-y !important;
+}

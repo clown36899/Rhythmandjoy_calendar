@@ -1,0 +1,2036 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-dark: #1a1a1a;
+  --bg-darker: #0d0d0d;
+  --text-primary: #ffffff;
+  --text-secondary: #888888;
+  --border-color: #333333;
+
+  --color-dawn: #E3F2FD;
+  --color-day: #FFF9C4;
+  --color-evening: #FFE0B2;
+
+  --room-a: #F6BF26;
+  --room-b: rgb(87, 150, 200);
+  --room-c: rgb(129, 180, 186);
+  --room-d: rgb(125, 157, 106);
+  --room-e: #4c4c4c;
+
+  --header-height: 60px;
+  --bottom-controls-height: 0px;
+  --room-selector-height: 0px;
+}
+
+html {
+  font-size: 16px;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Noto Sans KR', 'Segoe UI', sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
+  position: fixed;
+  width: 100%;
+}
+
+.app-container {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  height: -webkit-fill-available;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 예약정보 페이지 오버레이 */
+.info-page-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20000;
+  transform: translateY(-100%);
+  transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  pointer-events: none;
+}
+
+.info-page-overlay.active {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.info-page-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(0.5rem, 1.5vh, 1rem);
+
+  background-color: #2f2f2f;
+  border-bottom: none;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 200;
+  /* 🔴 [신규] month-panel 위에 헤더 항상 보임 */
+}
+
+.nav-btn {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: clamp(1rem, 2.2vh, 1.5rem);
+  padding: clamp(0.25rem, 1vh, 0.5rem) clamp(0.5rem, 1.5vh, 1rem);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.nav-btn:hover {
+  color: var(--text-secondary);
+}
+
+/* 헤더 월 네비게이션 그룹 */
+.calendar-header .month-nav-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  justify-content: space-around;
+}
+
+.calendar-title {
+  font-size: clamp(1.5rem, 3.5vh, 2rem);
+  font-weight: 700;
+  text-align: center;
+  color: #fff;
+  margin: 0;
+}
+
+.month-nav-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: clamp(1rem, 2vh, 1.3rem);
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  line-height: 1;
+}
+
+.month-nav-btn:hover {
+  opacity: 1;
+}
+
+.admin-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  padding: 0.5rem;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.admin-btn:hover {
+  opacity: 1;
+}
+
+.view-btn {
+  padding: clamp(0.3rem, 1vh, 0.5rem) clamp(0.75rem, 2vh, 1.5rem);
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: clamp(0.75rem, 1.8vh, 1rem);
+  white-space: nowrap;
+}
+
+.view-btn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.view-btn.active {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+}
+
+.calendar-main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  /* 🔴 [신규] month-panel 기준점 */
+}
+
+#calendarContainer {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 고정된 시간 열 */
+.time-column-fixed {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3.75em;
+  z-index: 100;
+  background-color: #1a1a1a;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.time-header-space {
+  height: auto;
+  min-height: 2em;
+  background-color: #2f2f2f;
+  /* border-bottom: 1px solid #1d1d1d; */
+  flex-shrink: 0;
+}
+
+.time-column-fixed .time-label {
+
+  border-bottom: 1px solid #171717;
+  padding: 0.5em 0.3em;
+  text-align: center;
+  font-weight: 400;
+  font-size: clamp(6px, 1.6vh, 16px);
+  font-size: 0.7em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.calendar-slider {
+  position: absolute;
+  inset: 0 0 0 3.75em;
+  display: flex;
+  overflow: hidden;
+}
+
+.calendar-slide {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  transition: transform 1s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+  flex-shrink: 0;
+  overflow: hidden !important;
+  touch-action: pan-y;
+  /* 🔴 [수정] pan-y로 변경하여 브라우저의 가로 스크롤과 Hammer.js의 충돌을 방지하고, 세로 스크롤(필요시)을 허용합니다. */
+  -webkit-overflow-scrolling: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.calendar-slide::-webkit-scrollbar {
+  display: none;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-dark);
+  color: var(--text-secondary);
+  z-index: 1000;
+  transition: opacity 0.5s ease-out;
+  /* 🔴 [신규] 페이드 아웃 효과 */
+}
+
+.loading-spinner-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  max-width: 300px;
+}
+
+.loading-logo {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: logoFloat 2s ease-in-out infinite;
+}
+
+.loading-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@keyframes logoFloat {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-15px);
+  }
+}
+
+.loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-top: 4px solid #F6BF26;
+  border-right: 4px solid #5796C8;
+  border-radius: 50%;
+  animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-text {
+  text-align: center;
+}
+
+.loading-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 0.5rem 0;
+  letter-spacing: 0.5px;
+}
+
+.loading-subtitle {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  margin: 0;
+  animation: fadeInOut 1.5s ease-in-out infinite;
+}
+
+@keyframes fadeInOut {
+
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.loading-dots {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+}
+
+.loading-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #F6BF26;
+  animation: bounce 1.2s ease-in-out infinite;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+  background-color: #5796C8;
+}
+
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+  background-color: #81B4BA;
+}
+
+@keyframes bounce {
+
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: translateY(-10px);
+    opacity: 1;
+  }
+}
+
+.week-view {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: auto repeat(24, 1fr) auto;
+  /* JavaScript에서 동적으로 덮어씀 */
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  overflow: visible;
+  min-height: 0;
+  font-size: clamp(6px, 1.6vh, 16px);
+}
+
+.week-header {
+  display: contents;
+}
+
+.week-view .day-header {
+  border-width: 0 1px 0 0;
+
+  /* 3. border-image를 사용하여 right 볼더에 그라데이션 적용 */
+  /* linear-gradient: 위(top)는 투명(transparent), 아래(bottom)는 어두운 색상(#1d1d1d) */
+  border-image: linear-gradient(to bottom, transparent, #1d1d1d) 1;
+
+  border-right: 1px solid #1d1d1d;
+  border-bottom: 1px solid #333;
+  padding: 0.2em 0;
+  text-align: center;
+  font-weight: 400;
+  font-size: 0.7em;
+  background-color: #2f2f2f;
+  border-top: none;
+}
+
+/* 시간 라벨 배경색 */
+.time-column-fixed .time-label.dawn-time {
+  background-color: #2f2f2f;
+}
+
+.time-column-fixed .time-label.day-time {
+  background-color: rgb(226 176 39 / 16%);
+}
+
+.time-column-fixed .time-label.evening-time {
+  background-color: rgb(33 150 243 / 25%);
+}
+
+.week-view .day-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05em;
+  justify-content: center;
+}
+
+.week-view .day-name {
+  font-size: 1.6em;
+  color: #999;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.week-view .day-date {
+  font-size: 2em;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+
+.day-header.sunday .day-name {
+  color: #ff6b6b;
+}
+
+.day-header.sunday .day-date {
+  color: #ff6b6b;
+}
+
+.day-header.today {
+
+  position: relative;
+}
+
+/* 오늘 날짜 왼쪽 위 빨간 삼각형 */
+.day-header.today::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-left: 1.2em solid #ff4444;
+  border-bottom: 1.2em solid transparent;
+  z-index: 5;
+}
+
+/* 시간 컬럼 위 빨간 삼각형 */
+.current-time-triangle {
+  position: absolute;
+  left: 3.75em;
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 12px solid #ff0000;
+  margin-left: -12px;
+  transform: translateY(-50%);
+  z-index: 176;
+  /* 🔴 [수정] z-index 176 = 항상 보임, month-panel(190) 아래 */
+  pointer-events: none;
+}
+
+/* 오늘 날짜 열 위 현재 시간 라인 */
+.current-time-indicator {
+  position: absolute;
+  height: 3px;
+  background-color: #ff0000;
+  z-index: 176;
+  /* 🔴 [수정] z-index 176 = 항상 보임, month-panel(190) 아래 */
+  pointer-events: none;
+}
+
+.time-row {
+  display: contents;
+}
+
+
+/* 메뉴 스타일 */
+.nav_line {
+  border-top: 1px solid #353b41;
+}
+
+.nav_image_pop {
+  width: 100%;
+  height: auto;
+  max-height: 300px;
+}
+
+.copyTxt1 {
+  background-color: transparent !important;
+  border: none;
+  color: #03A9F4;
+  font-size: 13px;
+}
+
+.copyTxt2 {
+  background-color: transparent !important;
+  border: 1px solid;
+  color: #03A9F4;
+  font-size: 13px;
+  margin-right: 5px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+#copyTxt:focus {
+  outline: none;
+}
+
+.offcanvas-body-desktop {
+  display: none;
+}
+
+.offcanvas-body-mobile {
+  display: block;
+}
+
+/* 모바일: iframe 숨김 */
+#sideFrame {
+  display: none !important;
+}
+
+#leftMenuFrame {
+  display: none;
+}
+
+
+/* 1000px 이상 화면: 3등분 레이아웃 */
+@media (min-width: 1000px) {
+
+  /* 예약 정보 버튼 숨김 */
+  .info-btn {
+    display: none !important;
+  }
+
+  /* 왼쪽 메뉴 iframe */
+  #leftMenuFrame {
+    display: block !important;
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 20%;
+    height: 100vh;
+    border: none;
+    border-right: 1px solid #5e5e5e;
+    background: #212529;
+    z-index: 1050;
+  }
+
+  /* 모바일 오프캔버스는 데스크탑에서 숨김 */
+  #leftMenu {
+    display: none !important;
+  }
+
+  /* 가운데 달력 */
+  .app-container {
+    position: absolute;
+    width: 46.7%;
+    left: 20%;
+    height: 100vh;
+  }
+
+  /* 오른쪽 iframe */
+  #sideFrame {
+    display: block !important;
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 33.3%;
+    height: 100vh;
+    border: none;
+    border-left: 1px solid #5e5e5e;
+    background: #111;
+    z-index: 9;
+  }
+
+  /* 오프캔버스 헤더 숨김 (데스크탑) */
+  #leftMenu .offcanvas-header {
+    display: none;
+  }
+
+  /* 데스크탑: 데스크탑용 홈페이지 섹션 표시 */
+  .offcanvas-body-desktop {
+    display: block;
+  }
+
+  /* 데스크탑: 모바일용 메뉴 숨김 */
+  .offcanvas-body {
+    display: none;
+  }
+
+  .offcanvas-body-mobile {
+    display: none;
+  }
+}
+
+/* 캘린더 영역의 시간 셀 (헤더와 격리) */
+.calendar-main .time-cell {
+  border-right: 1px solid #181818;
+  border-bottom: 1px solid #171717;
+  position: relative;
+}
+
+/* 새벽 시간대 (평일/주말 동일) */
+.time-cell.weekday-dawn,
+.time-cell.weekend-dawn {
+  background-color: #212121;
+}
+
+/* 시간대 경계선: 6시 (새벽-아침) */
+.time-cell.time-boundary-dawn {
+  border-top: 0px solid #FF9800;
+}
+
+/* 시간대 경계선: 16시 (낮-저녁) */
+.time-cell.time-boundary-evening {
+  border-top: 0px solid #2196F3;
+}
+
+/* 평일 낮 시간대 */
+.time-cell.weekday-day {
+  background-color: #212121;
+}
+
+/* 평일 저녁 & 주말 낮 시간대 (통일) */
+.time-cell.weekday-evening,
+.time-cell.weekend-day {
+  background-color: #212121;
+}
+
+.day-events-container {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
+  padding-top: 0;
+}
+
+.week-view .week-event {
+  position: absolute;
+  flex-wrap: wrap;
+
+  border-radius: 1em;
+  font-size: 0.55em;
+  overflow: hidden;
+  cursor: pointer;
+
+  transition: all 1s;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  pointer-events: auto;
+  box-shadow: 0 0.0625em 0.125em rgba(0, 0, 0, 0.4);
+  margin: 0 0.0625em;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 0;
+}
+
+.week-event:hover {
+  transform: scale(1.02);
+  z-index: 100;
+}
+
+.week-view .event-room {
+  font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+  font-weight: 700;
+  font-size: 1.2em;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: #ffffff;
+}
+
+.week-view .event-title {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
+  font-size: 0.95em;
+  font-weight: 500;
+  letter-spacing: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 1;
+  line-height: 1.2;
+  color: #ffffff;
+}
+
+.week-view .event-time {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
+  font-size: 0.75em;
+  font-weight: 400;
+  letter-spacing: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0.95;
+  line-height: 1.2;
+  color: #ffffff5e;
+}
+
+/* 주간 보기: 글자 세로로 나열 */
+.week-view .event-initial-only {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
+  font-size: 1.4em;
+  font-weight: 400;
+  color: #242425;
+  line-height: 1.1;
+  padding: 0.3em 0.1em;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.week-view .event-initial-only>div {
+  flex-shrink: 0;
+}
+
+/* 시간: 작은 폰트, 반투명 */
+.week-view .event-initial-only .event-time-short {
+  font-size: 0.8em;
+  opacity: 1;
+  font-weight: 500;
+  margin-bottom: 0.1em;
+}
+
+/* 성/알파벳: 흰색 유지 */
+.week-view .event-initial-only .name-char {
+  opacity: 1;
+}
+
+/* 동그라미와 님: 반투명 + 사이즈 절반 */
+.week-view .event-initial-only .name-circle,
+.week-view .event-initial-only .name-suffix {
+  opacity: 0.5;
+  font-size: 0.5em;
+}
+
+.week-event.room-a {
+  background-color: rgba(246, 191, 38, 0.9);
+  color: #000;
+}
+
+.week-view .week-event.room-a {
+  border-bottom-left-radius: 5px !important;
+}
+
+.week-event.room-b {
+  background-color: rgba(87, 150, 200, 0.9);
+
+  color: #fff;
+}
+
+.week-event.room-c {
+  background-color: rgba(129, 180, 186, 0.9);
+
+  color: #000;
+}
+
+.week-event.room-d {
+  background-color: rgba(125, 157, 106, 0.9);
+
+  color: #fff;
+}
+
+.week-event.room-e {
+  background-color: rgba(76, 76, 76, 0.9);
+
+  color: #fff;
+}
+
+
+
+
+
+.month-day.today {
+  background-color: rgb(0 70 125 / 68%);
+  /* border: 2px solid #5796c8; */
+  /* 🔴 [신규] 오늘 날짜 테두리 강조 */
+  box-sizing: border-box;
+  /* 테두리 포함 */
+}
+
+.month-day.today .month-day-number {
+  color: #5796c8;
+  font-weight: 800;
+}
+
+.month-day-number {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+  color: #ccc;
+}
+
+.month-day.sunday {
+  /* background-color: #212529; */
+  color: #ff6b6b;
+  /* 🔴 [신규] 일요일 배경색 (연한 붉은색) */
+}
+
+
+
+.month-day.other-month {
+  /* opacity: 0.3; 🔴 [수정] 컨테이너 투명도 제거 (배경은 유지) */
+  background-color: #111;
+}
+
+/* 🔴 [신규] 다른 달의 이벤트와 날짜만 투명도 적용 */
+.month-day.other-month .month-event,
+.month-day.other-month .month-day-number {
+  opacity: 0.3;
+}
+
+.month-event {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.25rem;
+  margin-bottom: 0.125rem;
+  border-radius: 0.125rem;
+  border-left: 0.125rem solid;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  min-height: 1.5em;
+  /* 🔴 [수정] 최소 높이 1.5em */
+}
+
+.bottom-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(0.75rem, 2vh, 1rem);
+  /* 🔴 [수정] 상하 패딩 제거 (높이 고정됨) */
+  background-color: #2f2f2f;
+  border-top: 1px solid #000000;
+  flex-shrink: 0;
+  font-size: clamp(8px, 2vw, 15px);
+  position: relative;
+  z-index: 100;
+  /* 🔴 [수정] z-index 100 = month-panel(175)보다 아래 */
+  height: 60px;
+  /* 🔴 [신규] 높이 고정 (화면 너비 변경 시 흔들림 방지) */
+}
+
+.logo-section {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 1 auto;
+}
+
+.logo-circle {
+  flex: 0 1 36px;
+  width: 36px;
+  min-width: 0;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background-color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.logo-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.logo-icon {
+  font-size: 1em;
+}
+
+.logo-text {
+  flex: 0 1 auto;
+  font-size: 2em;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.info-btn {
+  flex: 0 1 auto;
+  padding: 0.5em 1.3em;
+  background-color: #333;
+  border: none;
+  border-radius: 2rem;
+  color: var(--text-primary);
+  font-size: 1.67em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+/* 월간 패널 - 헤더 아래에서 내려오는 모달 */
+.month-panel {
+  position: absolute;
+  top: var(--month-panel-top, 60px);
+  /* 🔴 [수정] JS에서 계산된 헤더 바텀 위치 */
+  left: 0;
+  padding-top: 0;
+  /* 🔴 [수정] 패딩 제거 */
+  right: 0;
+  bottom: auto;
+  /* 🔴 [수정] bottom 사용 안 함 (height로 제어) */
+  background: #2f2f2f;
+  display: flex;
+  flex-direction: column;
+  z-index: 190;
+  /* 🔴 [수정] z-index 190 = 타임인디케이터(50) 위에서 보임 */
+  transform: translateY(-100%);
+  transition: transform 0.3s ease-out, visibility 0s linear 0.3s;
+  /* 🔴 [수정] 튀는 효과(cubic-bezier) 제거하고 부드러운 ease-out 적용 */
+  visibility: hidden;
+  /* 🔴 [신규] 기본적으로 숨김 */
+  pointer-events: none;
+  overflow: hidden;
+  height: var(--month-panel-height, calc(100vh - 200px));
+  /* 🔴 [수정] JS에서 계산된 정확한 높이 */
+}
+
+.month-panel.open {
+  transform: translateY(0);
+  pointer-events: auto;
+  background-color: #2f2f2f !important;
+  visibility: visible;
+  /* 🔴 [신규] 열릴 때 즉시 보임 */
+  transition: transform 0.3s ease-out, visibility 0s linear 0s;
+  /* 🔴 [수정] 튀는 효과 제거 */
+  /* 🔴 [신규] 월간 패널 뒤에 주간 뷰 안 보이도록 배경색 강제 설정 */
+}
+
+/* 🔴 [신규] 월간 패널 backdrop (배경 클릭으로 닫기) */
+.month-panel-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #2f2f2f;
+  z-index: 0;
+  cursor: pointer;
+}
+
+/* 월간 패널 헤더 */
+.month-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.8rem;
+  background-color: #262626;
+  border-bottom: 1px solid #3d3d3d;
+  z-index: 10;
+}
+
+.month-panel-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  min-width: 80px;
+  text-align: center;
+}
+
+.month-panel-btn {
+  background: #444;
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  border-radius: 0.2rem;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.month-panel-btn:hover {
+  background: #555;
+}
+
+/* 🔴 [신규] 월간 패널 닫힘 버튼 (헤더 내 버튼으로 변경) */
+.month-panel-close-btn {
+  background: #444;
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  border-radius: 0.2rem;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.month-panel-close-btn:hover {
+  background: #666;
+  transform: scale(1.1);
+}
+
+/* 🔴 [신규] 월간 패널 로딩 스피너 */
+.month-panel-loading {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 200;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.month-panel-loading.active {
+  display: flex;
+}
+
+.month-loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #555;
+  border-top: 4px solid #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.month-loading-text {
+  color: #aaa;
+  font-size: 1rem;
+  margin: 0;
+  text-align: center;
+}
+
+.month-slider {
+  display: flex;
+  width: 300%;
+  position: relative;
+  overflow: hidden;
+  /* 가로 스크롤 방지 */
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  background-color: #2f2f2f;
+  /* 🔴 [제거] touch-action은 Hammer.js에서 직접 관리하도록 CSS에서 제거합니다. */
+  /* 🔴 [수정] 그림자 효과를 부모 컨테이너로 이동하여 overflow:hidden에 의해 잘리지 않도록 합니다. */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  border-radius: 0.5rem;
+}
+
+/* ✅ [신규] 가로 스와이프 중일 때만 적용되는 클래스 */
+.month-slider.swiping {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.month-slider.snap-animate {
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.month-slider-item {
+  flex: 0 0 calc(100% / 3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: hidden;
+  /* ✅ 세로 스크롤 방지 (깜빡임 원인 제거) */
+  overflow-x: hidden;
+  /* 가로 스크롤 방지 */
+  box-sizing: border-box;
+  touch-action: pan-y;
+  /* ✅ 핵심: 세로 스크롤만 브라우저가 처리 */
+}
+
+/* ✅ [신규] 가로 스와이프 중일 때만 스크롤 차단 */
+/* 🔴 [수정] 스와이프 중에는 스크롤바를 기능적, 시각적으로 모두 숨깁니다. */
+.month-slider.swiping .month-slider-item {
+  overflow-y: hidden;
+  /* 스크롤 기능 비활성화 */
+  touch-action: none;
+  /* 가로 스와이프 중에는 모든 제스처 차단 */
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+/* 🔴 [신규] Webkit 브라우저(Chrome, Safari)에서 스와이프 중 스크롤바 숨기기 */
+.month-slider.swiping .month-slider-item::-webkit-scrollbar {
+  display: none;
+}
+
+/* 요일 헤더 */
+.month-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0;
+  /* 🔴 [수정] gap 제거 (가상 요소로 라인 대체) */
+
+  /* 🔴 [신규] 스티키 헤더 적용 */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: #2f2f2f;
+  /* 🔴 [수정] 배경색 통일 */
+  /* 배경색 지정하여 투명도 문제 해결 */
+
+  /* border-bottom: 1px solid #000; */
+}
+
+.month-weekday {
+  background-color: #2f2f2f;
+  /* 🔴 [신규] 배경색 추가 (gap 사이로 라인 보임) */
+  padding: 0.3rem 0.2rem;
+  text-align: center;
+  font-size: 1rem;
+  /* 🔴 [수정] 글자 크기 2배 확대 (0.75rem -> 1.5rem) */
+  font-weight: 700;
+  color: #fff;
+  /* 🔴 [수정] 글자색 밝게 */
+  position: relative;
+  /* 🔴 [신규] 가상 요소 위치 기준 */
+}
+
+/* 🔴 [신규] 요일 사이 그라데이션 라인 (위로 갈수록 사라짐) */
+.month-weekday::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 1px;
+  background: linear-gradient(to top, #000 0%, transparent 100%);
+}
+
+/* 마지막 요일은 오른쪽 라인 제거 */
+.month-weekday:last-child::after {
+  display: none;
+}
+
+.month-header {
+  display: none;
+  /* 달 표시 숨김 (헤더에서만 표시) */
+}
+
+.month-view {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  /* 🔴 [수정] 라인 두께 */
+  background-color: #222222;
+  /* 🔴 [수정] 라인 색상 (진한 검정) */
+  border: 0px solid #000;
+  border-radius: 0;
+  overflow: hidden;
+  /* 동적 높이: JS에서 주 수에 따라 grid-template-rows 설정 */
+  width: 100%;
+  height: 100%;
+  /* 🔴 [수정] 높이 100%로 꽉 차게 */
+  flex: 1;
+  /* 🔴 [신규] 남은 공간 모두 차지 */
+  max-width: 100%;
+  /* 🔴 [신규] 최대 너비를 item 내 너비로 제한 */
+  box-sizing: border-box;
+  /* 🔴 [신규] 패딩 포함 너비 계산 */
+}
+
+.month-day {
+  background-color: #282828;
+  /* 🔴 [수정] 셀 배경색 (라인과 대비) */
+  padding: 0.3px;
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  height: 100%;
+  /* 🔴 [수정] 높이 100%로 강제 고정 (auto 아님) */
+  min-height: 0;
+  /* 🔴 [신규] Grid item이 내용물에 의해 늘어나는 것 방지 */
+  overflow: hidden;
+  /* 🔴 [신규] 넘치는 내용 숨김 (JS 계산 전 레이아웃 유지) */
+
+  transition: all 0.2s ease;
+  /* overflow: visible; */
+  /* 🔴 [수정] 이벤트가 모두 보이도록 */
+  min-width: 0;
+  /* 🔴 [신규] 7등분 비율 유지 */
+  word-break: break-word;
+  /* 🔴 [신규] 긴 텍스트 줄바꿈 */
+  box-sizing: border-box;
+  /* 🔴 [신규] 패딩 포함 너비 계산 */
+}
+
+/* 🔴 [신규] 조정 중일 때 숨김 처리 제거 (전체 깜빡임 방지) */
+/* .month-slider-item.pending-adjustment .month-view {
+  visibility: hidden;
+  opacity: 0;
+} */
+
+.month-slider-item .month-view {
+  transition: opacity 0.2s ease;
+  opacity: 1;
+  visibility: visible;
+}
+
+.month-day:hover {
+  background-color: #252525;
+  border-color: #444;
+}
+
+.month-day.other-month {
+
+  background-color: #262626;
+}
+
+.month-day.today {
+  /* background-color: #2a3a4a;
+  border-color: #5a96c8;
+  box-shadow: inset 0 0 0 1px #5a96c8; */
+}
+
+.month-day-number {
+  font-weight: 600;
+  font-size: 0.7rem;
+  color: #fff;
+  margin-bottom: 0.1rem;
+}
+
+.month-day.sunday .month-day-number {
+  color: #ff6b6b;
+  /* 🔴 [수정] 월간 보기에서 일요일 날짜 숫자를 붉은 계열로 변경합니다. */
+}
+
+.month-event {
+  font-size: 0.5rem;
+  padding: 0.08rem 0.1rem;
+  margin-bottom: 0.05rem;
+  border-radius: 0.1rem;
+  border-left: 1px solid;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background-color: rgba(100, 100, 100, 0.4);
+  color: #ddd;
+  line-height: 1;
+  min-height: 1.5em;
+  /* 🔴 [수정] 최소 높이 1.5em */
+  display: flex;
+  /* 🔴 [신규] 시간과 제목을 나란히 표시 */
+  align-items: center;
+  /* 🔴 [신규] 수직 정렬 */
+  gap: 0.2em;
+  /* 🔴 [신규] 시간과 제목 사이 간격 */
+}
+
+.month-event-time {
+  flex-shrink: 0;
+  /* 🔴 [신규] 시간 고정 너비 */
+  font-weight: 600;
+  /* 🔴 [신규] 시간 굵게 */
+  min-width: 2.2em;
+  /* 🔴 [신규] HH:MM 형식 최소 너비 */
+}
+
+.month-event-title {
+  flex: 1;
+  /* 🔴 [신규] 제목이 남은 공간 차지 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.month-event.month-more {
+  font-size: 0.5rem;
+  color: #868686;
+  background-color: #424242;
+  border-radius: 4px;
+  width: auto;
+  height: auto;
+  /* display: flex; */
+  /* position: relative; */
+  /* left: 0; */
+  margin: 8.1px auto 0px 2px;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border: none;
+  justify-content: flex-start;
+  align-content: center;
+  flex-direction: column;
+  flex-wrap: wrap;
+}
+
+/* 🔴 [신규] 월간 날짜별 모달 */
+.month-day-modal {
+  display: none;
+  /* 기본 숨김 */
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgb(0 0 0 / 85%);
+  z-index: 3000;
+  /* 🔴 [수정] 높은 z-index로 모든 요소 위에 표시 */
+}
+
+.month-day-modal.open {
+  display: flex;
+  /* 열릴 때 표시 */
+  align-items: center;
+  /* 🔴 [신규] open 상태에서만 flex 활성화 */
+  justify-content: center;
+}
+
+.month-day-modal-content {
+  background-color: #2f2f2f;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  max-width: 95vw;
+  width: 70%;
+  max-height: 80vh;
+  overflow-y: auto;
+  margin: 2rem 1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
+  position: relative;
+}
+
+.month-day-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid #444;
+  padding-bottom: 0.8rem;
+}
+
+.month-day-modal-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.month-day-modal-close {
+  background: none;
+  border: none;
+  color: #ddd;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.month-day-modal-close:hover {
+  color: #fff;
+  transform: scale(1.2);
+}
+
+.month-day-modal-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+/* 🔴 [신규] room별 그룹화 */
+.month-day-modal-room-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.month-day-modal-event {
+  padding: 0.4rem 0.8rem;
+  border-radius: 0.3rem;
+  display: flex;
+  flex-direction: row;
+  gap: 0.5rem;
+  align-items: center;
+  color: #000;
+  font-size: 0.9rem;
+}
+
+.month-day-modal-event span {
+  white-space: nowrap;
+}
+
+.month-day-modal-event span:first-child {
+  font-weight: 600;
+  min-width: 60px;
+}
+
+.month-day-modal-event span:nth-child(2) {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.month-day-modal-event-time {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.month-day-modal-event-title {
+  font-size: 1rem;
+  color: #ddd;
+}
+
+.month-day-modal-event-room {
+  font-size: 0.8rem;
+  color: #999;
+}
+
+.info-btn:hover {
+  background-color: #444;
+}
+
+.room-selector {
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  gap: clamp(0.3rem, 1vh, 0.5rem);
+  padding: clamp(0.5rem, 1.5vh, 0.75rem) clamp(0.75rem, 2vh, 1rem);
+  background-color: #2f2f2f;
+  border-top: 1px solid var(--border-color);
+  overflow-x: auto;
+  flex-shrink: 0;
+  font-size: clamp(9px, 2.2vw, 16px);
+}
+
+.week-nav {
+  display: flex;
+  align-items: center;
+
+  margin-left: auto;
+  flex: 0 1 auto;
+}
+
+/* 🔴 [수정] 월간 뷰가 활성화되면 하단의 좌/우 주간 이동 버튼만 숨깁니다. (오늘 버튼은 유지) */
+body.month-view-active .nav-btn-round,
+body.month-view-active .nav-btn-round-right {
+  display: none;
+}
+
+.room-btn {
+  flex: 0 1 40px;
+  width: 40px;
+  min-width: 0;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 1em;
+  transition: all 0.2s;
+  color: #000;
+  opacity: 0.5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.room-btn.active {
+  opacity: 1;
+}
+
+.room-btn:hover {
+  opacity: 0.8;
+}
+
+#allRoomsBtn {
+  flex: 0 1 52px;
+  width: 52px;
+  min-width: 0;
+  background-color: #555;
+  color: #fff;
+  opacity: 0.7;
+}
+
+#allRoomsBtn:hover,
+#allRoomsBtn.active {
+  opacity: 1;
+}
+
+.period-btn {
+  flex: 0 1 40px;
+  width: 40px;
+  aspect-ratio: 1;
+  padding: 0;
+  background-color: #333;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: 0.85em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: none;
+}
+
+.period-btn.active {
+  background-color: #555;
+  color: var(--text-primary);
+}
+
+.period-btn:hover {
+  background-color: #444;
+}
+
+.nav-btn-round {
+  flex: 0 1 40px;
+  border: none;
+  /* border-left: 2px solid #fff; */
+  border-radius: 50% 0 0 50%;
+  width: 40px;
+  min-width: 0;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  background-color: #222;
+  /* border: none; */
+  /* border-radius: 50%; */
+  color: var(--text-secondary);
+  font-size: 1.1em;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-btn-round-right {
+  flex: 0 1 40px;
+  border: none;
+  /* border-left: 2px solid #fff; */
+  border-radius: 0 50% 50% 0;
+  width: 40px;
+  min-width: 0;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  background-color: #222;
+  /* border: none; */
+  /* border-radius: 50%; */
+  color: var(--text-secondary);
+  font-size: 1.1em;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-btn-round:hover,
+.nav-btn-round-right:hover {
+  background-color: #333;
+  color: var(--text-primary);
+}
+
+.today-btn {
+  flex: 0 1 auto;
+  height: 40px;
+  padding: 0 1em;
+  background-color: #222222;
+  border: 0;
+  /* border-radius: 1rem; */
+  color: white;
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.today-btn:hover {
+  background-color: #333;
+  color: white;
+}
+
+.today-btn.active {
+  color: #ffffff;
+  background-color: #333333;
+  font-weight: 700;
+}
+
+/* 미디어 쿼리 제거: viewport 기반 rem 스케일링으로 자동 조절 */
+
+/* 일간 보기: 컬럼 1개, 이벤트는 방 순서대로 균등 분배 (A=0-20%, B=20-40%...) */
+.week-view.day-view-mode {
+  grid-template-columns: repeat(1, 1fr) !important;
+  overflow-x: visible !important;
+}
+
+.week-view.day-view-mode .day-events-container {
+  left: 0 !important;
+  width: 100% !important;
+  overflow-x: visible !important;
+}
+
+/* 일간 보기: 이벤트 글자 크기 증가 및 스타일 개선 */
+.week-view.day-view-mode .week-event {
+  padding: 0.3em 0.4em !important;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0s !important;
+}
+
+.week-view.day-view-mode .event-room {
+  font-size: 1.5em !important;
+  font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif !important;
+  margin-bottom: 0.2em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.week-view.day-view-mode .event-room::before {
+  content: "♪";
+  display: inline-block;
+  margin-right: 0.3em;
+  font-size: 1.1em;
+  opacity: 0.9;
+}
+
+.week-view.day-view-mode .event-title {
+  font-size: 1.3em !important;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif !important;
+  font-weight: 600 !important;
+  margin-bottom: 0.2em;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.week-view.day-view-mode .event-time {
+  font-size: 1.1em !important;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif !important;
+  opacity: 1 !important;
+  font-weight: 500 !important;
+  color: #ffffff !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 일간 보기: 이벤트 확대 효과 */
+.week-view.day-view-mode .week-event.expanded {
+  transform: scale(1.15) !important;
+  z-index: 1000 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+}
+
+.week-view.day-view-mode .week-event.expanded .event-title {
+  white-space: normal !important;
+  word-break: break-word !important;
+}
+
+/* 단일 방 선택 주간뷰: 데이뷰와 동일한 글자 크기 (일반 주간뷰와 분리) */
+.week-view.single-room-mode .event-room {
+  font-size: 1.5em !important;
+  margin-bottom: 0.2em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
+}
+
+.week-view.single-room-mode .event-room::before {
+  content: "♪";
+  display: inline-block;
+  margin-right: 0.3em;
+  font-size: 1.1em;
+  opacity: 0.9;
+}
+
+.week-view.single-room-mode .event-title {
+  font-size: 1.3em !important;
+  font-weight: 600 !important;
+  margin-bottom: 0.2em;
+  white-space: nowrap;
+  overflow: visible;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
+}
+
+.week-view.single-room-mode .event-time {
+  font-size: 1.1em !important;
+  opacity: 1 !important;
+  font-weight: 500 !important;
+  color: #ffffff !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif;
+}
+
+/* 주간 보기 돌아가기 버튼 (하단 푸터) */
+.back-to-week-btn {
+  padding: 0.5em 1em;
+  background-color: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 0.6em;
+  color: #ffffff;
+  font-size: 0.95em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.back-to-week-btn:hover {
+  background-color: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: scale(1.05);
+}
+
+/* 주간 보기 오늘 날짜 방 구분선 - 컬러 컨트롤 */
+.room-dividers-container {
+  position: absolute;
+  background-color: #43434354;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 단일 방 선택 시 세로선과 라벨만 숨김 (배경색은 유지) */
+.room-dividers-container.hide-content .room-divider-line,
+.room-dividers-container.hide-content .room-label-container {
+  display: none;
+}
+
+/* 단일 방 선택 시 room-bottom-labels 숨김 */
+body.single-room-view .room-bottom-labels-outside {
+  display: none !important;
+}
+
+/* 세로 구분선 컬러 (여기서 수정) */
+.room-divider-line {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 1px;
+  background-color: rgb(112 112 112 / 12%);
+  /* ← 선 컬러 */
+  pointer-events: none;
+}
+
+.room-label-container {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  pointer-events: none;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.65em;
+  font-weight: 500;
+}
+
+.room-label-container.room-label-top {
+  top: 10%;
+}
+
+.room-label-container.room-label-bottom {
+  top: 65%;
+}
+
+/* 방 라벨 글자 컬러 (여기서 수정) */
+.room-label-char {
+  line-height: 1.3;
+  text-align: center;
+  color: rgb(255 255 255 / 0%);
+  /* ← 글자 컬러 */
+}
+
+/* 오늘 날짜 배경 컬러 (여기서 수정) */
+.day-header.today {
+  background-color: rgba(255, 255, 255, 0.08);
+  /* ← 오늘 날짜 배경 컬러 */
+}
+
+
+/* ✅ 새로운 구조: 마지막 행 전체 스타일 */
+.time-row.room-label-row {
+  background-color: #2f2f2f !important;
+}
+
+.time-row.room-label-row>* {
+  background-color: #2f2f2f !important;
+  border: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  border-top: none !important;
+}
+
+.room-labels-cell {
+  position: relative !important;
+  background-color: #2f2f2f !important;
+  border: none !important;
+}
+
+.room-labels-in-cell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  padding: 0;
+  margin: 0;
+}
+
+
+.room-label-badge {
+  position: absolute;
+  width: 20%;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+  color: white;
+  transform: translateX(-50%);
+  pointer-events: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+}
+
+/* 라벨 행 높이 조정 */
+.time-label.room-label-row {
+  min-height: 32px;
+  background-color: #2f2f2f !important;
+  border: none !important;
+}
+
+/* 기존 구조 (하위 호환, 사용 안 함) */
+.room-bottom-labels-outside {
+  position: fixed;
+  bottom: calc(var(--bottom-controls-height, 0px) + var(--room-selector-height, 0px) - 2.5em + 6px);
+  height: 2.5em;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  z-index: 500;
+}
+
+/* 방별 색상 지정 */
+.room-a {
+  /* 🎨 왼쪽 아래 모서리에 5px 라운드 추가 */
+
+  background-color: rgba(246, 191, 38, 0.9);
+  /* 빨간 계열 */
+}
+
+.room-b {
+  background-color: rgba(87, 150, 200, 0.9);
+  /* 초록 계열 */
+}
+
+.room-c {
+  background-color: rgba(129, 180, 186, 0.9);
+  /* 파란 계열 */
+}
+
+.room-d {
+  background-color: rgba(125, 157, 106, 0.9);
+  /* 초록 계열 */
+}
+
+.room-e {
+  background-color: rgba(76, 76, 76, 0.9);
+  /* 파란 계열 */
+}
+
+
+.room-bottom-label {
+  position: absolute;
+  transform: translateX(-50%);
+  width: 20%;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* font-size: 1em; */
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  /* background-color: rgba(255, 255, 255, 0.15); */
+
+  /* border-radius: 0.5em; */
+  text-align: center;
+  pointer-events: none;
+  border: 0px solid rgba(255, 255, 255, 0.25);
+  /* box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); */
+}
+
+/* A홀 라벨 (첫 번째)만 왼쪽 아래 둥글게 */
+.room-bottom-label:first-child {
+  border-bottom-left-radius: 5px;
+}
+
+/* E홀 라벨 (마지막)만 오른쪽 아래 둥글게 */
+.room-bottom-label:last-child {
+  border-bottom-right-radius: 5px;
+}
+
+/* 뷰 전환 버튼 그룹 (주 | 월) */
+.view-switch-group {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+  margin-right: 0.5rem;
+  background-color: #333;
+  padding: 0.3rem 0.6rem;
+  border-radius: 1.5rem;
+}
+
+.view-switch-btn {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  transition: color 0.2s;
+}
+
+.view-switch-btn.active {
+  color: #fff;
+  font-weight: 700;
+}
+
+.view-switch-btn:hover {
+  color: #ccc;
+}
+
+.view-switch-divider {
+  color: #555;
+  font-size: 0.8rem;
+  margin: 0 0.1rem;
+}
+
+/* 상단 네비게이션 기간 버튼 (월/주) */
+.week-nav .period-btn {
+  display: none;
+  /* 기본적으로 숨김 (주간 뷰) */
+}
+
+/* 월간 뷰 활성화 시 상단 버튼 표시 */
+body.month-view-active .week-nav .period-btn {
+  display: inline-block;
+}
+
+/* 🔴 [신규] 터치 스와이프 개선: 브라우저의 가로 스크롤/제스처 차단 */
+#calendarContainer,
+.month-slider {
+  touch-action: pan-y !important;
+}

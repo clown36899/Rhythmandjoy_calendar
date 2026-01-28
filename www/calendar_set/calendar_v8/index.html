@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+
+
+  <!-- URL 정규화: index.html이 포함된 경우 디렉토리 경로로 리디렉션 -->
+  <script>
+    (function () {
+      var currentPath = window.location.pathname;
+      var search = window.location.search;
+      var hash = window.location.hash;
+
+      // URL에 index.html이 포함되어 있는지 확인
+      if (currentPath.endsWith('/index.html')) {
+        // index.html 제거한 디렉토리 경로 생성
+        var newPath = currentPath.replace('/index.html', '/');
+        var newUrl = newPath + search + hash;
+
+        // 리디렉션 (replace 사용으로 브라우저 히스토리에 중복 기록 방지)
+        window.location.replace(newUrl);
+      }
+    })();
+  </script>
+
+  <title>리듬앤조이 일정표</title>
+  <!-- 🔄 버전: 0833 - 웹훅 리스너 빠른 초기화 (수정) -->
+
+  <!-- PWA 설치 비활성화 -->
+  <!-- <link rel="manifest" href="manifest.json" /> -->
+  <!-- <link rel="apple-touch-icon" href="img/logo.png" /> (JS로 지연 로딩) -->
+
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet" as="style" crossorigin
+    href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
+
+  <!-- 💡 [수정] 헤더에 중복으로 포함된 app-init.js를 제거합니다. 이 스크립트는 body 끝에서 한 번만 로드되어야 합니다. -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="/calendar_set/calendar_v8/css/calendar.css?t=20251126-1630" />
+  <link rel="stylesheet" href="/calendar_set/calendar_v8/home_infopage/popup.css?t=20251126-1630" />
+
+
+</head>
+
+<body>
+  <!-- 팝업 배경 -->
+  <div id="popupOverlay" class="popup-overlay"></div>
+
+  <!-- 팝업 박스 -->
+  <div id="popupBox" class="popup">
+    <div id="popupContent"></div>
+  </div>
+
+  <!-- 내부 팝업용 오버레이 -->
+  <div id="innerPopupOverlay" class="popup-overlay" style="z-index: 10002"></div>
+
+  <!-- 내부 팝업 박스 -->
+  <div id="innerPopupBox" class="popup" style="z-index: 10003">
+    <div id="innerPopupContent"></div>
+  </div>
+
+  <!-- 왼쪽 메뉴 iframe (데스크탑) - 달력 로드 후 동적 로드 -->
+  <iframe id="leftMenuFrame" src="/calendar_set/calendar_v8/left-menu.html"></iframe>
+
+  <!-- 왼쪽 메뉴 (모바일 오프캔버스) -->
+  <div class="offcanvas offcanvas-start text-bg-dark" tabindex="-1" id="leftMenu" aria-labelledby="leftMenuLabel">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title" id="leftMenuLabel">메뉴</h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+
+    <!-- 모바일용 메뉴 iframe - 달력 로드 후 동적 로드 -->
+    <div class="offcanvas-body" style="padding: 0">
+      <iframe id="leftMenuFrameMobile" src="/calendar_set/calendar_v8/left-menu.html"
+        style="width: 100%; height: 100%; border: none"></iframe>
+    </div>
+  </div>
+
+  <!-- 오른쪽 iframe - 달력 로드 후 동적 로드 -->
+  <iframe id="sideFrame" data-src="https://swingenjoy.com/" style="display: none"></iframe>
+
+  <!-- 예약정보 페이지 오버레이 - 달력 로드 후 동적 로드 -->
+  <div id="infoPageOverlay" class="info-page-overlay">
+    <iframe id="infoPageFrame" class="info-page-frame" data-src="./home_infopage/homepage-section_mobile.html"></iframe>
+  </div>
+
+  <div class="app-container">
+    <div class="loading">
+      <div class="loading-spinner-container">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">
+          <p class="loading-title">리듬앤조이</p>
+          <p class="loading-subtitle">일정표 로딩 중...</p>
+        </div>
+        <div class="loading-dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+
+    <header class="calendar-header">
+      <div class="month-nav-group">
+        <button class="month-nav-btn" id="prevMonthBtn" title="이전 달">
+          ◀
+        </button>
+        <h1 class="calendar-title" id="calendarTitle">11월</h1>
+        <button class="month-nav-btn" id="nextMonthBtn" title="다음 달">
+          ▶
+        </button>
+      </div>
+
+      <button class="admin-btn" id="adminBtn" title="관리자 모드">⚙️</button>
+    </header>
+
+    <main class="calendar-main" id="calendarContainer">
+    </main>
+
+    <div class="month-panel" id="monthPanel">
+      <!-- 🔴 [신규] 배경 클릭으로 닫기 -->
+      <div class="month-panel-backdrop" id="monthPanelBackdrop"></div>
+
+      <!-- 🔴 [신규] 월간 패널 로딩 스피너 -->
+      <div class="month-panel-loading" id="monthPanelLoading">
+        <div class="month-loading-spinner"></div>
+        <p class="month-loading-text">데이터 로딩 중...</p>
+      </div>
+      <div class="month-slider" id="monthSlider"></div>
+    </div>
+
+    <!-- 🔴 [신규] 월간 날짜별 모달 -->
+    <div class="month-day-modal" id="monthDayModal">
+      <div class="month-day-modal-content">
+        <div class="month-day-modal-header">
+          <h2 class="month-day-modal-title" id="monthDayModalTitle">11월 25일</h2>
+          <button class="month-day-modal-close" id="monthDayModalClose">✕</button>
+        </div>
+        <div class="month-day-modal-events" id="monthDayModalEvents"></div>
+      </div>
+    </div>
+
+    <footer class="bottom-controls">
+      <div class="logo-section">
+        <div class="logo-circle">
+          <img src="img/logo.png" alt="리듬앤조이" style="width: 100%; height: 100%; object-fit: cover" loading="lazy"
+            decoding="async" />
+        </div>
+        <span class="logo-text">리듬앤조이 연습실</span>
+      </div>
+
+      <div class="view-switch-group">
+        <button class="view-switch-btn active" id="viewWeekBtn">주</button>
+        <span class="view-switch-divider">|</span>
+        <button class="view-switch-btn" id="viewMonthBtn">월</button>
+      </div>
+
+      <button class="info-btn" id="infoBtn"><span>▼</span> 예약 정보</button>
+    </footer>
+
+    <script>
+      // 💡 [최적화] apple-touch-icon을 나중에 로드하여 초기 네트워크 경합 방지
+      window.addEventListener('load', () => {
+        const link = document.createElement('link');
+        link.rel = 'apple-touch-icon';
+        link.href = 'img/logo.png';
+        document.head.appendChild(link);
+      });
+    </script>
+
+    <nav class="room-selector">
+      <button class="room-btn active" data-room="a" style="background-color: #f6bf26">
+        A
+      </button>
+      <button class="room-btn active" data-room="b" style="background-color: rgb(87, 150, 200)">
+        B
+      </button>
+      <button class="room-btn active" data-room="c" style="background-color: rgb(129, 180, 186)">
+        C
+      </button>
+      <button class="room-btn active" data-room="d" style="background-color: rgb(125, 157, 106)">
+        D
+      </button>
+      <button class="room-btn active" data-room="e" style="background-color: #4c4c4c; color: #fff">
+        E
+      </button>
+      <button class="room-btn" id="allRoomsBtn">ALL</button>
+      <div class="week-nav">
+        <button class="nav-btn-round" id="prevWeekBtn">&lt;</button>
+        <button class="today-btn" id="todayBtn">오늘</button>
+        <button class="nav-btn-round-right" id="nextWeekBtn">&gt;</button>
+      </div>
+    </nav>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    // 🔧 [설정] 로그 출력 여부 (true: 켜기, false: 끄기)
+    window.ENABLE_LOGS = true;
+
+    // 원본 console 메서드 보관
+    const originalLog = console.log.bind(console);
+    const originalInfo = console.info.bind(console);
+    const originalWarn = console.warn.bind(console);
+    const originalError = console.error.bind(console);
+    const originalTable = console.table ? console.table.bind(console) : originalLog;
+
+    // 로그 제어 함수
+    const conditionalLog = (...args) => { if (window.ENABLE_LOGS) originalLog(...args); };
+    const conditionalInfo = (...args) => { if (window.ENABLE_LOGS) originalInfo(...args); };
+
+    // 1. window._originalConsole 재정의 (코드에서 사용하는 것)
+    window._originalConsole = {
+      log: conditionalLog,
+      info: conditionalInfo,
+      warn: originalWarn,   // 경고는 항상 출력 (필요시 변경 가능)
+      error: originalError, // 에러는 항상 출력
+      table: originalTable
+    };
+
+    // 2. 전역 console.log 덮어쓰기 (라이브러리 및 기타 코드용)
+    console.log = conditionalLog;
+    console.info = conditionalInfo;
+    // console.warn, console.error는 유지
+
+    // 💡 [신규] 강제 로그 출력용 (설정과 무관하게 항상 출력)
+    window.FORCE_LOG = originalLog;
+  </script>
+
+  <!-- 💡 [수정] 스크립트 로딩 순서를 명시적으로 제어하여 경합 상태를 해결합니다. -->
+  <!-- defer 속성은 스크립트가 순서대로 실행되는 것을 보장합니다. -->
+  <script src="/calendar_set/calendar_v8/env.js?v=netlify-dev" defer></script>
+  <script src="/calendar_set/calendar_v8/js/config.js?v=netlify-dev" defer></script>
+  <script src="/calendar_set/calendar_v8/js/cacheRules.js?v=netlify-dev" defer></script>
+  <script src="/calendar_set/calendar_v8/js/indexed-db-manager.js?v=netlify-dev" defer></script>
+  <!-- 🚀 [신규] DataManager 대신 SyncManager 사용 -->
+  <!-- <script src="/calendar_set/calendar_v8/js/data-manager.js?v=netlify-dev" defer></script> -->
+  <script src="/calendar_set/calendar_v8/js/public-calendar-sync.js?v=netlify-dev" defer></script>
+  <!-- 💡 [New] 직접 동기화 모듈 -->
+  <script src="/calendar_set/calendar_v8/js/sync-manager.js?v=netlify-dev" defer></script>
+  <script src="/calendar_set/calendar_v8/js/calendar-core.js?v=netlify-dev" defer></script>
+  <script src="/calendar_set/calendar_v8/js/app-init.js?v=netlify-dev" defer></script>
+  <script src="/calendar_set/calendar_v8/home_infopage/open_popup.js?t=netlify-dev" defer></script>
+
+  <script>
+    // 연락처 복사 함수
+    function copy() {
+      var copyTxt = document.getElementById("copyTxt");
+      copyTxt.select();
+      copyTxt.setSelectionRange(0, 99999);
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard
+          .writeText(copyTxt.value)
+          .then(() => {
+            alert("010-4801-7180 복사되었습니다.");
+            copyTxt.blur();
+          })
+          .catch((err) => {
+            window._originalConsole.error("복사 실패", err);
+            alert("복사에 실패했습니다.");
+          });
+      } else {
+        try {
+          document.execCommand("copy");
+          alert("010-4801-7180 복사되었습니다.");
+          copyTxt.blur();
+        } catch (err) {
+          window._originalConsole.error("복사 실패", err);
+          alert("복사에 실패했습니다. 수동으로 복사해주세요.");
+        }
+      }
+    }
+  </script>
+
+</body>
+
+</html>
