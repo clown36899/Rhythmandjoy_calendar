@@ -60,7 +60,7 @@
   }
 
 
-  #calendarAll {}
+
 
 
 
@@ -98,9 +98,7 @@
     background-color: #353535 !important;
   }
 
-  .offcanvas.hiding,
-  .offcanvas.show,
-  .offcanvas.showing {}
+
 
   .navbar navbar-dark bg-dark fixed-top {
     border: 2px solid rgb(0 0 0 / 97%);
@@ -268,7 +266,7 @@
     height: 10px;
   }
 
-  .leftslogbigt {}
+
 
   .fc-axis {
     width: calc(var(--vh, 1vh) * 8) !important;
@@ -867,6 +865,7 @@
 #loading_bar {
 
   -webkit-transform: translateZ(0);
+  transform: translateZ(0);
   position: absolute;
   width: 12%;
   height: 1px;
@@ -969,7 +968,7 @@
   }
 
 
-  #calendarAll {}
+
 
 
 
@@ -1007,9 +1006,7 @@
     background-color: #353535 !important;
   }
 
-  .offcanvas.hiding,
-  .offcanvas.show,
-  .offcanvas.showing {}
+
 
   .navbar navbar-dark bg-dark fixed-top {
     border: 2px solid rgb(0 0 0 / 97%);
@@ -1183,7 +1180,7 @@
     height: 10px;
   }
 
-  .leftslogbigt {}
+
 
   .fc-axis {
     width: calc(var(--vh, 1vh) * 8) !important;

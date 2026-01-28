@@ -218,9 +218,7 @@
     background-color: #35353500 !important;
   }
 
-  .offcanvas.hiding,
-  .offcanvas.show,
-  .offcanvas.showing {}
+
 
   .navbar navbar-dark bg-dark fixed-top {
     border: 2px solid rgb(0 0 0 / 97%);
@@ -412,7 +410,7 @@
     height: 10px;
   }
 
-  .leftslogbigt {}
+
 
   .fc-axis {
     width: calc(var(--vh, 1vh) * 8) !important;
@@ -430,15 +428,7 @@
 }
 
 /*///////////////////////////////////////////////////////////////////////////////////////////////////////////*/
-.downmenu {
-  /* top: 0;
-  left: 0;
-  right: 0;
-  width: calc(var(--vh, 1vh) * 100);
-  height: calc(var(--vh, 1vh) * 100);
-  position: fixed;
-  z-index: 9999; */
-}
+
 
 .center-modal {
   position: relative;
@@ -699,11 +689,7 @@
   height: calc(var(--vh, 1vh) * 2.8) !important;
 }
 
-.fc-time-grid {
-  /* overscroll-behavior: contain;
-  overflow: hidden; */
-  /* height: calc(var(--vh, 1vh) * 100) !important; */
-}
+
 
 .fc-head .fc-row .fc-widget-header {
   /* box-shadow: 0px 2px 5px #9e9e9e !important;
@@ -1208,6 +1194,7 @@ body.view-timeGridWeek .fc tbody {
 #loading_bar {
 
   -webkit-transform: translateZ(0);
+  transform: translateZ(0);
   position: absolute;
   width: 12%;
   height: 1px;
@@ -1295,12 +1282,11 @@ body.view-timeGridWeek .fc tbody {
   }
 
   .itemflex {
-
     text-align: center;
   }
 
 
-  #calendarAll {}
+
 
 
 
@@ -1348,14 +1334,9 @@ body.view-timeGridWeek .fc tbody {
     /* font-size: 15px; */
   }
 
-  .bg-dark {
-    /* border-bottom: 2px solid rgb(0, 0, 0); */
-    /* background-color: #353535 !important; */
-  }
 
-  .offcanvas.hiding,
-  .offcanvas.show,
-  .offcanvas.showing {}
+
+
 
   .navbar navbar-dark bg-dark fixed-top {
     border: 2px solid rgb(0 0 0 / 97%);
@@ -1509,7 +1490,7 @@ body.view-timeGridWeek .fc tbody {
     height: 10px;
   }
 
-  .leftslogbigt {}
+
 
   .fc-axis {
     width: calc(var(--vh, 1vh) * 8) !important;
