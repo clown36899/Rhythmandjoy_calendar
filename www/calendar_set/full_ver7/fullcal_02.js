@@ -317,6 +317,9 @@ function initCalendar() {
         }
       }
 
+
+      setTimeout(updateSourcesDynamicallyAllSlides, 0);
+
       setTimeout(updateSourcesDynamicallyAllSlides, 0);
     },
     eventRender: function (info) {

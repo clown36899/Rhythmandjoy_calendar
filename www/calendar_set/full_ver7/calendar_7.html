@@ -789,41 +789,60 @@
       const DESKTOP_THRESHOLD = 1000;
       const isLargeScreen = window.innerWidth > DESKTOP_THRESHOLD; // 1000px 초과인지 확인
 
-      // 💡 수정된 선택자: 모든 슬라이드에서 캘린더 tbody 요소를 모두 가져옴
-      // SwipeCalendar는 기본 캘린더 외에 이전/다음 캘린더를 DOM에 미리 로드합니다.
-      // 따라서 #calendarAll 내부의 모든 뷰 컨테이너의 .fc-body를 선택합니다.
-      const tbodyEls = document.querySelectorAll("#calendarAll .fc-body");
+      // 💡 수정된 선택자: FullCalendar v5에서는 .fc-body 대신 .fc-view-harness 또는 .fc-scrollgrid를 사용해야 합니다.
+      const tbodyEls = document.querySelectorAll("#calendarAll .fc-view-harness");
 
-      // 선택된 요소의 개수를 확인합니다. (기대값: 3개 또는 그 이상)
-      console.log(`⭐ 발견된 캘린더 tbody/fc-body 요소 개수: ${tbodyEls.length}개`);
+      // 💡 수정된 선택자: FullCalendar 루트 요소(.fc)를 직접 타겟팅합니다.
+      // SwipeCalendar는 여러 개의 .fc 요소를 생성할 수 있습니다.
+      const tbodyEls = document.querySelectorAll("#calendarAll .fc");
 
-      // 3개의 요소에 모두 스타일을 적용하기 위해 반복문을 사용합니다.
-      tbodyEls.forEach((tbodyEl, index) => {
-        // 스타일을 적용할 기본값 (초기화)
+      // 선택된 요소의 개수를 확인합니다.
+      console.log(`⭐ 발견된 캘린더 루트 요소(.fc) 개수: ${tbodyEls.length}개`);
+
+      // 만약 .fc가 없다면 구버전 호환성을 위해 .fc-view-harness도 찾아봅니다.
+      if (tbodyEls.length === 0) {
+        const harnessEls = document.querySelectorAll("#calendarAll .fc-view-harness");
+        console.log(`⭐ .fc 없음, .fc-view-harness 시도: ${harnessEls.length}개`);
+        // (여기서 harnessEls를 사용하도록 로직을 확장할 수도 있지만, 보통 .fc는 반드시 존재함)
+      }
+      viewContainers.forEach((containerEl, index) => {
+        // 스타일 초기화
         let newWidth = '';
+        let marginLeft = '';
+        let marginRight = '';
         let logMessage = '';
 
         if (currentView.type === 'dayGridMonth') {
           if (isLargeScreen) {
-            // 🟢 월간 뷰 AND 1000px 초과일 때 50% 적용
+            // 🟢 월간 뷰 AND 1000px 초과일 때 33.3% 적용
+            // 컨테이너 너비를 강제로 줄임
             newWidth = '33.3%';
-            logMessage = `✅ 월간 뷰 (1000px 초과): 50% 적용`;
+            marginLeft = 'auto'; // 가운데 정렬
+            marginRight = 'auto';
+            logMessage = `✅ 월간 뷰 (1000px 초과): 33.3% 적용 (margin: auto)`;
           } else {
-            // 🟡 월간 뷰 AND 1000px 이하일 때 width 초기화 (100%로 동작)
+            // 🟡 월간 뷰 AND 1000px 이하일 때 초기화
             newWidth = '';
+            marginLeft = '';
+            marginRight = '';
             logMessage = `✅ 월간 뷰 (1000px 이하): 초기화 (100%)`;
           }
         } else if (currentView.type === 'timeGridWeek') {
-          // 🔵 주간 뷰일 때는 항상 width 초기화 (100%로 동작)
+          // 🔵 주간 뷰일 때는 항상 초기화
           newWidth = '';
+          marginLeft = '';
+          marginRight = '';
           logMessage = `✅ 주간 뷰: 초기화 (100%)`;
         }
 
-        // 선택된 모든 요소에 스타일 적용
-        tbodyEl.style.width = newWidth;
-        // 가운데 정렬을 위해 margin-left/right auto 추가
-        tbodyEl.style.marginLeft = newWidth === '50%' ? 'auto' : '';
-        tbodyEl.style.marginRight = newWidth === '50%' ? 'auto' : '';
+        // 스타일 적용 (중요!)
+        // 기존 스타일을 덮어쓰기 위해 style 속성 직접 제어
+        containerEl.style.setProperty('width', newWidth, 'important');
+        containerEl.style.setProperty('margin-left', marginLeft, 'important');
+        containerEl.style.setProperty('margin-right', marginRight, 'important');
+
+        // 내부 테이블에도 영향이 가도록 overflow 설정
+        containerEl.style.overflow = 'hidden';
 
         if (logMessage) {
           console.log(`[${index + 1}번째 슬라이드] ${logMessage}`);
@@ -888,6 +907,22 @@
       document.getElementById('titleMonth').innerHTML = view.title;
       document.getElementById("titleMonth").style.color = "#029df7";
 
+      // 🟢 [추가] 초기 로드 시 월간 뷰 레이아웃 적용
+      applyMonthViewWidth();
+
+      // 🟢 [추가] 뷰 변경 감지 (MutationObserver) - 월간/주간 전환 시 레이아웃 재적용
+      // FullCalendar가 DOM을 업데이트할 때마다 스타일이 초기화될 수 있으므로 감지하여 재적용
+      if (typeof MutationObserver !== 'undefined') {
+        const calendarEl = document.getElementById('calendarAll');
+        if (calendarEl) {
+          const observer = new MutationObserver(debounce(() => {
+            applyMonthViewWidth();
+          }, 50)); // 짧은 debounce로 부하 방지
+
+          observer.observe(calendarEl, { childList: true, subtree: true });
+          console.log("✅ 캘린더 DOM 변경 감지(Observer) 등록 완료 of applyMonthViewWidth");
+        }
+      }
 
       //leftindicatortop();
       //timeloof();

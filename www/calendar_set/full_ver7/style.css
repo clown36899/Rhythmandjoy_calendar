@@ -832,6 +832,22 @@ body.view-timeGridWeek .fc tbody {
   /* 주간 뷰일 때 50% 적용 */
 }
 
+/* 🟢 월간 뷰(dayGridMonth) 전용 강제 스타일 (데스크탑 레이아웃 깨짐 방지) */
+@media (min-width: 1001px) {
+  .fc-dayGridMonth-view .fc-scroller>.fc-day-grid {
+    margin-bottom: 0px;
+    overflow: hidden;
+    width: 33.3% !important;
+    /* 33% 적용 */
+
+  }
+}
+
+.fc-dayGridMonth-view table {
+  width: 100% !important;
+  table-layout: fixed !important;
+}
+
 
 .fc-unthemed th
 
