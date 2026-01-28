@@ -66,6 +66,8 @@ body {
 .popup-overlay.active {
   opacity: 1;
   pointer-events: auto;
+  display: block !important;
+  /* Force display when active */
 }
 
 /* 팝업 본체 */
@@ -99,6 +101,8 @@ body {
   transform: translate(-50%, -50%);
   opacity: 1;
   pointer-events: auto;
+  display: block !important;
+  /* Force display when active */
 }
 
 .popup::-webkit-scrollbar {
