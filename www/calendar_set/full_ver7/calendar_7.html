@@ -135,6 +135,11 @@
     <div id="popupContent"></div>
   </div>
 
+  <!-- [Ported from V8] 예약정보 페이지 오버레이 -->
+  <div id="infoPageOverlay" class="info-page-overlay">
+    <iframe id="infoPageFrame" class="info-page-frame" src="./home_infopage/homepage-section_mobile.html"></iframe>
+  </div>
+
 
 
   <div id="main_room_title"></div>
@@ -216,10 +221,7 @@
 
 
       </div>
-      <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasDarkNavbar"
-        aria-controls="offcanvasDarkNavbar">
-        <span class="navbar-toggler-icon">▶️ 예약,정보</span>
-      </button>
+      <button class="info-btn" id="infoBtn"><span>▼</span> 예약 정보</button>
     </nav>
     <div id="loading_bar_base_a">
       <div id="bar_btn">
@@ -297,6 +299,9 @@
               </button>
             </div>
 
+            <!-- [Ported from V8] 예약 정보 버튼 -->
+
+
 
 
             <div class="fc-button-group" style="display: flex;
@@ -307,10 +312,10 @@
                       bottom: 0px;
                       justify-content: space-between;">
               <div>
-                <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas"
+                <!-- <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas"
                   data-bs-target="#offcanvasDarkNavbar" aria-controls="offcanvasDarkNavbar">
                   <span class="navbar-toggler-icon">예약</span>
-                </button>
+                </button> -->
               </div>
               <div class="fc-button-group">
                 <button type="button" id="prev" class="fc-prev-button fc-button fc-button-primary fc-corner-left"
@@ -1013,6 +1018,46 @@
       }
     }
   }
+</script>
+
+<script>
+  // [Ported from V8] 예약정보 버튼 및 오버레이 로직
+  function setupInfoButton() {
+    const infoBtn = document.getElementById("infoBtn");
+    if (infoBtn) {
+      infoBtn.addEventListener("click", () => {
+        openInfoPage();
+      });
+    }
+  }
+
+  function openInfoPage() {
+    const overlay = document.getElementById("infoPageOverlay");
+    if (overlay) {
+      requestAnimationFrame(() => {
+        overlay.classList.add("active");
+      });
+    }
+  }
+
+  function closeInfoPage() {
+    const overlay = document.getElementById("infoPageOverlay");
+    if (overlay) {
+      overlay.classList.remove("active");
+    }
+  }
+
+  // 메시지 리스너 (iframe에서 닫기 요청 시)
+  window.addEventListener("message", (event) => {
+    if (event.data && event.data.type === "closeInfo") {
+      closeInfoPage();
+    }
+  });
+
+  // 초기화
+  document.addEventListener('DOMContentLoaded', () => {
+    setupInfoButton();
+  });
 </script>
 
 </html>

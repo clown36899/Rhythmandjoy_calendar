@@ -540,6 +540,7 @@ temporary rendered events).
 	position: relative;
 	/* re-scope all positions */
 	width: 100%;
+
 	/* hack to force re-sizing this inner element when scrollbars appear/disappear */
 }
 

@@ -310,6 +310,7 @@ temporary rendered events).
   position: relative;
   /* re-scope all positions */
   width: 100%;
+
   /* hack to force re-sizing this inner element when scrollbars appear/disappear */
 }
 
@@ -521,7 +522,7 @@ be a descendant of the grid when it is being dragged.
   margin: 1px 2px 0;
   /* spacing between events and edges */
   padding: 0 1px;
-  height: 0.3rem;
+  height: 0.5rem;
   overflow: hidden;
 }
 

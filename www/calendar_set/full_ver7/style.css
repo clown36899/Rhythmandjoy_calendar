@@ -100,7 +100,7 @@
 .fc-scroller {
   /*본문표시배경*/
   background: #1f1f1f;
-  height: calc(var(--vh, 1vh) * 72) !important;
+  height: calc(var(--vh, 1vh) * 75) !important;
   /* margin: 3px 0 0 0; */
 }
 
@@ -520,7 +520,7 @@
   padding: 3px;
   transition: 400ms;
   flex-direction: row;
-  margin: 0 16px;
+  margin: 9px 0px;
   top: 0;
   display: flex;
   z-index: 0;
@@ -951,7 +951,7 @@ body.view-timeGridWeek .fc tbody {
   flex-direction: column;
   bottom: 0;
   width: 100%;
-  height: 5rem;
+  height: 5.5rem;
   z-index: 9;
   /* margin-bottom: 5px; */
   flex-wrap: nowrap;
@@ -1822,10 +1822,11 @@ body.view-timeGridWeek .fc tbody {
   position: relative;
   display: block;
   padding: 0px;
-  font-size: 0.4em;
+  font-size: 0.6em;
   line-height: 1.4;
   border-radius: 9px;
   border: 1px solid #3788d8;
+  color: black;
 }
 
 .room-btn {
@@ -2349,4 +2350,69 @@ hr.fc-divider,
   margin: 0 !important;
   padding: 0 !important;
   visibility: hidden !important;
+}
+
+/* =========================================
+   [Ported from V8] Info Page Overlay & Button
+   ========================================= */
+
+/* 예약정보 페이지 오버레이 */
+.info-page-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20000;
+  transform: translateY(-100%);
+  transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  pointer-events: none;
+  background: #1f1f1f;
+}
+
+.info-page-overlay.active {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.info-page-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+/* 예약 정보 버튼 스타일 */
+.info-btn {
+  background: #333;
+  border: 1px solid #555;
+  color: #fff;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.9rem;
+  margin-left: 5px;
+  height: 38px;
+  /* 다른 버튼과 높이 맞춤 */
+  white-space: nowrap;
+  /* 텍스트 줄바꿈 방지 */
+}
+
+.info-btn span {
+  font-size: 0.8em;
+}
+
+.info-btn:hover {
+  background: #444;
+  border-color: #777;
+}
+
+/* 1000px 이상에서는 버튼 숨김 (데스크탑 모드) */
+@media (min-width: 1001px) {
+  .info-btn {
+    display: none !important;
+  }
 }

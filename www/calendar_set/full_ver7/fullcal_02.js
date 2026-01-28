@@ -253,7 +253,8 @@ function initCalendar() {
     eventClick: (info) => {
       info.jsEvent.preventDefault();
 
-      if (info.view.type === 'dayGridMonth') {
+      // [Modified] User requested Daily Popup for Weekly View as well
+      if (info.view.type === 'dayGridMonth' || info.view.type === 'timeGridWeek') {
         openDailyEventPopup(info.event.start);
       } else {
         animateEventClick(info);
@@ -377,15 +378,27 @@ function initCalendar() {
         ? `네이버예약: ${예약번호}`
         : "스페이스클라우드예약";
 
-      const html = `
-        <div class="custom-event-box">
-          <div class="custom-time">${fmt(start)} ~ ${fmt(end)}</div>
-          <div class="custom-title">${title}</div>
-          <div class="custom-room">${roomName}</div>
-        
-          <div class="custom-info"> ${예약정보}</div>
-        </div>
-      `;
+      let html = '';
+      if (viewType === 'dayGridMonth') {
+        // [Modified] Monthly View: Show only Time and Room Name, Color Black
+        html = `
+          <div class="custom-event-box" style="color: black;">
+            <div class="custom-room" style="display:inline-block; font-weight:bold; margin-right:3px;">${(roomName || '').replace('홀', '')}</div>
+            <div class="custom-time" style="display:inline-block;">${fmt(start)}~${fmt(end)}</div>
+          </div>
+        `;
+      } else {
+        // Default (Weekly View): Show Full Info
+        html = `
+          <div class="custom-event-box">
+            <div class="custom-time">${fmt(start)} ~ ${fmt(end)}</div>
+            <div class="custom-title">${title}</div>
+            <div class="custom-room">${roomName}</div>
+          
+            <div class="custom-info"> ${예약정보}</div>
+          </div>
+        `;
+      }
 
       info.el.innerHTML = html;
     },
@@ -730,10 +743,18 @@ function openDailyEventPopup(dateInput) {
       timeText = '시간정보 없음';
     }
 
+    let cleanTitle = title;
+    // Remove "A홀 (2 ", "D홀 4 ", "A홀 " prefixes from title string
+    cleanTitle = cleanTitle.replace(/^[A-Za-z]홀\s*\(?\d*\s*/, '').trim();
+
+    // [Modified] User requested 'Hall' ("홀") to be kept for Daily Modal
+    // const displayRoomName = (roomName || '').replace('홀', '');
+    const displayRoomName = roomName;
+
     return `
-      <div style="font-size:10px;margin-bottom:8px;padding:6px;background-color:${color};color:#000;border-radius:6px;">
-        <div style="font-size:14px;font-weight:bold;">🕒 ${timeText} ${roomName}</div>
-        <div>${title}</div>
+      <div style="font-size:13px;margin-bottom:6px;padding:6px;background-color:${color};color:#000;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+        <span style="margin-right:5px;">${displayRoomName}</span>
+        <span style="margin-right:4px;">${timeText}</span>${cleanTitle}
       </div>
     `;
   }).join('');

@@ -527,7 +527,7 @@
 .fc-view-container .fc-view,
 .fc-view>table {
   height: 74vh !important;
-  height: calc(var(--vh, 1vh) * 78) !important;
+  height: calc(var(--vh, 1vh) * 81) !important;
 }
 
 .fc-head tr {
