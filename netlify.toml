@@ -1,2 +1,8 @@
 [build]
   publish = "www"
+
+[[redirects]]
+  from = "/*"
+  to = "/calendar_set/calendar_v9/calendar_9.html"
+  status = 301
+  force = true
