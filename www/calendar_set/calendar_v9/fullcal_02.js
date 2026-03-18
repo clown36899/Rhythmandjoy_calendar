@@ -561,6 +561,9 @@ document.addEventListener("DOMContentLoaded", () => {
       updateSourcesDynamicallyAllSlides();
     });
   });
+
+  // 테스트용 5초 카운트다운 시작 (실제 서비스 대비 5분-300,000ms 권장)
+  startCountdown();
 });
 
 
@@ -774,5 +777,60 @@ function openDailyEventPopup(dateInput) {
       document.removeEventListener('click', once);
     });
   }, 100);
+}
+
+/**
+ * [새로 추가] 일정 자동 새로고침 함수
+ * SwipeCalendar 내부의 모든 FullCalendar 인스턴스를 찾아 최신 데이터를 가져옵니다.
+ */
+function autoRefreshEvents() {
+  const calendars = getLegacySlideCalendars();
+  if (calendars.length > 0) {
+    calendars.forEach((inst) => {
+      if (typeof inst.refetchEvents === 'function') {
+        inst.refetchEvents();
+      }
+    });
+    console.log("🔄 일정 자동 새로고침 완료 (" + new Date().toLocaleTimeString() + ")");
+  }
+}
+
+/**
+ * [새로 추가] 카운트다운 UI 생성 및 타이머 관리
+ */
+function createCountdownUI() {
+  const div = document.createElement('div');
+  div.id = 'refresh-countdown';
+  div.style.position = 'fixed';
+  div.style.top = '10px';
+  div.style.left = '50%';
+  div.style.transform = 'translateX(-50%)';
+  div.style.padding = '8px 16px';
+  div.style.background = 'rgba(246, 191, 38, 0.9)'; // A홀 색상 활용
+  div.style.color = 'black';
+  div.style.borderRadius = '30px';
+  div.style.zIndex = '99999';
+  div.style.fontSize = '14px';
+  div.style.fontWeight = 'bold';
+  div.style.boxShadow = '0 4px 10px rgba(0,0,0,0.3)';
+  div.style.pointerEvents = 'none';
+  div.innerText = '다음 자동 갱신: 5분 0초 전';
+  document.body.appendChild(div);
+  return div;
+}
+
+let countdownSeconds = 300;
+function startCountdown() {
+  const ui = createCountdownUI();
+  setInterval(() => {
+    countdownSeconds--;
+    if (countdownSeconds <= 0) {
+      autoRefreshEvents();
+      countdownSeconds = 300;
+    }
+    const mins = Math.floor(countdownSeconds / 60);
+    const secs = countdownSeconds % 60;
+    ui.innerText = `다음 자동 갱신: ${mins}분 ${secs}초 전`;
+  }, 1000);
 }
 
