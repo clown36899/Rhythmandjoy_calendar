@@ -562,8 +562,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // 테스트용 5초 카운트다운 시작
-  startCountdown();
+  // 5분마다 자동 새로고침 시작 (300,000ms)
+  setInterval(autoRefreshEvents, 300000);
 });
 
 
