@@ -568,9 +568,9 @@ document.addEventListener("DOMContentLoaded", () => {
     document.addEventListener(e, () => lastInteraction = Date.now());
   });
 
-  // 탭 복귀 시 → reload
+  // 탭 복귀 시 → 무조건 reload
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && Date.now() - lastInteraction >= 5 * 60 * 1000) {
+    if (document.visibilityState === 'visible') {
       location.reload();
     }
   });
