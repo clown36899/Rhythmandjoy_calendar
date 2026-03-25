@@ -319,31 +319,26 @@ function initCalendar() {
       }
 
 
-      setTimeout(updateSourcesDynamicallyAllSlides, 0);
-
-      setTimeout(updateSourcesDynamicallyAllSlides, 0);
-    },
-    eventRender: function (info) {
-      const viewType = info.view.type;  // 'timeGridWeek', 'dayGridMonth' 등
-
-
-      if (viewType === 'dayGridMonth') {
-        // 월간 뷰에서는 .fc-day.fc-today에 삼각형 표시
+      // 삼각형: datesRender에서 한 번만 추가 (기존 것 제거 후)
+      document.querySelectorAll('.custom-triangle').forEach(el => el.remove());
+      if (info.view.type === 'dayGridMonth') {
         document.querySelectorAll('.fc-day.fc-today').forEach((el) => {
           const triangle = document.createElement('div');
           triangle.className = 'custom-triangle';
           el.appendChild(triangle);
         });
-      }
-
-      if (viewType === 'timeGridWeek') {
-        // 주간 뷰에서는 .fc-day-header.fc-today에만 삼각형 표시
+      } else if (info.view.type === 'timeGridWeek') {
         document.querySelectorAll('.fc-day-header.fc-today').forEach((el) => {
           const triangle = document.createElement('div');
           triangle.className = 'custom-triangle';
           el.appendChild(triangle);
         });
       }
+
+      setTimeout(updateSourcesDynamicallyAllSlides, 0);
+    },
+    eventRender: function (info) {
+      const viewType = info.view.type;  // 'timeGridWeek', 'dayGridMonth' 등
 
 
       const ev = info.event;
