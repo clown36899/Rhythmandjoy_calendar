@@ -1056,6 +1056,22 @@
   // 초기화
   document.addEventListener('DOMContentLoaded', () => {
     setupInfoButton();
+
+    // 공유 링크로 접근 시 정보창 자동 열기
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('openInfo') === 'true') {
+      const section = params.get('section');
+      openInfoPage();
+      if (section) {
+        // iframe 로드 후 섹션 이동
+        const iframe = document.getElementById('infoPageFrame');
+        if (iframe) {
+          iframe.addEventListener('load', () => {
+            iframe.contentWindow.postMessage({ type: 'showSection', section }, '*');
+          }, { once: true });
+        }
+      }
+    }
   });
 </script>
 
