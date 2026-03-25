@@ -785,6 +785,7 @@
   <script>// ⭐ [새 함수: 월간 뷰 width 적용 로직 - datesRender와 resize 이벤트에서 모두 사용] ⭐
     // ⭐ [새 함수: 월간 뷰 width 적용 로직 - datesRender와 resize 이벤트에서 모두 사용] ⭐
     function applyMonthViewWidth() {
+      return; // 미사용 함수 - MutationObserver 루프 방지
       // 캘린더 인스턴스가 존재하고 뷰 정보가 있는지 확인
       if (typeof calendar === 'undefined' || !calendar || !calendar.view) {
         return;
