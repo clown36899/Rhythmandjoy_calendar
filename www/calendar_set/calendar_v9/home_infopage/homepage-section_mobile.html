@@ -1338,12 +1338,10 @@
     });
     // 일정표로 돌아가기
     function closeAndGoBack() {
-      // iframe 안에 있으면 부모에게 닫기 메시지 전송
       if (window.parent !== window) {
         window.parent.postMessage({ type: "closeInfo" }, "*");
-      } else {
-        // 독립 페이지로 열렸으면 직접 이동
-        window.location.href = "../index.html";
+      } else if (typeof closeInfoPage === 'function') {
+        closeInfoPage();
       }
     }
 
