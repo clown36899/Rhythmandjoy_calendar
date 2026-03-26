@@ -2395,3 +2395,5 @@ hr.fc-divider,
     display: none !important;
   }
 }
+/* 캘린더 이벤트 커서 */
+.fc-event, .fc-event * { cursor: pointer !important; }

@@ -2,7 +2,19 @@
   publish = "www"
 
 [[redirects]]
+  from = "/calendar_set/calendar_v8/*"
+  to = "/calendar_set/calendar_v9/calendar_mobile.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/calendar_set/full_ver7/*"
+  to = "/calendar_set/calendar_v9/calendar_mobile.html"
+  status = 301
+  force = true
+
+[[redirects]]
   from = "/*"
-  to = "/calendar_set/calendar_v9/calendar_9.html"
+  to = "/calendar_set/calendar_v9/calendar_mobile.html"
   status = 301
 
