@@ -16,5 +16,5 @@
 [[redirects]]
   from = "/*"
   to = "/calendar_set/calendar_v9/calendar_mobile.html"
-  status = 301
+  status = 200
 
