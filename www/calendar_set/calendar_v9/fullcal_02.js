@@ -563,17 +563,17 @@ document.addEventListener("DOMContentLoaded", () => {
     document.addEventListener(e, () => lastInteraction = Date.now());
   });
 
-  // 탭 복귀 시 → 무조건 reload
+  // 탭 복귀 시 → 데이터만 갱신 (화면 유지, 깜빡임 없음)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      location.reload();
+      autoRefreshEvents();
     }
   });
 
   // 키오스크 방치 시 → 데이터만 갱신 (화면 유지)
   setInterval(() => {
     if (Date.now() - lastInteraction >= 5 * 60 * 1000) {
-      try { calendar.refetchEvents(); } catch(e) {}
+      autoRefreshEvents();
     }
   }, 30000);
 });
