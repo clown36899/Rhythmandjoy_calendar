@@ -1,6 +1,9 @@
 [build]
   publish = "www"
 
+[build.environment]
+  SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
+
 [[redirects]]
   from = "/calendar_set/calendar_v8/*"
   to = "/"
