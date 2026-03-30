@@ -1082,4 +1082,21 @@
   });
 </script>
 
+
+<!-- 임시 테스트 버튼 -->
+<button id="testRefetchBtn" onclick="
+  console.log('🔴 refetchEvents 호출 전 - 이벤트 DOM 수:', document.querySelectorAll('.fc-event').length);
+  const before = document.querySelectorAll('.fc-event').length;
+  const t0 = performance.now();
+  const cals = [calendar._prevCal, calendar._curCal, calendar._nextCal].filter(c => c);
+  cals.forEach(c => c.refetchEvents());
+  const t1 = performance.now();
+  console.log('🟡 refetchEvents 호출 직후 - 이벤트 DOM 수:', document.querySelectorAll('.fc-event').length, '(' + Math.round(t1-t0) + 'ms)');
+  setTimeout(() => {
+    console.log('🟢 1초 후 - 이벤트 DOM 수:', document.querySelectorAll('.fc-event').length);
+  }, 1000);
+" style="position:fixed;bottom:80px;right:10px;z-index:9999;background:red;color:white;padding:10px 16px;border-radius:8px;font-size:14px;border:none;cursor:pointer;">
+  TEST refetch
+</button>
+
 </html>
