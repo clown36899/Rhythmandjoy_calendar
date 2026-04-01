@@ -807,9 +807,24 @@ function openDailyEventPopup(dateInput) {
  * [새로 추가] 일정 자동 새로고침 함수
  * SwipeCalendar 내부의 모든 FullCalendar 인스턴스를 찾아 최신 데이터를 가져옵니다.
  */
+function showRefreshToast() {
+  let toast = document.getElementById('_refreshToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = '_refreshToast';
+    toast.style.cssText = 'position:fixed;bottom:70px;right:12px;z-index:99999;background:rgba(0,0,0,0.7);color:#fff;font-size:12px;padding:5px 10px;border-radius:20px;pointer-events:none;transition:opacity 0.4s;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = '🔄 새로고침 중...';
+  toast.style.opacity = '1';
+  clearTimeout(toast._hideTimer);
+  toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+}
+
 function autoRefreshEvents() {
   const calendars = getLegacySlideCalendars();
   if (calendars.length > 0) {
+    showRefreshToast();
     calendars.forEach((inst) => {
       if (typeof inst.refetchEvents === 'function') {
         inst.refetchEvents();
