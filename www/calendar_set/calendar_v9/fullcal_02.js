@@ -598,7 +598,8 @@ function openDailyEventPopup(dateInput) {
   popup.style.overflow = 'hidden';
   popup.style.border = '1px solid rgb(29 6 6)';
   popup.style.boxShadow = '0 4px 10px rgba(0,0,0,0.1)';
-  popup.style.width = '260px';
+  popup.style.width = '75%';
+  popup.style.maxWidth = '450px';
   popup.style.maxHeight = '60%';
   popup.style.top = '50%';
   popup.style.left = '50%';
@@ -731,7 +732,6 @@ function openDailyEventPopup(dateInput) {
   const eventListHTML = dailyEvents.map(ev => {
     const roomKey = ev.extendedProps?.roomKey || '';
     const color = getColor(roomKey);
-    const title = ev.title || '';
     const roomName = ev.extendedProps?.roomName || '';
     const start = ev.start;
     const end = ev.end;
@@ -742,9 +742,12 @@ function openDailyEventPopup(dateInput) {
       // Use local time formatting logic if needed
       // Re-using fmt logic from before which had -9h offset hack commented out?
       // Let's use simple formatting
-      const sTime = start.toTimeString().substring(0, 5);
-      const eTime = end.toTimeString().substring(0, 5);
-      timeText = `${sTime} ~ ${eTime}`;
+      const sHour = start.getHours();
+      const eHour = end.getHours();
+      const sMin = start.getMinutes();
+      const eMin = end.getMinutes();
+      const fmt = (h, m) => m === 0 ? `${h}` : `${h}:${String(m).padStart(2,'0')}`;
+      timeText = `${fmt(sHour, sMin)} ~ ${fmt(eHour, eMin)}시`;
 
       // Try using the originally provided fmt function if possible, but I defined it above 
       // locally. Let's use that.
@@ -758,18 +761,27 @@ function openDailyEventPopup(dateInput) {
       timeText = '시간정보 없음';
     }
 
-    let cleanTitle = title;
-    // Remove "A홀 (2 ", "D홀 4 ", "A홀 " prefixes from title string
-    cleanTitle = cleanTitle.replace(/^[A-Za-z]홀\s*\(?\d*\s*/, '').trim();
-
-    // [Modified] User requested 'Hall' ("홀") to be kept for Daily Modal
-    // const displayRoomName = (roomName || '').replace('홀', '');
+    const desc = ev.extendedProps?.description || '';
+    const extractDesc = (label) => {
+      const match = desc.match(new RegExp(`${label}:\\s*([^\n]+)`));
+      return match ? match[1].trim() : '';
+    };
+    const raw예약자명 = extractDesc('예약자명');
+    const 예약번호 = extractDesc('예약번호');
+    let displayName;
+    if (raw예약자명) {
+      displayName = raw예약자명.replace(/님+$/, '') + '님';
+    } else {
+      const title = ev.title || '';
+      displayName = title.replace(/^[A-Za-z]홀\s*\(?\d*\s*/, '').trim();
+    }
     const displayRoomName = roomName;
 
     return `
-      <div style="font-size:13px;margin-bottom:6px;padding:6px;background-color:${color};color:#000;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-        <span style="margin-right:5px;">${displayRoomName}</span>
-        <span style="margin-right:4px;">${timeText}</span>${cleanTitle}
+      <div style="font-size:13px;margin-bottom:6px;padding:6px;background-color:${color};color:#000;border-radius:4px;display:flex;align-items:center;overflow:hidden;">
+        <span style="width:28px;flex-shrink:0;font-weight:bold;">${displayRoomName}</span>
+        <span style="width:62px;flex-shrink:0;">${timeText}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${displayName}${예약번호 ? ' · ' + 예약번호 : ''}</span>
       </div>
     `;
   }).join('');
