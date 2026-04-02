@@ -564,15 +564,27 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // 탭 복귀 시 → 데이터만 갱신 (화면 유지, 깜빡임 없음)
+  // 디바운스: 연속 발화 방지 (모바일에서 visibilitychange 중복 트리거 시 먹통 방지)
+  let _visibilityTimer = null;
   document.addEventListener('visibilitychange', () => {
+    console.log('[visibilitychange]', document.visibilityState);
     if (document.visibilityState === 'visible') {
-      autoRefreshEvents();
+      clearTimeout(_visibilityTimer);
+      _visibilityTimer = setTimeout(() => {
+        console.log('[visibilitychange] 디바운스 후 autoRefreshEvents 실행');
+        autoRefreshEvents();
+      }, 300);
     }
   });
 
-  // 키오스크 방치 시 → 데이터만 갱신 (화면 유지)
+  // 키오스크 방치 시 → 데이터만 갱신 (화면 유지, 백그라운드 시 스킵)
   setInterval(() => {
+    if (document.visibilityState !== 'visible') {
+      console.log('[setInterval] 백그라운드 스킵');
+      return;
+    }
     if (Date.now() - lastInteraction >= 5 * 60 * 1000) {
+      console.log('[setInterval] 5분 방치 → autoRefreshEvents 실행');
       autoRefreshEvents();
     }
   }, 30000);
