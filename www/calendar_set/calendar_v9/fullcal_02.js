@@ -568,11 +568,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // 디바운스: 연속 발화 방지 (모바일에서 visibilitychange 중복 트리거 시 먹통 방지)
   let _visibilityTimer = null;
   document.addEventListener('visibilitychange', () => {
-    console.log('[visibilitychange]', document.visibilityState);
     if (document.visibilityState === 'visible') {
       clearTimeout(_visibilityTimer);
       _visibilityTimer = setTimeout(() => {
-        console.log('[visibilitychange] 디바운스 후 autoRefreshEvents 실행');
         autoRefreshEvents();
       }, 300);
     }
@@ -580,14 +578,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 키오스크 방치 시 → 데이터만 갱신 (화면 유지, 백그라운드 시 스킵)
   setInterval(() => {
-    if (document.visibilityState !== 'visible') {
-      console.log('[setInterval] 백그라운드 스킵');
-      return;
-    }
-    const idle = Math.round((Date.now() - lastInteraction) / 1000);
-    console.log(`[setInterval] 방치시간: ${idle}초`);
+    if (document.visibilityState !== 'visible') return;
     if (Date.now() - lastInteraction >= 5 * 60 * 1000) {
-      console.log('[setInterval] 5분 방치 → autoRefreshEvents 실행');
       autoRefreshEvents();
     }
   }, 30000);
@@ -839,7 +831,6 @@ function showRefreshToast() {
 function autoRefreshEvents() {
   const now = Date.now();
   if (now - _lastRefreshed < 6000) {
-    console.log('[autoRefreshEvents] 쿨타임 스킵');
     return;
   }
   _lastRefreshed = now;
