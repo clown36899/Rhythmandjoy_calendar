@@ -583,11 +583,13 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log('[setInterval] 백그라운드 스킵');
       return;
     }
-    if (Date.now() - lastInteraction >= 5 * 60 * 1000) {
-      console.log('[setInterval] 5분 방치 → autoRefreshEvents 실행');
+    const idle = Math.round((Date.now() - lastInteraction) / 1000);
+    console.log(`[setInterval] 방치시간: ${idle}초`);
+    if (Date.now() - lastInteraction >= 10 * 1000) {
+      console.log('[setInterval] 10초 방치 → autoRefreshEvents 실행');
       autoRefreshEvents();
     }
-  }, 30000);
+  }, 5000);
 });
 
 
