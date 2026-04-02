@@ -1,5 +1,7 @@
 // ✅ SwipeCalendar 안정판: 체크박스 유지 + 날짜 유지 + 동기화 대응 포함 (구형 대응)
 
+let lastInteraction = Date.now();
+let _lastRefreshed = 0;
 const calendarEl = document.getElementById("calendarAll");
 const roomKeys = ['a', 'b', 'c', 'd', 'e'];
 
@@ -558,7 +560,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // 자동 새로고침
-  let lastInteraction = Date.now();
   ['click', 'touchstart', 'keydown'].forEach(e => {
     document.addEventListener(e, () => lastInteraction = Date.now());
   });
@@ -585,11 +586,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const idle = Math.round((Date.now() - lastInteraction) / 1000);
     console.log(`[setInterval] 방치시간: ${idle}초`);
-    if (Date.now() - lastInteraction >= 10 * 1000) {
-      console.log('[setInterval] 10초 방치 → autoRefreshEvents 실행');
+    if (Date.now() - lastInteraction >= 5 * 60 * 1000) {
+      console.log('[setInterval] 5분 방치 → autoRefreshEvents 실행');
       autoRefreshEvents();
     }
-  }, 5000);
+  }, 30000);
 });
 
 
@@ -836,6 +837,12 @@ function showRefreshToast() {
 }
 
 function autoRefreshEvents() {
+  const now = Date.now();
+  if (now - _lastRefreshed < 6000) {
+    console.log('[autoRefreshEvents] 쿨타임 스킵');
+    return;
+  }
+  _lastRefreshed = now;
   const calendars = getLegacySlideCalendars();
   if (calendars.length > 0) {
     showRefreshToast();
@@ -845,6 +852,7 @@ function autoRefreshEvents() {
       }
     });
     console.log("🔄 일정 자동 새로고침 완료 (" + new Date().toLocaleTimeString() + ")");
+    lastInteraction = Date.now();
   }
 }
 
