@@ -39,6 +39,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="#2f2f2f" />
   <meta name="msapplication-navbutton-color" content="#2f2f2f" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <!-- <meta name="apple-mobile-web-app-status-bar-style" content="black" /> -->
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
@@ -60,7 +61,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta charset="utf-8" />
-  <script src="https://code.jquery.com/jquery-latest.js"></script>
+
   <link href="./packages/core/main.css" rel="stylesheet" />
   <link href="./packages/daygrid/main.css" rel="stylesheet" />
   <link href="./packages/list/main.css" rel="stylesheet" />
@@ -375,16 +376,17 @@
           console.error('외부 HTML 로드 실패:', error);
         });
     });
-    window.addEventListener('DOMContentLoaded', () => {
-      fetch('home_infopage/homepage-section_mobile.html')
-        .then(response => response.text())
-        .then(html => {
-          document.querySelector('.offcanvas-body-2000').innerHTML = html;
-        })
-        .catch(error => {
-          console.error('외부 HTML 로드 실패:', error);
-        });
-    });
+    // [주석 처리] offcanvas 토글 버튼이 비활성화되어 접근 불가 → 불필요한 42KB 로드 방지
+    // window.addEventListener('DOMContentLoaded', () => {
+    //   fetch('home_infopage/homepage-section_mobile.html')
+    //     .then(response => response.text())
+    //     .then(html => {
+    //       document.querySelector('.offcanvas-body-2000').innerHTML = html;
+    //     })
+    //     .catch(error => {
+    //       console.error('외부 HTML 로드 실패:', error);
+    //     });
+    // });
   </script>
   <script>
 
@@ -411,10 +413,8 @@
       if ([...fc_buttons].some(btn => btn.contains(e.target))) {
         return;
       }
-      console.log("✅ 바 버튼 클릭됨");
 
       if (isBottomOpen) {
-        console.log("✅ 바 버튼 클릭됨1");
         bottom.classList.remove("show");
 
         // ❌ 닫힐 때: 토글 스위치 숨기기
@@ -543,9 +543,7 @@
       const btn_pickk = document.getElementById(`${upperKey}btn_pick_oneroom`);
       if (btn_pickk) {
         btn_pickk.addEventListener("click", function () {
-          console.log(`${upperKey} 버튼 클릭됨`);
           select_room_btn_function(key);
-          console.log(key, ` ???`);
         });
       }
     });
@@ -609,44 +607,6 @@
   </script>
 
   <!-- <div id='loading'>loading...</div> -->
-  <script>
-    var clockTarget = document.getElementById("clock");
-    function clock() {
-      var date = new Date();
-
-      // date Object를 받아오고
-      var month = date.getMonth();
-
-      // 달을 받아옵니다
-      var clockDate = date.getDate();
-
-      // 몇일인지 받아옵니다
-      var day = date.getDay();
-
-      // 요일을 받아옵니다.
-      var week = ["일", "월", "화", "수", "목", "금", "토"];
-
-      // 요일은 숫자형태로 리턴되기때문에 미리 배열을 만듭니다.
-      var hours = date.getHours();
-
-      // 시간을 받아오고
-      var minutes = date.getMinutes();
-
-      // 분도 받아옵니다.
-      var seconds = date.getSeconds();
-
-      // 초까지 받아온후
-
-      // 월은 0부터 1월이기때문에 +1일을 해주고
-
-      // 시간 분 초는 한자리수이면 시계가 어색해보일까봐 10보다 작으면 앞에0을 붙혀주는 작업을 3항연산으로 했습니다.
-    }
-    function init() {
-      clock();
-      setInterval(clock, 1000);
-    }
-    init();
-  </script>
   <script>
     //     window.onresize = function() {
 
@@ -946,7 +906,6 @@
       });
     });
   </script>
-</body>
 <script>
   as = document.querySelector(".center-modal");
 
@@ -1082,5 +1041,5 @@
   });
 </script>
 
-
+</body>
 </html>
