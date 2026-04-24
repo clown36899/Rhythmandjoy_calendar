@@ -2397,3 +2397,10 @@ hr.fc-divider,
 }
 /* 캘린더 이벤트 커서 */
 .fc-event, .fc-event * { cursor: pointer !important; }
+
+/* 룸 필터링용 클래스 (CSS 기반 즉각적인 숨김 처리) */
+body.hide-room-a .fc-event.a { display: none !important; }
+body.hide-room-b .fc-event.b { display: none !important; }
+body.hide-room-c .fc-event.c { display: none !important; }
+body.hide-room-d .fc-event.d { display: none !important; }
+body.hide-room-e .fc-event.e { display: none !important; }

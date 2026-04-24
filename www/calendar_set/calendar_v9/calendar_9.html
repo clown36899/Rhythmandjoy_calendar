@@ -868,8 +868,8 @@
     window.addEventListener("load", function () {
 
 
-      var view = calendar.view;
-      document.getElementById('titleMonth').innerHTML = view.title;
+      var viewTitle = calendar?.view?.title || calendar?.calendar?.view?.title || "";
+      document.getElementById('titleMonth').innerHTML = viewTitle;
       document.getElementById("titleMonth").style.color = "#029df7";
 
       // 🟢 [추가] 초기 로드 시 월간 뷰 레이아웃 적용

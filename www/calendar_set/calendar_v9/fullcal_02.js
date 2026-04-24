@@ -36,90 +36,40 @@ function getLegacySlideCalendars() {
   return candidates.filter(cal => cal && typeof cal.getEventSources === 'function');
 }
 
-function updateSourcesDynamicallyAllSlides() {
-  const activeKeys = Object.keys(currentRoomSelections).filter(k => currentRoomSelections[k]);
-  console.log("\uD83D\uDD01 [동기화 시작] 체크된 룸:", activeKeys);
+function updateRoomVisibility() {
+  const body = document.body;
+  const roomKeys = Object.keys(roomConfigs);
 
-  const calendars = getLegacySlideCalendars();
-  if (calendars.length === 0) {
-    console.warn("\u26A0\uFE0F FullCalendar 인스턴스를 가진 슬라이드가 없습니다.");
-    return;
+  const allSelected = roomKeys.every(k => currentRoomSelections[k]);
+  if (allSelected) {
+    body.classList.add('view-all');
+  } else {
+    body.classList.remove('view-all');
   }
 
-  calendars.forEach((inst, idx) => {
-    const sources = inst.getEventSources();
-    sources.forEach(src => {
-      const id = src._raw?.id || src.source?.id || src.id;
-      if (id && !activeKeys.includes(id)) {
-        console.log(`➖ [${idx}] 제거: ${id}`);
-        src.remove();
-      }
-    });
-
-    activeKeys.forEach(key => {
-      const exists = sources.some(src => {
-        const id = src._raw?.id || src.source?.id || src.id;
-        return id === key;
-      });
-      if (!exists) {
-        console.log(`➕ [${idx}] 추가: ${key}`);
-        inst.addEventSource(makeSource(key));
-      }
-    });
+  const calendars = getLegacySlideCalendars();
+  calendars.forEach(calInst => {
+    if (calInst && typeof calInst.rerenderEvents === 'function') {
+      calInst.rerenderEvents();
+    }
   });
-
-  console.log("✅ 전체 슬라이드 동기화 완료");
 }
 
-
 function select_room_btn_function(aroom_name_key) {
-
-  console.log(aroom_name, "+(select_room_btn_function)");
-
   const roomKeys = Object.keys(roomConfigs);
-  const cal = calendar?.calendar || calendar; // SwipeCalendar 버전 호환
 
   // ✅ currentRoomSelections 초기화
   roomKeys.forEach(key => {
     currentRoomSelections[key] = false;
   });
 
-
-
-  const allSlides = getLegacySlideCalendars(); // ✅ 모든 슬라이드 인스턴스를 가져옴
-
-  roomKeys.forEach(key => {
-    allSlides.forEach(calInst => {
-      const sources = calInst.getEventSources().filter(src => src._raw?.id === key || src.id === key);
-      sources.forEach(src => src.remove());
-    });
-  });
-
-  // 1. 기존 모든 소스 제거
-  // roomKeys.forEach(key => {
-  //   const existingSources = cal.getEventSources().filter(src => src._raw?.id === key || src.id === key);
-  //   existingSources.forEach(src => src.remove());
-  // });
-  // 2. 선택한 룸 다시 로드 (모든 슬라이드에 적용)
-
-
   if (aroom_name_key === 'all') {
-    roomKeys.forEach(key => {
-      const newSource = makeSource(key);
-      allSlides.forEach(inst => inst.addEventSource(newSource));
-      currentRoomSelections[key] = true;
-    });
-    console.log("✅ 모든 룸 이벤트 로드 완료");
+    roomKeys.forEach(key => { currentRoomSelections[key] = true; });
   } else if (roomConfigs[aroom_name_key]) {
-    const newSource = makeSource(aroom_name_key);
-    allSlides.forEach(inst => inst.addEventSource(newSource));
     currentRoomSelections[aroom_name_key] = true;
-    console.log("✅", aroom_name_key, "이벤트 로드 완료");
   } else {
     console.warn("존재하지 않는 룸:", aroom_name_key);
   }
-
-
 
   // 🔁 체크박스 상태 업데이트
   const checkboxes = document.querySelectorAll('.room-toggle');
@@ -127,20 +77,7 @@ function select_room_btn_function(aroom_name_key) {
     checkbox.checked = currentRoomSelections[checkbox.value];
   });
 
-
-  updateLayoutClass(aroom_name_key);
-}
-
-function updateLayoutClass(aroom_name_key) {
-  const body = document.body;
-  console.log("css제어")
-  // 기존 클래스 제거
-  body.classList.remove('view-all');
-
-  // 전체 보기면 view-all 클래스 추가
-  if (aroom_name_key === 'all') {
-    body.classList.add('view-all');
-  }
+  updateRoomVisibility();
 }
 
 const roomOrder = ['Ahall', 'Bhall', 'Chall', 'Dhall', 'Ehall'];
@@ -164,7 +101,7 @@ function initCalendar() {
     googleCalendarApiKey: "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8",
     plugins: ["interaction", "dayGrid", "googleCalendar", "timeGrid"],
     height: 'parent',
-    eventSources: roomKeys.filter(k => currentRoomSelections[k]).map(makeSource),
+    eventSources: roomKeys.map(makeSource), // 최초 1회 전체 로드하여 캐싱
     customButtons: {
       weekview: {
         text: '주간',
@@ -337,9 +274,14 @@ function initCalendar() {
         });
       }
 
-      setTimeout(updateSourcesDynamicallyAllSlides, 0);
+      setTimeout(updateRoomVisibility, 0);
     },
     eventRender: function (info) {
+      const roomKey = info.event.extendedProps.roomKey;
+      if (roomKey && !currentRoomSelections[roomKey]) {
+        return false; // Tells FullCalendar to ignore this event in layout and DOM
+      }
+
       const viewType = info.view.type;  // 'timeGridWeek', 'dayGridMonth' 등
 
 
@@ -409,7 +351,7 @@ function initCalendar() {
     eventTimeFormat: { hour: '2-digit', minute: '2-digit', meridiem: false }
   });
   calendar?._curCal.render();
-  updateLayoutClass(aroom_name);
+  updateRoomVisibility();
 }
 
 
@@ -549,13 +491,14 @@ function renderClockSvg(startHour, startMinute = 0, endHour, endMinute = 0) {
 
 
 document.addEventListener("DOMContentLoaded", () => {
+  updateRoomVisibility(); // 최초 로드 시 클래스 적용
   initCalendar();
   document.querySelectorAll(".room-toggle").forEach(cb => {
     const key = cb.value;
     cb.checked = currentRoomSelections[key];
     cb.addEventListener("change", e => {
       currentRoomSelections[key] = e.target.checked;
-      updateSourcesDynamicallyAllSlides();
+      updateRoomVisibility();
     });
   });
 
@@ -713,15 +656,30 @@ function openDailyEventPopup(dateInput) {
   eventListDiv.style.overflowY = 'auto';
   eventListDiv.style.padding = '10px';
 
-  // Fetch and Filter Events
-  // Access global calendar instance
-  const calInst = (calendar && calendar.calendar) ? calendar.calendar : calendar;
-  // Safety check
+  let allEvents = [];
+  const slideCals = [calendar?._prevCal, calendar?._curCal, calendar?._nextCal].filter(c => c && typeof c.getEvents === 'function');
+  
+  if (slideCals.length > 0) {
+    const uniqueEvents = {};
+    slideCals.forEach(cal => {
+      cal.getEvents().forEach(ev => {
+        uniqueEvents[ev.id || (ev.title + ev.start.getTime())] = ev;
+      });
+    });
+    allEvents = Object.values(uniqueEvents);
+  } else {
+    const calInst = (calendar && calendar.calendar) ? calendar.calendar : calendar;
+    if (calInst && calInst.getEvents) {
+      allEvents = calInst.getEvents();
+    }
+  }
+
   let dailyEvents = [];
-  if (calInst && calInst.getEvents) {
-    const allEvents = calInst.getEvents();
+  if (allEvents.length > 0) {
     dailyEvents = allEvents.filter(ev => {
       const start = ev.start;
+      const roomKey = ev.extendedProps?.roomKey;
+      if (roomKey && !currentRoomSelections[roomKey]) return false;
       return start.getFullYear() === dateObj.getFullYear() &&
         start.getMonth() === dateObj.getMonth() &&
         start.getDate() === dateObj.getDate();
