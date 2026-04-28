@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>리듬앤조이 연습실 예약</title>
+    <script>
+        function redirect() {
+            var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            var isSmallScreen = window.innerWidth <= 1000;
+            
+            if (isMobile || isSmallScreen) {
+                // 모바일 기기이거나 해상도가 작으면 모바일 전용 페이지로 이동
+                window.location.replace("./calendar_set/calendar_v9/calendar_mobile.html");
+            } else {
+                // 데스크탑이면 우측 아이프레임이 포함된 데스크탑 전용 페이지로 이동
+                window.location.replace("./calendar_set/calendar_v9/calendar_9.html");
+            }
+        }
+        redirect();
+    </script>
+</head>
+<body style="background-color: #2f2f2f;">
+</body>
+</html>

@@ -16,8 +16,5 @@
   status = 301
   force = true
 
-[[redirects]]
-  from = "/*"
-  to = "/calendar_set/calendar_v9/calendar_mobile.html"
-  status = 200
+
 
