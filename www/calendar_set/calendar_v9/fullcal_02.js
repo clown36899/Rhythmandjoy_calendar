@@ -40,7 +40,7 @@ function getLegacySlideCalendars() {
   return candidates.filter(cal => cal && typeof cal.getEventSources === 'function');
 }
 
-function updateRoomVisibility() {
+function applyViewAllClass() {
   const body = document.body;
   const roomKeys = Object.keys(roomConfigs);
 
@@ -50,6 +50,10 @@ function updateRoomVisibility() {
   } else {
     body.classList.remove('view-all');
   }
+}
+
+function updateRoomVisibility() {
+  applyViewAllClass();
 
   const calendars = getLegacySlideCalendars();
   calendars.forEach(calInst => {
@@ -278,7 +282,8 @@ function initCalendar() {
         });
       }
 
-      setTimeout(updateRoomVisibility, 0);
+      // 스와이프 시에는 불필요한 이중 렌더링(rerenderEvents)을 피하고 CSS 클래스만 업데이트
+      setTimeout(applyViewAllClass, 0);
     },
     eventRender: function (info) {
       const roomKey = info.event.extendedProps.roomKey;
