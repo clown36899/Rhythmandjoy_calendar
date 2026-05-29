@@ -15,6 +15,10 @@ const roomConfigs = {
 
 let currentRoomSelections = { a: true, b: true, c: true, d: true, e: true };
 
+// ⭐ [최적화] 빈번하게 호출되는 정규식 사전 컴파일
+const REGEX_RESERVATION_NUM = /예약번호:\s*([^\n]+)/;
+const REGEX_RESERVER_NAME = /예약자명:\s*([^\n]+)/;
+
 function makeSource(key) {
   const cfg = roomConfigs[key];
   return {
@@ -293,25 +297,9 @@ function initCalendar() {
       const desc = ev.extendedProps.description || '';
       const fmt = (d) => d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
 
-      // 정규식으로 description에서 정보 추출
-
-
-      const extract = (label) => {
-        const match = desc.match(new RegExp(`${label}:\\s*([^\n]+)`));
-        return match ? match[1].trim() : '';
-      };
-
-      let 예약자명 = extract("예약자명");
-      예약자명 = 예약자명.replace(/님+$/, '') + '님';  // ⭐중복 처리
-
-      const 예약상품 = extract("예약상품");
-      const 사용일자 = extract("사용일자");
-      const 시작시간 = extract("시작시간");
-      const 종료시간 = extract("종료시간");
-      const 결제상태 = extract("결제상태");
-      // const 예약번호 = extract("예약번호");
-
-      let 예약번호 = extract("예약번호");
+      // ⭐ [최적화] 화면에 표시되지 않는 불필요한 필드 추출(데드 코드) 제거 및 사전 컴파일된 정규식 사용
+      const matchNum = desc.match(REGEX_RESERVATION_NUM);
+      const 예약번호 = matchNum ? matchNum[1].trim() : '';
 
       let 예약정보 = 예약번호
         ? `네이버예약: ${예약번호}`
@@ -727,12 +715,13 @@ function openDailyEventPopup(dateInput) {
     }
 
     const desc = ev.extendedProps?.description || '';
-    const extractDesc = (label) => {
-      const match = desc.match(new RegExp(`${label}:\\s*([^\n]+)`));
-      return match ? match[1].trim() : '';
-    };
-    const raw예약자명 = extractDesc('예약자명');
-    const 예약번호 = extractDesc('예약번호');
+    
+    // ⭐ [최적화] 일간 팝업에서도 사전 컴파일된 정규식 사용
+    const matchName = desc.match(REGEX_RESERVER_NAME);
+    const raw예약자명 = matchName ? matchName[1].trim() : '';
+    
+    const matchNum = desc.match(REGEX_RESERVATION_NUM);
+    const 예약번호 = matchNum ? matchNum[1].trim() : '';
     let displayName;
     if (raw예약자명) {
       displayName = raw예약자명.replace(/님+$/, '') + '님';
