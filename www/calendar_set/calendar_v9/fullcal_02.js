@@ -781,12 +781,14 @@ function autoRefreshEvents() {
     return;
   }
   _lastRefreshed = now;
-  
-  if (calendar && calendar._curCal) {
+  const calendars = getLegacySlideCalendars();
+  if (calendars.length > 0) {
     showRefreshToast();
-    if (typeof calendar._curCal.refetchEvents === 'function') {
-      calendar._curCal.refetchEvents();
-    }
+    calendars.forEach((inst) => {
+      if (typeof inst.refetchEvents === 'function') {
+        inst.refetchEvents();
+      }
+    });
     console.log("🔄 일정 자동 새로고침 완료 (" + new Date().toLocaleTimeString() + ")");
     lastInteraction = Date.now();
   }
