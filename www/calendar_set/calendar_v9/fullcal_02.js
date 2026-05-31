@@ -786,16 +786,31 @@ function autoRefreshEvents() {
     return;
   }
   _lastRefreshed = now;
-  const calendars = getLegacySlideCalendars();
-  if (calendars.length > 0) {
+
+  // ⭐ [최적화] 구글 API Rate Limit 방지: 현재 달력 → 2초 후 이전 달력 → 4초 후 다음 달력 순차 요청
+  const curCal = calendar?._curCal;
+  const prevCal = calendar?._prevCal;
+  const nextCal = calendar?._nextCal;
+
+  if (curCal && typeof curCal.refetchEvents === 'function') {
     showRefreshToast();
-    calendars.forEach((inst) => {
-      if (typeof inst.refetchEvents === 'function') {
-        inst.refetchEvents();
-      }
-    });
-    console.log("🔄 일정 자동 새로고침 완료 (" + new Date().toLocaleTimeString() + ")");
+    curCal.refetchEvents();
+    console.log("🔄 [1/3] 현재 달력 새로고침 완료 (" + new Date().toLocaleTimeString() + ")");
     lastInteraction = Date.now();
+  }
+
+  if (prevCal && typeof prevCal.refetchEvents === 'function') {
+    setTimeout(function () {
+      prevCal.refetchEvents();
+      console.log("🔄 [2/3] 이전 달력 새로고침 완료 (" + new Date().toLocaleTimeString() + ")");
+    }, 2000);
+  }
+
+  if (nextCal && typeof nextCal.refetchEvents === 'function') {
+    setTimeout(function () {
+      nextCal.refetchEvents();
+      console.log("🔄 [3/3] 다음 달력 새로고침 완료 (" + new Date().toLocaleTimeString() + ")");
+    }, 4000);
   }
 }
 
