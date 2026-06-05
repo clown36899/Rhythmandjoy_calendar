@@ -2,8 +2,11 @@
 
 let lastInteraction = Date.now();
 let _lastRefreshed = 0;
+let _lastNavigationRefresh = 0;
+let _navigationRefreshTimer = null;
 const calendarEl = document.getElementById("calendarAll");
 const roomKeys = ['a', 'b', 'c', 'd', 'e'];
+const GOOGLE_CALENDAR_API_KEY = "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8";
 
 const roomConfigs = {
   a: { name: "A홀", calendarId: "752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com", color: "#F6BF26" },
@@ -13,26 +16,55 @@ const roomConfigs = {
   e: { name: "E홀", calendarId: "aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com", color: "#4c4c4c" }
 };
 
+const calendarSync = window.RhythmjoyIndexedCalendarSync
+  ? window.RhythmjoyIndexedCalendarSync.create({
+    apiKey: GOOGLE_CALENDAR_API_KEY,
+    roomConfigs,
+    roomKeys
+  })
+  : null;
+
+window.rhythmjoyCalendarV10Sync = calendarSync;
+
 let currentRoomSelections = { a: true, b: true, c: true, d: true, e: true };
 
 // ⭐ [최적화] 빈번하게 호출되는 정규식 사전 컴파일
 const REGEX_RESERVATION_NUM = /예약번호:\s*([^\n]+)/;
 const REGEX_RESERVER_NAME = /예약자명:\s*([^\n]+)/;
 
-function makeSource(key) {
-  const cfg = roomConfigs[key];
-  return {
-    id: key,
-    googleCalendarId: cfg.calendarId,
-    className: key,
-    color: cfg.color,
-    textColor: '#000',
-    eventDataTransform: (ev) => {
-      delete ev.url;
-      ev.extendedProps = { ...ev.extendedProps, roomKey: key, roomName: cfg.name };
-      return ev;
+function fetchSyncedGoogleEvents(fetchInfo, successCallback, failureCallback) {
+  if (!calendarSync) {
+    const error = new Error('v10 IndexedDB calendar sync loader is missing');
+    console.error(error);
+    if (failureCallback) failureCallback(error);
+    return;
+  }
+
+  calendarSync.loadEvents(fetchInfo)
+    .then(events => {
+      console.log(`✅ [v10 sync] 화면 범위 이벤트 표시: ${events.length}건`);
+      successCallback(events);
+    })
+    .catch(error => {
+      console.warn('⚠️ [v10 sync] 이벤트 로드 실패', error);
+      if (failureCallback) failureCallback(error);
+      else successCallback([]);
+    });
+}
+
+function scheduleCurrentViewRefresh(reason) {
+  clearTimeout(_navigationRefreshTimer);
+  _navigationRefreshTimer = setTimeout(() => {
+    const now = Date.now();
+    if (now - _lastNavigationRefresh < 2500) return;
+    _lastNavigationRefresh = now;
+
+    const curCal = calendar?._curCal;
+    if (curCal && typeof curCal.refetchEvents === 'function') {
+      curCal.refetchEvents();
+      console.log(`🔄 [v10 sync] ${reason} 현재 화면 최신화 요청`);
     }
-  };
+  }, 700);
 }
 
 function getLegacySlideCalendars() {
@@ -106,10 +138,9 @@ function initCalendar() {
     slotEventOverlap: false,
     defaultView: "timeGridWeek",
 
-    googleCalendarApiKey: "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8",
-    plugins: ["interaction", "dayGrid", "googleCalendar", "timeGrid"],
+    plugins: ["interaction", "dayGrid", "timeGrid"],
     height: 'parent',
-    eventSources: roomKeys.map(makeSource), // 최초 1회 전체 로드하여 캐싱
+    events: fetchSyncedGoogleEvents,
     customButtons: {
       weekview: {
         text: '주간',
@@ -284,6 +315,7 @@ function initCalendar() {
 
       // 스와이프 시에는 불필요한 이중 렌더링(rerenderEvents)을 피하고 CSS 클래스만 업데이트
       setTimeout(applyViewAllClass, 0);
+      scheduleCurrentViewRefresh('화면 전환 후');
     },
     eventRender: function (info) {
       const roomKey = info.event.extendedProps.roomKey;
@@ -764,7 +796,7 @@ function openDailyEventPopup(dateInput) {
 
 /**
  * [새로 추가] 일정 자동 새로고침 함수
- * SwipeCalendar 내부의 모든 FullCalendar 인스턴스를 찾아 최신 데이터를 가져옵니다.
+ * v10은 IndexedDB + Google syncToken으로 변경분만 받은 뒤 현재 화면만 다시 그립니다.
  */
 function showRefreshToast() {
   let toast = document.getElementById('_refreshToast');
@@ -787,31 +819,12 @@ function autoRefreshEvents() {
   }
   _lastRefreshed = now;
 
-  // ⭐ [최적화] 구글 API Rate Limit 방지: 현재 달력 → 2초 후 이전 달력 → 4초 후 다음 달력 순차 요청
   const curCal = calendar?._curCal;
-  const prevCal = calendar?._prevCal;
-  const nextCal = calendar?._nextCal;
 
   if (curCal && typeof curCal.refetchEvents === 'function') {
     showRefreshToast();
     curCal.refetchEvents();
-    console.log("🔄 [1/3] 현재 달력 새로고침 완료 (" + new Date().toLocaleTimeString() + ")");
+    console.log("🔄 [v10 sync] 현재 화면 변경분 새로고침 요청 (" + new Date().toLocaleTimeString() + ")");
     lastInteraction = Date.now();
   }
-
-  if (prevCal && typeof prevCal.refetchEvents === 'function') {
-    setTimeout(function () {
-      prevCal.refetchEvents();
-      console.log("🔄 [2/3] 이전 달력 새로고침 완료 (" + new Date().toLocaleTimeString() + ")");
-    }, 2000);
-  }
-
-  if (nextCal && typeof nextCal.refetchEvents === 'function') {
-    setTimeout(function () {
-      nextCal.refetchEvents();
-      console.log("🔄 [3/3] 다음 달력 새로고침 완료 (" + new Date().toLocaleTimeString() + ")");
-    }, 4000);
-  }
 }
-
-
