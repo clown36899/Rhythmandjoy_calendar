@@ -917,6 +917,50 @@ body.view-timeGridWeek .fc tbody {
   /*해드 날요일 글자 사이즈*/
 }
 
+.column-header-day.today {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1;
+  position: relative;
+  top: 8px;
+  white-space: nowrap;
+}
+
+.today-date {
+  display: inline-block !important;
+}
+
+.today-badge {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ff3b30;
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28);
+  transform: translateY(-1px);
+}
+
+#singleRoomCalendar .column-header-day.today {
+  gap: 3px;
+  font-size: 0.62rem;
+}
+
+#singleRoomCalendar .today-badge {
+  height: 13px;
+  padding: 0 4px;
+  font-size: 0.46rem;
+}
+
 .fc-widget-header span {
   display: block;
   /* 이게 블럭이어야 span이 위아래로 나뉨*/

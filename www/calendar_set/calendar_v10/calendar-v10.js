@@ -147,6 +147,23 @@ function getMainCalendarViewType() {
   return calendar?._curCal?.view?.type || 'timeGridWeek';
 }
 
+function isSameCalendarDate(a, b) {
+  return a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+}
+
+function getWeekColumnHeaderHtml(date) {
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
+  const isToday = isSameCalendarDate(date, new Date());
+  const dayText = isToday
+    ? `<span class='today-date'>${date.getDate()}일</span><span class='today-badge'>오늘</span>`
+    : date.getDate();
+  return `
+    <span class='column-header-week'>${days[date.getDay()]}</span>
+    <span class='column-header-day${isToday ? ' today' : ''}'>${dayText}</span>`;
+}
+
 function getRoomEventHtml(info) {
   const ev = info.event;
   const title = ev.title;
@@ -213,10 +230,7 @@ function initSingleRoomCalendar() {
     views: {
       timeGridWeek: {
         columnHeaderHtml: (date) => {
-          const days = ["일", "월", "화", "수", "목", "금", "토"];
-          return `
-            <span class='column-header-week'>${days[date.getDay()]}</span>
-            <span class='column-header-day'>${date.getDate()}</span>`;
+          return getWeekColumnHeaderHtml(date);
         },
         titleFormat: { month: 'long' },
         columnHeaderFormat: { weekday: "short", day: "numeric" }
@@ -510,10 +524,7 @@ function initCalendar() {
       timeGridWeek: {
 
         columnHeaderHtml: (date) => {
-          const days = ["일", "월", "화", "수", "목", "금", "토"];
-          return `
-            <span class='column-header-week'>${days[date.getDay()]}</span>
-            <span class='column-header-day'>${date.getDate()}</span>`;
+          return getWeekColumnHeaderHtml(date);
         },
 
         titleFormat: { month: 'long' }, // "4월"
