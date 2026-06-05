@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>주의사항</title>
+  <style>
+    <style>.container {
+      max-width: 900px !important;
+      padding: 20px 30px !important;
+    }
+
+    h1 {
+      margin: 0 0 15px 0 !important;
+      font-size: 1.4rem !important;
+    }
+
+    .icon-lock {
+      display: none;
+    }
+
+    .notice-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      text-align: left;
+    }
+
+    .notice-item {
+      background: #2a2a2a;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #444;
+    }
+
+    .notice-item strong {
+      font-size: 1.05rem;
+      color: #00A859;
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .notice-item p,
+    .notice-item span,
+    .notice-item em {
+      font-size: 0.9rem;
+      color: #ccc;
+      display: block;
+      line-height: 1.4;
+    }
+
+    .notice-item .highlight {
+      display: inline-block;
+      margin-top: 2px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <button type="button" id="xxx_btn" onclick="closePopup()">x</button>
+
+    <div style="text-align: center;">
+      <!-- 아이콘 생략 -->
+      <h1>연습실 이용 시 주의사항</h1>
+    </div>
+
+    <div class="notice-grid">
+      <!-- 1. 외부 신발 -->
+      <div class="notice-item" style="border-color: #ff6b6b;">
+        <strong style="color: #ff6b6b;">1. 🚫 외부 신발 금지</strong>
+        <span class="highlight">적발 시 환불 없이 퇴실</span>
+        <em>금지 이유: 바닥 파손 및 오염 방지</em>
+        <span style="margin-top: 5px;"><b>스키드마크 남는 고무굽, 징 박힌 탭댄스화 금지</b></span>
+      </div>
+
+      <!-- 2. 시간 준수 -->
+      <div class="notice-item">
+        <strong>2. ⏰ 연습실 사용 시간 준수</strong>
+        <span>대기 목적 입장: <b>가능</b></span>
+        <span class="highlight">사용 목적: 단 10분이라도 대관 필요</span>
+        <div style="margin-top: 5px;">문의: <a href="sms:01048017180" style="color:#00A859;">010-4801-7180</a></div>
+      </div>
+
+      <!-- 3. 파손 -->
+      <div class="notice-item">
+        <strong>3. 🛠️ 물품 파손 관련 안내</strong>
+        <span><b>원상복구</b> 원칙 (거울, 전자기기 등)</span>
+        <em>고의성 없는 가벼운 파손은 책임 묻지 않음 (반드시 통보)</em>
+      </div>
+
+      <!-- 4. CCTV -->
+      <div class="notice-item">
+        <strong>4. 📹 CCTV 운영</strong>
+        <span>24시간 녹화 (시설 보호 및 안전 목적)</span>
+      </div>
+
+      <!-- 5. 타악기 -->
+      <div class="notice-item">
+        <strong>5. 🥁 징, 장구, 타악기 금지</strong>
+        <span>탭댄스는 구비된 탭판 위에서만 가능</span>
+      </div>
+
+      <!-- 6. 취식 -->
+      <div class="notice-item">
+        <strong>6. 🍜 취식 금지</strong>
+        <span>국물/냄새 심한 음식 불가</span>
+        <em>(과자 등 냄새 없는 간식은 뒷정리시 가능)</em>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

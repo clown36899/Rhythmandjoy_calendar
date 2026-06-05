@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>취소변경, 환불규정</title>
+  <link href="home_infopage/popup.css" rel="stylesheet" type="text/css" />
+
+</head>
+
+<style>
+  .container {
+    max-width: 900px !important;
+    padding: 20px !important;
+  }
+
+  .price-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin-top: 10px;
+    text-align: left;
+  }
+
+  .price-left {
+    border-right: 1px solid #444;
+    padding-right: 20px;
+  }
+
+  .price-right {
+    padding-left: 10px;
+  }
+
+  .icon-lock {
+    display: none;
+  }
+
+  h1 {
+    margin: 10px 0 20px 0 !important;
+    font-size: 1.5rem !important;
+    text-align: center;
+  }
+
+  h3 {
+    margin-top: 10px !important;
+    font-size: 1.1rem !important;
+  }
+
+  .price-box {
+    margin: 10px 0 !important;
+    padding: 12px !important;
+  }
+
+  img.refund-image {
+    margin: 10px auto !important;
+    max-width: 100% !important;
+  }
+</style>
+</head>
+
+<body>
+  <div class="container">
+    <button type="button" id="xxx_btn" onclick="closePopup()">x</button>
+
+    <!-- 아이콘 생략 -->
+    <h1>취소변경, 환불규정</h1>
+
+    <div class="price-grid">
+      <!-- 왼쪽: 취소 및 변경 규정 -->
+      <div class="price-left">
+        <h3>1. 잘못 예약한 경우</h3>
+        <div class="price-box">
+          <strong>⏱️ 예약 신청 2시간 안 변심 취소는 무료</strong>
+          <p>그 외에는 환불규정에 따릅니다</p>
+          <p>문의: <span style="color: #00a859;">010-4801-7180 (문자)</span></p>
+        </div>
+
+        <h3>2. 단순 취소</h3>
+        <div class="price-box">
+          <strong>⚠️ 신청 2시간 경과 후</strong>
+          <p>아래 환불규정에 따릅니다</p>
+        </div>
+
+        <h3>3. 변경</h3>
+        <div class="price-box">
+          <strong>🔄 변경은 취소 후 재예약만 가능</strong>
+          <button onclick="openPopup('home_infopage/popup_password.html')" style="
+                margin-top: 8px;
+                padding: 8px 12px;
+                background: #00a859;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+                cursor: pointer;
+                font-size: 0.9rem;
+              ">
+            🔐 예약정보 확인·취소
+          </button>
+        </div>
+      </div>
+
+      <!-- 오른쪽: 환불 규정 이미지 -->
+      <div class="price-right">
+        <h3>4. 환불 규정</h3>
+        <p style="margin-bottom: 10px; color: #ccc;">
+          💰 환불은 네이버에서 설정되어 있는 기준으로 작동합니다.
+        </p>
+
+        <img src="home_infopage/images/image.jpg" alt="환불규정" class="refund-image" />
+
+        <p style="text-align: center; margin-top: 15px">
+          문의:
+          <a href="sms:01048017180" style="
+                color: #00a859;
+                font-weight: 600;
+                border-bottom: 2px solid #00a859;
+                text-decoration: none;
+              ">010-4801-7180 (문자)</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>
