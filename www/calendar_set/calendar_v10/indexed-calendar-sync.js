@@ -147,8 +147,13 @@
     const apiKey = options.apiKey;
     const roomConfigs = options.roomConfigs;
     const roomKeys = options.roomKeys || Object.keys(roomConfigs);
+    const onSyncComplete = typeof options.onSyncComplete === 'function'
+      ? options.onSyncComplete
+      : () => {};
     let dbPromise = null;
     let syncPromise = null;
+    let queuedForceSync = false;
+    let lastBackgroundNotifyAt = 0;
     let lastSyncAt = 0;
 
     function db() {
@@ -160,6 +165,11 @@
       const database = await db();
       const tx = database.transaction(STATE_STORE, 'readonly');
       return requestToPromise(tx.objectStore(STATE_STORE).get(roomKey));
+    }
+
+    async function hasUsableCache() {
+      const states = await Promise.all(roomKeys.map(roomKey => getState(roomKey)));
+      return states.every(state => state?.fullSyncComplete);
     }
 
     async function putState(roomKey, patch) {
@@ -297,22 +307,47 @@
       }
     }
 
+    async function runSyncPass() {
+      for (const roomKey of roomKeys) {
+        await syncRoom(roomKey);
+        await new Promise(resolve => setTimeout(resolve, 120));
+      }
+      lastSyncAt = Date.now();
+    }
+
     async function syncAllRooms(options = {}) {
       const now = Date.now();
-      if (!options.force && syncPromise) return syncPromise;
+      if (syncPromise) {
+        if (options.force) queuedForceSync = true;
+        return syncPromise;
+      }
       if (!options.force && now - lastSyncAt < SYNC_COOLDOWN_MS) return syncPromise || Promise.resolve();
 
       syncPromise = (async () => {
-        for (const roomKey of roomKeys) {
-          await syncRoom(roomKey);
-          await new Promise(resolve => setTimeout(resolve, 120));
-        }
-        lastSyncAt = Date.now();
+        do {
+          queuedForceSync = false;
+          await runSyncPass();
+        } while (queuedForceSync);
       })().finally(() => {
         syncPromise = null;
       });
 
       return syncPromise;
+    }
+
+    function refresh(options = {}) {
+      const reason = options.reason || '증분 동기화';
+      return syncAllRooms({ force: !!options.force })
+        .then(() => {
+          const now = Date.now();
+          if (now - lastBackgroundNotifyAt < 2500) return;
+          lastBackgroundNotifyAt = now;
+          onSyncComplete({ reason });
+        })
+        .catch(error => {
+          console.warn('⚠️ [v10 sync] 백그라운드 변경분 갱신 실패', error);
+          throw error;
+        });
     }
 
     async function readEventsInRange(start, end) {
@@ -330,12 +365,18 @@
     }
 
     async function loadEvents(fetchInfo) {
-      await syncAllRooms();
+      if (await hasUsableCache()) {
+        return readEventsInRange(fetchInfo.start, fetchInfo.end);
+      }
+
+      await syncAllRooms({ force: true });
       return readEventsInRange(fetchInfo.start, fetchInfo.end);
     }
 
     return {
+      hasUsableCache,
       loadEvents,
+      refresh,
       syncAllRooms,
       readEventsInRange
     };

@@ -73,7 +73,6 @@
   <script src="./packages/interaction/main.js"></script>
   <script src="./packages/daygrid/main.js"></script>
   <script src="./packages/list/main.js"></script>
-  <script src="./packages/google-calendar/main.js"></script>
   <script src="./packages/core/locales/ko.js"></script>
 
   <link href="style.css" rel="stylesheet" />
@@ -84,16 +83,6 @@
   <script src="./packages/timegrid/main.js"></script>
   <script src="./dist/swipeCalendar.js"></script>
 
-  <!-- <link type="text/css" rel="stylesheet" href="./menu/demo/css/demo.css" />
-<link type="text/css" rel="stylesheet" href="./menu/dist/mmenu.css" /> -->
-
-  <script src="./lib/jquery.js"></script>
-  <script src="./lib/jquery-ui.js"></script>
-  <script src="./js/jquery.calendar.js"></script>
-  <script src="./lib/timepicker/jquery-ui-sliderAccess.js"></script>
-  <script src="./lib/timepicker/jquery-ui-timepicker-addon.min.js"></script>
-
-  <script src="./js/custom.js"></script>
   <script src="home_infopage/open_popup.js"></script>
 
   <script>
@@ -616,7 +605,7 @@
     //       calendar.render();
 
     // }
-    $(document).ready(function () {
+    document.addEventListener("DOMContentLoaded", function () {
       setTimeout(scrollTo, 0, 0, 1);
     });
 
@@ -747,8 +736,8 @@
 
 
 
-  <script src="./indexed-calendar-sync.js?v=calendar-v10-sync-1"></script>
-  <script src="./fullcal_02.js?v=calendar-v10-sync-1"></script>
+  <script src="./indexed-calendar-sync.js?v=calendar-v10-isolated-1"></script>
+  <script src="./calendar-v10.js?v=calendar-v10-isolated-1"></script>
   <!-- 풀캘린더 js -->
 
 
