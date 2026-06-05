@@ -5,6 +5,24 @@
   SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
 
 [[redirects]]
+  from = "/calendar_set/calendar_v9/calendar_mobile.html"
+  to = "/calendar_set/calendar_v10/calendar_mobile_10.html"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/calendar_set/calendar_v9/calendar_9.html"
+  to = "/calendar_set/calendar_v10/calendar_10.html"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/calendar_set/calendar_v9/*"
+  to = "/"
+  status = 302
+  force = true
+
+[[redirects]]
   from = "/calendar_set/calendar_v8/*"
   to = "/"
   status = 301
@@ -15,6 +33,5 @@
   to = "/"
   status = 301
   force = true
-
 
 
