@@ -2167,27 +2167,27 @@ tr:first-child>td>.fc-day-grid-event {
 .fc-event.c { left: 40% !important; width: 18% !important; }
 .fc-event.d { left: 60% !important; width: 18% !important; }
 .fc-event.e { left: 80% !important; width: 18% !important; } */
-body.view-all .fc-timeGrid-view .fc-event.a {
+body.view-all #calendarAll .fc-timeGrid-view .fc-event.a {
   left: 0% !important;
   width: 18% !important;
 }
 
-body.view-all .fc-timeGrid-view .fc-event.b {
+body.view-all #calendarAll .fc-timeGrid-view .fc-event.b {
   left: 20% !important;
   width: 18% !important;
 }
 
-body.view-all .fc-timeGrid-view .fc-event.c {
+body.view-all #calendarAll .fc-timeGrid-view .fc-event.c {
   left: 40% !important;
   width: 18% !important;
 }
 
-body.view-all .fc-timeGrid-view .fc-event.d {
+body.view-all #calendarAll .fc-timeGrid-view .fc-event.d {
   left: 60% !important;
   width: 18% !important;
 }
 
-body.view-all .fc-timeGrid-view .fc-event.e {
+body.view-all #calendarAll .fc-timeGrid-view .fc-event.e {
   left: 80% !important;
   width: 18% !important;
 }
@@ -2202,6 +2202,10 @@ body.view-all .fc-timeGrid-view .fc-event.e {
   display: none;
 }
 
+.calendar-hover-time-guide {
+  display: none;
+}
+
 @media (min-width: 1000px) {
   .offcanvas-body-2000 {
     display: none;
@@ -2212,6 +2216,94 @@ body.view-all .fc-timeGrid-view .fc-event.e {
     position: absolute;
     width: 66.7%;
     left: 33.3%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #singleRoomCalendarPanel {
+    position: absolute;
+    display: none;
+    top: 0;
+    left: 16%;
+    width: 17.3%;
+    height: 100%;
+    background: #1f1f1f;
+    border-left: 1px solid #5e5e5e;
+    border-right: 1px solid #5e5e5e;
+    z-index: 8;
+  }
+
+  body.desktop-room-detail-open #singleRoomCalendarPanel {
+    display: block;
+  }
+
+  #singleRoomCalendarTitle {
+    height: 34px;
+    line-height: 34px;
+    color: #000;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  #singleRoomCalendar {
+    height: calc(100% - 34px);
+    position: relative;
+  }
+
+  #singleRoomCalendar .fc-toolbar {
+    display: none;
+  }
+
+  #singleRoomCalendar .fc-scroller {
+    height: 100% !important;
+  }
+
+  #singleRoomCalendar .fc-scroller>.fc-time-grid,
+  #singleRoomCalendar .fc-head,
+  #singleRoomCalendar .fc-view,
+  #singleRoomCalendar .fc-view>table {
+    width: 100% !important;
+  }
+
+  .calendar-hover-time-guide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    pointer-events: none;
+    z-index: 30;
+  }
+
+  .calendar-hover-time-guide.is-visible {
+    display: block;
+  }
+
+  .calendar-hover-time-guide-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 1px;
+    background: rgba(117, 218, 255, 0.46);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.22), 0 0 6px rgba(117, 218, 255, 0.22);
+    transform: translateY(var(--hover-guide-y, 0));
+  }
+
+  .calendar-hover-time-guide-label {
+    position: absolute;
+    top: 0;
+    left: var(--hover-guide-x, 8px);
+    min-width: 52px;
+    padding: 2px 6px;
+    border: 1px solid rgba(117, 218, 255, 0.36);
+    border-radius: 4px;
+    background: rgba(9, 18, 26, 0.82);
+    color: #eafaff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    transform: translateY(calc(var(--hover-guide-y, 0) - 50%));
+    white-space: nowrap;
   }
 
   #offcanvasDarkNavbar {
@@ -2232,9 +2324,23 @@ body.view-all .fc-timeGrid-view .fc-event.e {
     /* 다른 요소 위에 보이도록 */
   }
 
-  .swiper-wrapper {
+  body.desktop-room-detail-open #offcanvasDarkNavbar {
+    width: 16% !important;
+  }
+
+  #calendarAll .swiper-container {
+    position: absolute !important;
+    top: 38px;
+    left: 0;
+    right: 0;
+    bottom: 16%;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  #calendarAll .swiper-wrapper {
     position: relative;
-    width: 66.7% !important;
+    width: 100% !important;
     right: 0;
     height: 100%;
     z-index: 1;
@@ -2243,15 +2349,15 @@ body.view-all .fc-timeGrid-view .fc-event.e {
     box-sizing: content-box;
   }
 
-  .fc-scroller>.fc-time-grid {
+  #calendarAll .fc-scroller>.fc-time-grid {
     position: relative;
-    width: 66.7%;
+    width: 100% !important;
   }
 
-  .fc-head {
+  #calendarAll .fc-head {
     position: absolute;
     background: #2f2f2f;
-    width: 66.7%;
+    width: 100% !important;
   }
 
   .bottomtop {

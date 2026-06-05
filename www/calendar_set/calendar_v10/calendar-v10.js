@@ -7,8 +7,12 @@ let _lastRangeSyncAt = 0;
 let _currentViewRefreshTimer = null;
 window.calendar = window.calendar || null;
 const calendarEl = document.getElementById("calendarAll");
+const singleRoomCalendarEl = document.getElementById("singleRoomCalendar");
+const singleRoomCalendarPanel = document.getElementById("singleRoomCalendarPanel");
+const singleRoomCalendarTitle = document.getElementById("singleRoomCalendarTitle");
 const roomKeys = ['a', 'b', 'c', 'd', 'e'];
 const GOOGLE_CALENDAR_API_KEY = "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8";
+const DESKTOP_ROOM_DETAIL_MIN_WIDTH = 1000;
 
 const roomConfigs = {
   a: { name: "A홀", calendarId: "752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com", color: "#F6BF26" },
@@ -30,6 +34,8 @@ const calendarSync = window.RhythmjoyIndexedCalendarSync
 window.rhythmjoyCalendarV10Sync = calendarSync;
 
 let currentRoomSelections = { a: true, b: true, c: true, d: true, e: true };
+let selectedSingleRoomKey = null;
+let singleRoomCalendar = null;
 
 // ⭐ [최적화] 빈번하게 호출되는 정규식 사전 컴파일
 const REGEX_RESERVATION_NUM = /예약번호:\s*([^\n]+)/;
@@ -62,6 +68,9 @@ function refreshCurrentViewFromIndex(reason) {
     if (curCal && typeof curCal.refetchEvents === 'function') {
       curCal.refetchEvents();
       console.log(`🔄 [v10 sync] ${reason} 인덱스 반영 후 현재 화면 다시 표시`);
+    }
+    if (singleRoomCalendar && typeof singleRoomCalendar.refetchEvents === 'function') {
+      singleRoomCalendar.refetchEvents();
     }
   }, 400);
 }
@@ -104,20 +113,169 @@ function getSwipeCalendarInstances() {
   return candidates.filter(cal => cal && typeof cal.rerenderEvents === 'function');
 }
 
+function isDesktopRoomDetailAvailable() {
+  return window.innerWidth >= DESKTOP_ROOM_DETAIL_MIN_WIDTH &&
+    !!singleRoomCalendarEl &&
+    !!roomConfigs[selectedSingleRoomKey];
+}
+
 function applyViewAllClass() {
   const body = document.body;
   const roomKeys = Object.keys(roomConfigs);
 
-  const allSelected = roomKeys.every(k => currentRoomSelections[k]);
-  if (allSelected) {
-    body.classList.add('view-all');
-  } else {
-    body.classList.remove('view-all');
+  const selectedCount = roomKeys.filter(k => currentRoomSelections[k]).length;
+  const allSelected = selectedCount === roomKeys.length;
+  const roomDetailOpen = isDesktopRoomDetailAvailable();
+  const layoutChanged =
+    body.classList.contains('view-all') !== allSelected ||
+    body.classList.contains('desktop-room-detail-open') !== roomDetailOpen;
+
+  body.classList.toggle('view-all', allSelected);
+  body.classList.toggle('desktop-room-detail-open', roomDetailOpen);
+
+  return layoutChanged;
+}
+
+function getMainCalendarDate() {
+  const raw = calendar && typeof calendar.getDate === 'function' ? calendar.getDate() : null;
+  if (raw && typeof raw.toDate === 'function') return raw.toDate();
+  const date = raw ? new Date(raw) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function getMainCalendarViewType() {
+  return calendar?._curCal?.view?.type || 'timeGridWeek';
+}
+
+function getRoomEventHtml(info) {
+  const ev = info.event;
+  const title = ev.title;
+  const start = ev.start;
+  const end = ev.end || start;
+  const roomName = ev.extendedProps.roomName || '';
+  const desc = ev.extendedProps.description || '';
+  const fmt = (d) => d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+  const matchNum = desc.match(REGEX_RESERVATION_NUM);
+  const 예약번호 = matchNum ? matchNum[1].trim() : '';
+  const 예약정보 = 예약번호 ? `네이버예약: ${예약번호}` : "스페이스클라우드예약";
+
+  if (info.view.type === 'dayGridMonth') {
+    return `
+      <div class="custom-event-box" style="color: black; display: flex; overflow: hidden; white-space: nowrap; align-items: center;">
+        <div class="custom-time" style="white-space: nowrap;">${fmt(start)}~${fmt(end)}</div>
+      </div>
+    `;
   }
+
+  return `
+    <div class="custom-event-box">
+      <div class="custom-time">${fmt(start)} ~ ${fmt(end)}</div>
+      <div class="custom-title">${title}</div>
+      <div class="custom-room">${roomName}</div>
+      <div class="custom-info">${예약정보}</div>
+    </div>
+  `;
+}
+
+function fetchSingleRoomEvents(fetchInfo, successCallback, failureCallback) {
+  const roomKey = selectedSingleRoomKey;
+  if (!roomConfigs[roomKey]) {
+    successCallback([]);
+    return;
+  }
+
+  fetchSyncedGoogleEvents(fetchInfo, (events) => {
+    successCallback(events.filter(event => event.extendedProps?.roomKey === roomKey));
+  }, failureCallback);
+}
+
+function initSingleRoomCalendar() {
+  if (singleRoomCalendar || !singleRoomCalendarEl || typeof FullCalendar === 'undefined') return;
+
+  singleRoomCalendar = new FullCalendar.Calendar(singleRoomCalendarEl, {
+    locale: "ko",
+    nowIndicator: true,
+    selectable: false,
+    editable: false,
+    slotDuration: "01:00",
+    allDaySlot: false,
+    slotEventOverlap: false,
+    defaultView: getMainCalendarViewType(),
+    defaultDate: getMainCalendarDate(),
+    plugins: ["interaction", "dayGrid", "timeGrid"],
+    height: 'parent',
+    events: fetchSingleRoomEvents,
+    header: {
+      left: 'prev',
+      center: 'title',
+      right: 'next'
+    },
+    views: {
+      timeGridWeek: {
+        columnHeaderHtml: (date) => {
+          const days = ["일", "월", "화", "수", "목", "금", "토"];
+          return `
+            <span class='column-header-week'>${days[date.getDay()]}</span>
+            <span class='column-header-day'>${date.getDate()}</span>`;
+        },
+        titleFormat: { month: 'long' },
+        columnHeaderFormat: { weekday: "short", day: "numeric" }
+      },
+      dayGridMonth: {
+        columnHeaderHtml: (date) => {
+          const days = ["일", "월", "화", "수", "목", "금", "토"];
+          const isSunday = date.getDay() === 0;
+          return `<span class='month-header-weekday${isSunday ? ' sunday' : ''}'>${days[date.getDay()]}</span>`;
+        },
+        eventLimit: true,
+        eventLimitText: function (n) {
+          return '+' + n;
+        }
+      }
+    },
+    datesRender: (info) => {
+      requestRangeSync(info, '개별 방 화면 범위 변경');
+    },
+    eventRender: function (info) {
+      info.el.innerHTML = getRoomEventHtml(info);
+    },
+    eventClick: (info) => {
+      info.jsEvent.preventDefault();
+      openDailyEventPopup(info.event.start);
+    },
+    eventTimeFormat: { hour: '2-digit', minute: '2-digit', meridiem: false }
+  });
+
+  singleRoomCalendar.render();
+}
+
+function updateSingleRoomCalendarPanel() {
+  if (!singleRoomCalendarPanel) return;
+
+  const shouldShow = isDesktopRoomDetailAvailable();
+  singleRoomCalendarPanel.hidden = !shouldShow;
+
+  if (!shouldShow) return;
+
+  if (singleRoomCalendarTitle) {
+    singleRoomCalendarTitle.textContent = roomConfigs[selectedSingleRoomKey].name;
+    singleRoomCalendarTitle.style.backgroundColor = roomConfigs[selectedSingleRoomKey].color;
+  }
+
+  initSingleRoomCalendar();
+  if (!singleRoomCalendar) return;
+
+  const mainViewType = getMainCalendarViewType();
+  if (singleRoomCalendar.view?.type !== mainViewType) {
+    singleRoomCalendar.changeView(mainViewType);
+  }
+  singleRoomCalendar.gotoDate(getMainCalendarDate());
+  singleRoomCalendar.refetchEvents();
 }
 
 function updateRoomVisibility() {
-  applyViewAllClass();
+  const layoutChanged = applyViewAllClass();
+  updateSingleRoomCalendarPanel();
 
   const calendars = getSwipeCalendarInstances();
   calendars.forEach(calInst => {
@@ -125,19 +283,37 @@ function updateRoomVisibility() {
       calInst.rerenderEvents();
     }
   });
+
+  if (layoutChanged) {
+    requestAnimationFrame(() => {
+      getSwipeCalendarInstances().forEach(calInst => {
+        if (calInst && typeof calInst.render === 'function') {
+          calInst.render();
+        }
+      });
+      if (typeof applyMonthViewWidth === 'function') {
+        applyMonthViewWidth();
+      }
+    });
+  }
 }
 
 function select_room_btn_function(aroom_name_key) {
   const roomKeys = Object.keys(roomConfigs);
+  const isDesktopRoomPick = window.innerWidth >= DESKTOP_ROOM_DETAIL_MIN_WIDTH && roomConfigs[aroom_name_key];
 
   // ✅ currentRoomSelections 초기화
   roomKeys.forEach(key => {
-    currentRoomSelections[key] = false;
+    currentRoomSelections[key] = isDesktopRoomPick;
   });
 
   if (aroom_name_key === 'all') {
+    selectedSingleRoomKey = null;
     roomKeys.forEach(key => { currentRoomSelections[key] = true; });
+  } else if (isDesktopRoomPick) {
+    selectedSingleRoomKey = aroom_name_key;
   } else if (roomConfigs[aroom_name_key]) {
+    selectedSingleRoomKey = null;
     currentRoomSelections[aroom_name_key] = true;
   } else {
     console.warn("존재하지 않는 룸:", aroom_name_key);
@@ -150,6 +326,121 @@ function select_room_btn_function(aroom_name_key) {
   });
 
   updateRoomVisibility();
+}
+
+function parseCalendarTimeToMinutes(timeText) {
+  const parts = String(timeText || '').split(':').map(Number);
+  if (parts.length < 2 || parts.some(Number.isNaN)) return 0;
+  return (parts[0] * 60) + parts[1];
+}
+
+function formatHoverGuideTime(minutes) {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, minutes));
+  const hour = Math.floor(clamped / 60);
+  const minute = clamped % 60;
+  const period = hour < 12 ? '오전' : '오후';
+  const displayHour = hour % 12 || 12;
+  return `${period} ${displayHour}:${String(minute).padStart(2, '0')}`;
+}
+
+function getVisibleCalendarRoot(containerEl) {
+  if (!containerEl) return null;
+  const activeSlide = containerEl.querySelector('.swiper-slide-active.fc');
+  if (activeSlide) return activeSlide;
+
+  const roots = Array.from(containerEl.querySelectorAll('.fc'));
+  if (!roots.length && containerEl.classList?.contains('fc')) return containerEl;
+  if (roots.length <= 1) return roots[0] || null;
+
+  const containerRect = containerEl.getBoundingClientRect();
+  return roots
+    .map(el => {
+      const rect = el.getBoundingClientRect();
+      const visibleWidth = Math.max(0, Math.min(rect.right, containerRect.right) - Math.max(rect.left, containerRect.left));
+      return { el, visibleWidth };
+    })
+    .sort((a, b) => b.visibleWidth - a.visibleWidth)[0]?.el || roots[0];
+}
+
+function getHoverGuideTimeMetrics(containerEl) {
+  const root = getVisibleCalendarRoot(containerEl);
+  const slatRows = root ? Array.from(root.querySelectorAll('.fc-slats tr[data-time]')) : [];
+  if (slatRows.length < 1) return null;
+
+  const firstRowRect = slatRows[0].getBoundingClientRect();
+  const lastRowRect = slatRows[slatRows.length - 1].getBoundingClientRect();
+  const top = firstRowRect.top;
+  const bottom = lastRowRect.bottom;
+  if (bottom <= top) return null;
+
+  const startMinutes = parseCalendarTimeToMinutes(slatRows[0].getAttribute('data-time'));
+  const secondMinutes = slatRows[1]
+    ? parseCalendarTimeToMinutes(slatRows[1].getAttribute('data-time'))
+    : startMinutes + 60;
+  const slotMinutes = Math.max(1, secondMinutes - startMinutes);
+  const totalMinutes = slotMinutes * slatRows.length;
+
+  return { top, bottom, startMinutes, totalMinutes };
+}
+
+function installHoverTimeGuide(containerEl) {
+  if (!containerEl || containerEl.dataset.hoverTimeGuideReady === '1') return;
+  containerEl.dataset.hoverTimeGuideReady = '1';
+
+  const guide = document.createElement('div');
+  guide.className = 'calendar-hover-time-guide';
+  guide.innerHTML = `
+    <div class="calendar-hover-time-guide-line"></div>
+    <div class="calendar-hover-time-guide-label"></div>
+  `;
+  containerEl.appendChild(guide);
+
+  const labelEl = guide.querySelector('.calendar-hover-time-guide-label');
+  const hideGuide = () => guide.classList.remove('is-visible');
+
+  containerEl.addEventListener('mousemove', (event) => {
+    if (window.innerWidth < DESKTOP_ROOM_DETAIL_MIN_WIDTH) {
+      hideGuide();
+      return;
+    }
+
+    const metrics = getHoverGuideTimeMetrics(containerEl);
+    if (!metrics || event.clientY < metrics.top || event.clientY > metrics.bottom) {
+      hideGuide();
+      return;
+    }
+
+    const ratio = (event.clientY - metrics.top) / (metrics.bottom - metrics.top);
+    const rawMinutes = metrics.startMinutes + (ratio * metrics.totalMinutes);
+    const snapUnitMinutes = 60;
+    const maxSnapMinutes = metrics.startMinutes + metrics.totalMinutes - snapUnitMinutes;
+    const roundedMinutes = Math.max(
+      metrics.startMinutes,
+      Math.min(maxSnapMinutes, Math.round(rawMinutes / snapUnitMinutes) * snapUnitMinutes)
+    );
+    const containerRect = containerEl.getBoundingClientRect();
+    const snappedRatio = (roundedMinutes - metrics.startMinutes) / metrics.totalMinutes;
+    const y = metrics.top + (snappedRatio * (metrics.bottom - metrics.top)) - containerRect.top;
+    const labelWidth = Math.max(labelEl.offsetWidth || 0, 62);
+    const mouseX = event.clientX - containerRect.left;
+    const rightSideX = mouseX + 12;
+    const leftSideX = mouseX - labelWidth - 12;
+    const labelX = rightSideX + labelWidth < containerRect.width - 8
+      ? rightSideX
+      : Math.max(8, leftSideX);
+
+    guide.style.setProperty('--hover-guide-y', `${y}px`);
+    guide.style.setProperty('--hover-guide-x', `${labelX}px`);
+    labelEl.textContent = formatHoverGuideTime(roundedMinutes);
+    guide.classList.add('is-visible');
+  });
+
+  containerEl.addEventListener('mouseleave', hideGuide);
+}
+
+function initHoverTimeGuides() {
+  installHoverTimeGuide(calendarEl);
+  installHoverTimeGuide(singleRoomCalendarEl);
 }
 
 const roomOrder = ['Ahall', 'Bhall', 'Chall', 'Dhall', 'Ehall'];
@@ -349,7 +640,10 @@ function initCalendar() {
       }
 
       // 스와이프 시에는 불필요한 이중 렌더링(rerenderEvents)을 피하고 CSS 클래스만 업데이트
-      setTimeout(applyViewAllClass, 0);
+      setTimeout(() => {
+        applyViewAllClass();
+        updateSingleRoomCalendarPanel();
+      }, 0);
       requestRangeSync(info, '화면 범위 변경');
     },
     eventRender: function (info) {
@@ -553,6 +847,7 @@ function renderClockSvg(startHour, startMinute = 0, endHour, endMinute = 0) {
 document.addEventListener("DOMContentLoaded", () => {
   updateRoomVisibility(); // 최초 로드 시 클래스 적용
   initCalendar();
+  initHoverTimeGuides();
   document.querySelectorAll(".room-toggle").forEach(cb => {
     const key = cb.value;
     cb.checked = currentRoomSelections[key];
@@ -564,6 +859,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   ['click', 'touchstart', 'keydown'].forEach(e => {
     document.addEventListener(e, () => lastInteraction = Date.now());
+  });
+
+  window.addEventListener('resize', () => {
+    updateRoomVisibility();
   });
 
   let _visibilityTimer = null;
