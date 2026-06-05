@@ -40,7 +40,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-image: url(./img/logo.png);
+    background-image: url(/calendar_set/calendar_v10/img/logo.png);
     align-content: space-between;
     background-position: center;
     /* background-size: cover; */

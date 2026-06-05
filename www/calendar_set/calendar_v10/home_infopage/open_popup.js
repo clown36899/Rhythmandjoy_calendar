@@ -1,9 +1,16 @@
 
 // HTML 캐시
 const htmlCache = new Map();
+const V10_HOME_PATH = "/calendar_set/calendar_v10/home_infopage/";
+const V10_IMAGE_PATH = `${V10_HOME_PATH}images/`;
+
+function resolveV10HomePath(url) {
+  return url.startsWith("home_infopage/") ? `/calendar_set/calendar_v10/${url}` : url;
+}
 
 // 팝업 열기
 function openPopup(url) {
+  const popupUrl = resolveV10HomePath(url);
   const popupBox = document.getElementById('popupBox');
   const popupOverlay = document.getElementById('popupOverlay');
 
@@ -13,8 +20,8 @@ function openPopup(url) {
   popupBox.style.width = '90%';
 
   // 캐시에 있으면 즉시 표시
-  if (htmlCache.has(url)) {
-    document.getElementById('popupContent').innerHTML = htmlCache.get(url);
+  if (htmlCache.has(popupUrl)) {
+    document.getElementById('popupContent').innerHTML = htmlCache.get(popupUrl);
 
     // 다음 프레임에 애니메이션 시작
     requestAnimationFrame(() => {
@@ -25,10 +32,10 @@ function openPopup(url) {
   }
 
   // 캐시에 없으면 fetch
-  fetch(url)
+  fetch(popupUrl)
     .then(response => response.text())
     .then(html => {
-      htmlCache.set(url, html); // 캐시에 저장
+      htmlCache.set(popupUrl, html); // 캐시에 저장
       document.getElementById('popupContent').innerHTML = html;
 
       // 다음 프레임에 애니메이션 시작
@@ -76,12 +83,13 @@ const imageCache = new Map();
 
 function openInnerPopup(url) {
   console.log("요청 URL:", url);
+  const popupUrl = resolveV10HomePath(url);
 
   // HTML 캐시 확인
-  const loadHTML = htmlCache.has(url)
-    ? Promise.resolve(htmlCache.get(url))
-    : fetch(url).then(response => response.text()).then(html => {
-      htmlCache.set(url, html);
+  const loadHTML = htmlCache.has(popupUrl)
+    ? Promise.resolve(htmlCache.get(popupUrl))
+    : fetch(popupUrl).then(response => response.text()).then(html => {
+      htmlCache.set(popupUrl, html);
       return html;
     });
 
@@ -98,7 +106,7 @@ function openInnerPopup(url) {
     });
 
     // folder=roomA 형식에서 folder값 추출
-    const folderMatch = url.match(/folder=([^&]+)/);
+    const folderMatch = popupUrl.match(/folder=([^&]+)/);
     const folder = folderMatch ? folderMatch[1] : '';
     console.log('[갤러리] folder 추출:', folder);
     if (!folder) return;
@@ -125,7 +133,7 @@ function openInnerPopup(url) {
     const totalImages = 10;
 
     // 첫 번째 이미지만 즉시 로드
-    const firstImagePath = `home_infopage/images/${folder}/image1.webp`;
+    const firstImagePath = `${V10_IMAGE_PATH}${folder}/image1.webp`;
     console.log('[갤러리] 첫 이미지 로드:', firstImagePath);
 
     // 캐시 확인
@@ -175,7 +183,7 @@ function openInnerPopup(url) {
     setTimeout(() => {
       console.log('[갤러리] 나머지 이미지 로드 시작 (2~10)');
       for (let i = 2; i <= totalImages; i++) {
-        const imgPath = `home_infopage/images/${folder}/image${i}.webp`;
+        const imgPath = `${V10_IMAGE_PATH}${folder}/image${i}.webp`;
 
         // 캐시에 있으면 즉시 표시
         if (imageCache.has(imgPath)) {
@@ -290,4 +298,3 @@ window.openPopup = openPopup;
 window.closePopup = closePopup;
 window.openInnerPopup = openInnerPopup;
 window.closeInnerPopup = closeInnerPopup;
-

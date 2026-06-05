@@ -2202,14 +2202,6 @@ body.view-all .fc-timeGrid-view .fc-event.e {
   display: none;
 }
 
-@media (max-width: 1000px) {
-  #sideFrame {
-    display: none !important;
-    /* 인라인 스타일 이겨야 해서 !important */
-  }
-}
-
-
 @media (min-width: 1000px) {
   .offcanvas-body-2000 {
     display: none;
@@ -2218,7 +2210,7 @@ body.view-all .fc-timeGrid-view .fc-event.e {
 
   #calendarAll {
     position: absolute;
-    width: 33.3%;
+    width: 66.7%;
     left: 33.3%;
   }
 
@@ -2242,7 +2234,7 @@ body.view-all .fc-timeGrid-view .fc-event.e {
 
   .swiper-wrapper {
     position: relative;
-    width: 33.3% !important;
+    width: 66.7% !important;
     right: 0;
     height: 100%;
     z-index: 1;
@@ -2253,13 +2245,13 @@ body.view-all .fc-timeGrid-view .fc-event.e {
 
   .fc-scroller>.fc-time-grid {
     position: relative;
-    width: 33.3%;
+    width: 66.7%;
   }
 
   .fc-head {
     position: absolute;
     background: #2f2f2f;
-    width: 33.3%;
+    width: 66.7%;
   }
 
   .bottomtop {
@@ -2267,7 +2259,7 @@ body.view-all .fc-timeGrid-view .fc-event.e {
     display: flex;
     flex-direction: column;
     bottom: 0;
-    width: 33.3%;
+    width: 66.7%;
     /* right: 0; */
     left: 33.3%;
 
