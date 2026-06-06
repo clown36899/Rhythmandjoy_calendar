@@ -823,9 +823,7 @@ body.view-timeGridWeek .fc tbody {
   .fc-dayGridMonth-view .fc-scroller>.fc-day-grid {
     margin-bottom: 0px;
     overflow: hidden;
-    width: 33.3% !important;
-    /* 33% 적용 */
-
+    width: 100% !important;
   }
 }
 
