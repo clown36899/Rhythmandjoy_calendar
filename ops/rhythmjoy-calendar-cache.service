@@ -1,0 +1,15 @@
+[Unit]
+Description=Rhythmjoy Google Calendar cache
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clown313python
+WorkingDirectory=/home/clown313python/rhythmjoy_ops
+ExecStart=/bin/bash -lc 'exec /home/clown313python/.pyenv/versions/3.8.12/envs/enve/bin/python3.8 /home/clown313python/rhythmjoy_ops/rhythmjoy_calendar_cache.py --interval 15 >> /home/clown313python/myapp/static/email_log/calendar_cache.log 2>&1'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

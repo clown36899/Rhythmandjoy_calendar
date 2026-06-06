@@ -1,20 +1,32 @@
 (() => {
   const DB_NAME = 'rhythmjoy-calendar-v10-sync';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const EVENT_STORE = 'events';
   const STATE_STORE = 'syncState';
   const DEFAULT_TIME_ZONE = 'Asia/Seoul';
   const FULL_SYNC_PAST_DAYS = 120;
   const SYNC_COOLDOWN_MS = 12000;
+  const REQUEST_TIMEOUT_MS = 12000;
+  const REQUEST_RETRY_DELAY_MS = 700;
 
   function openDb() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
+        let events;
         if (!db.objectStoreNames.contains(EVENT_STORE)) {
-          const events = db.createObjectStore(EVENT_STORE, { keyPath: 'cacheKey' });
+          events = db.createObjectStore(EVENT_STORE, { keyPath: 'cacheKey' });
+        } else {
+          events = req.transaction.objectStore(EVENT_STORE);
+        }
+        if (!events.indexNames.contains('startMs')) {
           events.createIndex('startMs', 'startMs', { unique: false });
+        }
+        if (!events.indexNames.contains('endMs')) {
+          events.createIndex('endMs', 'endMs', { unique: false });
+        }
+        if (!events.indexNames.contains('roomKey')) {
           events.createIndex('roomKey', 'roomKey', { unique: false });
         }
         if (!db.objectStoreNames.contains(STATE_STORE)) {
@@ -39,6 +51,10 @@
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
+  }
+
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   function addDays(date, days) {
@@ -108,19 +124,57 @@
     return url.toString();
   }
 
-  async function fetchCalendarPage(calendarId, apiKey, params) {
-    const response = await fetch(buildUrl(calendarId, apiKey, params), { cache: 'no-store' });
-    if (!response.ok) {
-      const error = new Error(`Google Calendar request failed: ${response.status}`);
-      error.status = response.status;
-      try {
-        error.body = await response.json();
-      } catch (_) {
-        error.body = null;
-      }
-      throw error;
+  async function fetchWithTimeout(url) {
+    if (typeof AbortController === 'undefined') {
+      return fetch(url, { cache: 'no-store' });
     }
-    return response.json();
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(url, { cache: 'no-store', signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  function isRetryableCalendarError(error) {
+    if (!error.status) return true;
+    return error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+
+  function summarizeCalendarError(error) {
+    if (!error) return 'unknown error';
+    if (error.status) return `HTTP ${error.status}`;
+    return error.name || error.message || 'network error';
+  }
+
+  async function fetchCalendarPage(calendarId, apiKey, params) {
+    const url = buildUrl(calendarId, apiKey, params);
+    let attempt = 0;
+
+    while (true) {
+      try {
+        const response = await fetchWithTimeout(url);
+        if (!response.ok) {
+          const error = new Error(`Google Calendar request failed: ${response.status}`);
+          error.status = response.status;
+          try {
+            error.body = await response.json();
+          } catch (_) {
+            error.body = null;
+          }
+          throw error;
+        }
+        return response.json();
+      } catch (error) {
+        if (attempt >= 1 || !isRetryableCalendarError(error)) {
+          throw error;
+        }
+        attempt++;
+        await delay(REQUEST_RETRY_DELAY_MS);
+      }
+    }
   }
 
   async function fetchAllPages(calendarId, apiKey, baseParams) {
@@ -155,6 +209,7 @@
     let queuedForceSync = false;
     let lastBackgroundNotifyAt = 0;
     let lastSyncAt = 0;
+    let lastLoadSyncAttemptAt = 0;
 
     function db() {
       if (!dbPromise) dbPromise = openDb();
@@ -259,6 +314,7 @@
 
       await replaceRoomEvents(roomKey, records, nextSyncToken);
       console.log(`✅ [v10 sync] ${cfg.name} 풀싱크 완료: ${records.length}건`);
+      return { changed: records.length, fullSyncs: 1, failed: 0 };
     }
 
     async function incrementalSyncRoom(roomKey, syncToken) {
@@ -284,35 +340,51 @@
       });
 
       await applyIncremental(roomKey, recordsToPut, keysToDelete, nextSyncToken);
-      console.log(`✅ [v10 sync] ${cfg.name} 변경분 반영: +${recordsToPut.length} / -${keysToDelete.length}`);
+      const changed = recordsToPut.length + keysToDelete.length;
+      if (changed > 0) {
+        console.log(`✅ [v10 sync] ${cfg.name} 변경분 반영: +${recordsToPut.length} / -${keysToDelete.length}`);
+      }
+      return { changed, fullSyncs: 0, failed: 0 };
     }
 
     async function syncRoom(roomKey) {
       const state = await getState(roomKey);
       if (!state?.syncToken) {
-        await fullSyncRoom(roomKey);
-        return;
+        return fullSyncRoom(roomKey);
       }
 
       try {
-        await incrementalSyncRoom(roomKey, state.syncToken);
+        return incrementalSyncRoom(roomKey, state.syncToken);
       } catch (error) {
         if (error.status === 410) {
           console.warn(`⚠️ [v10 sync] ${roomConfigs[roomKey].name} syncToken 만료, 풀싱크 재시도`);
           await putState(roomKey, { syncToken: null, fullSyncComplete: false });
-          await fullSyncRoom(roomKey);
-          return;
+          return fullSyncRoom(roomKey);
         }
         throw error;
       }
     }
 
+    function mergeStats(target, patch) {
+      target.changed += patch?.changed || 0;
+      target.fullSyncs += patch?.fullSyncs || 0;
+      target.failed += patch?.failed || 0;
+      return target;
+    }
+
     async function runSyncPass() {
+      const stats = { changed: 0, fullSyncs: 0, failed: 0 };
       for (const roomKey of roomKeys) {
-        await syncRoom(roomKey);
-        await new Promise(resolve => setTimeout(resolve, 120));
+        try {
+          mergeStats(stats, await syncRoom(roomKey));
+        } catch (error) {
+          stats.failed++;
+          console.warn(`⚠️ [v10 sync] ${roomConfigs[roomKey]?.name || roomKey} 동기화 실패: ${summarizeCalendarError(error)}`);
+        }
+        await delay(120);
       }
       lastSyncAt = Date.now();
+      return stats;
     }
 
     async function syncAllRooms(options = {}) {
@@ -321,13 +393,17 @@
         if (options.force) queuedForceSync = true;
         return syncPromise;
       }
-      if (!options.force && now - lastSyncAt < SYNC_COOLDOWN_MS) return syncPromise || Promise.resolve();
+      if (!options.force && now - lastSyncAt < SYNC_COOLDOWN_MS) {
+        return syncPromise || Promise.resolve({ changed: 0, fullSyncs: 0, failed: 0 });
+      }
 
       syncPromise = (async () => {
+        const total = { changed: 0, fullSyncs: 0, failed: 0 };
         do {
           queuedForceSync = false;
-          await runSyncPass();
+          mergeStats(total, await runSyncPass());
         } while (queuedForceSync);
+        return total;
       })().finally(() => {
         syncPromise = null;
       });
@@ -338,11 +414,13 @@
     function refresh(options = {}) {
       const reason = options.reason || '증분 동기화';
       return syncAllRooms({ force: !!options.force })
-        .then(() => {
+        .then((stats) => {
+          if (!stats || stats.changed <= 0) return stats;
           const now = Date.now();
-          if (now - lastBackgroundNotifyAt < 2500) return;
+          if (now - lastBackgroundNotifyAt < 2500) return stats;
           lastBackgroundNotifyAt = now;
           onSyncComplete({ reason });
+          return stats;
         })
         .catch(error => {
           console.warn('⚠️ [v10 sync] 백그라운드 변경분 갱신 실패', error);
@@ -369,7 +447,11 @@
         return readEventsInRange(fetchInfo.start, fetchInfo.end);
       }
 
-      await syncAllRooms({ force: true });
+      const now = Date.now();
+      if (now - lastLoadSyncAttemptAt >= SYNC_COOLDOWN_MS) {
+        lastLoadSyncAttemptAt = now;
+        await syncAllRooms({ force: true });
+      }
       return readEventsInRange(fetchInfo.start, fetchInfo.end);
     }
 
