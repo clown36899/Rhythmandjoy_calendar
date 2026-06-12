@@ -10,6 +10,33 @@
     crossorigin="anonymous" referrerpolicy="no-referrer" />
 
   <style>
+    :root {
+      --calendar-bg: #1f1f1f;
+      --calendar-surface: #2f2f2f;
+      --calendar-card: #353535;
+      --calendar-card-raised: #404040;
+      --calendar-border: #1d1d1d;
+      --calendar-border-soft: #4a4a4a;
+      --calendar-text: #ffffff;
+      --calendar-text-soft: #c1c1c1;
+      --calendar-text-muted: #9c9c9c;
+      --calendar-accent: #616161;
+      --room-a: #ffc107;
+      --room-a-rgb: 255, 193, 7;
+      --room-b: #5796c8;
+      --room-b-rgb: 87, 150, 200;
+      --room-c: #81b4ba;
+      --room-c-rgb: 129, 180, 186;
+      --room-d: #7d9d6a;
+      --room-d-rgb: 125, 157, 106;
+      --room-all: #6e2e8a;
+      --room-all-rgb: 110, 46, 138;
+      --site-blue: #03a9f4;
+      --site-blue-rgb: 3, 169, 244;
+      --site-cyan: #00bcd4;
+      --site-cyan-rgb: 0, 188, 212;
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -17,23 +44,23 @@
     }
 
     body {
-      font-family: "Noto Sans KR", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Noto Sans KR", "Segoe UI", sans-serif;
       overflow: hidden;
       height: 100vh;
-      background: #1f1f1f;
+      color: var(--calendar-text);
+      background: var(--calendar-bg);
     }
 
     /* 상단 콘텐츠 영역 */
     .content-area {
       position: fixed;
-      top: 0;
+      top: 70px;
       left: 0;
       right: 0;
-      bottom: 130px;
-      /* 바텀 네비 높이만큼 */
+      bottom: 0;
       overflow-y: auto;
-      padding: 20px;
-      background: #1f1f1f;
+      padding: 16px 16px 26px;
+      background: var(--calendar-bg);
     }
 
     .content-area::-webkit-scrollbar {
@@ -41,17 +68,54 @@
     }
 
     .content-area::-webkit-scrollbar-thumb {
-      background: #616161;
+      background: var(--calendar-accent);
       border-radius: 3px;
     }
 
     .content-area::-webkit-scrollbar-track {
-      background: #2f2f2f;
+      background: var(--calendar-bg);
     }
 
     /* 콘텐츠 섹션 */
     .content-section {
       display: none;
+      --section-accent: var(--site-blue);
+      --section-accent-rgb: var(--site-blue-rgb);
+    }
+
+    #howto {
+      --section-accent: var(--room-b);
+      --section-accent-rgb: var(--room-b-rgb);
+    }
+
+    #info {
+      --section-accent: var(--room-c);
+      --section-accent-rgb: var(--room-c-rgb);
+    }
+
+    #notice {
+      --section-accent: var(--room-a);
+      --section-accent-rgb: var(--room-a-rgb);
+    }
+
+    #map {
+      --section-accent: var(--site-blue);
+      --section-accent-rgb: var(--site-blue-rgb);
+    }
+
+    #night {
+      --section-accent: var(--room-all);
+      --section-accent-rgb: var(--room-all-rgb);
+    }
+
+    #pricelist {
+      --section-accent: var(--room-a);
+      --section-accent-rgb: var(--room-a-rgb);
+    }
+
+    #price {
+      --section-accent: var(--site-cyan);
+      --section-accent-rgb: var(--site-cyan-rgb);
     }
 
     .content-section.active {
@@ -80,130 +144,366 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 15px;
+      gap: 12px;
+      margin-bottom: 14px;
+      padding: 16px;
+      background: var(--calendar-surface);
+      border: 1px solid rgba(var(--section-accent-rgb), 0.25);
+      border-radius: 14px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
     }
 
     .section-header h1 {
       margin-bottom: 0 !important;
     }
 
+    .section-header-main {
+      min-width: 0;
+    }
+
+    .section-eyebrow {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--section-accent);
+      font-size: 0.78rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .section-lead {
+      margin: 8px 0 0 !important;
+      color: var(--calendar-text-soft) !important;
+      font-size: 1.02rem !important;
+      line-height: 1.55 !important;
+    }
+
+    .section-summary {
+      margin: 0 0 14px;
+      padding: 14px 15px;
+      background: var(--calendar-surface);
+      border: 1px solid rgba(var(--section-accent-rgb), 0.22);
+      border-radius: 14px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .section-summary strong {
+      display: block;
+      margin-bottom: 5px;
+      color: #ffffff;
+      font-size: 1.08rem;
+      line-height: 1.35;
+    }
+
+    .section-summary p {
+      margin: 0 !important;
+      color: var(--calendar-text-soft) !important;
+      font-size: 1rem !important;
+      line-height: 1.62 !important;
+    }
+
     /* 공유 버튼 */
     .share-btn {
-      background: #404040;
-      border: none;
-      color: #ffffff;
-      padding: 8px 12px;
-      border-radius: 6px;
+      flex: 0 0 auto;
+      width: 44px;
+      height: 44px;
+      background: var(--calendar-card);
+      border: 1px solid var(--calendar-border);
+      color: var(--calendar-text);
+      padding: 0;
+      border-radius: 999px;
       cursor: pointer;
       font-size: 0.85rem;
       transition: all 0.3s;
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
     }
 
     .share-btn:hover {
-      background: #ffc107;
-      color: #000000;
+      background: var(--calendar-card-raised);
+      color: var(--calendar-text);
+      border-color: rgba(var(--section-accent-rgb), 0.55);
     }
 
     .share-btn i {
-      font-size: 14px;
+      font-size: 15px;
+      color: var(--section-accent);
+    }
+
+    .share-btn span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
     }
 
     .content-section h1 {
-      font-size: clamp(1.2rem, 3.5vw, 1.6rem);
-      margin-bottom: 15px;
-      color: #ffffff;
-      background: #353535;
-      padding: 12px 15px;
-      border-radius: 8px;
-      border-left: 4px solid #ffc107;
+      font-size: clamp(1.35rem, 4vw, 1.7rem);
+      line-height: 1.25;
+      margin-bottom: 0;
+      color: var(--calendar-text);
+      background: transparent;
+      padding: 0;
+      border: none;
     }
 
     .content-section h2,
     .content-section h3 {
-      font-size: clamp(1rem, 3vw, 1.3rem);
-      margin: 15px 0 10px 0;
-      color: #ffffff;
-      border-left: 3px solid #616161;
-      padding-left: 10px;
+      font-size: clamp(1.1rem, 3.2vw, 1.35rem);
+      line-height: 1.35;
+      margin: 18px 0 11px 0;
+      color: var(--calendar-text);
+      padding-left: 0;
     }
 
     .content-section p {
-      line-height: 1.6;
-      margin-bottom: 10px;
-      color: #c1c1c1;
-      font-size: clamp(0.9rem, 2.5vw, 1rem);
+      line-height: 1.72;
+      margin-bottom: 12px;
+      color: var(--calendar-text-soft);
+      font-size: clamp(1rem, 2.85vw, 1.08rem);
     }
 
     .content-section ul {
-      padding-left: 15px;
-      margin-bottom: 12px;
+      padding-left: 0;
+      margin-bottom: 14px;
+      list-style: none;
     }
 
     .content-section li {
       margin-bottom: 12px;
-      line-height: 1.6;
-      color: #c1c1c1;
-      background: #2f2f2f;
-      padding: 10px;
-      border-radius: 6px;
-      border-left: 2px solid #616161;
-      font-size: clamp(0.85rem, 2.5vw, 0.95rem);
+      line-height: 1.7;
+      color: var(--calendar-text-soft);
+      background: var(--calendar-surface);
+      padding: 13px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--calendar-border);
+      font-size: clamp(0.96rem, 2.75vw, 1.03rem);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
     }
 
     .content-section strong {
-      color: #ffffff;
+      color: var(--calendar-text);
     }
 
     .content-section a {
-      color: #00baff;
+      color: var(--calendar-text);
       text-decoration: none;
       font-weight: 600;
       transition: all 0.3s ease;
+      border-bottom: 1px solid var(--calendar-accent);
     }
 
     .content-section a:hover {
-      color: #ffc107;
+      color: var(--calendar-text);
       text-decoration: underline;
     }
 
     .highlight {
-      background: #ffc107;
+      background: var(--room-a);
       padding: 2px 6px;
       border-radius: 3px;
       font-weight: bold;
-      color: #000000;
+      color: #1f1f1f;
     }
 
     .important {
-      background: #404040 !important;
-      border-left-color: #ffc107 !important;
+      background: var(--calendar-card) !important;
     }
 
     .button,
     .inline-button {
       display: inline-block;
-      background: #353535;
-      color: #ffffff;
-      padding: 10px 18px;
+      background: var(--calendar-surface);
+      color: var(--calendar-text);
+      padding: 11px 18px;
       border-radius: 6px;
       text-decoration: none;
       font-weight: 600;
       margin: 5px;
-      border: 1px solid #616161;
+      border: 1px solid var(--calendar-border);
       cursor: pointer;
       transition: all 0.3s ease;
-      font-size: clamp(0.9rem, 2.5vw, 1rem);
+      font-size: clamp(0.98rem, 2.8vw, 1.05rem);
     }
 
     .button:hover,
     .inline-button:hover {
-      background: #404040;
-      border-color: #ffc107;
-      color: #ffc107;
+      background: var(--calendar-card-raised);
+      border-color: rgba(var(--section-accent-rgb), 0.65);
+      color: var(--calendar-text);
       transform: translateY(-1px);
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+      margin: 12px 0 14px;
+    }
+
+    .action-grid .inline-button {
+      min-height: 46px;
+      margin: 0;
+      padding: 10px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 0.96rem;
+      line-height: 1.25;
+    }
+
+    .full-action {
+      width: 100%;
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 12px 0 16px;
+      border-radius: 12px;
+      color: var(--calendar-text) !important;
+      background: var(--calendar-card);
+      border-color: rgba(var(--section-accent-rgb), 0.45);
+    }
+
+    .muted-text {
+      display: block;
+      margin-top: 6px;
+      color: var(--calendar-text-muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .booking-actions {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .booking-action {
+      width: 100%;
+      min-height: 58px;
+      text-align: center;
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--calendar-text) !important;
+      font-weight: 700;
+      font-size: 1.12rem;
+      line-height: 1.35;
+      padding: 14px 16px;
+      border-radius: 12px;
+      text-decoration: none;
+      box-sizing: border-box;
+    }
+
+    .booking-action:hover {
+      color: var(--calendar-text) !important;
+      text-decoration: none;
+      transform: translateY(-1px);
+    }
+
+    .booking-action-primary {
+      background: #03C75A;
+      border: 1px solid #03C75A;
+      box-shadow: 0 8px 20px rgba(3, 199, 90, 0.22);
+    }
+
+    .booking-action-secondary {
+      color: #d9f0ff !important;
+      background: #142332;
+      border: 1px solid #1d5f92;
+    }
+
+    .booking-steps {
+      display: grid;
+      gap: 10px;
+      margin: 10px 0 14px;
+    }
+
+    .booking-step {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 14px;
+      background: var(--calendar-surface);
+      border: 1px solid var(--calendar-border);
+      border-radius: 14px;
+    }
+
+    .booking-step-number {
+      width: 36px;
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: rgba(var(--section-accent-rgb), 0.32);
+      border: 1px solid rgba(var(--section-accent-rgb), 0.42);
+      color: var(--calendar-text);
+      font-size: 1rem;
+      font-weight: 800;
+    }
+
+    .booking-step strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--calendar-text);
+      font-size: 1.08rem;
+      line-height: 1.35;
+    }
+
+    .booking-step p {
+      margin: 0 !important;
+      color: var(--calendar-text-soft) !important;
+      font-size: 1rem !important;
+      line-height: 1.6 !important;
+    }
+
+    .booking-facts {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px !important;
+    }
+
+    .booking-facts li {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      margin: 0;
+      padding: 11px 12px;
+      background: var(--calendar-surface);
+      border: 1px solid var(--calendar-border);
+      border-radius: 12px;
+      color: var(--calendar-text-soft);
+      font-size: 0.98rem;
+      line-height: 1.55;
+      box-shadow: none;
+    }
+
+    .booking-facts i {
+      margin-top: 2px;
+      color: var(--section-accent);
+      font-size: 0.95rem;
+    }
+
+    .my-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 34px;
+      padding: 1px 7px 2px;
+      border-radius: 999px;
+      background: #029df7;
+      border: 1px solid #029df7;
+      color: #ffffff;
+      font-size: 0.78rem;
+      font-weight: 800;
     }
 
     .price-image {
@@ -211,41 +511,55 @@
       max-width: 100%;
       height: auto;
       margin: 20px auto;
-      border: 1px solid #ddd;
+      border: 1px solid var(--calendar-border);
       border-radius: 8px;
+      background: var(--calendar-surface);
     }
 
-    /* 바텀 네비게이션 */
+    /* 상단 섹션 탭 */
     .bottom-nav {
       position: fixed;
-      bottom: 0;
       left: 0;
       right: 0;
-      background: #262626;
-      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      grid-template-rows: repeat(2, 1fr);
-      gap: 1px;
-      background: #1f1f1f;
-      padding: 0;
+      top: 0;
+      bottom: auto;
+      height: 70px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      background: rgba(31, 31, 31, 0.96);
+      backdrop-filter: blur(10px);
+      padding: 10px 12px;
       z-index: 1000;
-      border-top: 1px solid #404040;
+      border-top: none;
+      border-bottom: 1px solid var(--calendar-border);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+      scrollbar-width: none;
+    }
+
+    .bottom-nav::-webkit-scrollbar {
+      display: none;
     }
 
     .nav-item {
-      background: #2f2f2f;
-      border: none;
-      padding: 10px 5px;
+      min-width: max-content;
+      min-height: 48px;
+      background: var(--calendar-card);
+      border: 1px solid var(--calendar-border);
+      border-radius: 999px;
+      padding: 0 13px;
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
       align-items: center;
       justify-content: center;
+      gap: 7px;
       cursor: pointer;
-      transition: all 0.3s ease;
+      transition: all 0.18s ease;
       position: relative;
-      overflow: hidden;
-      color: #c1c1c1;
+      overflow: visible;
+      color: var(--calendar-text-soft);
     }
 
     .nav-item:active {
@@ -253,22 +567,46 @@
     }
 
     .nav-item.active {
-      background: #353535;
-      color: #ffc107;
-      border-top: 2px solid #ffc107;
+      background: var(--site-blue);
+      color: var(--calendar-text);
+      border-color: var(--calendar-border);
+      box-shadow: 0 7px 18px rgba(0, 0, 0, 0.18);
+    }
+
+    .nav-item[data-section="howto"].active {
+      background: #5796c8;
+    }
+
+    .nav-item[data-section="info"].active {
+      background: var(--room-c);
+    }
+
+    .nav-item[data-section="notice"].active,
+    .nav-item[data-section="pricelist"].active {
+      background: var(--room-a);
+      color: #1f1f1f;
+    }
+
+    .nav-item[data-section="map"].active,
+    .nav-item[data-section="price"].active {
+      background: var(--site-blue);
+    }
+
+    .nav-item[data-section="night"].active {
+      background: var(--room-all);
     }
 
     .nav-item i {
-      font-size: clamp(20px, 4vw, 26px);
-      margin-bottom: 4px;
+      font-size: 15px;
+      margin-bottom: 0;
       position: relative;
       z-index: 1;
       filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
     }
 
     .nav-item span {
-      font-size: clamp(0.65rem, 1.8vw, 0.8rem);
-      font-weight: 600;
+      font-size: 0.86rem;
+      font-weight: 700;
       text-align: center;
       position: relative;
       z-index: 1;
@@ -279,17 +617,15 @@
     .welcome-message {
       text-align: center;
       padding: 60px 20px;
-      background: rgba(102, 126, 234, 0.05);
+      background: var(--calendar-surface);
+      border: 1px solid var(--calendar-border);
       border-radius: 20px;
       margin: 20px;
     }
 
     .welcome-message h1 {
       font-size: clamp(1.8rem, 5vw, 2.5rem);
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: var(--calendar-text);
       margin-bottom: 20px;
       padding: 0;
       border: none;
@@ -297,38 +633,180 @@
 
     .welcome-message p {
       font-size: clamp(1rem, 3vw, 1.2rem);
-      color: #b0b0b0;
+      color: var(--calendar-text-soft);
     }
 
     .welcome-message i {
       font-size: 80px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: var(--calendar-text-muted);
       margin-bottom: 20px;
-      filter: drop-shadow(0 4px 8px rgba(102, 126, 234, 0.3));
     }
 
     /* 정보 박스 */
     .info-box {
-      background: #2f2f2f;
-      border: 1px solid #404040;
-      border-radius: 8px;
-      padding: 12px;
-      color: #fff;
-      margin: 12px 0;
+      background: var(--calendar-surface);
+      border: 1px solid var(--calendar-border);
+      border-radius: 14px;
+      padding: 16px;
+      color: var(--calendar-text);
+      margin: 12px 0 14px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
     }
 
     .example-box {
-      background: #353535;
-      padding: 12px;
-      border-left: 3px solid #ffc107;
+      background: var(--calendar-surface);
+      padding: 14px;
+      border: 1px solid var(--calendar-border);
       margin: 12px 0;
-      border-radius: 6px;
+      border-radius: 12px;
       font-family: monospace;
-      color: #c1c1c1;
-      font-size: clamp(0.85rem, 2.5vw, 0.9rem);
+      color: var(--calendar-text-soft);
+      font-size: clamp(0.95rem, 2.7vw, 1rem);
+      line-height: 1.65;
+    }
+
+    .price-notes {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0 14px;
+    }
+
+    .price-note {
+      margin: 0 !important;
+      padding: 12px 13px;
+      border-radius: 12px;
+      border: 1px solid var(--calendar-border);
+      background: var(--calendar-surface);
+      font-size: 0.98rem !important;
+      line-height: 1.55 !important;
+    }
+
+    .price-note.warning {
+      color: var(--calendar-text-soft) !important;
+      border-color: rgba(var(--room-a-rgb), 0.32);
+    }
+
+    .price-note.good {
+      color: var(--calendar-text-soft) !important;
+      border-color: rgba(var(--room-d-rgb), 0.32);
+    }
+
+    .price-table {
+      width: 100% !important;
+      overflow: hidden;
+      border-collapse: separate !important;
+      border-spacing: 0 !important;
+      background: var(--calendar-surface) !important;
+      border: 1px solid var(--calendar-border);
+      border-radius: 12px !important;
+      font-size: 0.86rem !important;
+      line-height: 1.35;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .price-table th {
+      padding: 9px 5px !important;
+      color: var(--calendar-text) !important;
+      background: var(--calendar-card) !important;
+      border-bottom: 1px solid var(--calendar-border) !important;
+      font-size: 0.78rem !important;
+      line-height: 1.25;
+    }
+
+    .price-table td {
+      padding: 9px 5px !important;
+      color: var(--calendar-text-soft) !important;
+      border-bottom: 1px solid var(--calendar-border) !important;
+      font-size: 0.84rem !important;
+      line-height: 1.3;
+    }
+
+    .price-table tbody tr:last-child td {
+      border-bottom: 0 !important;
+    }
+
+    .price-table tbody tr:nth-child(2) td:first-child strong {
+      color: var(--room-a);
+    }
+
+    .price-table tbody tr:nth-child(3) td:first-child strong {
+      color: var(--room-b);
+    }
+
+    .price-table tbody tr:nth-child(4) td:first-child strong {
+      color: var(--room-c);
+    }
+
+    .price-table tbody tr:nth-child(5) td:first-child strong {
+      color: var(--room-d);
+    }
+
+    .price-table tbody tr:nth-child(6) td:first-child strong {
+      color: #b8b8b8;
+    }
+
+    .refund-grid {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0 14px;
+    }
+
+    .refund-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 14px;
+      background: var(--calendar-surface);
+      border: 1px solid var(--calendar-border);
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+    }
+
+    .refund-card strong {
+      color: var(--calendar-text);
+      font-size: 0.98rem;
+      line-height: 1.35;
+    }
+
+    .refund-card span {
+      display: block;
+      margin-top: 3px;
+      color: var(--calendar-text-muted);
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+
+    .refund-rate {
+      flex: 0 0 auto;
+      min-width: 66px;
+      padding: 7px 9px;
+      border-radius: 10px;
+      border: 1px solid var(--calendar-border);
+      background: var(--calendar-card);
+      color: var(--calendar-text);
+      font-weight: 900;
+      text-align: center;
+      line-height: 1.1;
+    }
+
+    .refund-rate.good {
+      border-color: rgba(var(--room-d-rgb), 0.42);
+      background: rgba(var(--room-d-rgb), 0.22);
+      color: var(--calendar-text);
+    }
+
+    .refund-rate.warn {
+      border-color: rgba(var(--room-a-rgb), 0.38);
+      background: rgba(var(--room-a-rgb), 0.18);
+      color: var(--calendar-text);
+    }
+
+    .refund-reference {
+      max-width: min(100%, 320px) !important;
+      margin: 12px auto 16px !important;
+      opacity: 0.82;
+      filter: brightness(0.84) contrast(0.96);
     }
 
     /* 모달 갤러리 스타일 */
@@ -377,7 +855,7 @@
     }
 
     .gallery-close:hover {
-      color: #ffc107;
+      color: var(--calendar-text);
     }
 
     .gallery-main-image {
@@ -415,7 +893,7 @@
     }
 
     .gallery-thumbnail.active {
-      border-color: #ffc107;
+      border-color: var(--calendar-accent);
       opacity: 1;
     }
 
@@ -428,7 +906,7 @@
       top: 50%;
       transform: translateY(-50%);
       background: rgba(0, 0, 0, 0.5);
-      color: white;
+      color: var(--calendar-text);
       border: none;
       font-size: 30px;
       padding: 10px 15px;
@@ -439,7 +917,7 @@
 
     .gallery-nav:hover {
       background: rgba(0, 0, 0, 0.8);
-      color: #ffc107;
+      color: var(--calendar-text-soft);
     }
 
     .gallery-nav.prev {
@@ -458,7 +936,11 @@
     <!-- 예약방법 (초기 활성화) -->
     <div class="content-section active" id="howto">
       <div class="section-header">
-        <h1>📱 네이버 예약</h1>
+        <div class="section-header-main">
+          <span class="section-eyebrow">예약 / 비밀번호 / 취소</span>
+          <h1>예약은 네이버, 확인은 MY</h1>
+          <p class="section-lead">비밀번호와 취소 내역은 오른쪽 위 MY에서 확인합니다.</p>
+        </div>
         <button class="share-btn" onclick="shareSection('예약/비번', '네이버 예약 정보')">
           <i class="fas fa-share-alt"></i>
           <span>공유</span>
@@ -466,117 +948,61 @@
       </div>
 
       <div class="info-box">
-        <a href="https://naver.me/59vo9MDk" target="_blank" style="
-              width: 100%;
-              text-align: center;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              gap: 8px;
-              background-color: #03C75A;
-              color: #ffffff !important;
-              font-weight: 700;
-              font-size: 1rem;
-              padding: 14px 16px;
-              border-radius: 8px;
-              text-decoration: none;
-              box-sizing: border-box;
-              margin-bottom: 8px;
-            "><svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M16.273 12.845L7.376 0H0v24h7.727V11.155L16.624 24H24V0h-7.727z"/></svg> 네이버 예약하기</a>
-        <a href="https://m.place.naver.com/my" target="_blank" style="
-              width: 100%;
-              text-align: center;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              gap: 8px;
-              background-color: #03C75A;
-              color: #ffffff !important;
-              font-weight: 700;
-              font-size: 1rem;
-              padding: 14px 16px;
-              border-radius: 8px;
-              text-decoration: none;
-              box-sizing: border-box;
-              margin-bottom: 8px;
-            "><svg width="20" height="20" viewBox="0 0 24 24" fill="white"></svg> 예약·비번 확인/취소 (네이버 마이플레이스)</a>
-        <p style="font-size: 0.85rem; color: #c1c1c1; margin: 0">
-          💡 네이버 로그인 필요(승인없음, 당일1분전까지 예약가능)
-        </p>
-        
+        <div class="booking-actions">
+          <a href="https://booking.naver.com/booking/10/bizes/1257912" target="_blank" rel="noopener" class="booking-action booking-action-primary"><svg width="20" height="20" viewBox="0 0 24 24" fill="white" aria-hidden="true"><path d="M16.273 12.845L7.376 0H0v24h7.727V11.155L16.624 24H24V0h-7.727z"/></svg> 네이버 예약하기</a>
+        </div>
+
+        <div class="booking-steps">
+          <div class="booking-step">
+            <span class="booking-step-number">1</span>
+            <div>
+              <strong>예약하기</strong>
+              <p>위 버튼에서 날짜와 시간을 선택하면 승인 없이 바로 확정됩니다.</p>
+            </div>
+          </div>
+          <div class="booking-step">
+            <span class="booking-step-number">2</span>
+            <div>
+              <strong>비밀번호 / 취소 확인</strong>
+              <p>예약 페이지 오른쪽 위 <span class="my-label">MY</span> 메뉴에서 예약정보, 비밀번호, 취소 내역을 확인하세요.</p>
+            </div>
+          </div>
+        </div>
+
+        <a href="https://m.place.naver.com/my" target="_blank" rel="noopener" class="booking-action booking-action-secondary"><i class="fas fa-user-check" aria-hidden="true"></i> MY에서 예약 확인/취소</a>
       </div>
-      <p style="font-size: 0.9rem; margin-top: 8px">
-        ✅ 사용 1분 전까지 실시간 예약 가능<br />✅ 승인 없이 즉시 확정
-      </p>
-      <p>
-        네이버지도 앱에서 <strong>"리듬앤조이 연습실"</strong>
-      </p>
-      <p>
-        무통장 입금은 1시간 내로 입금부탁드립니다. <strong>무통장 입금 대기 노쇼가 많아요</strong>
-      </p>
+
+      <ul class="booking-facts">
+        <li><i class="fas fa-check-circle" aria-hidden="true"></i><span>네이버 로그인이 필요합니다.</span></li>
+        <li><i class="fas fa-check-circle" aria-hidden="true"></i><span>사용 1분 전까지 실시간 예약 가능합니다.</span></li>
+        <li><i class="fas fa-check-circle" aria-hidden="true"></i><span>무통장 입금은 1시간 안에 부탁드립니다.</span></li>
+      </ul>
     </div>
 
     <!-- 시설안내 -->
     <div class="content-section" id="info">
       <div class="section-header">
-        <h1>🏢 시설 안내</h1>
+        <div class="section-header-main">
+          <span class="section-eyebrow">시설 / 룸 사진</span>
+          <h1>룸 크기와 사진 확인</h1>
+          <p class="section-lead">평면도와 각 룸 사진을 먼저 보고 용도에 맞는 공간을 선택하세요.</p>
+        </div>
         <button class="share-btn" onclick="shareSection('시설안내', '연습실 시설 정보')">
           <i class="fas fa-share-alt"></i>
           <span>공유</span>
         </button>
       </div>
-      <p style="margin-bottom: 10px">
-        <span class="highlight">총 5개 연습룸</span> - 이미지 갤러리 보기
-      </p>
-      <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px">
-        <button onclick="openGallery('roomALL')" class="inline-button" style="
-              flex: 1 1 45%;
-              min-width: 80px;
-              padding: 8px;
-              font-size: 0.85rem;
-            ">
-          📐 평면도
-        </button>
-        <button onclick="openGallery('roomA')" class="inline-button" style="
-              flex: 1 1 45%;
-              min-width: 80px;
-              padding: 8px;
-              font-size: 0.85rem;
-            ">
-          A홀 10×6m
-        </button>
-        <button onclick="openGallery('roomB')" class="inline-button" style="
-              flex: 1 1 45%;
-              min-width: 80px;
-              padding: 8px;
-              font-size: 0.85rem;
-            ">
-          B홀 8.4×4.5m
-        </button>
-        <button onclick="openGallery('roomE')" class="inline-button" style="
-              flex: 1 1 45%;
-              min-width: 80px;
-              padding: 8px;
-              font-size: 0.85rem;
-            ">
-          E홀 6.5×6m
-        </button>
-        <button onclick="openGallery('roomC')" class="inline-button" style="
-              flex: 1 1 45%;
-              min-width: 80px;
-              padding: 8px;
-              font-size: 0.85rem;
-            ">
-          C홀 4.5×3.5m
-        </button>
-        <button onclick="openGallery('roomD')" class="inline-button" style="
-              flex: 1 1 45%;
-              min-width: 80px;
-              padding: 8px;
-              font-size: 0.85rem;
-            ">
-          D홀 4.5×2.8m
-        </button>
+      <div class="section-summary">
+        <strong>총 5개 연습룸</strong>
+        <p>평면도와 룸별 사진을 눌러 바로 확인할 수 있습니다.</p>
+      </div>
+      <div class="action-grid">
+        <button onclick="openGallery('roomALL')" class="inline-button">📐 평면도</button>
+        <button onclick="openGallery('roomA')" class="inline-button">A홀 10×6m</button>
+        <button onclick="openGallery('roomB')" class="inline-button">B홀 8.4×4.5m</button>
+        <button onclick="openGallery('roomE')" class="inline-button">E홀 6.5×6m</button>
+        <button onclick="openGallery('roomC')" class="inline-button">C홀 4.5×3.5m</button>
+        <button onclick="openGallery('roomD')" class="inline-button">D홀 4.5×2.8m</button>
       </div>
       <ul>
         <li>📺 A/B홀 TV 무료 (HDMI, C타입, 8핀 커넥터)</li>
@@ -588,7 +1014,11 @@
     <!-- 주의사항 -->
     <div class="content-section" id="notice">
       <div class="section-header">
-        <h1>⚠️ 주의사항</h1>
+        <div class="section-header-main">
+          <span class="section-eyebrow">이용 전 확인</span>
+          <h1>퇴실/환불 문제 방지</h1>
+          <p class="section-lead">외부 신발, 음식, 타악기 사용은 특히 주의해주세요.</p>
+        </div>
         <button class="share-btn" onclick="shareSection('주의사항', '연습실 이용 주의사항')">
           <i class="fas fa-share-alt"></i>
           <span>공유</span>
@@ -609,28 +1039,27 @@
     <!-- 오시는길 -->
     <div class="content-section" id="map">
       <div class="section-header">
-        <h1>📍 오시는 길</h1>
+        <div class="section-header-main">
+          <span class="section-eyebrow">위치 / 주차</span>
+          <h1>사당역 7번 출구 1분</h1>
+          <p class="section-lead">드림디포 문구점 건물 지하 2층입니다.</p>
+        </div>
         <button class="share-btn" onclick="shareSection('오시는길', '리듬앤조이 찾아오는 길')">
           <i class="fas fa-share-alt"></i>
           <span>공유</span>
         </button>
       </div>
-      <p>
-        📌 사당역 7번출구 도보 1분<br />🏢 서울시 동작구 남부순환로 2077
-        지하2층 (드림디포 문구점 건물)
-      </p>
-      <a href="https://naver.me/59vo9MDk" target="_blank" class="button" style="
-            width: 100%;
-            text-align: center;
-            display: block;
-            color: #ffffff !important;
-          ">🔗 네이버 지도 보기</a>
+      <div class="section-summary">
+        <strong>서울시 동작구 남부순환로 2077</strong>
+        <p>사당역 7번 출구 도보 1분, 드림디포 문구점 건물 지하 2층</p>
+      </div>
+      <a href="https://naver.me/59vo9MDk" target="_blank" class="button full-action">🔗 네이버 지도 보기</a>
       <h3>🚗 주차 안내</h3>
       <ul>
         <li>⛔ 건물 주차 기본적으로 <span class="highlight">불가</span></li>
         <li>
           ✅ 예외: 문구점 폐점 후 문구점앞만 가능<br />
-          <span style="font-size: 0.9em; color: #999">※ 카리프트 앞& 지정주차장 불가</span>
+          <span class="muted-text">※ 카리프트 앞& 지정주차장 불가</span>
         </li>
         <li>✅ 사당역 공영주차장 이용 권장</li>
       </ul>
@@ -639,37 +1068,49 @@
     <!-- 새벽통대관 -->
     <div class="content-section" id="night">
       <div class="section-header">
-        <h1>🌙 새벽 통대관</h1>
+        <div class="section-header-main">
+          <span class="section-eyebrow">문자 예약</span>
+          <h1>새벽 통대관 문의</h1>
+          <p class="section-lead">가격과 일정표 확인 후 문자로 문의해주세요.</p>
+        </div>
         <button class="share-btn" onclick="shareSection('새벽통대관', '새벽 통대관 예약 정보')">
           <i class="fas fa-share-alt"></i>
           <span>공유</span>
         </button>
       </div>
-      <p>📲 문자 예약: <a href="sms:01048017180">010-4801-7180</a></p>
+      <div class="section-summary">
+        <strong>문자 예약: <a href="sms:01048017180">010-4801-7180</a></strong>
+        <p>가능 여부 확인 후 승인, 입금, 이용정보 수신 순서로 진행됩니다.</p>
+      </div>
       <div class="example-box">예: "12~13일 새벽 A홀 통대관 가능한가요?"</div>
-      <p>✅ 승인 후 입금 → 이용정보 수신 → 완료</p>
+      <ul>
+        <li>✅ 승인 후 입금 → 이용정보 수신 → 예약 완료</li>
+      </ul>
     </div>
 
     <!-- 가격표 -->
     <div class="content-section" id="pricelist">
       <div class="section-header">
-        <h1>💰 가격표 (시간당)</h1>
+        <div class="section-header-main">
+          <span class="section-eyebrow">요금 / 시간당</span>
+          <h1>룸별 이용 요금</h1>
+          <p class="section-lead">시간대와 룸 크기에 따라 가격이 달라집니다.</p>
+        </div>
         <button class="share-btn" onclick="shareSection('가격표', '연습실 이용 요금')">
           <i class="fas fa-share-alt"></i>
           <span>공유</span>
         </button>
       </div>
-      <div
-        style="margin-top: 5px; margin-bottom: 10px; background: #333; padding: 12px; border-radius: 8px; border: 1px solid #444;">
-        <p style="margin: 4px 0; color: #ff8a80; font-size: 0.9em;">
+      <div class="price-notes">
+        <p class="price-note warning">
           ※ 스페이스클라우드 결제 시 수수료로 인해 <strong>10% 할증된 가격</strong>이 적용됩니다.
         </p>
-        <p style="margin: 4px 0; color: #69f0ae; font-size: 0.9em;">
+        <p class="price-note good">
           ※ 기준 인원 초과 시 <strong>인원 추가 비용은 없습니다.</strong>
         </p>
       </div>
 
-      <table style="
+      <table class="price-table" style="
             width: 100%;
             border-collapse: collapse;
             font-size: 0.75rem;
@@ -723,7 +1164,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr style="border-left: 3px solid #ffa500">
+          <tr>
             <td style="
                   padding: 6px 4px; color: #ffffff;
                   border-bottom: 1px solid #444;
@@ -760,7 +1201,7 @@
               30,000
             </td>
           </tr>
-          <tr style="border-left: 3px solid #4da6ff">
+          <tr>
             <td style="
                   padding: 6px 4px; color: #ffffff;
                   border-bottom: 1px solid #444;
@@ -797,7 +1238,7 @@
               20,000
             </td>
           </tr>
-          <tr style="border-left: 3px solid #66cc99">
+          <tr>
             <td style="
                   padding: 6px 4px; color: #ffffff;
                   border-bottom: 1px solid #444;
@@ -834,7 +1275,7 @@
               15,000
             </td>
           </tr>
-          <tr style="border-left: 3px solid #90ee90">
+          <tr>
             <td style="
                   padding: 6px 4px; color: #ffffff;
                   border-bottom: 1px solid #444;
@@ -871,7 +1312,7 @@
               15,000
             </td>
           </tr>
-          <tr style="border-left: 3px solid #ff6b9d">
+          <tr>
             <td style="padding: 6px 4px; color: #ffffff; text-align: center">
               <strong>E</strong><br /><span style="font-size: 0.65rem; color: #999">15평</span>
             </td>
@@ -887,63 +1328,95 @@
     <!-- 환불규정 -->
     <div class="content-section" id="price">
       <div class="section-header">
-        <h1>💵 환불 규정</h1>
+        <div class="section-header-main">
+          <span class="section-eyebrow">취소 / 변경</span>
+          <h1>환불 규정</h1>
+          <p class="section-lead">변경은 취소 후 재예약만 가능합니다.</p>
+        </div>
         <button class="share-btn" onclick="shareSection('환불규정', '예약 환불 규정')">
           <i class="fas fa-share-alt"></i>
           <span>공유</span>
         </button>
       </div>
+      <div class="section-summary">
+        <strong>예약 2시간 안 변심 취소는 무료</strong>
+        <p>2시간이 지난 뒤에는 네이버에 설정된 환불 규정이 적용됩니다.</p>
+      </div>
+      <div class="refund-grid" aria-label="환불률 안내">
+        <div class="refund-card">
+          <div>
+            <strong>예약 후 2시간 안</strong>
+            <span>단순 변심 취소 가능</span>
+          </div>
+          <div class="refund-rate good">무료</div>
+        </div>
+        <div class="refund-card">
+          <div>
+            <strong>방문 3일 전</strong>
+            <span>네이버 환불 기준</span>
+          </div>
+          <div class="refund-rate">70%</div>
+        </div>
+        <div class="refund-card">
+          <div>
+            <strong>방문 2일 전</strong>
+            <span>네이버 환불 기준</span>
+          </div>
+          <div class="refund-rate">50%</div>
+        </div>
+        <div class="refund-card">
+          <div>
+            <strong>방문 1일 전 / 당일</strong>
+            <span>네이버 환불 기준</span>
+          </div>
+          <div class="refund-rate warn">0%</div>
+        </div>
+      </div>
       <ul>
-        <li>예약 2시간 안 변심 취소 → <span class="highlight">무료</span></li>
-        <li>2시간 경과 → 아래 환불규정 적용</li>
-        <li>변경 → 취소 후 재예약만 가능</li>
+        <li>변경은 취소 후 재예약만 가능합니다.</li>
+        <li>환불 기준이 설정되지 않은 날은 100% 환불됩니다.</li>
       </ul>
-      <img src="/calendar_set/calendar_v10/home_infopage/images/image.jpg" alt="환불규정" class="price-image" loading="lazy"
-        style="max-width: 70%; margin: 10px auto; display: block" />
+      <img src="/calendar_set/calendar_v10/home_infopage/images/image.jpg" alt="네이버 예약 환불규정 상세 이미지"
+        class="price-image refund-reference" loading="lazy" />
       <p>문의: <a href="sms:01048017180">010-4801-7180</a></p>
     </div>
   </div>
 
   <!-- 바텀 네비게이션 -->
   <div class="bottom-nav">
-    <button class="nav-item active" onclick="showContent('howto', this)">
+    <button class="nav-item active" data-section="howto" onclick="showContent('howto', this)">
       <i class="fas fa-question-circle"></i>
       <span>예약/비번</span>
     </button>
 
-    <button class="nav-item" onclick="showContent('info', this)">
+    <button class="nav-item" data-section="info" onclick="showContent('info', this)">
       <i class="fas fa-building"></i>
       <span>시설안내</span>
     </button>
 
-    <button class="nav-item" onclick="showContent('notice', this)">
+    <button class="nav-item" data-section="notice" onclick="showContent('notice', this)">
       <i class="fas fa-exclamation-triangle"></i>
       <span>주의사항</span>
     </button>
 
-    <button class="nav-item" onclick="showContent('map', this)">
+    <button class="nav-item" data-section="map" onclick="showContent('map', this)">
       <i class="fas fa-map-marked-alt"></i>
       <span>오시는길</span>
     </button>
 
-    <button class="nav-item" onclick="showContent('night', this)">
+    <button class="nav-item" data-section="night" onclick="showContent('night', this)">
       <i class="fas fa-moon"></i>
       <span>새벽통대관</span>
     </button>
 
-    <button class="nav-item" onclick="showContent('pricelist', this)">
+    <button class="nav-item" data-section="pricelist" onclick="showContent('pricelist', this)">
       <i class="fas fa-won-sign"></i>
       <span>가격표</span>
     </button>
 
-    <button class="nav-item" onclick="showContent('price', this)">
+    <button class="nav-item" data-section="price" onclick="showContent('price', this)">
       <i class="fas fa-dollar-sign"></i>
       <span>환불규정</span>
-    </button>
-
-    <button class="nav-item" onclick="closeAndGoBack()" style="background: #404040">
-      <i class="fas fa-arrow-up"></i>
-      <span>일정표</span>
     </button>
   </div>
 
@@ -1091,6 +1564,9 @@
 
       // 선택된 섹션 표시
       const targetSection = document.getElementById(sectionId);
+      if (!targetSection) {
+        return;
+      }
       targetSection.classList.add("active");
 
       // 애니메이션 스킵 (URL 링크로 첫 로드 시)
@@ -1101,6 +1577,11 @@
       // 선택된 버튼 활성화
       if (button) {
         button.classList.add("active");
+        button.scrollIntoView({
+          behavior: skipAnimation ? "auto" : "smooth",
+          block: "nearest",
+          inline: "center",
+        });
       }
 
       // 스크롤 맨 위로
@@ -1162,7 +1643,9 @@
       // 팝업 박스
       const popup = document.createElement("div");
       popup.style.cssText = `
-          background: white;
+          background: #2f2f2f;
+          color: #ffffff;
+          border: 1px solid #1d1d1d;
           border-radius: 12px;
           padding: 24px;
           max-width: 320px;
@@ -1172,10 +1655,10 @@
 
       popup.innerHTML = `
           <div style="text-align: center;">
-            <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: bold; color: #333;">
+            <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: bold; color: #ffffff;">
               공유 안내
             </h3>
-            <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.5; color: #666;">
+            <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.5; color: #c1c1c1;">
               카카오톡 앱에서는 공유 기능이 제한됩니다.<br>
               상단 오른쪽 점 3개(⋮) 메뉴를 눌러<br>
               <strong>"다른 브라우저에서 열기"</strong>를 선택한 후<br>
@@ -1184,9 +1667,9 @@
             <button id="closeGuideBtn" style="
               width: 100%;
               padding: 14px;
-              background: #4CAF50;
-              color: white;
-              border: none;
+              background: #404040;
+              color: #ffffff;
+              border: 1px solid #1d1d1d;
               border-radius: 8px;
               font-size: 16px;
               font-weight: bold;
@@ -1301,21 +1784,11 @@
         // URL 디코딩 (한글 등 특수 문자 지원)
         const section = decodeURIComponent(rawSection);
 
-        const navButtons = {
-          'howto': document.querySelector('.nav-item[onclick*="howto"]'),
-          'info': document.querySelector('.nav-item[onclick*="info"]'),
-          'notice': document.querySelector('.nav-item[onclick*="notice"]'),
-          'map': document.querySelector('.nav-item[onclick*="map"]'),
-          'night': document.querySelector('.nav-item[onclick*="night"]'),
-          'pricelist': document.querySelector('.nav-item[onclick*="pricelist"]'),
-          'refund': document.querySelector('.nav-item[onclick*="price"]'),
-          'price': document.querySelector('.nav-item[onclick*="price"]'),
-        };
-
-        const button = navButtons[section];
+        const normalizedSection = section === 'refund' ? 'price' : section;
+        const button = document.querySelector(`.nav-item[data-section="${normalizedSection}"]`);
         if (button) {
           // URL 링크로 첫 로드 시 애니메이션 없이 즉시 표시
-          showContent(section, button, true);
+          showContent(normalizedSection, button, true);
         }
       }
     };
@@ -1351,20 +1824,11 @@
         });
       }, 6000); // 달력 초기 렌더링과 서버 캐시 로드를 먼저 끝낸 뒤 시작
     });
-    // 일정표로 돌아가기
-    function closeAndGoBack() {
-      if (window.parent !== window) {
-        window.parent.postMessage({ type: "closeInfo" }, "*");
-      } else if (typeof closeInfoPage === 'function') {
-        closeInfoPage();
-      }
-    }
-
     // 부모 창에서 섹션 전환 메시지 받기
     window.addEventListener('message', function (event) {
       if (event.data && event.data.type === 'showSection' && event.data.section) {
-        const sectionId = event.data.section;
-        const button = document.querySelector(`.nav-item[onclick*="${sectionId}"]`);
+        const sectionId = event.data.section === 'refund' ? 'price' : event.data.section;
+        const button = document.querySelector(`.nav-item[data-section="${sectionId}"]`);
         showContent(sectionId, button, true);
       }
     });

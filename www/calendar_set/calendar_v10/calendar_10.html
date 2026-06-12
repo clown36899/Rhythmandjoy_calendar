@@ -129,8 +129,19 @@
   </div>
 
   <!-- [Ported from V8] 예약정보 페이지 오버레이 -->
-  <div id="infoPageOverlay" class="info-page-overlay">
-    <iframe id="infoPageFrame" class="info-page-frame" src="./home_infopage/homepage-section_mobile.html?v=preload-delay-1"></iframe>
+  <div id="infoPageOverlay" class="info-page-overlay" aria-hidden="true">
+    <div class="info-page-scrim" data-info-close></div>
+    <section class="info-page-panel" role="dialog" aria-modal="true" aria-label="예약 정보">
+      <div class="info-page-handle" aria-hidden="true"></div>
+      <div class="info-page-topbar">
+        <div>
+          <p class="info-page-kicker">Rhythmjoy Guide</p>
+          <h2>예약 정보</h2>
+        </div>
+        <button type="button" class="info-page-close" data-info-close aria-label="예약 정보 닫기">×</button>
+      </div>
+      <iframe id="infoPageFrame" class="info-page-frame" title="리듬앤조이 예약 정보" src="./home_infopage/homepage-section_mobile.html?v=booking-guide-tone-20260612"></iframe>
+    </section>
   </div>
 
 
@@ -146,8 +157,43 @@
   <div class="offcanvas offcanvas-end text-bg-dark" tabindex="-1" id="offcanvasDarkNavbar"
     aria-labelledby="offcanvasDarkNavbarLabel">
     <div class="offcanvas-header">
-
+      <div class="menu-profile-card">
+        <div class="menu-profile-avatar">
+          <img src="/calendar_set/calendar_v10/img/logo.png" alt="리듬앤조이 로고" />
+        </div>
+        <div class="menu-profile-main">
+          <span class="menu-profile-eyebrow">Rhythm & Joy Studio</span>
+          <strong>리듬앤조이 연습실</strong>
+          <span>실시간 예약 캘린더 · A-E홀</span>
+        </div>
+      </div>
       <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="menu-profile-panel" aria-label="리듬앤조이 프로필 및 연결 링크">
+      <div class="menu-profile-hero">
+        <div class="menu-profile-logo">
+          <img src="/calendar_set/calendar_v10/img/logo.png" alt="리듬앤조이" />
+        </div>
+        <div class="menu-profile-copy">
+          <span>MY BOOKING PROFILE</span>
+          <strong>리듬앤조이 연습실</strong>
+          <em>예약 · 문의 · SNS 연결</em>
+        </div>
+      </div>
+      <div class="menu-profile-links">
+        <a href="https://booking.naver.com/booking/10/bizes/1257912" target="_blank" rel="noopener">
+          <i class="fa-solid fa-calendar-check"></i>
+          네이버예약
+        </a>
+        <a href="https://blog.naver.com/clown313" target="_blank" rel="noopener">
+          <i class="fa-solid fa-house"></i>
+          홈페이지
+        </a>
+        <a href="tel:01048017180">
+          <i class="fa-solid fa-phone"></i>
+          전화문의
+        </a>
+      </div>
     </div>
     <!-- 이곳은 좌측 홈페이지 구역입니다 -->
     <div class="offcanvas-body-1000" id="homepage-section">
@@ -164,7 +210,7 @@
         </li> -->
 
         <li class="nav-item nav_line">
-          <a class="nav-link active" aria-current="page" href="https://naver.me/GMmI6eUr" target="_blank">예약
+          <a class="nav-link active" aria-current="page" href="https://booking.naver.com/booking/10/bizes/1257912" target="_blank" rel="noopener">예약
             바로가기(네이버예약)</a>
         </li>
 
@@ -213,6 +259,10 @@
           </div>
         </div>
 
+        <button class="navbar-toggler menu-profile-toggle" type="button" data-bs-toggle="offcanvas"
+          data-bs-target="#offcanvasDarkNavbar" aria-controls="offcanvasDarkNavbar" aria-label="메뉴 열기">
+          <i class="fa-solid fa-bars"></i>
+        </button>
 
       </div>
       <button class="info-btn" id="infoBtn"><span>▼</span> 예약 정보</button>
@@ -979,10 +1029,21 @@
   function setupInfoButton() {
     const infoBtn = document.getElementById("infoBtn");
     if (infoBtn) {
+      infoBtn.setAttribute("aria-expanded", "false");
       infoBtn.addEventListener("click", () => {
         openInfoPage();
       });
     }
+
+    document.querySelectorAll("[data-info-close]").forEach((closeTrigger) => {
+      closeTrigger.addEventListener("click", closeInfoPage);
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeInfoPage();
+      }
+    });
   }
 
   function openInfoPage() {
@@ -990,6 +1051,12 @@
     if (overlay) {
       requestAnimationFrame(() => {
         overlay.classList.add("active");
+        overlay.setAttribute("aria-hidden", "false");
+        document.body.classList.add("info-page-open");
+        const infoBtn = document.getElementById("infoBtn");
+        if (infoBtn) {
+          infoBtn.setAttribute("aria-expanded", "true");
+        }
       });
     }
   }
@@ -998,6 +1065,12 @@
     const overlay = document.getElementById("infoPageOverlay");
     if (overlay) {
       overlay.classList.remove("active");
+      overlay.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("info-page-open");
+      const infoBtn = document.getElementById("infoBtn");
+      if (infoBtn) {
+        infoBtn.setAttribute("aria-expanded", "false");
+      }
     }
   }
 

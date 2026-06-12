@@ -1211,6 +1211,160 @@ body.view-timeGridWeek .fc tbody {
   transition: var(--bs-navbar-toggler-transition);
 }
 
+.menu-profile-toggle {
+  margin-left: auto;
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.menu-profile-toggle i {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.menu-profile-card,
+.menu-profile-panel {
+  min-width: 0;
+}
+
+.menu-profile-card {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-right: 10px;
+}
+
+.menu-profile-avatar,
+.menu-profile-logo {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+}
+
+.menu-profile-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  flex: 0 0 48px;
+}
+
+.menu-profile-avatar img,
+.menu-profile-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.menu-profile-main,
+.menu-profile-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.menu-profile-eyebrow,
+.menu-profile-copy span {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.1;
+}
+
+.menu-profile-main strong,
+.menu-profile-copy strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-profile-main span:last-child,
+.menu-profile-copy em {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-profile-panel {
+  flex: 0 0 auto;
+  margin: 0 14px 14px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(34, 211, 238, 0.18), transparent 34%),
+    linear-gradient(135deg, rgba(33, 37, 41, 0.96), rgba(10, 15, 22, 0.95));
+}
+
+.menu-profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.menu-profile-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  flex: 0 0 56px;
+}
+
+.menu-profile-links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.menu-profile-links a {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.menu-profile-links a:first-child {
+  background: linear-gradient(135deg, rgba(3, 169, 244, 0.32), rgba(59, 130, 246, 0.2));
+  border-color: rgba(125, 211, 252, 0.34);
+}
+
+.menu-profile-links i {
+  flex: 0 0 auto;
+  color: #8bdcff;
+  font-size: 13px;
+}
+
 .fc-toolbar h2 {
   /* font-size: 1.4rem; */
   font-weight: 600;
@@ -2476,29 +2630,153 @@ hr.fc-divider,
    ========================================= */
 
 /* 예약정보 페이지 오버레이 */
+body.info-page-open {
+  overflow: hidden;
+}
+
 .info-page-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 20000;
-  transform: translateY(-100%);
-  transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  background: #1f1f1f;
+  transition: opacity 0.18s ease, visibility 0s linear 0.18s;
 }
 
 .info-page-overlay.active {
-  transform: translateY(0);
+  opacity: 1;
+  visibility: visible;
   pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.info-page-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+}
+
+.info-page-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(92dvh, 820px);
+  max-height: calc(100dvh - 18px);
+  color: #ffffff;
+  background: #1f1f1f;
+  border: 1px solid #000000;
+  border-bottom: 0;
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -18px 46px rgba(0, 0, 0, 0.42);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateY(100%);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.info-page-overlay.active .info-page-panel {
+  transform: translateY(0);
+}
+
+.info-page-handle {
+  width: 44px;
+  height: 5px;
+  margin: 10px auto 4px;
+  border-radius: 999px;
+  background: #03A9F4;
+}
+
+.info-page-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px 12px;
+  background: #2f2f2f;
+  border-bottom: 1px solid #000000;
+}
+
+.info-page-kicker {
+  margin: 0 0 2px;
+  color: #03A9F4;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.info-page-topbar h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.info-page-close {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid #1d1d1d;
+  border-radius: 999px;
+  background: #353535;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.info-page-close:hover {
+  background: #404040;
+  border-color: #03A9F4;
 }
 
 .info-page-frame {
   width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   border: none;
   display: block;
+  background: #1f1f1f;
+}
+
+@media (min-width: 768px) {
+  .info-page-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 24px;
+  }
+
+  .info-page-panel {
+    position: relative;
+    width: min(460px, calc(100vw - 48px));
+    height: min(760px, calc(100dvh - 48px));
+    max-height: calc(100dvh - 48px);
+    border: 1px solid #000000;
+    border-radius: 18px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+    transform: translateX(34px) scale(0.98);
+  }
+
+  .info-page-overlay.active .info-page-panel {
+    transform: translateX(0) scale(1);
+  }
+
+  .info-page-handle {
+    display: none;
+  }
+
+  .info-page-topbar {
+    padding: 16px 16px 14px;
+  }
 }
 
 /* 예약 정보 버튼 스타일 */
