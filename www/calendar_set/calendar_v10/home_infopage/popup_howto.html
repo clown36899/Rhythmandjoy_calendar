@@ -1,82 +1,40 @@
-<!doctype html>
-<html lang="ko">
+<div class="detail-page">
+  <button type="button" id="xxx_btn" class="detail-close" onclick="closePopup()" aria-label="닫기">닫기</button>
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>리듬앤조이 연습실 – 네이버 예약 안내</title>
-  <style>
-    <style>.container {
-      max-width: 850px !important;
-      padding: 25px !important;
-    }
+  <header class="detail-header">
+    <span class="detail-eyebrow">네이버 예약 방법</span>
+    <h1>예약은 네이버에서 바로 확정됩니다</h1>
+    <p class="detail-lead">이 링크로 예약을 받고, 예약정보와 비밀번호는 네이버 예약 화면 오른쪽 위 MY에서 확인합니다.</p>
+  </header>
 
-    .how-grid {
-      display: grid;
-      grid-template-columns: 1fr 1.5fr;
-      gap: 30px;
-      align-items: center;
-      text-align: left;
-    }
+  <div class="detail-actions">
+    <a href="https://booking.naver.com/booking/10/bizes/1257912" target="_blank" rel="noopener"
+      class="detail-action detail-action-primary">네이버 예약 바로가기</a>
+    <a href="https://m.place.naver.com/my" target="_blank" rel="noopener"
+      class="detail-action detail-action-secondary">MY 예약 확인</a>
+  </div>
 
-    .how-left {
-      text-align: center;
-      border-right: 1px solid #444;
-      padding-right: 20px;
-    }
-
-    .how-right {
-      display: flex;
-      flex-direction: column;
-      gap: 15px;
-    }
-
-    .info-box {
-      margin: 0 !important;
-      padding: 15px !important;
-    }
-
-    .icon-lock {
-      display: none;
-    }
-
-    h1 {
-      margin: 0 0 15px 0 !important;
-      font-size: 1.5rem !important;
-    }
-  </style>
-</head>
-
-<body>
-  <div class="container">
-    <button type="button" id="xxx_btn" onclick="closePopup()">x</button>
-
-    <div class="how-grid">
-      <div class="how-left">
-        <!-- 아이콘 생략 -->
-        <h1>예약은 네이버로 승인없이!</h1>
-        <p style="margin-top: 15px; color: #ccc; font-size: 0.95rem;">
-          네이버 로그인과 결제 정보는<br>
-          <strong>최초 1회만 입력</strong>하면 되며,<br>
-          이후엔 더 빠르고 편리하게 예약할 수 있어요!
-        </p>
+  <div class="detail-steps">
+    <div class="detail-step">
+      <span class="detail-step-number">1</span>
+      <div>
+        <strong>네이버 예약에서 시간 선택</strong>
+        <p>원하는 룸과 시간을 선택하면 결제 후 즉시 예약이 확정됩니다.</p>
       </div>
-
-      <div class="how-right">
-        <div class="info-box">
-          <p class="info-main" style="font-size: 1.2rem; margin-bottom: 20px;">
-            <strong>1. 네이버에서</strong><br />
-            <strong>"리듬앤조이"</strong>를 검색해 예약하세요.
-          </p>
-
-          <div class="info-sub">
-            <p style="font-size: 1rem;">✨ 사용 1분 전까지도 실시간 예약 가능!</p>
-            <p style="font-size: 1rem;">⚡ 네이버 예약 즉시 확정 – 승인 없이 바로 이용 가능</p>
-          </div>
-        </div>
+    </div>
+    <div class="detail-step">
+      <span class="detail-step-number">2</span>
+      <div>
+        <strong>예약정보는 MY에서 확인</strong>
+        <p>예약 완료 후 오른쪽 위 <span class="detail-my-label">MY</span> 메뉴를 누르면 예약 내역과 이용 비밀번호를 볼 수 있습니다.</p>
+      </div>
+    </div>
+    <div class="detail-step">
+      <span class="detail-step-number">3</span>
+      <div>
+        <strong>취소도 같은 화면에서 처리</strong>
+        <p>예약 변경이나 취소가 필요할 때도 MY 메뉴에서 예약 정보를 먼저 확인하세요.</p>
       </div>
     </div>
   </div>
-</body>
-
-</html>
+</div>

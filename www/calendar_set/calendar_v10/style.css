@@ -1311,7 +1311,7 @@ body.view-timeGridWeek .fc tbody {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 18px;
   background:
-    radial-gradient(circle at 18% 0%, rgba(34, 211, 238, 0.18), transparent 34%),
+    radial-gradient(circle at 18% 0%, rgba(34, 211, 238, 0.055), transparent 42%),
     linear-gradient(135deg, rgba(33, 37, 41, 0.96), rgba(10, 15, 22, 0.95));
 }
 
@@ -1355,8 +1355,8 @@ body.view-timeGridWeek .fc tbody {
 }
 
 .menu-profile-links a:first-child {
-  background: linear-gradient(135deg, rgba(3, 169, 244, 0.32), rgba(59, 130, 246, 0.2));
-  border-color: rgba(125, 211, 252, 0.34);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.13);
 }
 
 .menu-profile-links i {
@@ -2776,6 +2776,69 @@ body.info-page-open {
 
   .info-page-topbar {
     padding: 16px 16px 14px;
+  }
+}
+
+/* 데스크탑 캘린더: 왼쪽 메뉴와 맞춘 낮은 대비의 중립 톤 */
+@media (min-width: 1000px) {
+  #calendarWrapper,
+  #calendarAll {
+    background:
+      linear-gradient(180deg, #212326 0%, #202224 100%) !important;
+  }
+
+  #calendarAll .fc-scroller,
+  #singleRoomCalendar .fc-scroller,
+  #calendarAll .fc-view,
+  #singleRoomCalendar .fc-view,
+  #calendarAll .fc-view>table,
+  #singleRoomCalendar .fc-view>table {
+    background:
+      linear-gradient(180deg, #212326 0%, #202224 100%) !important;
+  }
+
+  #calendarAll .fc-toolbar,
+  #singleRoomCalendar .fc-toolbar,
+  .fc-toolbar {
+    background:
+      linear-gradient(180deg, rgba(38, 40, 43, 0.98), rgba(34, 36, 38, 0.98)) !important;
+  }
+
+  #calendarAll .fc-head,
+  #calendarAll .fc th,
+  #singleRoomCalendar .fc-head,
+  #singleRoomCalendar .fc th {
+    background:
+      linear-gradient(180deg, rgba(38, 40, 43, 0.98), rgba(34, 36, 38, 0.98)) !important;
+  }
+
+  #calendarAll .fc-time-grid .fc-slats td,
+  #calendarAll .fc-unthemed td,
+  #singleRoomCalendar .fc-time-grid .fc-slats td,
+  #singleRoomCalendar .fc-unthemed td {
+    border-color: rgba(0, 0, 0, 0.26) !important;
+  }
+
+  #calendarAll .fc-unthemed td.fc-today,
+  #singleRoomCalendar .fc-unthemed td.fc-today {
+    background: rgba(255, 255, 255, 0.025) !important;
+  }
+
+  #fixed-top,
+  #fixed-top.navbar-dark,
+  #fixed-top .container-fluid {
+    background:
+      linear-gradient(180deg, rgba(36, 40, 44, 0.98), rgba(32, 36, 40, 0.98)) !important;
+  }
+
+  .bottomtop {
+    background:
+      linear-gradient(180deg, rgba(36, 40, 44, 0.16), rgba(32, 36, 40, 0.98));
+  }
+
+  #bottom,
+  #bottom.show {
+    background: #2f3133;
   }
 }
 

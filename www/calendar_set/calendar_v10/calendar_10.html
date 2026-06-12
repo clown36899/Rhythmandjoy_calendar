@@ -68,10 +68,10 @@
   <script src="./packages/list/main.js"></script>
   <script src="./packages/core/locales/ko.js"></script>
 
-  <link href="style.css" rel="stylesheet" />
+  <link href="style.css?v=desktop-calendar-neutral-20260613" rel="stylesheet" />
   <link href="./packages/timegrid/main.css" rel="stylesheet" />
 
-  <link href="./home_infopage/popup.css" rel="stylesheet" type="text/css" />
+  <link href="./home_infopage/popup.css?v=detail-redesign-v2-20260612" rel="stylesheet" type="text/css" />
 
   <script src="./packages/timegrid/main.js"></script>
   <script src="./dist/swipeCalendar.js"></script>
@@ -378,7 +378,7 @@
 
   <script>
     window.addEventListener('DOMContentLoaded', () => {
-      fetch('home_infopage/homepage-section.html')
+      fetch('home_infopage/homepage-section.html?v=detail-menu-combined-v2-20260612')
         .then(response => response.text())
         .then(html => {
           document.querySelector('.offcanvas-body-1000').innerHTML = html;

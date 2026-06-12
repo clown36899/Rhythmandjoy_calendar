@@ -1,167 +1,311 @@
-<!DOCTYPE html>
-<html lang="ko">
+<style>
+  .desktop-guide-menu {
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    background: #212529;
+    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Noto Sans KR", "Segoe UI", sans-serif;
+  }
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>8개 버튼 입력 + 팝업</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-    integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
-    crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <!-- <style>
-    body {
-      font-family: sans-serif;
-      margin: 0;
-      padding: 0;
+  .desktop-guide-hero {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background:
+      radial-gradient(circle at 18% 0%, rgba(34, 211, 238, 0.055), transparent 42%),
+      linear-gradient(135deg, rgba(34, 38, 42, 0.98), rgba(24, 28, 33, 0.98));
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+  }
+
+  .desktop-guide-hero {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .desktop-guide-hero-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .desktop-guide-logo {
+    width: 58px;
+    height: 58px;
+    flex: 0 0 58px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+  }
+
+  .desktop-guide-logo img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
+
+  .desktop-guide-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .desktop-guide-eyebrow {
+    color: #8bdcff;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0;
+    line-height: 1.1;
+    text-transform: uppercase;
+  }
+
+  .desktop-guide-copy strong {
+    overflow: hidden;
+    color: #ffffff;
+    font-size: 17px;
+    font-weight: 900;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .desktop-guide-copy em {
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 700;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .desktop-guide-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+    gap: 7px;
+    margin-top: 13px;
+  }
+
+  .desktop-guide-actions a {
+    display: inline-flex;
+    min-width: 0;
+    min-height: 38px;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 0 7px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.07);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .desktop-guide-actions a:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+
+  .desktop-guide-actions i {
+    flex: 0 0 auto;
+    color: #8bdcff;
+    font-size: 13px;
+  }
+
+  .desktop-guide-items {
+    display: grid;
+    gap: 9px;
+    padding-bottom: 14px;
+  }
+
+  .desktop-guide-item {
+    width: 100%;
+    min-height: 74px;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 18px;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 16px;
+    background: #24282c;
+    box-shadow: none;
+    color: #ffffff;
+    cursor: pointer;
+    text-align: left;
+    transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+  }
+
+  .desktop-guide-item:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.15);
+    background: #292e33;
+  }
+
+  .desktop-guide-item:active {
+    transform: translateY(0);
+  }
+
+  .desktop-guide-icon {
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.055);
+  }
+
+  .desktop-guide-icon img {
+    width: 27px;
+    height: 27px;
+    display: block;
+    object-fit: contain;
+  }
+
+  .desktop-guide-item-title {
+    overflow: hidden;
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .desktop-guide-item-desc {
+    overflow: hidden;
+    margin-top: 3px;
+    color: rgba(255, 255, 255, 0.66);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .desktop-guide-arrow {
+    color: rgba(255, 255, 255, 0.36);
+    font-size: 12px;
+  }
+
+  @media (min-width: 1000px) {
+    .desktop-guide-menu {
+      padding: 14px 14px 18px;
     }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      grid-template-rows: repeat(2, 1fr);
-      gap: 10px;
-      padding: 20px;
-      max-width: 600px;
-      margin: 60px auto;
+    .desktop-guide-item {
+      min-height: clamp(66px, 8.6vh, 86px);
     }
+  }
+</style>
 
-    .grid button {
-      padding: 20px;
-      font-size: 16px;
-      background-color: #f0f0f0;
-      border: 1px solid #ccc;
-      cursor: pointer;
-      white-space: normal;
-    }
-
-    .grid button:hover {
-      background-color: #ddd;
-    }
-
-    /* 팝업 배경 (반투명 블랙) */
-    .popup-overlay {
-      display: none;
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-color: rgba(0, 0, 0, 0.5);
-      z-index: 1000;
-    }
-
-    /* 팝업 본체 */
-    .popup {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background-color: white;
-      padding: 30px;
-      border-radius: 8px;
-      box-shadow: 0 0 20px rgba(0,0,0,0.3);
-      z-index: 1001;
-      max-width: 90%;
-      width: 300px;
-    }
-
-    .popup h3 {
-      margin-top: 0;
-    }
-
-    .popup input {
-      width: 100%;
-      padding: 8px;
-      margin-top: 10px;
-      margin-bottom: 20px;
-      font-size: 16px;
-    }
-
-    .popup-buttons {
-      display: flex;
-      justify-content: space-between;
-    }
-
-    .popup-buttons button {
-      flex: 1;
-      margin: 0 5px;
-      padding: 10px;
-      font-size: 14px;
-      cursor: pointer;
-    }
-  </style> -->
-</head>
-
-<body>
-
-
-  <div class="menu-list" style="
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 0;
-  width: 100%;
-  height: 100vh;
-">
-
-    <div onclick="openPopup('home_infopage/popup_password.html')"
-      style="display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid #353b41; cursor: pointer; width: 100%; flex: 1;">
-      <img class="png_main" src="/calendar_set/calendar_v10/home_infopage/images/png/lock.png" style="width: 30px; height: 30px; margin-right: 15px; vertical-align: middle;">
-      <p class="main_text" style="margin: 0; font-size: 15px; line-height: 1;"> 비번 예약확인, 취소</p>
+<nav class="desktop-guide-menu" aria-label="리듬앤조이 예약 안내 메뉴">
+  <section class="desktop-guide-hero" aria-label="리듬앤조이 예약 안내">
+    <div class="desktop-guide-hero-main">
+      <div class="desktop-guide-logo">
+        <img src="/calendar_set/calendar_v10/img/logo.png" alt="리듬앤조이 로고" />
+      </div>
+      <div class="desktop-guide-copy">
+        <span class="desktop-guide-eyebrow">BOOKING GUIDE</span>
+        <strong>리듬앤조이 연습실</strong>
+        <em>예약 바로가기 · 010-4801-7180</em>
+      </div>
     </div>
-
-
-    <div onclick="openPopup('home_infopage/popup_notice.html')"
-      style="display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid #353b41; cursor: pointer; width: 100%; flex: 1;">
-      <img class="png_main" src="/calendar_set/calendar_v10/home_infopage/images/png/notice.png" style="width: 30px; height: 30px; margin-right: 15px; vertical-align: middle;">
-      <p class="main_text" style="margin: 0; font-size: 15px; line-height: 1;">주의사항 (외부신발금지)</p>
+    <div class="desktop-guide-actions">
+      <a href="https://booking.naver.com/booking/10/bizes/1257912" target="_blank" rel="noopener">
+        <i class="fa-solid fa-calendar-check" aria-hidden="true"></i>
+        네이버예약
+      </a>
+      <a href="tel:01048017180">
+        <i class="fa-solid fa-phone" aria-hidden="true"></i>
+        010-4801-7180
+      </a>
     </div>
+  </section>
 
-    <div onclick="openPopup('home_infopage/popup_howto.html')"
-      style="display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid #353b41; cursor: pointer; width: 100%; flex: 1;">
-      <img class="png_main" src="/calendar_set/calendar_v10/home_infopage/images/png/howto.png" style="width: 30px; height: 30px; margin-right: 15px; vertical-align: middle;">
-      <p class="main_text" style="margin: 0; font-size: 15px; line-height: 1;">예약방법</p>
-    </div>
+  <div class="desktop-guide-items">
+    <button type="button" class="desktop-guide-item" data-tone="blue"
+      onclick="openPopup('home_infopage/popup_password.html?v=detail-redesign-v2-20260612')">
+      <span class="desktop-guide-icon">
+        <img src="/calendar_set/calendar_v10/home_infopage/images/png/lock.png" alt="" />
+      </span>
+      <span>
+        <span class="desktop-guide-item-title">예약/비번 확인, 취소</span>
+        <span class="desktop-guide-item-desc">네이버 예약 방법과 MY 예약정보 확인</span>
+      </span>
+      <i class="desktop-guide-arrow fa-solid fa-chevron-right" aria-hidden="true"></i>
+    </button>
 
-    <div onclick="openPopup('home_infopage/popup_info.html')"
-      style="display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid #353b41; cursor: pointer; width: 100%; flex: 1;">
-      <img class="png_main" src="/calendar_set/calendar_v10/home_infopage/images/png/info.png" style="width: 30px; height: 30px; margin-right: 15px; vertical-align: middle;">
-      <p class="main_text" style="margin: 0; font-size: 15px; line-height: 1;">시설안내</p>
-    </div>
+    <button type="button" class="desktop-guide-item" data-tone="yellow"
+      onclick="openPopup('home_infopage/popup_notice.html?v=detail-redesign-v2-20260612')">
+      <span class="desktop-guide-icon">
+        <img src="/calendar_set/calendar_v10/home_infopage/images/png/notice.png" alt="" />
+      </span>
+      <span>
+        <span class="desktop-guide-item-title">주의사항</span>
+        <span class="desktop-guide-item-desc">외부신발, 음식, 타악기 사용 안내</span>
+      </span>
+      <i class="desktop-guide-arrow fa-solid fa-chevron-right" aria-hidden="true"></i>
+    </button>
 
-    <div onclick="openPopup('home_infopage/popup_map.html')"
-      style="display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid #353b41; cursor: pointer; width: 100%; flex: 1;">
-      <img class="png_main" src="/calendar_set/calendar_v10/home_infopage/images/png/map.png" style="width: 30px; height: 30px; margin-right: 15px; vertical-align: middle;">
-      <p class="main_text" style="margin: 0; font-size: 15px; line-height: 1;">오시는길 (주차안내)</p>
-    </div>
+    <button type="button" class="desktop-guide-item" data-tone="cyan"
+      onclick="openPopup('home_infopage/popup_info.html?v=detail-redesign-v2-20260612')">
+      <span class="desktop-guide-icon">
+        <img src="/calendar_set/calendar_v10/home_infopage/images/png/info.png" alt="" />
+      </span>
+      <span>
+        <span class="desktop-guide-item-title">시설안내</span>
+        <span class="desktop-guide-item-desc">룸 크기, 사진, 평면도 확인</span>
+      </span>
+      <i class="desktop-guide-arrow fa-solid fa-chevron-right" aria-hidden="true"></i>
+    </button>
 
-    <div onclick="openPopup('home_infopage/popup_night.html')"
-      style="display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid #353b41; cursor: pointer; width: 100%; flex: 1;">
-      <img class="png_main" src="/calendar_set/calendar_v10/home_infopage/images/png/night.png" style="width: 30px; height: 30px; margin-right: 15px; vertical-align: middle;">
-      <p class="main_text" style="margin: 0; font-size: 15px; line-height: 1;">새벽통대관, 가격표</p>
-    </div>
+    <button type="button" class="desktop-guide-item" data-tone="green"
+      onclick="openPopup('home_infopage/popup_map.html?v=detail-redesign-v2-20260612')">
+      <span class="desktop-guide-icon">
+        <img src="/calendar_set/calendar_v10/home_infopage/images/png/map.png" alt="" />
+      </span>
+      <span>
+        <span class="desktop-guide-item-title">오시는길</span>
+        <span class="desktop-guide-item-desc">사당역 7번 출구, 주차 안내</span>
+      </span>
+      <i class="desktop-guide-arrow fa-solid fa-chevron-right" aria-hidden="true"></i>
+    </button>
 
+    <button type="button" class="desktop-guide-item" data-tone="purple"
+      onclick="openPopup('home_infopage/popup_night.html?v=detail-redesign-v2-20260612')">
+      <span class="desktop-guide-icon">
+        <img src="/calendar_set/calendar_v10/home_infopage/images/png/night.png" alt="" />
+      </span>
+      <span>
+        <span class="desktop-guide-item-title">새벽통대관, 가격표</span>
+        <span class="desktop-guide-item-desc">문자 문의와 룸별 이용 요금</span>
+      </span>
+      <i class="desktop-guide-arrow fa-solid fa-chevron-right" aria-hidden="true"></i>
+    </button>
 
-    <div onclick="openPopup('home_infopage/popup_price.html')"
-      style="display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid #353b41; cursor: pointer; width: 100%; flex: 1;">
-      <img class="png_main" src="/calendar_set/calendar_v10/home_infopage/images/png/pay.png" style="width: 30px; height: 30px; margin-right: 15px; vertical-align: middle;">
-      <p class="main_text" style="margin: 0; font-size: 15px; line-height: 1;">환불규정</p>
-    </div>
-
-
+    <button type="button" class="desktop-guide-item" data-tone="blue"
+      onclick="openPopup('home_infopage/popup_price.html?v=detail-redesign-v2-20260612')">
+      <span class="desktop-guide-icon">
+        <img src="/calendar_set/calendar_v10/home_infopage/images/png/pay.png" alt="" />
+      </span>
+      <span>
+        <span class="desktop-guide-item-title">환불규정</span>
+        <span class="desktop-guide-item-desc">취소, 변경, 환불 기준 확인</span>
+      </span>
+      <i class="desktop-guide-arrow fa-solid fa-chevron-right" aria-hidden="true"></i>
+    </button>
   </div>
-
-  <!-- 팝업 오버레이 -->
-  <div class="popup-overlay" id="popupOverlay" onclick="closePopup()"></div>
-
-  <!-- 팝업 본체 -->
-  <div class="popup" id="popupBox" style="display: none;">
-    <h3>텍스트 수정</h3>
-    <input type="text" id="popupInput" />
-    <div class="popup-buttons">
-      <button onclick="applyText()">확인</button>
-      <button onclick="closePopup()">취소</button>
-    </div>
-  </div>
-
-
-</body>
-
-</html>
+</nav>
