@@ -1,6 +1,23 @@
-# Cafe24 VPS backup and restore
+# Cafe24 VPS deploy, backup, and restore
 
-This repository stores the deployable Rhythmjoy calendar site, Cafe24 Apache configuration, systemd loop service, certbot renewal hook, and sanitized Naver email import code.
+This repository is only for `리듬앤조이일정표.com` (`xn--xy1b23ggrmm5bfb82ees967e.com`). It stores the deployable Rhythmjoy calendar site, Cafe24 Apache configuration, systemd loop service, certbot renewal hook, and sanitized Naver email import code.
+
+The Cafe24 VPS is shared with a separate `swingenjoy.com` project, but this repository must never manage that project. Do not use `/opt/swingenjoy`, `swingenjoy.service`, `127.0.0.1:3001`, `swingenjoy-http.conf`, or `swingenjoy-http-le-ssl.conf` here.
+
+## Canonical production target
+
+Non-secret production target settings live in `ops/cafe24-production-target.env`.
+
+- VPS hostname: `clown313python.cafe24.com`
+- VPS IP / SSH target: `root@1.234.23.64`
+- Server web root: `/home/clown313python/myapp`
+- Server ops dir: `/home/clown313python/rhythmjoy_ops`
+- Main entry: `/calendar_set/calendar_v10/calendar_10.html`
+- Cache service: `rhythmjoy-calendar-cache.service`
+- Legacy email service name: `my_email_service.service`
+- Server env file: `/home/clown313python/myapp/.env`
+
+Do not put DB passwords, API keys, tokens, Google service account JSON, or TLS private keys in the canonical target file or anywhere else in Git.
 
 ## What is backed up in Git
 
@@ -11,6 +28,8 @@ This repository stores the deployable Rhythmjoy calendar site, Cafe24 Apache con
 - certbot cron and reload hook: `ops/rhythmjoy-certbot.cron`, `ops/reload-httpd-after-certbot.sh`
 - Legacy Naver email to Google Calendar import code, sanitized: `ops/naver_booking_googleimport/import_email.py`
 - Python package snapshot from Cafe24: `ops/cafe24-requirements.txt`
+- Canonical non-secret production target: `ops/cafe24-production-target.env`
+- Deploy helper: `ops/deploy-cafe24.sh`
 - Restore helper: `ops/restore-cafe24.sh`
 
 ## What is intentionally not backed up
@@ -29,14 +48,15 @@ Keep the omitted secret files in a separate password manager or private offline 
 1. Provision a Cafe24 VPS with Apache/httpd, Python 3.8.12 pyenv environment, and certbot.
 2. Clone this repository on the VPS.
 3. Restore secret files manually using `ops/env.example` as the checklist.
-4. Run as root from the repo:
+4. Confirm the target is `clown313python.cafe24.com`; `restore-cafe24.sh` also refuses to run if `hostname`/`hostname -f` does not match.
+5. Run as root from the repo:
 
 ```bash
 bash ops/restore-cafe24.sh
 ```
 
-5. If TLS files are missing, point DNS to the VPS and run certbot for `xn--xy1b23ggrmm5bfb82ees967e.com`.
-6. Verify:
+6. If TLS files are missing, point DNS to the VPS and run certbot for `xn--xy1b23ggrmm5bfb82ees967e.com`.
+7. Verify:
 
 ```bash
 systemctl status rhythmjoy-calendar-cache.service
@@ -44,9 +64,30 @@ curl -I https://xn--xy1b23ggrmm5bfb82ees967e.com/
 curl -s https://xn--xy1b23ggrmm5bfb82ees967e.com/calendar_set/calendar_v10/data/events.json | head
 ```
 
+## Deploy outline
+
+From the local repository at `/Users/inteyeo/Rhythmjoy_calendar`:
+
+```bash
+bash ops/deploy-cafe24.sh
+```
+
+The deploy helper reads `ops/cafe24-production-target.env`, verifies the remote hostname is `clown313python.cafe24.com` before uploading, syncs a release copy under `/home/clown313python/rhythmjoy_ops/release`, then runs the guarded restore script on the VPS.
+
+## Apache scope
+
+This repository may manage only these Apache config names:
+
+- `rhythmjoy-domain-*.conf`
+- `rhythmjoy-calendar-*.conf`
+- `clown313python-root-redirect.conf`
+
+The restore script refuses any Apache config outside that allowlist.
+
 ## Current production notes
 
 - Domain root internally serves `/calendar_set/calendar_v10/calendar_10.html`.
 - Google Calendar cache interval is 15 seconds.
 - Browser-side polling reads the server cache every 15 seconds while the page is visible.
-- Git push is backup/history only. Production is updated directly on the Cafe24 VPS unless a separate deployment process is added later.
+- `rhythmandjoy.cafe24.com` currently resolves to `210.114.6.137`; do not use it as the deployment target for this VPS.
+- Git push is backup/history only. Production is updated through the guarded Cafe24 deploy/restore scripts.

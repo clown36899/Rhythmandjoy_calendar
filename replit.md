@@ -33,7 +33,7 @@ Preferred communication style: Simple, everyday language.
 ## External Dependencies
 
 **Google Calendar API**
-- API Key: AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8
+- API keys are production secrets/configuration and must not be documented as literal values.
 - Five separate Google Calendar IDs for each practice room
 - Read-only access to display events and availability
 - No write operations - calendars managed externally
@@ -58,9 +58,11 @@ Preferred communication style: Simple, everyday language.
 - Google Tag Manager (GTM-KSDF78ZT)
 
 **Hosting & Deployment**
-- SFTP deployment to rhythmandjoy.cafe24.com
-- Cafe24 hosting service (Korean web hosting provider)
-- Credentials stored in .vscode/sftp.json for automated uploads
+- This repository deploys only `리듬앤조이일정표.com` (`xn--xy1b23ggrmm5bfb82ees967e.com`) to the Cafe24 VPS `clown313python.cafe24.com` / `1.234.23.64`.
+- Canonical non-secret deployment settings live in `ops/cafe24-production-target.env`; secrets stay out of Git.
+- Server web root is `/home/clown313python/myapp`; ops files live under `/home/clown313python/rhythmjoy_ops`.
+- Do not use `rhythmandjoy.cafe24.com` as the VPS target because it currently resolves to `210.114.6.137`.
+- The shared VPS also hosts a separate `swingenjoy.com` project. This repo must not touch `/opt/swingenjoy`, `swingenjoy.service`, `127.0.0.1:3001`, or `swingenjoy-*.conf`.
 
 **Revenue Calculation Module**
 - Standalone feature in google_month_settlement_amount/
