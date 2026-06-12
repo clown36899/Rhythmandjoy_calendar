@@ -1,6 +1,8 @@
 .claude/
 .playwright-mcp/
 .codex/
+.DS_Store
+.swp
 .env
 .env.*
 !.env.example
@@ -11,6 +13,7 @@
 *credentials*.json
 *secret*.json
 static/rhythmjoycalendar-*.json
+www/.vscode/
 www/.vscode/sftp.json
 .vscode/sftp.json
 www/calendar_set/calendar_v10/data/*.json
@@ -20,3 +23,17 @@ uploads/
 *.png
 *.jpg
 *.jpeg
+
+# Active production is www/calendar_set/calendar_v10/.
+# Keep legacy URLs as redirect stubs only.
+www/js/
+www/lib/
+www/calendar_set/calendar_v9/*
+!www/calendar_set/calendar_v9/
+!www/calendar_set/calendar_v9/calendar_9.html
+!www/calendar_set/calendar_v9/calendar_mobile.html
+www/calendar_set/full_ver7/*
+!www/calendar_set/full_ver7/
+!www/calendar_set/full_ver7/index.html
+!www/calendar_set/full_ver7/calendar_7.html
+!www/calendar_set/full_ver7/calendar_9.html
