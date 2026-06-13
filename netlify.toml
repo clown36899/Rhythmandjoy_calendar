@@ -65,19 +65,37 @@
   force = true
 
 [[redirects]]
-  from = "/calendar_set/calendar_v9/*"
-  to = "/"
+  from = "/calendar_set/calendar_v9"
+  to = "/calendar_set/calendar_v10/calendar_10.html"
   status = 302
   force = true
 
 [[redirects]]
+  from = "/calendar_set/calendar_v9/*"
+  to = "/calendar_set/calendar_v10/calendar_10.html"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/calendar_set/calendar_v8"
+  to = "/calendar_set/calendar_v10/calendar_10.html"
+  status = 301
+  force = true
+
+[[redirects]]
   from = "/calendar_set/calendar_v8/*"
-  to = "/"
+  to = "/calendar_set/calendar_v10/calendar_10.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/calendar_set/full_ver7"
+  to = "/calendar_set/calendar_v10/calendar_10.html"
   status = 301
   force = true
 
 [[redirects]]
   from = "/calendar_set/full_ver7/*"
-  to = "/"
+  to = "/calendar_set/calendar_v10/calendar_10.html"
   status = 301
   force = true
