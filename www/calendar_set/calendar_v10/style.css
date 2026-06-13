@@ -1211,25 +1211,6 @@ body.view-timeGridWeek .fc tbody {
   transition: var(--bs-navbar-toggler-transition);
 }
 
-.menu-profile-toggle {
-  margin-left: auto;
-  width: 42px;
-  height: 42px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
-  color: #ffffff;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
-}
-
-.menu-profile-toggle i {
-  font-size: 18px;
-  line-height: 1;
-}
-
 .menu-profile-card,
 .menu-profile-panel {
   min-width: 0;
