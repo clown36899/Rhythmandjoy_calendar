@@ -79,10 +79,6 @@ function refreshCurrentViewFromIndex(reason) {
 function requestCalendarIncrementalSync(reason, options = {}) {
   if (!calendarSync || typeof calendarSync.refresh !== 'function') return;
 
-  if (options.showToast) {
-    showRefreshToast();
-  }
-
   console.log(`🔄 [v10 sync] ${reason} 증분 요청`);
   calendarSync.refresh({
     reason,
@@ -882,7 +878,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (document.visibilityState === 'visible') {
       clearTimeout(_visibilityTimer);
       _visibilityTimer = setTimeout(() => {
-        requestCalendarIncrementalSync('화면 복귀', { force: true, showToast: true });
+        requestCalendarIncrementalSync('화면 복귀', { force: true });
       }, 300);
     }
   });
@@ -1137,22 +1133,4 @@ function openDailyEventPopup(dateInput) {
       document.removeEventListener('click', once);
     });
   }, 100);
-}
-
-/**
- * [새로 추가] 일정 자동 새로고침 함수
- * v10은 IndexedDB + Google syncToken으로 변경분만 받은 뒤 현재 화면만 다시 그립니다.
- */
-function showRefreshToast() {
-  let toast = document.getElementById('_refreshToast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = '_refreshToast';
-    toast.style.cssText = 'position:fixed;bottom:70px;right:12px;z-index:99999;background:rgba(0,0,0,0.7);color:#fff;font-size:12px;padding:5px 10px;border-radius:20px;pointer-events:none;transition:opacity 0.4s;';
-    document.body.appendChild(toast);
-  }
-  toast.textContent = '🔄 새로고침 중...';
-  toast.style.opacity = '1';
-  clearTimeout(toast._hideTimer);
-  toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
 }
