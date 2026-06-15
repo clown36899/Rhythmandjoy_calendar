@@ -11347,6 +11347,7 @@ const Observer = {
   func: win.MutationObserver || win.WebkitMutationObserver,
   attach(target, options = {}) {
     const swiper = this;
+    if (!target || (typeof win.Node !== 'undefined' && !(target instanceof win.Node))) return;
 
     const ObserverFunc = Observer.func;
     const observer = new ObserverFunc((mutations) => {
