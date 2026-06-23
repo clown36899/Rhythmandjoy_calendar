@@ -385,7 +385,7 @@
 
     .sources {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 8px;
       margin-top: 12px;
     }
@@ -458,9 +458,9 @@
   <main class="page">
     <header class="hero">
       <div>
-        <p class="eyebrow">서울 5호선 · 조건 일치만 표시 · 2026-06-23 확장 재검색</p>
+        <p class="eyebrow">서울 5호선 · 조건 일치만 표시 · 2026-06-24 네이버 화면 재확인</p>
         <h1>예외 없는 매수 후보</h1>
-        <p class="brief">집품 전체 매물 사이트맵, 당근 동별 상세, 피터팬, KB·네이버 검색, 경매 검색까지 다시 넓혔습니다. 아래 카드는 가격·면적·방 개수·디딤돌 면적·5호선 역거리 기준을 동시에 통과한 매물만 남긴 목록입니다.</p>
+        <p class="brief">집품 전체 매물 사이트맵, 당근 동별 상세, 피터팬, KB 검색, 경매 검색에 더해 네이버 부동산 화면 필터로 5호선 역권을 직접 재확인했습니다. 아래 카드는 가격·면적·방 개수·디딤돌 면적·5호선 역거리 기준을 동시에 통과한 매물만 남긴 목록입니다.</p>
       </div>
       <div class="criteria" aria-label="고정 검색 조건">
         <span>매매가 2.5억 이하</span>
@@ -505,7 +505,8 @@
         <span class="source-chip">집품 매물 사이트맵 16,493개</span>
         <span class="source-chip">집품 저가 매매 상세 510개</span>
         <span class="source-chip">당근 강서·양천·강동 상세 260개</span>
-        <span class="source-chip">피터팬·네이버·KB 검색</span>
+        <span class="source-chip">네이버 부동산 화면 52개 역권</span>
+        <span class="source-chip">피터팬·KB 검색</span>
         <span class="source-chip">경매마당·리치고·경매 검색</span>
         <span class="source-chip">유튜브 중개 영상 검색</span>
       </div>
@@ -525,7 +526,9 @@
       "방3": "green",
       "예산 OK": "green",
       "욕실2": "blue",
+      "역 3분권": "blue",
       "역 5분권": "blue",
+      "역 8분권": "blue",
       "역 9분권": "blue",
       "역 10분권": "blue",
       "주차 가능": "blue",
@@ -535,10 +538,32 @@
       "14평 경계": "orange",
       "도보 재확인": "orange",
       "주차 확인": "orange",
+      "주차 불가": "orange",
       "현장 확인": "orange"
     };
 
     const candidates = [
+      {
+        id: "naver-mirim",
+        title: "미림파크빌",
+        kind: "네이버 매매 2630501883",
+        address: "서울특별시 강서구 방화동 497-15",
+        station: "개화산역 약 172m · 3분권",
+        stationMeters: 172,
+        stationWalk: 3,
+        zone: "west",
+        price: 22000,
+        priceText: "2억 2,000만원",
+        area: 46.58,
+        areaText: "46.58㎡ · 14.1평",
+        structure: "방3 · 욕실1",
+        schedule: "4층/4층 · 남향 · 즉시입주",
+        tags: ["조건 일치", "디딤돌 면적 OK", "방3", "역 3분권", "예산 OK", "즉시 입주", "주차 가능", "14평 경계", "탑층 누수 확인"],
+        memo: "네이버 상세에서 전용 46.58㎡, 방3, 즉시입주, 주차 가능으로 확인했습니다. 전용은 14평 경계라 작고 4층 탑층이라 누수·단열과 엘리베이터 여부 확인.",
+        links: [
+          ["원문", "https://new.land.naver.com/houses?ms=2AMw32,3zaJra,16&a=DDDGG:JWJT:SGJT:HOJT:VL&b=A1&e=RETAIL&g=25000&h=46&i=60&articleNo=2630501883", true]
+        ]
+      },
       {
         id: "zippoom-chihyeon",
         title: "치현태청타운빌리지",
@@ -582,6 +607,48 @@
         ]
       },
       {
+        id: "naver-sammi",
+        title: "삼미주택",
+        kind: "네이버 매매 2633719811",
+        address: "서울특별시 강서구 내발산동 676-6",
+        station: "우장산역 도보 8분권",
+        stationMeters: 520,
+        stationWalk: 8,
+        zone: "west",
+        price: 21000,
+        priceText: "2억 1,000만원",
+        area: 47.76,
+        areaText: "47.76㎡ · 14.4평",
+        structure: "방3 · 욕실1",
+        schedule: "고층/4층 · 동향 · 즉시입주",
+        tags: ["조건 일치", "디딤돌 면적 OK", "방3", "역 8분권", "예산 OK", "즉시 입주", "주차 가능", "14평 경계"],
+        memo: "네이버 상세에 5호선 우장산역·발산역 이용, 빠른 입주, 주차 가능으로 표시된 후보입니다. 구옥 고층이라 계단 부담과 실제 도보 동선은 현장 확인.",
+        links: [
+          ["원문", "https://new.land.naver.com/houses?ms=2ALIqU,3zbM4U,16&a=DDDGG:JWJT:SGJT:HOJT:VL&b=A1&e=RETAIL&g=25000&h=46&i=60&articleNo=2633719811", true]
+        ]
+      },
+      {
+        id: "naver-youngjae",
+        title: "영재빌라",
+        kind: "네이버 매매 2628443511",
+        address: "서울특별시 강서구 방화동 266-12",
+        station: "방화역 약 554m · 9분권",
+        stationMeters: 554,
+        stationWalk: 9,
+        zone: "west",
+        price: 20000,
+        priceText: "2억원",
+        area: 47.28,
+        areaText: "47.28㎡ · 14.3평",
+        structure: "방3 · 욕실1",
+        schedule: "4층/5층 · 남향 · 즉시입주 협의",
+        tags: ["조건 일치", "디딤돌 면적 OK", "방3", "역 9분권", "예산 OK", "즉시 입주", "14평 경계", "주차 불가"],
+        memo: "네이버 상세에서 전용 47.28㎡, 방3, 즉시입주 협의로 확인했습니다. 방화역 5호선 10분권 안이지만 주차 불가와 4층 계단 부담은 감수 조건.",
+        links: [
+          ["원문", "https://new.land.naver.com/houses?ms=2AMw32,3zaJra,16&a=DDDGG:JWJT:SGJT:HOJT:VL&b=A1&e=RETAIL&g=25000&h=46&i=60&articleNo=2628443511", true]
+        ]
+      },
+      {
         id: "zippoom-yangjin",
         title: "양진빌라",
         kind: "집품 매매 12865532",
@@ -600,6 +667,27 @@
         memo: "가격과 면적이 안정적이고 화곡역 10분권 경계에 들어옵니다. 실제 도보 동선, 주차 0.6대 표기, 고층 계단 부담을 확인.",
         links: [
           ["원문", "https://zippoom.com/%EB%A7%A4%EB%AC%BC/%EC%84%9C%EC%9A%B8-%EA%B0%95%EC%84%9C%EA%B5%AC-%ED%99%94%EA%B3%A1%EB%8F%99-%EC%96%91%EC%A7%84%EB%B9%8C%EB%9D%BC-%EB%A7%A4%EB%A7%A4-1%EC%96%B59000%EB%A7%8C%EC%9B%90/12865532", true]
+        ]
+      },
+      {
+        id: "naver-osung",
+        title: "오성빌라",
+        kind: "네이버 매매 2633196539",
+        address: "서울특별시 강서구 내발산동 689-11",
+        station: "우장산역 도보 10분권",
+        stationMeters: 650,
+        stationWalk: 10,
+        zone: "west",
+        price: 22000,
+        priceText: "2억 2,000만원",
+        area: 49.92,
+        areaText: "49.92㎡ · 15.1평",
+        structure: "방3 · 욕실1",
+        schedule: "저층/3층 · 남향 · 즉시입주 협의",
+        tags: ["조건 일치", "디딤돌 면적 OK", "방3", "역 10분권", "예산 OK", "즉시 입주", "주차 불가", "도보 재확인"],
+        memo: "동일 주소 2.25억 매물도 있었지만 2.2억 네이버 매물을 우선 표시했습니다. 우장산역 10분권 경계라 실제 도보 동선과 주차 불가 조건 확인.",
+        links: [
+          ["원문", "https://new.land.naver.com/houses?ms=2ALIqU,3zbM4U,16&a=DDDGG:JWJT:SGJT:HOJT:VL&b=A1&e=RETAIL&g=25000&h=46&i=60&articleNo=2633196539", true]
         ]
       },
       {
