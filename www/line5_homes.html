@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>서울 5호선 매수 후보</title>
+  <style>
+    :root {
+      --bg: #f6f7f2;
+      --surface: #ffffff;
+      --surface-strong: #f1f5ec;
+      --ink: #1f2623;
+      --muted: #68716d;
+      --line: #dce3d8;
+      --green: #22724f;
+      --green-bg: #e5f4ec;
+      --blue: #1e65a8;
+      --blue-bg: #e7f0fb;
+      --orange: #a45512;
+      --orange-bg: #fff0df;
+      --red: #b3262d;
+      --red-bg: #fde7e8;
+      --focus: #1a7f64;
+      --shadow: 0 16px 45px rgba(38, 47, 43, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-user-drag: none;
+    }
+
+    html {
+      min-width: 0;
+      overflow-x: hidden;
+      background: var(--bg);
+    }
+
+    body {
+      min-width: 0;
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(241, 245, 236, 0.92) 0%, rgba(246, 247, 242, 0.94) 44%, #f6f7f2 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      letter-spacing: 0;
+      word-break: keep-all;
+    }
+
+    button,
+    a,
+    img {
+      -webkit-user-drag: none;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 16px 0 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--green);
+      font-size: 0.84rem;
+      font-weight: 800;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.72rem, 3vw, 2.65rem);
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    .brief {
+      max-width: 720px;
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.65;
+    }
+
+    .criteria {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      min-width: min(360px, 100%);
+      padding-top: 2px;
+    }
+
+    .criteria span {
+      display: flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.72);
+      color: #32403b;
+      font-size: 0.85rem;
+      font-weight: 800;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      padding: 18px 0;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(246, 247, 242, 0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(220, 227, 216, 0.76);
+    }
+
+    .filter-list,
+    .sort-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .control-label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      line-height: 36px;
+      white-space: nowrap;
+    }
+
+    .filter-button,
+    .sort-button {
+      min-height: 36px;
+      max-width: 100%;
+      padding: 0 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: #39443f;
+      font-size: 0.88rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .filter-button[aria-pressed="true"],
+    .sort-button[aria-pressed="true"] {
+      border-color: var(--focus);
+      background: #e3f2ec;
+      color: #145d49;
+      box-shadow: 0 0 0 2px rgba(26, 127, 100, 0.08);
+    }
+
+    .section {
+      padding: 28px 0 8px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 1.3rem;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .section-note {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .count {
+      flex: 0 0 auto;
+      min-width: 68px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: #47524e;
+      font-size: 0.82rem;
+      font-weight: 800;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.8);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .card {
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr);
+      gap: 15px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .visual {
+      position: relative;
+      min-height: 100%;
+      background: var(--surface-strong);
+      border-right: 1px solid var(--line);
+    }
+
+    .visual img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 188px;
+      object-fit: cover;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .status {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      max-width: calc(100% - 20px);
+      padding: 5px 8px;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 900;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .status.good { background: var(--green); }
+    .status.watch { background: var(--blue); }
+    .status.caution { background: var(--orange); }
+    .status.reject { background: var(--red); }
+
+    .card-body {
+      min-width: 0;
+      padding: 15px 15px 15px 0;
+    }
+
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      min-width: 0;
+    }
+
+    .title-wrap {
+      min-width: 0;
+    }
+
+    .item-title {
+      margin: 0 0 5px;
+      font-size: 1.08rem;
+      line-height: 1.35;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .kind {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 800;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+
+    .price {
+      flex: 0 0 auto;
+      max-width: 132px;
+      color: #17231f;
+      font-size: 1rem;
+      font-weight: 900;
+      line-height: 1.25;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 12px 0;
+      min-width: 0;
+    }
+
+    .fact {
+      min-width: 0;
+      padding: 9px 10px;
+      border: 1px solid #e6ece3;
+      border-radius: 8px;
+      background: #fbfcfa;
+    }
+
+    .fact b {
+      display: block;
+      margin-bottom: 3px;
+      color: #6b746f;
+      font-size: 0.72rem;
+      line-height: 1.2;
+    }
+
+    .fact span {
+      display: block;
+      color: #26312d;
+      font-size: 0.88rem;
+      font-weight: 800;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-width: 0;
+      margin: 12px 0;
+    }
+
+    .tag {
+      max-width: 100%;
+      padding: 5px 8px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-weight: 900;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+
+    .tag.green { background: var(--green-bg); color: var(--green); }
+    .tag.blue { background: var(--blue-bg); color: var(--blue); }
+    .tag.orange { background: var(--orange-bg); color: var(--orange); }
+    .tag.red { background: var(--red-bg); color: var(--red); }
+
+    .memo {
+      margin: 0;
+      color: #3d4843;
+      font-size: 0.9rem;
+      line-height: 1.58;
+      overflow-wrap: anywhere;
+    }
+
+    .risk-note {
+      margin: 10px 0 0;
+      padding: 10px 11px;
+      border-left: 4px solid var(--orange);
+      background: #fff7ed;
+      color: #51311b;
+      font-size: 0.87rem;
+      font-weight: 750;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+      min-width: 0;
+    }
+
+    .link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      max-width: 100%;
+      padding: 0 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f9fbf7;
+      color: #24342f;
+      font-size: 0.82rem;
+      font-weight: 900;
+      overflow-wrap: anywhere;
+    }
+
+    .link.primary {
+      border-color: #b7d7ca;
+      background: #e7f4ef;
+      color: #145d49;
+    }
+
+    .checks {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .check {
+      min-width: 0;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .check h3 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+      line-height: 1.3;
+    }
+
+    .check p {
+      margin: 0;
+      color: #48524e;
+      font-size: 0.9rem;
+      line-height: 1.62;
+      overflow-wrap: anywhere;
+    }
+
+    .sources {
+      margin-top: 34px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.6;
+    }
+
+    .sources a {
+      color: #1e65a8;
+      font-weight: 800;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .empty {
+      display: none;
+      padding: 18px;
+      border: 1px dashed #c7d2cc;
+      border-radius: 8px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.62);
+      font-size: 0.92rem;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .grid:empty + .empty {
+      display: block;
+    }
+
+    @media (max-width: 980px) {
+      .topbar {
+        display: block;
+      }
+
+      .criteria {
+        width: 100%;
+        margin-top: 18px;
+      }
+
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+
+      .grid,
+      .checks {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .page {
+        width: min(100% - 20px, 1180px);
+        padding-top: 18px;
+      }
+
+      .criteria {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        align-items: flex-start;
+      }
+
+      .card {
+        grid-template-columns: 1fr;
+      }
+
+      .visual {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .visual img {
+        min-height: 118px;
+        max-height: 140px;
+      }
+
+      .card-body {
+        padding: 14px;
+      }
+
+      .card-top {
+        display: block;
+      }
+
+      .price {
+        max-width: none;
+        margin-top: 8px;
+        text-align: left;
+      }
+
+      .facts {
+        grid-template-columns: 1fr;
+      }
+
+      .filter-button,
+      .sort-button,
+      .link {
+        white-space: normal;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">서울 5호선 도보권 · 총예산 2.5억 · 2026-06-23 원문 확인</p>
+        <h1>매매와 경매 후보 카드</h1>
+        <p class="brief">실주소 기준으로 원문 확인 가능한 후보를 넣었습니다. 경매는 가격보다 권리 리스크를 먼저 보며, 원문·등기·현황조사 확인 전에는 추천으로 올리지 않습니다.</p>
+      </div>
+      <div class="criteria" aria-label="검토 기준">
+        <span>전용 14평 이상 우선</span>
+        <span>방3 · 거실1 · 욕실1+</span>
+        <span>디딤돌 60㎡ 이하</span>
+        <span>주택가격 3억 이하</span>
+      </div>
+    </header>
+
+    <nav class="toolbar" aria-label="후보 필터와 정렬">
+      <div class="filter-list" id="filterList">
+        <span class="control-label">필터</span>
+      </div>
+      <div class="sort-list" id="sortList">
+        <span class="control-label">정렬</span>
+      </div>
+    </nav>
+
+    <section class="section" aria-labelledby="activeTitle">
+      <div class="section-head">
+        <div>
+          <h2 id="activeTitle">검토 후보</h2>
+          <p class="section-note">조건에 맞거나 근접해 실제 확인이 필요한 카드입니다.</p>
+        </div>
+        <span class="count" id="activeCount">0건</span>
+      </div>
+      <div class="grid" id="activeGrid"></div>
+      <div class="empty">현재 필터에서 표시할 검토 후보가 없습니다.</div>
+    </section>
+
+    <section class="section" aria-labelledby="holdTitle">
+      <div class="section-head">
+        <div>
+          <h2 id="holdTitle">보류 및 제외</h2>
+          <p class="section-note">면적, 가격, 구조, 권리 리스크 중 핵심 조건을 넘은 카드입니다.</p>
+        </div>
+        <span class="count" id="holdCount">0건</span>
+      </div>
+      <div class="grid" id="holdGrid"></div>
+      <div class="empty">현재 필터에서 표시할 보류 후보가 없습니다.</div>
+    </section>
+
+    <section class="section" aria-labelledby="checksTitle">
+      <div class="section-head">
+        <div>
+          <h2 id="checksTitle">입찰 전 확인</h2>
+          <p class="section-note">경매와 대출은 문서 기준으로 확인한 뒤에만 다음 단계로 넘깁니다.</p>
+        </div>
+      </div>
+      <div class="checks">
+        <article class="check">
+          <h3>대항력</h3>
+          <p>전입일, 확정일자, 배당요구 여부, 보증금 전액 배당 가능성을 매각물건명세서와 현황조사서로 확인.</p>
+        </article>
+        <article class="check">
+          <h3>인수금</h3>
+          <p>낙찰가 외에 떠안을 임차보증금, 미납관리비, 유치권, 법정지상권 표시가 있는지 확인.</p>
+        </article>
+        <article class="check">
+          <h3>디딤돌</h3>
+          <p>미혼 단독세대주는 전용 60㎡ 이하, 주택가격 3억 이하, 생애최초 한도 2억 기준으로 은행 사전심사.</p>
+        </article>
+        <article class="check">
+          <h3>현장</h3>
+          <p>불법증축, 누수, 엘리베이터, 주차, 도보시간, 실제 방 개수는 현장 방문 전에는 보류.</p>
+        </article>
+      </div>
+    </section>
+
+    <footer class="sources">
+      원문 링크는 새 탭으로 열립니다. 매물은 문의 시점에 거래완료 또는 조건 변경 가능성이 있고, 경매는 법원 문건으로 재검증해야 합니다.
+      디딤돌 기준은 <a href="https://www.hf.go.kr/ko/sub01/sub01_02_01.do" target="_blank" rel="noopener noreferrer" draggable="false">한국주택금융공사 디딤돌대출 안내</a>를 기준으로 화면에 반영했습니다.
+    </footer>
+  </main>
+
+  <script>
+    const tagColor = {
+      "디딤돌 면적 OK": "green",
+      "방3": "green",
+      "예산 여유": "green",
+      "면적 조건권": "green",
+      "역세권": "blue",
+      "추적": "blue",
+      "2층": "blue",
+      "낙찰 참고": "blue",
+      "14평 경계": "orange",
+      "실매물 확인": "orange",
+      "엘리베이터 없음": "orange",
+      "탑층 누수 확인": "orange",
+      "HUG 포기조건 확인": "orange",
+      "대항력 포기 표시": "orange",
+      "예산 초과 사례": "orange",
+      "선순위임차인": "red",
+      "임차권등기": "red",
+      "특별매각조건": "red",
+      "가격 왜곡": "red",
+      "면적 미달": "red",
+      "방3 아님": "red",
+      "디딤돌 면적 초과": "red",
+      "즉시 입주 아님": "red"
+    };
+
+    const statusLabel = {
+      good: "GOOD",
+      watch: "WATCH",
+      caution: "CAUTION",
+      reject: "REJECT"
+    };
+
+    const filters = [
+      ["all", "전체"],
+      ["auction", "경매 검토"],
+      ["sale", "매매"],
+      ["near", "조건 근접"],
+      ["rights", "권리주의"]
+    ];
+
+    const sorts = [
+      ["recommend", "추천순"],
+      ["price", "가격 낮은순"],
+      ["area", "면적 큰순"]
+    ];
+
+    const sourceAuction = "https://www.eauctions.co.kr/search/court_list.php?acharge=&acourt=212&address1_01=&address1_02=&address1_03=&aorder=&apoint1=&apoint2=&area_js=&aresult=&auction_cate=&barea1=&barea2=&bunji1=&bunji2=&catelist=&charge_no=&eprice1=&eprice2=&ipdate1=&ipdate2=&larea1=&larea2=&mprice1=&mprice2=&npls=&office=&option1=&option2=&page=9&rows=30&search_addr1=&search_addr_str=&search_usage2=&search_usage3=&selgoods=&sno=&spe_age=&spels=&subDis=&subNum=&tno=&usage_codes=";
+
+    const candidates = [
+      {
+        id: "sale-toseok",
+        status: "good",
+        group: "active",
+        type: "sale",
+        title: "토석아네스빌 4층",
+        kind: "매매 원문 3590010",
+        address: "서울특별시 강서구 까치산로14길 50-8 (화곡동, 토석아네스빌)",
+        station: "화곡역 도보 15분",
+        price: 21000,
+        priceText: "2억 1,000만원",
+        area: 46.28,
+        areaText: "46.28㎡ · 14.0평",
+        structure: "방3 · 거실1 · 욕실1",
+        schedule: "즉시입주 가능 · 4층/5층",
+        tags: ["디딤돌 면적 OK", "방3", "예산 여유", "14평 경계", "실매물 확인"],
+        memo: "예산, 방 개수, 디딤돌 면적을 동시에 만족하는 1순위 후보. 전용 14평 경계라 실제 내부 체감 면적과 등기부, 대출 사전심사는 바로 확인 필요.",
+        links: [
+          ["원문", "https://realty.daangn.com/articles/3590010", true]
+        ]
+      },
+      {
+        id: "sale-topvillage",
+        status: "watch",
+        group: "active",
+        type: "sale",
+        title: "탑빌리지 2층",
+        kind: "매매 원문 3711029",
+        address: "서울특별시 강서구 까치산로18라길 5-20 (화곡동, 탑빌리지)",
+        station: "까치산역·화곡역 도보시간 확인",
+        price: 18000,
+        priceText: "1억 8,000만원",
+        area: 55.75,
+        areaText: "55.75㎡ · 16.9평",
+        structure: "방3 · 욕실2",
+        schedule: "2층/4층 · 입주일 원문 미기재",
+        tags: ["디딤돌 면적 OK", "방3", "예산 여유", "면적 조건권", "2층", "실매물 확인"],
+        memo: "면적과 가격만 보면 가장 넓은 후보. 원문에 지하철 도보시간과 입주 가능일이 없어 지도, 현장, 등기 확인 전에는 watch로 둠.",
+        links: [
+          ["원문", "https://realty.daangn.com/articles/3711029?referrer=public_web", true]
+        ]
+      },
+      {
+        id: "auction-raean",
+        status: "reject",
+        group: "hold",
+        type: "auction-watch",
+        title: "래안빌 402호",
+        kind: "서울남부지방법원 2025-11208",
+        address: "서울특별시 강서구 화곡동 488-38 래안빌 제4층 제402호",
+        station: "화곡역권 · 지도 도보 확인",
+        price: 20032,
+        priceText: "최저 2억 32만원",
+        area: 38.36,
+        areaText: "건물 38.36㎡ · 11.6평",
+        structure: "방 개수 문건 확인",
+        schedule: "2026-08-04 입찰 · 유찰 2회",
+        tags: ["임차권등기", "HUG 포기조건 확인", "대항력 포기 표시", "면적 미달", "가격 왜곡"],
+        riskNote: "HUG 관련 특수조건. 선순위임차인과 임차권등기가 있더라도 대항력 포기/배당 구조가 문서로 맞으면 검토 가능. 낙찰가 외에 떠안을 임차보증금이 있는지 매각물건명세서, 현황조사서, 등기부로 확인 필요.",
+        memo: "최저가는 예산 안이지만 전용 14평 기준에 못 미치고 HUG·임차권 조건 확인이 먼저라 보류.",
+        links: [
+          ["경매 원문", sourceAuction, true]
+        ]
+      },
+      {
+        id: "auction-living",
+        status: "reject",
+        group: "hold",
+        type: "auction-watch",
+        title: "리빙하우스 401호",
+        kind: "서울남부지방법원 2025-11334",
+        address: "서울특별시 강서구 화곡동 372-44 리빙하우스 제4층 제401호",
+        station: "화곡역·까치산역 도보 확인",
+        price: 11520,
+        priceText: "최저 1억 1,520만원",
+        area: 34.74,
+        areaText: "건물 34.74㎡ · 10.5평",
+        structure: "방 개수 문건 확인",
+        schedule: "2026-08-04 입찰 · 유찰 3회",
+        tags: ["선순위임차인", "임차권등기", "HUG 포기조건 확인", "대항력 포기 표시", "면적 미달", "가격 왜곡"],
+        riskNote: "최저가가 비정상적으로 낮은 건은 인수금 또는 권리 하자가 핵심. 입찰 전에는 제외에 가깝게 봐야 함. 가격은 낮지만 원하는 크기와 차이가 큼. 권리 검증이 끝나도 크기 우선 조건에서는 제외.",
+        memo: "가격이 낮아 보여도 선순위임차권·HUG 인수조건변경이 핵심 리스크. 면적도 작아 제외에 가깝게 둠.",
+        links: [
+          ["경매 원문", sourceAuction, true]
+        ]
+      },
+      {
+        id: "auction-dongwon",
+        status: "reject",
+        group: "hold",
+        type: "auction-watch",
+        title: "동원아트빌 201호",
+        kind: "서울남부지방법원 2025-11182",
+        address: "서울특별시 강서구 방화동 247-158 동원아트빌 제2층 제201호",
+        station: "방화역·개화산역 도보 확인",
+        price: 14848,
+        priceText: "최저 1억 4,848만원",
+        area: 29.97,
+        areaText: "건물 29.97㎡ · 9.1평",
+        structure: "방 개수 문건 확인",
+        schedule: "2026-08-04 입찰 · 유찰 3회",
+        tags: ["선순위임차인", "임차권등기", "HUG 포기조건 확인", "대항력 포기 표시", "면적 미달", "가격 왜곡", "2층"],
+        riskNote: "낙찰가 외에 떠안을 임차보증금이 있는지 매각물건명세서, 현황조사서, 등기부로 확인 필요. 가격은 낮지만 원하는 크기와 차이가 큼. 권리 검증이 끝나도 크기 우선 조건에서는 제외.",
+        memo: "2층과 최저가만 보면 추적 가능하지만 면적 미달과 임차권 리스크가 동시에 있어 hold.",
+        links: [
+          ["경매 원문", sourceAuction, true]
+        ]
+      },
+      {
+        id: "sale-bluehill",
+        status: "reject",
+        group: "hold",
+        type: "sale",
+        title: "블루힐 6층",
+        kind: "매매 원문 3646133",
+        address: "서울특별시 강서구 강서로29길 82 (화곡동, 블루힐)",
+        station: "화곡역 도보 7분",
+        price: 27000,
+        priceText: "2억 7,000만원",
+        area: 35.32,
+        areaText: "35.32㎡ · 10.7평",
+        structure: "방3 · 욕실1",
+        schedule: "6층/6층 · 입주일 원문 미기재",
+        tags: ["역세권", "방3", "예산 초과 사례", "면적 미달", "탑층 누수 확인", "실매물 확인"],
+        memo: "역세권과 방3은 좋지만 총예산 2.5억을 넘고 면적이 14평에 못 미침. 탑층 누수와 입주 가능일 확인도 필요.",
+        links: [
+          ["원문", "https://realty.daangn.com/articles/3646133", true]
+        ]
+      },
+      {
+        id: "sale-sonovillage",
+        status: "reject",
+        group: "hold",
+        type: "sale",
+        title: "소노빌리지 101동 4층",
+        kind: "매매 원문 3541770",
+        address: "서울특별시 강서구 월정로32길 58 (화곡동, 소노빌리지) 101동",
+        station: "화곡역 도보 이용 가능",
+        price: 26300,
+        priceText: "2억 6,300만원",
+        area: 29.89,
+        areaText: "29.89㎡ · 9.0평",
+        structure: "방3 · 거실1 · 욕실1",
+        schedule: "4층/6층 · 입주일 원문 미기재",
+        tags: ["방3", "예산 초과 사례", "면적 미달", "실매물 확인", "추적"],
+        memo: "방3 구조지만 면적과 예산이 동시에 어긋남. 가격 조정이 있더라도 크기 우선 조건에서는 뒤로 둠.",
+        links: [
+          ["원문", "https://realty.daangn.com/articles/3541770", true]
+        ]
+      },
+      {
+        id: "sale-changdae",
+        status: "reject",
+        group: "hold",
+        type: "sale",
+        title: "창대빌라 A동 2층",
+        kind: "매매 원문 3718846",
+        address: "서울특별시 강서구 가로공원로 184-19 (화곡동, 창대빌라) A동",
+        station: "화곡역 도보 10여분",
+        price: 21000,
+        priceText: "2억 1,000만원",
+        area: 29.95,
+        areaText: "29.95㎡ · 9.1평",
+        structure: "방2 · 거실1 · 욕실1",
+        schedule: "2층/5층 · 입주일 원문 미기재",
+        tags: ["역세권", "예산 여유", "2층", "면적 미달", "방3 아님", "실매물 확인"],
+        memo: "가격과 도보시간은 괜찮지만 방3 조건과 14평 조건을 모두 놓침. 비교 참고용으로만 유지.",
+        links: [
+          ["원문", "https://realty.daangn.com/articles/3718846", true]
+        ]
+      },
+      {
+        id: "sale-towerpark",
+        status: "reject",
+        group: "hold",
+        type: "sale",
+        title: "타워파크빌 3층",
+        kind: "매매 원문 3654959",
+        address: "서울특별시 강서구 초록마을로24길 15-6 (화곡동, 타워파크빌)",
+        station: "까치산역 도보 14분 이내",
+        price: 17500,
+        priceText: "1억 7,500만원",
+        area: 7,
+        areaText: "원문 7㎡ · 공부 재확인",
+        structure: "방3 · 욕실1",
+        schedule: "즉시입주 가능 · 3층/5층",
+        tags: ["방3", "예산 여유", "면적 미달", "엘리베이터 없음", "실매물 확인"],
+        memo: "원문 면적값이 비정상적으로 작아 공부상 전용면적 확인이 우선. 현재 데이터 기준으로는 핵심 탈락.",
+        links: [
+          ["원문", "https://realty.daangn.com/articles/3654959", true]
+        ]
+      }
+    ];
+
+    let activeFilter = "all";
+    let activeSort = "recommend";
+
+    function mapLink(address) {
+      return `https://map.naver.com/p/search/${encodeURIComponent(address)}`;
+    }
+
+    function svgArt(item) {
+      const isAuction = item.type.includes("auction");
+      const status = item.status;
+      const palette = {
+        good: ["#d8f0e4", "#1b7c5b", "#9bd2bb"],
+        watch: ["#e4eef9", "#2469aa", "#a9c8e9"],
+        caution: ["#fff0df", "#a45512", "#ffd09b"],
+        reject: ["#fde7e8", "#b3262d", "#f4a5aa"]
+      }[status];
+      const marker = isAuction ? "#f7c948" : "#ffffff";
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220">
+          <rect width="320" height="220" fill="${palette[0]}"/>
+          <path d="M-22 178 C54 118, 93 112, 165 142 S280 176, 344 84" fill="none" stroke="${palette[2]}" stroke-width="46" stroke-linecap="round"/>
+          <path d="M-6 174 C66 126, 106 122, 169 150 S268 172, 332 92" fill="none" stroke="${palette[1]}" stroke-width="10" stroke-linecap="round"/>
+          <circle cx="96" cy="136" r="22" fill="#fff" stroke="${palette[1]}" stroke-width="7"/>
+          <circle cx="205" cy="154" r="22" fill="${marker}" stroke="${palette[1]}" stroke-width="7"/>
+          <path d="M205 120 c23 0 42 18 42 41 0 35-42 73-42 73s-42-38-42-73c0-23 19-41 42-41z" fill="${palette[1]}" opacity=".92"/>
+          <circle cx="205" cy="160" r="13" fill="#fff"/>
+          <rect x="26" y="28" width="116" height="16" rx="8" fill="#fff" opacity=".78"/>
+          <rect x="26" y="56" width="74" height="12" rx="6" fill="#fff" opacity=".64"/>
+        </svg>`;
+      return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    }
+
+    function formatLinks(item) {
+      const baseLinks = [...item.links, ["지도", mapLink(item.address), true]];
+      return baseLinks.map(([label, href, primary]) => `
+        <a class="link ${primary ? "primary" : ""}" href="${href}" target="_blank" rel="noopener noreferrer" draggable="false">${label}</a>
+      `).join("");
+    }
+
+    function renderCard(item) {
+      const tags = item.tags.map(tag => `<span class="tag ${tagColor[tag] || "blue"}">${tag}</span>`).join("");
+      const risk = item.riskNote ? `<p class="risk-note">${item.riskNote}</p>` : "";
+      return `
+        <article class="card" data-id="${item.id}" data-type="${item.type}" data-status="${item.status}">
+          <figure class="visual" aria-hidden="true">
+            <img src="${svgArt(item)}" alt="" draggable="false">
+            <figcaption class="status ${item.status}">${statusLabel[item.status]}</figcaption>
+          </figure>
+          <div class="card-body">
+            <div class="card-top">
+              <div class="title-wrap">
+                <h3 class="item-title">${item.title}</h3>
+                <div class="kind">${item.kind}</div>
+              </div>
+              <div class="price">${item.priceText}</div>
+            </div>
+            <div class="facts">
+              <div class="fact"><b>주소</b><span>${item.address}</span></div>
+              <div class="fact"><b>5호선 역</b><span>${item.station}</span></div>
+              <div class="fact"><b>면적</b><span>${item.areaText}</span></div>
+              <div class="fact"><b>구조·일정</b><span>${item.structure}<br>${item.schedule}</span></div>
+            </div>
+            <div class="tags">${tags}</div>
+            <p class="memo">${item.memo}</p>
+            ${risk}
+            <div class="links">${formatLinks(item)}</div>
+          </div>
+        </article>
+      `;
+    }
+
+    function score(item) {
+      const statusScore = { good: 0, watch: 1, caution: 2, reject: 3 }[item.status];
+      const groupScore = item.group === "active" ? 0 : 2;
+      const areaBonus = item.area >= 46.28 ? -0.2 : 0;
+      return groupScore + statusScore + areaBonus;
+    }
+
+    function matchesFilter(item) {
+      if (activeFilter === "all") return true;
+      if (activeFilter === "auction") return item.type.includes("auction");
+      if (activeFilter === "sale") return item.type === "sale";
+      if (activeFilter === "near") return item.status === "watch" || item.tags.includes("14평 경계") || item.tags.includes("예산 초과 사례") || item.tags.includes("추적");
+      if (activeFilter === "rights") return item.tags.some(tag => ["선순위임차인", "임차권등기", "특별매각조건", "HUG 포기조건 확인", "대항력 포기 표시", "가격 왜곡"].includes(tag));
+      return true;
+    }
+
+    function sortedItems(items) {
+      const copy = [...items];
+      if (activeSort === "price") return copy.sort((a, b) => a.price - b.price || b.area - a.area);
+      if (activeSort === "area") return copy.sort((a, b) => b.area - a.area || a.price - b.price);
+      return copy.sort((a, b) => score(a) - score(b) || a.price - b.price);
+    }
+
+    function render() {
+      const items = sortedItems(candidates.filter(matchesFilter));
+      const active = items.filter(item => item.group === "active");
+      const hold = items.filter(item => item.group === "hold");
+
+      document.getElementById("activeGrid").innerHTML = active.map(renderCard).join("");
+      document.getElementById("holdGrid").innerHTML = hold.map(renderCard).join("");
+      document.getElementById("activeCount").textContent = `${active.length}건`;
+      document.getElementById("holdCount").textContent = `${hold.length}건`;
+
+      document.querySelectorAll("img, a").forEach(el => el.setAttribute("draggable", "false"));
+    }
+
+    function setupControls() {
+      const filterList = document.getElementById("filterList");
+      const sortList = document.getElementById("sortList");
+
+      filters.forEach(([value, label]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "filter-button";
+        button.textContent = label;
+        button.setAttribute("aria-pressed", value === activeFilter ? "true" : "false");
+        button.addEventListener("click", () => {
+          activeFilter = value;
+          document.querySelectorAll(".filter-button").forEach(btn => btn.setAttribute("aria-pressed", "false"));
+          button.setAttribute("aria-pressed", "true");
+          render();
+        });
+        filterList.appendChild(button);
+      });
+
+      sorts.forEach(([value, label]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "sort-button";
+        button.textContent = label;
+        button.setAttribute("aria-pressed", value === activeSort ? "true" : "false");
+        button.addEventListener("click", () => {
+          activeSort = value;
+          document.querySelectorAll(".sort-button").forEach(btn => btn.setAttribute("aria-pressed", "false"));
+          button.setAttribute("aria-pressed", "true");
+          render();
+        });
+        sortList.appendChild(button);
+      });
+    }
+
+    document.addEventListener("dragstart", event => event.preventDefault());
+    setupControls();
+    render();
+  </script>
+</body>
+</html>
