@@ -564,15 +564,15 @@
   <main class="page">
     <header class="topbar">
       <div>
-        <p class="eyebrow">서울 5호선 도보권 · 총예산 2.5억 · 2026-06-23 원문 확인</p>
+        <p class="eyebrow">서울 5호선 도보 10분 이내 우선 · 총예산 2.5억 · 2026-06-23 원문 확인</p>
         <h1>매매와 경매 후보 카드</h1>
-        <p class="brief">실주소 기준으로 원문 확인 가능한 후보를 넣었습니다. 경매는 가격보다 권리 리스크를 먼저 보며, 원문·등기·현황조사 확인 전에는 추천으로 올리지 않습니다.</p>
+        <p class="brief">역에서 먼 후보를 보류로 내리고, 가까운 후보부터 다시 정렬했습니다. 가까운 물건은 면적·예산이 깨지는 경우가 많아 카드에서 탈락 사유를 바로 보이게 했습니다.</p>
       </div>
       <div class="criteria" aria-label="검토 기준">
+        <span>역 도보 10분 이내 우선</span>
         <span>전용 14평 이상 우선</span>
         <span>방3 · 거실1 · 욕실1+</span>
-        <span>디딤돌 60㎡ 이하</span>
-        <span>주택가격 3억 이하</span>
+        <span>총예산 2.5억 기준</span>
       </div>
     </header>
 
@@ -589,7 +589,7 @@
       <div class="section-head">
         <div>
           <h2 id="activeTitle">검토 후보</h2>
-          <p class="section-note">조건에 맞거나 근접해 실제 확인이 필요한 카드입니다.</p>
+          <p class="section-note">역거리 우선으로 다시 본 현실적 절충 후보입니다.</p>
         </div>
         <span class="count" id="activeCount">0건</span>
       </div>
@@ -601,7 +601,7 @@
       <div class="section-head">
         <div>
           <h2 id="holdTitle">보류 및 제외</h2>
-          <p class="section-note">면적, 가격, 구조, 권리 리스크 중 핵심 조건을 넘은 카드입니다.</p>
+          <p class="section-note">역에서 멀거나, 가까워도 면적·가격·구조가 핵심 조건을 넘은 카드입니다.</p>
         </div>
         <span class="count" id="holdCount">0건</span>
       </div>
@@ -649,11 +649,14 @@
       "예산 여유": "green",
       "면적 조건권": "green",
       "역세권": "blue",
+      "역 5분권": "blue",
+      "역 10분권": "blue",
       "추적": "blue",
       "2층": "blue",
       "낙찰 참고": "blue",
       "14평 경계": "orange",
       "실매물 확인": "orange",
+      "도보 확인 필요": "orange",
       "엘리베이터 없음": "orange",
       "탑층 누수 확인": "orange",
       "HUG 포기조건 확인": "orange",
@@ -666,6 +669,7 @@
       "면적 미달": "red",
       "방3 아님": "red",
       "디딤돌 면적 초과": "red",
+      "도보 10분 초과": "red",
       "즉시 입주 아님": "red"
     };
 
@@ -678,6 +682,7 @@
 
     const filters = [
       ["all", "전체"],
+      ["station", "역 가까움"],
       ["auction", "경매 검토"],
       ["sale", "매매"],
       ["near", "조건 근접"],
@@ -685,6 +690,7 @@
     ];
 
     const sorts = [
+      ["station", "역 가까운순"],
       ["recommend", "추천순"],
       ["price", "가격 낮은순"],
       ["area", "면적 큰순"]
@@ -694,45 +700,69 @@
 
     const candidates = [
       {
-        id: "sale-toseok",
-        status: "good",
-        group: "active",
-        type: "sale",
-        title: "토석아네스빌 4층",
-        kind: "매매 원문 3590010",
-        address: "서울특별시 강서구 까치산로14길 50-8 (화곡동, 토석아네스빌)",
-        station: "화곡역 도보 15분",
-        price: 21000,
-        priceText: "2억 1,000만원",
-        area: 46.28,
-        areaText: "46.28㎡ · 14.0평",
-        structure: "방3 · 거실1 · 욕실1",
-        schedule: "즉시입주 가능 · 4층/5층",
-        tags: ["디딤돌 면적 OK", "방3", "예산 여유", "14평 경계", "실매물 확인"],
-        memo: "예산, 방 개수, 디딤돌 면적을 동시에 만족하는 1순위 후보. 전용 14평 경계라 실제 내부 체감 면적과 등기부, 대출 사전심사는 바로 확인 필요.",
-        links: [
-          ["원문", "https://realty.daangn.com/articles/3590010", true]
-        ]
-      },
-      {
-        id: "sale-topvillage",
+        id: "sale-bellahouse",
         status: "watch",
         group: "active",
         type: "sale",
-        title: "탑빌리지 2층",
-        kind: "매매 원문 3711029",
-        address: "서울특별시 강서구 까치산로18라길 5-20 (화곡동, 탑빌리지)",
-        station: "까치산역·화곡역 도보시간 확인",
-        price: 18000,
-        priceText: "1억 8,000만원",
-        area: 55.75,
-        areaText: "55.75㎡ · 16.9평",
-        structure: "방3 · 욕실2",
-        schedule: "2층/4층 · 입주일 원문 미기재",
-        tags: ["디딤돌 면적 OK", "방3", "예산 여유", "면적 조건권", "2층", "실매물 확인"],
-        memo: "면적과 가격만 보면 가장 넓은 후보. 원문에 지하철 도보시간과 입주 가능일이 없어 지도, 현장, 등기 확인 전에는 watch로 둠.",
+        title: "벨라하우스 5층",
+        kind: "매매 원문 3533469",
+        address: "서울특별시 강서구 강서로17가길 63-6 (화곡동, 벨라하우스)",
+        station: "까치산역 4번출구 도보 7분",
+        stationWalk: 7,
+        price: 23000,
+        priceText: "2억 3,000만원",
+        area: 34.46,
+        areaText: "34.46㎡ · 10.4평",
+        structure: "방3 · 욕실1",
+        schedule: "5층/5층 · 2016년식",
+        tags: ["역세권", "역 10분권", "디딤돌 면적 OK", "방3", "예산 여유", "면적 미달", "실매물 확인"],
+        memo: "역거리와 예산을 우선하면 가장 먼저 볼 후보. 다만 전용 10.4평이라 14평 이상 조건은 포기하는 대체안에 가깝습니다.",
         links: [
-          ["원문", "https://realty.daangn.com/articles/3711029?referrer=public_web", true]
+          ["원문", "https://realty.daangn.com/articles/3533469", true]
+        ]
+      },
+      {
+        id: "sale-chingchan",
+        status: "watch",
+        group: "active",
+        type: "sale",
+        title: "칭찬빌 5층",
+        kind: "매매 원문 3697693",
+        address: "서울특별시 강서구 초록마을로22길 55 (화곡동, 칭찬빌)",
+        station: "까치산역·화곡역 도보 12분",
+        stationWalk: 12,
+        price: 24500,
+        priceText: "2억 4,500만원",
+        area: 53.54,
+        areaText: "53.54㎡ · 16.2평",
+        structure: "방3 · 거실1 · 욕실1",
+        schedule: "5층/5층 · 입주시기 협의",
+        tags: ["디딤돌 면적 OK", "방3", "예산 여유", "면적 조건권", "도보 10분 초과", "탑층 누수 확인", "실매물 확인"],
+        memo: "크기와 예산은 가장 잘 맞지만 역에서 10분을 넘습니다. 역거리 허용선을 12분까지 넓힐 때만 검토 후보입니다.",
+        links: [
+          ["원문", "https://realty.daangn.com/articles/3697693", true]
+        ]
+      },
+      {
+        id: "sale-dottyhouse",
+        status: "caution",
+        group: "active",
+        type: "sale",
+        title: "도티하우스 2층",
+        kind: "매매 원문 2193049",
+        address: "서울특별시 강서구 곰달래로35길 42-1 (화곡동, 도티하우스)",
+        station: "까치산역 도보 11분",
+        stationWalk: 11,
+        price: 26500,
+        priceText: "2억 6,500만원",
+        area: 43.52,
+        areaText: "43.52㎡ · 13.2평",
+        structure: "방3 · 욕실2 · 다용도실",
+        schedule: "2층/5층 · 공실 빠른입주",
+        tags: ["디딤돌 면적 OK", "방3", "2층", "도보 10분 초과", "14평 경계", "예산 초과 사례", "실매물 확인"],
+        memo: "역 11분, 예산 1,500만원 초과, 면적 14평 미만이라 조건이 조금씩 어긋납니다. 가격 조정과 실제 도보시간 확인이 되면 비교 대상입니다.",
+        links: [
+          ["원문", "https://realty.daangn.com/articles/2193049", true]
         ]
       },
       {
@@ -744,6 +774,7 @@
         kind: "서울남부지방법원 2025-11208",
         address: "서울특별시 강서구 화곡동 488-38 래안빌 제4층 제402호",
         station: "화곡역권 · 지도 도보 확인",
+        stationWalk: 99,
         price: 20032,
         priceText: "최저 2억 32만원",
         area: 38.36,
@@ -766,6 +797,7 @@
         kind: "서울남부지방법원 2025-11334",
         address: "서울특별시 강서구 화곡동 372-44 리빙하우스 제4층 제401호",
         station: "화곡역·까치산역 도보 확인",
+        stationWalk: 99,
         price: 11520,
         priceText: "최저 1억 1,520만원",
         area: 34.74,
@@ -788,6 +820,7 @@
         kind: "서울남부지방법원 2025-11182",
         address: "서울특별시 강서구 방화동 247-158 동원아트빌 제2층 제201호",
         station: "방화역·개화산역 도보 확인",
+        stationWalk: 99,
         price: 14848,
         priceText: "최저 1억 4,848만원",
         area: 29.97,
@@ -803,13 +836,14 @@
       },
       {
         id: "sale-bluehill",
-        status: "reject",
+        status: "caution",
         group: "hold",
         type: "sale",
         title: "블루힐 6층",
         kind: "매매 원문 3646133",
         address: "서울특별시 강서구 강서로29길 82 (화곡동, 블루힐)",
         station: "화곡역 도보 7분",
+        stationWalk: 7,
         price: 27000,
         priceText: "2억 7,000만원",
         area: 35.32,
@@ -817,78 +851,125 @@
         structure: "방3 · 욕실1",
         schedule: "6층/6층 · 입주일 원문 미기재",
         tags: ["역세권", "방3", "예산 초과 사례", "면적 미달", "탑층 누수 확인", "실매물 확인"],
-        memo: "역세권과 방3은 좋지만 총예산 2.5억을 넘고 면적이 14평에 못 미침. 탑층 누수와 입주 가능일 확인도 필요.",
+        memo: "역 7분은 좋지만 총예산을 넘고 면적도 작습니다. 역세권 비교용으로 남기되 탑층 누수와 가격 조정 여부를 확인해야 합니다.",
         links: [
           ["원문", "https://realty.daangn.com/articles/3646133", true]
         ]
       },
       {
-        id: "sale-sonovillage",
+        id: "sale-gosen",
         status: "reject",
         group: "hold",
         type: "sale",
-        title: "소노빌리지 101동 4층",
-        kind: "매매 원문 3541770",
-        address: "서울특별시 강서구 월정로32길 58 (화곡동, 소노빌리지) 101동",
-        station: "화곡역 도보 이용 가능",
-        price: 26300,
-        priceText: "2억 6,300만원",
-        area: 29.89,
-        areaText: "29.89㎡ · 9.0평",
-        structure: "방3 · 거실1 · 욕실1",
-        schedule: "4층/6층 · 입주일 원문 미기재",
-        tags: ["방3", "예산 초과 사례", "면적 미달", "실매물 확인", "추적"],
-        memo: "방3 구조지만 면적과 예산이 동시에 어긋남. 가격 조정이 있더라도 크기 우선 조건에서는 뒤로 둠.",
+        title: "고센아트빌 2층",
+        kind: "매매 원문 2314484",
+        address: "서울특별시 강서구 강서로17가길 18-32 (화곡동, 고센아트빌)",
+        station: "까치산역 도보 약 5분",
+        stationWalk: 5,
+        price: 23000,
+        priceText: "2억 3,000만원",
+        area: 29.24,
+        areaText: "29.24㎡ · 8.8평",
+        structure: "방2 · 욕실1",
+        schedule: "2층/6층 · 2016년식",
+        tags: ["역세권", "역 5분권", "디딤돌 면적 OK", "예산 여유", "면적 미달", "방3 아님", "실매물 확인"],
+        memo: "지하철 접근성은 가장 좋지만 방2와 전용 8.8평이라 핵심 조건에서 탈락입니다. 역세권 가격 기준 참고용입니다.",
         links: [
-          ["원문", "https://realty.daangn.com/articles/3541770", true]
+          ["원문", "https://realty.daangn.com/articles/2314484", true]
         ]
       },
       {
-        id: "sale-changdae",
+        id: "sale-namgwang",
         status: "reject",
         group: "hold",
         type: "sale",
-        title: "창대빌라 A동 2층",
-        kind: "매매 원문 3718846",
-        address: "서울특별시 강서구 가로공원로 184-19 (화곡동, 창대빌라) A동",
-        station: "화곡역 도보 10여분",
+        title: "남광아파트 101동 5층",
+        kind: "매매 원문 3035184",
+        address: "서울특별시 강서구 곰달래로22길 18 (화곡동, 남광아파트) 101동",
+        station: "까치산역 도보 8분",
+        stationWalk: 8,
+        price: 31700,
+        priceText: "3억 1,700만원",
+        area: 45.53,
+        areaText: "45.53㎡ · 13.8평",
+        structure: "방3 · 욕실1 · 다용도실",
+        schedule: "5층/11층 · 입주 협의",
+        tags: ["역세권", "역 10분권", "방3", "14평 경계", "예산 초과 사례", "디딤돌 면적 OK", "실매물 확인"],
+        memo: "역 8분과 엘리베이터 있는 아파트는 장점이지만 가격이 3억을 넘어 디딤돌 주택가격 기준과 총예산에서 탈락입니다.",
+        links: [
+          ["원문", "https://realty.daangn.com/articles/3035184", true]
+        ]
+      },
+      {
+        id: "sale-raeum",
+        status: "caution",
+        group: "hold",
+        type: "sale",
+        title: "라움 3층",
+        kind: "매매 원문 1861316",
+        address: "서울특별시 강서구 까치산로14길 41-15 (화곡동, 라움)",
+        station: "화곡역 도보시간 지도 확인",
+        stationWalk: 99,
+        price: 27000,
+        priceText: "2억 7,000만원",
+        area: 47.17,
+        areaText: "47.17㎡ · 14.3평",
+        structure: "방3 · 욕실1",
+        schedule: "3층/6층 · 입주 협의",
+        tags: ["디딤돌 면적 OK", "방3", "면적 조건권", "예산 초과 사례", "도보 확인 필요", "실매물 확인"],
+        memo: "면적과 방 개수는 맞지만 가격이 2.5억을 넘고 원문에 도보분이 없습니다. 역거리 확인 전에는 보류입니다.",
+        links: [
+          ["원문", "https://realty.daangn.com/articles/1861316", true]
+        ]
+      },
+      {
+        id: "sale-toseok",
+        status: "reject",
+        group: "hold",
+        type: "sale",
+        title: "토석아네스빌 4층",
+        kind: "매매 원문 3590010",
+        address: "서울특별시 강서구 까치산로14길 50-8 (화곡동, 토석아네스빌)",
+        station: "화곡역 도보 15분",
+        stationWalk: 15,
         price: 21000,
         priceText: "2억 1,000만원",
-        area: 29.95,
-        areaText: "29.95㎡ · 9.1평",
-        structure: "방2 · 거실1 · 욕실1",
-        schedule: "2층/5층 · 입주일 원문 미기재",
-        tags: ["역세권", "예산 여유", "2층", "면적 미달", "방3 아님", "실매물 확인"],
-        memo: "가격과 도보시간은 괜찮지만 방3 조건과 14평 조건을 모두 놓침. 비교 참고용으로만 유지.",
+        area: 46.28,
+        areaText: "46.28㎡ · 14.0평",
+        structure: "방3 · 거실1 · 욕실1",
+        schedule: "즉시입주 가능 · 4층/5층",
+        tags: ["디딤돌 면적 OK", "방3", "예산 여유", "14평 경계", "도보 10분 초과", "실매물 확인"],
+        memo: "가격과 구조는 좋지만 화곡역 15분이라 이번 역거리 기준에서는 보류입니다.",
         links: [
-          ["원문", "https://realty.daangn.com/articles/3718846", true]
+          ["원문", "https://realty.daangn.com/articles/3590010", true]
         ]
       },
       {
-        id: "sale-towerpark",
-        status: "reject",
+        id: "sale-topvillage",
+        status: "caution",
         group: "hold",
         type: "sale",
-        title: "타워파크빌 3층",
-        kind: "매매 원문 3654959",
-        address: "서울특별시 강서구 초록마을로24길 15-6 (화곡동, 타워파크빌)",
-        station: "까치산역 도보 14분 이내",
-        price: 17500,
-        priceText: "1억 7,500만원",
-        area: 7,
-        areaText: "원문 7㎡ · 공부 재확인",
-        structure: "방3 · 욕실1",
-        schedule: "즉시입주 가능 · 3층/5층",
-        tags: ["방3", "예산 여유", "면적 미달", "엘리베이터 없음", "실매물 확인"],
-        memo: "원문 면적값이 비정상적으로 작아 공부상 전용면적 확인이 우선. 현재 데이터 기준으로는 핵심 탈락.",
+        title: "탑빌리지 2층",
+        kind: "매매 원문 3711029",
+        address: "서울특별시 강서구 까치산로18라길 5-20 (화곡동, 탑빌리지)",
+        station: "까치산역·화곡역 도보시간 확인",
+        stationWalk: 99,
+        price: 18000,
+        priceText: "1억 8,000만원",
+        area: 55.75,
+        areaText: "55.75㎡ · 16.9평",
+        structure: "방3 · 욕실2",
+        schedule: "2층/4층 · 입주일 원문 미기재",
+        tags: ["디딤돌 면적 OK", "방3", "예산 여유", "면적 조건권", "2층", "도보 확인 필요", "실매물 확인"],
+        memo: "면적과 가격은 좋지만 원문에 도보 시간이 없어 역세권 후보로 올릴 수 없습니다. 지도와 현장 확인 전에는 보류입니다.",
         links: [
-          ["원문", "https://realty.daangn.com/articles/3654959", true]
+          ["원문", "https://realty.daangn.com/articles/3711029?referrer=public_web", true]
         ]
       }
     ];
 
     let activeFilter = "all";
-    let activeSort = "recommend";
+    let activeSort = "station";
 
     function mapLink(address) {
       return `https://map.naver.com/p/search/${encodeURIComponent(address)}`;
@@ -961,24 +1042,27 @@
     function score(item) {
       const statusScore = { good: 0, watch: 1, caution: 2, reject: 3 }[item.status];
       const groupScore = item.group === "active" ? 0 : 2;
+      const stationPenalty = (item.stationWalk || 99) > 10 ? 1.2 : 0;
       const areaBonus = item.area >= 46.28 ? -0.2 : 0;
-      return groupScore + statusScore + areaBonus;
+      return groupScore + statusScore + stationPenalty + areaBonus;
     }
 
     function matchesFilter(item) {
       if (activeFilter === "all") return true;
+      if (activeFilter === "station") return (item.stationWalk || 99) <= 10;
       if (activeFilter === "auction") return item.type.includes("auction");
       if (activeFilter === "sale") return item.type === "sale";
-      if (activeFilter === "near") return item.status === "watch" || item.tags.includes("14평 경계") || item.tags.includes("예산 초과 사례") || item.tags.includes("추적");
+      if (activeFilter === "near") return item.status === "watch" || item.status === "caution" || item.tags.includes("14평 경계") || item.tags.includes("예산 초과 사례") || item.tags.includes("추적");
       if (activeFilter === "rights") return item.tags.some(tag => ["선순위임차인", "임차권등기", "특별매각조건", "HUG 포기조건 확인", "대항력 포기 표시", "가격 왜곡"].includes(tag));
       return true;
     }
 
     function sortedItems(items) {
       const copy = [...items];
+      if (activeSort === "station") return copy.sort((a, b) => (a.stationWalk || 99) - (b.stationWalk || 99) || score(a) - score(b) || a.price - b.price);
       if (activeSort === "price") return copy.sort((a, b) => a.price - b.price || b.area - a.area);
       if (activeSort === "area") return copy.sort((a, b) => b.area - a.area || a.price - b.price);
-      return copy.sort((a, b) => score(a) - score(b) || a.price - b.price);
+      return copy.sort((a, b) => score(a) - score(b) || (a.stationWalk || 99) - (b.stationWalk || 99) || a.price - b.price);
     }
 
     function render() {
