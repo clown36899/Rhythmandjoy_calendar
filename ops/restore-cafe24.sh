@@ -133,6 +133,7 @@ rsync -a --delete \
     "$REPO_ROOT/www/" "$APP_ROOT/"
 
 install -d "$APP_ROOT/static/email_log"
+chown -R clown313python:clown313python "$APP_ROOT/static/email_log"
 install -m 0755 "$REPO_ROOT/ops/rhythmjoy_calendar_cache.py" "$OPS_ROOT/rhythmjoy_calendar_cache.py"
 install -m 0755 "$REPO_ROOT/ops/rhythmjoy_email_import.py" "$OPS_ROOT/rhythmjoy_email_import.py"
 install -d "$APP_ROOT/naver_booking_googleimport"
