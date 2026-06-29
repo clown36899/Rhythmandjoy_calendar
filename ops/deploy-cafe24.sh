@@ -70,6 +70,10 @@ require_exact_targets() {
         echo "Unexpected CACHE_SERVICE: $CACHE_SERVICE" >&2
         exit 1
     }
+    [[ "$LEGACY_EMAIL_SERVICE" == "my_email_service.service" ]] || {
+        echo "Unexpected LEGACY_EMAIL_SERVICE: $LEGACY_EMAIL_SERVICE" >&2
+        exit 1
+    }
 
     abort_for_forbidden_target "LOCAL_REPO" "$LOCAL_REPO"
     abort_for_forbidden_target "APP_ROOT" "$APP_ROOT"
@@ -77,13 +81,14 @@ require_exact_targets() {
     abort_for_forbidden_target "REMOTE_RELEASE_DIR" "$REMOTE_RELEASE_DIR"
     abort_for_forbidden_target "APACHE_CONF_DIR" "$APACHE_CONF_DIR"
     abort_for_forbidden_target "CACHE_SERVICE" "$CACHE_SERVICE"
+    abort_for_forbidden_target "LEGACY_EMAIL_SERVICE" "$LEGACY_EMAIL_SERVICE"
 }
 
 remote_quote() {
     printf "%q" "$1"
 }
 
-for required in VPS_HOSTNAME SSH_TARGET SSH_KEY LOCAL_REPO APP_ROOT OPS_ROOT REMOTE_RELEASE_DIR APACHE_CONF_DIR CACHE_SERVICE; do
+for required in VPS_HOSTNAME SSH_TARGET SSH_KEY LOCAL_REPO APP_ROOT OPS_ROOT REMOTE_RELEASE_DIR APACHE_CONF_DIR CACHE_SERVICE LEGACY_EMAIL_SERVICE; do
     require_var "$required"
 done
 require_exact_targets

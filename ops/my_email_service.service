@@ -1,0 +1,17 @@
+[Unit]
+Description=Rhythmjoy Naver email import service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clown313python
+WorkingDirectory=/home/clown313python/rhythmjoy_ops
+EnvironmentFile=/home/clown313python/myapp/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/bash -lc 'exec /home/clown313python/.pyenv/versions/3.8.12/envs/enve/bin/python3.8 /home/clown313python/rhythmjoy_ops/rhythmjoy_email_import.py'
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
