@@ -1,5 +1,9 @@
 /* @import url('https://fonts.googleapis.com/css?family=Amatic+SC'); */
 
+:root {
+  --rhythmjoy-ui-font: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif;
+}
+
 #main_room_title {
   z-index: 999999999999;
   font-size: 9rem;
@@ -123,7 +127,7 @@
     -webkit-user-select: none;
     user-select: none;
     /* 위코드는 마우스로 텍스트를 긁는걸 방지함*/
-    font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
+    font-family: var(--rhythmjoy-ui-font);
     font-size: 19px;
     overflow: hidden;
     width: 100%;
@@ -1421,7 +1425,7 @@ body.view-timeGridWeek .fc tbody {
 
   body {
 
-    font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
+    font-family: var(--rhythmjoy-ui-font);
     font-size: 19px;
     overflow: hidden;
     width: 100%;
@@ -1983,6 +1987,77 @@ body.view-timeGridWeek .fc tbody {
   border-radius: 9px;
   border: 1px solid #3788d8;
   color: black;
+}
+
+#calendarAll .fc,
+#singleRoomCalendar .fc,
+#calendarAll .fc-event,
+#singleRoomCalendar .fc-event {
+  font-family: var(--rhythmjoy-ui-font);
+  letter-spacing: 0;
+  font-kerning: normal;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#calendarAll .fc-timeGrid-view .custom-event-box,
+#singleRoomCalendar .fc-timeGrid-view .custom-event-box {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  gap: 1px;
+  padding: 2px 3px;
+  overflow: hidden;
+  color: #0f1113;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.23;
+  word-break: keep-all;
+}
+
+#singleRoomCalendar .fc-timeGrid-view .custom-event-box {
+  font-size: 10px;
+  padding: 2px;
+}
+
+#calendarAll .custom-event-box > div,
+#singleRoomCalendar .custom-event-box > div {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#calendarAll .custom-time,
+#singleRoomCalendar .custom-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+#calendarAll .custom-title,
+#calendarAll .custom-room,
+#singleRoomCalendar .custom-title,
+#singleRoomCalendar .custom-room {
+  font-weight: 600;
+}
+
+#calendarAll .custom-info,
+#singleRoomCalendar .custom-info {
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+#calendarAll .fc-dayGridMonth-view .custom-event-box,
+#singleRoomCalendar .fc-dayGridMonth-view .custom-event-box {
+  align-items: center;
+  gap: 3px;
+  padding: 1px 2px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
 }
 
 .room-btn {
