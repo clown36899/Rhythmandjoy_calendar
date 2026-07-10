@@ -160,6 +160,38 @@ Operational limits:
 - This is not password automation. If SpaceCloud or Naver expires the session, the watcher sends a Telegram login-needed alert, keeps the Chrome profile open, and retries on the normal watch interval after the host logs in again.
 - It detects the Google Calendar cache, not raw Gmail. The server-side cache currently syncs Google Calendar every 15 seconds, so a 60-second local watch interval is usually enough.
 - Updated/cancelled Google events are not automatically edited/deleted in SpaceCloud yet. The current watcher is for new confirmed reservation uploads.
+- Cancellation detection is handled earlier at the Naver email import layer: `ops/rhythmjoy_email_import.py` records the cancellation before deleting the matching Google Calendar event, creates a SpaceCloud delete task for mapped hall rooms, and sends a Telegram alert. SpaceCloud UI deletion remains the next automation step.
+
+## Naver Email DB Ledger
+
+The Cafe24 email importer now writes a DB ledger before it mutates Google Calendar.
+
+Tables:
+
+- `rhythmjoy_naver_email_events`: one row per Naver booking/cancellation email. It stores the mailbox, message identity, parse result, target calendar, reservation details, Google Calendar processing status, and optional raw body.
+- `rhythmjoy_spacecloud_tasks`: durable work queue for SpaceCloud-side actions. Cancellation emails for mapped hall rooms create a `delete` task with `pending` status.
+
+This keeps the workflow consistent across restarts:
+
+1. Naver email is read.
+2. The email is saved or updated in `rhythmjoy_naver_email_events`.
+3. For cancellation emails, a SpaceCloud delete task is saved in `rhythmjoy_spacecloud_tasks`.
+4. Google Calendar is created or deleted only after the DB write succeeds.
+5. If the process restarts and sees the same email again, `processing_status` prevents duplicate calendar mutation.
+
+Environment flags:
+
+```text
+DB_SERVERNAME=
+DB_PORT=3306
+DB_USERNAME=
+DB_PASSWORD=
+DB_NAME=
+RHYTHMJOY_EMAIL_DB_REQUIRED=0
+RHYTHMJOY_EMAIL_STORE_RAW_BODY=1
+```
+
+Set `RHYTHMJOY_EMAIL_DB_REQUIRED=1` after the DB values are confirmed in production. With this flag enabled, the importer stops instead of falling back to calendar-only processing when DB logging is unavailable.
 
 LaunchAgent example:
 

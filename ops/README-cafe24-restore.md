@@ -26,7 +26,8 @@ Do not put DB passwords, API keys, tokens, Google service account JSON, or TLS p
 - systemd service: `ops/rhythmjoy-calendar-cache.service`
 - Apache vhosts/static cache/modsecurity config: `ops/*.conf`
 - certbot cron and reload hook: `ops/rhythmjoy-certbot.cron`, `ops/reload-httpd-after-certbot.sh`
-- Legacy Naver email to Google Calendar import code, sanitized: `ops/naver_booking_googleimport/import_email.py`
+- Active Naver email to Google Calendar import service: `ops/rhythmjoy_email_import.py`
+- Legacy Naver email import code, sanitized for reference: `ops/naver_booking_googleimport/import_email.py`
 - Python package snapshot from Cafe24: `ops/cafe24-requirements.txt`
 - Canonical non-secret production target: `ops/cafe24-production-target.env`
 - Deploy helper: `ops/deploy-cafe24.sh`
@@ -91,3 +92,12 @@ The restore script refuses any Apache config outside that allowlist.
 - Browser-side polling reads the server cache every 15 seconds while the page is visible.
 - `rhythmandjoy.cafe24.com` currently resolves to `210.114.6.137`; do not use it as the deployment target for this VPS.
 - Git push is backup/history only. Production is updated through the guarded Cafe24 deploy/restore scripts.
+
+## Naver email DB ledger
+
+`ops/rhythmjoy_email_import.py` writes a DB record before creating or deleting Google Calendar events when `DB_SERVERNAME`, `DB_USERNAME`, `DB_PASSWORD`, and `DB_NAME` are set in `/home/clown313python/myapp/.env`.
+
+- `rhythmjoy_naver_email_events`: durable record of each Naver reservation/cancellation email and its Google Calendar processing status.
+- `rhythmjoy_spacecloud_tasks`: durable queue for SpaceCloud follow-up work, currently cancellation delete tasks for mapped hall rooms.
+
+After confirming DB access on production, set `RHYTHMJOY_EMAIL_DB_REQUIRED=1` so the importer stops instead of falling back to calendar-only processing if DB logging is unavailable.

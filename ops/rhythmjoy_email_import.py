@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 import argparse
 import email
+import hashlib
 import imaplib
+import json
 import logging
 import os
 import re
 import smtplib
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta
 from email.header import decode_header
 from email.mime.multipart import MIMEMultipart
@@ -53,6 +57,14 @@ CALENDAR_IDS = {
     'Ehall': 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com',
 }
 
+SPACECLOUD_ROOM_KEYS = {
+    'Ahall': 'a',
+    'Bhall': 'b',
+    'Chall': 'c',
+    'Dhall': 'd',
+    'Ehall': 'e',
+}
+
 
 class ConfigError(RuntimeError):
     pass
@@ -80,6 +92,10 @@ def get_required_env(name):
     if not value:
         raise ConfigError(f'Missing required environment variable: {name}')
     return value
+
+
+def env_flag(name, default='0'):
+    return os.environ.get(name, default).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def setup_logging():
@@ -188,6 +204,127 @@ def mask_name(name):
     return clean
 
 
+def calendar_to_spacecloud_room_key(calendar_key):
+    return SPACECLOUD_ROOM_KEYS.get(calendar_key or '', '')
+
+
+def clean_date_or_none(value):
+    if not value:
+        return None
+    try:
+        return normalize_date(value)
+    except Exception:
+        return None
+
+
+def clean_time_or_none(value):
+    if not value:
+        return None
+    if re.match(r'^\d{1,2}:\d{2}$', value):
+        hour, minute = value.split(':', 1)
+        return f'{int(hour):02d}:{minute}:00'
+    return None
+
+
+def message_identity(mailbox, decoded_id, message, raw_message):
+    message_id = decode_header_value(message.get('Message-ID', '')).strip()
+    source_value = message_id or hashlib.sha256(raw_message).hexdigest() or decoded_id
+    digest = hashlib.sha256(f'{mailbox}|{source_value}'.encode('utf-8')).hexdigest()[:32]
+    return f'{mailbox}:{digest}', message_id
+
+
+def truncate_text(value, limit):
+    if not value:
+        return ''
+    text = str(value)
+    return text[:limit]
+
+
+def compact_json(value):
+    if not value:
+        return ''
+    return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+
+
+def build_email_record_base(config, mail_key, mailbox, decoded_id, message_id, subject, body, event_type, parsed_payload):
+    return {
+        'mail_key': mail_key,
+        'mailbox': truncate_text(mailbox, 64),
+        'imap_id': truncate_text(decoded_id, 64),
+        'message_id': truncate_text(message_id, 255),
+        'subject': truncate_text(subject, 500),
+        'event_type': event_type,
+        'parse_status': 'parsed' if parsed_payload else 'unparsed',
+        'processing_status': 'received' if parsed_payload else 'parse_failed',
+        'target_calendar': '',
+        'spacecloud_room_key': '',
+        'reservation_number': '',
+        'reserver_name': '',
+        'product': '',
+        'reservation_date': None,
+        'start_time': None,
+        'end_time': None,
+        'payment_status': '',
+        'price': '',
+        'raw_body': body if config.get('store_raw_email_body') else None,
+        'parsed_json': compact_json(parsed_payload),
+    }
+
+
+def build_reservation_email_record(config, mail_key, mailbox, decoded_id, message_id, subject, body, target_calendar, event_data):
+    record = build_email_record_base(
+        config,
+        mail_key,
+        mailbox,
+        decoded_id,
+        message_id,
+        subject,
+        body,
+        'reservation',
+        event_data,
+    )
+    record['target_calendar'] = target_calendar or ''
+    record['spacecloud_room_key'] = calendar_to_spacecloud_room_key(target_calendar)
+    if event_data:
+        record.update({
+            'reservation_number': truncate_text(event_data.get('reservation_number'), 64),
+            'reserver_name': truncate_text(event_data.get('name'), 128),
+            'product': truncate_text(event_data.get('product'), 255),
+            'reservation_date': clean_date_or_none(event_data.get('date')),
+            'start_time': clean_time_or_none(event_data.get('start_time')),
+            'end_time': clean_time_or_none(event_data.get('end_time')),
+            'payment_status': truncate_text(event_data.get('payment_status'), 64),
+            'price': truncate_text(event_data.get('price'), 64),
+        })
+    return record
+
+
+def build_cancellation_email_record(config, mail_key, mailbox, decoded_id, message_id, subject, body, deletion, calendar_key):
+    record = build_email_record_base(
+        config,
+        mail_key,
+        mailbox,
+        decoded_id,
+        message_id,
+        subject,
+        body,
+        'cancellation',
+        deletion,
+    )
+    record['target_calendar'] = calendar_key or ''
+    record['spacecloud_room_key'] = calendar_to_spacecloud_room_key(calendar_key)
+    if deletion:
+        record.update({
+            'reservation_number': truncate_text(deletion.get('reservation_number'), 64),
+            'reserver_name': truncate_text(deletion.get('name'), 128),
+            'product': truncate_text(deletion.get('product'), 255),
+            'reservation_date': clean_date_or_none(deletion.get('date')),
+            'start_time': clean_time_or_none(deletion.get('start_time')),
+            'end_time': clean_time_or_none(deletion.get('end_time')),
+        })
+    return record
+
+
 def build_calendar_service(config):
     credentials = service_account.Credentials.from_service_account_file(
         config['google_service_account_file'],
@@ -196,9 +333,387 @@ def build_calendar_service(config):
     return build('calendar', 'v3', credentials=credentials, cache_discovery=False)
 
 
+def db_connect(config):
+    if not config['db_enabled']:
+        return None
+    try:
+        import pymysql
+    except ImportError as error:
+        raise ConfigError('PyMySQL is required for Rhythmjoy email DB logging') from error
+
+    return pymysql.connect(
+        host=config['db_server'],
+        port=config['db_port'],
+        user=config['db_username'],
+        password=config['db_password'],
+        database=config['db_name'],
+        charset='utf8mb4',
+        autocommit=True,
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
+def ensure_db_tables(config, logger):
+    if not config['db_enabled']:
+        if config['db_required']:
+            raise ConfigError('Email DB logging is required but DB_* env values are incomplete')
+        logger.info('Email DB logging disabled: DB_* env values incomplete')
+        return
+
+    conn = db_connect(config)
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rhythmjoy_naver_email_events (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    mail_key VARCHAR(128) NOT NULL,
+                    mailbox VARCHAR(64) NOT NULL,
+                    imap_id VARCHAR(64) NOT NULL DEFAULT '',
+                    message_id VARCHAR(255) NOT NULL DEFAULT '',
+                    subject VARCHAR(500) NOT NULL DEFAULT '',
+                    event_type VARCHAR(32) NOT NULL DEFAULT 'unknown',
+                    parse_status VARCHAR(32) NOT NULL DEFAULT 'unparsed',
+                    processing_status VARCHAR(32) NOT NULL DEFAULT 'received',
+                    target_calendar VARCHAR(64) NOT NULL DEFAULT '',
+                    spacecloud_room_key VARCHAR(8) NOT NULL DEFAULT '',
+                    reservation_number VARCHAR(64) NOT NULL DEFAULT '',
+                    reserver_name VARCHAR(128) NOT NULL DEFAULT '',
+                    product VARCHAR(255) NOT NULL DEFAULT '',
+                    reservation_date DATE NULL,
+                    start_time TIME NULL,
+                    end_time TIME NULL,
+                    payment_status VARCHAR(64) NOT NULL DEFAULT '',
+                    price VARCHAR(64) NOT NULL DEFAULT '',
+                    google_calendar_event_id VARCHAR(255) NOT NULL DEFAULT '',
+                    google_calendar_deleted_count INT NOT NULL DEFAULT 0,
+                    error_text TEXT NULL,
+                    raw_body MEDIUMTEXT NULL,
+                    parsed_json TEXT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uq_mail_key (mail_key),
+                    KEY idx_reservation_number (reservation_number),
+                    KEY idx_status (processing_status),
+                    KEY idx_event_type (event_type),
+                    KEY idx_spacecloud_room_date (spacecloud_room_key, reservation_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rhythmjoy_spacecloud_tasks (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    dedupe_key VARCHAR(255) NOT NULL,
+                    email_event_id BIGINT UNSIGNED NULL,
+                    task_type VARCHAR(32) NOT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    room_key VARCHAR(8) NOT NULL DEFAULT '',
+                    reservation_number VARCHAR(64) NOT NULL DEFAULT '',
+                    reserver_name VARCHAR(128) NOT NULL DEFAULT '',
+                    product VARCHAR(255) NOT NULL DEFAULT '',
+                    reservation_date DATE NULL,
+                    start_time TIME NULL,
+                    end_time TIME NULL,
+                    payload_json TEXT NULL,
+                    attempts INT NOT NULL DEFAULT 0,
+                    locked_at DATETIME NULL,
+                    processed_at DATETIME NULL,
+                    result_text TEXT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uq_dedupe_key (dedupe_key),
+                    KEY idx_status_type (status, task_type),
+                    KEY idx_room_date (room_key, reservation_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
+        logger.info('Email DB tables checked')
+    finally:
+        conn.close()
+
+
+def db_select_email_event(config, mail_key):
+    if not config['db_enabled']:
+        return None
+    conn = db_connect(config)
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                'SELECT * FROM rhythmjoy_naver_email_events WHERE mail_key=%s LIMIT 1',
+                (mail_key,),
+            )
+            return cursor.fetchone()
+    finally:
+        conn.close()
+
+
+def upsert_email_event(config, logger, record):
+    if not config['db_enabled']:
+        return None
+
+    conn = db_connect(config)
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO rhythmjoy_naver_email_events (
+                    mail_key, mailbox, imap_id, message_id, subject,
+                    event_type, parse_status, processing_status,
+                    target_calendar, spacecloud_room_key,
+                    reservation_number, reserver_name, product,
+                    reservation_date, start_time, end_time,
+                    payment_status, price, raw_body, parsed_json
+                )
+                VALUES (
+                    %(mail_key)s, %(mailbox)s, %(imap_id)s, %(message_id)s, %(subject)s,
+                    %(event_type)s, %(parse_status)s, %(processing_status)s,
+                    %(target_calendar)s, %(spacecloud_room_key)s,
+                    %(reservation_number)s, %(reserver_name)s, %(product)s,
+                    %(reservation_date)s, %(start_time)s, %(end_time)s,
+                    %(payment_status)s, %(price)s, %(raw_body)s, %(parsed_json)s
+                )
+                ON DUPLICATE KEY UPDATE
+                    subject=VALUES(subject),
+                    event_type=VALUES(event_type),
+                    parse_status=VALUES(parse_status),
+                    target_calendar=VALUES(target_calendar),
+                    spacecloud_room_key=VALUES(spacecloud_room_key),
+                    reservation_number=VALUES(reservation_number),
+                    reserver_name=VALUES(reserver_name),
+                    product=VALUES(product),
+                    reservation_date=VALUES(reservation_date),
+                    start_time=VALUES(start_time),
+                    end_time=VALUES(end_time),
+                    payment_status=VALUES(payment_status),
+                    price=VALUES(price),
+                    raw_body=VALUES(raw_body),
+                    parsed_json=VALUES(parsed_json),
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                record,
+            )
+        row = db_select_email_event(config, record['mail_key'])
+        logger.info('Email DB event saved id=%s type=%s status=%s', row.get('id') if row else '-', record['event_type'], record['processing_status'])
+        return row
+    finally:
+        conn.close()
+
+
+def update_email_processing(config, email_event_id, status, logger, **fields):
+    if not config['db_enabled'] or not email_event_id:
+        return
+
+    allowed = {
+        'google_calendar_event_id',
+        'google_calendar_deleted_count',
+        'error_text',
+    }
+    assignments = ['processing_status=%s', 'updated_at=CURRENT_TIMESTAMP']
+    values = [status]
+    for key, value in fields.items():
+        if key in allowed:
+            assignments.append(f'{key}=%s')
+            values.append(value)
+    values.append(email_event_id)
+
+    conn = db_connect(config)
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"UPDATE rhythmjoy_naver_email_events SET {', '.join(assignments)} WHERE id=%s",
+                values,
+            )
+        logger.info('Email DB event updated id=%s status=%s', email_event_id, status)
+    finally:
+        conn.close()
+
+
+def spacecloud_delete_dedupe_key(deletion, room_key):
+    reservation_number = deletion.get('reservation_number') or ''
+    if reservation_number:
+        return f'delete|reservation|{reservation_number}'
+    return '|'.join([
+        'delete',
+        room_key or '',
+        normalize_date(deletion.get('date', '')) if deletion.get('date') else '',
+        deletion.get('start_time', ''),
+        deletion.get('end_time', ''),
+        deletion.get('name', ''),
+    ])
+
+
+def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, calendar_key):
+    room_key = calendar_to_spacecloud_room_key(calendar_key)
+    if not config['db_enabled'] or not room_key:
+        if not room_key:
+            logger.info('SpaceCloud delete task skipped: no room mapping for calendar=%s product=%s', calendar_key, deletion.get('product'))
+        return None
+
+    dedupe_key = spacecloud_delete_dedupe_key(deletion, room_key)
+    payload = {
+        'source': 'naver-email-cancellation',
+        'calendarKey': calendar_key,
+        'roomKey': room_key,
+        **deletion,
+    }
+    row = {
+        'dedupe_key': dedupe_key,
+        'email_event_id': email_event_id,
+        'task_type': 'delete',
+        'room_key': room_key,
+        'reservation_number': deletion.get('reservation_number') or '',
+        'reserver_name': deletion.get('name') or '',
+        'product': deletion.get('product') or '',
+        'reservation_date': clean_date_or_none(deletion.get('date')),
+        'start_time': clean_time_or_none(deletion.get('start_time')),
+        'end_time': clean_time_or_none(deletion.get('end_time')),
+        'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+    }
+
+    conn = db_connect(config)
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO rhythmjoy_spacecloud_tasks (
+                    dedupe_key, email_event_id, task_type, status,
+                    room_key, reservation_number, reserver_name, product,
+                    reservation_date, start_time, end_time, payload_json
+                )
+                VALUES (
+                    %(dedupe_key)s, %(email_event_id)s, %(task_type)s, 'pending',
+                    %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
+                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(payload_json)s
+                )
+                ON DUPLICATE KEY UPDATE
+                    email_event_id=VALUES(email_event_id),
+                    room_key=VALUES(room_key),
+                    reservation_number=VALUES(reservation_number),
+                    reserver_name=VALUES(reserver_name),
+                    product=VALUES(product),
+                    reservation_date=VALUES(reservation_date),
+                    start_time=VALUES(start_time),
+                    end_time=VALUES(end_time),
+                    payload_json=VALUES(payload_json),
+                    status=IF(status='done', status, 'pending'),
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                row,
+            )
+            cursor.execute(
+                'SELECT * FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=%s LIMIT 1',
+                (dedupe_key,),
+            )
+            task = cursor.fetchone()
+        logger.info('SpaceCloud delete task saved id=%s room=%s reservation=%s status=%s', task.get('id') if task else '-', room_key, row['reservation_number'], task.get('status') if task else '-')
+        return task
+    finally:
+        conn.close()
+
+
+def send_telegram_message(config, text, logger):
+    token = config.get('telegram_bot_token', '')
+    chat_id = config.get('telegram_chat_id', '')
+    if not token or not chat_id:
+        logger.info('Telegram cancellation alert skipped: token or chat id missing')
+        return False
+
+    try:
+        payload = json.dumps({'chat_id': chat_id, 'text': text}, ensure_ascii=False).encode('utf-8')
+        request = urllib.request.Request(
+            f'https://api.telegram.org/bot{token}/sendMessage',
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        with urllib.request.urlopen(request, timeout=config['telegram_timeout']) as response:
+            response.read()
+        logger.info('Telegram cancellation alert sent')
+        return True
+    except urllib.error.HTTPError as error:
+        body = error.read().decode('utf-8', errors='replace')
+        logger.exception('Telegram cancellation alert failed http=%s body=%s', error.code, body[:300])
+    except Exception:
+        logger.exception('Telegram cancellation alert failed')
+    return False
+
+
+def format_cancellation_alert(deletion, calendar_key, deleted, subject):
+    time_text = '-'
+    if deletion.get('date') and deletion.get('start_time') and deletion.get('end_time'):
+        time_text = f"{deletion['date']} {deletion['start_time']}-{deletion['end_time']}"
+
+    calendar_text = calendar_key or '-'
+    reservation_number = deletion.get('reservation_number') or '-'
+    product = deletion.get('product') or '-'
+    name = mask_name(deletion.get('name', '')) or '-'
+    delete_status = '삭제완료' if deleted else '매칭없음'
+
+    return (
+        '네이버 예약 취소 감지\n'
+        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
+        f'상품: {product}\n'
+        f'일시: {time_text}\n'
+        f'예약자: {name}\n'
+        f'예약번호: {reservation_number}\n'
+        f'구글캘린더: {calendar_text} / {delete_status} {deleted}건\n\n'
+        '스페이스클라우드에 이미 등록된 일정이면 삭제 확인 필요\n'
+        f'메일제목: {subject or "-"}'
+    )
+
+
+def notify_cancellation(config, deletion, calendar_key, deleted, subject, logger):
+    text = format_cancellation_alert(deletion, calendar_key, deleted, subject)
+    send_telegram_message(config, text, logger)
+
+
+def notify_cancellation_parse_failure(config, mailbox, email_id, subject, logger):
+    text = (
+        '네이버 예약 취소 메일 파싱 실패\n'
+        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
+        f'메일함: {mailbox}\n'
+        f'메일ID: {email_id}\n'
+        f'메일제목: {subject or "-"}\n\n'
+        '취소 메일 양식이 바뀌었을 수 있으니 확인 필요'
+    )
+    send_telegram_message(config, text, logger)
+
+
+def find_calendar_event_by_reservation(service, target_calendar, reservation_number, logger):
+    if not reservation_number:
+        return None
+
+    calendar_id = CALENDAR_IDS[target_calendar]
+    result = service.events().list(
+        calendarId=calendar_id,
+        q=reservation_number,
+        singleEvents=True,
+        maxResults=10,
+    ).execute()
+    for item in result.get('items', []):
+        private = item.get('extendedProperties', {}).get('private', {})
+        description = item.get('description', '')
+        if private.get('reservationNumber') == reservation_number or reservation_number in description:
+            logger.info('Existing Google Calendar event found calendar=%s reservation=%s event_id=%s', target_calendar, reservation_number, item.get('id'))
+            return item
+    return None
+
+
 def create_calendar_event(service, event_data, logger):
     target_calendar = event_data['target_calendar']
     calendar_id = CALENDAR_IDS[target_calendar]
+    existing = find_calendar_event_by_reservation(
+        service,
+        target_calendar,
+        event_data.get('reservation_number', ''),
+        logger,
+    )
+    if existing:
+        return existing
+
     start = parse_datetime(event_data['date'], event_data['start_time'])
     end = parse_datetime(event_data['date'], event_data['end_time'])
     if end <= start:
@@ -229,6 +744,7 @@ def create_calendar_event(service, event_data, logger):
     }
     created = service.events().insert(calendarId=calendar_id, body=event_body).execute()
     logger.info('Event created calendar=%s reservation=%s link=%s', target_calendar, event_data.get('reservation_number'), created.get('htmlLink'))
+    return created
 
 
 def product_to_calendar_key(product):
@@ -381,36 +897,111 @@ def mark_seen(imap_connection, email_id, logger):
         logger.exception('Failed to mark email seen id=%s', email_id.decode('utf-8', errors='replace'))
 
 
-def process_message(service, imap_connection, mailbox, target_calendar, email_id, raw_message, logger):
+def process_message(config, service, imap_connection, mailbox, target_calendar, email_id, raw_message, logger):
     message = email.message_from_bytes(raw_message)
     subject = decode_header_value(message.get('Subject', ''))
     body = get_text_body(message)
     decoded_id = email_id.decode('utf-8', errors='replace')
+    mail_key, message_id = message_identity(mailbox, decoded_id, message, raw_message)
+    email_record_id = None
     logger.info('Processing mailbox=%s email_id=%s subject=%s', mailbox, decoded_id, subject)
 
     try:
         if mailbox in ROOM_MAILBOXES:
             event_data = parse_reservation(body, target_calendar)
+            record = build_reservation_email_record(
+                config,
+                mail_key,
+                mailbox,
+                decoded_id,
+                message_id,
+                subject,
+                body,
+                target_calendar,
+                event_data,
+            )
+            email_row = upsert_email_event(config, logger, record)
+            email_record_id = email_row.get('id') if email_row else None
             if event_data:
-                create_calendar_event(service, event_data, logger)
+                if email_row and email_row.get('processing_status') == 'calendar_created':
+                    logger.info('Reservation already handled by DB id=%s reservation=%s', email_record_id, event_data.get('reservation_number'))
+                else:
+                    created = create_calendar_event(service, event_data, logger)
+                    update_email_processing(
+                        config,
+                        email_record_id,
+                        'calendar_created',
+                        logger,
+                        google_calendar_event_id=created.get('id', ''),
+                        error_text='',
+                    )
             else:
                 logger.warning('Reservation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
+                update_email_processing(
+                    config,
+                    email_record_id,
+                    'parse_failed',
+                    logger,
+                    error_text='reservation_parser_no_match',
+                )
             mark_seen(imap_connection, email_id, logger)
             return
 
         if mailbox in ('Cancellation', 'Cancelhall'):
             deletion = parse_cancellation(body)
+            calendar_key = product_to_calendar_key(deletion.get('product', '')) if deletion else None
+            record = build_cancellation_email_record(
+                config,
+                mail_key,
+                mailbox,
+                decoded_id,
+                message_id,
+                subject,
+                body,
+                deletion,
+                calendar_key,
+            )
+            email_row = upsert_email_event(config, logger, record)
+            email_record_id = email_row.get('id') if email_row else None
             if deletion:
-                delete_events_by_reservation(service, deletion, logger)
+                upsert_spacecloud_delete_task(config, logger, email_record_id, deletion, calendar_key)
+                if email_row and email_row.get('processing_status') in ('calendar_deleted', 'calendar_not_found'):
+                    logger.info('Cancellation already handled by DB id=%s reservation=%s', email_record_id, deletion.get('reservation_number'))
+                else:
+                    deleted = delete_events_by_reservation(service, deletion, logger)
+                    update_email_processing(
+                        config,
+                        email_record_id,
+                        'calendar_deleted' if deleted else 'calendar_not_found',
+                        logger,
+                        google_calendar_deleted_count=deleted,
+                        error_text='',
+                    )
+                    notify_cancellation(config, deletion, calendar_key, deleted, subject, logger)
             else:
                 logger.warning('Cancellation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
+                update_email_processing(
+                    config,
+                    email_record_id,
+                    'parse_failed',
+                    logger,
+                    error_text='cancellation_parser_no_match',
+                )
+                notify_cancellation_parse_failure(config, mailbox, decoded_id, subject, logger)
             mark_seen(imap_connection, email_id, logger)
             return
 
         logger.warning('Unknown mailbox configured: %s', mailbox)
         mark_seen(imap_connection, email_id, logger)
-    except Exception:
+    except Exception as error:
         logger.exception('Failed to process email mailbox=%s email_id=%s', mailbox, decoded_id)
+        update_email_processing(
+            config,
+            email_record_id,
+            'failed',
+            logger,
+            error_text=str(error)[:1000],
+        )
         raise
 
 
@@ -439,7 +1030,7 @@ def run_poll_once(config, logger):
                 if result != 'OK' or not message_data or not message_data[0]:
                     logger.error('Failed to fetch mailbox=%s email_id=%s result=%s', mailbox, email_id, result)
                     continue
-                process_message(service, imap_connection, mailbox, target_calendar, email_id, message_data[0][1], logger)
+                process_message(config, service, imap_connection, mailbox, target_calendar, email_id, message_data[0][1], logger)
                 processed += 1
     finally:
         if imap_connection is not None:
@@ -472,6 +1063,11 @@ def build_config():
     naver_mail_username = get_required_env('NAVER_MAIL_USERNAME')
     naver_mail_password = get_required_env('NAVER_MAIL_PASSWORD')
     google_service_account_file = os.environ.get('GOOGLE_SERVICE_ACCOUNT_FILE', str(DEFAULT_GOOGLE_SERVICE_ACCOUNT))
+    db_server = os.environ.get('DB_SERVERNAME', '')
+    db_username = os.environ.get('DB_USERNAME', '')
+    db_password = os.environ.get('DB_PASSWORD', '')
+    db_name = os.environ.get('DB_NAME', '')
+    db_enabled = all([db_server, db_username, db_password, db_name])
 
     return {
         'naver_mail_username': naver_mail_username,
@@ -487,15 +1083,27 @@ def build_config():
         'smtp_timeout': int(os.environ.get('RHYTHMJOY_EMAIL_SMTP_TIMEOUT_SECONDS', '20')),
         'alert_from': os.environ.get('RHYTHMJOY_EMAIL_ALERT_FROM', f'{naver_mail_username}@naver.com'),
         'alert_to': os.environ.get('RHYTHMJOY_EMAIL_ALERT_TO', ''),
+        'telegram_bot_token': os.environ.get('TELEGRAM_BOT_TOKEN', ''),
+        'telegram_chat_id': os.environ.get('TELEGRAM_CHAT_ID', ''),
+        'telegram_timeout': int(os.environ.get('TELEGRAM_SEND_TIMEOUT', '12')),
+        'db_enabled': db_enabled,
+        'db_required': env_flag('RHYTHMJOY_EMAIL_DB_REQUIRED', '0'),
+        'db_server': db_server,
+        'db_port': int(os.environ.get('DB_PORT', '3306')),
+        'db_username': db_username,
+        'db_password': db_password,
+        'db_name': db_name,
+        'store_raw_email_body': env_flag('RHYTHMJOY_EMAIL_STORE_RAW_BODY', '1'),
     }
 
 
-def check_config(config):
+def check_config(config, logger):
     if not Path(config['google_service_account_file']).is_file():
         raise ConfigError(f"Missing Google service account file: {config['google_service_account_file']}")
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     if not os.access(str(LOG_DIR), os.W_OK):
         raise ConfigError(f'Email log directory is not writable: {LOG_DIR}')
+    ensure_db_tables(config, logger)
 
 
 def main():
@@ -506,7 +1114,7 @@ def main():
 
     logger = setup_logging()
     config = build_config()
-    check_config(config)
+    check_config(config, logger)
 
     restart_count = increment_restart_count()
     logger.info('Rhythmjoy email import started restart_count=%s interval=%s', restart_count, config['poll_interval'])
