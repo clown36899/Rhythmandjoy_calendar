@@ -161,6 +161,7 @@ Operational limits:
 - It detects the Google Calendar cache, not raw Gmail. The server-side cache currently syncs Google Calendar every 15 seconds, so a 60-second local watch interval is usually enough.
 - New confirmed Google Calendar events are automatically uploaded to SpaceCloud by the local watcher.
 - Cancellation detection is handled earlier at the Naver email import layer: `ops/rhythmjoy_email_import.py` records the cancellation, deletes the matching Google Calendar event, and creates a SpaceCloud delete task for mapped hall rooms. The local watcher consumes that task and deletes the matching direct-added SpaceCloud schedule through the logged-in UI.
+- Automatic SpaceCloud deletion only proceeds when the clicked popup is a direct-added schedule and the room, date/time, and `naverReservationNo` in the memo match the DB task. Tasks without a reservation number are left as `needs_review` instead of being deleted automatically.
 - Google Calendar deletion and SpaceCloud deletion are reported separately. `Google Calendar 자동삭제 완료` does not mean SpaceCloud was deleted; SpaceCloud task status must be `done` or `already_gone`.
 
 ## Naver Email DB Ledger

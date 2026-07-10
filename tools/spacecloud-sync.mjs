@@ -332,6 +332,12 @@ function normalizeName(value) {
     .trim();
 }
 
+function displayReserverName(value) {
+  const normalized = normalizeName(value);
+  if (!normalized) return '';
+  return /[가-힣]/u.test(normalized) ? `${normalized}님` : normalized;
+}
+
 function normalizeTitleName(title) {
   return String(title || '')
     .replace(/^[A-E]홀\s*\(?\d*\s*/u, '')
@@ -379,7 +385,7 @@ function buildSpacecloudCreatePayload(candidate) {
     EDATE: ymd,
     SHOUR: String(hourFromSlotTime(candidate.startTime)),
     EHOUR: String(hourFromSlotTime(candidate.endTime)),
-    NAME: candidate.reserverName || candidate.reserverNameKey || candidate.title,
+    NAME: candidate.reserverNameDisplay || candidate.reserverName || candidate.reserverNameKey || candidate.title,
     TEL: '',
     MEMO: candidate.memo,
     REPEAT_TYPE: '-1',
@@ -405,7 +411,7 @@ function buildSpacecloudUiInput(candidate) {
       date: candidate.date,
       startHourSelectValue: String(startHour - 1),
       endHourSelectValue: String(endHour - 1),
-      name: candidate.reserverName || candidate.reserverNameKey || candidate.title,
+      name: candidate.reserverNameDisplay || candidate.reserverName || candidate.reserverNameKey || candidate.title,
       tel: '',
       memo: candidate.memo,
     },
@@ -442,6 +448,7 @@ function toCandidate(event, roomConfig) {
     timeProblems: normalizedTime.timeProblems,
     reserverName,
     reserverNameKey: normalizeName(reserverName),
+    reserverNameDisplay: displayReserverName(reserverName),
     reservationNo,
     paymentStatus,
     product,

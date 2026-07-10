@@ -39,6 +39,10 @@ function hourFromSlot(value) {
   return Number(match[1]);
 }
 
+function compactText(value) {
+  return String(value || '').replace(/\s+/g, '');
+}
+
 function normalizeDate(value) {
   const text = String(value || '').trim().replace(/\./g, '-').replace(/\/+/g, '-').replace(/-+$/, '');
   const match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -123,6 +127,15 @@ async function closeModalIfOpen(page) {
   }
 }
 
+async function closeReservationPopup(page) {
+  if (!(await visible(page, '.layer_popup.reservation_state').catch(() => false))) return;
+  const close = page.locator('.layer_popup.reservation_state .btn_pop_close, .layer_popup.reservation_state a.btn_close, .layer_popup.reservation_state button.btn_close').filter({ visible: true });
+  if (await close.count() > 0) {
+    await close.first().click({ timeout: 5000 });
+    await waitHidden(page, '.layer_popup.reservation_state', 5000);
+  }
+}
+
 async function calendarMonth(page) {
   const text = await page.evaluate(() => {
     const title = document.querySelector('.calendar_tit.short strong') || document.querySelector('.calendar_tit.short');
@@ -153,15 +166,13 @@ async function findDirectEventCandidates(page, {
   date,
   startTime,
   endTime,
-  reserverName = '',
 }) {
   const targetDate = normalizeDate(date);
   const day = Number(targetDate.slice(8, 10));
   const startHour = hourFromSlot(startTime);
   const endHour = hourFromSlot(endTime);
-  const firstNameChar = String(reserverName || '').trim().charAt(0);
 
-  return page.evaluate(({ day, startHour, endHour, firstNameChar }) => {
+  return page.evaluate(({ day, startHour, endHour }) => {
     const normalize = (value) => String(value || '').replace(/\s+/g, '');
     const timePatterns = [
       `추${startHour}~${endHour}`,
@@ -178,15 +189,43 @@ async function findDirectEventCandidates(page, {
       links.forEach((link, index) => {
         const text = normalize(link.innerText || link.textContent || '');
         const timeMatches = timePatterns.some((pattern) => text.includes(pattern));
-        const nameMatches = !firstNameChar || text.includes(firstNameChar);
-        if (timeMatches && nameMatches) {
+        if (timeMatches) {
           link.setAttribute('data-codex-delete-candidate', String(index));
           rows.push({ index, text });
         }
       });
     }
     return rows;
-  }, { day, startHour, endHour, firstNameChar });
+  }, { day, startHour, endHour });
+}
+
+function popupDeleteVerification(popupText, row) {
+  const normalized = compactText(popupText);
+  const errors = [];
+  const room = SPACECLOUD_ROOMS[row.roomKey];
+  const startHour = hourFromSlot(row.startTime);
+  const endHour = hourFromSlot(row.endTime);
+  const timePatterns = [
+    `${startHour}:00~${endHour}:00`,
+    `${String(startHour).padStart(2, '0')}:00~${String(endHour).padStart(2, '0')}:00`,
+    `${startHour}:00~${String(endHour).padStart(2, '0')}:00`,
+    `${String(startHour).padStart(2, '0')}:00~${endHour}:00`,
+  ];
+  const dateText = normalizeDate(row.date).replace(/-/g, '.');
+
+  if (!/직접\s*추가한\s*예약/.test(popupText)) errors.push('not-direct-added');
+  if (!room?.name || !normalized.includes(room.name)) errors.push(`room-mismatch:${room?.name || row.roomKey}`);
+  if (!normalized.includes(dateText)) errors.push(`date-mismatch:${dateText}`);
+  if (!timePatterns.some((pattern) => normalized.includes(pattern))) {
+    errors.push(`time-mismatch:${row.startTime}-${row.endTime}`);
+  }
+  if (!row.reservationNo) {
+    errors.push('reservation-number-missing-in-task');
+  } else if (!normalized.includes(String(row.reservationNo))) {
+    errors.push(`reservation-number-mismatch:${row.reservationNo}`);
+  }
+
+  return { ok: errors.length === 0, errors };
 }
 
 async function openDatePicker(page) {
@@ -446,6 +485,12 @@ export async function deleteSpacecloudDirectReservation(context, task) {
     startedAt: new Date().toISOString(),
   };
   row.reservationCalendarUrl = task.reservationCalendarUrl || reservationCalendarUrl(row.roomKey);
+  if (!row.reservationNo) {
+    row.status = 'needs-review';
+    row.error = 'reservation number missing; automatic SpaceCloud delete requires room, time, and reservation number';
+    row.finishedAt = new Date().toISOString();
+    return row;
+  }
 
   const dialogTypes = [];
   const onDialog = async (dialog) => {
@@ -489,10 +534,13 @@ export async function deleteSpacecloudDirectReservation(context, task) {
 
     const popupText = await page.locator('.layer_popup.reservation_state').filter({ visible: true }).first().innerText({ timeout: 5000 });
     row.popupTextPreview = popupText.replace(/\s+/g, ' ').slice(0, 300);
-    if (!/직접\s*추가한\s*예약/.test(popupText)) {
+    const verification = popupDeleteVerification(popupText, row);
+    row.deleteVerification = verification;
+    if (!verification.ok) {
       row.status = 'needs-review';
-      row.error = 'matched event is not a direct-added SpaceCloud schedule';
+      row.error = `matched event failed delete verification: ${verification.errors.join(', ')}`;
       row.finishedAt = new Date().toISOString();
+      await closeReservationPopup(page).catch(() => {});
       return row;
     }
 
