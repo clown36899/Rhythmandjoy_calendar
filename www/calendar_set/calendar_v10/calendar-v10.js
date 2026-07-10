@@ -37,6 +37,7 @@ window.rhythmjoyCalendarV10Sync = calendarSync;
 let currentRoomSelections = { a: true, b: true, c: true, d: true, e: true };
 let selectedSingleRoomKey = null;
 let singleRoomCalendar = null;
+let activeDailyPopup = null;
 
 // ⭐ [최적화] 빈번하게 호출되는 정규식 사전 컴파일
 const REGEX_RESERVATION_NUM = /예약번호:\s*([^\n]+)/;
@@ -903,7 +904,39 @@ offcanvasEl.addEventListener('shown.bs.offcanvas', function () {
 offcanvasEl.addEventListener('hidden.bs.offcanvas', function () {
   console.log("❎ 오프캔버스 닫힘");
 });
+
+function closeActiveDailyPopup() {
+  if (!activeDailyPopup) return;
+
+  const { popup, backdrop, closeOnPointerDown, closeOnKeydown } = activeDailyPopup;
+  document.removeEventListener('pointerdown', closeOnPointerDown, true);
+  document.removeEventListener('keydown', closeOnKeydown, true);
+  popup.remove();
+  backdrop.remove();
+  activeDailyPopup = null;
+}
+
+function registerActiveDailyPopup(popup, backdrop) {
+  const closeOnPointerDown = (event) => {
+    if (!activeDailyPopup || activeDailyPopup.popup !== popup) return;
+    if (popup.contains(event.target)) return;
+    closeActiveDailyPopup();
+  };
+  const closeOnKeydown = (event) => {
+    if (event.key === 'Escape') closeActiveDailyPopup();
+  };
+
+  activeDailyPopup = { popup, backdrop, closeOnPointerDown, closeOnKeydown };
+  setTimeout(() => {
+    if (!activeDailyPopup || activeDailyPopup.popup !== popup) return;
+    document.addEventListener('pointerdown', closeOnPointerDown, true);
+    document.addEventListener('keydown', closeOnKeydown, true);
+  }, 0);
+}
+
 function openDailyEventPopup(dateInput) {
+  closeActiveDailyPopup();
+
   const popup = document.createElement('div');
   popup.className = 'fc-more-popover';
   popup.style.position = 'fixed';
@@ -931,6 +964,7 @@ function openDailyEventPopup(dateInput) {
   backdrop.style.height = '100vh';
   backdrop.style.backgroundColor = 'rgba(0, 0, 0, 0.56)';
   backdrop.style.zIndex = 9998;
+  backdrop.style.pointerEvents = 'none';
 
   const getColor = (roomKey) => {
     return roomConfigs[roomKey]?.color || '#ccc';
@@ -1010,8 +1044,7 @@ function openDailyEventPopup(dateInput) {
       calendar.changeView('timeGridWeek');
       requestCalendarIncrementalSync('일간 팝업 주간 이동', { force: true });
     }
-    popup.remove();
-    backdrop.remove();
+    closeActiveDailyPopup();
   });
 
   dateContainer.appendChild(dateSpan);
@@ -1125,12 +1158,5 @@ function openDailyEventPopup(dateInput) {
 
   document.body.appendChild(backdrop);
   document.body.appendChild(popup);
-
-  setTimeout(() => {
-    document.addEventListener('click', function once() {
-      popup.remove();
-      backdrop.remove();
-      document.removeEventListener('click', once);
-    });
-  }, 100);
+  registerActiveDailyPopup(popup, backdrop);
 }
