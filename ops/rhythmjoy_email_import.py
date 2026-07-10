@@ -735,17 +735,18 @@ def find_calendar_event_by_reservation(service, target_calendar, reservation_num
     return None
 
 
-def create_calendar_event(service, event_data, logger):
+def create_calendar_event(service, event_data, logger, dedupe_google_calendar=False):
     target_calendar = event_data['target_calendar']
     calendar_id = CALENDAR_IDS[target_calendar]
-    existing = find_calendar_event_by_reservation(
-        service,
-        target_calendar,
-        event_data.get('reservation_number', ''),
-        logger,
-    )
-    if existing:
-        return existing
+    if dedupe_google_calendar:
+        existing = find_calendar_event_by_reservation(
+            service,
+            target_calendar,
+            event_data.get('reservation_number', ''),
+            logger,
+        )
+        if existing:
+            return existing
 
     start = parse_datetime(event_data['date'], event_data['start_time'])
     end = parse_datetime(event_data['date'], event_data['end_time'])
@@ -956,18 +957,20 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if event_data:
-                if email_row and email_row.get('processing_status') == 'calendar_created':
-                    logger.info('Reservation already handled by DB id=%s reservation=%s', email_record_id, event_data.get('reservation_number'))
-                else:
-                    created = create_calendar_event(service, event_data, logger)
-                    update_email_processing(
-                        config,
-                        email_record_id,
-                        'calendar_created',
-                        logger,
-                        google_calendar_event_id=created.get('id', ''),
-                        error_text='',
-                    )
+                created = create_calendar_event(
+                    service,
+                    event_data,
+                    logger,
+                    dedupe_google_calendar=config['dedupe_google_calendar'],
+                )
+                update_email_processing(
+                    config,
+                    email_record_id,
+                    'calendar_created',
+                    logger,
+                    google_calendar_event_id=created.get('id', ''),
+                    error_text='',
+                )
             else:
                 logger.warning('Reservation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
                 update_email_processing(
@@ -998,19 +1001,16 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             email_record_id = email_row.get('id') if email_row else None
             if deletion:
                 upsert_spacecloud_delete_task(config, logger, email_record_id, deletion, calendar_key)
-                if email_row and email_row.get('processing_status') in ('calendar_deleted', 'calendar_not_found'):
-                    logger.info('Cancellation already handled by DB id=%s reservation=%s', email_record_id, deletion.get('reservation_number'))
-                else:
-                    deleted = delete_events_by_reservation(service, deletion, logger)
-                    update_email_processing(
-                        config,
-                        email_record_id,
-                        'calendar_deleted' if deleted else 'calendar_not_found',
-                        logger,
-                        google_calendar_deleted_count=deleted,
-                        error_text='',
-                    )
-                    notify_cancellation(config, deletion, calendar_key, deleted, subject, logger)
+                deleted = delete_events_by_reservation(service, deletion, logger)
+                update_email_processing(
+                    config,
+                    email_record_id,
+                    'calendar_deleted' if deleted else 'calendar_not_found',
+                    logger,
+                    google_calendar_deleted_count=deleted,
+                    error_text='',
+                )
+                notify_cancellation(config, deletion, calendar_key, deleted, subject, logger)
             else:
                 logger.warning('Cancellation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
                 update_email_processing(
@@ -1127,6 +1127,7 @@ def build_config():
         'db_password': db_password,
         'db_name': db_name,
         'store_raw_email_body': env_flag('RHYTHMJOY_EMAIL_STORE_RAW_BODY', '1'),
+        'dedupe_google_calendar': env_flag('RHYTHMJOY_EMAIL_DEDUPE_GOOGLE', '0'),
     }
 
 

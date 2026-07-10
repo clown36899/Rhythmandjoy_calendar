@@ -164,20 +164,22 @@ Operational limits:
 
 ## Naver Email DB Ledger
 
-The Cafe24 email importer now writes a DB ledger before it mutates Google Calendar.
+The Cafe24 email importer now writes a DB ledger before it mutates Google Calendar. The ledger is an audit and recovery layer, not the default decision maker for the existing Google Calendar flow.
 
 Tables:
 
 - `rhythmjoy_naver_email_events`: one row per Naver booking/cancellation email. It stores the mailbox, message identity, parse result, target calendar, reservation details, Google Calendar processing status, and optional raw body.
 - `rhythmjoy_spacecloud_tasks`: durable work queue for SpaceCloud-side actions. Cancellation emails for mapped hall rooms create a `delete` task with `pending` status.
 
-This keeps the workflow consistent across restarts:
+Default production behavior keeps the existing calendar importer path intact:
 
 1. Naver email is read.
 2. The email is saved or updated in `rhythmjoy_naver_email_events`.
 3. For cancellation emails, a SpaceCloud delete task is saved in `rhythmjoy_spacecloud_tasks`.
-4. Google Calendar is created or deleted only after the DB write succeeds.
-5. If the process restarts and sees the same email again, `processing_status` prevents duplicate calendar mutation.
+4. Google Calendar is created or deleted through the same existing parser/API path.
+5. DB status records the result for verification, recovery, and future SpaceCloud work.
+
+With `RHYTHMJOY_EMAIL_DB_REQUIRED=0`, DB errors are logged and the importer falls back to calendar-only processing. Keep this as the normal operating mode while the DB is used as insurance.
 
 Environment flags:
 
@@ -189,9 +191,10 @@ DB_PASSWORD=
 DB_NAME=
 RHYTHMJOY_EMAIL_DB_REQUIRED=0
 RHYTHMJOY_EMAIL_STORE_RAW_BODY=1
+RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0
 ```
 
-Set `RHYTHMJOY_EMAIL_DB_REQUIRED=1` after the DB values are confirmed in production. With this flag enabled, the importer stops instead of falling back to calendar-only processing when DB logging is unavailable.
+`RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` preserves the old behavior. Set it to `1` only if you intentionally want the importer to search Google Calendar by reservation number before creating an event.
 
 LaunchAgent example:
 

@@ -95,9 +95,9 @@ The restore script refuses any Apache config outside that allowlist.
 
 ## Naver email DB ledger
 
-`ops/rhythmjoy_email_import.py` writes a DB record before creating or deleting Google Calendar events when `DB_SERVERNAME`, `DB_USERNAME`, `DB_PASSWORD`, and `DB_NAME` are set in `/home/clown313python/myapp/.env`.
+`ops/rhythmjoy_email_import.py` writes a DB record before creating or deleting Google Calendar events when `DB_SERVERNAME`, `DB_USERNAME`, `DB_PASSWORD`, and `DB_NAME` are set in `/home/clown313python/myapp/.env`. The DB ledger is the audit/recovery layer; it should not block the existing Google Calendar importer in normal operation.
 
 - `rhythmjoy_naver_email_events`: durable record of each Naver reservation/cancellation email and its Google Calendar processing status.
 - `rhythmjoy_spacecloud_tasks`: durable queue for SpaceCloud follow-up work, currently cancellation delete tasks for mapped hall rooms.
 
-After confirming DB access on production, set `RHYTHMJOY_EMAIL_DB_REQUIRED=1` so the importer stops instead of falling back to calendar-only processing if DB logging is unavailable.
+Keep `RHYTHMJOY_EMAIL_DB_REQUIRED=0` for normal operation so DB errors fall back to calendar-only processing. Keep `RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` unless you intentionally want the importer to search Google Calendar by reservation number before creating a new event.
