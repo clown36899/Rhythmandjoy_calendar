@@ -159,8 +159,9 @@ Operational limits:
 
 - This is not password automation. If SpaceCloud or Naver expires the session, the watcher sends a Telegram login-needed alert, keeps the Chrome profile open, and retries on the normal watch interval after the host logs in again.
 - It detects the Google Calendar cache, not raw Gmail. The server-side cache currently syncs Google Calendar every 15 seconds, so a 60-second local watch interval is usually enough.
-- Updated/cancelled Google events are not automatically edited/deleted in SpaceCloud yet. The current watcher is for new confirmed reservation uploads.
-- Cancellation detection is handled earlier at the Naver email import layer: `ops/rhythmjoy_email_import.py` records the cancellation before deleting the matching Google Calendar event, creates a SpaceCloud delete task for mapped hall rooms, and sends a Telegram alert. SpaceCloud UI deletion remains the next automation step.
+- New confirmed Google Calendar events are automatically uploaded to SpaceCloud by the local watcher.
+- Cancellation detection is handled earlier at the Naver email import layer: `ops/rhythmjoy_email_import.py` records the cancellation, deletes the matching Google Calendar event, and creates a SpaceCloud delete task for mapped hall rooms. The local watcher consumes that task and deletes the matching direct-added SpaceCloud schedule through the logged-in UI.
+- Google Calendar deletion and SpaceCloud deletion are reported separately. `Google Calendar 자동삭제 완료` does not mean SpaceCloud was deleted; SpaceCloud task status must be `done` or `already_gone`.
 
 ## Naver Email DB Ledger
 
@@ -169,7 +170,7 @@ The Cafe24 email importer now writes a DB ledger before it mutates Google Calend
 Tables:
 
 - `rhythmjoy_naver_email_events`: one row per Naver booking/cancellation email. It stores the mailbox, message identity, parse result, target calendar, reservation details, Google Calendar processing status, and optional raw body.
-- `rhythmjoy_spacecloud_tasks`: durable work queue for SpaceCloud-side actions. Cancellation emails for mapped hall rooms create a `delete` task with `pending` status.
+- `rhythmjoy_spacecloud_tasks`: durable work queue for SpaceCloud-side actions. Cancellation emails for mapped hall rooms create a `delete` task with `pending` status. The Mac watcher claims pending tasks, clicks the matching SpaceCloud direct-added reservation, confirms deletion, and writes `done`, `already_gone`, `needs_review`, or `failed`.
 
 Default production behavior keeps the existing calendar importer path intact:
 
@@ -178,6 +179,7 @@ Default production behavior keeps the existing calendar importer path intact:
 3. For cancellation emails, a SpaceCloud delete task is saved in `rhythmjoy_spacecloud_tasks`.
 4. Google Calendar is created or deleted through the same existing parser/API path.
 5. DB status records the result for verification, recovery, and future SpaceCloud work.
+6. The Mac watcher polls `rhythmjoy_spacecloud_tasks` over SSH and deletes pending SpaceCloud direct-added schedules through the already logged-in Chrome profile.
 
 With `RHYTHMJOY_EMAIL_DB_REQUIRED=0`, DB errors are logged and the importer falls back to calendar-only processing. Keep this as the normal operating mode while the DB is used as insurance.
 

@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import {
   checkSpacecloudLogin,
   createSpacecloudPlaywrightUploader,
+  deleteSpacecloudDirectReservation,
   openSpacecloudContext,
 } from './spacecloud-playwright-uploader.mjs';
 
@@ -15,6 +16,7 @@ const DEFAULT_STATE_PATH = 'state/spacecloud-sync-log.json';
 const DEFAULT_WORK_DIR = 'state/spacecloud-watch';
 const DEFAULT_PROFILE_DIR = '/Users/inteyeo/.spacecloud-automation';
 const DEFAULT_ENV_FILE = '/Users/inteyeo/.rhythmjoy-ingestion.env';
+const DEFAULT_CAFE24_TARGET_ENV = 'ops/cafe24-production-target.env';
 const DEFAULT_NOTIFY_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'notify-state.json');
 const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -34,6 +36,8 @@ Options:
   --work-dir <path>         Defaults to ${DEFAULT_WORK_DIR}.
   --profile-dir <path>      Defaults to ${DEFAULT_PROFILE_DIR}.
   --env-file <path>         Defaults to ${DEFAULT_ENV_FILE}.
+  --cafe24-target-env <path>
+                            Defaults to ${DEFAULT_CAFE24_TARGET_ENV}.
   --notify-state <path>     Defaults to ${DEFAULT_NOTIFY_STATE_PATH}.
   --notify-cooldown-seconds <n>
                             Defaults to ${DEFAULT_NOTIFY_COOLDOWN_SECONDS}.
@@ -42,6 +46,8 @@ Options:
   --rooms <keys>            Defaults to a,b,c,d,e.
   --interval-seconds <n>    Defaults to 60 for watch mode.
   --limit-per-cycle <n>     Defaults to 3.
+  --delete-limit-per-cycle <n>
+                            Defaults to 2.
   --headless                Run Chrome headless. Not recommended for first login.
   --dry-run                 Plan only; do not upload.
   --json                    Print machine-readable output for once/check-login.
@@ -64,12 +70,14 @@ function parseArgs(argv) {
     workDir: DEFAULT_WORK_DIR,
     profileDir: DEFAULT_PROFILE_DIR,
     envFile: DEFAULT_ENV_FILE,
+    cafe24TargetEnv: DEFAULT_CAFE24_TARGET_ENV,
     notifyState: DEFAULT_NOTIFY_STATE_PATH,
     notifyCooldownSeconds: DEFAULT_NOTIFY_COOLDOWN_SECONDS,
     days: 370,
     rooms: 'a,b,c,d,e',
     intervalSeconds: 60,
     limitPerCycle: 3,
+    deleteLimitPerCycle: 2,
     headless: false,
     dryRun: false,
     json: false,
@@ -101,7 +109,7 @@ function parseArgs(argv) {
     if (!next || next.startsWith('--')) throw new Error(`Missing value for ${arg}`);
     i += 1;
 
-    if (['days', 'interval-seconds', 'limit-per-cycle', 'notify-cooldown-seconds'].includes(key)) {
+    if (['days', 'interval-seconds', 'limit-per-cycle', 'delete-limit-per-cycle', 'notify-cooldown-seconds'].includes(key)) {
       const parsed = Number.parseInt(next, 10);
       if (!Number.isFinite(parsed) || parsed < 1) throw new Error(`${arg} must be a positive integer`);
       args[key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = parsed;
@@ -113,6 +121,8 @@ function parseArgs(argv) {
       args.profileDir = next;
     } else if (key === 'env-file') {
       args.envFile = next;
+    } else if (key === 'cafe24-target-env') {
+      args.cafe24TargetEnv = next;
     } else if (key === 'notify-state') {
       args.notifyState = next;
     } else {
@@ -198,6 +208,189 @@ async function loadEnvFile(filePath) {
     if (process.env[key]) continue;
     process.env[key] = parseEnvValue(rawValue);
   }
+}
+
+async function readEnvLikeFile(filePath) {
+  const values = {};
+  const text = await fs.readFile(filePath, 'utf8');
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    values[key] = parseEnvValue(rawValue);
+  }
+  return values;
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+async function loadCafe24Target(args) {
+  const target = await readEnvLikeFile(args.cafe24TargetEnv);
+  const required = ['SSH_TARGET', 'SSH_KEY', 'PYTHON_BIN', 'SERVER_ENV_FILE'];
+  const missing = required.filter((key) => !target[key]);
+  if (missing.length > 0) throw new Error(`missing Cafe24 target setting(s): ${missing.join(', ')}`);
+  return target;
+}
+
+function runSshScript(target, script) {
+  const cp = spawnSync('ssh', [
+    '-i',
+    target.SSH_KEY,
+    '-o',
+    'IdentitiesOnly=yes',
+    target.SSH_TARGET,
+    'bash -s',
+  ], {
+    cwd: process.cwd(),
+    input: script,
+    encoding: 'utf8',
+    maxBuffer: 20 * 1024 * 1024,
+  });
+  if (cp.status !== 0) {
+    throw new Error((cp.stderr || cp.stdout || `ssh exited ${cp.status}`).trim());
+  }
+  return cp.stdout;
+}
+
+async function fetchRemoteDeleteTasks(args) {
+  const target = await loadCafe24Target(args);
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export DELETE_LIMIT=${shellQuote(args.deleteLimitPerCycle)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=False,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id,
+                room_key AS roomKey,
+                reservation_number AS reservationNo,
+                reserver_name AS reserverName,
+                product,
+                DATE_FORMAT(reservation_date, '%%Y-%%m-%%d') AS date,
+                TIME_FORMAT(start_time, '%%H:%%i') AS startTime,
+                TIME_FORMAT(end_time, '%%H:%%i') AS endTime,
+                payload_json AS payloadJson,
+                attempts
+            FROM rhythmjoy_spacecloud_tasks
+            WHERE task_type='delete'
+              AND (
+                status='pending'
+                OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
+              )
+            ORDER BY created_at ASC, id ASC
+            LIMIT %s
+            """,
+            (int(os.environ.get('DELETE_LIMIT', '2')),)
+        )
+        rows = cur.fetchall()
+        ids = [row['id'] for row in rows]
+        if ids:
+            cur.execute(
+                f"""
+                UPDATE rhythmjoy_spacecloud_tasks
+                SET status='running', attempts=attempts+1, locked_at=NOW(), updated_at=NOW()
+                WHERE id IN ({','.join(['%s'] * len(ids))})
+                """,
+                ids
+            )
+    conn.commit()
+    print(json.dumps(rows, ensure_ascii=False))
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '[]');
+}
+
+async function updateRemoteDeleteTask(args, taskId, status, resultText) {
+  const target = await loadCafe24Target(args);
+  const payload = Buffer.from(JSON.stringify({
+    taskId,
+    status,
+    resultText: String(resultText || '').slice(0, 4000),
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export TASK_UPDATE_B64=${shellQuote(payload)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+payload = json.loads(base64.b64decode(os.environ['TASK_UPDATE_B64']).decode('utf-8'))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=True,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        processed_expr = 'NOW()' if payload['status'] in ('done', 'already_gone', 'needs_review', 'failed') else 'processed_at'
+        cur.execute(
+            f"""
+            UPDATE rhythmjoy_spacecloud_tasks
+            SET status=%s,
+                processed_at={processed_expr},
+                result_text=%s,
+                updated_at=NOW()
+            WHERE id=%s
+            """,
+            (payload['status'], payload['resultText'], payload['taskId'])
+        )
+        print(json.dumps({'updated': cur.rowcount}, ensure_ascii=False))
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '{}');
 }
 
 async function sendTelegram(args, text) {
@@ -300,6 +493,86 @@ ${kstNowText()}
 
 오류: ${String(errorText || '-').slice(0, 900)}
 로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+}
+
+function deleteFailureMessage(rowOrError) {
+  const errorText = typeof rowOrError === 'string'
+    ? rowOrError
+    : (rowOrError?.failed || []).map((row) => `task=${row.taskId || '-'} ${row.error || row.status}`).filter(Boolean).join('\n');
+  return `스페이스클라우드 자동삭제 확인 필요
+${kstNowText()}
+
+Google Calendar 취소 처리와 별개로 SpaceCloud 삭제 작업 중 확인이 필요한 항목이 생겼습니다.
+
+오류: ${String(errorText || '-').slice(0, 900)}
+로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+}
+
+function dbStatusForDeleteRow(row) {
+  if (row.status === 'deleted') return 'done';
+  if (row.status === 'already-gone') return 'already_gone';
+  if (row.status === 'needs-review') return 'needs_review';
+  if (isLoginProblem(row.error)) return 'pending';
+  return 'failed';
+}
+
+async function runDeleteTasks(args, context = null) {
+  if (args.dryRun) {
+    return {
+      status: 'delete-dry-run',
+      fetched: 0,
+      attempted: 0,
+      rows: [],
+      failed: [],
+    };
+  }
+  const tasks = await fetchRemoteDeleteTasks(args);
+  if (tasks.length === 0) {
+    return {
+      status: 'no-delete-tasks',
+      fetched: tasks.length,
+      attempted: 0,
+      rows: [],
+      failed: [],
+    };
+  }
+
+  let ownedContext = null;
+  const activeContext = context || await openSpacecloudContext({
+    profileDir: args.profileDir,
+    headless: args.headless,
+  }).then((created) => {
+    ownedContext = created;
+    return created;
+  });
+
+  const rows = [];
+  try {
+    for (const task of tasks) {
+      const row = await deleteSpacecloudDirectReservation(activeContext, task);
+      rows.push(row);
+      const status = dbStatusForDeleteRow(row);
+      await updateRemoteDeleteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      if (status === 'pending' && isLoginProblem(row.error)) {
+        break;
+      }
+      if (status === 'failed' || status === 'needs_review') {
+        break;
+      }
+      await sleep(800);
+    }
+  } finally {
+    if (ownedContext) await ownedContext.close();
+  }
+
+  const failed = rows.filter((row) => !['deleted', 'already-gone'].includes(row.status));
+  return {
+    status: failed.length ? 'delete-needs-review' : 'delete-processed',
+    fetched: tasks.length,
+    attempted: rows.length,
+    rows,
+    failed,
+  };
 }
 
 function runNodeJson(args) {
@@ -457,38 +730,53 @@ async function runCycle(args, context = null) {
     dryRun: args.dryRun,
   };
 
-  if (plan.upload.length === 0 || args.dryRun) {
-    await appendJsonl(runLogPath, { ...cycle, status: 'planned' });
-    return { ...cycle, status: 'planned', upload: plan.upload };
-  }
-
   let ownedContext = null;
-  const activeContext = context || await openSpacecloudContext({
-    profileDir: args.profileDir,
-    headless: args.headless,
-  }).then((created) => {
-    ownedContext = created;
-    return created;
-  });
+  let activeContext = context;
+  const getContext = async () => {
+    if (activeContext) return activeContext;
+    activeContext = await openSpacecloudContext({
+      profileDir: args.profileDir,
+      headless: args.headless,
+    });
+    ownedContext = activeContext;
+    return activeContext;
+  };
 
   try {
-    const uploader = await createSpacecloudPlaywrightUploader({
-      context: activeContext,
-      planPath,
-      resultsPath,
-    });
-    const result = await uploader.runBatch(args.limitPerCycle);
-    const allResults = await readResults(resultsPath);
-    const marked = markSubmittedRows(args, allResults);
     const row = {
       ...cycle,
-      status: result.failed?.length ? 'failed' : 'uploaded',
-      attempted: result.attempted,
-      submittedInPlan: result.submitted,
-      remainingInPlan: result.remaining,
-      marked,
-      failed: result.failed,
+      status: plan.upload.length === 0 || args.dryRun ? 'planned' : 'uploaded',
+      attempted: 0,
+      submittedInPlan: 0,
+      remainingInPlan: plan.upload.length,
+      marked: 0,
+      failed: [],
     };
+
+    if (plan.upload.length > 0 && !args.dryRun) {
+      const uploader = await createSpacecloudPlaywrightUploader({
+        context: await getContext(),
+        planPath,
+        resultsPath,
+      });
+      const result = await uploader.runBatch(args.limitPerCycle);
+      const allResults = await readResults(resultsPath);
+      const marked = markSubmittedRows(args, allResults);
+      row.status = result.failed?.length ? 'failed' : 'uploaded';
+      row.attempted = result.attempted;
+      row.submittedInPlan = result.submitted;
+      row.remainingInPlan = result.remaining;
+      row.marked = marked;
+      row.failed = result.failed;
+    }
+
+    if (!row.failed?.length) {
+      row.deleteTasks = await runDeleteTasks(args, activeContext);
+      if (row.status === 'planned' && row.deleteTasks.attempted > 0) {
+        row.status = row.deleteTasks.failed.length ? 'delete-needs-review' : 'delete-processed';
+      }
+    }
+
     await appendJsonl(runLogPath, row);
     return row;
   } finally {
@@ -513,7 +801,7 @@ async function runWatch(args) {
     while (!stopping) {
       try {
         const row = await runCycle(args, context);
-        logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}`);
+        logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; deleteTasks=${row.deleteTasks?.attempted || 0}`);
         if (row.failed?.length) {
           const errorText = row.failed.map((failedRow) => failedRow.error).join('\n');
           if (isLoginProblem(errorText)) {
@@ -522,6 +810,17 @@ async function runWatch(args) {
           } else {
             await notifyWithCooldown(args, 'spacecloud-upload-failed', uploadFailureMessage(row));
             logLine(`stopping after non-login failure: ${JSON.stringify(row.failed)}`);
+            break;
+          }
+        }
+        if (row.deleteTasks?.failed?.length) {
+          const errorText = row.deleteTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
+          if (isLoginProblem(errorText)) {
+            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorText));
+            logLine(`login needed during delete; waiting for manual login: ${JSON.stringify(row.deleteTasks.failed)}`);
+          } else {
+            await notifyWithCooldown(args, 'spacecloud-delete-failed', deleteFailureMessage(row.deleteTasks));
+            logLine(`stopping after delete failure: ${JSON.stringify(row.deleteTasks.failed)}`);
             break;
           }
         }

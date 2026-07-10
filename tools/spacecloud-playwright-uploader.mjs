@@ -5,6 +5,14 @@ import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 
+export const SPACECLOUD_ROOMS = {
+  a: { spaceId: '66056', productId: '108673', name: 'A홀' },
+  b: { spaceId: '66056', productId: '108674', name: 'B홀' },
+  c: { spaceId: '66056', productId: '108675', name: 'C홀' },
+  d: { spaceId: '66056', productId: '108989', name: 'D홀' },
+  e: { spaceId: '66056', productId: '108676', name: 'E홀' },
+};
+
 function compactDate(value) {
   return String(value || '').replace(/-/g, '');
 }
@@ -16,6 +24,26 @@ function ymFromDate(value) {
 
 function ymIndex(ym) {
   return ym.year * 12 + ym.month;
+}
+
+function reservationCalendarUrl(roomKey) {
+  const room = SPACECLOUD_ROOMS[roomKey];
+  if (!room) throw new Error(`unknown SpaceCloud room key: ${roomKey}`);
+  return `https://partner.spacecloud.kr/reservation-calendar?product=${room.productId}&space=${room.spaceId}`;
+}
+
+function hourFromSlot(value) {
+  if (String(value) === '24:00') return 24;
+  const match = String(value || '').match(/^(\d{1,2}):\d{2}/);
+  if (!match) throw new Error(`invalid slot time: ${value}`);
+  return Number(match[1]);
+}
+
+function normalizeDate(value) {
+  const text = String(value || '').trim().replace(/\./g, '-').replace(/\/+/g, '-').replace(/-+$/, '');
+  const match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!match) throw new Error(`invalid date: ${value}`);
+  return `${match[1]}-${String(Number(match[2])).padStart(2, '0')}-${String(Number(match[3])).padStart(2, '0')}`;
 }
 
 export async function loadPlaywright() {
@@ -93,6 +121,72 @@ async function closeModalIfOpen(page) {
     await close.click({ timeout: 5000 });
     await waitHidden(page, '#start_day', 5000);
   }
+}
+
+async function calendarMonth(page) {
+  const text = await page.evaluate(() => {
+    const title = document.querySelector('.calendar_tit.short strong') || document.querySelector('.calendar_tit.short');
+    return title?.innerText || '';
+  });
+  const match = String(text).match(/(\d{4})\s*\.\s*(\d{1,2})/);
+  if (!match) throw new Error(`calendar title month not found: ${String(text).slice(0, 80)}`);
+  return { year: Number(match[1]), month: Number(match[2]) };
+}
+
+async function gotoCalendarMonth(page, targetDate) {
+  const targetYm = ymFromDate(targetDate);
+  for (let i = 0; i < 36; i += 1) {
+    const currentYm = await calendarMonth(page);
+    const diff = ymIndex(targetYm) - ymIndex(currentYm);
+    if (diff === 0) return currentYm;
+    const selector = diff > 0 ? '.calendar_tit.short .btn_next' : '.calendar_tit.short .btn_prev';
+    const button = page.locator(selector).filter({ visible: true });
+    const count = await button.count();
+    if (count < 1) throw new Error(`calendar month control not found: ${selector}`);
+    await button.first().click({ timeout: 5000 });
+    await page.waitForTimeout(700);
+  }
+  throw new Error(`calendar month navigation failed for ${targetDate}`);
+}
+
+async function findDirectEventCandidates(page, {
+  date,
+  startTime,
+  endTime,
+  reserverName = '',
+}) {
+  const targetDate = normalizeDate(date);
+  const day = Number(targetDate.slice(8, 10));
+  const startHour = hourFromSlot(startTime);
+  const endHour = hourFromSlot(endTime);
+  const firstNameChar = String(reserverName || '').trim().charAt(0);
+
+  return page.evaluate(({ day, startHour, endHour, firstNameChar }) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, '');
+    const timePatterns = [
+      `추${startHour}~${endHour}`,
+      `추${String(startHour).padStart(2, '0')}~${String(endHour).padStart(2, '0')}`,
+      `추${startHour}~${String(endHour).padStart(2, '0')}`,
+      `추${String(startHour).padStart(2, '0')}~${endHour}`,
+    ];
+    const rows = [];
+    const dayCells = [...document.querySelectorAll('.booking_wrap')];
+    for (const dayCell of dayCells) {
+      const firstLine = String(dayCell.innerText || '').split(/\n/)[0]?.trim();
+      if (Number(firstLine) !== day) continue;
+      const links = [...dayCell.querySelectorAll('a.type5')];
+      links.forEach((link, index) => {
+        const text = normalize(link.innerText || link.textContent || '');
+        const timeMatches = timePatterns.some((pattern) => text.includes(pattern));
+        const nameMatches = !firstNameChar || text.includes(firstNameChar);
+        if (timeMatches && nameMatches) {
+          link.setAttribute('data-codex-delete-candidate', String(index));
+          rows.push({ index, text });
+        }
+      });
+    }
+    return rows;
+  }, { day, startHour, endHour, firstNameChar });
 }
 
 async function openDatePicker(page) {
@@ -337,6 +431,106 @@ export async function createSpacecloudPlaywrightUploader({
     summary,
     runBatch,
   };
+}
+
+export async function deleteSpacecloudDirectReservation(context, task) {
+  const page = await pageForContext(context);
+  const row = {
+    taskId: task.id || null,
+    roomKey: task.roomKey || task.room_key,
+    date: normalizeDate(task.date || task.reservation_date),
+    startTime: task.startTime || task.start_time,
+    endTime: task.endTime || task.end_time,
+    reserverName: task.reserverName || task.reserver_name || '',
+    reservationNo: task.reservationNo || task.reservation_number || '',
+    startedAt: new Date().toISOString(),
+  };
+  row.reservationCalendarUrl = task.reservationCalendarUrl || reservationCalendarUrl(row.roomKey);
+
+  const dialogTypes = [];
+  const onDialog = async (dialog) => {
+    dialogTypes.push(dialog.type());
+    if (dialog.type() === 'confirm' || dialog.type() === 'alert') await dialog.accept();
+    else await dialog.dismiss();
+  };
+
+  page.on('dialog', onDialog);
+  try {
+    if (page.url() !== row.reservationCalendarUrl) {
+      await page.goto(row.reservationCalendarUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    }
+    await closeModalIfOpen(page);
+
+    if (!(await waitVisible(page, 'a._additionalReserveLayerOpen', 20000))) {
+      throw new Error('calendar add button not visible; login or page load may have failed');
+    }
+
+    await gotoCalendarMonth(page, row.date);
+    const candidates = await findDirectEventCandidates(page, row);
+    row.candidates = candidates;
+
+    if (candidates.length === 0) {
+      row.status = 'already-gone';
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+    if (candidates.length > 1) {
+      row.status = 'needs-review';
+      row.error = `multiple direct events matched: ${candidates.map((candidate) => candidate.text).join(' / ')}`;
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+
+    const selector = `a.type5[data-codex-delete-candidate="${candidates[0].index}"]`;
+    await page.locator(selector).first().click({ timeout: 8000 });
+    if (!(await waitVisible(page, '.layer_popup.reservation_state', 8000))) {
+      throw new Error('reservation popup did not open after clicking event');
+    }
+
+    const popupText = await page.locator('.layer_popup.reservation_state').filter({ visible: true }).first().innerText({ timeout: 5000 });
+    row.popupTextPreview = popupText.replace(/\s+/g, ' ').slice(0, 300);
+    if (!/직접\s*추가한\s*예약/.test(popupText)) {
+      row.status = 'needs-review';
+      row.error = 'matched event is not a direct-added SpaceCloud schedule';
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+
+    const deleteButton = page.locator('.layer_popup.reservation_state .btn_negative').filter({ hasText: '예약 삭제', visible: true });
+    const deleteCount = await deleteButton.count();
+    if (deleteCount !== 1) throw new Error(`visible reservation delete button count ${deleteCount}`);
+    await deleteButton.first().click({ timeout: 8000 });
+
+    const confirmButton = page.locator('#_deleteExternalScheduleOK').filter({ visible: true });
+    if (await confirmButton.count() === 1) {
+      await confirmButton.first().click({ timeout: 8000 });
+    }
+    await page.waitForTimeout(1500);
+
+    await waitHidden(page, '.layer_popup.reservation_state', 10000);
+    const remaining = await findDirectEventCandidates(page, row);
+    if (remaining.length === 0) {
+      row.status = 'deleted';
+    } else {
+      row.status = 'failed';
+      row.error = `event still visible after delete: ${remaining.map((candidate) => candidate.text).join(' / ')}`;
+      row.remaining = remaining;
+    }
+    if (dialogTypes.length > 0) row.dialogTypes = dialogTypes;
+    row.finishedAt = new Date().toISOString();
+    return row;
+  } catch (error) {
+    row.status = row.status || 'failed';
+    row.error = String(error?.message || error);
+    row.finishedAt = new Date().toISOString();
+    try {
+      const close = page.locator('.btn_pop_close, a.btn_close, button.btn_close').filter({ visible: true });
+      if (await close.count() === 1) await close.click({ timeout: 3000 });
+    } catch {}
+    return row;
+  } finally {
+    page.off('dialog', onDialog);
+  }
 }
 
 export async function checkSpacecloudLogin(context, {
