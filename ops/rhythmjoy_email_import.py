@@ -11,10 +11,11 @@ import smtplib
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.header import decode_header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import parsedate_to_datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
@@ -30,6 +31,7 @@ LOG_FILE = LOG_DIR / 'email_service.log'
 RESTART_COUNT_FILE = LOG_DIR / 'restart_count.txt'
 DEFAULT_GOOGLE_SERVICE_ACCOUNT = APP_ROOT / 'static' / 'rhythmjoycalendar-ce0594fe594b.json'
 TIME_ZONE = 'Asia/Seoul'
+KST = timezone(timedelta(hours=9))
 
 ROOM_MAILBOXES = {
     'Aroom': 'Aroom',
@@ -226,6 +228,59 @@ def clean_time_or_none(value):
     return None
 
 
+def db_datetime_or_none(value):
+    if not value:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=KST)
+    return value.astimezone(KST).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+
+
+def parse_internaldate_from_fetch_metadata(metadata):
+    if not metadata:
+        return None
+    if isinstance(metadata, bytes):
+        metadata = metadata.decode('utf-8', errors='replace')
+    match = re.search(r'INTERNALDATE "([^"]+)"', metadata)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1), '%d-%b-%Y %H:%M:%S %z')
+    except ValueError:
+        return None
+
+
+def parse_message_date_header(message):
+    try:
+        header_value = message.get('Date', '')
+        if not header_value:
+            return None
+        parsed = parsedate_to_datetime(header_value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=KST)
+        return parsed
+    except Exception:
+        return None
+
+
+def get_email_received_at(message, fetch_metadata):
+    return db_datetime_or_none(parse_internaldate_from_fetch_metadata(fetch_metadata) or parse_message_date_header(message))
+
+
+def extract_fetch_payload(message_data):
+    fetch_metadata = ''
+    raw_message = None
+    for item in message_data:
+        if not isinstance(item, tuple):
+            continue
+        metadata, payload = item
+        if metadata and not fetch_metadata:
+            fetch_metadata = metadata.decode('utf-8', errors='replace') if isinstance(metadata, bytes) else str(metadata)
+        if payload and raw_message is None:
+            raw_message = payload
+    return fetch_metadata, raw_message
+
+
 def message_identity(mailbox, decoded_id, message, raw_message):
     message_id = decode_header_value(message.get('Message-ID', '')).strip()
     source_value = message_id or hashlib.sha256(raw_message).hexdigest() or decoded_id
@@ -246,12 +301,13 @@ def compact_json(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
 
 
-def build_email_record_base(config, mail_key, mailbox, decoded_id, message_id, subject, body, event_type, parsed_payload):
+def build_email_record_base(config, mail_key, mailbox, decoded_id, message_id, email_received_at, subject, body, event_type, parsed_payload):
     return {
         'mail_key': mail_key,
         'mailbox': truncate_text(mailbox, 64),
         'imap_id': truncate_text(decoded_id, 64),
         'message_id': truncate_text(message_id, 255),
+        'email_received_at': email_received_at,
         'subject': truncate_text(subject, 500),
         'event_type': event_type,
         'parse_status': 'parsed' if parsed_payload else 'unparsed',
@@ -271,13 +327,14 @@ def build_email_record_base(config, mail_key, mailbox, decoded_id, message_id, s
     }
 
 
-def build_reservation_email_record(config, mail_key, mailbox, decoded_id, message_id, subject, body, target_calendar, event_data):
+def build_reservation_email_record(config, mail_key, mailbox, decoded_id, message_id, email_received_at, subject, body, target_calendar, event_data):
     record = build_email_record_base(
         config,
         mail_key,
         mailbox,
         decoded_id,
         message_id,
+        email_received_at,
         subject,
         body,
         'reservation',
@@ -299,13 +356,14 @@ def build_reservation_email_record(config, mail_key, mailbox, decoded_id, messag
     return record
 
 
-def build_cancellation_email_record(config, mail_key, mailbox, decoded_id, message_id, subject, body, deletion, calendar_key):
+def build_cancellation_email_record(config, mail_key, mailbox, decoded_id, message_id, email_received_at, subject, body, deletion, calendar_key):
     record = build_email_record_base(
         config,
         mail_key,
         mailbox,
         decoded_id,
         message_id,
+        email_received_at,
         subject,
         body,
         'cancellation',
@@ -363,6 +421,22 @@ def disable_db_logging(config, logger, message, error=None):
     config['db_enabled'] = False
 
 
+def ensure_db_column(cursor, table_name, column_name, ddl_fragment):
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = %s
+          AND COLUMN_NAME = %s
+        """,
+        (table_name, column_name),
+    )
+    if cursor.fetchone()['count']:
+        return
+    cursor.execute(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl_fragment}')
+
+
 def ensure_db_tables(config, logger):
     if not config['db_enabled']:
         if config['db_required']:
@@ -382,6 +456,7 @@ def ensure_db_tables(config, logger):
                     mailbox VARCHAR(64) NOT NULL,
                     imap_id VARCHAR(64) NOT NULL DEFAULT '',
                     message_id VARCHAR(255) NOT NULL DEFAULT '',
+                    email_received_at DATETIME NULL,
                     subject VARCHAR(500) NOT NULL DEFAULT '',
                     event_type VARCHAR(32) NOT NULL DEFAULT 'unknown',
                     parse_status VARCHAR(32) NOT NULL DEFAULT 'unparsed',
@@ -406,6 +481,7 @@ def ensure_db_tables(config, logger):
                     PRIMARY KEY (id),
                     UNIQUE KEY uq_mail_key (mail_key),
                     KEY idx_reservation_number (reservation_number),
+                    KEY idx_email_received_at (email_received_at),
                     KEY idx_status (processing_status),
                     KEY idx_event_type (event_type),
                     KEY idx_spacecloud_room_date (spacecloud_room_key, reservation_date)
@@ -441,6 +517,7 @@ def ensure_db_tables(config, logger):
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """
             )
+            ensure_db_column(cursor, 'rhythmjoy_naver_email_events', 'email_received_at', 'DATETIME NULL AFTER message_id')
         logger.info('Email DB tables checked')
     except Exception as error:
         disable_db_logging(config, logger, 'Email DB table check failed', error)
@@ -480,7 +557,7 @@ def upsert_email_event(config, logger, record):
             cursor.execute(
                 """
                 INSERT INTO rhythmjoy_naver_email_events (
-                    mail_key, mailbox, imap_id, message_id, subject,
+                    mail_key, mailbox, imap_id, message_id, email_received_at, subject,
                     event_type, parse_status, processing_status,
                     target_calendar, spacecloud_room_key,
                     reservation_number, reserver_name, product,
@@ -489,7 +566,7 @@ def upsert_email_event(config, logger, record):
                     created_at, updated_at
                 )
                 VALUES (
-                    %(mail_key)s, %(mailbox)s, %(imap_id)s, %(message_id)s, %(subject)s,
+                    %(mail_key)s, %(mailbox)s, %(imap_id)s, %(message_id)s, %(email_received_at)s, %(subject)s,
                     %(event_type)s, %(parse_status)s, %(processing_status)s,
                     %(target_calendar)s, %(spacecloud_room_key)s,
                     %(reservation_number)s, %(reserver_name)s, %(product)s,
@@ -498,6 +575,7 @@ def upsert_email_event(config, logger, record):
                     NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
+                    email_received_at=VALUES(email_received_at),
                     subject=VALUES(subject),
                     event_type=VALUES(event_type),
                     parse_status=VALUES(parse_status),
@@ -681,23 +759,24 @@ def send_telegram_message(config, text, logger):
     return False
 
 
-def format_cancellation_alert(deletion, calendar_key, deleted, subject):
-    time_text = '-'
+def format_cancellation_alert(deletion, calendar_key, deleted, subject, email_received_at):
+    reservation_time_text = '-'
     if deletion.get('date') and deletion.get('start_time') and deletion.get('end_time'):
-        time_text = f"{deletion['date']} {deletion['start_time']}-{deletion['end_time']}"
+        reservation_time_text = f"{deletion['date']} {deletion['start_time']}-{deletion['end_time']}"
 
     calendar_text = calendar_key or '-'
     reservation_number = deletion.get('reservation_number') or '-'
     product = deletion.get('product') or '-'
-    name = mask_name(deletion.get('name', '')) or '-'
+    name = deletion.get('name') or '-'
     delete_status = '삭제완료' if deleted else '매칭없음'
 
     return (
         '네이버 예약 취소 감지\n'
         f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
         f'상품: {product}\n'
-        f'일시: {time_text}\n'
-        f'예약자: {name}\n'
+        f'메일수신: {email_received_at or "-"}\n'
+        f'예약시간: {reservation_time_text}\n'
+        f'예약자명: {name}\n'
         f'예약번호: {reservation_number}\n'
         f'구글캘린더: {calendar_text} / {delete_status} {deleted}건\n\n'
         '스페이스클라우드에 이미 등록된 일정이면 삭제 확인 필요\n'
@@ -705,17 +784,18 @@ def format_cancellation_alert(deletion, calendar_key, deleted, subject):
     )
 
 
-def notify_cancellation(config, deletion, calendar_key, deleted, subject, logger):
-    text = format_cancellation_alert(deletion, calendar_key, deleted, subject)
+def notify_cancellation(config, deletion, calendar_key, deleted, subject, email_received_at, logger):
+    text = format_cancellation_alert(deletion, calendar_key, deleted, subject, email_received_at)
     send_telegram_message(config, text, logger)
 
 
-def notify_cancellation_parse_failure(config, mailbox, email_id, subject, logger):
+def notify_cancellation_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
     text = (
         '네이버 예약 취소 메일 파싱 실패\n'
         f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
         f'메일함: {mailbox}\n'
         f'메일ID: {email_id}\n'
+        f'메일수신: {email_received_at or "-"}\n'
         f'메일제목: {subject or "-"}\n\n'
         '취소 메일 양식이 바뀌었을 수 있으니 확인 필요'
     )
@@ -784,7 +864,14 @@ def create_calendar_event(service, event_data, logger, dedupe_google_calendar=Fa
         },
     }
     created = service.events().insert(calendarId=calendar_id, body=event_body).execute()
-    logger.info('Event created calendar=%s reservation=%s link=%s', target_calendar, event_data.get('reservation_number'), created.get('htmlLink'))
+    logger.info(
+        'Event created calendar=%s reservation=%s reserver_name=%s reservation_time=%s link=%s',
+        target_calendar,
+        event_data.get('reservation_number'),
+        event_data.get('name'),
+        reservation_time_text(event_data),
+        created.get('htmlLink'),
+    )
     return created
 
 
@@ -805,6 +892,12 @@ def product_to_calendar_key(product):
     if 'E홀' in product:
         return 'Ehall'
     return None
+
+
+def reservation_time_text(payload):
+    if payload.get('date') and payload.get('start_time') and payload.get('end_time'):
+        return f"{payload['date']} {payload['start_time']}-{payload['end_time']}"
+    return '-'
 
 
 def delete_events_by_reservation(service, deletion, logger):
@@ -828,9 +921,22 @@ def delete_events_by_reservation(service, deletion, logger):
     for item in result.get('items', []):
         service.events().delete(calendarId=calendar_id, eventId=item['id']).execute()
         deleted += 1
-        logger.info('Event deleted calendar=%s reservation=%s summary=%s', calendar_key, reservation_number, item.get('summary', ''))
+        logger.info(
+            'Event deleted calendar=%s reservation=%s reserver_name=%s reservation_time=%s summary=%s',
+            calendar_key,
+            reservation_number,
+            deletion.get('name', ''),
+            reservation_time_text(deletion),
+            item.get('summary', ''),
+        )
     if not deleted:
-        logger.warning('No matching event for cancellation calendar=%s reservation=%s', calendar_key, reservation_number)
+        logger.warning(
+            'No matching event for cancellation calendar=%s reservation=%s reserver_name=%s reservation_time=%s',
+            calendar_key,
+            reservation_number,
+            deletion.get('name', ''),
+            reservation_time_text(deletion),
+        )
     return deleted
 
 
@@ -873,7 +979,13 @@ def delete_events_by_details(service, calendar_key, deletion, logger):
             continue
         service.events().delete(calendarId=calendar_id, eventId=item['id']).execute()
         deleted += 1
-        logger.info('Event deleted by details calendar=%s summary=%s', calendar_key, summary)
+        logger.info(
+            'Event deleted by details calendar=%s reserver_name=%s reservation_time=%s summary=%s',
+            calendar_key,
+            deletion.get('name', ''),
+            reservation_time_text(deletion),
+            summary,
+        )
     return deleted
 
 
@@ -938,14 +1050,15 @@ def mark_seen(imap_connection, email_id, logger):
         logger.exception('Failed to mark email seen id=%s', email_id.decode('utf-8', errors='replace'))
 
 
-def process_message(config, service, imap_connection, mailbox, target_calendar, email_id, raw_message, logger):
+def process_message(config, service, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger):
     message = email.message_from_bytes(raw_message)
     subject = decode_header_value(message.get('Subject', ''))
     body = get_text_body(message)
     decoded_id = email_id.decode('utf-8', errors='replace')
     mail_key, message_id = message_identity(mailbox, decoded_id, message, raw_message)
+    email_received_at = get_email_received_at(message, fetch_metadata)
     email_record_id = None
-    logger.info('Processing mailbox=%s email_id=%s subject=%s', mailbox, decoded_id, subject)
+    logger.info('Processing mailbox=%s email_id=%s received_at=%s subject=%s', mailbox, decoded_id, email_received_at or '-', subject)
 
     try:
         if mailbox in ROOM_MAILBOXES:
@@ -956,6 +1069,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                 mailbox,
                 decoded_id,
                 message_id,
+                email_received_at,
                 subject,
                 body,
                 target_calendar,
@@ -999,6 +1113,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                 mailbox,
                 decoded_id,
                 message_id,
+                email_received_at,
                 subject,
                 body,
                 deletion,
@@ -1017,7 +1132,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                     google_calendar_deleted_count=deleted,
                     error_text='',
                 )
-                notify_cancellation(config, deletion, calendar_key, deleted, subject, logger)
+                notify_cancellation(config, deletion, calendar_key, deleted, subject, email_received_at, logger)
             else:
                 logger.warning('Cancellation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
                 update_email_processing(
@@ -1027,7 +1142,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                     logger,
                     error_text='cancellation_parser_no_match',
                 )
-                notify_cancellation_parse_failure(config, mailbox, decoded_id, subject, logger)
+                notify_cancellation_parse_failure(config, mailbox, decoded_id, subject, email_received_at, logger)
             mark_seen(imap_connection, email_id, logger)
             return
 
@@ -1066,11 +1181,12 @@ def run_poll_once(config, logger):
                 continue
 
             for email_id in email_data[0].split()[::-1]:
-                result, message_data = imap_connection.fetch(email_id, '(RFC822)')
-                if result != 'OK' or not message_data or not message_data[0]:
+                result, message_data = imap_connection.fetch(email_id, '(INTERNALDATE RFC822)')
+                fetch_metadata, raw_message = extract_fetch_payload(message_data or [])
+                if result != 'OK' or not raw_message:
                     logger.error('Failed to fetch mailbox=%s email_id=%s result=%s', mailbox, email_id, result)
                     continue
-                process_message(config, service, imap_connection, mailbox, target_calendar, email_id, message_data[0][1], logger)
+                process_message(config, service, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger)
                 processed += 1
     finally:
         if imap_connection is not None:
