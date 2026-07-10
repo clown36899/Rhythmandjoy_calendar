@@ -416,7 +416,7 @@ def ensure_db_tables(config, logger):
                 """
                 CREATE TABLE IF NOT EXISTS rhythmjoy_spacecloud_tasks (
                     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                    dedupe_key VARCHAR(255) NOT NULL,
+                    dedupe_key VARCHAR(96) NOT NULL,
                     email_event_id BIGINT UNSIGNED NULL,
                     task_type VARCHAR(32) NOT NULL,
                     status VARCHAR(32) NOT NULL DEFAULT 'pending',
@@ -564,15 +564,18 @@ def update_email_processing(config, email_event_id, status, logger, **fields):
 def spacecloud_delete_dedupe_key(deletion, room_key):
     reservation_number = deletion.get('reservation_number') or ''
     if reservation_number:
-        return f'delete|reservation|{reservation_number}'
-    return '|'.join([
-        'delete',
-        room_key or '',
-        normalize_date(deletion.get('date', '')) if deletion.get('date') else '',
-        deletion.get('start_time', ''),
-        deletion.get('end_time', ''),
-        deletion.get('name', ''),
-    ])
+        raw_key = f'delete|reservation|{reservation_number}'
+    else:
+        raw_key = '|'.join([
+            'delete',
+            room_key or '',
+            normalize_date(deletion.get('date', '')) if deletion.get('date') else '',
+            deletion.get('start_time', ''),
+            deletion.get('end_time', ''),
+            deletion.get('name', ''),
+        ])
+    digest = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+    return f'delete|{digest}'
 
 
 def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, calendar_key):
