@@ -353,6 +353,16 @@ def db_connect(config):
     )
 
 
+def disable_db_logging(config, logger, message, error=None):
+    if config['db_required']:
+        raise ConfigError(message) from error
+    if error:
+        logger.exception('%s; falling back to calendar-only processing', message)
+    else:
+        logger.warning('%s; falling back to calendar-only processing', message)
+    config['db_enabled'] = False
+
+
 def ensure_db_tables(config, logger):
     if not config['db_enabled']:
         if config['db_required']:
@@ -360,8 +370,9 @@ def ensure_db_tables(config, logger):
         logger.info('Email DB logging disabled: DB_* env values incomplete')
         return
 
-    conn = db_connect(config)
+    conn = None
     try:
+        conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -431,31 +442,40 @@ def ensure_db_tables(config, logger):
                 """
             )
         logger.info('Email DB tables checked')
+    except Exception as error:
+        disable_db_logging(config, logger, 'Email DB table check failed', error)
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def db_select_email_event(config, mail_key):
     if not config['db_enabled']:
         return None
-    conn = db_connect(config)
+    conn = None
     try:
+        conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 'SELECT * FROM rhythmjoy_naver_email_events WHERE mail_key=%s LIMIT 1',
                 (mail_key,),
             )
             return cursor.fetchone()
+    except Exception as error:
+        disable_db_logging(config, logging.getLogger('rhythmjoy_email_import'), 'Email DB select failed', error)
+        return None
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def upsert_email_event(config, logger, record):
     if not config['db_enabled']:
         return None
 
-    conn = db_connect(config)
+    conn = None
     try:
+        conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -498,8 +518,12 @@ def upsert_email_event(config, logger, record):
         row = db_select_email_event(config, record['mail_key'])
         logger.info('Email DB event saved id=%s type=%s status=%s', row.get('id') if row else '-', record['event_type'], record['processing_status'])
         return row
+    except Exception as error:
+        disable_db_logging(config, logger, 'Email DB event save failed', error)
+        return None
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def update_email_processing(config, email_event_id, status, logger, **fields):
@@ -519,16 +543,20 @@ def update_email_processing(config, email_event_id, status, logger, **fields):
             values.append(value)
     values.append(email_event_id)
 
-    conn = db_connect(config)
+    conn = None
     try:
+        conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 f"UPDATE rhythmjoy_naver_email_events SET {', '.join(assignments)} WHERE id=%s",
                 values,
             )
         logger.info('Email DB event updated id=%s status=%s', email_event_id, status)
+    except Exception as error:
+        disable_db_logging(config, logger, 'Email DB event update failed', error)
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def spacecloud_delete_dedupe_key(deletion, room_key):
@@ -573,8 +601,9 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
         'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
     }
 
-    conn = db_connect(config)
+    conn = None
     try:
+        conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -610,8 +639,12 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
             task = cursor.fetchone()
         logger.info('SpaceCloud delete task saved id=%s room=%s reservation=%s status=%s', task.get('id') if task else '-', room_key, row['reservation_number'], task.get('status') if task else '-')
         return task
+    except Exception as error:
+        disable_db_logging(config, logger, 'SpaceCloud delete task save failed', error)
+        return None
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def send_telegram_message(config, text, logger):
