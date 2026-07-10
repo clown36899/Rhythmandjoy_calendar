@@ -759,7 +759,17 @@ def send_telegram_message(config, text, logger):
     return False
 
 
-def format_cancellation_alert(deletion, calendar_key, deleted, subject, email_received_at):
+def format_spacecloud_delete_status(task, calendar_key):
+    if task:
+        task_id = task.get('id') or '-'
+        status = task.get('status') or 'pending'
+        return f'삭제작업 대기(status={status}, task_id={task_id})'
+    if calendar_to_spacecloud_room_key(calendar_key):
+        return '삭제작업 큐 미등록(DB 비활성/오류 가능)'
+    return '대상 아님(스페이스클라우드 방 매핑 없음)'
+
+
+def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spacecloud_task, subject, email_received_at):
     reservation_time_text = '-'
     if deletion.get('date') and deletion.get('start_time') and deletion.get('end_time'):
         reservation_time_text = f"{deletion['date']} {deletion['start_time']}-{deletion['end_time']}"
@@ -768,7 +778,8 @@ def format_cancellation_alert(deletion, calendar_key, deleted, subject, email_re
     reservation_number = deletion.get('reservation_number') or '-'
     product = deletion.get('product') or '-'
     name = deletion.get('name') or '-'
-    delete_status = '삭제완료' if deleted else '매칭없음'
+    google_delete_status = '자동삭제 완료' if google_deleted_count else '매칭없음'
+    spacecloud_delete_status = format_spacecloud_delete_status(spacecloud_task, calendar_key)
 
     return (
         '네이버 예약 취소 감지\n'
@@ -778,14 +789,15 @@ def format_cancellation_alert(deletion, calendar_key, deleted, subject, email_re
         f'예약시간: {reservation_time_text}\n'
         f'예약자명: {name}\n'
         f'예약번호: {reservation_number}\n'
-        f'구글캘린더: {calendar_text} / {delete_status} {deleted}건\n\n'
-        '스페이스클라우드에 이미 등록된 일정이면 삭제 확인 필요\n'
+        f'구글캘린더: {calendar_text} / {google_delete_status} {google_deleted_count}건\n'
+        f'스페이스클라우드: {spacecloud_delete_status}\n\n'
+        '주의: 스페이스클라우드 삭제 완료가 아니라 삭제 작업 상태 표시임\n'
         f'메일제목: {subject or "-"}'
     )
 
 
-def notify_cancellation(config, deletion, calendar_key, deleted, subject, email_received_at, logger):
-    text = format_cancellation_alert(deletion, calendar_key, deleted, subject, email_received_at)
+def notify_cancellation(config, deletion, calendar_key, google_deleted_count, spacecloud_task, subject, email_received_at, logger):
+    text = format_cancellation_alert(deletion, calendar_key, google_deleted_count, spacecloud_task, subject, email_received_at)
     send_telegram_message(config, text, logger)
 
 
@@ -922,7 +934,7 @@ def delete_events_by_reservation(service, deletion, logger):
         service.events().delete(calendarId=calendar_id, eventId=item['id']).execute()
         deleted += 1
         logger.info(
-            'Event deleted calendar=%s reservation=%s reserver_name=%s reservation_time=%s summary=%s',
+            'Google Calendar event deleted calendar=%s reservation=%s reserver_name=%s reservation_time=%s summary=%s',
             calendar_key,
             reservation_number,
             deletion.get('name', ''),
@@ -931,7 +943,7 @@ def delete_events_by_reservation(service, deletion, logger):
         )
     if not deleted:
         logger.warning(
-            'No matching event for cancellation calendar=%s reservation=%s reserver_name=%s reservation_time=%s',
+            'No matching Google Calendar event for cancellation calendar=%s reservation=%s reserver_name=%s reservation_time=%s',
             calendar_key,
             reservation_number,
             deletion.get('name', ''),
@@ -980,7 +992,7 @@ def delete_events_by_details(service, calendar_key, deletion, logger):
         service.events().delete(calendarId=calendar_id, eventId=item['id']).execute()
         deleted += 1
         logger.info(
-            'Event deleted by details calendar=%s reserver_name=%s reservation_time=%s summary=%s',
+            'Google Calendar event deleted by details calendar=%s reserver_name=%s reservation_time=%s summary=%s',
             calendar_key,
             deletion.get('name', ''),
             reservation_time_text(deletion),
@@ -1122,7 +1134,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if deletion:
-                upsert_spacecloud_delete_task(config, logger, email_record_id, deletion, calendar_key)
+                spacecloud_task = upsert_spacecloud_delete_task(config, logger, email_record_id, deletion, calendar_key)
                 deleted = delete_events_by_reservation(service, deletion, logger)
                 update_email_processing(
                     config,
@@ -1132,7 +1144,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                     google_calendar_deleted_count=deleted,
                     error_text='',
                 )
-                notify_cancellation(config, deletion, calendar_key, deleted, subject, email_received_at, logger)
+                notify_cancellation(config, deletion, calendar_key, deleted, spacecloud_task, subject, email_received_at, logger)
             else:
                 logger.warning('Cancellation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
                 update_email_processing(
