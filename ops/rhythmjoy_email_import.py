@@ -401,8 +401,8 @@ def ensure_db_tables(config, logger):
                     error_text TEXT NULL,
                     raw_body MEDIUMTEXT NULL,
                     parsed_json TEXT NULL,
-                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    created_at DATETIME NULL,
+                    updated_at DATETIME NULL,
                     PRIMARY KEY (id),
                     UNIQUE KEY uq_mail_key (mail_key),
                     KEY idx_reservation_number (reservation_number),
@@ -432,8 +432,8 @@ def ensure_db_tables(config, logger):
                     locked_at DATETIME NULL,
                     processed_at DATETIME NULL,
                     result_text TEXT NULL,
-                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    created_at DATETIME NULL,
+                    updated_at DATETIME NULL,
                     PRIMARY KEY (id),
                     UNIQUE KEY uq_dedupe_key (dedupe_key),
                     KEY idx_status_type (status, task_type),
@@ -485,7 +485,8 @@ def upsert_email_event(config, logger, record):
                     target_calendar, spacecloud_room_key,
                     reservation_number, reserver_name, product,
                     reservation_date, start_time, end_time,
-                    payment_status, price, raw_body, parsed_json
+                    payment_status, price, raw_body, parsed_json,
+                    created_at, updated_at
                 )
                 VALUES (
                     %(mail_key)s, %(mailbox)s, %(imap_id)s, %(message_id)s, %(subject)s,
@@ -493,7 +494,8 @@ def upsert_email_event(config, logger, record):
                     %(target_calendar)s, %(spacecloud_room_key)s,
                     %(reservation_number)s, %(reserver_name)s, %(product)s,
                     %(reservation_date)s, %(start_time)s, %(end_time)s,
-                    %(payment_status)s, %(price)s, %(raw_body)s, %(parsed_json)s
+                    %(payment_status)s, %(price)s, %(raw_body)s, %(parsed_json)s,
+                    NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
                     subject=VALUES(subject),
@@ -511,7 +513,7 @@ def upsert_email_event(config, logger, record):
                     price=VALUES(price),
                     raw_body=VALUES(raw_body),
                     parsed_json=VALUES(parsed_json),
-                    updated_at=CURRENT_TIMESTAMP
+                    updated_at=NOW()
                 """,
                 record,
             )
@@ -535,7 +537,7 @@ def update_email_processing(config, email_event_id, status, logger, **fields):
         'google_calendar_deleted_count',
         'error_text',
     }
-    assignments = ['processing_status=%s', 'updated_at=CURRENT_TIMESTAMP']
+    assignments = ['processing_status=%s', 'updated_at=NOW()']
     values = [status]
     for key, value in fields.items():
         if key in allowed:
@@ -610,12 +612,14 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
                 INSERT INTO rhythmjoy_spacecloud_tasks (
                     dedupe_key, email_event_id, task_type, status,
                     room_key, reservation_number, reserver_name, product,
-                    reservation_date, start_time, end_time, payload_json
+                    reservation_date, start_time, end_time, payload_json,
+                    created_at, updated_at
                 )
                 VALUES (
                     %(dedupe_key)s, %(email_event_id)s, %(task_type)s, 'pending',
                     %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
-                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(payload_json)s
+                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(payload_json)s,
+                    NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
                     email_event_id=VALUES(email_event_id),
@@ -628,7 +632,7 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
                     end_time=VALUES(end_time),
                     payload_json=VALUES(payload_json),
                     status=IF(status='done', status, 'pending'),
-                    updated_at=CURRENT_TIMESTAMP
+                    updated_at=NOW()
                 """,
                 row,
             )
