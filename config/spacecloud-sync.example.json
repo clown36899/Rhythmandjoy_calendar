@@ -1,0 +1,44 @@
+{
+  "calendarCacheUrl": "https://xn--xy1b23ggrmm5bfb82ees967e.com/calendar_set/calendar_v10/data/events.json",
+  "uploadPolicy": {
+    "requireReservationNumber": true,
+    "allowPaymentStatuses": ["결제완료"]
+  },
+  "rooms": {
+    "a": {
+      "rhythmjoyName": "A홀",
+      "spacecloudSpaceId": "66056",
+      "spacecloudProductId": "108673",
+      "spacecloudName": "A홀 20평형-외부신발금지",
+      "icalUrl": ""
+    },
+    "b": {
+      "rhythmjoyName": "B홀",
+      "spacecloudSpaceId": "66056",
+      "spacecloudProductId": "108674",
+      "spacecloudName": "B홀 16평형-외부신발금지",
+      "icalUrl": ""
+    },
+    "c": {
+      "rhythmjoyName": "C홀",
+      "spacecloudSpaceId": "66056",
+      "spacecloudProductId": "108675",
+      "spacecloudName": "C홀 5평형-외부신발금지",
+      "icalUrl": ""
+    },
+    "d": {
+      "rhythmjoyName": "D홀",
+      "spacecloudSpaceId": "66056",
+      "spacecloudProductId": "108989",
+      "spacecloudName": "D홀 4평형-외부신발금지",
+      "icalUrl": ""
+    },
+    "e": {
+      "rhythmjoyName": "E홀",
+      "spacecloudSpaceId": "66056",
+      "spacecloudProductId": "108676",
+      "spacecloudName": "E홀15평형-외부신발금지",
+      "icalUrl": ""
+    }
+  }
+}

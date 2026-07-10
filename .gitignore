@@ -6,6 +6,9 @@
 .env
 .env.*
 !.env.example
+config/spacecloud-sync.local.json
+state/spacecloud-sync-log.json
+state/spacecloud-watch/
 *.pem
 *.key
 *service-account*.json
