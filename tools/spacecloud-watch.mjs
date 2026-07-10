@@ -474,7 +474,7 @@ function loginNeededMessage(rowOrError) {
   return `스페이스클라우드 로그인 필요
 ${kstNowText()}
 
-자동등록이 로그인/세션 확인 단계에서 대기 중입니다.
+자동등록/자동삭제가 로그인 또는 세션 확인 단계에서 대기 중입니다.
 조치: 이 Mac의 자동화 Chrome 창에서 네이버/스페이스클라우드 로그인을 다시 해주세요.
 
 등록 후보: ${candidates ?? '-'}건
@@ -495,14 +495,40 @@ ${kstNowText()}
 로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
 }
 
+function formatDeleteTaskLine(row) {
+  const verificationErrors = row.deleteVerification?.errors?.length
+    ? ` / 검증실패=${row.deleteVerification.errors.join(',')}`
+    : '';
+  return [
+    `task=${row.taskId || '-'}`,
+    `방=${row.roomKey || '-'}`,
+    `일시=${row.date || '-'} ${row.startTime || '-'}-${row.endTime || '-'}`,
+    `예약번호=${row.reservationNo || '-'}`,
+    `상태=${row.status || '-'}`,
+    `사유=${row.error || '-'}${verificationErrors}`,
+  ].join('\n');
+}
+
 function deleteFailureMessage(rowOrError) {
   const errorText = typeof rowOrError === 'string'
     ? rowOrError
-    : (rowOrError?.failed || []).map((row) => `task=${row.taskId || '-'} ${row.error || row.status}`).filter(Boolean).join('\n');
+    : (rowOrError?.failed || []).map(formatDeleteTaskLine).filter(Boolean).join('\n\n');
   return `스페이스클라우드 자동삭제 확인 필요
 ${kstNowText()}
 
 Google Calendar 취소 처리와 별개로 SpaceCloud 삭제 작업 중 확인이 필요한 항목이 생겼습니다.
+자동삭제는 직접 추가한 예약이고 방/시간/예약번호가 모두 맞을 때만 실행됩니다. 조건이 맞지 않으면 삭제하지 않고 멈춥니다.
+
+오류: ${String(errorText || '-').slice(0, 1200)}
+로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+}
+
+function cycleErrorMessage(errorText) {
+  return `스페이스클라우드 자동화 점검 필요
+${kstNowText()}
+
+자동등록/자동삭제 감시 주기에서 오류가 발생해 반복 실행을 멈췄습니다.
+가능 원인: Cafe24 SSH/DB 조회 실패, Google Calendar cache 응답 실패, 로컬 브라우저 자동화 오류.
 
 오류: ${String(errorText || '-').slice(0, 900)}
 로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
@@ -836,7 +862,7 @@ async function runWatch(args) {
           await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorRow.error));
           logLine('login needed; waiting for manual login');
         } else {
-          await notifyWithCooldown(args, 'spacecloud-cycle-error', uploadFailureMessage(errorRow.error));
+          await notifyWithCooldown(args, 'spacecloud-cycle-error', cycleErrorMessage(errorRow.error));
           break;
         }
       }
@@ -880,7 +906,7 @@ async function main() {
     const result = await sendTelegram(args, `스페이스클라우드 자동화 알림 테스트
 ${kstNowText()}
 
-이 메시지가 보이면 로그인 필요/등록 실패 알림도 텔레그램으로 전송됩니다.`);
+이 메시지가 보이면 로그인 필요, 등록 실패, 삭제 확인 필요, 감시 주기 오류 알림도 텔레그램으로 전송됩니다.`);
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else console.log(result.sent ? 'Telegram notification OK' : `Telegram notification skipped: ${result.reason}`);
     return;
