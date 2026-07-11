@@ -666,8 +666,7 @@ def ensure_db_tables(config, logger):
                     UNIQUE KEY uq_ledger_key (ledger_key),
                     KEY idx_status_time (current_status, reservation_date, start_time),
                     KEY idx_reservation_number (reservation_number),
-                    KEY idx_room_date (room_key, reservation_date),
-                    KEY idx_space_time_name (source_platform, target_calendar, reservation_date, start_time, end_time, reserver_name_key)
+                    KEY idx_room_date (room_key, reservation_date)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """
             )
