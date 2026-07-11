@@ -887,9 +887,9 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(() => {
     if (document.visibilityState !== 'visible') return;
     const now = Date.now();
-    if (now - _lastIdleRefresh >= 15 * 1000) {
+    if (now - _lastIdleRefresh >= 60 * 1000) {
       _lastIdleRefresh = now;
-      requestCalendarIncrementalSync('15초 자동 갱신', { force: true });
+      requestCalendarIncrementalSync('60초 자동 갱신', { force: true });
     }
   }, 5000);
 });

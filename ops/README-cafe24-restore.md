@@ -88,8 +88,8 @@ The restore script refuses any Apache config outside that allowlist.
 ## Current production notes
 
 - Domain root internally serves `/calendar_set/calendar_v10/calendar_10.html`.
-- Google Calendar cache interval is 15 seconds.
-- Browser-side polling reads the server cache every 15 seconds while the page is visible.
+- Google Calendar cache interval is 60 seconds.
+- Browser-side polling reads the server cache every 60 seconds while the page is visible.
 - `rhythmandjoy.cafe24.com` currently resolves to `210.114.6.137`; do not use it as the deployment target for this VPS.
 - Git push is backup/history only. Production is updated through the guarded Cafe24 deploy/restore scripts.
 
