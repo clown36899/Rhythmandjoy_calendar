@@ -34,9 +34,13 @@ function reservationCalendarUrl(roomKey) {
 
 function hourFromSlot(value) {
   if (String(value) === '24:00') return 24;
-  const match = String(value || '').match(/^(\d{1,2}):\d{2}/);
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
   if (!match) throw new Error(`invalid slot time: ${value}`);
-  return Number(match[1]);
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (minute === 59 && hour < 24) return hour + 1;
+  if (minute !== 0) throw new Error(`SpaceCloud automation only supports whole-hour slots: ${value}`);
+  return hour;
 }
 
 function compactText(value) {
@@ -48,6 +52,118 @@ function normalizeDate(value) {
   const match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (!match) throw new Error(`invalid date: ${value}`);
   return `${match[1]}-${String(Number(match[2])).padStart(2, '0')}-${String(Number(match[3])).padStart(2, '0')}`;
+}
+
+function normalizeName(value) {
+  return String(value || '')
+    .replace(/님+$/u, '')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+function displayReserverName(value) {
+  const normalized = normalizeName(value);
+  if (!normalized) return '';
+  return /[가-힣]/u.test(normalized) ? `${normalized}님` : normalized;
+}
+
+function slotTimeText(value) {
+  const hour = hourFromSlot(value);
+  if (hour === 24) return '24:00';
+  return `${String(hour).padStart(2, '0')}:00`;
+}
+
+function eventFingerprint(eventLike) {
+  return [
+    eventLike.roomKey,
+    eventLike.date,
+    eventLike.startTime,
+    eventLike.endTime,
+  ].join('|');
+}
+
+function buildSpacecloudUiInput(event) {
+  const room = SPACECLOUD_ROOMS[event.roomKey];
+  if (!room) throw new Error(`unknown SpaceCloud room key: ${event.roomKey}`);
+  const startHour = hourFromSlot(event.startTime);
+  const endHour = hourFromSlot(event.endTime);
+  return {
+    reservationCalendarUrl: event.reservationCalendarUrl || reservationCalendarUrl(event.roomKey),
+    selectors: {
+      date: '#start_day',
+      startHour: '#shour',
+      endHour: '#ehour',
+      name: '#reserve_name',
+      tel: '#reserve_tel',
+      memo: '#reserve_memo',
+      submit: '#_addExternalSchedule',
+    },
+    values: {
+      date: event.date,
+      startHourSelectValue: String(startHour - 1),
+      endHourSelectValue: String(endHour - 1),
+      name: event.reserverNameDisplay || event.reserverName || event.reserverNameKey || event.title || '',
+      tel: event.tel || '',
+      memo: event.memo || '',
+    },
+  };
+}
+
+function parseTaskPayload(task) {
+  if (task.payload && typeof task.payload === 'object') return task.payload;
+  const raw = task.payloadJson || task.payload_json || '{}';
+  try {
+    const parsed = JSON.parse(raw || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function spacecloudUploadEventFromTask(task) {
+  const payload = parseTaskPayload(task);
+  const roomKey = task.roomKey || task.room_key || payload.roomKey || payload.room_key || '';
+  const room = SPACECLOUD_ROOMS[roomKey];
+  if (!room) throw new Error(`unknown SpaceCloud room key: ${roomKey}`);
+
+  const date = normalizeDate(task.date || task.reservation_date || payload.date);
+  const startTime = slotTimeText(task.startTime || task.start_time || payload.start_time || payload.startTime);
+  const endTime = slotTimeText(task.endTime || task.end_time || payload.end_time || payload.endTime);
+  const reserverName = task.reserverName || task.reserver_name || payload.name || '';
+  const reservationNo = task.reservationNo || task.reservation_number || payload.reservation_number || '';
+  const sourceEventId = payload.googleEventId || payload.google_event_id || (payload.emailEventId ? `email:${payload.emailEventId}` : `task:${task.id || task.taskId || ''}`);
+  const event = {
+    source: 'rhythmjoy-naver-email-db',
+    taskId: task.id || task.taskId || null,
+    emailEventId: payload.emailEventId || task.emailEventId || task.email_event_id || null,
+    sourceEventId,
+    googleEventId: payload.googleEventId || '',
+    roomKey,
+    rhythmjoyRoomName: payload.calendarKey || payload.target_calendar || room.name,
+    spacecloudSpaceId: room.spaceId,
+    spacecloudProductId: room.productId,
+    spacecloudRoomName: room.name,
+    title: payload.product || task.product || room.name,
+    date,
+    startTime,
+    endTime,
+    reserverName,
+    reserverNameKey: normalizeName(reserverName),
+    reserverNameDisplay: displayReserverName(reserverName),
+    reservationNo,
+    paymentStatus: payload.payment_status || task.payment_status || '',
+    product: payload.product || task.product || '',
+  };
+  event.memo = [
+    'Rhythmjoy Naver email DB sync',
+    `room=${event.spacecloudRoomName}`,
+    event.emailEventId ? `emailEventId=${event.emailEventId}` : '',
+    event.taskId ? `taskId=${event.taskId}` : '',
+    reservationNo ? `naverReservationNo=${reservationNo}` : '',
+  ].filter(Boolean).join(' / ');
+  event.fingerprint = eventFingerprint(event);
+  event.spacecloudUiInput = buildSpacecloudUiInput(event);
+  return event;
 }
 
 export async function loadPlaywright() {
@@ -319,6 +435,95 @@ async function readJsonArray(filePath) {
   }
 }
 
+export async function uploadSpacecloudDirectReservation(context, event) {
+  const page = await pageForContext(context);
+  const ui = event.spacecloudUiInput || buildSpacecloudUiInput(event);
+  const row = {
+    taskId: event.taskId || null,
+    fingerprint: event.fingerprint || eventFingerprint(event),
+    sourceEventId: event.sourceEventId || '',
+    reservationNo: event.reservationNo || '',
+    roomKey: event.roomKey,
+    date: event.date,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    reserverName: event.reserverName,
+    startedAt: new Date().toISOString(),
+  };
+
+  const dialogTypes = [];
+  const onDialog = async (dialog) => {
+    dialogTypes.push(dialog.type());
+    if (dialog.type() === 'confirm') await dialog.accept();
+    else await dialog.dismiss();
+  };
+
+  page.on('dialog', onDialog);
+  try {
+    if (page.url() !== ui.reservationCalendarUrl) {
+      await page.goto(ui.reservationCalendarUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    }
+
+    await closeModalIfOpen(page);
+
+    if (!(await waitVisible(page, 'a._additionalReserveLayerOpen', 20000))) {
+      throw new Error('add button not visible; login or page load may have failed');
+    }
+    const add = page.locator('a._additionalReserveLayerOpen').filter({ visible: true });
+    const addCount = await add.count();
+    if (addCount !== 1) throw new Error(`visible add button count ${addCount}`);
+    await add.click({ timeout: 10000 });
+    if (!(await waitVisible(page, '#start_day', 12000))) throw new Error('add modal did not open');
+
+    row.dateSet = await setDate(page, ui.values.date);
+    await page.locator('#shour').selectOption(ui.values.startHourSelectValue, { timeout: 10000 });
+    await page.locator('#ehour').selectOption(ui.values.endHourSelectValue, { timeout: 10000 });
+    await page.locator('#reserve_name').fill(ui.values.name, { timeout: 10000 });
+    await page.locator('#reserve_tel').fill(ui.values.tel || '', { timeout: 10000 });
+    await page.locator('#reserve_memo').fill(ui.values.memo, { timeout: 10000 });
+
+    const filled = await page.evaluate(() => ({
+      date: document.querySelector('#start_day')?.value || '',
+      shour: document.querySelector('#shour')?.value || '',
+      ehour: document.querySelector('#ehour')?.value || '',
+      name: document.querySelector('#reserve_name')?.value || '',
+    }));
+
+    if (
+      String(filled.date).replace(/[^0-9]/g, '').slice(0, 8) !== compactDate(ui.values.date)
+      || filled.shour !== ui.values.startHourSelectValue
+      || filled.ehour !== ui.values.endHourSelectValue
+      || filled.name !== ui.values.name
+    ) {
+      throw new Error(`field verification failed: ${JSON.stringify(filled)}`);
+    }
+
+    const submit = page.locator('#_addExternalSchedule').filter({ visible: true });
+    const submitCount = await submit.count();
+    if (submitCount !== 1) throw new Error(`visible submit count ${submitCount}`);
+    await submit.click({ timeout: 10000 });
+    await page.waitForTimeout(1200);
+
+    const hidden = await waitHidden(page, '#start_day', 12000);
+    row.finishedAt = new Date().toISOString();
+    row.status = hidden ? 'submitted' : 'submitted-modal-still-visible';
+    if (dialogTypes.length > 0) row.dialogTypes = dialogTypes;
+    if (!hidden) throw new Error('modal still visible after submit');
+  } catch (error) {
+    row.finishedAt = new Date().toISOString();
+    row.status = row.status || 'failed';
+    row.error = String(error?.message || error);
+    try {
+      const close = page.locator('.btn_pop_close, a.btn_close, button.btn_close').filter({ visible: true });
+      if (await close.count() === 1) await close.click({ timeout: 3000 });
+    } catch {}
+  } finally {
+    page.off('dialog', onDialog);
+  }
+
+  return row;
+}
+
 export async function createSpacecloudPlaywrightUploader({
   context,
   planPath,
@@ -333,90 +538,7 @@ export async function createSpacecloudPlaywrightUploader({
   }
 
   async function uploadOne(event) {
-    const page = await pageForContext(context);
-    const ui = event.spacecloudUiInput;
-    const row = {
-      fingerprint: event.fingerprint,
-      sourceEventId: event.sourceEventId,
-      reservationNo: event.reservationNo,
-      roomKey: event.roomKey,
-      date: event.date,
-      startTime: event.startTime,
-      endTime: event.endTime,
-      reserverName: event.reserverName,
-      startedAt: new Date().toISOString(),
-    };
-
-    const dialogTypes = [];
-    const onDialog = async (dialog) => {
-      dialogTypes.push(dialog.type());
-      if (dialog.type() === 'confirm') await dialog.accept();
-      else await dialog.dismiss();
-    };
-
-    page.on('dialog', onDialog);
-    try {
-      if (page.url() !== ui.reservationCalendarUrl) {
-        await page.goto(ui.reservationCalendarUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      }
-
-      await closeModalIfOpen(page);
-
-      if (!(await waitVisible(page, 'a._additionalReserveLayerOpen', 20000))) {
-        throw new Error('add button not visible; login or page load may have failed');
-      }
-      const add = page.locator('a._additionalReserveLayerOpen').filter({ visible: true });
-      const addCount = await add.count();
-      if (addCount !== 1) throw new Error(`visible add button count ${addCount}`);
-      await add.click({ timeout: 10000 });
-      if (!(await waitVisible(page, '#start_day', 12000))) throw new Error('add modal did not open');
-
-      row.dateSet = await setDate(page, ui.values.date);
-      await page.locator('#shour').selectOption(ui.values.startHourSelectValue, { timeout: 10000 });
-      await page.locator('#ehour').selectOption(ui.values.endHourSelectValue, { timeout: 10000 });
-      await page.locator('#reserve_name').fill(ui.values.name, { timeout: 10000 });
-      await page.locator('#reserve_tel').fill(ui.values.tel || '', { timeout: 10000 });
-      await page.locator('#reserve_memo').fill(ui.values.memo, { timeout: 10000 });
-
-      const filled = await page.evaluate(() => ({
-        date: document.querySelector('#start_day')?.value || '',
-        shour: document.querySelector('#shour')?.value || '',
-        ehour: document.querySelector('#ehour')?.value || '',
-        name: document.querySelector('#reserve_name')?.value || '',
-      }));
-
-      if (
-        String(filled.date).replace(/[^0-9]/g, '').slice(0, 8) !== compactDate(ui.values.date)
-        || filled.shour !== ui.values.startHourSelectValue
-        || filled.ehour !== ui.values.endHourSelectValue
-        || filled.name !== ui.values.name
-      ) {
-        throw new Error(`field verification failed: ${JSON.stringify(filled)}`);
-      }
-
-      const submit = page.locator('#_addExternalSchedule').filter({ visible: true });
-      const submitCount = await submit.count();
-      if (submitCount !== 1) throw new Error(`visible submit count ${submitCount}`);
-      await submit.click({ timeout: 10000 });
-      await page.waitForTimeout(1200);
-
-      const hidden = await waitHidden(page, '#start_day', 12000);
-      row.finishedAt = new Date().toISOString();
-      row.status = hidden ? 'submitted' : 'submitted-modal-still-visible';
-      if (dialogTypes.length > 0) row.dialogTypes = dialogTypes;
-      if (!hidden) throw new Error('modal still visible after submit');
-    } catch (error) {
-      row.finishedAt = new Date().toISOString();
-      row.status = row.status || 'failed';
-      row.error = String(error?.message || error);
-      try {
-        const close = page.locator('.btn_pop_close, a.btn_close, button.btn_close').filter({ visible: true });
-        if (await close.count() === 1) await close.click({ timeout: 3000 });
-      } catch {}
-    } finally {
-      page.off('dialog', onDialog);
-    }
-
+    const row = await uploadSpacecloudDirectReservation(context, event);
     results.push(row);
     await writeResults();
     return row;

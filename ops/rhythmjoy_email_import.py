@@ -754,6 +754,23 @@ def spacecloud_naver_block_dedupe_key(event_data, room_key):
     return f'naver_block|{digest}'
 
 
+def spacecloud_upload_dedupe_key(event_data, room_key):
+    reservation_number = event_data.get('reservation_number') or ''
+    if reservation_number:
+        raw_key = f'upload|reservation|{reservation_number}'
+    else:
+        raw_key = '|'.join([
+            'upload',
+            room_key or '',
+            normalize_date(event_data.get('date', '')) if event_data.get('date') else '',
+            event_data.get('start_time', ''),
+            event_data.get('end_time', ''),
+            event_data.get('name', ''),
+        ])
+    digest = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+    return f'upload|{digest}'
+
+
 def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, calendar_key):
     room_key = calendar_to_spacecloud_room_key(calendar_key)
     if not config['db_enabled'] or not room_key:
@@ -810,7 +827,7 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
                     start_time=VALUES(start_time),
                     end_time=VALUES(end_time),
                     payload_json=VALUES(payload_json),
-                    status=IF(status='done', status, 'pending'),
+                    status=IF(status IN ('done', 'already_gone', 'needs_review', 'google_pending'), status, 'pending'),
                     updated_at=NOW()
                 """,
                 row,
@@ -824,6 +841,101 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
         return task
     except Exception as error:
         disable_db_logging(config, logger, 'SpaceCloud delete task save failed', error)
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def upsert_spacecloud_upload_task(config, logger, email_event_id, event_data, calendar_key):
+    if not config.get('naver_spacecloud_upload_enabled'):
+        return None
+
+    room_key = calendar_to_spacecloud_room_key(calendar_key)
+    if not config['db_enabled'] or not room_key:
+        if not room_key:
+            logger.info('SpaceCloud upload task skipped: no room mapping for calendar=%s product=%s', calendar_key, event_data.get('product'))
+        return None
+
+    if event_data.get('payment_status') and event_data.get('payment_status') != '결제완료':
+        logger.info(
+            'SpaceCloud upload task skipped: payment status not allowed reservation=%s status=%s',
+            event_data.get('reservation_number'),
+            event_data.get('payment_status'),
+        )
+        return None
+
+    dedupe_key = spacecloud_upload_dedupe_key(event_data, room_key)
+    payload = {
+        'source': 'naver-email-reservation',
+        'action': 'upload-spacecloud-direct',
+        'calendarKey': calendar_key,
+        'roomKey': room_key,
+        'emailEventId': email_event_id,
+        **event_data,
+    }
+    row = {
+        'dedupe_key': dedupe_key,
+        'email_event_id': email_event_id,
+        'task_type': 'upload',
+        'room_key': room_key,
+        'reservation_number': event_data.get('reservation_number') or '',
+        'reserver_name': event_data.get('name') or '',
+        'product': event_data.get('product') or '',
+        'reservation_date': clean_date_or_none(event_data.get('date')),
+        'start_time': clean_time_or_none(event_data.get('start_time')),
+        'end_time': clean_time_or_none(event_data.get('end_time')),
+        'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+    }
+
+    conn = None
+    try:
+        conn = db_connect(config)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO rhythmjoy_spacecloud_tasks (
+                    dedupe_key, email_event_id, task_type, status,
+                    room_key, reservation_number, reserver_name, product,
+                    reservation_date, start_time, end_time, payload_json,
+                    created_at, updated_at
+                )
+                VALUES (
+                    %(dedupe_key)s, %(email_event_id)s, %(task_type)s, 'pending',
+                    %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
+                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(payload_json)s,
+                    NOW(), NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    email_event_id=VALUES(email_event_id),
+                    room_key=VALUES(room_key),
+                    reservation_number=VALUES(reservation_number),
+                    reserver_name=VALUES(reserver_name),
+                    product=VALUES(product),
+                    reservation_date=VALUES(reservation_date),
+                    start_time=VALUES(start_time),
+                    end_time=VALUES(end_time),
+                    payload_json=VALUES(payload_json),
+                    status=IF(status IN ('done', 'needs_review', 'google_pending'), status, 'pending'),
+                    updated_at=NOW()
+                """,
+                row,
+            )
+            cursor.execute(
+                'SELECT * FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=%s LIMIT 1',
+                (dedupe_key,),
+            )
+            task = cursor.fetchone()
+        logger.info(
+            'SpaceCloud upload task saved id=%s room=%s reservation=%s status=%s',
+            task.get('id') if task else '-',
+            room_key,
+            row['reservation_number'],
+            task.get('status') if task else '-',
+        )
+        return task
+    except Exception as error:
+        disable_db_logging(config, logger, 'SpaceCloud upload task save failed', error)
         return None
     finally:
         if conn is not None:
@@ -965,7 +1077,12 @@ def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spac
     reservation_number = deletion.get('reservation_number') or '-'
     product = deletion.get('product') or '-'
     name = deletion.get('name') or '-'
-    google_delete_status = '자동삭제 완료' if google_deleted_count else '매칭없음'
+    if google_deleted_count:
+        google_delete_status = '자동삭제 완료'
+    elif spacecloud_task:
+        google_delete_status = '스페이스클라우드 삭제 후 처리대기'
+    else:
+        google_delete_status = '매칭없음'
     spacecloud_delete_status = format_spacecloud_delete_status(spacecloud_task, calendar_key)
 
     return (
@@ -1492,20 +1609,34 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if event_data:
-                created = create_calendar_event(
-                    service,
-                    event_data,
-                    logger,
-                    dedupe_google_calendar=config['dedupe_google_calendar'],
-                )
-                update_email_processing(
-                    config,
-                    email_record_id,
-                    'calendar_created',
-                    logger,
-                    google_calendar_event_id=created.get('id', ''),
-                    error_text='',
-                )
+                upload_task = upsert_spacecloud_upload_task(config, logger, email_record_id, event_data, target_calendar)
+                if upload_task:
+                    task_status = upload_task.get('status') or 'pending'
+                    processing_status = f"spacecloud_upload_{task_status}"
+                    if len(processing_status) > 32:
+                        processing_status = 'spacecloud_upload_saved'
+                    update_email_processing(
+                        config,
+                        email_record_id,
+                        processing_status,
+                        logger,
+                        error_text='',
+                    )
+                else:
+                    created = create_calendar_event(
+                        service,
+                        event_data,
+                        logger,
+                        dedupe_google_calendar=config['dedupe_google_calendar'],
+                    )
+                    update_email_processing(
+                        config,
+                        email_record_id,
+                        'calendar_created',
+                        logger,
+                        google_calendar_event_id=created.get('id', ''),
+                        error_text='legacy_or_upload_task_unavailable',
+                    )
             else:
                 logger.warning('Reservation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
                 update_email_processing(
@@ -1537,15 +1668,30 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             email_record_id = email_row.get('id') if email_row else None
             if deletion:
                 spacecloud_task = upsert_spacecloud_delete_task(config, logger, email_record_id, deletion, calendar_key)
-                deleted = delete_events_by_reservation(service, deletion, logger)
-                update_email_processing(
-                    config,
-                    email_record_id,
-                    'calendar_deleted' if deleted else 'calendar_not_found',
-                    logger,
-                    google_calendar_deleted_count=deleted,
-                    error_text='',
-                )
+                if config.get('naver_spacecloud_upload_enabled') and spacecloud_task:
+                    deleted = 0
+                    task_status = spacecloud_task.get('status') or 'pending'
+                    processing_status = f"spacecloud_delete_{task_status}"
+                    if len(processing_status) > 32:
+                        processing_status = 'spacecloud_delete_saved'
+                    update_email_processing(
+                        config,
+                        email_record_id,
+                        processing_status,
+                        logger,
+                        google_calendar_deleted_count=0,
+                        error_text='google_delete_after_spacecloud',
+                    )
+                else:
+                    deleted = delete_events_by_reservation(service, deletion, logger)
+                    update_email_processing(
+                        config,
+                        email_record_id,
+                        'calendar_deleted' if deleted else 'calendar_not_found',
+                        logger,
+                        google_calendar_deleted_count=deleted,
+                        error_text='',
+                    )
                 notify_cancellation(config, deletion, calendar_key, deleted, spacecloud_task, subject, email_received_at, logger)
             else:
                 logger.warning('Cancellation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
@@ -1757,6 +1903,7 @@ def build_config():
         'db_name': db_name,
         'store_raw_email_body': env_flag('RHYTHMJOY_EMAIL_STORE_RAW_BODY', '1'),
         'dedupe_google_calendar': env_flag('RHYTHMJOY_EMAIL_DEDUPE_GOOGLE', '0'),
+        'naver_spacecloud_upload_enabled': env_flag('RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED', '0'),
         'spacecloud_email_enabled': env_flag('RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED', '0'),
         'spacecloud_naver_block_enabled': env_flag('RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED', '0'),
     }

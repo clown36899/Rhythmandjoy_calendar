@@ -182,25 +182,20 @@ The Cafe24 email importer now writes a DB ledger before cross-platform side effe
 Tables:
 
 - `rhythmjoy_naver_email_events`: one row per Naver booking/cancellation email. It stores the mailbox, message identity, parse result, target calendar, reservation details, Google Calendar processing status, and optional raw body.
-- `rhythmjoy_spacecloud_tasks`: durable work queue for cross-platform actions. Cancellation emails for mapped hall rooms create a `delete` task with `pending` status. SpaceCloud reservation-complete emails can create a `naver_block` task when enabled. The Mac watcher claims pending tasks, performs the matching UI action, and writes `done`, `already_gone`, `needs_review`, `google_pending`, or `failed`.
+- `rhythmjoy_spacecloud_tasks`: durable work queue for cross-platform actions. Naver reservation emails for mapped hall rooms create an `upload` task when enabled. Cancellation emails for mapped hall rooms create a `delete` task with `pending` status. SpaceCloud reservation-complete emails can create a `naver_block` task when enabled. The Mac watcher claims pending tasks, performs the matching UI action, and writes `done`, `already_gone`, `needs_review`, `google_pending`, or `failed`.
 
-Default production behavior keeps the existing Naver reservation calendar importer path intact while moving SpaceCloud-origin reservations to the email/DB-first flow:
+Default production behavior uses the Naver email DB row as the durable source before cross-platform work:
 
 1. Naver email is read.
 2. The email is saved or updated in `rhythmjoy_naver_email_events`.
-3. For cancellation emails, a SpaceCloud delete task is saved in `rhythmjoy_spacecloud_tasks`.
-4. Existing Naver-origin reservation emails still create Google Calendar through the proven parser/API path, and the existing watcher uses those confirmed calendar records for SpaceCloud upload until the upload path is migrated to DB tasks.
-5. Real platform-side work that already has DB tasks is performed from DB: SpaceCloud direct-added schedules are deleted when Naver cancellations arrive, and Naver SmartPlace availability is blocked when SpaceCloud confirmations arrive.
-6. For SpaceCloud-origin reservations, Google Calendar is written after the Naver SmartPlace availability change succeeds, so it stays a record layer instead of becoming the booking source.
-7. DB status records the result for verification, recovery, and future SpaceCloud work.
-8. The Mac watcher polls `rhythmjoy_spacecloud_tasks` over SSH, deletes pending SpaceCloud direct-added schedules, and blocks pending Naver SmartPlace availability slots through the already logged-in Chrome profile.
+3. For mapped hall reservation emails, a SpaceCloud `upload` task is saved in `rhythmjoy_spacecloud_tasks` when `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1`.
+4. For cancellation emails, a SpaceCloud `delete` task is saved in `rhythmjoy_spacecloud_tasks`. With `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1`, Google Calendar deletion is deferred until the watcher confirms the SpaceCloud delete task.
+5. For SpaceCloud-origin reservation emails, a Naver SmartPlace `naver_block` task is saved in `rhythmjoy_spacecloud_tasks`.
+6. The Mac watcher polls `rhythmjoy_spacecloud_tasks` over SSH and performs the real platform-side UI action through the already logged-in Chrome profile.
+7. Google Calendar is written or deleted after the platform-side action succeeds, so it stays a record layer instead of becoming the booking source.
+8. DB status records the result for verification, retry, and recovery.
 
-Target migration for Naver-origin reservations:
-
-1. Naver reservation email is saved to `rhythmjoy_naver_email_events`.
-2. The importer creates a SpaceCloud upload task from the DB row.
-3. The local watcher uploads the direct-added SpaceCloud reservation.
-4. Only after the upload is verified does the system write or update Google Calendar as the record layer.
+The older Google Calendar plan upload path remains as a legacy/backfill path for calendar records that already existed before the DB upload queue was enabled. New mapped hall reservations should enter through `upload` tasks instead.
 
 With `RHYTHMJOY_EMAIL_DB_REQUIRED=0`, DB errors are logged and the importer falls back to calendar-only processing. Keep this as the normal operating mode while the DB is used as insurance.
 
@@ -215,12 +210,15 @@ DB_NAME=
 RHYTHMJOY_EMAIL_DB_REQUIRED=0
 RHYTHMJOY_EMAIL_STORE_RAW_BODY=1
 RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0
+RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=0
 RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=0
 RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=0
 ```
 
 `RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` preserves the old behavior. Set it to `1` only if you intentionally want the importer to search Google Calendar by reservation number before creating an event.
-Set `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` for SpaceCloud reservation email intake. Add `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1` only when the local Mac watcher is installed, logged into Naver SmartPlace, and ready to consume `naver_block` tasks. Google Calendar creation for SpaceCloud-origin reservations is intentionally done by the local watcher after Naver SmartPlace availability is applied. Toggle either flag back to `0` and restart `my_email_service.service` to return to the previous importer behavior.
+Set `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1` only when the local Mac watcher is installed, logged into SpaceCloud, and ready to consume `upload` tasks. With this enabled, mapped hall Naver reservation emails no longer create Google Calendar immediately; the watcher uploads to SpaceCloud first, then creates the Google Calendar record from the DB payload.
+
+Set `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` for SpaceCloud reservation email intake. Add `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1` only when the local Mac watcher is installed, logged into Naver SmartPlace, and ready to consume `naver_block` tasks. Google Calendar creation for SpaceCloud-origin reservations is intentionally done by the local watcher after Naver SmartPlace availability is applied. Toggle the relevant flag back to `0` and restart `my_email_service.service` to return to the previous importer behavior.
 
 LaunchAgent example:
 
