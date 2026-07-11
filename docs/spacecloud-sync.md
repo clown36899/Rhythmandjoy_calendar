@@ -134,13 +134,13 @@ Check saved Naver SmartPlace login:
 node tools/spacecloud-watch.mjs check-naver-login
 ```
 
-Dry-run one polling cycle:
+Dry-run one DB queue cycle:
 
 ```bash
 node tools/spacecloud-watch.mjs once --dry-run
 ```
 
-Run one upload cycle:
+Run one DB queue cycle:
 
 ```bash
 node tools/spacecloud-watch.mjs once --limit-per-cycle 3
@@ -154,20 +154,26 @@ node tools/spacecloud-watch.mjs watch --interval-seconds 60 --limit-per-cycle 3
 
 What it does each cycle:
 
-1. Builds a fresh plan from the Rhythmjoy Google Calendar cache.
-2. Skips local-log duplicates, reservation-number-missing events, non-paid events, and optional iCal duplicates.
-3. Opens the dedicated Chrome profile.
-4. Uploads only `plan.upload` rows through the SpaceCloud UI.
-5. Marks successful rows in `state/spacecloud-sync-log.json`.
-6. Consumes pending SpaceCloud delete tasks from `rhythmjoy_spacecloud_tasks`.
-7. Consumes pending Naver SmartPlace block tasks from `rhythmjoy_spacecloud_tasks`.
-8. Writes operational files under `state/spacecloud-watch/`.
+1. Polls `rhythmjoy_spacecloud_tasks` over SSH.
+2. Consumes pending SpaceCloud upload/delete tasks created from Naver reservation emails.
+3. Consumes pending Naver SmartPlace block/restore tasks created from SpaceCloud reservation emails.
+4. Opens the dedicated Chrome profile only when a browser-side task needs to run.
+5. Writes the platform action result back to the DB task row.
+6. Writes or deletes Google Calendar only after the real platform-side action succeeds.
+7. Writes operational files under `state/spacecloud-watch/`.
+
+The older Google Calendar cache plan is no longer part of the default loop. Use it only for legacy/backfill uploads:
+
+```bash
+node tools/spacecloud-watch.mjs once --legacy-calendar-plan --dry-run
+node tools/spacecloud-watch.mjs once --legacy-calendar-plan --limit-per-cycle 3
+```
 
 Operational limits:
 
 - This is not password automation. If SpaceCloud or Naver expires the session, the watcher sends a Telegram login-needed alert, keeps the Chrome profile open, and retries on the normal watch interval after the host logs in again.
-- It detects the Google Calendar cache, not raw Gmail. The server-side cache currently syncs Google Calendar every 15 seconds, so a 60-second local watch interval is usually enough.
-- New confirmed Google Calendar events are automatically uploaded to SpaceCloud by the local watcher.
+- The default loop detects DB work queued by the Cafe24 email importer. It does not scan Google Calendar for new uploads unless `--legacy-calendar-plan` is passed.
+- New mapped-hall Naver reservation emails are uploaded to SpaceCloud through `upload` tasks. Google Calendar is a downstream record after that platform action.
 - Cancellation detection is handled earlier at the Naver email import layer: `ops/rhythmjoy_email_import.py` records the cancellation as a retained DB event and creates a follow-up task instead of removing the DB row. Naver-origin cancellations create a SpaceCloud `delete` task for mapped hall rooms. The local watcher consumes that task and deletes the matching direct-added SpaceCloud schedule through the logged-in UI.
 - Automatic SpaceCloud deletion only proceeds when the clicked popup is a direct-added schedule and the room, date/time, and `naverReservationNo` in the memo match the DB task. Tasks without a reservation number are left as `needs_review` instead of being deleted automatically.
 - Google Calendar deletion and SpaceCloud deletion are reported separately. `Google Calendar 자동삭제 완료` does not mean SpaceCloud was deleted; SpaceCloud task status must be `done` or `already_gone`.
@@ -209,7 +215,7 @@ Booking ledger identity:
 - Current production samples show Naver reservation emails include reservation numbers. SpaceCloud emails are treated as having no reliable reservation number even when a URL contains an internal numeric id. Earlier SpaceCloud cancellation emails stored before this parser change were `spacecloud_ignored`, so they have no parsed reservation number in the DB. Future SpaceCloud cancellation emails are parsed and then matched from the existing ledger or reservation email record by room/date/time/name.
 - SpaceCloud settlement/admin notices in the same mail folder are not bookings. They are recorded only as ignored admin mail with reason `spacecloud_admin_settlement` and never update the booking ledger or automation task queue.
 
-The older Google Calendar plan upload path remains as a legacy/backfill path for calendar records that already existed before the DB upload queue was enabled. New mapped hall reservations should enter through `upload` tasks instead.
+The older Google Calendar plan upload path remains as a legacy/backfill path for calendar records that already existed before the DB upload queue was enabled. It is opt-in via `tools/spacecloud-watch.mjs --legacy-calendar-plan`; new mapped hall reservations should enter through `upload` tasks instead.
 
 With `RHYTHMJOY_EMAIL_DB_REQUIRED=0`, DB errors are logged and the importer falls back to calendar-only processing. Keep this as the normal operating mode while the DB is used as insurance.
 

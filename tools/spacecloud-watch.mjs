@@ -58,8 +58,9 @@ Options:
   --naver-block-limit-per-cycle <n>
                             Defaults to 2.
   --naver-business-id <id>  Defaults to 1257912.
+  --legacy-calendar-plan    Also run the older Google Calendar cache upload plan.
   --headless                Run Chrome headless. Not recommended for first login.
-  --dry-run                 Plan only; do not upload.
+  --dry-run                 Do not mutate DB rows, Google Calendar, or platform UI.
   --json                    Print machine-readable output for once/check-login.
   --no-telegram             Disable Telegram notifications.
 
@@ -70,6 +71,7 @@ Examples:
   node tools/spacecloud-watch.mjs notify-test
   node tools/spacecloud-watch.mjs once --dry-run
   node tools/spacecloud-watch.mjs watch --interval-seconds 60 --limit-per-cycle 3
+  node tools/spacecloud-watch.mjs once --legacy-calendar-plan --dry-run
 `;
 }
 
@@ -91,6 +93,7 @@ function parseArgs(argv) {
     deleteLimitPerCycle: 2,
     naverBlockLimitPerCycle: 2,
     naverBusinessId: '1257912',
+    legacyCalendarPlan: false,
     headless: false,
     dryRun: false,
     json: false,
@@ -113,6 +116,10 @@ function parseArgs(argv) {
     }
     if (arg === '--no-telegram') {
       args.telegram = false;
+      continue;
+    }
+    if (arg === '--legacy-calendar-plan') {
+      args.legacyCalendarPlan = true;
       continue;
     }
     if (!arg.startsWith('--')) throw new Error(`Unexpected argument: ${arg}`);
@@ -1012,7 +1019,7 @@ function cycleErrorMessage(errorText) {
 ${kstNowText()}
 
 자동등록/자동삭제 감시 주기에서 오류가 발생해 반복 실행을 멈췄습니다.
-가능 원인: Cafe24 SSH/DB 조회 실패, Google Calendar cache 응답 실패, 로컬 브라우저 자동화 오류.
+가능 원인: Cafe24 SSH/DB 작업큐 조회 실패, 플랫폼 반영 후 Google Calendar 기록 실패, 로컬 브라우저 자동화 오류.
 
 오류: ${String(errorText || '-').slice(0, 900)}
 로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
@@ -1660,15 +1667,16 @@ async function runCycle(args, context = null) {
   const planPath = path.join(workDir, 'latest-plan.json');
   const resultsPath = path.join(workDir, 'results.json');
   const runLogPath = path.join(workDir, 'runs.jsonl');
-  const plan = await buildPlan(args, planPath);
+  const plan = args.legacyCalendarPlan ? await buildPlan(args, planPath) : null;
   const cycle = {
     at: new Date().toISOString(),
-    planPath,
-    resultsPath,
-    sourceGeneratedAt: plan.source?.generatedAt || null,
-    sourceEventsInRange: plan.source?.eventCountInRange || 0,
-    uploadCandidates: plan.upload.length,
-    skipped: plan.skipped.length,
+    mode: args.legacyCalendarPlan ? 'db-queue-plus-legacy-calendar-plan' : 'db-queue',
+    planPath: args.legacyCalendarPlan ? planPath : '',
+    resultsPath: args.legacyCalendarPlan ? resultsPath : '',
+    sourceGeneratedAt: plan?.source?.generatedAt || null,
+    sourceEventsInRange: plan?.source?.eventCountInRange || 0,
+    uploadCandidates: plan?.upload?.length || 0,
+    skipped: plan?.skipped?.length || 0,
     dryRun: args.dryRun,
   };
 
@@ -1687,20 +1695,20 @@ async function runCycle(args, context = null) {
   try {
     const row = {
       ...cycle,
-      status: plan.upload.length === 0 || args.dryRun ? 'planned' : 'uploaded',
+      status: args.dryRun ? 'dry-run' : 'planned',
       attempted: 0,
       submittedInPlan: 0,
-      remainingInPlan: plan.upload.length,
+      remainingInPlan: plan?.upload?.length || 0,
       marked: 0,
       failed: [],
     };
 
     row.uploadTasks = await runUploadTasks(args, activeContext);
-    if (row.status === 'planned' && row.uploadTasks.attempted > 0) {
+    if (['planned', 'dry-run'].includes(row.status) && row.uploadTasks.attempted > 0) {
       row.status = row.uploadTasks.failed.length ? 'upload-task-needs-review' : 'upload-task-processed';
     }
 
-    if (!row.uploadTasks?.failed?.length && plan.upload.length > 0 && !args.dryRun) {
+    if (args.legacyCalendarPlan && !row.uploadTasks?.failed?.length && plan.upload.length > 0 && !args.dryRun) {
       const uploader = await createSpacecloudPlaywrightUploader({
         context: await getContext(),
         planPath,
@@ -1721,7 +1729,7 @@ async function runCycle(args, context = null) {
 
     if (!row.failed?.length && !row.uploadTasks?.failed?.length) {
       row.deleteTasks = await runDeleteTasks(args, activeContext);
-      if (row.status === 'planned' && row.deleteTasks.attempted > 0) {
+      if (['planned', 'dry-run'].includes(row.status) && row.deleteTasks.attempted > 0) {
         row.status = row.deleteTasks.failed.length ? 'delete-needs-review' : 'delete-processed';
       }
     }
@@ -1731,9 +1739,13 @@ async function runCycle(args, context = null) {
       const split = splitNaverAvailabilityResult(row.naverAvailabilityTasks);
       row.naverBlockTasks = split.naverBlockTasks;
       row.naverRestoreTasks = split.naverRestoreTasks;
-      if (row.status === 'planned' && row.naverAvailabilityTasks.attempted > 0) {
+      if (['planned', 'dry-run'].includes(row.status) && row.naverAvailabilityTasks.attempted > 0) {
         row.status = row.naverAvailabilityTasks.failed.length ? 'naver-availability-needs-review' : 'naver-availability-processed';
       }
+    }
+
+    if (!args.legacyCalendarPlan && row.status === 'planned') {
+      row.status = 'idle';
     }
 
     await appendJsonl(runLogPath, row);
@@ -1755,7 +1767,7 @@ async function runWatch(args) {
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
 
-  logLine(`watch started; interval=${args.intervalSeconds}s profile=${args.profileDir}`);
+  logLine(`watch started; interval=${args.intervalSeconds}s profile=${args.profileDir} mode=${args.legacyCalendarPlan ? 'db+legacy-calendar-plan' : 'db-queue'}`);
   try {
     while (!stopping) {
       try {
