@@ -10,6 +10,10 @@ import {
   deleteSpacecloudDirectReservation,
   openSpacecloudContext,
 } from './spacecloud-playwright-uploader.mjs';
+import {
+  checkNaverSmartplaceLogin,
+  setNaverAvailability,
+} from './naver-playwright-availability.mjs';
 
 const DEFAULT_CONFIG_PATH = 'config/spacecloud-sync.local.json';
 const DEFAULT_STATE_PATH = 'state/spacecloud-sync-log.json';
@@ -26,6 +30,7 @@ function usage() {
   return `Usage:
   node tools/spacecloud-watch.mjs login [options]
   node tools/spacecloud-watch.mjs check-login [options]
+  node tools/spacecloud-watch.mjs check-naver-login [options]
   node tools/spacecloud-watch.mjs notify-test [options]
   node tools/spacecloud-watch.mjs once [options]
   node tools/spacecloud-watch.mjs watch [options]
@@ -48,6 +53,9 @@ Options:
   --limit-per-cycle <n>     Defaults to 3.
   --delete-limit-per-cycle <n>
                             Defaults to 2.
+  --naver-block-limit-per-cycle <n>
+                            Defaults to 2.
+  --naver-business-id <id>  Defaults to 1257912.
   --headless                Run Chrome headless. Not recommended for first login.
   --dry-run                 Plan only; do not upload.
   --json                    Print machine-readable output for once/check-login.
@@ -56,6 +64,7 @@ Options:
 Examples:
   node tools/spacecloud-watch.mjs login
   node tools/spacecloud-watch.mjs check-login
+  node tools/spacecloud-watch.mjs check-naver-login
   node tools/spacecloud-watch.mjs notify-test
   node tools/spacecloud-watch.mjs once --dry-run
   node tools/spacecloud-watch.mjs watch --interval-seconds 60 --limit-per-cycle 3
@@ -78,6 +87,8 @@ function parseArgs(argv) {
     intervalSeconds: 60,
     limitPerCycle: 3,
     deleteLimitPerCycle: 2,
+    naverBlockLimitPerCycle: 2,
+    naverBusinessId: '1257912',
     headless: false,
     dryRun: false,
     json: false,
@@ -109,12 +120,14 @@ function parseArgs(argv) {
     if (!next || next.startsWith('--')) throw new Error(`Missing value for ${arg}`);
     i += 1;
 
-    if (['days', 'interval-seconds', 'limit-per-cycle', 'delete-limit-per-cycle', 'notify-cooldown-seconds'].includes(key)) {
+    if (['days', 'interval-seconds', 'limit-per-cycle', 'delete-limit-per-cycle', 'naver-block-limit-per-cycle', 'notify-cooldown-seconds'].includes(key)) {
       const parsed = Number.parseInt(next, 10);
       if (!Number.isFinite(parsed) || parsed < 1) throw new Error(`${arg} must be a positive integer`);
       args[key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = parsed;
     } else if (['config', 'state', 'from', 'rooms'].includes(key)) {
       args[key] = next;
+    } else if (key === 'naver-business-id') {
+      args.naverBusinessId = next;
     } else if (key === 'work-dir') {
       args.workDir = next;
     } else if (key === 'profile-dir') {
@@ -256,12 +269,13 @@ function runSshScript(target, script) {
   return cp.stdout;
 }
 
-async function fetchRemoteDeleteTasks(args) {
+async function fetchRemoteTasks(args, { taskType, limit }) {
   const target = await loadCafe24Target(args);
   const script = `
 set -e
 export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
-export DELETE_LIMIT=${shellQuote(args.deleteLimitPerCycle)}
+export RHYTHMJOY_TASK_TYPE=${shellQuote(taskType)}
+export TASK_LIMIT=${shellQuote(limit)}
 ${shellQuote(target.PYTHON_BIN)} <<'PY'
 import json
 import os
@@ -303,7 +317,7 @@ try:
                 payload_json AS payloadJson,
                 attempts
             FROM rhythmjoy_spacecloud_tasks
-            WHERE task_type='delete'
+            WHERE task_type=%s
               AND (
                 status='pending'
                 OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
@@ -311,7 +325,10 @@ try:
             ORDER BY created_at ASC, id ASC
             LIMIT %s
             """,
-            (int(os.environ.get('DELETE_LIMIT', '2')),)
+            (
+                os.environ['RHYTHMJOY_TASK_TYPE'],
+                int(os.environ.get('TASK_LIMIT', '2')),
+            )
         )
         rows = cur.fetchall()
         ids = [row['id'] for row in rows]
@@ -333,7 +350,21 @@ PY
   return JSON.parse(runSshScript(target, script).trim() || '[]');
 }
 
-async function updateRemoteDeleteTask(args, taskId, status, resultText) {
+async function fetchRemoteDeleteTasks(args) {
+  return fetchRemoteTasks(args, {
+    taskType: 'delete',
+    limit: args.deleteLimitPerCycle,
+  });
+}
+
+async function fetchRemoteNaverBlockTasks(args) {
+  return fetchRemoteTasks(args, {
+    taskType: 'naver_block',
+    limit: args.naverBlockLimitPerCycle,
+  });
+}
+
+async function updateRemoteTask(args, taskId, status, resultText) {
   const target = await loadCafe24Target(args);
   const payload = Buffer.from(JSON.stringify({
     taskId,
@@ -548,6 +579,47 @@ Google Calendar 취소 처리와 별개로 SpaceCloud 삭제 작업 중 확인�
 로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
 }
 
+function formatNaverBlockTaskLine(row) {
+  return [
+    `task=${row.taskId || '-'}`,
+    `방=${row.roomKey || '-'}`,
+    `일시=${row.date || '-'} ${row.startTime || '-'}-${row.endTime || '-'}`,
+    `예약번호=${row.reservationNo || '-'}`,
+    `예약자=${row.reserverName || '-'}`,
+    `상태=${row.status || '-'}`,
+    `사유=${row.error || '-'}`,
+  ].join('\n');
+}
+
+function naverBlockSuccessMessage(row) {
+  const processed = (row.naverBlockTasks?.rows || []).filter((taskRow) => ['blocked', 'already-blocked'].includes(taskRow.status));
+  const detailText = processed.map(formatNaverBlockTaskLine).join('\n\n');
+  return `네이버 예약불가 반영 완료
+${kstNowText()}
+
+스페이스클라우드 예약완료 메일 기준으로 네이버 SmartPlace 해당 시간 예약가능 슬롯을 막았습니다.
+
+처리건수: ${processed.length}건
+
+${String(detailText || '-').slice(0, 1200)}
+
+로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+}
+
+function naverBlockFailureMessage(rowOrError) {
+  const errorText = typeof rowOrError === 'string'
+    ? rowOrError
+    : (rowOrError?.failed || []).map(formatNaverBlockTaskLine).filter(Boolean).join('\n\n');
+  return `네이버 예약불가 자동처리 확인 필요
+${kstNowText()}
+
+스페이스클라우드 예약완료 메일은 감지됐지만 네이버 예약불가 반영 중 확인이 필요한 항목이 생겼습니다.
+네이버에 이미 확정/마감 슬롯이 있으면 네이버 예약을 우선으로 보고 자동 수정하지 않습니다.
+
+오류: ${String(errorText || '-').slice(0, 1200)}
+로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+}
+
 function cycleErrorMessage(errorText) {
   return `스페이스클라우드 자동화 점검 필요
 ${kstNowText()}
@@ -563,6 +635,13 @@ function dbStatusForDeleteRow(row) {
   if (row.status === 'deleted') return 'done';
   if (row.status === 'already-gone') return 'already_gone';
   if (row.status === 'needs-review') return 'needs_review';
+  if (isLoginProblem(row.error)) return 'pending';
+  return 'failed';
+}
+
+function dbStatusForNaverBlockRow(row) {
+  if (row.status === 'blocked' || row.status === 'already-blocked') return 'done';
+  if (row.status === 'naver-conflict' || row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   return 'failed';
 }
@@ -603,7 +682,7 @@ async function runDeleteTasks(args, context = null) {
       const row = await deleteSpacecloudDirectReservation(activeContext, task);
       rows.push(row);
       const status = dbStatusForDeleteRow(row);
-      await updateRemoteDeleteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && isLoginProblem(row.error)) {
         break;
       }
@@ -619,6 +698,68 @@ async function runDeleteTasks(args, context = null) {
   const failed = rows.filter((row) => !['deleted', 'already-gone'].includes(row.status));
   return {
     status: failed.length ? 'delete-needs-review' : 'delete-processed',
+    fetched: tasks.length,
+    attempted: rows.length,
+    rows,
+    failed,
+  };
+}
+
+async function runNaverBlockTasks(args, context = null) {
+  if (args.dryRun) {
+    return {
+      status: 'naver-block-dry-run',
+      fetched: 0,
+      attempted: 0,
+      rows: [],
+      failed: [],
+    };
+  }
+  const tasks = await fetchRemoteNaverBlockTasks(args);
+  if (tasks.length === 0) {
+    return {
+      status: 'no-naver-block-tasks',
+      fetched: tasks.length,
+      attempted: 0,
+      rows: [],
+      failed: [],
+    };
+  }
+
+  let ownedContext = null;
+  const activeContext = context || await openSpacecloudContext({
+    profileDir: args.profileDir,
+    headless: args.headless,
+  }).then((created) => {
+    ownedContext = created;
+    return created;
+  });
+
+  const rows = [];
+  try {
+    for (const task of tasks) {
+      const row = await setNaverAvailability(activeContext, task, {
+        businessId: args.naverBusinessId,
+        targetStatus: 'unavailable',
+      });
+      rows.push(row);
+      const status = dbStatusForNaverBlockRow(row);
+      await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      if (status === 'pending' && isLoginProblem(row.error)) {
+        break;
+      }
+      if (status === 'failed' || status === 'needs_review') {
+        break;
+      }
+      await sleep(800);
+    }
+  } finally {
+    if (ownedContext) await ownedContext.close();
+  }
+
+  const failed = rows.filter((row) => !['blocked', 'already-blocked'].includes(row.status));
+  return {
+    status: failed.length ? 'naver-block-needs-review' : 'naver-block-processed',
     fetched: tasks.length,
     attempted: rows.length,
     rows,
@@ -764,6 +905,20 @@ async function runCheckLogin(args) {
   }
 }
 
+async function runCheckNaverLogin(args) {
+  const context = await openSpacecloudContext({
+    profileDir: args.profileDir,
+    headless: args.headless,
+  });
+  try {
+    return await checkNaverSmartplaceLogin(context, {
+      businessId: args.naverBusinessId,
+    });
+  } finally {
+    await context.close();
+  }
+}
+
 async function runCycle(args, context = null) {
   const workDir = args.workDir;
   const planPath = path.join(workDir, 'latest-plan.json');
@@ -830,6 +985,13 @@ async function runCycle(args, context = null) {
       }
     }
 
+    if (!row.failed?.length && !row.deleteTasks?.failed?.length) {
+      row.naverBlockTasks = await runNaverBlockTasks(args, activeContext);
+      if (row.status === 'planned' && row.naverBlockTasks.attempted > 0) {
+        row.status = row.naverBlockTasks.failed.length ? 'naver-block-needs-review' : 'naver-block-processed';
+      }
+    }
+
     await appendJsonl(runLogPath, row);
     return row;
   } finally {
@@ -854,11 +1016,16 @@ async function runWatch(args) {
     while (!stopping) {
       try {
         const row = await runCycle(args, context);
-        logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; deleteTasks=${row.deleteTasks?.attempted || 0}`);
+        logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; deleteTasks=${row.deleteTasks?.attempted || 0}; naverBlockTasks=${row.naverBlockTasks?.attempted || 0}`);
         if (row.uploadedRows?.length) {
           const result = await sendTelegram(args, uploadSuccessMessage(row));
           if (result.sent) logLine(`telegram sent: spacecloud-upload-success count=${row.uploadedRows.length}`);
           else logLine(`telegram upload success skipped: ${result.reason}`);
+        }
+        if (row.naverBlockTasks?.rows?.some((taskRow) => ['blocked', 'already-blocked'].includes(taskRow.status))) {
+          const result = await sendTelegram(args, naverBlockSuccessMessage(row));
+          if (result.sent) logLine(`telegram sent: naver-block-success count=${row.naverBlockTasks.rows.length}`);
+          else logLine(`telegram naver block success skipped: ${result.reason}`);
         }
         if (row.failed?.length) {
           const errorText = row.failed.map((failedRow) => failedRow.error).join('\n');
@@ -879,6 +1046,17 @@ async function runWatch(args) {
           } else {
             await notifyWithCooldown(args, 'spacecloud-delete-failed', deleteFailureMessage(row.deleteTasks));
             logLine(`stopping after delete failure: ${JSON.stringify(row.deleteTasks.failed)}`);
+            break;
+          }
+        }
+        if (row.naverBlockTasks?.failed?.length) {
+          const errorText = row.naverBlockTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
+          if (isLoginProblem(errorText)) {
+            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorText));
+            logLine(`login needed during naver block; waiting for manual login: ${JSON.stringify(row.naverBlockTasks.failed)}`);
+          } else {
+            await notifyWithCooldown(args, 'naver-block-failed', naverBlockFailureMessage(row.naverBlockTasks));
+            logLine(`stopping after naver block failure: ${JSON.stringify(row.naverBlockTasks.failed)}`);
             break;
           }
         }
@@ -934,6 +1112,14 @@ async function main() {
     return;
   }
 
+  if (args.command === 'check-naver-login') {
+    const result = await runCheckNaverLogin(args);
+    if (args.json) console.log(JSON.stringify(result, null, 2));
+    else console.log(result.ok ? 'Naver SmartPlace login OK' : `Naver SmartPlace login needed: ${result.reason}`);
+    process.exitCode = result.ok ? 0 : 2;
+    return;
+  }
+
   if (args.command === 'notify-test') {
     const result = await sendTelegram(args, `스페이스클라우드 자동화 알림 테스트
 ${kstNowText()}
@@ -947,7 +1133,7 @@ ${kstNowText()}
   if (args.command === 'once') {
     const result = await runCycle(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
-    else console.log(`cycle ${result.status}; candidates=${result.uploadCandidates}; attempted=${result.attempted || 0}; remaining=${result.remainingInPlan ?? 0}`);
+    else console.log(`cycle ${result.status}; candidates=${result.uploadCandidates}; attempted=${result.attempted || 0}; remaining=${result.remainingInPlan ?? 0}; deleteTasks=${result.deleteTasks?.attempted || 0}; naverBlockTasks=${result.naverBlockTasks?.attempted || 0}`);
     return;
   }
 

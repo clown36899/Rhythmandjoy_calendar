@@ -725,6 +725,23 @@ def spacecloud_delete_dedupe_key(deletion, room_key):
     return f'delete|{digest}'
 
 
+def spacecloud_naver_block_dedupe_key(event_data, room_key):
+    reservation_number = event_data.get('reservation_number') or ''
+    if reservation_number:
+        raw_key = f'naver_block|reservation|{reservation_number}'
+    else:
+        raw_key = '|'.join([
+            'naver_block',
+            room_key or '',
+            normalize_date(event_data.get('date', '')) if event_data.get('date') else '',
+            event_data.get('start_time', ''),
+            event_data.get('end_time', ''),
+            event_data.get('name', ''),
+        ])
+    digest = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+    return f'naver_block|{digest}'
+
+
 def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, calendar_key):
     room_key = calendar_to_spacecloud_room_key(calendar_key)
     if not config['db_enabled'] or not room_key:
@@ -795,6 +812,100 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
         return task
     except Exception as error:
         disable_db_logging(config, logger, 'SpaceCloud delete task save failed', error)
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_data, calendar_key, conflicts):
+    if not config.get('spacecloud_naver_block_enabled'):
+        return None
+    if conflicts:
+        logger.info(
+            'Naver block task skipped: Google Calendar conflict reservation=%s conflicts=%s',
+            event_data.get('reservation_number'),
+            len(conflicts),
+        )
+        return None
+
+    room_key = spacecloud_room_key_from_calendar(calendar_key)
+    if not config['db_enabled'] or not room_key:
+        if not room_key:
+            logger.info('Naver block task skipped: no room mapping for calendar=%s product=%s', calendar_key, event_data.get('product'))
+        return None
+
+    dedupe_key = spacecloud_naver_block_dedupe_key(event_data, room_key)
+    payload = {
+        'source': 'spacecloud-email-reservation',
+        'action': 'block-naver-availability',
+        'calendarKey': calendar_key,
+        'roomKey': room_key,
+        'conflictCount': len(conflicts),
+        **event_data,
+    }
+    row = {
+        'dedupe_key': dedupe_key,
+        'email_event_id': email_event_id,
+        'task_type': 'naver_block',
+        'room_key': room_key,
+        'reservation_number': event_data.get('reservation_number') or '',
+        'reserver_name': event_data.get('name') or '',
+        'product': event_data.get('product') or '',
+        'reservation_date': clean_date_or_none(event_data.get('date')),
+        'start_time': clean_time_or_none(event_data.get('start_time')),
+        'end_time': clean_time_or_none(event_data.get('end_time')),
+        'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+    }
+
+    conn = None
+    try:
+        conn = db_connect(config)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO rhythmjoy_spacecloud_tasks (
+                    dedupe_key, email_event_id, task_type, status,
+                    room_key, reservation_number, reserver_name, product,
+                    reservation_date, start_time, end_time, payload_json,
+                    created_at, updated_at
+                )
+                VALUES (
+                    %(dedupe_key)s, %(email_event_id)s, %(task_type)s, 'pending',
+                    %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
+                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(payload_json)s,
+                    NOW(), NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    email_event_id=VALUES(email_event_id),
+                    room_key=VALUES(room_key),
+                    reservation_number=VALUES(reservation_number),
+                    reserver_name=VALUES(reserver_name),
+                    product=VALUES(product),
+                    reservation_date=VALUES(reservation_date),
+                    start_time=VALUES(start_time),
+                    end_time=VALUES(end_time),
+                    payload_json=VALUES(payload_json),
+                    status=IF(status IN ('done', 'needs_review'), status, 'pending'),
+                    updated_at=NOW()
+                """,
+                row,
+            )
+            cursor.execute(
+                'SELECT * FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=%s LIMIT 1',
+                (dedupe_key,),
+            )
+            task = cursor.fetchone()
+        logger.info(
+            'Naver block task saved id=%s room=%s reservation=%s status=%s',
+            task.get('id') if task else '-',
+            room_key,
+            row['reservation_number'],
+            task.get('status') if task else '-',
+        )
+        return task
+    except Exception as error:
+        disable_db_logging(config, logger, 'Naver block task save failed', error)
         return None
     finally:
         if conn is not None:
@@ -899,15 +1010,37 @@ def format_spacecloud_conflicts(conflicts):
     return '\n'.join(lines)
 
 
-def notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, subject, email_received_at, logger):
+def format_naver_block_task_status(config, task, conflicts):
+    if conflicts:
+        return '네이버 우선 충돌 감지: 구글 캘린더에 이미 겹치는 일정이 있어 네이버 예약불가 작업을 만들지 않음'
+    if not config.get('spacecloud_naver_block_enabled'):
+        return 'report-only: 네이버 예약불가 변경 안 함'
+    if task:
+        return f"네이버 예약불가 작업 저장됨: task={task.get('id') or '-'} status={task.get('status') or '-'}"
+    return '네이버 예약불가 작업 미생성: DB/방 매핑/파싱 상태 확인 필요'
+
+
+def format_spacecloud_google_status(config, google_event, conflicts):
+    if conflicts:
+        return '생성 안 함: 기존 구글 캘린더 겹침'
+    if google_event:
+        return f"자동생성 완료: event_id={google_event.get('id') or '-'}"
+    if not config.get('spacecloud_google_create_enabled'):
+        return 'report-only: 자동생성 안 함'
+    return '자동생성 미완료: DB/파싱/Google API 상태 확인 필요'
+
+
+def notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, google_event, naver_block_task, subject, email_received_at, logger):
     status = '네이버 우선 충돌 감지' if conflicts else '네이버 차단 후보 감지'
+    current_step = format_naver_block_task_status(config, naver_block_task, conflicts)
+    google_status = format_spacecloud_google_status(config, google_event, conflicts)
     text = (
         f'스페이스클라우드 예약완료 메일 감지({status})\n'
         f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
-        '현재 단계: report-only\n'
-        '아직 구글 캘린더 등록/네이버 예약불가 변경은 하지 않았습니다.\n\n'
+        f'현재 단계: {current_step}\n\n'
         f"상품: {event_data.get('product') or '-'}\n"
         f"캘린더: {calendar_key or '-'}\n"
+        f"구글캘린더: {google_status}\n"
         f"메일수신: {email_received_at or '-'}\n"
         f"예약시간: {reservation_time_text(event_data)}\n"
         f"예약자명: {event_data.get('name') or '-'}\n"
@@ -1094,7 +1227,7 @@ def parse_spacecloud_reservation(body, raw_message, subject):
 
     return {
         'source_platform': 'spacecloud',
-        'source_mode': 'report_only',
+        'source_mode': 'spacecloud_email',
         'name': name,
         'reservation_number': reservation_id or '',
         'product': product,
@@ -1456,15 +1589,56 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             if event_data and calendar_key:
                 conflicts = find_calendar_conflicts(service, calendar_key, event_data, logger)
                 event_data['calendar_key'] = calendar_key
+                event_data['target_calendar'] = calendar_key
                 event_data['conflict_count'] = len(conflicts)
+                google_event = None
+                if not conflicts and config.get('spacecloud_google_create_enabled'):
+                    google_event = create_calendar_event(
+                        service,
+                        event_data,
+                        logger,
+                        dedupe_google_calendar=True,
+                    )
+                naver_block_task = upsert_spacecloud_naver_block_task(
+                    config,
+                    logger,
+                    email_record_id,
+                    event_data,
+                    calendar_key,
+                    conflicts,
+                )
+                if conflicts:
+                    processing_status = 'spacecloud_conflict_reported'
+                elif naver_block_task:
+                    task_status = naver_block_task.get('status') or 'pending'
+                    processing_status = f"naver_block_{task_status}"
+                    if len(processing_status) > 32:
+                        processing_status = 'naver_block_saved'
+                elif google_event:
+                    processing_status = 'calendar_created'
+                elif config.get('spacecloud_naver_block_enabled'):
+                    processing_status = 'naver_block_skipped'
+                else:
+                    processing_status = 'report_only_ready'
                 update_email_processing(
                     config,
                     email_record_id,
-                    'report_only_conflict' if conflicts else 'report_only_ready',
+                    processing_status,
                     logger,
+                    google_calendar_event_id=google_event.get('id', '') if google_event else '',
                     error_text='',
                 )
-                notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, subject, email_received_at, logger)
+                notify_spacecloud_reservation_report(
+                    config,
+                    event_data,
+                    calendar_key,
+                    conflicts,
+                    google_event,
+                    naver_block_task,
+                    subject,
+                    email_received_at,
+                    logger,
+                )
             else:
                 logger.warning('SpaceCloud reservation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
                 update_email_processing(
@@ -1584,6 +1758,8 @@ def build_config():
         'store_raw_email_body': env_flag('RHYTHMJOY_EMAIL_STORE_RAW_BODY', '1'),
         'dedupe_google_calendar': env_flag('RHYTHMJOY_EMAIL_DEDUPE_GOOGLE', '0'),
         'spacecloud_email_enabled': env_flag('RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED', '0'),
+        'spacecloud_google_create_enabled': env_flag('RHYTHMJOY_SPACECLOUD_GOOGLE_CREATE_ENABLED', '0'),
+        'spacecloud_naver_block_enabled': env_flag('RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED', '0'),
     }
 
 
