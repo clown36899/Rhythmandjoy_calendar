@@ -230,14 +230,14 @@ DB_NAME=
 RHYTHMJOY_EMAIL_DB_REQUIRED=0
 RHYTHMJOY_EMAIL_STORE_RAW_BODY=1
 RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0
-RHYTHMJOY_EMAIL_POLL_INTERVAL_SECONDS=60
+RHYTHMJOY_EMAIL_POLL_INTERVAL_SECONDS=30
 RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=0
 RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=0
 RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=0
 ```
 
 `RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` preserves the old behavior. Set it to `1` only if you intentionally want the importer to search Google Calendar by reservation number before creating an event.
-`RHYTHMJOY_EMAIL_POLL_INTERVAL_SECONDS` defaults to `60`. The importer checks a small fixed set of Naver IMAP folders once per interval; production logs show each idle cycle completes in a few seconds, so 60 seconds is a practical balance between fast opposite-platform blocking and low server load. Increase it if Naver IMAP throttling is observed.
+`RHYTHMJOY_EMAIL_POLL_INTERVAL_SECONDS` defaults to `30`. The importer checks a small fixed set of Naver IMAP folders once per interval; production tests on Cafe24 completed 30, 15, and 10 second IMAP search cycles without errors, but Naver does not publish a numeric polling limit and the server does not advertise IMAP IDLE support. Use 30 seconds as the normal operating value; increase it if Naver IMAP throttling is observed.
 Set `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1` only when the local Mac watcher is installed, logged into SpaceCloud, and ready to consume `upload` tasks. With this enabled, mapped hall Naver reservation emails no longer create Google Calendar immediately; the watcher uploads to SpaceCloud first, then creates the Google Calendar record from the DB payload.
 
 Set `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` for SpaceCloud reservation email intake. Add `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1` only when the local Mac watcher is installed, logged into Naver SmartPlace, and ready to consume `naver_block` tasks. Google Calendar creation for SpaceCloud-origin reservations is intentionally done by the local watcher after Naver SmartPlace availability is applied. Toggle the relevant flag back to `0` and restart `my_email_service.service` to return to the previous importer behavior.

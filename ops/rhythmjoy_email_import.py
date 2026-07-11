@@ -2624,7 +2624,7 @@ def build_config():
         'google_service_account_file': google_service_account_file,
         'imap_server': os.environ.get('NAVER_IMAP_SERVER', 'imap.naver.com'),
         'imap_port': int(os.environ.get('NAVER_IMAP_PORT', '993')),
-        'poll_interval': int(os.environ.get('RHYTHMJOY_EMAIL_POLL_INTERVAL_SECONDS', '60')),
+        'poll_interval': int(os.environ.get('RHYTHMJOY_EMAIL_POLL_INTERVAL_SECONDS', '30')),
         'smtp_server': os.environ.get('NAVER_SMTP_SERVER', 'smtp.naver.com'),
         'smtp_port': int(os.environ.get('NAVER_SMTP_PORT', '587')),
         'smtp_username': os.environ.get('NAVER_SMTP_USERNAME', naver_mail_username),
