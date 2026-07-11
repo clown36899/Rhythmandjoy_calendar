@@ -228,6 +228,11 @@ def normalize_event_datetime_fields(event_data):
     return normalized
 
 
+def is_spacecloud_origin_event(event_data):
+    source = str((event_data or {}).get('source') or '').strip().lower()
+    return source.startswith('spacecloud-')
+
+
 def parse_datetime(date_text, time_text):
     date_value = datetime.strptime(normalize_date(date_text), '%Y-%m-%d')
     hour, minute = normalize_booking_time(time_text)
@@ -1839,7 +1844,9 @@ def create_calendar_event(service, event_data, logger, dedupe_google_calendar=Fa
     if end <= start:
         end += timedelta(days=1)
 
+    source_line = '예약경로: SC\n' if is_spacecloud_origin_event(event_data) else ''
     description = (
+        f"{source_line}"
         f"예약자명: {event_data['name']}\n"
         f"예약상품: {event_data['product']}\n"
         f"사용일자: {event_data['date']}\n"
