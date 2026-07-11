@@ -157,9 +157,9 @@ What it does each cycle:
 1. Polls `rhythmjoy_spacecloud_tasks` over SSH.
 2. Consumes pending SpaceCloud upload/delete tasks created from Naver reservation emails.
 3. Consumes pending Naver SmartPlace block/restore tasks created from SpaceCloud reservation emails.
-4. Opens the dedicated Chrome profile only when a browser-side task needs to run.
+4. Keeps the dedicated Chrome profile available for browser-side tasks and manual re-login when a session expires.
 5. Writes the platform action result back to the DB task row.
-6. Writes or deletes Google Calendar only after the real platform-side action succeeds.
+6. Writes or deletes Google Calendar only after the real platform-side action succeeds. Google Calendar write/delete failures are recorded as warnings; they do not turn a successful platform action into a failed booking action.
 7. Writes operational files under `state/spacecloud-watch/`.
 
 The older Google Calendar cache plan is no longer part of the default loop. Use it only for legacy/backfill uploads:
@@ -173,14 +173,14 @@ Operational limits:
 
 - This is not password automation. If SpaceCloud or Naver expires the session, the watcher sends a Telegram login-needed alert, keeps the Chrome profile open, and retries on the normal watch interval after the host logs in again.
 - The default loop detects DB work queued by the Cafe24 email importer. It does not scan Google Calendar for new uploads unless `--legacy-calendar-plan` is passed.
-- New mapped-hall Naver reservation emails are uploaded to SpaceCloud through `upload` tasks. Google Calendar is a downstream record after that platform action.
+- New mapped-hall Naver reservation emails are uploaded to SpaceCloud through `upload` tasks. Google Calendar is a downstream record after that platform action, never the source of truth.
 - Cancellation detection is handled earlier at the Naver email import layer: `ops/rhythmjoy_email_import.py` records the cancellation as a retained DB event and creates a follow-up task instead of removing the DB row. Naver-origin cancellations create a SpaceCloud `delete` task for mapped hall rooms. The local watcher consumes that task and deletes the matching direct-added SpaceCloud schedule through the logged-in UI.
 - Automatic SpaceCloud deletion only proceeds when the clicked popup is a direct-added schedule and the room, date/time, and `naverReservationNo` in the memo match the DB task. Tasks without a reservation number are left as `needs_review` instead of being deleted automatically.
 - Google Calendar deletion and SpaceCloud deletion are reported separately. `Google Calendar 자동삭제 완료` does not mean SpaceCloud was deleted; SpaceCloud task status must be `done` or `already_gone`.
 - Telegram alerts are sent for host action items and state changes: successful SpaceCloud uploads, SpaceCloud login/session expiry, upload failures, delete tasks that need review, Naver SmartPlace block success or review-needed states, watcher cycle errors, Naver cancellation detection, and cancellation email parse failures.
 - SpaceCloud reservation-complete and cancellation-complete email intake starts from the Naver mail folder displayed as `스페이스클라우드`. When `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1`, the Cafe24 email importer records parsed SpaceCloud emails in the DB, checks Google Calendar only as downstream verification data, and sends Telegram reports.
 - If `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1` is also enabled, SpaceCloud reservation-complete emails create a `naver_block` task even when Google Calendar already has a conflicting record. Naver mail plus DB is the source of truth; Google Calendar is a record after the platform-side action. The local Mac watcher opens Naver SmartPlace weekly calendar, selects the mapped room/date/time, splits overnight or multi-hour reservations into hourly slots, and changes available slots to `예약불가`. Only after that Naver-side change is verified does the watcher create the mapped Google Calendar event. If Naver already has a confirmed or sold-out slot there, the watcher does not overwrite it and marks the task `needs_review`.
-- SpaceCloud cancellation-complete emails create a retained `spacecloud_cancellation` DB event and a `naver_restore` task. The local Mac watcher processes `naver_block` and `naver_restore` in DB creation order, restores only slots that are still `예약불가`, and deletes the matching Google Calendar record only after the Naver-side restore succeeds or is already available. Confirmed/sold-out/unknown Naver slots are left as `needs_review`.
+- SpaceCloud cancellation-complete emails create a retained `spacecloud_cancellation` DB event and a `naver_restore` task. The local Mac watcher processes `naver_block` and `naver_restore` in DB creation order, but restores Naver availability only when a previous automation-owned block actually changed the slot. If the slot was already manually blocked, the watcher does not release it. Google Calendar cleanup is still attempted afterward as a record-layer cleanup.
 - SpaceCloud cancellation emails may not include the SpaceCloud reservation id. In that case the importer tries to enrich the cancellation from an earlier `spacecloud_reservation` DB row with the same calendar, room/date/time, and reserver name. If no reservation id can be recovered, the restore task is left for review instead of changing Naver availability automatically.
 
 ## Naver Email DB Ledger
@@ -203,7 +203,7 @@ Default production behavior uses the Naver email DB row as the durable source be
 6. For SpaceCloud-origin reservation emails, a Naver SmartPlace `naver_block` task is saved in `rhythmjoy_spacecloud_tasks`.
 7. For SpaceCloud-origin cancellation emails, a Naver SmartPlace `naver_restore` task is saved in `rhythmjoy_spacecloud_tasks`.
 8. The Mac watcher polls `rhythmjoy_spacecloud_tasks` over SSH and performs the real platform-side UI action through the already logged-in Chrome profile.
-9. Google Calendar is written or deleted after the platform-side action succeeds, so it stays a record layer instead of becoming the booking source.
+9. Google Calendar is written or deleted after the platform-side action succeeds, so it stays a record layer instead of becoming the booking source. Calendar record conflicts or transient API failures are logged in `result_text` and Telegram details as warnings.
 10. DB status records the result for verification, retry, and recovery.
 
 Booking ledger identity:
@@ -230,12 +230,14 @@ DB_NAME=
 RHYTHMJOY_EMAIL_DB_REQUIRED=0
 RHYTHMJOY_EMAIL_STORE_RAW_BODY=1
 RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0
+RHYTHMJOY_EMAIL_POLL_INTERVAL_SECONDS=60
 RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=0
 RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=0
 RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=0
 ```
 
 `RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` preserves the old behavior. Set it to `1` only if you intentionally want the importer to search Google Calendar by reservation number before creating an event.
+`RHYTHMJOY_EMAIL_POLL_INTERVAL_SECONDS` defaults to `60`. The importer checks a small fixed set of Naver IMAP folders once per interval; production logs show each idle cycle completes in a few seconds, so 60 seconds is a practical balance between fast opposite-platform blocking and low server load. Increase it if Naver IMAP throttling is observed.
 Set `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1` only when the local Mac watcher is installed, logged into SpaceCloud, and ready to consume `upload` tasks. With this enabled, mapped hall Naver reservation emails no longer create Google Calendar immediately; the watcher uploads to SpaceCloud first, then creates the Google Calendar record from the DB payload.
 
 Set `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` for SpaceCloud reservation email intake. Add `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1` only when the local Mac watcher is installed, logged into Naver SmartPlace, and ready to consume `naver_block` tasks. Google Calendar creation for SpaceCloud-origin reservations is intentionally done by the local watcher after Naver SmartPlace availability is applied. Toggle the relevant flag back to `0` and restart `my_email_service.service` to return to the previous importer behavior.
