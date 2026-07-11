@@ -98,6 +98,7 @@ The restore script refuses any Apache config outside that allowlist.
 `ops/rhythmjoy_email_import.py` writes a DB record before creating or deleting Google Calendar events when `DB_SERVERNAME`, `DB_USERNAME`, `DB_PASSWORD`, and `DB_NAME` are set in `/home/clown313python/myapp/.env`. The DB ledger is the audit/recovery layer; it should not block the existing Google Calendar importer in normal operation.
 
 - `rhythmjoy_naver_email_events`: durable record of each Naver/SpaceCloud reservation or cancellation email and its processing status. Cancellation rows are retained instead of deleted, so a later audit can distinguish "cancellation email arrived" from "platform action completed".
+- `rhythmjoy_booking_ledger`: current-state booking ledger. Each parsed confirmation/cancellation email upserts a booking identity as `confirmed` or `canceled`, while linking back to the original confirmed/canceled email event ids. This is the booking-state layer; email events remain the source audit trail.
 - `rhythmjoy_spacecloud_tasks`: durable queue for cross-platform follow-up work. Naver-origin cancellation delete tasks for mapped hall rooms are consumed by the Mac SpaceCloud watcher and marked `done`, `already_gone`, `needs_review`, `google_pending`, or `failed`. SpaceCloud-origin cancellation emails create `naver_restore` tasks that restore Naver SmartPlace availability before Google Calendar is deleted.
 
 Keep `RHYTHMJOY_EMAIL_DB_REQUIRED=0` for normal operation so DB errors fall back to calendar-only processing. Keep `RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` unless you intentionally want the importer to search Google Calendar by reservation number before creating a new event.
@@ -106,4 +107,10 @@ Keep `RHYTHMJOY_EMAIL_DB_REQUIRED=0` for normal operation so DB errors fall back
 
 `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` enables SpaceCloud reservation-complete and cancellation-complete email intake from the Naver mail folder displayed as `스페이스클라우드`. The Naver email plus DB row is the source of truth; Google Calendar checks are only downstream verification. With `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1`, parsed SpaceCloud confirmations create `naver_block` tasks that the local Mac watcher applies to Naver SmartPlace before writing Google Calendar, and parsed SpaceCloud cancellations create `naver_restore` tasks that restore Naver availability before deleting Google Calendar. Set the relevant flag back to `0` and restart `my_email_service.service` to disable the new intake or queue without affecting the rest of the importer.
 
-SpaceCloud cancellation emails may omit the SpaceCloud reservation id. The importer first tries to recover it from an earlier `spacecloud_reservation` DB row with the same calendar, date/time, and reserver name. If no id is available, the task is retained for review instead of changing Naver availability automatically.
+SpaceCloud cancellation emails may omit the SpaceCloud reservation id. The importer first tries to recover it from an earlier `rhythmjoy_booking_ledger` or `spacecloud_reservation` DB row with the same calendar, date/time, and reserver name. If no id is available, the task is retained for review instead of changing Naver availability automatically.
+
+Run this after restoring a DB backup or deploying the ledger for the first time:
+
+```bash
+/home/clown313python/.pyenv/versions/3.8.12/envs/enve/bin/python3.8 /home/clown313python/rhythmjoy_ops/rhythmjoy_email_import.py --backfill-ledger
+```

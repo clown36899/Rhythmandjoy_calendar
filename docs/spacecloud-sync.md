@@ -184,19 +184,27 @@ The Cafe24 email importer now writes a DB ledger before cross-platform side effe
 Tables:
 
 - `rhythmjoy_naver_email_events`: one row per booking/cancellation email. Cancellations are not deleted from this table; they remain as `cancellation` or `spacecloud_cancellation` events with parse and processing status, so later audits can distinguish "mail arrived", "task saved", and "platform action completed".
+- `rhythmjoy_booking_ledger`: one row per booking identity. This is the current-state ledger used to decide whether a booking is `confirmed` or `canceled`. Confirmed and canceled email event ids are linked back to `rhythmjoy_naver_email_events`; raw email event rows are retained as the audit trail.
 - `rhythmjoy_spacecloud_tasks`: durable work queue for cross-platform actions. Naver reservation emails for mapped hall rooms create an `upload` task when enabled. Naver cancellation emails for mapped hall rooms create a `delete` task with `pending` status. SpaceCloud reservation-complete emails can create a `naver_block` task when enabled. SpaceCloud cancellation-complete emails can create a `naver_restore` task. The Mac watcher claims pending tasks, performs the matching UI action, and writes `done`, `already_gone`, `needs_review`, `google_pending`, or `failed`.
 
 Default production behavior uses the Naver email DB row as the durable source before cross-platform work:
 
 1. Naver email is read.
 2. The email is saved or updated in `rhythmjoy_naver_email_events`.
-3. For mapped hall reservation emails, a SpaceCloud `upload` task is saved in `rhythmjoy_spacecloud_tasks` when `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1`.
-4. For cancellation emails, a SpaceCloud `delete` task is saved in `rhythmjoy_spacecloud_tasks`. With `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1`, Google Calendar deletion is deferred until the watcher confirms the SpaceCloud delete task.
-5. For SpaceCloud-origin reservation emails, a Naver SmartPlace `naver_block` task is saved in `rhythmjoy_spacecloud_tasks`.
-6. For SpaceCloud-origin cancellation emails, a Naver SmartPlace `naver_restore` task is saved in `rhythmjoy_spacecloud_tasks`.
-7. The Mac watcher polls `rhythmjoy_spacecloud_tasks` over SSH and performs the real platform-side UI action through the already logged-in Chrome profile.
-8. Google Calendar is written or deleted after the platform-side action succeeds, so it stays a record layer instead of becoming the booking source.
-9. DB status records the result for verification, retry, and recovery.
+3. The booking identity is upserted into `rhythmjoy_booking_ledger` as `confirmed` or `canceled`.
+4. For mapped hall reservation emails, a SpaceCloud `upload` task is saved in `rhythmjoy_spacecloud_tasks` when `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1`.
+5. For cancellation emails, a SpaceCloud `delete` task is saved in `rhythmjoy_spacecloud_tasks`. With `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1`, Google Calendar deletion is deferred until the watcher confirms the SpaceCloud delete task.
+6. For SpaceCloud-origin reservation emails, a Naver SmartPlace `naver_block` task is saved in `rhythmjoy_spacecloud_tasks`.
+7. For SpaceCloud-origin cancellation emails, a Naver SmartPlace `naver_restore` task is saved in `rhythmjoy_spacecloud_tasks`.
+8. The Mac watcher polls `rhythmjoy_spacecloud_tasks` over SSH and performs the real platform-side UI action through the already logged-in Chrome profile.
+9. Google Calendar is written or deleted after the platform-side action succeeds, so it stays a record layer instead of becoming the booking source.
+10. DB status records the result for verification, retry, and recovery.
+
+Booking ledger identity:
+
+- If an email has a reservation number, the ledger key is based on `source_platform + reservation_number`.
+- If an email has no reservation number, the fallback key is based on `source_platform + calendar + date + start/end + reserver name`.
+- Current production samples show Naver reservation emails and SpaceCloud reservation-complete emails include reservation numbers. Earlier SpaceCloud cancellation emails stored before this parser change were `spacecloud_ignored`, so they have no parsed reservation number in the DB. Future SpaceCloud cancellation emails are parsed and then enriched from the existing ledger or reservation email record when the cancellation email itself omits the reservation id.
 
 The older Google Calendar plan upload path remains as a legacy/backfill path for calendar records that already existed before the DB upload queue was enabled. New mapped hall reservations should enter through `upload` tasks instead.
 

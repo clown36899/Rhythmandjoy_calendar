@@ -627,6 +627,41 @@ def ensure_db_tables(config, logger):
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rhythmjoy_booking_ledger (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    ledger_key VARCHAR(96) NOT NULL,
+                    source_platform VARCHAR(32) NOT NULL DEFAULT '',
+                    source_mode VARCHAR(64) NOT NULL DEFAULT '',
+                    current_status VARCHAR(32) NOT NULL DEFAULT 'confirmed',
+                    target_calendar VARCHAR(64) NOT NULL DEFAULT '',
+                    room_key VARCHAR(8) NOT NULL DEFAULT '',
+                    reservation_number VARCHAR(64) NOT NULL DEFAULT '',
+                    reserver_name VARCHAR(128) NOT NULL DEFAULT '',
+                    product VARCHAR(255) NOT NULL DEFAULT '',
+                    reservation_date DATE NULL,
+                    start_time TIME NULL,
+                    end_time TIME NULL,
+                    payment_status VARCHAR(64) NOT NULL DEFAULT '',
+                    price VARCHAR(64) NOT NULL DEFAULT '',
+                    confirmed_email_event_id BIGINT UNSIGNED NULL,
+                    canceled_email_event_id BIGINT UNSIGNED NULL,
+                    confirmed_email_received_at DATETIME NULL,
+                    canceled_email_received_at DATETIME NULL,
+                    last_event_at DATETIME NULL,
+                    payload_json TEXT NULL,
+                    cancel_payload_json TEXT NULL,
+                    created_at DATETIME NULL,
+                    updated_at DATETIME NULL,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uq_ledger_key (ledger_key),
+                    KEY idx_status_time (current_status, reservation_date, start_time),
+                    KEY idx_reservation_number (reservation_number),
+                    KEY idx_room_date (room_key, reservation_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
             ensure_db_column(cursor, 'rhythmjoy_naver_email_events', 'email_received_at', 'DATETIME NULL AFTER message_id')
         logger.info('Email DB tables checked')
     except Exception as error:
@@ -749,6 +784,205 @@ def update_email_processing(config, email_event_id, status, logger, **fields):
             conn.close()
 
 
+def booking_event_at(email_received_at):
+    return email_received_at or datetime.now(KST).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+
+
+def booking_room_key_from_calendar(calendar_key):
+    return spacecloud_room_key_from_calendar(calendar_key) or calendar_to_spacecloud_room_key(calendar_key)
+
+
+def booking_ledger_key(source_platform, event_data, calendar_key):
+    reservation_number = event_data.get('reservation_number') or ''
+    if reservation_number:
+        raw_key = f'{source_platform}|reservation|{reservation_number}'
+    else:
+        raw_key = '|'.join([
+            source_platform or '',
+            calendar_key or '',
+            normalize_date(event_data.get('date', '')) if event_data.get('date') else '',
+            event_data.get('start_time', ''),
+            event_data.get('end_time', ''),
+            event_data.get('name', ''),
+        ])
+    digest = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+    return f'{source_platform}|{digest}'
+
+
+def booking_ledger_row(source_platform, event_data, calendar_key, email_event_id, email_received_at):
+    event_at = booking_event_at(email_received_at)
+    return {
+        'ledger_key': booking_ledger_key(source_platform, event_data, calendar_key),
+        'source_platform': source_platform or '',
+        'source_mode': event_data.get('source_mode') or '',
+        'target_calendar': calendar_key or '',
+        'room_key': booking_room_key_from_calendar(calendar_key),
+        'reservation_number': event_data.get('reservation_number') or '',
+        'reserver_name': event_data.get('name') or '',
+        'product': event_data.get('product') or '',
+        'reservation_date': clean_date_or_none(event_data.get('date')),
+        'start_time': clean_time_or_none(event_data.get('start_time')),
+        'end_time': clean_time_or_none(event_data.get('end_time')),
+        'payment_status': event_data.get('payment_status') or '',
+        'price': event_data.get('price') or '',
+        'email_event_id': email_event_id,
+        'event_at': event_at,
+        'payload_json': json.dumps(event_data, ensure_ascii=False, separators=(',', ':')),
+    }
+
+
+def db_select_booking_ledger(config, ledger_key):
+    if not config['db_enabled']:
+        return None
+    conn = None
+    try:
+        conn = db_connect(config)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                'SELECT * FROM rhythmjoy_booking_ledger WHERE ledger_key=%s LIMIT 1',
+                (ledger_key,),
+            )
+            return cursor.fetchone()
+    except Exception as error:
+        disable_db_logging(config, logging.getLogger('rhythmjoy_email_import'), 'Booking ledger select failed', error)
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, calendar_key, email_received_at, source_platform):
+    if not config['db_enabled'] or not event_data:
+        return None
+
+    row = booking_ledger_row(source_platform, event_data, calendar_key, email_event_id, email_received_at)
+    conn = None
+    try:
+        conn = db_connect(config)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO rhythmjoy_booking_ledger (
+                    ledger_key, source_platform, source_mode, current_status,
+                    target_calendar, room_key, reservation_number, reserver_name, product,
+                    reservation_date, start_time, end_time,
+                    payment_status, price,
+                    confirmed_email_event_id, confirmed_email_received_at, last_event_at,
+                    payload_json, created_at, updated_at
+                )
+                VALUES (
+                    %(ledger_key)s, %(source_platform)s, %(source_mode)s, 'confirmed',
+                    %(target_calendar)s, %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
+                    %(reservation_date)s, %(start_time)s, %(end_time)s,
+                    %(payment_status)s, %(price)s,
+                    %(email_event_id)s, %(event_at)s, %(event_at)s,
+                    %(payload_json)s, NOW(), NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    source_mode=VALUES(source_mode),
+                    current_status=IF(VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), 'confirmed', current_status),
+                    target_calendar=VALUES(target_calendar),
+                    room_key=VALUES(room_key),
+                    reservation_number=VALUES(reservation_number),
+                    reserver_name=VALUES(reserver_name),
+                    product=VALUES(product),
+                    reservation_date=VALUES(reservation_date),
+                    start_time=VALUES(start_time),
+                    end_time=VALUES(end_time),
+                    payment_status=VALUES(payment_status),
+                    price=VALUES(price),
+                    confirmed_email_event_id=VALUES(confirmed_email_event_id),
+                    confirmed_email_received_at=VALUES(confirmed_email_received_at),
+                    last_event_at=IF(VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(confirmed_email_received_at), last_event_at),
+                    payload_json=VALUES(payload_json),
+                    updated_at=NOW()
+                """,
+                row,
+            )
+        ledger = db_select_booking_ledger(config, row['ledger_key'])
+        logger.info(
+            'Booking ledger confirmed ledger=%s id=%s platform=%s reservation=%s status=%s',
+            row['ledger_key'],
+            ledger.get('id') if ledger else '-',
+            source_platform,
+            row['reservation_number'],
+            ledger.get('current_status') if ledger else '-',
+        )
+        return ledger
+    except Exception as error:
+        disable_db_logging(config, logger, 'Booking ledger confirmed upsert failed', error)
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, calendar_key, email_received_at, source_platform):
+    if not config['db_enabled'] or not event_data:
+        return None
+
+    row = booking_ledger_row(source_platform, event_data, calendar_key, email_event_id, email_received_at)
+    conn = None
+    try:
+        conn = db_connect(config)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO rhythmjoy_booking_ledger (
+                    ledger_key, source_platform, source_mode, current_status,
+                    target_calendar, room_key, reservation_number, reserver_name, product,
+                    reservation_date, start_time, end_time,
+                    payment_status, price,
+                    canceled_email_event_id, canceled_email_received_at, last_event_at,
+                    cancel_payload_json, created_at, updated_at
+                )
+                VALUES (
+                    %(ledger_key)s, %(source_platform)s, %(source_mode)s, 'canceled',
+                    %(target_calendar)s, %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
+                    %(reservation_date)s, %(start_time)s, %(end_time)s,
+                    %(payment_status)s, %(price)s,
+                    %(email_event_id)s, %(event_at)s, %(event_at)s,
+                    %(payload_json)s, NOW(), NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    source_mode=VALUES(source_mode),
+                    current_status=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), 'canceled', current_status),
+                    target_calendar=VALUES(target_calendar),
+                    room_key=VALUES(room_key),
+                    reservation_number=IF(VALUES(reservation_number) <> '', VALUES(reservation_number), reservation_number),
+                    reserver_name=VALUES(reserver_name),
+                    product=VALUES(product),
+                    reservation_date=VALUES(reservation_date),
+                    start_time=VALUES(start_time),
+                    end_time=VALUES(end_time),
+                    payment_status=VALUES(payment_status),
+                    price=IF(VALUES(price) <> '', VALUES(price), price),
+                    canceled_email_event_id=VALUES(canceled_email_event_id),
+                    canceled_email_received_at=VALUES(canceled_email_received_at),
+                    last_event_at=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(canceled_email_received_at), last_event_at),
+                    cancel_payload_json=VALUES(cancel_payload_json),
+                    updated_at=NOW()
+                """,
+                row,
+            )
+        ledger = db_select_booking_ledger(config, row['ledger_key'])
+        logger.info(
+            'Booking ledger canceled ledger=%s id=%s platform=%s reservation=%s status=%s',
+            row['ledger_key'],
+            ledger.get('id') if ledger else '-',
+            source_platform,
+            row['reservation_number'],
+            ledger.get('current_status') if ledger else '-',
+        )
+        return ledger
+    except Exception as error:
+        disable_db_logging(config, logger, 'Booking ledger canceled upsert failed', error)
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def enrich_spacecloud_cancellation_from_db(config, logger, event_data, calendar_key):
     if not config['db_enabled'] or not event_data or not calendar_key:
         return event_data
@@ -765,6 +999,45 @@ def enrich_spacecloud_cancellation_from_db(config, logger, event_data, calendar_
     try:
         conn = db_connect(config)
         with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, reservation_number
+                FROM rhythmjoy_booking_ledger
+                WHERE source_platform='spacecloud'
+                  AND current_status='confirmed'
+                  AND target_calendar=%s
+                  AND reservation_date=%s
+                  AND start_time=%s
+                  AND end_time=%s
+                  AND reserver_name=%s
+                  AND reservation_number <> ''
+                ORDER BY last_event_at DESC, id DESC
+                LIMIT 1
+                """,
+                (
+                    calendar_key,
+                    reservation_date,
+                    start_time,
+                    end_time,
+                    event_data.get('name') or '',
+                ),
+            )
+            row = cursor.fetchone()
+            if row:
+                event_data = dict(event_data)
+                event_data['reservation_number'] = row.get('reservation_number') or ''
+                event_data['matched_booking_ledger_id'] = row.get('id')
+                logger.info(
+                    'SpaceCloud cancellation enriched from booking ledger id=%s reservation=%s calendar=%s time=%s %s-%s',
+                    row.get('id'),
+                    row.get('reservation_number'),
+                    calendar_key,
+                    reservation_date,
+                    event_data.get('start_time'),
+                    event_data.get('end_time'),
+                )
+                return event_data
+
             cursor.execute(
                 """
                 SELECT id, reservation_number
@@ -1892,6 +2165,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if event_data:
+                upsert_booking_ledger_confirmed(config, logger, email_record_id, event_data, target_calendar, email_received_at, 'naver')
                 upload_task = upsert_spacecloud_upload_task(config, logger, email_record_id, event_data, target_calendar)
                 if upload_task:
                     task_status = upload_task.get('status') or 'pending'
@@ -1950,6 +2224,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if deletion:
+                upsert_booking_ledger_canceled(config, logger, email_record_id, deletion, calendar_key, email_received_at, 'naver')
                 spacecloud_task = upsert_spacecloud_delete_task(config, logger, email_record_id, deletion, calendar_key)
                 if config.get('naver_spacecloud_upload_enabled') and spacecloud_task:
                     deleted = 0
@@ -2014,6 +2289,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                 if event_data and calendar_key:
                     event_data['calendar_key'] = calendar_key
                     event_data['target_calendar'] = calendar_key
+                    upsert_booking_ledger_canceled(config, logger, email_record_id, event_data, calendar_key, email_received_at, 'spacecloud')
                     naver_restore_task = upsert_spacecloud_naver_restore_task(
                         config,
                         logger,
@@ -2097,6 +2373,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                 event_data['calendar_key'] = calendar_key
                 event_data['target_calendar'] = calendar_key
                 event_data['conflict_count'] = len(conflicts)
+                upsert_booking_ledger_confirmed(config, logger, email_record_id, event_data, calendar_key, email_received_at, 'spacecloud')
                 google_event = None
                 naver_block_task = upsert_spacecloud_naver_block_task(
                     config,
@@ -2161,6 +2438,91 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             error_text=str(error)[:1000],
         )
         raise
+
+
+def load_event_payload(row):
+    try:
+        payload = json.loads(row.get('parsed_json') or '{}')
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def backfill_booking_ledger(config, logger):
+    if not config['db_enabled']:
+        logger.info('Booking ledger backfill skipped: DB disabled')
+        return 0
+
+    conn = None
+    rows = []
+    try:
+        conn = db_connect(config)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, event_type, email_received_at, subject, target_calendar, parsed_json, raw_body
+                FROM rhythmjoy_naver_email_events
+                WHERE (
+                    event_type IN ('reservation', 'cancellation', 'spacecloud_reservation', 'spacecloud_cancellation')
+                    AND parse_status='parsed'
+                  )
+                  OR (
+                    event_type='spacecloud_ignored'
+                    AND subject LIKE '%취소 완료%'
+                    AND raw_body IS NOT NULL
+                  )
+                ORDER BY email_received_at ASC, id ASC
+                """
+            )
+            rows = cursor.fetchall()
+    except Exception as error:
+        disable_db_logging(config, logger, 'Booking ledger backfill select failed', error)
+        return 0
+    finally:
+        if conn is not None:
+            conn.close()
+
+    processed = 0
+    for row in rows:
+        if row.get('event_type') == 'spacecloud_ignored':
+            raw_body = row.get('raw_body') or ''
+            event_data = parse_spacecloud_cancellation(raw_body, raw_body.encode('utf-8'), row.get('subject') or '')
+        else:
+            event_data = load_event_payload(row)
+        if not event_data:
+            continue
+        calendar_key = row.get('target_calendar') or event_data.get('target_calendar') or event_data.get('calendar_key') or product_to_calendar_key(event_data.get('product', ''))
+        if not calendar_key:
+            logger.warning('Booking ledger backfill skipped: no calendar row_id=%s type=%s', row.get('id'), row.get('event_type'))
+            continue
+        event_type = row.get('event_type')
+        source_platform = 'spacecloud' if event_type.startswith('spacecloud_') else 'naver'
+        if event_type in ('reservation', 'spacecloud_reservation'):
+            upsert_booking_ledger_confirmed(
+                config,
+                logger,
+                row.get('id'),
+                event_data,
+                calendar_key,
+                row.get('email_received_at'),
+                source_platform,
+            )
+            processed += 1
+        elif event_type in ('cancellation', 'spacecloud_cancellation', 'spacecloud_ignored'):
+            if source_platform == 'spacecloud':
+                event_data = enrich_spacecloud_cancellation_from_db(config, logger, event_data, calendar_key)
+            upsert_booking_ledger_canceled(
+                config,
+                logger,
+                row.get('id'),
+                event_data,
+                calendar_key,
+                row.get('email_received_at'),
+                source_platform,
+            )
+            processed += 1
+    logger.info('Booking ledger backfill finished processed=%s scanned=%s', processed, len(rows))
+    return processed
 
 
 def run_poll_once(config, logger):
@@ -2273,6 +2635,7 @@ def main():
     parser = argparse.ArgumentParser(description='Import Rhythmjoy Naver booking email into Google Calendar.')
     parser.add_argument('--once', action='store_true', help='run one polling cycle and exit')
     parser.add_argument('--check-config', action='store_true', help='validate config and exit')
+    parser.add_argument('--backfill-ledger', action='store_true', help='rebuild booking ledger rows from stored parsed email events and exit')
     args = parser.parse_args()
 
     logger = setup_logging()
@@ -2284,6 +2647,11 @@ def main():
 
     if args.check_config:
         logger.info('Configuration check succeeded')
+        return
+
+    if args.backfill_ledger:
+        processed = backfill_booking_ledger(config, logger)
+        logger.info('Booking ledger backfill command finished processed=%s', processed)
         return
 
     while True:
