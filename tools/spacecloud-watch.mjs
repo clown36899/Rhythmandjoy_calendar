@@ -432,7 +432,9 @@ try:
                 TIME_FORMAT(start_time, '%%H:%%i') AS startTime,
                 TIME_FORMAT(end_time, '%%H:%%i') AS endTime,
                 payload_json AS payloadJson,
-                attempts
+                attempts,
+                DATE_FORMAT(locked_at, '%%Y-%%m-%%d %%H:%%i:%%s') AS lockedAt,
+                result_text AS resultText
             FROM rhythmjoy_spacecloud_tasks
             WHERE task_type=%s
               AND (
@@ -442,8 +444,8 @@ try:
               )
             ORDER BY
               CASE
-                WHEN status='pending' THEN 0
-                WHEN status='running' THEN 1
+                WHEN status='running' THEN 0
+                WHEN status='pending' THEN 1
                 ELSE 2
               END,
               created_at ASC,
@@ -543,7 +545,9 @@ try:
                 TIME_FORMAT(start_time, '%%H:%%i') AS startTime,
                 TIME_FORMAT(end_time, '%%H:%%i') AS endTime,
                 payload_json AS payloadJson,
-                attempts
+                attempts,
+                DATE_FORMAT(locked_at, '%%Y-%%m-%%d %%H:%%i:%%s') AS lockedAt,
+                result_text AS resultText
             FROM rhythmjoy_spacecloud_tasks
             WHERE task_type IN ({placeholders})
               AND (
@@ -553,8 +557,8 @@ try:
               )
             ORDER BY
               CASE
-                WHEN status='pending' THEN 0
-                WHEN status='running' THEN 1
+                WHEN status='running' THEN 0
+                WHEN status='pending' THEN 1
                 ELSE 2
               END,
               created_at ASC,
@@ -744,6 +748,8 @@ try:
 
     reservation_number = event_data.get('reservation_number') or task.get('reservation_number') or ''
     existing = importer.find_calendar_event_by_reservation(service, calendar_key, reservation_number, logger)
+    if not existing:
+        existing = importer.find_calendar_event_by_details(service, calendar_key, event_data, logger)
     if existing:
         if task.get('email_event_id'):
             importer.update_email_processing(
@@ -1052,14 +1058,19 @@ function formatDeleteTaskLine(row) {
   const verificationErrors = row.deleteVerification?.errors?.length
     ? ` / 검증실패=${row.deleteVerification.errors.join(',')}`
     : '';
+  const googleStatus = row.googleCalendar?.status
+    ? `구글=${row.googleCalendar.status}${row.googleCalendar.eventId ? `(${row.googleCalendar.eventId})` : ''}`
+    : '구글=-';
   return [
     `task=${row.taskId || '-'}`,
     `방=${row.roomKey || '-'}`,
     `일시=${row.date || '-'} ${row.startTime || '-'}-${row.endTime || '-'}`,
     `예약번호=${row.reservationNo || '-'}`,
     `상태=${row.status || '-'}`,
+    googleStatus,
+    row.calendarRecordWarning ? `구글기록경고=${row.calendarRecordWarning}` : '',
     `사유=${row.error || '-'}${verificationErrors}`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function deleteFailureMessage(rowOrError) {
@@ -1122,7 +1133,7 @@ function naverBlockSuccessMessage(row) {
 ${kstNowText()}
 
 스페이스클라우드 예약완료 메일 기준으로 네이버 SmartPlace 해당 시간 예약가능 슬롯을 막았습니다.
-Google Calendar는 후순위 기록장이며, 기록 실패/겹침은 아래 경고로만 표시됩니다.
+Google Calendar는 후순위 기록장이며, 일시 실패는 google_pending 재시도, 겹침은 확인 필요로 보고합니다.
 
 처리건수: ${processed.length}건
 
@@ -1158,7 +1169,7 @@ function naverRestoreSuccessMessage(row) {
 ${kstNowText()}
 
 스페이스클라우드 취소완료 메일 기준으로 네이버 SmartPlace 예약불가 슬롯을 예약가능으로 되돌렸거나, 자동화가 막은 슬롯이 아니라 복구를 생략했습니다.
-Google Calendar는 후순위 기록장이며, 기록 실패/겹침은 아래 경고로만 표시됩니다.
+Google Calendar는 후순위 기록장이며, 일시 실패는 google_pending 재시도, 겹침은 확인 필요로 보고합니다.
 
 처리건수: ${processed.length}건
 
@@ -1193,6 +1204,7 @@ ${kstNowText()}
 }
 
 function dbStatusForDeleteRow(row) {
+  if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'deleted') return 'done';
@@ -1204,6 +1216,7 @@ function dbStatusForDeleteRow(row) {
 }
 
 function dbStatusForUploadRow(row) {
+  if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'google-recorded') return 'done';
@@ -1215,6 +1228,7 @@ function dbStatusForUploadRow(row) {
 }
 
 function dbStatusForNaverBlockRow(row) {
+  if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'blocked' || row.status === 'already-blocked' || row.status === 'google-recorded') return 'done';
@@ -1227,6 +1241,7 @@ function dbStatusForNaverBlockRow(row) {
 }
 
 function dbStatusForNaverRestoreRow(row) {
+  if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip' || row.status === 'restore-skipped-not-owned') return 'done';
   if (row.status === 'restored' || row.status === 'already-available') return 'done';
@@ -1289,6 +1304,29 @@ function missingLedgerNeedsReviewRow(task, taskType) {
   };
 }
 
+function staleRunningNeedsReviewRow(task, taskType) {
+  let previousResult = {};
+  try {
+    previousResult = JSON.parse(task.resultText || '{}');
+  } catch {
+    previousResult = {};
+  }
+  const error = 'stale running task was not retried automatically to avoid duplicate platform side effects';
+  return {
+    ...basicTaskSummary(task),
+    taskType,
+    status: 'stale-running-needs-review',
+    previousStatus: task.status || '',
+    previousResultStatus: previousResult.status || '',
+    attempts: task.attempts ?? null,
+    lockedAt: task.lockedAt || '',
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    reason: error,
+    error,
+  };
+}
+
 function ledgerIssueForTask(task, taskType) {
   const expected = expectedLedgerStatus(taskType);
   if (!expected) return null;
@@ -1335,7 +1373,11 @@ function applyCalendarCreateResult(row, result, label) {
 
 function applyCalendarDeleteResult(row, result, label) {
   row.googleCalendar = result;
-  if (['deleted', 'not_found'].includes(result?.status)) return 'google-deleted';
+  if (result?.status === 'deleted') return 'google-deleted';
+  if (result?.status === 'not_found') {
+    setCalendarWarning(row, label, result);
+    return 'google-deleted';
+  }
   setCalendarWarning(row, label, result);
   row.error = row.error || row.calendarRecordWarning;
   return 'google-delete-failed';
@@ -1396,32 +1438,36 @@ async function runUploadTasks(args, context = null) {
     for (const task of tasks) {
       let row = null;
       try {
-        const ledgerIssue = ledgerIssueForTask(task, 'upload');
-        if (ledgerIssue) {
-          row = ledgerIssueRow(task, 'upload', ledgerIssue);
-        } else if (task.status === 'google_pending') {
-          const event = spacecloudUploadEventFromTask(task);
-          row = {
-            taskId: task.id,
-            fingerprint: event.fingerprint,
-            sourceEventId: event.sourceEventId,
-            reservationNo: event.reservationNo,
-            roomKey: event.roomKey,
-            date: event.date,
-            startTime: event.startTime,
-            endTime: event.endTime,
-            reserverName: event.reserverName,
-            status: 'google-pending',
-            startedAt: new Date().toISOString(),
-            spacecloudAlreadySubmitted: true,
-          };
+        if (task.status === 'running') {
+          row = staleRunningNeedsReviewRow(task, 'upload');
         } else {
-          const event = spacecloudUploadEventFromTask(task);
-          row = await uploadSpacecloudDirectReservation(activeContext, event);
-          if (row.status === 'submitted') {
-            const marked = markSubmittedRows(args, [row]);
-            row.marked = marked;
-            await updateRemoteTask(args, task.id, 'google_pending', JSON.stringify(row, null, 2));
+          const ledgerIssue = ledgerIssueForTask(task, 'upload');
+          if (ledgerIssue) {
+            row = ledgerIssueRow(task, 'upload', ledgerIssue);
+          } else if (task.status === 'google_pending') {
+            const event = spacecloudUploadEventFromTask(task);
+            row = {
+              taskId: task.id,
+              fingerprint: event.fingerprint,
+              sourceEventId: event.sourceEventId,
+              reservationNo: event.reservationNo,
+              roomKey: event.roomKey,
+              date: event.date,
+              startTime: event.startTime,
+              endTime: event.endTime,
+              reserverName: event.reserverName,
+              status: 'google-pending',
+              startedAt: new Date().toISOString(),
+              spacecloudAlreadySubmitted: true,
+            };
+          } else {
+            const event = spacecloudUploadEventFromTask(task);
+            row = await uploadSpacecloudDirectReservation(activeContext, event);
+            if (row.status === 'submitted') {
+              const marked = markSubmittedRows(args, [row]);
+              row.marked = marked;
+              await updateRemoteTask(args, task.id, 'google_pending', JSON.stringify(row, null, 2));
+            }
           }
         }
 
@@ -1520,26 +1566,30 @@ async function runDeleteTasks(args, context = null) {
   try {
     for (const task of tasks) {
       let row;
-      const ledgerIssue = ledgerIssueForTask(task, 'delete');
-      if (ledgerIssue) {
-        row = ledgerIssueRow(task, 'delete', ledgerIssue);
-      } else if (task.status === 'google_pending') {
-        row = {
-          taskId: task.id || null,
-          roomKey: task.roomKey || task.room_key,
-          date: task.date || task.reservation_date,
-          startTime: task.startTime || task.start_time,
-          endTime: task.endTime || task.end_time,
-          reserverName: task.reserverName || task.reserver_name || '',
-          reservationNo: task.reservationNo || task.reservation_number || '',
-          status: 'google-delete-pending',
-          startedAt: new Date().toISOString(),
-          spacecloudAlreadyDeleted: true,
-        };
+      if (task.status === 'running') {
+        row = staleRunningNeedsReviewRow(task, 'delete');
       } else {
-        row = await deleteSpacecloudDirectReservation(activeContext, task);
-        if (['deleted', 'already-gone'].includes(row.status)) {
-          await updateRemoteTask(args, task.id, 'google_pending', JSON.stringify(row, null, 2));
+        const ledgerIssue = ledgerIssueForTask(task, 'delete');
+        if (ledgerIssue) {
+          row = ledgerIssueRow(task, 'delete', ledgerIssue);
+        } else if (task.status === 'google_pending') {
+          row = {
+            taskId: task.id || null,
+            roomKey: task.roomKey || task.room_key,
+            date: task.date || task.reservation_date,
+            startTime: task.startTime || task.start_time,
+            endTime: task.endTime || task.end_time,
+            reserverName: task.reserverName || task.reserver_name || '',
+            reservationNo: task.reservationNo || task.reservation_number || '',
+            status: 'google-delete-pending',
+            startedAt: new Date().toISOString(),
+            spacecloudAlreadyDeleted: true,
+          };
+        } else {
+          row = await deleteSpacecloudDirectReservation(activeContext, task);
+          if (['deleted', 'already-gone'].includes(row.status)) {
+            await updateRemoteTask(args, task.id, 'google_pending', JSON.stringify(row, null, 2));
+          }
         }
       }
 
@@ -1620,31 +1670,19 @@ async function runNaverBlockTasks(args, context = null) {
   try {
     for (const task of tasks) {
       let row;
-      const ledgerIssue = ledgerIssueForTask(task, 'naver_block');
-      if (ledgerIssue) {
-        row = ledgerIssueRow(task, 'naver_block', ledgerIssue);
-      } else if (task.status === 'google_pending') {
-        row = {
-          ...naverBlockTaskSummary(task),
-          status: 'google-pending',
-          startedAt: new Date().toISOString(),
-          naverAlreadyApplied: true,
-        };
-        let calendarStatus = 'google-recorded';
-        try {
-          const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
-          calendarStatus = applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
-        } catch (error) {
-          calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-naver-block', error);
-        }
-        row.status = calendarStatus;
-        row.finishedAt = new Date().toISOString();
+      if (task.status === 'running') {
+        row = staleRunningNeedsReviewRow(task, 'naver_block');
       } else {
-        row = await setNaverAvailability(activeContext, task, {
-          businessId: args.naverBusinessId,
-          targetStatus: 'unavailable',
-        });
-        if (['blocked', 'already-blocked'].includes(row.status)) {
+        const ledgerIssue = ledgerIssueForTask(task, 'naver_block');
+        if (ledgerIssue) {
+          row = ledgerIssueRow(task, 'naver_block', ledgerIssue);
+        } else if (task.status === 'google_pending') {
+          row = {
+            ...naverBlockTaskSummary(task),
+            status: 'google-pending',
+            startedAt: new Date().toISOString(),
+            naverAlreadyApplied: true,
+          };
           let calendarStatus = 'google-recorded';
           try {
             const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
@@ -1652,8 +1690,24 @@ async function runNaverBlockTasks(args, context = null) {
           } catch (error) {
             calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-naver-block', error);
           }
-          row.naverStatus = row.status;
-          row.status = calendarStatus === 'google-recorded' ? row.naverStatus : calendarStatus;
+          row.status = calendarStatus;
+          row.finishedAt = new Date().toISOString();
+        } else {
+          row = await setNaverAvailability(activeContext, task, {
+            businessId: args.naverBusinessId,
+            targetStatus: 'unavailable',
+          });
+          if (['blocked', 'already-blocked'].includes(row.status)) {
+            let calendarStatus = 'google-recorded';
+            try {
+              const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
+              calendarStatus = applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
+            } catch (error) {
+              calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-naver-block', error);
+            }
+            row.naverStatus = row.status;
+            row.status = calendarStatus === 'google-recorded' ? row.naverStatus : calendarStatus;
+          }
         }
       }
       rows.push(row);
@@ -1745,69 +1799,56 @@ async function runNaverAvailabilityTasks(args, context = null) {
     for (const task of tasks) {
       const taskType = task.taskType || 'naver_block';
       let row;
-      const ledgerIssue = ledgerIssueForTask(task, taskType);
-      if (ledgerIssue) {
-        row = ledgerIssueRow(task, taskType, ledgerIssue);
-      } else if (taskType === 'naver_restore') {
-        if (task.status === 'google_pending') {
-          row = {
-            ...naverBlockTaskSummary(task),
-            taskType,
-            status: 'google-delete-pending',
-            startedAt: new Date().toISOString(),
-            naverAlreadyRestored: true,
-          };
-        } else if (task.priorNaverBlockChanged !== true) {
-          row = restoreSkippedNotOwnedRow(task);
-        } else {
-          row = await setNaverAvailability(activeContext, task, {
-            businessId: args.naverBusinessId,
-            targetStatus: 'available',
-          });
-          row.taskType = taskType;
-          if (['restored', 'already-available'].includes(row.status)) {
-            await updateRemoteTask(args, task.id, 'google_pending', JSON.stringify(row, null, 2));
-          }
-        }
-
-        if (['restored', 'already-available', 'restore-skipped-not-owned', 'google-delete-pending'].includes(row.status)) {
-          const naverStatus = row.status === 'google-delete-pending' ? 'restored' : row.status;
-          let calendarStatus = 'google-deleted';
-          try {
-            const googleResult = await deleteRemoteGoogleEventForNaverRestoreTask(args, task.id);
-            calendarStatus = applyCalendarDeleteResult(row, googleResult, 'Google Calendar after-naver-restore');
-          } catch (error) {
-            calendarStatus = applyCalendarDeleteError(row, 'Google Calendar after-naver-restore', error);
-          }
-          row.naverStatus = naverStatus;
-          row.status = calendarStatus === 'google-deleted' ? naverStatus : calendarStatus;
-          row.finishedAt = new Date().toISOString();
-        }
+      if (task.status === 'running') {
+        row = staleRunningNeedsReviewRow(task, taskType);
       } else {
-        if (task.status === 'google_pending') {
-          row = {
-            ...naverBlockTaskSummary(task),
-            taskType,
-            status: 'google-pending',
-            startedAt: new Date().toISOString(),
-            naverAlreadyApplied: true,
-          };
-          let calendarStatus = 'google-recorded';
-          try {
-            const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
-            calendarStatus = applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
-          } catch (error) {
-            calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-naver-block', error);
+        const ledgerIssue = ledgerIssueForTask(task, taskType);
+        if (ledgerIssue) {
+          row = ledgerIssueRow(task, taskType, ledgerIssue);
+        } else if (taskType === 'naver_restore') {
+          if (task.status === 'google_pending') {
+            row = {
+              ...naverBlockTaskSummary(task),
+              taskType,
+              status: 'google-delete-pending',
+              startedAt: new Date().toISOString(),
+              naverAlreadyRestored: true,
+            };
+          } else if (task.priorNaverBlockChanged !== true) {
+            row = restoreSkippedNotOwnedRow(task);
+          } else {
+            row = await setNaverAvailability(activeContext, task, {
+              businessId: args.naverBusinessId,
+              targetStatus: 'available',
+            });
+            row.taskType = taskType;
+            if (['restored', 'already-available'].includes(row.status)) {
+              await updateRemoteTask(args, task.id, 'google_pending', JSON.stringify(row, null, 2));
+            }
           }
-          row.status = calendarStatus;
-          row.finishedAt = new Date().toISOString();
+
+          if (['restored', 'already-available', 'restore-skipped-not-owned', 'google-delete-pending'].includes(row.status)) {
+            const naverStatus = row.status === 'google-delete-pending' ? 'restored' : row.status;
+            let calendarStatus = 'google-deleted';
+            try {
+              const googleResult = await deleteRemoteGoogleEventForNaverRestoreTask(args, task.id);
+              calendarStatus = applyCalendarDeleteResult(row, googleResult, 'Google Calendar after-naver-restore');
+            } catch (error) {
+              calendarStatus = applyCalendarDeleteError(row, 'Google Calendar after-naver-restore', error);
+            }
+            row.naverStatus = naverStatus;
+            row.status = calendarStatus === 'google-deleted' ? naverStatus : calendarStatus;
+            row.finishedAt = new Date().toISOString();
+          }
         } else {
-          row = await setNaverAvailability(activeContext, task, {
-            businessId: args.naverBusinessId,
-            targetStatus: 'unavailable',
-          });
-          row.taskType = taskType;
-          if (['blocked', 'already-blocked'].includes(row.status)) {
+          if (task.status === 'google_pending') {
+            row = {
+              ...naverBlockTaskSummary(task),
+              taskType,
+              status: 'google-pending',
+              startedAt: new Date().toISOString(),
+              naverAlreadyApplied: true,
+            };
             let calendarStatus = 'google-recorded';
             try {
               const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
@@ -1815,8 +1856,25 @@ async function runNaverAvailabilityTasks(args, context = null) {
             } catch (error) {
               calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-naver-block', error);
             }
-            row.naverStatus = row.status;
-            row.status = calendarStatus === 'google-recorded' ? row.naverStatus : calendarStatus;
+            row.status = calendarStatus;
+            row.finishedAt = new Date().toISOString();
+          } else {
+            row = await setNaverAvailability(activeContext, task, {
+              businessId: args.naverBusinessId,
+              targetStatus: 'unavailable',
+            });
+            row.taskType = taskType;
+            if (['blocked', 'already-blocked'].includes(row.status)) {
+              let calendarStatus = 'google-recorded';
+              try {
+                const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
+                calendarStatus = applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
+              } catch (error) {
+                calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-naver-block', error);
+              }
+              row.naverStatus = row.status;
+              row.status = calendarStatus === 'google-recorded' ? row.naverStatus : calendarStatus;
+            }
           }
         }
       }

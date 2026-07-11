@@ -1747,6 +1747,76 @@ def find_calendar_event_by_reservation(service, target_calendar, reservation_num
     return None
 
 
+def compact_calendar_match_text(value):
+    return re.sub(r'\s+', '', str(value or '')).lower()
+
+
+def calendar_event_time_matches(item, target_start, target_end):
+    start = parse_google_event_datetime(item.get('start', {}).get('dateTime'))
+    end = parse_google_event_datetime(item.get('end', {}).get('dateTime'))
+    if not start or not end:
+        return False
+    return (
+        start.replace(second=0, microsecond=0) == target_start.replace(second=0, microsecond=0)
+        and end.replace(second=0, microsecond=0) == target_end.replace(second=0, microsecond=0)
+    )
+
+
+def calendar_event_detail_matches(item, event_data, target_start, target_end):
+    if not calendar_event_time_matches(item, target_start, target_end):
+        return False
+
+    summary = item.get('summary', '')
+    description = item.get('description', '')
+    searchable = f'{summary}\n{description}'
+    compact_searchable = compact_calendar_match_text(searchable)
+
+    product = event_data.get('product') or ''
+    if product and compact_calendar_match_text(product) not in compact_searchable:
+        return False
+
+    reserver_name = normalize_reserver_name_for_match(
+        event_data.get('name') or event_data.get('reserver_name')
+    )
+    if reserver_name and reserver_name not in normalize_reserver_name_for_match(searchable):
+        return False
+
+    return True
+
+
+def find_calendar_event_by_details(service, target_calendar, event_data, logger):
+    if not target_calendar or target_calendar not in CALENDAR_IDS:
+        return None
+
+    event_data = normalize_event_datetime_fields(event_data)
+    if not event_data.get('date') or not event_data.get('start_time') or not event_data.get('end_time'):
+        return None
+
+    target_start = parse_datetime(event_data['date'], event_data['start_time']).replace(tzinfo=KST)
+    target_end = parse_datetime(event_data['date'], event_data['end_time']).replace(tzinfo=KST)
+    if target_end <= target_start:
+        target_end += timedelta(days=1)
+
+    result = service.events().list(
+        calendarId=CALENDAR_IDS[target_calendar],
+        timeMin=f"{event_data['date']}T00:00:00+09:00",
+        timeMax=f"{event_data['date']}T23:59:59+09:00",
+        singleEvents=True,
+        orderBy='startTime',
+    ).execute()
+    for item in result.get('items', []):
+        if calendar_event_detail_matches(item, event_data, target_start, target_end):
+            logger.info(
+                'Existing Google Calendar event found by details calendar=%s reserver_name=%s reservation_time=%s event_id=%s',
+                target_calendar,
+                event_data.get('name') or event_data.get('reserver_name') or '',
+                reservation_time_text(event_data),
+                item.get('id'),
+            )
+            return item
+    return None
+
+
 def create_calendar_event(service, event_data, logger, dedupe_google_calendar=False):
     event_data = normalize_event_datetime_fields(event_data)
     target_calendar = event_data['target_calendar']
@@ -1756,6 +1826,14 @@ def create_calendar_event(service, event_data, logger, dedupe_google_calendar=Fa
             service,
             target_calendar,
             event_data.get('reservation_number', ''),
+            logger,
+        )
+        if existing:
+            return existing
+        existing = find_calendar_event_by_details(
+            service,
+            target_calendar,
+            event_data,
             logger,
         )
         if existing:
@@ -2054,6 +2132,7 @@ def delete_events_by_reservation(service, deletion, logger):
 
 
 def delete_events_by_details(service, calendar_key, deletion, logger):
+    deletion = normalize_event_datetime_fields(deletion)
     date_text = deletion.get('date')
     start_time = deletion.get('start_time')
     end_time = deletion.get('end_time')
@@ -2061,7 +2140,7 @@ def delete_events_by_details(service, calendar_key, deletion, logger):
         return 0
 
     calendar_id = CALENDAR_IDS[calendar_key]
-    date_value = normalize_date(date_text)
+    date_value = deletion['date']
     time_min = f'{date_value}T00:00:00+09:00'
     time_max = f'{date_value}T23:59:59+09:00'
     result = service.events().list(
@@ -2071,24 +2150,15 @@ def delete_events_by_details(service, calendar_key, deletion, logger):
         singleEvents=True,
     ).execute()
 
-    start_dt = parse_datetime(date_text, start_time)
-    end_dt = parse_datetime(date_text, end_time)
+    start_dt = parse_datetime(date_text, start_time).replace(tzinfo=KST)
+    end_dt = parse_datetime(date_text, end_time).replace(tzinfo=KST)
     if end_dt <= start_dt:
         end_dt += timedelta(days=1)
 
     deleted = 0
     for item in result.get('items', []):
         summary = item.get('summary', '')
-        description = item.get('description', '')
-        if deletion.get('product') and deletion['product'] not in summary:
-            continue
-        if deletion.get('name') and deletion['name'] not in description:
-            continue
-        event_start = item.get('start', {}).get('dateTime', '')
-        event_end = item.get('end', {}).get('dateTime', '')
-        if not event_start or not event_end:
-            continue
-        if event_start[:16] != start_dt.isoformat()[:16] or event_end[:16] != end_dt.isoformat()[:16]:
+        if not calendar_event_detail_matches(item, deletion, start_dt, end_dt):
             continue
         service.events().delete(calendarId=calendar_id, eventId=item['id']).execute()
         deleted += 1
