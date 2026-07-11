@@ -259,11 +259,21 @@ async function loadCafe24Target(args) {
 }
 
 function runSshScript(target, script) {
+  const timeoutSeconds = Number.parseInt(process.env.SPACECLOUD_WATCH_SSH_TIMEOUT_SECONDS || '90', 10);
+  const timeoutMs = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 90_000;
   const cp = spawnSync('ssh', [
     '-i',
     target.SSH_KEY,
     '-o',
     'IdentitiesOnly=yes',
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    'ConnectTimeout=12',
+    '-o',
+    'ServerAliveInterval=15',
+    '-o',
+    'ServerAliveCountMax=2',
     target.SSH_TARGET,
     'bash -s',
   ], {
@@ -271,7 +281,13 @@ function runSshScript(target, script) {
     input: script,
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
   });
+  if (cp.error) {
+    const detail = (cp.stderr || cp.stdout || '').trim();
+    throw new Error(`ssh failed: ${cp.error.message}${detail ? `\n${detail}` : ''}`);
+  }
   if (cp.status !== 0) {
     throw new Error((cp.stderr || cp.stdout || `ssh exited ${cp.status}`).trim());
   }
@@ -943,6 +959,10 @@ async function notifyWithCooldown(args, key, text, {
 
 function isLoginProblem(message) {
   return /login|logged out|add button not visible|로그인|세션|인증/i.test(String(message || ''));
+}
+
+function isTransientRemoteProblem(message) {
+  return /ssh failed|timed out|ETIMEDOUT|SIGKILL|Connection timed out|Connection reset|Broken pipe/i.test(String(message || ''));
 }
 
 function loginNeededMessage(rowOrError) {
@@ -2235,6 +2255,11 @@ async function runWatch(args) {
         if (isLoginProblem(errorRow.error)) {
           await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorRow.error));
           logLine('login needed; waiting for manual login');
+        } else if (isTransientRemoteProblem(errorRow.error)) {
+          await notifyWithCooldown(args, 'spacecloud-cycle-error', cycleErrorMessage(errorRow.error), {
+            cooldownSeconds: Math.min(args.notifyCooldownSeconds, 60 * 60),
+          });
+          logLine('transient remote problem; will retry next cycle');
         } else {
           await notifyWithCooldown(args, 'spacecloud-cycle-error', cycleErrorMessage(errorRow.error));
           break;
