@@ -495,6 +495,31 @@ ${kstNowText()}
 로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
 }
 
+function formatUploadRowLine(row) {
+  return [
+    `방=${row.roomKey || '-'}`,
+    `일시=${row.date || '-'} ${row.startTime || '-'}-${row.endTime || '-'}`,
+    `예약번호=${row.reservationNo || '-'}`,
+    `예약자=${row.reserverName || '-'}`,
+  ].join('\n');
+}
+
+function uploadSuccessMessage(row) {
+  const uploadedRows = row.uploadedRows || [];
+  const detailText = uploadedRows.map(formatUploadRowLine).join('\n\n');
+  return `스페이스클라우드 자동등록 완료
+${kstNowText()}
+
+Google Calendar 확정 일정이 SpaceCloud 직접 추가 예약으로 등록됐습니다.
+
+등록건수: ${uploadedRows.length}건
+남은 후보: ${row.remainingInPlan ?? '-'}건
+
+${String(detailText || '-').slice(0, 1200)}
+
+로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+}
+
 function formatDeleteTaskLine(row) {
   const verificationErrors = row.deleteVerification?.errors?.length
     ? ` / 검증실패=${row.deleteVerification.errors.join(',')}`
@@ -788,12 +813,14 @@ async function runCycle(args, context = null) {
       const result = await uploader.runBatch(args.limitPerCycle);
       const allResults = await readResults(resultsPath);
       const marked = markSubmittedRows(args, allResults);
+      const uploadedRows = (result.rows || []).filter((uploadRow) => uploadRow.status === 'submitted');
       row.status = result.failed?.length ? 'failed' : 'uploaded';
       row.attempted = result.attempted;
       row.submittedInPlan = result.submitted;
       row.remainingInPlan = result.remaining;
       row.marked = marked;
       row.failed = result.failed;
+      row.uploadedRows = uploadedRows;
     }
 
     if (!row.failed?.length) {
@@ -828,6 +855,11 @@ async function runWatch(args) {
       try {
         const row = await runCycle(args, context);
         logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; deleteTasks=${row.deleteTasks?.attempted || 0}`);
+        if (row.uploadedRows?.length) {
+          const result = await sendTelegram(args, uploadSuccessMessage(row));
+          if (result.sent) logLine(`telegram sent: spacecloud-upload-success count=${row.uploadedRows.length}`);
+          else logLine(`telegram upload success skipped: ${result.reason}`);
+        }
         if (row.failed?.length) {
           const errorText = row.failed.map((failedRow) => failedRow.error).join('\n');
           if (isLoginProblem(errorText)) {
@@ -906,7 +938,7 @@ async function main() {
     const result = await sendTelegram(args, `스페이스클라우드 자동화 알림 테스트
 ${kstNowText()}
 
-이 메시지가 보이면 로그인 필요, 등록 실패, 삭제 확인 필요, 감시 주기 오류 알림도 텔레그램으로 전송됩니다.`);
+이 메시지가 보이면 등록 완료, 로그인 필요, 등록 실패, 삭제 확인 필요, 감시 주기 오류 알림도 텔레그램으로 전송됩니다.`);
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else console.log(result.sent ? 'Telegram notification OK' : `Telegram notification skipped: ${result.reason}`);
     return;

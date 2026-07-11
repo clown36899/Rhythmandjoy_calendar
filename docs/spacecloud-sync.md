@@ -163,7 +163,7 @@ Operational limits:
 - Cancellation detection is handled earlier at the Naver email import layer: `ops/rhythmjoy_email_import.py` records the cancellation, deletes the matching Google Calendar event, and creates a SpaceCloud delete task for mapped hall rooms. The local watcher consumes that task and deletes the matching direct-added SpaceCloud schedule through the logged-in UI.
 - Automatic SpaceCloud deletion only proceeds when the clicked popup is a direct-added schedule and the room, date/time, and `naverReservationNo` in the memo match the DB task. Tasks without a reservation number are left as `needs_review` instead of being deleted automatically.
 - Google Calendar deletion and SpaceCloud deletion are reported separately. `Google Calendar 자동삭제 완료` does not mean SpaceCloud was deleted; SpaceCloud task status must be `done` or `already_gone`.
-- Telegram alerts are sent for host action items: SpaceCloud login/session expiry, upload failures, delete tasks that need review, watcher cycle errors, Naver cancellation detection, and cancellation email parse failures.
+- Telegram alerts are sent for host action items and state changes: successful SpaceCloud uploads, SpaceCloud login/session expiry, upload failures, delete tasks that need review, watcher cycle errors, Naver cancellation detection, and cancellation email parse failures.
 
 ## Naver Email DB Ledger
 
