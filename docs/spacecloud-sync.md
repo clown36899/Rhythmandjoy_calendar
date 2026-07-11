@@ -172,8 +172,8 @@ Operational limits:
 - Automatic SpaceCloud deletion only proceeds when the clicked popup is a direct-added schedule and the room, date/time, and `naverReservationNo` in the memo match the DB task. Tasks without a reservation number are left as `needs_review` instead of being deleted automatically.
 - Google Calendar deletion and SpaceCloud deletion are reported separately. `Google Calendar 자동삭제 완료` does not mean SpaceCloud was deleted; SpaceCloud task status must be `done` or `already_gone`.
 - Telegram alerts are sent for host action items and state changes: successful SpaceCloud uploads, SpaceCloud login/session expiry, upload failures, delete tasks that need review, Naver SmartPlace block success or review-needed states, watcher cycle errors, Naver cancellation detection, and cancellation email parse failures.
-- SpaceCloud reservation-complete email intake starts as report-only. When `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1`, the Cafe24 email importer reads the Naver mail folder displayed as `스페이스클라우드`, records parsed reservations in the DB, checks Google Calendar conflicts, and sends Telegram reports.
-- If `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1` is also enabled, reservation-complete emails with no Google Calendar conflict create a `naver_block` task. The local Mac watcher opens Naver SmartPlace weekly calendar, selects the mapped room/date/time, and changes an available slot to `예약불가`. Only after that Naver-side change is verified does the watcher create the mapped Google Calendar event. If Naver already has a confirmed or sold-out slot there, the watcher does not overwrite it and marks the task `needs_review`.
+- SpaceCloud reservation-complete email intake starts from the Naver mail folder displayed as `스페이스클라우드`. When `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1`, the Cafe24 email importer records parsed reservations in the DB, checks Google Calendar only as downstream verification data, and sends Telegram reports.
+- If `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1` is also enabled, SpaceCloud reservation-complete emails create a `naver_block` task even when Google Calendar already has a conflicting record. Naver mail plus DB is the source of truth; Google Calendar is a record after the platform-side action. The local Mac watcher opens Naver SmartPlace weekly calendar, selects the mapped room/date/time, splits overnight or multi-hour reservations into hourly slots, and changes available slots to `예약불가`. Only after that Naver-side change is verified does the watcher create the mapped Google Calendar event. If Naver already has a confirmed or sold-out slot there, the watcher does not overwrite it and marks the task `needs_review`.
 
 ## Naver Email DB Ledger
 
@@ -182,16 +182,25 @@ The Cafe24 email importer now writes a DB ledger before cross-platform side effe
 Tables:
 
 - `rhythmjoy_naver_email_events`: one row per Naver booking/cancellation email. It stores the mailbox, message identity, parse result, target calendar, reservation details, Google Calendar processing status, and optional raw body.
-- `rhythmjoy_spacecloud_tasks`: durable work queue for cross-platform actions. Cancellation emails for mapped hall rooms create a `delete` task with `pending` status. SpaceCloud reservation-complete emails can create a `naver_block` task when enabled. The Mac watcher claims pending tasks, performs the matching UI action, and writes `done`, `already_gone`, `needs_review`, or `failed`.
+- `rhythmjoy_spacecloud_tasks`: durable work queue for cross-platform actions. Cancellation emails for mapped hall rooms create a `delete` task with `pending` status. SpaceCloud reservation-complete emails can create a `naver_block` task when enabled. The Mac watcher claims pending tasks, performs the matching UI action, and writes `done`, `already_gone`, `needs_review`, `google_pending`, or `failed`.
 
-Default production behavior keeps the existing calendar importer path intact:
+Default production behavior keeps the existing Naver reservation calendar importer path intact while moving SpaceCloud-origin reservations to the email/DB-first flow:
 
 1. Naver email is read.
 2. The email is saved or updated in `rhythmjoy_naver_email_events`.
 3. For cancellation emails, a SpaceCloud delete task is saved in `rhythmjoy_spacecloud_tasks`.
-4. Google Calendar is created or deleted through the same existing parser/API path.
-5. DB status records the result for verification, recovery, and future SpaceCloud work.
-6. The Mac watcher polls `rhythmjoy_spacecloud_tasks` over SSH, deletes pending SpaceCloud direct-added schedules, and blocks pending Naver SmartPlace availability slots through the already logged-in Chrome profile.
+4. Existing Naver-origin reservation emails still create Google Calendar through the proven parser/API path, and the existing watcher uses those confirmed calendar records for SpaceCloud upload until the upload path is migrated to DB tasks.
+5. Real platform-side work that already has DB tasks is performed from DB: SpaceCloud direct-added schedules are deleted when Naver cancellations arrive, and Naver SmartPlace availability is blocked when SpaceCloud confirmations arrive.
+6. For SpaceCloud-origin reservations, Google Calendar is written after the Naver SmartPlace availability change succeeds, so it stays a record layer instead of becoming the booking source.
+7. DB status records the result for verification, recovery, and future SpaceCloud work.
+8. The Mac watcher polls `rhythmjoy_spacecloud_tasks` over SSH, deletes pending SpaceCloud direct-added schedules, and blocks pending Naver SmartPlace availability slots through the already logged-in Chrome profile.
+
+Target migration for Naver-origin reservations:
+
+1. Naver reservation email is saved to `rhythmjoy_naver_email_events`.
+2. The importer creates a SpaceCloud upload task from the DB row.
+3. The local watcher uploads the direct-added SpaceCloud reservation.
+4. Only after the upload is verified does the system write or update Google Calendar as the record layer.
 
 With `RHYTHMJOY_EMAIL_DB_REQUIRED=0`, DB errors are logged and the importer falls back to calendar-only processing. Keep this as the normal operating mode while the DB is used as insurance.
 

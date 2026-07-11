@@ -307,6 +307,7 @@ try:
             """
             SELECT
                 id,
+                status,
                 room_key AS roomKey,
                 reservation_number AS reservationNo,
                 reserver_name AS reserverName,
@@ -320,12 +321,14 @@ try:
             WHERE task_type=%s
               AND (
                 status='pending'
+                OR (status='google_pending' AND %s='naver_block')
                 OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
               )
             ORDER BY created_at ASC, id ASC
             LIMIT %s
             """,
             (
+                os.environ['RHYTHMJOY_TASK_TYPE'],
                 os.environ['RHYTHMJOY_TASK_TYPE'],
                 int(os.environ.get('TASK_LIMIT', '2')),
             )
@@ -711,8 +714,21 @@ function formatNaverBlockTaskLine(row) {
   ].join('\n');
 }
 
+function naverBlockTaskSummary(task) {
+  return {
+    taskId: task.id || task.taskId || null,
+    roomKey: task.roomKey || task.room_key || '',
+    date: task.date || task.reservation_date || '',
+    startTime: task.startTime || task.start_time || '',
+    endTime: task.endTime || task.end_time || '',
+    reservationNo: task.reservationNo || task.reservation_number || '',
+    reserverName: task.reserverName || task.reserver_name || '',
+    product: task.product || '',
+  };
+}
+
 function naverBlockSuccessMessage(row) {
-  const processed = (row.naverBlockTasks?.rows || []).filter((taskRow) => ['blocked', 'already-blocked'].includes(taskRow.status));
+  const processed = (row.naverBlockTasks?.rows || []).filter((taskRow) => ['blocked', 'already-blocked', 'google-recorded'].includes(taskRow.status));
   const detailText = processed.map(formatNaverBlockTaskLine).join('\n\n');
   return `네이버 예약불가 반영 완료
 ${kstNowText()}
@@ -735,6 +751,7 @@ ${kstNowText()}
 
 스페이스클라우드 예약완료 메일은 감지됐지만 네이버 예약불가 반영 또는 반영 후 Google Calendar 기록 중 확인이 필요한 항목이 생겼습니다.
 네이버에 이미 확정/마감 슬롯이 있으면 네이버 예약을 우선으로 보고 자동 수정하지 않습니다.
+Google Calendar 기록만 일시 실패한 경우에는 작업을 google_pending으로 되돌리고 다음 주기에 기록만 재시도합니다.
 
 오류: ${String(errorText || '-').slice(0, 1200)}
 로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
@@ -760,7 +777,8 @@ function dbStatusForDeleteRow(row) {
 }
 
 function dbStatusForNaverBlockRow(row) {
-  if (row.status === 'blocked' || row.status === 'already-blocked') return 'done';
+  if (row.status === 'blocked' || row.status === 'already-blocked' || row.status === 'google-recorded') return 'done';
+  if (row.status === 'google-create-failed') return 'google_pending';
   if (row.status === 'google-conflict') return 'needs_review';
   if (row.status === 'naver-conflict' || row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
@@ -859,16 +877,35 @@ async function runNaverBlockTasks(args, context = null) {
   const rows = [];
   try {
     for (const task of tasks) {
-      const row = await setNaverAvailability(activeContext, task, {
-        businessId: args.naverBusinessId,
-        targetStatus: 'unavailable',
-      });
-      if (['blocked', 'already-blocked'].includes(row.status)) {
+      let row;
+      if (task.status === 'google_pending') {
+        row = {
+          ...naverBlockTaskSummary(task),
+          status: 'google-pending',
+          startedAt: new Date().toISOString(),
+          naverAlreadyApplied: true,
+        };
         const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
         row.googleCalendar = googleResult;
-        if (!['created', 'existing'].includes(googleResult.status)) {
+        if (['created', 'existing'].includes(googleResult.status)) {
+          row.status = 'google-recorded';
+        } else {
           row.status = googleResult.status === 'conflict' ? 'google-conflict' : 'google-create-failed';
           row.error = googleResult.error || `Google Calendar after-apply result: ${googleResult.status || 'unknown'}`;
+        }
+        row.finishedAt = new Date().toISOString();
+      } else {
+        row = await setNaverAvailability(activeContext, task, {
+          businessId: args.naverBusinessId,
+          targetStatus: 'unavailable',
+        });
+        if (['blocked', 'already-blocked'].includes(row.status)) {
+          const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
+          row.googleCalendar = googleResult;
+          if (!['created', 'existing'].includes(googleResult.status)) {
+            row.status = googleResult.status === 'conflict' ? 'google-conflict' : 'google-create-failed';
+            row.error = googleResult.error || `Google Calendar after-apply result: ${googleResult.status || 'unknown'}`;
+          }
         }
       }
       rows.push(row);
@@ -886,7 +923,7 @@ async function runNaverBlockTasks(args, context = null) {
     if (ownedContext) await ownedContext.close();
   }
 
-  const failed = rows.filter((row) => !['blocked', 'already-blocked'].includes(row.status));
+  const failed = rows.filter((row) => !['blocked', 'already-blocked', 'google-recorded'].includes(row.status));
   return {
     status: failed.length ? 'naver-block-needs-review' : 'naver-block-processed',
     fetched: tasks.length,
@@ -1151,7 +1188,7 @@ async function runWatch(args) {
           if (result.sent) logLine(`telegram sent: spacecloud-upload-success count=${row.uploadedRows.length}`);
           else logLine(`telegram upload success skipped: ${result.reason}`);
         }
-        if (row.naverBlockTasks?.rows?.some((taskRow) => ['blocked', 'already-blocked'].includes(taskRow.status))) {
+        if (row.naverBlockTasks?.rows?.some((taskRow) => ['blocked', 'already-blocked', 'google-recorded'].includes(taskRow.status))) {
           const result = await sendTelegram(args, naverBlockSuccessMessage(row));
           if (result.sent) logLine(`telegram sent: naver-block-success count=${row.naverBlockTasks.rows.length}`);
           else logLine(`telegram naver block success skipped: ${result.reason}`);
@@ -1183,6 +1220,11 @@ async function runWatch(args) {
           if (isLoginProblem(errorText)) {
             await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorText));
             logLine(`login needed during naver block; waiting for manual login: ${JSON.stringify(row.naverBlockTasks.failed)}`);
+          } else if (row.naverBlockTasks.failed.every((failedRow) => failedRow.status === 'google-create-failed')) {
+            await notifyWithCooldown(args, 'naver-block-google-pending', naverBlockFailureMessage(row.naverBlockTasks), {
+              cooldownSeconds: Math.min(args.notifyCooldownSeconds, 60 * 60),
+            });
+            logLine(`google calendar record pending after naver block; will retry: ${JSON.stringify(row.naverBlockTasks.failed)}`);
           } else {
             await notifyWithCooldown(args, 'naver-block-failed', naverBlockFailureMessage(row.naverBlockTasks));
             logLine(`stopping after naver block failure: ${JSON.stringify(row.naverBlockTasks.failed)}`);

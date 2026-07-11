@@ -833,13 +833,6 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
 def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_data, calendar_key, conflicts):
     if not config.get('spacecloud_naver_block_enabled'):
         return None
-    if conflicts:
-        logger.info(
-            'Naver block task skipped: Google Calendar conflict reservation=%s conflicts=%s',
-            event_data.get('reservation_number'),
-            len(conflicts),
-        )
-        return None
 
     room_key = spacecloud_room_key_from_calendar(calendar_key)
     if not config['db_enabled'] or not room_key:
@@ -854,6 +847,7 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
         'calendarKey': calendar_key,
         'roomKey': room_key,
         'conflictCount': len(conflicts),
+        'googleConflicts': conflicts[:5],
         **event_data,
     }
     row = {
@@ -898,7 +892,7 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
                     start_time=VALUES(start_time),
                     end_time=VALUES(end_time),
                     payload_json=VALUES(payload_json),
-                    status=IF(status IN ('done', 'needs_review'), status, 'pending'),
+                    status=IF(status IN ('done', 'needs_review', 'google_pending'), status, 'pending'),
                     updated_at=NOW()
                 """,
                 row,
@@ -909,11 +903,12 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
             )
             task = cursor.fetchone()
         logger.info(
-            'Naver block task saved id=%s room=%s reservation=%s status=%s',
+            'Naver block task saved id=%s room=%s reservation=%s status=%s google_conflicts=%s',
             task.get('id') if task else '-',
             room_key,
             row['reservation_number'],
             task.get('status') if task else '-',
+            len(conflicts),
         )
         return task
     except Exception as error:
@@ -1023,27 +1018,26 @@ def format_spacecloud_conflicts(conflicts):
 
 
 def format_naver_block_task_status(config, task, conflicts):
-    if conflicts:
-        return '네이버 우선 충돌 감지: 구글 캘린더에 이미 겹치는 일정이 있어 네이버 예약불가 작업을 만들지 않음'
     if not config.get('spacecloud_naver_block_enabled'):
         return 'report-only: 네이버 예약불가 변경 안 함'
     if task:
-        return f"네이버 예약불가 작업 저장됨: task={task.get('id') or '-'} status={task.get('status') or '-'}"
+        suffix = f" / 구글 겹침 참고 {len(conflicts)}건" if conflicts else ''
+        return f"네이버 예약불가 작업 저장됨: task={task.get('id') or '-'} status={task.get('status') or '-'}{suffix}"
     return '네이버 예약불가 작업 미생성: DB/방 매핑/파싱 상태 확인 필요'
 
 
 def format_spacecloud_google_status(config, google_event, conflicts):
-    if conflicts:
-        return '생성 안 함: 기존 구글 캘린더 겹침'
     if google_event:
         return f"자동생성 완료: event_id={google_event.get('id') or '-'}"
     if config.get('spacecloud_naver_block_enabled'):
+        if conflicts:
+            return f'후순위 대기: 네이버 예약불가 반영 후 기록, 기존 구글 겹침 {len(conflicts)}건은 검증 참고'
         return '후순위 대기: 네이버 예약불가 반영 후 기록'
     return 'report-only: 자동생성 안 함'
 
 
 def notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, google_event, naver_block_task, subject, email_received_at, logger):
-    status = '네이버 우선 충돌 감지' if conflicts else '네이버 차단 후보 감지'
+    status = '구글 기록 겹침 참고' if conflicts else '네이버 차단 후보 감지'
     current_step = format_naver_block_task_status(config, naver_block_task, conflicts)
     google_status = format_spacecloud_google_status(config, google_event, conflicts)
     text = (
@@ -1059,7 +1053,7 @@ def notify_spacecloud_reservation_report(config, event_data, calendar_key, confl
         f"스페이스클라우드 예약ID: {event_data.get('reservation_number') or '-'}\n"
         f"인원: {event_data.get('headcount') or '-'}\n"
         f"결제: {event_data.get('payment_method') or '-'} / {event_data.get('price') or '-'}\n\n"
-        f'기존 구글 캘린더 겹침:\n{format_spacecloud_conflicts(conflicts)}\n\n'
+        f'기존 구글 캘린더 겹침(기록 검증용):\n{format_spacecloud_conflicts(conflicts)}\n\n'
         f'메일제목: {subject or "-"}'
     )
     send_telegram_message(config, text, logger)
@@ -1615,13 +1609,13 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                     calendar_key,
                     conflicts,
                 )
-                if conflicts:
-                    processing_status = 'spacecloud_conflict_reported'
-                elif naver_block_task:
+                if naver_block_task:
                     task_status = naver_block_task.get('status') or 'pending'
                     processing_status = f"naver_block_{task_status}"
                     if len(processing_status) > 32:
                         processing_status = 'naver_block_saved'
+                elif conflicts:
+                    processing_status = 'spacecloud_conflict_reported'
                 elif config.get('spacecloud_naver_block_enabled'):
                     processing_status = 'naver_block_skipped'
                 else:

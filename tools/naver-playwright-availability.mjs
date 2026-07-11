@@ -34,6 +34,12 @@ function dateIndex(value) {
   return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
 }
 
+function addDays(value, days) {
+  const { year, month, day } = dateParts(value);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return ymdFromParts(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
 function dayIndexForDate(value) {
   const { year, month, day } = dateParts(value);
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
@@ -58,6 +64,12 @@ function timeLabel(value) {
   const ampm = normalized < 12 ? '오전' : '오후';
   const hour12 = normalized % 12 === 0 ? 12 : normalized % 12;
   return `${ampm} ${hour12}:00`;
+}
+
+function timeTextFromHour(hour) {
+  if (hour === 24) return '24:00';
+  if (hour < 0 || hour > 23) throw new Error(`invalid slot hour: ${hour}`);
+  return `${String(hour).padStart(2, '0')}:00`;
 }
 
 function ymdFromParts(year, month, day) {
@@ -234,18 +246,18 @@ async function findWeeklySlot(page, row) {
 
     let status = 'unknown';
     let targetIndex = -1;
-    if (suspendedIndex >= 0) {
-      status = 'suspended';
-      targetIndex = suspendedIndex;
-    } else if (confirmedIndex >= 0) {
+    if (confirmedIndex >= 0) {
       status = 'confirmed';
       targetIndex = confirmedIndex;
-    } else if (availableIndex >= 0) {
-      status = 'available';
-      targetIndex = availableIndex;
     } else if (soldoutIndex >= 0) {
       status = 'soldout';
       targetIndex = soldoutIndex;
+    } else if (suspendedIndex >= 0) {
+      status = 'suspended';
+      targetIndex = suspendedIndex;
+    } else if (availableIndex >= 0) {
+      status = 'available';
+      targetIndex = availableIndex;
     }
 
     if (targetIndex >= 0) {
@@ -347,6 +359,74 @@ function taskRow(task) {
   };
 }
 
+function buildHourlySlotRows(row) {
+  const startHour = parseHour(row.startTime);
+  const endHour = parseHour(row.endTime);
+  const rows = [];
+  const pushHours = (date, fromHour, toHour) => {
+    for (let hour = fromHour; hour < toHour; hour += 1) {
+      rows.push({
+        ...row,
+        date,
+        startTime: timeTextFromHour(hour),
+        endTime: timeTextFromHour(hour + 1),
+        slotIndex: rows.length + 1,
+      });
+    }
+  };
+
+  if (startHour === endHour) {
+    if (startHour !== 0) {
+      throw new Error(`zero-duration Naver availability range is not supported: ${row.startTime}-${row.endTime}`);
+    }
+    pushHours(row.date, 0, 24);
+  } else if (endHour > startHour) {
+    pushHours(row.date, startHour, endHour);
+  } else {
+    pushHours(row.date, startHour, 24);
+    if (endHour > 0) pushHours(addDays(row.date, 1), 0, endHour);
+  }
+
+  if (rows.length === 0) {
+    throw new Error(`empty Naver availability slot range: ${row.date} ${row.startTime}-${row.endTime}`);
+  }
+  if (rows.length > 48) {
+    throw new Error(`Naver availability range is too large for one automatic task: ${rows.length} hours`);
+  }
+  return rows;
+}
+
+function compactSlot(slot) {
+  return {
+    status: slot?.status || 'unknown',
+    reason: slot?.reason || '',
+    cellText: String(slot?.cellText || '').slice(0, 160),
+    buttons: (slot?.buttons || []).map((button) => ({
+      text: String(button.text || '').slice(0, 40),
+      title: button.title || '',
+      visible: !!button.visible,
+    })),
+  };
+}
+
+function successStatusesForTarget(targetStatus) {
+  if (targetStatus === 'unavailable') return {
+    desired: 'suspended',
+    already: 'already-blocked',
+    changed: 'blocked',
+    expectedPanelStatus: '예약가능',
+    formStatus: '예약불가',
+  };
+  if (targetStatus === 'available') return {
+    desired: 'available',
+    already: 'already-available',
+    changed: 'restored',
+    expectedPanelStatus: '예약불가',
+    formStatus: '예약가능',
+  };
+  throw new Error(`unsupported target status: ${targetStatus}`);
+}
+
 async function prepareCalendar(page, row, { businessId = NAVER_BOOKING_BUSINESS_ID } = {}) {
   const url = naverCalendarUrl(businessId);
   if (!page.url().startsWith(url)) {
@@ -359,6 +439,79 @@ async function prepareCalendar(page, row, { businessId = NAVER_BOOKING_BUSINESS_
   await selectRoom(page, row.roomKey);
   await gotoWeekContainingDate(page, row.date);
   await scrollCalendarToHour(page, parseHour(row.startTime));
+}
+
+async function applyOneNaverAvailabilitySlot(page, slotRow, {
+  businessId = NAVER_BOOKING_BUSINESS_ID,
+  targetStatus = 'unavailable',
+} = {}) {
+  const meta = successStatusesForTarget(targetStatus);
+  const result = {
+    date: slotRow.date,
+    startTime: slotRow.startTime,
+    endTime: slotRow.endTime,
+    slotIndex: slotRow.slotIndex,
+  };
+
+  await prepareCalendar(page, slotRow, { businessId });
+  let slot = await findWeeklySlot(page, slotRow);
+  result.beforeSlot = compactSlot(slot);
+
+  if (targetStatus === 'unavailable') {
+    if (slot.status === meta.desired) {
+      result.status = meta.already;
+      return result;
+    }
+    if (slot.status === 'confirmed' || slot.status === 'soldout') {
+      result.status = 'naver-conflict';
+      result.error = `Naver slot is ${slot.status}; Naver reservation takes priority`;
+      return result;
+    }
+    if (slot.status !== 'available') {
+      result.status = 'needs-review';
+      result.error = `Naver slot is not available: ${JSON.stringify(compactSlot(slot))}`;
+      return result;
+    }
+  } else if (targetStatus === 'available') {
+    if (slot.status === meta.desired) {
+      result.status = meta.already;
+      return result;
+    }
+    if (slot.status !== 'suspended') {
+      result.status = 'needs-review';
+      result.error = `Naver slot is ${slot.status}; automatic restore only changes 예약불가 slots`;
+      return result;
+    }
+  }
+
+  const target = page.locator(`button[data-rhythmjoy-target="${slot.marker}"]`);
+  const targetCount = await target.count();
+  if (targetCount !== 1) throw new Error(`Naver target button count ${targetCount}`);
+  await target.click({ timeout: 10000 });
+  await page.waitForTimeout(900);
+
+  const verification = await verifySchedulePanel(page, slotRow, meta.expectedPanelStatus);
+  result.panelVerification = verification;
+  if (!verification.ok) {
+    result.status = 'needs-review';
+    result.error = `Naver panel verification failed: ${verification.errors.join(', ')}`;
+    return result;
+  }
+
+  await selectScheduleFormButton(page, '적용시간', 0, timeLabel(slotRow.startTime));
+  await selectScheduleFormButton(page, '적용시간', 1, timeLabel(slotRow.endTime));
+  await selectScheduleFormButton(page, '예약상태', 0, meta.formStatus);
+  result.save = await saveSchedule(page);
+  await scrollCalendarToHour(page, parseHour(slotRow.startTime));
+  slot = await findWeeklySlot(page, slotRow);
+  result.afterSlot = compactSlot(slot);
+
+  if (slot.status !== meta.desired) {
+    throw new Error(`Naver slot did not become ${meta.formStatus}: ${JSON.stringify(compactSlot(slot))}`);
+  }
+
+  result.status = meta.changed;
+  return result;
 }
 
 export async function setNaverAvailability(context, task, {
@@ -386,81 +539,67 @@ export async function setNaverAvailability(context, task, {
   }
 
   try {
-    await prepareCalendar(page, row, { businessId });
-    let slot = await findWeeklySlot(page, row);
-    row.beforeSlot = slot;
+    const meta = successStatusesForTarget(targetStatus);
+    const slotRows = buildHourlySlotRows(row);
+    row.slotRows = slotRows.map((slotRow) => ({
+      date: slotRow.date,
+      startTime: slotRow.startTime,
+      endTime: slotRow.endTime,
+      slotIndex: slotRow.slotIndex,
+    }));
+    row.slotCount = slotRows.length;
+    row.beforeSlots = [];
 
-    if (targetStatus === 'unavailable') {
-      if (slot.status === 'suspended') {
-        row.status = 'already-blocked';
+    for (const slotRow of slotRows) {
+      await prepareCalendar(page, slotRow, { businessId });
+      const slot = await findWeeklySlot(page, slotRow);
+      const inspection = {
+        date: slotRow.date,
+        startTime: slotRow.startTime,
+        endTime: slotRow.endTime,
+        slotIndex: slotRow.slotIndex,
+        slot: compactSlot(slot),
+      };
+      row.beforeSlots.push(inspection);
+
+      if (targetStatus === 'unavailable') {
+        if (slot.status === 'confirmed' || slot.status === 'soldout') {
+          row.status = 'naver-conflict';
+          row.error = `Naver slot is ${slot.status}; Naver reservation takes priority: ${slotRow.date} ${slotRow.startTime}-${slotRow.endTime}`;
+          row.finishedAt = new Date().toISOString();
+          return row;
+        }
+        if (!['available', meta.desired].includes(slot.status)) {
+          row.status = 'needs-review';
+          row.error = `Naver slot is not available or already blocked: ${slotRow.date} ${slotRow.startTime}-${slotRow.endTime} ${JSON.stringify(compactSlot(slot))}`;
+          row.finishedAt = new Date().toISOString();
+          return row;
+        }
+      } else if (targetStatus === 'available') {
+        if (!['suspended', meta.desired].includes(slot.status)) {
+          row.status = 'needs-review';
+          row.error = `Naver slot is ${slot.status}; automatic restore only changes 예약불가 slots: ${slotRow.date} ${slotRow.startTime}-${slotRow.endTime}`;
+          row.finishedAt = new Date().toISOString();
+          return row;
+        }
+      }
+    }
+
+    row.appliedSlots = [];
+    for (const slotRow of slotRows) {
+      const result = await applyOneNaverAvailabilitySlot(page, slotRow, { businessId, targetStatus });
+      row.appliedSlots.push(result);
+      if (result.status === 'naver-conflict' || result.status === 'needs-review') {
+        row.status = result.status;
+        row.error = result.error;
         row.finishedAt = new Date().toISOString();
         return row;
       }
-      if (slot.status === 'confirmed' || slot.status === 'soldout') {
-        row.status = 'naver-conflict';
-        row.error = `Naver slot is ${slot.status}; Naver reservation takes priority`;
-        row.finishedAt = new Date().toISOString();
-        return row;
-      }
-      if (slot.status !== 'available') {
-        throw new Error(`target Naver slot is not available: ${JSON.stringify(slot)}`);
-      }
-    } else if (targetStatus === 'available') {
-      if (slot.status === 'available') {
-        row.status = 'already-available';
-        row.finishedAt = new Date().toISOString();
-        return row;
-      }
-      if (slot.status !== 'suspended') {
-        row.status = 'needs-review';
-        row.error = `Naver slot is ${slot.status}; automatic restore only changes 예약불가 slots`;
-        row.finishedAt = new Date().toISOString();
-        return row;
-      }
-    } else {
-      throw new Error(`unsupported target status: ${targetStatus}`);
     }
 
-    const target = page.locator(`button[data-rhythmjoy-target="${slot.marker}"]`);
-    const targetCount = await target.count();
-    if (targetCount !== 1) throw new Error(`Naver target button count ${targetCount}`);
-    await target.click({ timeout: 10000 });
-    await page.waitForTimeout(900);
-
-    const verification = await verifySchedulePanel(
-      page,
-      row,
-      targetStatus === 'unavailable' ? '예약가능' : '예약불가',
-    );
-    row.panelVerification = verification;
-    if (!verification.ok) {
-      row.status = 'needs-review';
-      row.error = `Naver panel verification failed: ${verification.errors.join(', ')}`;
-      row.finishedAt = new Date().toISOString();
-      return row;
-    }
-
-    await selectScheduleFormButton(page, '적용시간', 0, timeLabel(row.startTime));
-    await selectScheduleFormButton(page, '적용시간', 1, timeLabel(row.endTime));
-    await selectScheduleFormButton(
-      page,
-      '예약상태',
-      0,
-      targetStatus === 'unavailable' ? '예약불가' : '예약가능',
-    );
-    row.save = await saveSchedule(page);
-    await scrollCalendarToHour(page, parseHour(row.startTime));
-    slot = await findWeeklySlot(page, row);
-    row.afterSlot = slot;
-
-    if (targetStatus === 'unavailable' && slot.status !== 'suspended') {
-      throw new Error(`Naver slot did not become 예약불가: ${JSON.stringify(slot)}`);
-    }
-    if (targetStatus === 'available' && slot.status !== 'available') {
-      throw new Error(`Naver slot did not become 예약가능: ${JSON.stringify(slot)}`);
-    }
-
-    row.status = targetStatus === 'unavailable' ? 'blocked' : 'restored';
+    row.changedSlotCount = row.appliedSlots.filter((slot) => slot.status === meta.changed).length;
+    row.alreadySlotCount = row.appliedSlots.filter((slot) => slot.status === meta.already).length;
+    row.status = row.changedSlotCount > 0 ? meta.changed : meta.already;
     row.finishedAt = new Date().toISOString();
     return row;
   } catch (error) {
