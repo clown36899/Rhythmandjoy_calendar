@@ -1847,7 +1847,6 @@ def create_calendar_event(service, event_data, logger, dedupe_google_calendar=Fa
         f"종료시간: {event_data['end_time']}\n"
         f"결제상태: {event_data.get('payment_status', 'N/A')}\n"
         f"예약번호: {event_data.get('reservation_number', 'N/A')}\n"
-        f"결제금액: {event_data.get('price', 'N/A')}\n"
     )
     event_body = {
         'summary': f"{event_data['product']} {mask_name(event_data['name'])}님",
