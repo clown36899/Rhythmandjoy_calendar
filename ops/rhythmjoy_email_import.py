@@ -447,6 +447,35 @@ def build_spacecloud_email_record(config, mail_key, mailbox, decoded_id, message
     return record
 
 
+def build_spacecloud_cancellation_email_record(config, mail_key, mailbox, decoded_id, message_id, email_received_at, subject, body, event_data, calendar_key):
+    record = build_email_record_base(
+        config,
+        mail_key,
+        mailbox,
+        decoded_id,
+        message_id,
+        email_received_at,
+        subject,
+        body,
+        'spacecloud_cancellation',
+        event_data,
+    )
+    record['target_calendar'] = calendar_key or ''
+    record['spacecloud_room_key'] = spacecloud_room_key_from_calendar(calendar_key)
+    if event_data:
+        record.update({
+            'reservation_number': truncate_text(event_data.get('reservation_number'), 64),
+            'reserver_name': truncate_text(event_data.get('name'), 128),
+            'product': truncate_text(event_data.get('product'), 255),
+            'reservation_date': clean_date_or_none(event_data.get('date')),
+            'start_time': clean_time_or_none(event_data.get('start_time')),
+            'end_time': clean_time_or_none(event_data.get('end_time')),
+            'payment_status': truncate_text(event_data.get('payment_status'), 64),
+            'price': truncate_text(event_data.get('price'), 64),
+        })
+    return record
+
+
 def build_ignored_email_record(config, mail_key, mailbox, decoded_id, message_id, email_received_at, subject, body, reason):
     record = build_email_record_base(
         config,
@@ -720,6 +749,76 @@ def update_email_processing(config, email_event_id, status, logger, **fields):
             conn.close()
 
 
+def enrich_spacecloud_cancellation_from_db(config, logger, event_data, calendar_key):
+    if not config['db_enabled'] or not event_data or not calendar_key:
+        return event_data
+    if event_data.get('reservation_number'):
+        return event_data
+
+    reservation_date = clean_date_or_none(event_data.get('date'))
+    start_time = clean_time_or_none(event_data.get('start_time'))
+    end_time = clean_time_or_none(event_data.get('end_time'))
+    if not reservation_date or not start_time or not end_time:
+        return event_data
+
+    conn = None
+    try:
+        conn = db_connect(config)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, reservation_number
+                FROM rhythmjoy_naver_email_events
+                WHERE event_type='spacecloud_reservation'
+                  AND target_calendar=%s
+                  AND reservation_date=%s
+                  AND start_time=%s
+                  AND end_time=%s
+                  AND reserver_name=%s
+                  AND reservation_number <> ''
+                ORDER BY email_received_at DESC, id DESC
+                LIMIT 1
+                """,
+                (
+                    calendar_key,
+                    reservation_date,
+                    start_time,
+                    end_time,
+                    event_data.get('name') or '',
+                ),
+            )
+            row = cursor.fetchone()
+        if row:
+            event_data = dict(event_data)
+            event_data['reservation_number'] = row.get('reservation_number') or ''
+            event_data['matched_reservation_email_event_id'] = row.get('id')
+            logger.info(
+                'SpaceCloud cancellation enriched from reservation email id=%s reservation=%s calendar=%s time=%s %s-%s',
+                row.get('id'),
+                row.get('reservation_number'),
+                calendar_key,
+                reservation_date,
+                event_data.get('start_time'),
+                event_data.get('end_time'),
+            )
+        else:
+            logger.warning(
+                'SpaceCloud cancellation has no reservation id and no matching reservation email calendar=%s name=%s time=%s %s-%s',
+                calendar_key,
+                event_data.get('name') or '',
+                reservation_date,
+                event_data.get('start_time'),
+                event_data.get('end_time'),
+            )
+        return event_data
+    except Exception as error:
+        disable_db_logging(config, logger, 'SpaceCloud cancellation enrichment failed', error)
+        return event_data
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def spacecloud_delete_dedupe_key(deletion, room_key):
     reservation_number = deletion.get('reservation_number') or ''
     if reservation_number:
@@ -752,6 +851,23 @@ def spacecloud_naver_block_dedupe_key(event_data, room_key):
         ])
     digest = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
     return f'naver_block|{digest}'
+
+
+def spacecloud_naver_restore_dedupe_key(event_data, room_key):
+    reservation_number = event_data.get('reservation_number') or ''
+    if reservation_number:
+        raw_key = f'naver_restore|reservation|{reservation_number}'
+    else:
+        raw_key = '|'.join([
+            'naver_restore',
+            room_key or '',
+            normalize_date(event_data.get('date', '')) if event_data.get('date') else '',
+            event_data.get('start_time', ''),
+            event_data.get('end_time', ''),
+            event_data.get('name', ''),
+        ])
+    digest = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+    return f'naver_restore|{digest}'
 
 
 def spacecloud_upload_dedupe_key(event_data, room_key):
@@ -1031,6 +1147,92 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
             conn.close()
 
 
+def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_data, calendar_key):
+    if not config.get('spacecloud_naver_block_enabled'):
+        return None
+
+    room_key = spacecloud_room_key_from_calendar(calendar_key)
+    if not config['db_enabled'] or not room_key:
+        if not room_key:
+            logger.info('Naver restore task skipped: no room mapping for calendar=%s product=%s', calendar_key, event_data.get('product'))
+        return None
+
+    dedupe_key = spacecloud_naver_restore_dedupe_key(event_data, room_key)
+    payload = {
+        'source': 'spacecloud-email-cancellation',
+        'action': 'restore-naver-availability',
+        'calendarKey': calendar_key,
+        'roomKey': room_key,
+        **event_data,
+    }
+    row = {
+        'dedupe_key': dedupe_key,
+        'email_event_id': email_event_id,
+        'task_type': 'naver_restore',
+        'room_key': room_key,
+        'reservation_number': event_data.get('reservation_number') or '',
+        'reserver_name': event_data.get('name') or '',
+        'product': event_data.get('product') or '',
+        'reservation_date': clean_date_or_none(event_data.get('date')),
+        'start_time': clean_time_or_none(event_data.get('start_time')),
+        'end_time': clean_time_or_none(event_data.get('end_time')),
+        'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+    }
+
+    conn = None
+    try:
+        conn = db_connect(config)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO rhythmjoy_spacecloud_tasks (
+                    dedupe_key, email_event_id, task_type, status,
+                    room_key, reservation_number, reserver_name, product,
+                    reservation_date, start_time, end_time, payload_json,
+                    created_at, updated_at
+                )
+                VALUES (
+                    %(dedupe_key)s, %(email_event_id)s, %(task_type)s, 'pending',
+                    %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
+                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(payload_json)s,
+                    NOW(), NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    email_event_id=VALUES(email_event_id),
+                    room_key=VALUES(room_key),
+                    reservation_number=VALUES(reservation_number),
+                    reserver_name=VALUES(reserver_name),
+                    product=VALUES(product),
+                    reservation_date=VALUES(reservation_date),
+                    start_time=VALUES(start_time),
+                    end_time=VALUES(end_time),
+                    payload_json=VALUES(payload_json),
+                    status=IF(status IN ('done', 'needs_review', 'google_pending'), status, 'pending'),
+                    updated_at=NOW()
+                """,
+                row,
+            )
+            cursor.execute(
+                'SELECT * FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=%s LIMIT 1',
+                (dedupe_key,),
+            )
+            task = cursor.fetchone()
+        logger.info(
+            'Naver restore task saved id=%s room=%s reservation=%s status=%s',
+            task.get('id') if task else '-',
+            room_key,
+            row['reservation_number'],
+            task.get('status') if task else '-',
+        )
+        return task
+    except Exception as error:
+        disable_db_logging(config, logger, 'Naver restore task save failed', error)
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def send_telegram_message(config, text, logger):
     token = config.get('telegram_bot_token', '')
     chat_id = config.get('telegram_chat_id', '')
@@ -1190,6 +1392,48 @@ def notify_spacecloud_parse_failure(config, mailbox, email_id, subject, email_re
     send_telegram_message(config, text, logger)
 
 
+def format_naver_restore_task_status(config, task):
+    if not config.get('spacecloud_naver_block_enabled'):
+        return 'report-only: 네이버 예약가능 복구 안 함'
+    if task:
+        return f"네이버 예약가능 복구 작업 저장됨: task={task.get('id') or '-'} status={task.get('status') or '-'}"
+    return '네이버 예약가능 복구 작업 미생성: DB/방 매핑/파싱 상태 확인 필요'
+
+
+def notify_spacecloud_cancellation_report(config, event_data, calendar_key, naver_restore_task, subject, email_received_at, logger):
+    current_step = format_naver_restore_task_status(config, naver_restore_task)
+    text = (
+        '스페이스클라우드 취소완료 메일 감지\n'
+        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
+        f'현재 단계: {current_step}\n\n'
+        f"상품: {event_data.get('product') or '-'}\n"
+        f"캘린더: {calendar_key or '-'}\n"
+        f"구글캘린더: 네이버 예약가능 복구 후 삭제 대기\n"
+        f"메일수신: {email_received_at or '-'}\n"
+        f"예약시간: {reservation_time_text(event_data)}\n"
+        f"예약자명: {event_data.get('name') or '-'}\n"
+        f"스페이스클라우드 예약ID: {event_data.get('reservation_number') or '-'}\n"
+        f"인원: {event_data.get('headcount') or '-'}\n"
+        f"금액: {event_data.get('price') or '-'}\n\n"
+        '주의: 이 알림은 취소 메일 감지와 작업 저장 상태이며, 네이버 복구/구글 삭제 완료 알림은 별도로 전송됨\n'
+        f'메일제목: {subject or "-"}'
+    )
+    send_telegram_message(config, text, logger)
+
+
+def notify_spacecloud_cancellation_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
+    text = (
+        '스페이스클라우드 취소완료 메일 파싱 실패\n'
+        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
+        f'메일함: {mailbox}\n'
+        f'메일ID: {email_id}\n'
+        f'메일수신: {email_received_at or "-"}\n'
+        f'메일제목: {subject or "-"}\n\n'
+        '취소 메일 양식이 바뀌었거나 방/시간/예약자명 확인이 필요함'
+    )
+    send_telegram_message(config, text, logger)
+
+
 def find_calendar_event_by_reservation(service, target_calendar, reservation_number, logger):
     if not reservation_number:
         return None
@@ -1321,10 +1565,16 @@ def normalize_spacecloud_hour(hour_text, minute_text=''):
     return f'{hour:02d}:{minute:02d}'
 
 
-def parse_spacecloud_reservation(body, raw_message, subject):
-    if '예약 완료' not in (subject or '') and '예약승인완료' not in (body or ''):
-        return None
+def is_spacecloud_reservation_complete(subject, body):
+    return '예약 완료' in (subject or '') or '예약승인완료' in (body or '')
 
+
+def is_spacecloud_cancellation_complete(subject, body):
+    text = f"{subject or ''}\n{body or ''}"
+    return any(keyword in text for keyword in ('취소 완료', '예약취소', '예약이 취소되었습니다', '취소된 예약'))
+
+
+def parse_spacecloud_booking_details(body, raw_message, source_mode, payment_status):
     text = compact_spacecloud_text(body)
     product_match = re.search(r'(A홀|B홀|C홀|D홀|E홀)\s*[^\s,]+(?:\s*[^\s,]+)?-?외부신발금지', text)
     if not product_match:
@@ -1334,9 +1584,27 @@ def parse_spacecloud_reservation(body, raw_message, subject):
         text,
     )
 
-    labels = ['예약공간', '예약내용', '예약인원', '예약옵션', '요청사항', '예약자명', '결제수단', '결제금액', '호스트센터로 이동']
-    name = extract_spacecloud_field(text, '예약자명', ['결제수단', '결제금액', '호스트센터로 이동'])
-    price = extract_spacecloud_field(text, '결제금액', ['호스트센터로 이동'])
+    labels = [
+        '예약공간',
+        '예약내용',
+        '예약인원',
+        '예약옵션',
+        '요청사항',
+        '예약자명',
+        '결제수단',
+        '결제금액',
+        '결제예정금액',
+        '취소수수료',
+        '환불금액',
+        '호스트센터로 이동',
+    ]
+    payment_labels = ['결제수단', '결제금액', '결제예정금액', '취소수수료', '환불금액', '호스트센터로 이동']
+    name = extract_spacecloud_field(text, '예약자명', payment_labels)
+    price = (
+        extract_spacecloud_field(text, '결제금액', ['결제예정금액', '취소수수료', '환불금액', '호스트센터로 이동'])
+        or extract_spacecloud_field(text, '결제예정금액', ['취소수수료', '환불금액', '호스트센터로 이동'])
+        or extract_spacecloud_field(text, '환불금액', ['호스트센터로 이동'])
+    )
     payment_method = extract_spacecloud_field(text, '결제수단', ['결제금액', '호스트센터로 이동'])
     headcount = extract_spacecloud_field(text, '예약인원', labels)
     space_name = extract_spacecloud_field(text, '예약공간', labels)
@@ -1353,7 +1621,7 @@ def parse_spacecloud_reservation(body, raw_message, subject):
 
     return {
         'source_platform': 'spacecloud',
-        'source_mode': 'spacecloud_email',
+        'source_mode': source_mode,
         'name': name,
         'reservation_number': reservation_id or '',
         'product': product,
@@ -1362,10 +1630,25 @@ def parse_spacecloud_reservation(body, raw_message, subject):
         'start_time': start_time,
         'end_time': end_time,
         'headcount': headcount,
-        'payment_status': '예약완료',
+        'payment_status': payment_status,
         'payment_method': payment_method,
         'price': price,
     }
+
+
+def parse_spacecloud_reservation(body, raw_message, subject):
+    if not is_spacecloud_reservation_complete(subject, body):
+        return None
+    return parse_spacecloud_booking_details(body, raw_message, 'spacecloud_email', '예약완료')
+
+
+def parse_spacecloud_cancellation(body, raw_message, subject):
+    if not is_spacecloud_cancellation_complete(subject, body):
+        return None
+    event_data = parse_spacecloud_booking_details(body, raw_message, 'spacecloud_cancel_email', '취소완료')
+    if event_data:
+        event_data['cancellation_status'] = '취소완료'
+    return event_data
 
 
 def parse_google_event_datetime(value):
@@ -1707,7 +1990,75 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             return
 
         if mailbox in SPACECLOUD_MAILBOXES:
-            is_reservation_complete = '예약 완료' in subject or '예약승인완료' in body
+            is_cancellation_complete = is_spacecloud_cancellation_complete(subject, body)
+            is_reservation_complete = is_spacecloud_reservation_complete(subject, body)
+            if is_cancellation_complete:
+                event_data = parse_spacecloud_cancellation(body, raw_message, subject)
+                calendar_key = product_to_calendar_key(event_data.get('product', '')) if event_data else None
+                if event_data and calendar_key:
+                    event_data = enrich_spacecloud_cancellation_from_db(config, logger, event_data, calendar_key)
+                record = build_spacecloud_cancellation_email_record(
+                    config,
+                    mail_key,
+                    mailbox,
+                    decoded_id,
+                    message_id,
+                    email_received_at,
+                    subject,
+                    body,
+                    event_data,
+                    calendar_key,
+                )
+                email_row = upsert_email_event(config, logger, record)
+                email_record_id = email_row.get('id') if email_row else None
+                if event_data and calendar_key:
+                    event_data['calendar_key'] = calendar_key
+                    event_data['target_calendar'] = calendar_key
+                    naver_restore_task = upsert_spacecloud_naver_restore_task(
+                        config,
+                        logger,
+                        email_record_id,
+                        event_data,
+                        calendar_key,
+                    )
+                    if naver_restore_task:
+                        task_status = naver_restore_task.get('status') or 'pending'
+                        processing_status = f"naver_restore_{task_status}"
+                        if len(processing_status) > 32:
+                            processing_status = 'naver_restore_saved'
+                    elif config.get('spacecloud_naver_block_enabled'):
+                        processing_status = 'naver_restore_skipped'
+                    else:
+                        processing_status = 'report_only_cancel'
+                    update_email_processing(
+                        config,
+                        email_record_id,
+                        processing_status,
+                        logger,
+                        error_text='',
+                    )
+                    notify_spacecloud_cancellation_report(
+                        config,
+                        event_data,
+                        calendar_key,
+                        naver_restore_task,
+                        subject,
+                        email_received_at,
+                        logger,
+                    )
+                else:
+                    logger.warning('SpaceCloud cancellation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
+                    update_email_processing(
+                        config,
+                        email_record_id,
+                        'parse_failed',
+                        logger,
+                        error_text='spacecloud_cancellation_parser_no_match',
+                    )
+                    notify_spacecloud_cancellation_parse_failure(config, mailbox, decoded_id, subject, email_received_at, logger)
+                mark_seen(imap_connection, email_id, logger)
+                return
+
             if not is_reservation_complete:
                 record = build_ignored_email_record(
                     config,

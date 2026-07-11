@@ -168,12 +168,14 @@ Operational limits:
 - This is not password automation. If SpaceCloud or Naver expires the session, the watcher sends a Telegram login-needed alert, keeps the Chrome profile open, and retries on the normal watch interval after the host logs in again.
 - It detects the Google Calendar cache, not raw Gmail. The server-side cache currently syncs Google Calendar every 15 seconds, so a 60-second local watch interval is usually enough.
 - New confirmed Google Calendar events are automatically uploaded to SpaceCloud by the local watcher.
-- Cancellation detection is handled earlier at the Naver email import layer: `ops/rhythmjoy_email_import.py` records the cancellation, deletes the matching Google Calendar event, and creates a SpaceCloud delete task for mapped hall rooms. The local watcher consumes that task and deletes the matching direct-added SpaceCloud schedule through the logged-in UI.
+- Cancellation detection is handled earlier at the Naver email import layer: `ops/rhythmjoy_email_import.py` records the cancellation as a retained DB event and creates a follow-up task instead of removing the DB row. Naver-origin cancellations create a SpaceCloud `delete` task for mapped hall rooms. The local watcher consumes that task and deletes the matching direct-added SpaceCloud schedule through the logged-in UI.
 - Automatic SpaceCloud deletion only proceeds when the clicked popup is a direct-added schedule and the room, date/time, and `naverReservationNo` in the memo match the DB task. Tasks without a reservation number are left as `needs_review` instead of being deleted automatically.
 - Google Calendar deletion and SpaceCloud deletion are reported separately. `Google Calendar 자동삭제 완료` does not mean SpaceCloud was deleted; SpaceCloud task status must be `done` or `already_gone`.
 - Telegram alerts are sent for host action items and state changes: successful SpaceCloud uploads, SpaceCloud login/session expiry, upload failures, delete tasks that need review, Naver SmartPlace block success or review-needed states, watcher cycle errors, Naver cancellation detection, and cancellation email parse failures.
-- SpaceCloud reservation-complete email intake starts from the Naver mail folder displayed as `스페이스클라우드`. When `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1`, the Cafe24 email importer records parsed reservations in the DB, checks Google Calendar only as downstream verification data, and sends Telegram reports.
+- SpaceCloud reservation-complete and cancellation-complete email intake starts from the Naver mail folder displayed as `스페이스클라우드`. When `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1`, the Cafe24 email importer records parsed SpaceCloud emails in the DB, checks Google Calendar only as downstream verification data, and sends Telegram reports.
 - If `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1` is also enabled, SpaceCloud reservation-complete emails create a `naver_block` task even when Google Calendar already has a conflicting record. Naver mail plus DB is the source of truth; Google Calendar is a record after the platform-side action. The local Mac watcher opens Naver SmartPlace weekly calendar, selects the mapped room/date/time, splits overnight or multi-hour reservations into hourly slots, and changes available slots to `예약불가`. Only after that Naver-side change is verified does the watcher create the mapped Google Calendar event. If Naver already has a confirmed or sold-out slot there, the watcher does not overwrite it and marks the task `needs_review`.
+- SpaceCloud cancellation-complete emails create a retained `spacecloud_cancellation` DB event and a `naver_restore` task. The local Mac watcher processes `naver_block` and `naver_restore` in DB creation order, restores only slots that are still `예약불가`, and deletes the matching Google Calendar record only after the Naver-side restore succeeds or is already available. Confirmed/sold-out/unknown Naver slots are left as `needs_review`.
+- SpaceCloud cancellation emails may not include the SpaceCloud reservation id. In that case the importer tries to enrich the cancellation from an earlier `spacecloud_reservation` DB row with the same calendar, room/date/time, and reserver name. If no reservation id can be recovered, the restore task is left for review instead of changing Naver availability automatically.
 
 ## Naver Email DB Ledger
 
@@ -181,8 +183,8 @@ The Cafe24 email importer now writes a DB ledger before cross-platform side effe
 
 Tables:
 
-- `rhythmjoy_naver_email_events`: one row per Naver booking/cancellation email. It stores the mailbox, message identity, parse result, target calendar, reservation details, Google Calendar processing status, and optional raw body.
-- `rhythmjoy_spacecloud_tasks`: durable work queue for cross-platform actions. Naver reservation emails for mapped hall rooms create an `upload` task when enabled. Cancellation emails for mapped hall rooms create a `delete` task with `pending` status. SpaceCloud reservation-complete emails can create a `naver_block` task when enabled. The Mac watcher claims pending tasks, performs the matching UI action, and writes `done`, `already_gone`, `needs_review`, `google_pending`, or `failed`.
+- `rhythmjoy_naver_email_events`: one row per booking/cancellation email. Cancellations are not deleted from this table; they remain as `cancellation` or `spacecloud_cancellation` events with parse and processing status, so later audits can distinguish "mail arrived", "task saved", and "platform action completed".
+- `rhythmjoy_spacecloud_tasks`: durable work queue for cross-platform actions. Naver reservation emails for mapped hall rooms create an `upload` task when enabled. Naver cancellation emails for mapped hall rooms create a `delete` task with `pending` status. SpaceCloud reservation-complete emails can create a `naver_block` task when enabled. SpaceCloud cancellation-complete emails can create a `naver_restore` task. The Mac watcher claims pending tasks, performs the matching UI action, and writes `done`, `already_gone`, `needs_review`, `google_pending`, or `failed`.
 
 Default production behavior uses the Naver email DB row as the durable source before cross-platform work:
 
@@ -191,9 +193,10 @@ Default production behavior uses the Naver email DB row as the durable source be
 3. For mapped hall reservation emails, a SpaceCloud `upload` task is saved in `rhythmjoy_spacecloud_tasks` when `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1`.
 4. For cancellation emails, a SpaceCloud `delete` task is saved in `rhythmjoy_spacecloud_tasks`. With `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1`, Google Calendar deletion is deferred until the watcher confirms the SpaceCloud delete task.
 5. For SpaceCloud-origin reservation emails, a Naver SmartPlace `naver_block` task is saved in `rhythmjoy_spacecloud_tasks`.
-6. The Mac watcher polls `rhythmjoy_spacecloud_tasks` over SSH and performs the real platform-side UI action through the already logged-in Chrome profile.
-7. Google Calendar is written or deleted after the platform-side action succeeds, so it stays a record layer instead of becoming the booking source.
-8. DB status records the result for verification, retry, and recovery.
+6. For SpaceCloud-origin cancellation emails, a Naver SmartPlace `naver_restore` task is saved in `rhythmjoy_spacecloud_tasks`.
+7. The Mac watcher polls `rhythmjoy_spacecloud_tasks` over SSH and performs the real platform-side UI action through the already logged-in Chrome profile.
+8. Google Calendar is written or deleted after the platform-side action succeeds, so it stays a record layer instead of becoming the booking source.
+9. DB status records the result for verification, retry, and recovery.
 
 The older Google Calendar plan upload path remains as a legacy/backfill path for calendar records that already existed before the DB upload queue was enabled. New mapped hall reservations should enter through `upload` tasks instead.
 

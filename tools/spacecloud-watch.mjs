@@ -309,6 +309,7 @@ try:
             """
             SELECT
                 id,
+                task_type AS taskType,
                 status,
                 room_key AS roomKey,
                 reservation_number AS reservationNo,
@@ -323,7 +324,7 @@ try:
             WHERE task_type=%s
               AND (
                 status='pending'
-                OR (status='google_pending' AND %s IN ('naver_block', 'upload', 'delete'))
+                OR (status='google_pending' AND %s IN ('naver_block', 'naver_restore', 'upload', 'delete'))
                 OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
               )
             ORDER BY created_at ASC, id ASC
@@ -334,6 +335,92 @@ try:
                 os.environ['RHYTHMJOY_TASK_TYPE'],
                 int(os.environ.get('TASK_LIMIT', '2')),
             )
+        )
+        rows = cur.fetchall()
+        ids = [row['id'] for row in rows]
+        if ids:
+            cur.execute(
+                f"""
+                UPDATE rhythmjoy_spacecloud_tasks
+                SET status='running', attempts=attempts+1, locked_at=NOW(), updated_at=NOW()
+                WHERE id IN ({','.join(['%s'] * len(ids))})
+                """,
+                ids
+            )
+    conn.commit()
+    print(json.dumps(rows, ensure_ascii=False))
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '[]');
+}
+
+async function fetchRemoteTaskTypes(args, { taskTypes, limit }) {
+  const target = await loadCafe24Target(args);
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export RHYTHMJOY_TASK_TYPES=${shellQuote(JSON.stringify(taskTypes))}
+export TASK_LIMIT=${shellQuote(limit)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+task_types = json.loads(os.environ['RHYTHMJOY_TASK_TYPES'])
+if not task_types:
+    print('[]')
+    raise SystemExit(0)
+placeholders = ','.join(['%s'] * len(task_types))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=False,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT
+                id,
+                task_type AS taskType,
+                status,
+                room_key AS roomKey,
+                reservation_number AS reservationNo,
+                reserver_name AS reserverName,
+                product,
+                DATE_FORMAT(reservation_date, '%%Y-%%m-%%d') AS date,
+                TIME_FORMAT(start_time, '%%H:%%i') AS startTime,
+                TIME_FORMAT(end_time, '%%H:%%i') AS endTime,
+                payload_json AS payloadJson,
+                attempts
+            FROM rhythmjoy_spacecloud_tasks
+            WHERE task_type IN ({placeholders})
+              AND (
+                status='pending'
+                OR (status='google_pending' AND task_type IN ('naver_block', 'naver_restore', 'upload', 'delete'))
+                OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
+              )
+            ORDER BY created_at ASC, id ASC
+            LIMIT %s
+            """,
+            [*task_types, int(os.environ.get('TASK_LIMIT', '2'))],
         )
         rows = cur.fetchall()
         ids = [row['id'] for row in rows]
@@ -372,6 +459,13 @@ async function fetchRemoteUploadTasks(args) {
 async function fetchRemoteNaverBlockTasks(args) {
   return fetchRemoteTasks(args, {
     taskType: 'naver_block',
+    limit: args.naverBlockLimitPerCycle,
+  });
+}
+
+async function fetchRemoteNaverAvailabilityTasks(args) {
+  return fetchRemoteTaskTypes(args, {
+    taskTypes: ['naver_block', 'naver_restore'],
     limit: args.naverBlockLimitPerCycle,
   });
 }
@@ -562,9 +656,9 @@ async function createRemoteGoogleEventForUploadTask(args, taskId) {
   return createRemoteGoogleEventForTask(args, taskId, 'upload');
 }
 
-async function deleteRemoteGoogleEventForDeleteTask(args, taskId) {
+async function deleteRemoteGoogleEventForTask(args, taskId, taskType) {
   const target = await loadCafe24Target(args);
-  const payload = Buffer.from(JSON.stringify({ taskId }), 'utf8').toString('base64');
+  const payload = Buffer.from(JSON.stringify({ taskId, taskType }), 'utf8').toString('base64');
   const opsRoot = target.OPS_ROOT || '/home/clown313python/rhythmjoy_ops';
   const script = `
 set -e
@@ -587,6 +681,7 @@ import rhythmjoy_email_import as importer
 
 payload = json.loads(base64.b64decode(os.environ['GOOGLE_DELETE_TASK_B64']).decode('utf-8'))
 task_id = int(payload['taskId'])
+task_type = payload.get('taskType') or 'delete'
 logger = logging.getLogger('spacecloud_watch_google_after_delete')
 logger.setLevel(logging.INFO)
 
@@ -607,26 +702,27 @@ try:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, email_event_id, reservation_number, payload_json
+            SELECT id, email_event_id, task_type, reservation_number, payload_json
             FROM rhythmjoy_spacecloud_tasks
-            WHERE id=%s AND task_type='delete'
+            WHERE id=%s AND task_type=%s
             LIMIT 1
             """,
-            (task_id,),
+            (task_id, task_type),
         )
         task = cur.fetchone()
     if not task:
-        print(json.dumps({'status': 'failed', 'error': f'delete task not found: {task_id}'}, ensure_ascii=False))
+        print(json.dumps({'status': 'failed', 'error': f'{task_type} task not found: {task_id}'}, ensure_ascii=False))
         raise SystemExit(0)
 
     deletion = json.loads(task.get('payload_json') or '{}')
     deleted_count = importer.delete_events_by_reservation(service, deletion, logger)
     status = 'deleted' if deleted_count else 'not_found'
+    status_prefix = 'calendar_restore' if task_type == 'naver_restore' else 'calendar_after_delete'
     if task.get('email_event_id'):
         importer.update_email_processing(
             config,
             task['email_event_id'],
-            'calendar_after_delete_done' if deleted_count else 'calendar_after_delete_not_found',
+            f'{status_prefix}_done' if deleted_count else f'{status_prefix}_not_found',
             logger,
             google_calendar_deleted_count=deleted_count,
             error_text='',
@@ -637,6 +733,14 @@ finally:
 PY
 `;
   return JSON.parse(runSshScript(target, script).trim() || '{}');
+}
+
+async function deleteRemoteGoogleEventForDeleteTask(args, taskId) {
+  return deleteRemoteGoogleEventForTask(args, taskId, 'delete');
+}
+
+async function deleteRemoteGoogleEventForNaverRestoreTask(args, taskId) {
+  return deleteRemoteGoogleEventForTask(args, taskId, 'naver_restore');
 }
 
 async function sendTelegram(args, text) {
@@ -819,6 +923,7 @@ function formatNaverBlockTaskLine(row) {
     : '구글=-';
   return [
     `task=${row.taskId || '-'}`,
+    row.taskType ? `작업=${row.taskType}` : '',
     `방=${row.roomKey || '-'}`,
     `일시=${row.date || '-'} ${row.startTime || '-'}-${row.endTime || '-'}`,
     `예약번호=${row.reservationNo || '-'}`,
@@ -832,6 +937,7 @@ function formatNaverBlockTaskLine(row) {
 function naverBlockTaskSummary(task) {
   return {
     taskId: task.id || task.taskId || null,
+    taskType: task.taskType || task.task_type || 'naver_block',
     roomKey: task.roomKey || task.room_key || '',
     date: task.date || task.reservation_date || '',
     startTime: task.startTime || task.start_time || '',
@@ -872,6 +978,35 @@ Google Calendar 기록만 일시 실패한 경우에는 작업을 google_pending
 로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
 }
 
+function naverRestoreSuccessMessage(row) {
+  const processed = (row.naverRestoreTasks?.rows || []).filter((taskRow) => ['restored', 'already-available'].includes(taskRow.status));
+  const detailText = processed.map(formatNaverBlockTaskLine).join('\n\n');
+  return `네이버 예약가능 복구 완료
+${kstNowText()}
+
+스페이스클라우드 취소완료 메일 기준으로 네이버 SmartPlace 예약불가 슬롯을 예약가능으로 되돌리고, 그 다음 Google Calendar 기록을 정리했습니다.
+
+처리건수: ${processed.length}건
+
+${String(detailText || '-').slice(0, 1200)}
+
+로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+}
+
+function naverRestoreFailureMessage(rowOrError) {
+  const errorText = typeof rowOrError === 'string'
+    ? rowOrError
+    : (rowOrError?.failed || []).map(formatNaverBlockTaskLine).filter(Boolean).join('\n\n');
+  return `네이버 예약가능 복구 확인 필요
+${kstNowText()}
+
+스페이스클라우드 취소완료 메일은 감지됐지만 네이버 예약가능 복구 또는 복구 후 Google Calendar 삭제 중 확인이 필요한 항목이 생겼습니다.
+자동 복구는 네이버 슬롯이 예약불가 상태일 때만 실행합니다. 이미 확정/마감/다른 상태면 자동으로 풀지 않고 멈춥니다.
+
+오류: ${String(errorText || '-').slice(0, 1200)}
+로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+}
+
 function cycleErrorMessage(errorText) {
   return `스페이스클라우드 자동화 점검 필요
 ${kstNowText()}
@@ -905,6 +1040,14 @@ function dbStatusForNaverBlockRow(row) {
   if (row.status === 'google-create-failed') return 'google_pending';
   if (row.status === 'google-conflict') return 'needs_review';
   if (row.status === 'naver-conflict' || row.status === 'needs-review') return 'needs_review';
+  if (isLoginProblem(row.error)) return 'pending';
+  return 'failed';
+}
+
+function dbStatusForNaverRestoreRow(row) {
+  if (row.status === 'restored' || row.status === 'already-available') return 'done';
+  if (row.status === 'google-delete-failed') return 'google_pending';
+  if (row.status === 'needs-review' || row.status === 'naver-conflict') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   return 'failed';
 }
@@ -1203,6 +1346,163 @@ async function runNaverBlockTasks(args, context = null) {
   };
 }
 
+function splitNaverAvailabilityResult(result) {
+  const blockRows = (result.rows || []).filter((row) => row.taskType !== 'naver_restore');
+  const restoreRows = (result.rows || []).filter((row) => row.taskType === 'naver_restore');
+  const blockFailed = (result.failed || []).filter((row) => row.taskType !== 'naver_restore');
+  const restoreFailed = (result.failed || []).filter((row) => row.taskType === 'naver_restore');
+  return {
+    naverBlockTasks: {
+      status: blockFailed.length ? 'naver-block-needs-review' : 'naver-block-processed',
+      fetched: blockRows.length,
+      attempted: blockRows.length,
+      rows: blockRows,
+      failed: blockFailed,
+    },
+    naverRestoreTasks: {
+      status: restoreFailed.length ? 'naver-restore-needs-review' : 'naver-restore-processed',
+      fetched: restoreRows.length,
+      attempted: restoreRows.length,
+      rows: restoreRows,
+      failed: restoreFailed,
+    },
+  };
+}
+
+async function runNaverAvailabilityTasks(args, context = null) {
+  if (args.dryRun) {
+    return {
+      status: 'naver-availability-dry-run',
+      fetched: 0,
+      attempted: 0,
+      rows: [],
+      failed: [],
+    };
+  }
+  const tasks = await fetchRemoteNaverAvailabilityTasks(args);
+  if (tasks.length === 0) {
+    return {
+      status: 'no-naver-availability-tasks',
+      fetched: tasks.length,
+      attempted: 0,
+      rows: [],
+      failed: [],
+    };
+  }
+
+  let ownedContext = null;
+  const activeContext = context || await openSpacecloudContext({
+    profileDir: args.profileDir,
+    headless: args.headless,
+  }).then((created) => {
+    ownedContext = created;
+    return created;
+  });
+
+  const rows = [];
+  try {
+    for (const task of tasks) {
+      const taskType = task.taskType || 'naver_block';
+      let row;
+      if (taskType === 'naver_restore') {
+        if (task.status === 'google_pending') {
+          row = {
+            ...naverBlockTaskSummary(task),
+            taskType,
+            status: 'google-delete-pending',
+            startedAt: new Date().toISOString(),
+            naverAlreadyRestored: true,
+          };
+        } else {
+          row = await setNaverAvailability(activeContext, task, {
+            businessId: args.naverBusinessId,
+            targetStatus: 'available',
+          });
+          row.taskType = taskType;
+          if (['restored', 'already-available'].includes(row.status)) {
+            await updateRemoteTask(args, task.id, 'google_pending', JSON.stringify(row, null, 2));
+          }
+        }
+
+        if (['restored', 'already-available', 'google-delete-pending'].includes(row.status)) {
+          const naverStatus = row.status === 'google-delete-pending' ? 'restored' : row.status;
+          const googleResult = await deleteRemoteGoogleEventForNaverRestoreTask(args, task.id);
+          row.googleCalendar = googleResult;
+          if (['deleted', 'not_found'].includes(googleResult.status)) {
+            row.status = naverStatus;
+          } else {
+            row.status = 'google-delete-failed';
+            row.error = googleResult.error || `Google Calendar after-restore-delete result: ${googleResult.status || 'unknown'}`;
+          }
+          row.finishedAt = new Date().toISOString();
+        }
+      } else {
+        if (task.status === 'google_pending') {
+          row = {
+            ...naverBlockTaskSummary(task),
+            taskType,
+            status: 'google-pending',
+            startedAt: new Date().toISOString(),
+            naverAlreadyApplied: true,
+          };
+          const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
+          row.googleCalendar = googleResult;
+          if (['created', 'existing'].includes(googleResult.status)) {
+            row.status = 'google-recorded';
+          } else {
+            row.status = googleResult.status === 'conflict' ? 'google-conflict' : 'google-create-failed';
+            row.error = googleResult.error || `Google Calendar after-apply result: ${googleResult.status || 'unknown'}`;
+          }
+          row.finishedAt = new Date().toISOString();
+        } else {
+          row = await setNaverAvailability(activeContext, task, {
+            businessId: args.naverBusinessId,
+            targetStatus: 'unavailable',
+          });
+          row.taskType = taskType;
+          if (['blocked', 'already-blocked'].includes(row.status)) {
+            const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
+            row.googleCalendar = googleResult;
+            if (!['created', 'existing'].includes(googleResult.status)) {
+              row.status = googleResult.status === 'conflict' ? 'google-conflict' : 'google-create-failed';
+              row.error = googleResult.error || `Google Calendar after-apply result: ${googleResult.status || 'unknown'}`;
+            }
+          }
+        }
+      }
+
+      rows.push(row);
+      const status = taskType === 'naver_restore'
+        ? dbStatusForNaverRestoreRow(row)
+        : dbStatusForNaverBlockRow(row);
+      await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      if (status === 'pending' && isLoginProblem(row.error)) {
+        break;
+      }
+      if (status === 'failed' || status === 'needs_review') {
+        break;
+      }
+      await sleep(800);
+    }
+  } finally {
+    if (ownedContext) await ownedContext.close();
+  }
+
+  const failed = rows.filter((row) => {
+    if (row.taskType === 'naver_restore') {
+      return !['restored', 'already-available'].includes(row.status);
+    }
+    return !['blocked', 'already-blocked', 'google-recorded'].includes(row.status);
+  });
+  return {
+    status: failed.length ? 'naver-availability-needs-review' : 'naver-availability-processed',
+    fetched: tasks.length,
+    attempted: rows.length,
+    rows,
+    failed,
+  };
+}
+
 function runNodeJson(args) {
   const cp = spawnSync(process.execPath, args, {
     cwd: process.cwd(),
@@ -1427,9 +1727,12 @@ async function runCycle(args, context = null) {
     }
 
     if (!row.failed?.length && !row.uploadTasks?.failed?.length && !row.deleteTasks?.failed?.length) {
-      row.naverBlockTasks = await runNaverBlockTasks(args, activeContext);
-      if (row.status === 'planned' && row.naverBlockTasks.attempted > 0) {
-        row.status = row.naverBlockTasks.failed.length ? 'naver-block-needs-review' : 'naver-block-processed';
+      row.naverAvailabilityTasks = await runNaverAvailabilityTasks(args, activeContext);
+      const split = splitNaverAvailabilityResult(row.naverAvailabilityTasks);
+      row.naverBlockTasks = split.naverBlockTasks;
+      row.naverRestoreTasks = split.naverRestoreTasks;
+      if (row.status === 'planned' && row.naverAvailabilityTasks.attempted > 0) {
+        row.status = row.naverAvailabilityTasks.failed.length ? 'naver-availability-needs-review' : 'naver-availability-processed';
       }
     }
 
@@ -1457,7 +1760,7 @@ async function runWatch(args) {
     while (!stopping) {
       try {
         const row = await runCycle(args, context);
-        logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; uploadTasks=${row.uploadTasks?.attempted || 0}; deleteTasks=${row.deleteTasks?.attempted || 0}; naverBlockTasks=${row.naverBlockTasks?.attempted || 0}`);
+        logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; uploadTasks=${row.uploadTasks?.attempted || 0}; deleteTasks=${row.deleteTasks?.attempted || 0}; naverBlockTasks=${row.naverBlockTasks?.attempted || 0}; naverRestoreTasks=${row.naverRestoreTasks?.attempted || 0}`);
         if (row.uploadedRows?.length || row.uploadTasks?.rows?.some((taskRow) => taskRow.status === 'google-recorded')) {
           const result = await sendTelegram(args, uploadSuccessMessage(row));
           const successCount = (row.uploadedRows?.length || 0)
@@ -1469,6 +1772,11 @@ async function runWatch(args) {
           const result = await sendTelegram(args, naverBlockSuccessMessage(row));
           if (result.sent) logLine(`telegram sent: naver-block-success count=${row.naverBlockTasks.rows.length}`);
           else logLine(`telegram naver block success skipped: ${result.reason}`);
+        }
+        if (row.naverRestoreTasks?.rows?.some((taskRow) => ['restored', 'already-available'].includes(taskRow.status))) {
+          const result = await sendTelegram(args, naverRestoreSuccessMessage(row));
+          if (result.sent) logLine(`telegram sent: naver-restore-success count=${row.naverRestoreTasks.rows.length}`);
+          else logLine(`telegram naver restore success skipped: ${result.reason}`);
         }
         if (row.failed?.length) {
           const errorText = row.failed.map((failedRow) => failedRow.error).join('\n');
@@ -1526,6 +1834,22 @@ async function runWatch(args) {
           } else {
             await notifyWithCooldown(args, 'naver-block-failed', naverBlockFailureMessage(row.naverBlockTasks));
             logLine(`stopping after naver block failure: ${JSON.stringify(row.naverBlockTasks.failed)}`);
+            break;
+          }
+        }
+        if (row.naverRestoreTasks?.failed?.length) {
+          const errorText = row.naverRestoreTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
+          if (isLoginProblem(errorText)) {
+            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorText));
+            logLine(`login needed during naver restore; waiting for manual login: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
+          } else if (row.naverRestoreTasks.failed.every((failedRow) => failedRow.status === 'google-delete-failed')) {
+            await notifyWithCooldown(args, 'naver-restore-google-pending', naverRestoreFailureMessage(row.naverRestoreTasks), {
+              cooldownSeconds: Math.min(args.notifyCooldownSeconds, 60 * 60),
+            });
+            logLine(`google calendar delete pending after naver restore; will retry: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
+          } else {
+            await notifyWithCooldown(args, 'naver-restore-failed', naverRestoreFailureMessage(row.naverRestoreTasks));
+            logLine(`stopping after naver restore failure: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
             break;
           }
         }
@@ -1602,7 +1926,7 @@ ${kstNowText()}
   if (args.command === 'once') {
     const result = await runCycle(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
-    else console.log(`cycle ${result.status}; candidates=${result.uploadCandidates}; attempted=${result.attempted || 0}; remaining=${result.remainingInPlan ?? 0}; uploadTasks=${result.uploadTasks?.attempted || 0}; deleteTasks=${result.deleteTasks?.attempted || 0}; naverBlockTasks=${result.naverBlockTasks?.attempted || 0}`);
+    else console.log(`cycle ${result.status}; candidates=${result.uploadCandidates}; attempted=${result.attempted || 0}; remaining=${result.remainingInPlan ?? 0}; uploadTasks=${result.uploadTasks?.attempted || 0}; deleteTasks=${result.deleteTasks?.attempted || 0}; naverBlockTasks=${result.naverBlockTasks?.attempted || 0}; naverRestoreTasks=${result.naverRestoreTasks?.attempted || 0}`);
     return;
   }
 
