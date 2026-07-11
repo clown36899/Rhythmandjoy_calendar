@@ -101,7 +101,7 @@ The restore script refuses any Apache config outside that allowlist.
 - `rhythmjoy_booking_ledger`: current-state booking ledger. Each parsed confirmation/cancellation email upserts a booking identity as `confirmed` or `canceled`, while linking back to the original confirmed/canceled email event ids. This is the booking-state layer; email events remain the source audit trail.
 - `rhythmjoy_spacecloud_tasks`: durable queue for cross-platform follow-up work. Naver-origin cancellation delete tasks for mapped hall rooms are consumed by the Mac SpaceCloud watcher and marked `done`, `already_gone`, `needs_review`, `google_pending`, or `failed`. SpaceCloud-origin cancellation emails create `naver_restore` tasks that restore Naver SmartPlace availability before Google Calendar is deleted.
 
-Keep `RHYTHMJOY_EMAIL_DB_REQUIRED=0` for normal operation so DB errors fall back to calendar-only processing. Keep `RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` unless you intentionally want the importer to search Google Calendar by reservation number before creating a new event.
+Keep `RHYTHMJOY_EMAIL_DB_REQUIRED=1` for normal operation so DB errors stop the importer before platform or Google Calendar side effects. This leaves unread mail available for retry after DB recovery. Keep `RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` unless you intentionally want the importer to search Google Calendar by reservation number before creating a new event.
 
 `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1` makes mapped hall Naver reservation emails create `upload` tasks instead of writing Google Calendar immediately. The local Mac watcher uploads the SpaceCloud direct-added reservation first, then writes Google Calendar from the DB payload.
 

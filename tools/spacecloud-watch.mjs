@@ -1232,7 +1232,8 @@ function staleLedgerSkipRow(task, taskType) {
 
 function taskStaleByLedger(task, taskType) {
   const expected = expectedLedgerStatus(taskType);
-  if (!expected || !task.ledgerStatus) return false;
+  if (!expected) return false;
+  if (!task.ledgerStatus) return true;
   return task.ledgerStatus !== expected;
 }
 

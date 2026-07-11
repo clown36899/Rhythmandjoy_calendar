@@ -2636,7 +2636,7 @@ def build_config():
         'telegram_chat_id': os.environ.get('TELEGRAM_CHAT_ID', ''),
         'telegram_timeout': int(os.environ.get('TELEGRAM_SEND_TIMEOUT', '12')),
         'db_enabled': db_enabled,
-        'db_required': env_flag('RHYTHMJOY_EMAIL_DB_REQUIRED', '0'),
+        'db_required': env_flag('RHYTHMJOY_EMAIL_DB_REQUIRED', '1'),
         'db_server': db_server,
         'db_port': int(os.environ.get('DB_PORT', '3306')),
         'db_username': db_username,

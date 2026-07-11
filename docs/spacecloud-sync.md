@@ -217,7 +217,7 @@ Booking ledger identity:
 
 The older Google Calendar plan upload path remains as a legacy/backfill path for calendar records that already existed before the DB upload queue was enabled. It is opt-in via `tools/spacecloud-watch.mjs --legacy-calendar-plan`; new mapped hall reservations should enter through `upload` tasks instead.
 
-With `RHYTHMJOY_EMAIL_DB_REQUIRED=0`, DB errors are logged and the importer falls back to calendar-only processing. Keep this as the normal operating mode while the DB is used as insurance.
+With `RHYTHMJOY_EMAIL_DB_REQUIRED=1`, DB errors stop the importer before platform or Google Calendar side effects. Keep this as the normal operating mode now that the email DB ledger is the source of truth.
 
 Environment flags:
 
@@ -227,7 +227,7 @@ DB_PORT=3306
 DB_USERNAME=
 DB_PASSWORD=
 DB_NAME=
-RHYTHMJOY_EMAIL_DB_REQUIRED=0
+RHYTHMJOY_EMAIL_DB_REQUIRED=1
 RHYTHMJOY_EMAIL_STORE_RAW_BODY=1
 RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0
 RHYTHMJOY_EMAIL_POLL_INTERVAL_SECONDS=30
