@@ -1571,7 +1571,7 @@ def compact_telegram_text(text, limit=None):
     normalized = re.sub(r'\n{3,}', '\n\n', normalized)
     if len(normalized) <= limit:
         return normalized
-    suffix = '\n...\n로그: email import log'
+    suffix = f'\n...\n로그: {LOG_FILE}'
     return f'{normalized[:max(0, limit - len(suffix))]}{suffix}'
 
 
@@ -1638,22 +1638,6 @@ def notify_cancellation_parse_failure(config, mailbox, email_id, subject, email_
         '조치: 취소 메일 양식 확인'
     )
     send_telegram_message(config, text, logger)
-
-
-def format_spacecloud_conflicts(conflicts):
-    if not conflicts:
-        return '없음'
-    lines = []
-    for conflict in conflicts[:5]:
-        lines.append(
-            f"- {conflict.get('start', '-')}~{conflict.get('end', '-')} "
-            f"{conflict.get('summary', '-')} "
-            f"source={conflict.get('source') or '-'} "
-            f"예약번호={conflict.get('reservation_number') or '-'}"
-        )
-    if len(conflicts) > 5:
-        lines.append(f'외 {len(conflicts) - 5}건')
-    return '\n'.join(lines)
 
 
 def format_naver_block_task_status(config, task, conflicts):

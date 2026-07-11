@@ -1008,8 +1008,25 @@ function rowsFromResult(rowOrError, key = 'failed') {
   return [];
 }
 
+function minutesFromTimeText(value) {
+  const match = /^(\d{1,2}):(\d{2})/.exec(String(value || ''));
+  if (!match) return null;
+  return Number.parseInt(match[1], 10) * 60 + Number.parseInt(match[2], 10);
+}
+
+function displayEndTime(startTime, endTime) {
+  if (!endTime) return '-';
+  const startMinutes = minutesFromTimeText(startTime);
+  const endMinutes = minutesFromTimeText(endTime);
+  if (endTime === '00:00' && startMinutes !== null && startMinutes > 0) return '24:00';
+  if (startMinutes !== null && endMinutes !== null && endMinutes < startMinutes) return `익일 ${endTime}`;
+  return endTime;
+}
+
 function taskTimeText(row) {
-  return `${row.date || '-'} ${row.startTime || '-'}-${row.endTime || '-'}`;
+  const startTime = row.startTime || row.start_time || '-';
+  const endTime = displayEndTime(startTime, row.endTime || row.end_time || '');
+  return `${row.date || row.reservation_date || '-'} ${startTime}-${endTime}`;
 }
 
 function taskTargetText(row) {
@@ -1061,13 +1078,15 @@ function compactNotice(title, lines) {
 }
 
 function loginNeededMessage(rowOrError) {
+  const rows = rowsFromResult(rowOrError);
   const errorText = typeof rowOrError === 'string'
     ? rowOrError
-    : (rowOrError?.failed || []).map((row) => row.error).filter(Boolean).join('\n');
+    : rows.map((row) => row.error || row.status).filter(Boolean).join('\n');
   const candidates = typeof rowOrError === 'object' ? rowOrError?.uploadCandidates : null;
   return compactNotice('스페이스클라우드 로그인 필요', [
     '상태: 세션 확인 대기',
     `후보: ${candidates ?? '-'}건`,
+    rows.length ? `대상:\n${formatBriefRows(rows, 1)}` : '',
     `원인: ${cleanTelegramText(errorText || '-', 120)}`,
     '조치: 자동화 Chrome에서 네이버/스페이스클라우드 로그인',
   ]);
@@ -2232,7 +2251,7 @@ async function runWatch(args) {
         if (row.uploadTasks?.failed?.length) {
           const errorText = row.uploadTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorText));
+            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.uploadTasks));
             logLine(`login needed during db upload; waiting for manual login: ${JSON.stringify(row.uploadTasks.failed)}`);
           } else if (row.uploadTasks.failed.every((failedRow) => failedRow.status === 'google-create-failed')) {
             await notifyWithCooldown(args, 'spacecloud-upload-google-pending', uploadTaskFailureMessage(row.uploadTasks), {
@@ -2248,7 +2267,7 @@ async function runWatch(args) {
         if (row.deleteTasks?.failed?.length) {
           const errorText = row.deleteTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorText));
+            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.deleteTasks));
             logLine(`login needed during delete; waiting for manual login: ${JSON.stringify(row.deleteTasks.failed)}`);
           } else if (row.deleteTasks.failed.every((failedRow) => failedRow.status === 'google-delete-failed')) {
             await notifyWithCooldown(args, 'spacecloud-delete-google-pending', deleteFailureMessage(row.deleteTasks), {
@@ -2264,7 +2283,7 @@ async function runWatch(args) {
         if (row.naverBlockTasks?.failed?.length) {
           const errorText = row.naverBlockTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorText));
+            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.naverBlockTasks));
             logLine(`login needed during naver block; waiting for manual login: ${JSON.stringify(row.naverBlockTasks.failed)}`);
           } else if (row.naverBlockTasks.failed.every((failedRow) => failedRow.status === 'google-create-failed')) {
             await notifyWithCooldown(args, 'naver-block-google-pending', naverBlockFailureMessage(row.naverBlockTasks), {
@@ -2280,7 +2299,7 @@ async function runWatch(args) {
         if (row.naverRestoreTasks?.failed?.length) {
           const errorText = row.naverRestoreTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorText));
+            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.naverRestoreTasks));
             logLine(`login needed during naver restore; waiting for manual login: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
           } else if (row.naverRestoreTasks.failed.every((failedRow) => failedRow.status === 'google-delete-failed')) {
             await notifyWithCooldown(args, 'naver-restore-google-pending', naverRestoreFailureMessage(row.naverRestoreTasks), {
