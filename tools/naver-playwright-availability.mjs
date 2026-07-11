@@ -46,6 +46,7 @@ function parseHour(value) {
   if (!match) throw new Error(`invalid time: ${value}`);
   const hour = Number(match[1]);
   const minute = Number(match[2]);
+  if (minute === 59 && hour < 24) return hour + 1;
   if (minute !== 0) throw new Error(`Naver availability automation only supports whole-hour times: ${value}`);
   if (hour < 0 || hour > 23) throw new Error(`invalid hour: ${value}`);
   return hour;

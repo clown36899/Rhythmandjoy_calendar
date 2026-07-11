@@ -424,6 +424,122 @@ PY
   return JSON.parse(runSshScript(target, script).trim() || '{}');
 }
 
+async function createRemoteGoogleEventForNaverBlockTask(args, taskId) {
+  const target = await loadCafe24Target(args);
+  const payload = Buffer.from(JSON.stringify({ taskId }), 'utf8').toString('base64');
+  const opsRoot = target.OPS_ROOT || '/home/clown313python/rhythmjoy_ops';
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export RHYTHMJOY_OPS_ROOT=${shellQuote(opsRoot)}
+export GOOGLE_TASK_B64=${shellQuote(payload)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import logging
+import os
+import sys
+from pathlib import Path
+
+import pymysql
+
+ops_root = Path(os.environ['RHYTHMJOY_OPS_ROOT'])
+sys.path.insert(0, str(ops_root))
+import rhythmjoy_email_import as importer
+
+payload = json.loads(base64.b64decode(os.environ['GOOGLE_TASK_B64']).decode('utf-8'))
+task_id = int(payload['taskId'])
+logger = logging.getLogger('spacecloud_watch_google_after_apply')
+logger.setLevel(logging.INFO)
+
+config = importer.build_config()
+service = importer.build_calendar_service(config)
+
+conn = pymysql.connect(
+    host=config['db_server'],
+    port=int(config.get('db_port', 3306)),
+    user=config['db_username'],
+    password=config['db_password'],
+    database=config['db_name'],
+    charset='utf8mb4',
+    autocommit=True,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, email_event_id, reservation_number, payload_json
+            FROM rhythmjoy_spacecloud_tasks
+            WHERE id=%s AND task_type='naver_block'
+            LIMIT 1
+            """,
+            (task_id,),
+        )
+        task = cur.fetchone()
+    if not task:
+        print(json.dumps({'status': 'failed', 'error': f'task not found: {task_id}'}, ensure_ascii=False))
+        raise SystemExit(0)
+
+    event_data = json.loads(task.get('payload_json') or '{}')
+    calendar_key = event_data.get('calendarKey') or event_data.get('calendar_key')
+    if not calendar_key:
+        print(json.dumps({'status': 'failed', 'error': 'calendar key missing'}, ensure_ascii=False))
+        raise SystemExit(0)
+    event_data['target_calendar'] = calendar_key
+    event_data['calendar_key'] = calendar_key
+
+    reservation_number = event_data.get('reservation_number') or task.get('reservation_number') or ''
+    existing = importer.find_calendar_event_by_reservation(service, calendar_key, reservation_number, logger)
+    if existing:
+        if task.get('email_event_id'):
+            importer.update_email_processing(
+                config,
+                task['email_event_id'],
+                'calendar_after_apply_existing',
+                logger,
+                google_calendar_event_id=existing.get('id', ''),
+                error_text='',
+            )
+        print(json.dumps({'status': 'existing', 'eventId': existing.get('id', '')}, ensure_ascii=False))
+        raise SystemExit(0)
+
+    conflicts = importer.find_calendar_conflicts(service, calendar_key, event_data, logger)
+    if conflicts:
+        if task.get('email_event_id'):
+            importer.update_email_processing(
+                config,
+                task['email_event_id'],
+                'calendar_after_apply_conflict',
+                logger,
+                error_text=json.dumps(conflicts[:5], ensure_ascii=False),
+            )
+        print(json.dumps({'status': 'conflict', 'conflicts': conflicts[:5]}, ensure_ascii=False))
+        raise SystemExit(0)
+
+    created = importer.create_calendar_event(
+        service,
+        event_data,
+        logger,
+        dedupe_google_calendar=True,
+    )
+    if task.get('email_event_id'):
+        importer.update_email_processing(
+            config,
+            task['email_event_id'],
+            'calendar_after_apply_created',
+            logger,
+            google_calendar_event_id=created.get('id', ''),
+            error_text='',
+        )
+    print(json.dumps({'status': 'created', 'eventId': created.get('id', '')}, ensure_ascii=False))
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '{}');
+}
+
 async function sendTelegram(args, text) {
   if (!args.telegram) return { sent: false, reason: 'disabled' };
   if (process.env.TELEGRAM_DRY_RUN === '1') {
@@ -580,6 +696,9 @@ Google Calendar 취소 처리와 별개로 SpaceCloud 삭제 작업 중 확인�
 }
 
 function formatNaverBlockTaskLine(row) {
+  const googleStatus = row.googleCalendar?.status
+    ? `구글=${row.googleCalendar.status}${row.googleCalendar.eventId ? `(${row.googleCalendar.eventId})` : ''}`
+    : '구글=-';
   return [
     `task=${row.taskId || '-'}`,
     `방=${row.roomKey || '-'}`,
@@ -587,6 +706,7 @@ function formatNaverBlockTaskLine(row) {
     `예약번호=${row.reservationNo || '-'}`,
     `예약자=${row.reserverName || '-'}`,
     `상태=${row.status || '-'}`,
+    googleStatus,
     `사유=${row.error || '-'}`,
   ].join('\n');
 }
@@ -597,7 +717,7 @@ function naverBlockSuccessMessage(row) {
   return `네이버 예약불가 반영 완료
 ${kstNowText()}
 
-스페이스클라우드 예약완료 메일 기준으로 네이버 SmartPlace 해당 시간 예약가능 슬롯을 막았습니다.
+스페이스클라우드 예약완료 메일 기준으로 네이버 SmartPlace 해당 시간 예약가능 슬롯을 막고, 그 다음 Google Calendar에 기록했습니다.
 
 처리건수: ${processed.length}건
 
@@ -613,7 +733,7 @@ function naverBlockFailureMessage(rowOrError) {
   return `네이버 예약불가 자동처리 확인 필요
 ${kstNowText()}
 
-스페이스클라우드 예약완료 메일은 감지됐지만 네이버 예약불가 반영 중 확인이 필요한 항목이 생겼습니다.
+스페이스클라우드 예약완료 메일은 감지됐지만 네이버 예약불가 반영 또는 반영 후 Google Calendar 기록 중 확인이 필요한 항목이 생겼습니다.
 네이버에 이미 확정/마감 슬롯이 있으면 네이버 예약을 우선으로 보고 자동 수정하지 않습니다.
 
 오류: ${String(errorText || '-').slice(0, 1200)}
@@ -641,6 +761,7 @@ function dbStatusForDeleteRow(row) {
 
 function dbStatusForNaverBlockRow(row) {
   if (row.status === 'blocked' || row.status === 'already-blocked') return 'done';
+  if (row.status === 'google-conflict') return 'needs_review';
   if (row.status === 'naver-conflict' || row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   return 'failed';
@@ -742,6 +863,14 @@ async function runNaverBlockTasks(args, context = null) {
         businessId: args.naverBusinessId,
         targetStatus: 'unavailable',
       });
+      if (['blocked', 'already-blocked'].includes(row.status)) {
+        const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
+        row.googleCalendar = googleResult;
+        if (!['created', 'existing'].includes(googleResult.status)) {
+          row.status = googleResult.status === 'conflict' ? 'google-conflict' : 'google-create-failed';
+          row.error = googleResult.error || `Google Calendar after-apply result: ${googleResult.status || 'unknown'}`;
+        }
+      }
       rows.push(row);
       const status = dbStatusForNaverBlockRow(row);
       await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));

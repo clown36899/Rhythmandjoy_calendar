@@ -205,8 +205,20 @@ def normalize_date(date_text):
     return date_text.strip().rstrip('.').replace('.', '-').replace('/', '-')
 
 
+def normalize_booking_time(time_text):
+    hour, minute = map(int, time_text.split(':')[:2])
+    if minute == 59:
+        hour += 1
+        minute = 0
+    return hour, minute
+
+
 def parse_datetime(date_text, time_text):
-    return datetime.strptime(f'{normalize_date(date_text)} {time_text}:00', '%Y-%m-%d %H:%M:%S')
+    date_value = datetime.strptime(normalize_date(date_text), '%Y-%m-%d')
+    hour, minute = normalize_booking_time(time_text)
+    if hour == 24 and minute == 0:
+        return date_value + timedelta(days=1)
+    return date_value.replace(hour=hour, minute=minute)
 
 
 def mask_name(name):
@@ -235,8 +247,8 @@ def clean_time_or_none(value):
     if not value:
         return None
     if re.match(r'^\d{1,2}:\d{2}$', value):
-        hour, minute = value.split(':', 1)
-        return f'{int(hour):02d}:{minute}:00'
+        hour, minute = normalize_booking_time(value)
+        return f'{hour:02d}:{minute:02d}:00'
     return None
 
 
@@ -1025,9 +1037,9 @@ def format_spacecloud_google_status(config, google_event, conflicts):
         return '생성 안 함: 기존 구글 캘린더 겹침'
     if google_event:
         return f"자동생성 완료: event_id={google_event.get('id') or '-'}"
-    if not config.get('spacecloud_google_create_enabled'):
-        return 'report-only: 자동생성 안 함'
-    return '자동생성 미완료: DB/파싱/Google API 상태 확인 필요'
+    if config.get('spacecloud_naver_block_enabled'):
+        return '후순위 대기: 네이버 예약불가 반영 후 기록'
+    return 'report-only: 자동생성 안 함'
 
 
 def notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, google_event, naver_block_task, subject, email_received_at, logger):
@@ -1192,6 +1204,9 @@ def parse_spacecloud_reservation_id(raw_message):
 def normalize_spacecloud_hour(hour_text, minute_text=''):
     hour = int(hour_text)
     minute = int(minute_text or 0)
+    if minute == 59:
+        hour += 1
+        minute = 0
     return f'{hour:02d}:{minute:02d}'
 
 
@@ -1592,13 +1607,6 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                 event_data['target_calendar'] = calendar_key
                 event_data['conflict_count'] = len(conflicts)
                 google_event = None
-                if not conflicts and config.get('spacecloud_google_create_enabled'):
-                    google_event = create_calendar_event(
-                        service,
-                        event_data,
-                        logger,
-                        dedupe_google_calendar=True,
-                    )
                 naver_block_task = upsert_spacecloud_naver_block_task(
                     config,
                     logger,
@@ -1614,8 +1622,6 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                     processing_status = f"naver_block_{task_status}"
                     if len(processing_status) > 32:
                         processing_status = 'naver_block_saved'
-                elif google_event:
-                    processing_status = 'calendar_created'
                 elif config.get('spacecloud_naver_block_enabled'):
                     processing_status = 'naver_block_skipped'
                 else:
@@ -1758,7 +1764,6 @@ def build_config():
         'store_raw_email_body': env_flag('RHYTHMJOY_EMAIL_STORE_RAW_BODY', '1'),
         'dedupe_google_calendar': env_flag('RHYTHMJOY_EMAIL_DEDUPE_GOOGLE', '0'),
         'spacecloud_email_enabled': env_flag('RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED', '0'),
-        'spacecloud_google_create_enabled': env_flag('RHYTHMJOY_SPACECLOUD_GOOGLE_CREATE_ENABLED', '0'),
         'spacecloud_naver_block_enabled': env_flag('RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED', '0'),
     }
 
