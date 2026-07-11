@@ -370,6 +370,7 @@ ${shellQuote(target.PYTHON_BIN)} <<'PY'
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 import pymysql
 
@@ -399,6 +400,7 @@ conn = pymysql.connect(
     cursorclass=pymysql.cursors.DictCursor,
 )
 try:
+    claim_token = uuid.uuid4().hex
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -424,6 +426,7 @@ try:
               )
             ORDER BY created_at ASC, id ASC
             LIMIT %s
+            FOR UPDATE
             """,
             (
                 os.environ['RHYTHMJOY_TASK_TYPE'],
@@ -439,10 +442,10 @@ try:
             cur.execute(
                 f"""
                 UPDATE rhythmjoy_spacecloud_tasks
-                SET status='running', attempts=attempts+1, locked_at=NOW(), updated_at=NOW()
+                SET status='running', attempts=attempts+1, locked_at=NOW(), claim_token=%s, updated_at=NOW()
                 WHERE id IN ({','.join(['%s'] * len(ids))})
                 """,
-                ids
+                [claim_token, *ids]
             )
     conn.commit()
     print(json.dumps(rows, ensure_ascii=False))
@@ -466,6 +469,7 @@ ${shellQuote(target.PYTHON_BIN)} <<'PY'
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 import pymysql
 
@@ -500,6 +504,7 @@ conn = pymysql.connect(
     cursorclass=pymysql.cursors.DictCursor,
 )
 try:
+    claim_token = uuid.uuid4().hex
     with conn.cursor() as cur:
         cur.execute(
             f"""
@@ -525,6 +530,7 @@ try:
               )
             ORDER BY created_at ASC, id ASC
             LIMIT %s
+            FOR UPDATE
             """,
             [*task_types, int(os.environ.get('TASK_LIMIT', '2'))],
         )
@@ -536,10 +542,10 @@ try:
             cur.execute(
                 f"""
                 UPDATE rhythmjoy_spacecloud_tasks
-                SET status='running', attempts=attempts+1, locked_at=NOW(), updated_at=NOW()
+                SET status='running', attempts=attempts+1, locked_at=NOW(), claim_token=%s, updated_at=NOW()
                 WHERE id IN ({','.join(['%s'] * len(ids))})
                 """,
-                ids
+                [claim_token, *ids]
             )
     conn.commit()
     print(json.dumps(rows, ensure_ascii=False))
@@ -624,6 +630,7 @@ try:
             UPDATE rhythmjoy_spacecloud_tasks
             SET status=%s,
                 processed_at={processed_expr},
+                claim_token='',
                 result_text=%s,
                 updated_at=NOW()
             WHERE id=%s
@@ -1152,6 +1159,7 @@ ${kstNowText()}
 }
 
 function dbStatusForDeleteRow(row) {
+  if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'deleted') return 'done';
   if (row.status === 'already-gone') return 'already_gone';
@@ -1162,6 +1170,7 @@ function dbStatusForDeleteRow(row) {
 }
 
 function dbStatusForUploadRow(row) {
+  if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'google-recorded') return 'done';
   if (row.status === 'submitted' || row.status === 'calendar-record-warning') return 'done';
@@ -1172,6 +1181,7 @@ function dbStatusForUploadRow(row) {
 }
 
 function dbStatusForNaverBlockRow(row) {
+  if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'blocked' || row.status === 'already-blocked' || row.status === 'google-recorded') return 'done';
   if (row.status === 'calendar-record-warning') return 'done';
@@ -1183,6 +1193,7 @@ function dbStatusForNaverBlockRow(row) {
 }
 
 function dbStatusForNaverRestoreRow(row) {
+  if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip' || row.status === 'restore-skipped-not-owned') return 'done';
   if (row.status === 'restored' || row.status === 'already-available') return 'done';
   if (row.status === 'calendar-record-warning') return 'done';
@@ -1230,11 +1241,32 @@ function staleLedgerSkipRow(task, taskType) {
   };
 }
 
-function taskStaleByLedger(task, taskType) {
+function missingLedgerNeedsReviewRow(task, taskType) {
   const expected = expectedLedgerStatus(taskType);
-  if (!expected) return false;
-  if (!task.ledgerStatus) return true;
-  return task.ledgerStatus !== expected;
+  return {
+    ...basicTaskSummary(task),
+    taskType,
+    status: 'missing-ledger-needs-review',
+    expectedLedgerStatus: expected,
+    actualLedgerStatus: '',
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    reason: `booking ledger is missing; expected ${expected}`,
+  };
+}
+
+function ledgerIssueForTask(task, taskType) {
+  const expected = expectedLedgerStatus(taskType);
+  if (!expected) return null;
+  if (!task.ledgerStatus) return 'missing';
+  if (task.ledgerStatus !== expected) return 'stale';
+  return null;
+}
+
+function ledgerIssueRow(task, taskType, issue) {
+  if (issue === 'missing') return missingLedgerNeedsReviewRow(task, taskType);
+  if (issue === 'stale') return staleLedgerSkipRow(task, taskType);
+  return null;
 }
 
 function restoreSkippedNotOwnedRow(task) {
@@ -1307,8 +1339,9 @@ async function runUploadTasks(args, context = null) {
     for (const task of tasks) {
       let row = null;
       try {
-        if (taskStaleByLedger(task, 'upload')) {
-          row = staleLedgerSkipRow(task, 'upload');
+        const ledgerIssue = ledgerIssueForTask(task, 'upload');
+        if (ledgerIssue) {
+          row = ledgerIssueRow(task, 'upload', ledgerIssue);
         } else if (task.status === 'google_pending') {
           const event = spacecloudUploadEventFromTask(task);
           row = {
@@ -1430,8 +1463,9 @@ async function runDeleteTasks(args, context = null) {
   try {
     for (const task of tasks) {
       let row;
-      if (taskStaleByLedger(task, 'delete')) {
-        row = staleLedgerSkipRow(task, 'delete');
+      const ledgerIssue = ledgerIssueForTask(task, 'delete');
+      if (ledgerIssue) {
+        row = ledgerIssueRow(task, 'delete', ledgerIssue);
       } else if (task.status === 'google_pending') {
         row = {
           taskId: task.id || null,
@@ -1527,8 +1561,9 @@ async function runNaverBlockTasks(args, context = null) {
   try {
     for (const task of tasks) {
       let row;
-      if (taskStaleByLedger(task, 'naver_block')) {
-        row = staleLedgerSkipRow(task, 'naver_block');
+      const ledgerIssue = ledgerIssueForTask(task, 'naver_block');
+      if (ledgerIssue) {
+        row = ledgerIssueRow(task, 'naver_block', ledgerIssue);
       } else if (task.status === 'google_pending') {
         row = {
           ...naverBlockTaskSummary(task),
@@ -1647,8 +1682,9 @@ async function runNaverAvailabilityTasks(args, context = null) {
     for (const task of tasks) {
       const taskType = task.taskType || 'naver_block';
       let row;
-      if (taskStaleByLedger(task, taskType)) {
-        row = staleLedgerSkipRow(task, taskType);
+      const ledgerIssue = ledgerIssueForTask(task, taskType);
+      if (ledgerIssue) {
+        row = ledgerIssueRow(task, taskType, ledgerIssue);
       } else if (taskType === 'naver_restore') {
         if (task.status === 'google_pending') {
           row = {

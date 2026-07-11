@@ -672,6 +672,7 @@ def ensure_db_tables(config, logger):
             )
             ensure_db_column(cursor, 'rhythmjoy_naver_email_events', 'email_received_at', 'DATETIME NULL AFTER message_id')
             ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'reserver_name_key', "VARCHAR(128) NOT NULL DEFAULT '' AFTER reserver_name")
+            ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'claim_token', "VARCHAR(64) NOT NULL DEFAULT '' AFTER locked_at")
         logger.info('Email DB tables checked')
     except Exception as error:
         disable_db_logging(config, logger, 'Email DB table check failed', error)
@@ -2146,7 +2147,7 @@ def mark_seen(imap_connection, email_id, logger):
         logger.exception('Failed to mark email seen id=%s', email_id.decode('utf-8', errors='replace'))
 
 
-def process_message(config, service, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger):
+def process_message(config, get_calendar_service, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger):
     message = email.message_from_bytes(raw_message)
     subject = decode_header_value(message.get('Subject', ''))
     body = get_text_body(message)
@@ -2190,7 +2191,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                     )
                 else:
                     created = create_calendar_event(
-                        service,
+                        get_calendar_service(),
                         event_data,
                         logger,
                         dedupe_google_calendar=config['dedupe_google_calendar'],
@@ -2250,7 +2251,7 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
                         error_text='google_delete_after_spacecloud',
                     )
                 else:
-                    deleted = delete_events_by_reservation(service, deletion, logger)
+                    deleted = delete_events_by_reservation(get_calendar_service(), deletion, logger)
                     update_email_processing(
                         config,
                         email_record_id,
@@ -2396,11 +2397,19 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if event_data and calendar_key:
-                conflicts = find_calendar_conflicts(service, calendar_key, event_data, logger)
                 event_data['calendar_key'] = calendar_key
                 event_data['target_calendar'] = calendar_key
-                event_data['conflict_count'] = len(conflicts)
                 upsert_booking_ledger_confirmed(config, logger, email_record_id, event_data, calendar_key, email_received_at, 'spacecloud')
+                conflicts = []
+                try:
+                    conflicts = find_calendar_conflicts(get_calendar_service(), calendar_key, event_data, logger)
+                except Exception:
+                    logger.exception(
+                        'Google Calendar conflict check skipped for SpaceCloud reservation mailbox=%s email_id=%s',
+                        mailbox,
+                        decoded_id,
+                    )
+                event_data['conflict_count'] = len(conflicts)
                 google_event = None
                 naver_block_task = upsert_spacecloud_naver_block_task(
                     config,
@@ -2554,7 +2563,14 @@ def backfill_booking_ledger(config, logger):
 
 
 def run_poll_once(config, logger):
-    service = build_calendar_service(config)
+    service = None
+
+    def get_calendar_service():
+        nonlocal service
+        if service is None:
+            service = build_calendar_service(config)
+        return service
+
     processed = 0
     imap_connection = None
     try:
@@ -2579,7 +2595,7 @@ def run_poll_once(config, logger):
                 if result != 'OK' or not raw_message:
                     logger.error('Failed to fetch mailbox=%s email_id=%s result=%s', mailbox, email_id, result)
                     continue
-                process_message(config, service, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger)
+                process_message(config, get_calendar_service, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger)
                 processed += 1
     finally:
         if imap_connection is not None:
@@ -2652,7 +2668,7 @@ def build_config():
 
 def check_config(config, logger):
     if not Path(config['google_service_account_file']).is_file():
-        raise ConfigError(f"Missing Google service account file: {config['google_service_account_file']}")
+        logger.warning('Missing Google service account file; downstream Google Calendar writes will fail: %s', config['google_service_account_file'])
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     if not os.access(str(LOG_DIR), os.W_OK):
         raise ConfigError(f'Email log directory is not writable: {LOG_DIR}')
