@@ -1040,9 +1040,27 @@ function taskTargetText(row) {
   return cleanTelegramText(parts.join(' / '), 160);
 }
 
+function telegramStatusText(status) {
+  const map = {
+    blocked: '반영 성공',
+    'already-blocked': '이미 반영됨',
+    restored: '복구 성공',
+    'already-available': '이미 예약가능',
+    'restore-skipped-not-owned': '복구 생략',
+    submitted: '등록 성공',
+    'google-recorded': '구글 기록 완료',
+    'calendar-record-warning': '구글 기록 경고',
+    'google-create-failed': '구글 기록 재시도',
+    'google-delete-failed': '구글 삭제 재시도',
+    'naver-conflict': '네이버 충돌',
+    'needs-review': '확인 필요',
+  };
+  return map[status] || status || '-';
+}
+
 function formatBriefRows(rows, limit = 3) {
   const visible = rows.slice(0, limit);
-  const lines = visible.map((row, index) => `${index + 1}. ${taskTargetText(row)} (${row.status || '-'})`);
+  const lines = visible.map((row, index) => `${index + 1}. ${taskTargetText(row)} (${telegramStatusText(row.status)})`);
   if (rows.length > visible.length) lines.push(`외 ${rows.length - visible.length}건`);
   return lines.join('\n') || '-';
 }
@@ -1161,7 +1179,7 @@ function naverBlockSuccessMessage(row) {
     'google-recorded',
     'calendar-record-warning',
   ].includes(taskRow.status));
-  return compactNotice('네이버 예약불가 반영 완료', [
+  return compactNotice('네이버 반영 성공', [
     `처리: ${processed.length}건`,
     formatBriefRows(processed),
     googleSummary(processed),
@@ -1171,7 +1189,7 @@ function naverBlockSuccessMessage(row) {
 function naverBlockFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
   const allGoogle = rows.length && rows.every((row) => row.status === 'google-create-failed');
-  return compactNotice('네이버 예약불가 확인 필요', [
+  return compactNotice('네이버 반영 확인 필요', [
     `상태: ${allGoogle ? '구글 기록 재시도 예정' : '자동 처리 중지'}`,
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),

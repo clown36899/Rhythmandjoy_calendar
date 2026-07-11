@@ -1647,11 +1647,11 @@ def notify_cancellation_parse_failure(config, mailbox, email_id, subject, email_
 
 def format_naver_block_task_status(config, task, conflicts):
     if not config.get('spacecloud_naver_block_enabled'):
-        return 'report-only: 네이버 예약불가 변경 안 함'
+        return 'report-only: 네이버 반영 안 함'
     if task:
         suffix = f" / 구글 겹침 참고 {len(conflicts)}건" if conflicts else ''
-        return f"네이버 예약불가 작업 저장됨: task={task.get('id') or '-'} status={task.get('status') or '-'}{suffix}"
-    return '네이버 예약불가 작업 미생성: DB/방 매핑/파싱 상태 확인 필요'
+        return f"네이버 반영 작업 저장됨: task={task.get('id') or '-'} status={task.get('status') or '-'}{suffix}"
+    return '네이버 반영 작업 미생성: DB/방 매핑/파싱 상태 확인 필요'
 
 
 def format_spacecloud_google_status(config, google_event, conflicts):
@@ -1659,13 +1659,13 @@ def format_spacecloud_google_status(config, google_event, conflicts):
         return f"자동생성 완료: event_id={google_event.get('id') or '-'}"
     if config.get('spacecloud_naver_block_enabled'):
         if conflicts:
-            return f'후순위 대기: 네이버 예약불가 반영 후 기록, 기존 구글 겹침 {len(conflicts)}건은 검증 참고'
-        return '후순위 대기: 네이버 예약불가 반영 후 기록'
+            return f'후순위 대기: 네이버 반영 후 기록, 기존 구글 겹침 {len(conflicts)}건은 검증 참고'
+        return '후순위 대기: 네이버 반영 후 기록'
     return 'report-only: 자동생성 안 함'
 
 
 def notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, google_event, naver_block_task, subject, email_received_at, logger):
-    status = '구글 기록 겹침 참고' if conflicts else '네이버 차단 후보 감지'
+    status = '구글 기록 겹침 참고' if conflicts else '네이버 반영 대기'
     current_step = format_naver_block_task_status(config, naver_block_task, conflicts)
     google_status = format_spacecloud_google_status(config, google_event, conflicts)
     text = (
