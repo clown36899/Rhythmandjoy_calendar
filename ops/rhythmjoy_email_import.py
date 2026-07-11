@@ -1534,7 +1534,7 @@ def send_telegram_message(config, text, logger):
         return False
 
     try:
-        payload = json.dumps({'chat_id': chat_id, 'text': text}, ensure_ascii=False).encode('utf-8')
+        payload = json.dumps({'chat_id': chat_id, 'text': compact_telegram_text(text)}, ensure_ascii=False).encode('utf-8')
         request = urllib.request.Request(
             f'https://api.telegram.org/bot{token}/sendMessage',
             data=payload,
@@ -1553,6 +1553,45 @@ def send_telegram_message(config, text, logger):
     return False
 
 
+def short_alert_text(value, limit=110):
+    text = re.sub(r'\s+', ' ', str(value or '')).strip()
+    if len(text) <= limit:
+        return text or '-'
+    return f'{text[:max(0, limit - 3)]}...'
+
+
+def compact_telegram_text(text, limit=None):
+    if limit is None:
+        try:
+            limit = int(os.environ.get('TELEGRAM_MAX_CHARS', '1200'))
+        except ValueError:
+            limit = 1200
+    limit = max(400, limit)
+    normalized = '\n'.join(line.strip() for line in str(text or '').splitlines()).strip()
+    normalized = re.sub(r'\n{3,}', '\n\n', normalized)
+    if len(normalized) <= limit:
+        return normalized
+    suffix = '\n...\n로그: email import log'
+    return f'{normalized[:max(0, limit - len(suffix))]}{suffix}'
+
+
+def alert_time_text():
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def alert_event_line(event_data):
+    return short_alert_text(
+        f"{event_data.get('product') or '-'} / "
+        f"{reservation_time_text(event_data)} / "
+        f"{event_data.get('name') or '-'}",
+        150,
+    )
+
+
+def alert_mail_line(subject):
+    return f"메일: {short_alert_text(subject or '-', 90)}"
+
+
 def format_spacecloud_delete_status(task, calendar_key):
     if task:
         task_id = task.get('id') or '-'
@@ -1564,14 +1603,6 @@ def format_spacecloud_delete_status(task, calendar_key):
 
 
 def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spacecloud_task, subject, email_received_at):
-    reservation_time_text = '-'
-    if deletion.get('date') and deletion.get('start_time') and deletion.get('end_time'):
-        reservation_time_text = f"{deletion['date']} {deletion['start_time']}-{deletion['end_time']}"
-
-    calendar_text = calendar_key or '-'
-    reservation_number = deletion.get('reservation_number') or '-'
-    product = deletion.get('product') or '-'
-    name = deletion.get('name') or '-'
     if google_deleted_count:
         google_delete_status = '자동삭제 완료'
     elif spacecloud_task:
@@ -1582,16 +1613,13 @@ def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spac
 
     return (
         '네이버 예약 취소 감지\n'
-        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
-        f'상품: {product}\n'
+        f'{alert_time_text()}\n\n'
+        f'대상: {alert_event_line(deletion)}\n'
+        f"예약번호: {deletion.get('reservation_number') or '-'}\n"
+        f'구글: {calendar_key or "-"} / {google_delete_status} {google_deleted_count}건\n'
+        f'스페이스클라우드: {short_alert_text(spacecloud_delete_status, 100)}\n'
         f'메일수신: {email_received_at or "-"}\n'
-        f'예약시간: {reservation_time_text}\n'
-        f'예약자명: {name}\n'
-        f'예약번호: {reservation_number}\n'
-        f'구글캘린더: {calendar_text} / {google_delete_status} {google_deleted_count}건\n'
-        f'스페이스클라우드: {spacecloud_delete_status}\n\n'
-        '주의: 스페이스클라우드 삭제 완료가 아니라 삭제 작업 상태 표시임\n'
-        f'메일제목: {subject or "-"}'
+        f'{alert_mail_line(subject)}'
     )
 
 
@@ -1603,12 +1631,11 @@ def notify_cancellation(config, deletion, calendar_key, google_deleted_count, sp
 def notify_cancellation_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
     text = (
         '네이버 예약 취소 메일 파싱 실패\n'
-        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
-        f'메일함: {mailbox}\n'
-        f'메일ID: {email_id}\n'
+        f'{alert_time_text()}\n\n'
+        f'메일: {mailbox} / {email_id}\n'
         f'메일수신: {email_received_at or "-"}\n'
-        f'메일제목: {subject or "-"}\n\n'
-        '취소 메일 양식이 바뀌었을 수 있으니 확인 필요'
+        f'{alert_mail_line(subject)}\n'
+        '조치: 취소 메일 양식 확인'
     )
     send_telegram_message(config, text, logger)
 
@@ -1653,20 +1680,14 @@ def notify_spacecloud_reservation_report(config, event_data, calendar_key, confl
     current_step = format_naver_block_task_status(config, naver_block_task, conflicts)
     google_status = format_spacecloud_google_status(config, google_event, conflicts)
     text = (
-        f'스페이스클라우드 예약완료 메일 감지({status})\n'
-        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
-        f'현재 단계: {current_step}\n\n'
-        f"상품: {event_data.get('product') or '-'}\n"
-        f"캘린더: {calendar_key or '-'}\n"
-        f"구글캘린더: {google_status}\n"
+        '스페이스클라우드 예약 메일 감지\n'
+        f'{alert_time_text()}\n\n'
+        f'상태: {status}\n'
+        f'대상: {alert_event_line(event_data)}\n'
+        f"네이버: {short_alert_text(current_step, 120)}\n"
+        f"구글: {short_alert_text(google_status, 100)}\n"
         f"메일수신: {email_received_at or '-'}\n"
-        f"예약시간: {reservation_time_text(event_data)}\n"
-        f"예약자명: {event_data.get('name') or '-'}\n"
-        f"스페이스클라우드 예약ID: {event_data.get('reservation_number') or '-'}\n"
-        f"인원: {event_data.get('headcount') or '-'}\n"
-        f"결제: {event_data.get('payment_method') or '-'} / {event_data.get('price') or '-'}\n\n"
-        f'기존 구글 캘린더 겹침(기록 검증용):\n{format_spacecloud_conflicts(conflicts)}\n\n'
-        f'메일제목: {subject or "-"}'
+        f'{alert_mail_line(subject)}'
     )
     send_telegram_message(config, text, logger)
 
@@ -1674,13 +1695,11 @@ def notify_spacecloud_reservation_report(config, event_data, calendar_key, confl
 def notify_spacecloud_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
     text = (
         '스페이스클라우드 예약완료 메일 파싱 실패\n'
-        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
-        '현재 단계: report-only\n'
-        f'메일함: {mailbox}\n'
-        f'메일ID: {email_id}\n'
+        f'{alert_time_text()}\n\n'
+        f'메일: {mailbox} / {email_id}\n'
         f'메일수신: {email_received_at or "-"}\n'
-        f'메일제목: {subject or "-"}\n\n'
-        '메일 양식이 예상과 다를 수 있으니 확인 필요'
+        f'{alert_mail_line(subject)}\n'
+        '조치: 예약 메일 양식 확인'
     )
     send_telegram_message(config, text, logger)
 
@@ -1697,19 +1716,12 @@ def notify_spacecloud_cancellation_report(config, event_data, calendar_key, nave
     current_step = format_naver_restore_task_status(config, naver_restore_task)
     text = (
         '스페이스클라우드 취소완료 메일 감지\n'
-        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
-        f'현재 단계: {current_step}\n\n'
-        f"상품: {event_data.get('product') or '-'}\n"
-        f"캘린더: {calendar_key or '-'}\n"
-        f"구글캘린더: 네이버 예약가능 복구 후 삭제 대기\n"
+        f'{alert_time_text()}\n\n'
+        f'대상: {alert_event_line(event_data)}\n'
+        f"네이버: {short_alert_text(current_step, 120)}\n"
+        f"구글: 복구 후 삭제 대기\n"
         f"메일수신: {email_received_at or '-'}\n"
-        f"예약시간: {reservation_time_text(event_data)}\n"
-        f"예약자명: {event_data.get('name') or '-'}\n"
-        f"스페이스클라우드 예약ID: {event_data.get('reservation_number') or '-'}\n"
-        f"인원: {event_data.get('headcount') or '-'}\n"
-        f"금액: {event_data.get('price') or '-'}\n\n"
-        '주의: 이 알림은 취소 메일 감지와 작업 저장 상태이며, 네이버 복구/구글 삭제 완료 알림은 별도로 전송됨\n'
-        f'메일제목: {subject or "-"}'
+        f'{alert_mail_line(subject)}'
     )
     send_telegram_message(config, text, logger)
 
@@ -1717,12 +1729,11 @@ def notify_spacecloud_cancellation_report(config, event_data, calendar_key, nave
 def notify_spacecloud_cancellation_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
     text = (
         '스페이스클라우드 취소완료 메일 파싱 실패\n'
-        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
-        f'메일함: {mailbox}\n'
-        f'메일ID: {email_id}\n'
+        f'{alert_time_text()}\n\n'
+        f'메일: {mailbox} / {email_id}\n'
         f'메일수신: {email_received_at or "-"}\n'
-        f'메일제목: {subject or "-"}\n\n'
-        '취소 메일 양식이 바뀌었거나 방/시간/예약자명 확인이 필요함'
+        f'{alert_mail_line(subject)}\n'
+        '조치: 취소 메일 양식 확인'
     )
     send_telegram_message(config, text, logger)
 

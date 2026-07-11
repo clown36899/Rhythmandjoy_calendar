@@ -894,10 +894,39 @@ async function deleteRemoteGoogleEventForNaverRestoreTask(args, taskId) {
   return deleteRemoteGoogleEventForTask(args, taskId, 'naver_restore');
 }
 
+const TELEGRAM_LOG_HINT = '로그: state/spacecloud-watch/launchd.log';
+
+function cleanTelegramText(value, maxLength = 160) {
+  const text = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text.length <= maxLength) return text || '-';
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function compactTelegramText(text) {
+  const configuredLimit = Number.parseInt(process.env.TELEGRAM_MAX_CHARS || '1200', 10);
+  const limit = Number.isFinite(configuredLimit) && configuredLimit >= 400 ? configuredLimit : 1200;
+  const normalized = String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .reduce((lines, line) => {
+      if (!line && lines[lines.length - 1] === '') return lines;
+      lines.push(line);
+      return lines;
+    }, [])
+    .join('\n')
+    .trim();
+  if (normalized.length <= limit) return normalized;
+  const suffix = `\n...\n${TELEGRAM_LOG_HINT}`;
+  return `${normalized.slice(0, Math.max(0, limit - suffix.length))}${suffix}`;
+}
+
 async function sendTelegram(args, text) {
   if (!args.telegram) return { sent: false, reason: 'disabled' };
+  const message = compactTelegramText(text);
   if (process.env.TELEGRAM_DRY_RUN === '1') {
-    logLine(`telegram dry-run: ${text.replace(/\s+/g, ' ').slice(0, 160)}`);
+    logLine(`telegram dry-run: ${message.replace(/\s+/g, ' ').slice(0, 160)}`);
     return { sent: false, reason: 'dry-run' };
   }
 
@@ -915,7 +944,7 @@ async function sendTelegram(args, text) {
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text }),
+      body: JSON.stringify({ chat_id: chatId, text: message }),
       signal: controller.signal,
     });
     if (!response.ok) {
@@ -945,7 +974,7 @@ async function notifyWithCooldown(args, key, text, {
       lastAttemptAt: new Date().toISOString(),
       lastSentAt: result.sent || result.reason === 'dry-run' ? new Date().toISOString() : state[key]?.lastSentAt || null,
       result,
-      textPreview: text.replace(/\s+/g, ' ').slice(0, 240),
+      textPreview: compactTelegramText(text).replace(/\s+/g, ' ').slice(0, 240),
     };
     await writeJson(args.notifyState, state);
     if (result.sent) logLine(`telegram sent: ${key}`);
@@ -955,7 +984,7 @@ async function notifyWithCooldown(args, key, text, {
       lastAttemptAt: new Date().toISOString(),
       lastSentAt: state[key]?.lastSentAt || null,
       result: { sent: false, reason: String(error?.message || error) },
-      textPreview: text.replace(/\s+/g, ' ').slice(0, 240),
+      textPreview: compactTelegramText(text).replace(/\s+/g, ' ').slice(0, 240),
     };
     await writeJson(args.notifyState, state);
     logLine(`telegram failed: ${String(error?.message || error)}`);
@@ -971,49 +1000,87 @@ function isTransientRemoteProblem(message) {
   return /ssh failed|timed out|ETIMEDOUT|SIGKILL|Connection timed out|Connection reset|Broken pipe/i.test(String(message || ''));
 }
 
+function rowsFromResult(rowOrError, key = 'failed') {
+  if (typeof rowOrError !== 'object' || !rowOrError) return [];
+  if (Array.isArray(rowOrError)) return rowOrError;
+  if (Array.isArray(rowOrError[key])) return rowOrError[key];
+  if (Array.isArray(rowOrError.rows)) return rowOrError.rows;
+  return [];
+}
+
+function taskTimeText(row) {
+  return `${row.date || '-'} ${row.startTime || '-'}-${row.endTime || '-'}`;
+}
+
+function taskTargetText(row) {
+  const parts = [
+    row.taskId ? `#${row.taskId}` : '',
+    row.roomKey || row.room_key || '-',
+    taskTimeText(row),
+    row.reserverName || row.reserver_name || '',
+    row.reservationNo || row.reservation_number || '',
+  ].filter(Boolean);
+  return cleanTelegramText(parts.join(' / '), 160);
+}
+
+function formatBriefRows(rows, limit = 3) {
+  const visible = rows.slice(0, limit);
+  const lines = visible.map((row, index) => `${index + 1}. ${taskTargetText(row)} (${row.status || '-'})`);
+  if (rows.length > visible.length) lines.push(`외 ${rows.length - visible.length}건`);
+  return lines.join('\n') || '-';
+}
+
+function firstFailureReason(rowOrError) {
+  if (typeof rowOrError === 'string') return cleanTelegramText(rowOrError, 180);
+  const row = rowsFromResult(rowOrError).find((item) => item.error || item.reason || item.calendarRecordWarning || item.status) || {};
+  return cleanTelegramText(row.error || row.reason || row.calendarRecordWarning || row.status || '-', 180);
+}
+
+function googleSummary(rows) {
+  if (!rows.length) return '구글=-';
+  const counts = new Map();
+  let warnings = 0;
+  for (const row of rows) {
+    const status = row.googleCalendar?.status || (row.status?.startsWith('google-') ? row.status : '');
+    if (status) counts.set(status, (counts.get(status) || 0) + 1);
+    if (row.calendarRecordWarning) warnings += 1;
+  }
+  if (!counts.size && !warnings) return '구글=-';
+  const statusText = [...counts.entries()].map(([status, count]) => `${status} ${count}`).join(', ');
+  return `구글=${statusText || '-'}${warnings ? ` / 경고 ${warnings}` : ''}`;
+}
+
+function compactNotice(title, lines) {
+  return [
+    title,
+    kstNowText(),
+    '',
+    ...lines.filter((line) => line !== ''),
+    TELEGRAM_LOG_HINT,
+  ].join('\n');
+}
+
 function loginNeededMessage(rowOrError) {
   const errorText = typeof rowOrError === 'string'
     ? rowOrError
     : (rowOrError?.failed || []).map((row) => row.error).filter(Boolean).join('\n');
   const candidates = typeof rowOrError === 'object' ? rowOrError?.uploadCandidates : null;
-  return `스페이스클라우드 로그인 필요
-${kstNowText()}
-
-자동등록/자동삭제가 로그인 또는 세션 확인 단계에서 대기 중입니다.
-조치: 이 Mac의 자동화 Chrome 창에서 네이버/스페이스클라우드 로그인을 다시 해주세요.
-
-등록 후보: ${candidates ?? '-'}건
-오류: ${String(errorText || '-').slice(0, 500)}
-로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+  return compactNotice('스페이스클라우드 로그인 필요', [
+    '상태: 세션 확인 대기',
+    `후보: ${candidates ?? '-'}건`,
+    `원인: ${cleanTelegramText(errorText || '-', 120)}`,
+    '조치: 자동화 Chrome에서 네이버/스페이스클라우드 로그인',
+  ]);
 }
 
 function uploadFailureMessage(rowOrError) {
-  const errorText = typeof rowOrError === 'string'
-    ? rowOrError
-    : (rowOrError?.failed || []).map((row) => `${row.fingerprint}: ${row.error}`).filter(Boolean).join('\n');
-  return `스페이스클라우드 자동등록 확인 필요
-${kstNowText()}
-
-로그인 문제가 아닌 등록 오류가 발생해 자동 반복을 멈췄습니다.
-
-오류: ${String(errorText || '-').slice(0, 900)}
-로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
-}
-
-function formatUploadRowLine(row) {
-  const googleStatus = row.googleCalendar?.status
-    ? `구글=${row.googleCalendar.status}${row.googleCalendar.eventId ? `(${row.googleCalendar.eventId})` : ''}`
-    : '구글=-';
-  return [
-    row.taskId ? `task=${row.taskId}` : '',
-    `방=${row.roomKey || '-'}`,
-    `일시=${row.date || '-'} ${row.startTime || '-'}-${row.endTime || '-'}`,
-    `예약번호=${row.reservationNo || '-'}`,
-    `예약자=${row.reserverName || '-'}`,
-    row.status ? `상태=${row.status}` : '',
-    googleStatus,
-    row.calendarRecordWarning ? `구글기록경고=${row.calendarRecordWarning}` : '',
-  ].filter(Boolean).join('\n');
+  const rows = rowsFromResult(rowOrError);
+  return compactNotice('스페이스클라우드 자동등록 확인 필요', [
+    `대상: ${rows.length || '-'}건`,
+    formatBriefRows(rows),
+    `원인: ${firstFailureReason(rowOrError)}`,
+    '조치: 자동 반복 중지, 로그 확인',
+  ]);
 }
 
 function uploadSuccessMessage(row) {
@@ -1025,86 +1092,33 @@ function uploadSuccessMessage(row) {
       'calendar-record-warning',
     ].includes(taskRow.status))),
   ];
-  const detailText = uploadedRows.map(formatUploadRowLine).join('\n\n');
-  return `스페이스클라우드 자동등록 완료
-${kstNowText()}
-
-네이버 예약 메일 DB 작업 또는 기존 Google Calendar 확정 일정이 SpaceCloud 직접 추가 예약으로 등록됐습니다.
-Google Calendar는 후순위 기록장이며, 일시 실패는 google_pending으로 남겨 다음 주기에 기록만 재시도합니다.
-
-등록건수: ${uploadedRows.length}건
-남은 후보: ${row.remainingInPlan ?? '-'}건
-
-${String(detailText || '-').slice(0, 1200)}
-
-로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+  return compactNotice('스페이스클라우드 자동등록 완료', [
+    `처리: ${uploadedRows.length}건 / 남은 후보 ${row.remainingInPlan ?? '-'}건`,
+    formatBriefRows(uploadedRows),
+    googleSummary(uploadedRows),
+  ]);
 }
 
 function uploadTaskFailureMessage(rowOrError) {
-  const errorText = typeof rowOrError === 'string'
-    ? rowOrError
-    : (rowOrError?.failed || []).map(formatUploadRowLine).filter(Boolean).join('\n\n');
-  return `스페이스클라우드 DB 업로드 확인 필요
-${kstNowText()}
-
-네이버 예약 메일은 DB에 기록됐지만 SpaceCloud 직접 등록 또는 등록 후 Google Calendar 기록 중 확인이 필요한 항목이 생겼습니다.
-Google Calendar 기록만 일시 실패한 경우에는 작업을 google_pending으로 되돌리고 다음 주기에 기록만 재시도합니다.
-
-오류: ${String(errorText || '-').slice(0, 1200)}
-로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
-}
-
-function formatDeleteTaskLine(row) {
-  const verificationErrors = row.deleteVerification?.errors?.length
-    ? ` / 검증실패=${row.deleteVerification.errors.join(',')}`
-    : '';
-  const googleStatus = row.googleCalendar?.status
-    ? `구글=${row.googleCalendar.status}${row.googleCalendar.eventId ? `(${row.googleCalendar.eventId})` : ''}`
-    : '구글=-';
-  return [
-    `task=${row.taskId || '-'}`,
-    `방=${row.roomKey || '-'}`,
-    `일시=${row.date || '-'} ${row.startTime || '-'}-${row.endTime || '-'}`,
-    `예약번호=${row.reservationNo || '-'}`,
-    `상태=${row.status || '-'}`,
-    googleStatus,
-    row.calendarRecordWarning ? `구글기록경고=${row.calendarRecordWarning}` : '',
-    `사유=${row.error || '-'}${verificationErrors}`,
-  ].filter(Boolean).join('\n');
+  const rows = rowsFromResult(rowOrError);
+  const allGoogle = rows.length && rows.every((row) => row.status === 'google-create-failed');
+  return compactNotice('스페이스클라우드 등록 확인 필요', [
+    `상태: ${allGoogle ? '구글 기록 재시도 예정' : '자동 처리 중지'}`,
+    `대상: ${rows.length || '-'}건`,
+    formatBriefRows(rows),
+    `원인: ${firstFailureReason(rowOrError)}`,
+  ]);
 }
 
 function deleteFailureMessage(rowOrError) {
-  const errorText = typeof rowOrError === 'string'
-    ? rowOrError
-    : (rowOrError?.failed || []).map(formatDeleteTaskLine).filter(Boolean).join('\n\n');
-  return `스페이스클라우드 자동삭제 확인 필요
-${kstNowText()}
-
-Google Calendar 취소 처리와 별개로 SpaceCloud 삭제 작업 중 확인이 필요한 항목이 생겼습니다.
-자동삭제는 직접 추가한 예약이고 방/시간/예약번호가 모두 맞을 때만 실행됩니다. 조건이 맞지 않으면 삭제하지 않고 멈춥니다.
-
-오류: ${String(errorText || '-').slice(0, 1200)}
-로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
-}
-
-function formatNaverBlockTaskLine(row) {
-  const googleStatus = row.googleCalendar?.status
-    ? `구글=${row.googleCalendar.status}${row.googleCalendar.eventId ? `(${row.googleCalendar.eventId})` : ''}`
-    : '구글=-';
-  return [
-    `task=${row.taskId || '-'}`,
-    row.taskType ? `작업=${row.taskType}` : '',
-    `방=${row.roomKey || '-'}`,
-    `일시=${row.date || '-'} ${row.startTime || '-'}-${row.endTime || '-'}`,
-    `예약번호=${row.reservationNo || '-'}`,
-    `예약자=${row.reserverName || '-'}`,
-    `상태=${row.status || '-'}`,
-    googleStatus,
-    row.calendarRecordWarning ? `구글기록경고=${row.calendarRecordWarning}` : '',
-    row.priorNaverBlockTaskId ? `기존차단task=${row.priorNaverBlockTaskId}` : '',
-    row.reason ? `설명=${row.reason}` : '',
-    `사유=${row.error || '-'}`,
-  ].filter(Boolean).join('\n');
+  const rows = rowsFromResult(rowOrError);
+  const allGoogle = rows.length && rows.every((row) => row.status === 'google-delete-failed');
+  return compactNotice('스페이스클라우드 자동삭제 확인 필요', [
+    `상태: ${allGoogle ? '구글 삭제 재시도 예정' : '자동 처리 중지'}`,
+    `대상: ${rows.length || '-'}건`,
+    formatBriefRows(rows),
+    `원인: ${firstFailureReason(rowOrError)}`,
+  ]);
 }
 
 function naverBlockTaskSummary(task) {
@@ -1128,33 +1142,23 @@ function naverBlockSuccessMessage(row) {
     'google-recorded',
     'calendar-record-warning',
   ].includes(taskRow.status));
-  const detailText = processed.map(formatNaverBlockTaskLine).join('\n\n');
-  return `네이버 예약불가 반영 완료
-${kstNowText()}
-
-스페이스클라우드 예약완료 메일 기준으로 네이버 SmartPlace 해당 시간 예약가능 슬롯을 막았습니다.
-Google Calendar는 후순위 기록장이며, 일시 실패는 google_pending 재시도, 겹침은 확인 필요로 보고합니다.
-
-처리건수: ${processed.length}건
-
-${String(detailText || '-').slice(0, 1200)}
-
-로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+  return compactNotice('네이버 예약불가 반영 완료', [
+    `처리: ${processed.length}건`,
+    formatBriefRows(processed),
+    googleSummary(processed),
+  ]);
 }
 
 function naverBlockFailureMessage(rowOrError) {
-  const errorText = typeof rowOrError === 'string'
-    ? rowOrError
-    : (rowOrError?.failed || []).map(formatNaverBlockTaskLine).filter(Boolean).join('\n\n');
-  return `네이버 예약불가 자동처리 확인 필요
-${kstNowText()}
-
-스페이스클라우드 예약완료 메일은 감지됐지만 네이버 예약불가 반영 또는 반영 후 Google Calendar 기록 중 확인이 필요한 항목이 생겼습니다.
-네이버에 이미 확정/마감 슬롯이 있으면 네이버 예약을 우선으로 보고 자동 수정하지 않습니다.
-Google Calendar 기록만 일시 실패한 경우에는 작업을 google_pending으로 되돌리고 다음 주기에 기록만 재시도합니다.
-
-오류: ${String(errorText || '-').slice(0, 1200)}
-로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+  const rows = rowsFromResult(rowOrError);
+  const allGoogle = rows.length && rows.every((row) => row.status === 'google-create-failed');
+  return compactNotice('네이버 예약불가 확인 필요', [
+    `상태: ${allGoogle ? '구글 기록 재시도 예정' : '자동 처리 중지'}`,
+    `대상: ${rows.length || '-'}건`,
+    formatBriefRows(rows),
+    `원인: ${firstFailureReason(rowOrError)}`,
+    '기준: 네이버 예약 우선',
+  ]);
 }
 
 function naverRestoreSuccessMessage(row) {
@@ -1164,43 +1168,30 @@ function naverRestoreSuccessMessage(row) {
     'restore-skipped-not-owned',
     'calendar-record-warning',
   ].includes(taskRow.status));
-  const detailText = processed.map(formatNaverBlockTaskLine).join('\n\n');
-  return `네이버 예약가능 복구 완료
-${kstNowText()}
-
-스페이스클라우드 취소완료 메일 기준으로 네이버 SmartPlace 예약불가 슬롯을 예약가능으로 되돌렸거나, 자동화가 막은 슬롯이 아니라 복구를 생략했습니다.
-Google Calendar는 후순위 기록장이며, 일시 실패는 google_pending 재시도, 겹침은 확인 필요로 보고합니다.
-
-처리건수: ${processed.length}건
-
-${String(detailText || '-').slice(0, 1200)}
-
-로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+  return compactNotice('네이버 예약가능 복구 완료', [
+    `처리: ${processed.length}건`,
+    formatBriefRows(processed),
+    googleSummary(processed),
+  ]);
 }
 
 function naverRestoreFailureMessage(rowOrError) {
-  const errorText = typeof rowOrError === 'string'
-    ? rowOrError
-    : (rowOrError?.failed || []).map(formatNaverBlockTaskLine).filter(Boolean).join('\n\n');
-  return `네이버 예약가능 복구 확인 필요
-${kstNowText()}
-
-스페이스클라우드 취소완료 메일은 감지됐지만 네이버 예약가능 복구 또는 복구 후 Google Calendar 삭제 중 확인이 필요한 항목이 생겼습니다.
-자동 복구는 네이버 슬롯이 예약불가 상태일 때만 실행합니다. 이미 확정/마감/다른 상태면 자동으로 풀지 않고 멈춥니다.
-
-오류: ${String(errorText || '-').slice(0, 1200)}
-로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+  const rows = rowsFromResult(rowOrError);
+  const allGoogle = rows.length && rows.every((row) => row.status === 'google-delete-failed');
+  return compactNotice('네이버 예약가능 복구 확인 필요', [
+    `상태: ${allGoogle ? '구글 삭제 재시도 예정' : '자동 처리 중지'}`,
+    `대상: ${rows.length || '-'}건`,
+    formatBriefRows(rows),
+    `원인: ${firstFailureReason(rowOrError)}`,
+  ]);
 }
 
 function cycleErrorMessage(errorText) {
-  return `스페이스클라우드 자동화 점검 필요
-${kstNowText()}
-
-자동등록/자동삭제 감시 주기에서 오류가 발생해 반복 실행을 멈췄습니다.
-가능 원인: Cafe24 SSH/DB 작업큐 조회 실패, 플랫폼 반영 후 Google Calendar 기록 실패, 로컬 브라우저 자동화 오류.
-
-오류: ${String(errorText || '-').slice(0, 900)}
-로그: /Users/inteyeo/Rhythmjoy_calendar/state/spacecloud-watch/launchd.log`;
+  return compactNotice('스페이스클라우드 자동화 점검 필요', [
+    '상태: 감시 주기 오류로 중지',
+    `원인: ${cleanTelegramText(errorText || '-', 180)}`,
+    '조치: 로그 확인 후 재시작',
+  ]);
 }
 
 function dbStatusForDeleteRow(row) {
