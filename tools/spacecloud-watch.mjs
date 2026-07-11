@@ -424,7 +424,14 @@ try:
                 OR (status='google_pending' AND %s IN ('naver_block', 'naver_restore', 'upload', 'delete'))
                 OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
               )
-            ORDER BY created_at ASC, id ASC
+            ORDER BY
+              CASE
+                WHEN status='pending' THEN 0
+                WHEN status='running' THEN 1
+                ELSE 2
+              END,
+              created_at ASC,
+              id ASC
             LIMIT %s
             FOR UPDATE
             """,
@@ -528,7 +535,14 @@ try:
                 OR (status='google_pending' AND task_type IN ('naver_block', 'naver_restore', 'upload', 'delete'))
                 OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
               )
-            ORDER BY created_at ASC, id ASC
+            ORDER BY
+              CASE
+                WHEN status='pending' THEN 0
+                WHEN status='running' THEN 1
+                ELSE 2
+              END,
+              created_at ASC,
+              id ASC
             LIMIT %s
             FOR UPDATE
             """,
@@ -990,7 +1004,7 @@ function uploadSuccessMessage(row) {
 ${kstNowText()}
 
 네이버 예약 메일 DB 작업 또는 기존 Google Calendar 확정 일정이 SpaceCloud 직접 추가 예약으로 등록됐습니다.
-Google Calendar는 후순위 기록장이며, 기록 실패/겹침은 아래 경고로만 표시됩니다.
+Google Calendar는 후순위 기록장이며, 일시 실패는 google_pending으로 남겨 다음 주기에 기록만 재시도합니다.
 
 등록건수: ${uploadedRows.length}건
 남은 후보: ${row.remainingInPlan ?? '-'}건
@@ -1186,7 +1200,7 @@ function dbStatusForNaverBlockRow(row) {
   if (row.status === 'blocked' || row.status === 'already-blocked' || row.status === 'google-recorded') return 'done';
   if (row.status === 'calendar-record-warning') return 'done';
   if (row.status === 'google-create-failed') return 'google_pending';
-  if (row.status === 'google-conflict') return 'done';
+  if (row.status === 'google-conflict') return 'needs_review';
   if (row.status === 'naver-conflict' || row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   return 'failed';
@@ -1292,16 +1306,39 @@ function setCalendarWarning(row, label, value) {
 
 function applyCalendarCreateResult(row, result, label) {
   row.googleCalendar = result;
-  if (!['created', 'existing'].includes(result?.status)) {
-    setCalendarWarning(row, label, result);
-  }
+  if (['created', 'existing'].includes(result?.status)) return 'google-recorded';
+  setCalendarWarning(row, label, result);
+  if (result?.status === 'conflict') return 'google-conflict';
+  row.error = row.error || row.calendarRecordWarning;
+  return 'google-create-failed';
 }
 
 function applyCalendarDeleteResult(row, result, label) {
   row.googleCalendar = result;
-  if (!['deleted', 'not_found'].includes(result?.status)) {
-    setCalendarWarning(row, label, result);
-  }
+  if (['deleted', 'not_found'].includes(result?.status)) return 'google-deleted';
+  setCalendarWarning(row, label, result);
+  row.error = row.error || row.calendarRecordWarning;
+  return 'google-delete-failed';
+}
+
+function applyCalendarCreateError(row, label, error) {
+  row.error = String(error?.message || error);
+  setCalendarWarning(row, label, row.error);
+  return 'google-create-failed';
+}
+
+function applyCalendarDeleteError(row, label, error) {
+  row.error = String(error?.message || error);
+  setCalendarWarning(row, label, row.error);
+  return 'google-delete-failed';
+}
+
+function isGoogleRetryableStatus(status) {
+  return status === 'google-create-failed' || status === 'google-delete-failed';
+}
+
+function hasBlockingFailures(result) {
+  return (result?.failed || []).some((row) => !isGoogleRetryableStatus(row.status));
 }
 
 async function runUploadTasks(args, context = null) {
@@ -1369,13 +1406,14 @@ async function runUploadTasks(args, context = null) {
         }
 
         if (['submitted', 'google-pending'].includes(row.status)) {
+          let calendarStatus = 'google-recorded';
           try {
             const googleResult = await createRemoteGoogleEventForUploadTask(args, task.id);
-            applyCalendarCreateResult(row, googleResult, 'Google Calendar after-upload');
+            calendarStatus = applyCalendarCreateResult(row, googleResult, 'Google Calendar after-upload');
           } catch (error) {
-            setCalendarWarning(row, 'Google Calendar after-upload', String(error?.message || error));
+            calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-upload', error);
           }
-          row.status = row.calendarRecordWarning ? 'calendar-record-warning' : 'google-recorded';
+          row.status = calendarStatus;
           row.finishedAt = new Date().toISOString();
         }
       } catch (error) {
@@ -1390,8 +1428,7 @@ async function runUploadTasks(args, context = null) {
           startedAt: new Date().toISOString(),
         };
         if (row.status === 'submitted') {
-          row.status = 'calendar-record-warning';
-          setCalendarWarning(row, 'Google Calendar after-upload', String(error?.message || error));
+          row.status = applyCalendarCreateError(row, 'Google Calendar after-upload', error);
         } else {
           row.status = 'failed';
         }
@@ -1488,13 +1525,15 @@ async function runDeleteTasks(args, context = null) {
 
       if (['deleted', 'already-gone', 'google-delete-pending'].includes(row.status)) {
         const spacecloudStatus = row.status === 'google-delete-pending' ? 'deleted' : row.status;
+        let calendarStatus = 'google-deleted';
         try {
           const googleResult = await deleteRemoteGoogleEventForDeleteTask(args, task.id);
-          applyCalendarDeleteResult(row, googleResult, 'Google Calendar after-delete');
+          calendarStatus = applyCalendarDeleteResult(row, googleResult, 'Google Calendar after-delete');
         } catch (error) {
-          setCalendarWarning(row, 'Google Calendar after-delete', String(error?.message || error));
+          calendarStatus = applyCalendarDeleteError(row, 'Google Calendar after-delete', error);
         }
-        row.status = spacecloudStatus;
+        row.spacecloudStatus = spacecloudStatus;
+        row.status = calendarStatus === 'google-deleted' ? spacecloudStatus : calendarStatus;
         row.finishedAt = new Date().toISOString();
       }
 
@@ -1571,13 +1610,14 @@ async function runNaverBlockTasks(args, context = null) {
           startedAt: new Date().toISOString(),
           naverAlreadyApplied: true,
         };
+        let calendarStatus = 'google-recorded';
         try {
           const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
-          applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
+          calendarStatus = applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
         } catch (error) {
-          setCalendarWarning(row, 'Google Calendar after-naver-block', String(error?.message || error));
+          calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-naver-block', error);
         }
-        row.status = row.calendarRecordWarning ? 'calendar-record-warning' : 'google-recorded';
+        row.status = calendarStatus;
         row.finishedAt = new Date().toISOString();
       } else {
         row = await setNaverAvailability(activeContext, task, {
@@ -1585,12 +1625,15 @@ async function runNaverBlockTasks(args, context = null) {
           targetStatus: 'unavailable',
         });
         if (['blocked', 'already-blocked'].includes(row.status)) {
+          let calendarStatus = 'google-recorded';
           try {
             const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
-            applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
+            calendarStatus = applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
           } catch (error) {
-            setCalendarWarning(row, 'Google Calendar after-naver-block', String(error?.message || error));
+            calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-naver-block', error);
           }
+          row.naverStatus = row.status;
+          row.status = calendarStatus === 'google-recorded' ? row.naverStatus : calendarStatus;
         }
       }
       rows.push(row);
@@ -1709,13 +1752,15 @@ async function runNaverAvailabilityTasks(args, context = null) {
 
         if (['restored', 'already-available', 'restore-skipped-not-owned', 'google-delete-pending'].includes(row.status)) {
           const naverStatus = row.status === 'google-delete-pending' ? 'restored' : row.status;
+          let calendarStatus = 'google-deleted';
           try {
             const googleResult = await deleteRemoteGoogleEventForNaverRestoreTask(args, task.id);
-            applyCalendarDeleteResult(row, googleResult, 'Google Calendar after-naver-restore');
+            calendarStatus = applyCalendarDeleteResult(row, googleResult, 'Google Calendar after-naver-restore');
           } catch (error) {
-            setCalendarWarning(row, 'Google Calendar after-naver-restore', String(error?.message || error));
+            calendarStatus = applyCalendarDeleteError(row, 'Google Calendar after-naver-restore', error);
           }
-          row.status = naverStatus;
+          row.naverStatus = naverStatus;
+          row.status = calendarStatus === 'google-deleted' ? naverStatus : calendarStatus;
           row.finishedAt = new Date().toISOString();
         }
       } else {
@@ -1727,13 +1772,14 @@ async function runNaverAvailabilityTasks(args, context = null) {
             startedAt: new Date().toISOString(),
             naverAlreadyApplied: true,
           };
+          let calendarStatus = 'google-recorded';
           try {
             const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
-            applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
+            calendarStatus = applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
           } catch (error) {
-            setCalendarWarning(row, 'Google Calendar after-naver-block', String(error?.message || error));
+            calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-naver-block', error);
           }
-          row.status = row.calendarRecordWarning ? 'calendar-record-warning' : 'google-recorded';
+          row.status = calendarStatus;
           row.finishedAt = new Date().toISOString();
         } else {
           row = await setNaverAvailability(activeContext, task, {
@@ -1742,12 +1788,15 @@ async function runNaverAvailabilityTasks(args, context = null) {
           });
           row.taskType = taskType;
           if (['blocked', 'already-blocked'].includes(row.status)) {
+            let calendarStatus = 'google-recorded';
             try {
               const googleResult = await createRemoteGoogleEventForNaverBlockTask(args, task.id);
-              applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
+              calendarStatus = applyCalendarCreateResult(row, googleResult, 'Google Calendar after-naver-block');
             } catch (error) {
-              setCalendarWarning(row, 'Google Calendar after-naver-block', String(error?.message || error));
+              calendarStatus = applyCalendarCreateError(row, 'Google Calendar after-naver-block', error);
             }
+            row.naverStatus = row.status;
+            row.status = calendarStatus === 'google-recorded' ? row.naverStatus : calendarStatus;
           }
         }
       }
@@ -1991,10 +2040,12 @@ async function runCycle(args, context = null) {
 
     row.uploadTasks = await runUploadTasks(args, activeContext);
     if (['planned', 'dry-run'].includes(row.status) && row.uploadTasks.attempted > 0) {
-      row.status = row.uploadTasks.failed.length ? 'upload-task-needs-review' : 'upload-task-processed';
+      row.status = hasBlockingFailures(row.uploadTasks)
+        ? 'upload-task-needs-review'
+        : (row.uploadTasks.failed.length ? 'upload-task-google-pending' : 'upload-task-processed');
     }
 
-    if (args.legacyCalendarPlan && !row.uploadTasks?.failed?.length && plan.upload.length > 0 && !args.dryRun) {
+    if (args.legacyCalendarPlan && !hasBlockingFailures(row.uploadTasks) && plan.upload.length > 0 && !args.dryRun) {
       const uploader = await createSpacecloudPlaywrightUploader({
         context: await getContext(),
         planPath,
@@ -2013,20 +2064,24 @@ async function runCycle(args, context = null) {
       row.uploadedRows = uploadedRows;
     }
 
-    if (!row.failed?.length && !row.uploadTasks?.failed?.length) {
+    if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks)) {
       row.deleteTasks = await runDeleteTasks(args, activeContext);
       if (['planned', 'dry-run'].includes(row.status) && row.deleteTasks.attempted > 0) {
-        row.status = row.deleteTasks.failed.length ? 'delete-needs-review' : 'delete-processed';
+        row.status = hasBlockingFailures(row.deleteTasks)
+          ? 'delete-needs-review'
+          : (row.deleteTasks.failed.length ? 'delete-google-pending' : 'delete-processed');
       }
     }
 
-    if (!row.failed?.length && !row.uploadTasks?.failed?.length && !row.deleteTasks?.failed?.length) {
+    if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.deleteTasks)) {
       row.naverAvailabilityTasks = await runNaverAvailabilityTasks(args, activeContext);
       const split = splitNaverAvailabilityResult(row.naverAvailabilityTasks);
       row.naverBlockTasks = split.naverBlockTasks;
       row.naverRestoreTasks = split.naverRestoreTasks;
       if (['planned', 'dry-run'].includes(row.status) && row.naverAvailabilityTasks.attempted > 0) {
-        row.status = row.naverAvailabilityTasks.failed.length ? 'naver-availability-needs-review' : 'naver-availability-processed';
+        row.status = hasBlockingFailures(row.naverAvailabilityTasks)
+          ? 'naver-availability-needs-review'
+          : (row.naverAvailabilityTasks.failed.length ? 'naver-availability-google-pending' : 'naver-availability-processed');
       }
     }
 

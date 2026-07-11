@@ -66,6 +66,17 @@ function timeLabel(value) {
   return `${ampm} ${hour12}:00`;
 }
 
+function timeLabelVariants(value) {
+  const hour = parseHour(value);
+  const labels = [timeLabel(value)];
+  if (hour === 0 || hour === 24) labels.push('자정 12:00');
+  return [...new Set(labels)];
+}
+
+function compactIncludesAny(compact, values) {
+  return values.some((value) => compact.includes(compactText(value)));
+}
+
 function timeTextFromHour(hour) {
   if (hour === 24) return '24:00';
   if (hour < 0 || hour > 23) throw new Error(`invalid slot hour: ${hour}`);
@@ -277,8 +288,8 @@ async function verifySchedulePanel(page, row, expectedStatus) {
   const room = NAVER_ROOMS[row.roomKey];
   const date = normalizeDate(row.date);
   const dateText = `${dateParts(date).year}.${dateParts(date).month}.${dateParts(date).day}`;
-  const startText = timeLabel(row.startTime);
-  const endText = timeLabel(row.endTime);
+  const startTexts = timeLabelVariants(row.startTime);
+  const endTexts = timeLabelVariants(row.endTime);
   const panel = await page.evaluate(() => {
     const side = document.querySelector('[class*="SideLayer__visible"]');
     return (side?.innerText || side?.textContent || '').replace(/\s+/g, ' ').trim();
@@ -287,13 +298,14 @@ async function verifySchedulePanel(page, row, expectedStatus) {
   const errors = [];
   if (!compact.includes(compactText(room.name))) errors.push(`room:${room.name}`);
   if (!compact.includes(compactText(dateText))) errors.push(`date:${dateText}`);
-  if (!compact.includes(compactText(startText))) errors.push(`start:${startText}`);
-  if (!compact.includes(compactText(endText))) errors.push(`end:${endText}`);
+  if (!compactIncludesAny(compact, startTexts)) errors.push(`start:${startTexts[0]}`);
+  if (!compactIncludesAny(compact, endTexts)) errors.push(`end:${endTexts[0]}`);
   if (expectedStatus && !compact.includes(compactText(expectedStatus))) errors.push(`status:${expectedStatus}`);
   return { ok: errors.length === 0, errors, textPreview: panel.slice(0, 500) };
 }
 
 async function selectScheduleFormButton(page, groupLabel, buttonIndex, targetText) {
+  const targetTexts = Array.isArray(targetText) ? targetText : [targetText];
   const marker = `rhythmjoy-form-${Date.now()}-${buttonIndex}`;
   const current = await page.evaluate(({ groupLabel: wantedGroup, buttonIndex: wantedIndex, marker: wantedMarker }) => {
     const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
@@ -309,7 +321,7 @@ async function selectScheduleFormButton(page, groupLabel, buttonIndex, targetTex
   }, { groupLabel, buttonIndex, marker });
 
   if (!current.ok) throw new Error(current.reason);
-  if (current.text === targetText) return { changed: false, value: current.text };
+  if (targetTexts.includes(current.text)) return { changed: false, value: current.text };
 
   const button = page.locator(`button[data-rhythmjoy-form-target="${marker}"]`);
   const buttonCount = await button.count();
@@ -317,12 +329,20 @@ async function selectScheduleFormButton(page, groupLabel, buttonIndex, targetTex
   await button.click({ timeout: 8000 });
   await page.waitForTimeout(300);
 
-  const option = page.locator('div.selectbox-list button.btn-select').filter({ hasText: targetText });
-  const optionCount = await option.count();
-  if (optionCount !== 1) throw new Error(`select option count ${optionCount} for ${targetText}`);
-  await option.click({ timeout: 8000 });
+  let selected = null;
+  for (const optionText of targetTexts) {
+    const option = page.locator('div.selectbox-list button.btn-select').filter({ hasText: optionText });
+    const optionCount = await option.count();
+    if (optionCount === 1) {
+      await option.click({ timeout: 8000 });
+      selected = optionText;
+      break;
+    }
+    if (optionCount > 1) throw new Error(`select option count ${optionCount} for ${optionText}`);
+  }
+  if (!selected) throw new Error(`select option count 0 for ${targetTexts.join(' | ')}`);
   await page.waitForTimeout(300);
-  return { changed: true, value: targetText };
+  return { changed: true, value: selected };
 }
 
 async function saveSchedule(page) {
@@ -498,8 +518,8 @@ async function applyOneNaverAvailabilitySlot(page, slotRow, {
     return result;
   }
 
-  await selectScheduleFormButton(page, '적용시간', 0, timeLabel(slotRow.startTime));
-  await selectScheduleFormButton(page, '적용시간', 1, timeLabel(slotRow.endTime));
+  await selectScheduleFormButton(page, '적용시간', 0, timeLabelVariants(slotRow.startTime));
+  await selectScheduleFormButton(page, '적용시간', 1, timeLabelVariants(slotRow.endTime));
   await selectScheduleFormButton(page, '예약상태', 0, meta.formStatus);
   result.save = await saveSchedule(page);
   await scrollCalendarToHour(page, parseHour(slotRow.startTime));

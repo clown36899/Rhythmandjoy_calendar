@@ -213,6 +213,21 @@ def normalize_booking_time(time_text):
     return hour, minute
 
 
+def normalize_time_text(time_text):
+    hour, minute = normalize_booking_time(time_text)
+    return f'{hour:02d}:{minute:02d}'
+
+
+def normalize_event_datetime_fields(event_data):
+    normalized = dict(event_data or {})
+    if normalized.get('date'):
+        normalized['date'] = normalize_date(str(normalized['date']))
+    for key in ('start_time', 'end_time'):
+        if normalized.get(key):
+            normalized[key] = normalize_time_text(str(normalized[key]))
+    return normalized
+
+
 def parse_datetime(date_text, time_text):
     date_value = datetime.strptime(normalize_date(date_text), '%Y-%m-%d')
     hour, minute = normalize_booking_time(time_text)
@@ -254,8 +269,7 @@ def clean_time_or_none(value):
     if not value:
         return None
     if re.match(r'^\d{1,2}:\d{2}$', value):
-        hour, minute = normalize_booking_time(value)
-        return f'{hour:02d}:{minute:02d}:00'
+        return f'{normalize_time_text(value)}:00'
     return None
 
 
@@ -1734,6 +1748,7 @@ def find_calendar_event_by_reservation(service, target_calendar, reservation_num
 
 
 def create_calendar_event(service, event_data, logger, dedupe_google_calendar=False):
+    event_data = normalize_event_datetime_fields(event_data)
     target_calendar = event_data['target_calendar']
     calendar_id = CALENDAR_IDS[target_calendar]
     if dedupe_google_calendar:
@@ -1951,6 +1966,7 @@ def parse_google_event_datetime(value):
 def find_calendar_conflicts(service, calendar_key, event_data, logger):
     if not calendar_key or calendar_key not in CALENDAR_IDS:
         return []
+    event_data = normalize_event_datetime_fields(event_data)
     if not event_data.get('date') or not event_data.get('start_time') or not event_data.get('end_time'):
         return []
 
@@ -2105,7 +2121,7 @@ def parse_reservation(body, target_calendar):
         'name': matches['name'].group(1).strip(),
         'reservation_number': matches['number'].group(1).strip(),
         'product': matches['product'].group(1).strip(),
-        'date': datetime_match.group(1).strip(),
+        'date': normalize_date(datetime_match.group(1).strip()),
         'start_time': convert_to_24_hour(datetime_match.group(3), datetime_match.group(4)),
         'end_time': convert_to_24_hour(datetime_match.group(5), datetime_match.group(6)),
         'payment_status': matches['status'].group(1).strip(),
@@ -2133,7 +2149,7 @@ def parse_cancellation(body):
     }
     if datetime_match:
         deletion.update({
-            'date': datetime_match.group(1).strip(),
+            'date': normalize_date(datetime_match.group(1).strip()),
             'start_time': convert_to_24_hour(datetime_match.group(2), datetime_match.group(3)),
             'end_time': convert_to_24_hour(datetime_match.group(4), datetime_match.group(5)),
         })
