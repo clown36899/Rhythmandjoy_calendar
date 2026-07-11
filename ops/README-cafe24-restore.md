@@ -101,3 +101,5 @@ The restore script refuses any Apache config outside that allowlist.
 - `rhythmjoy_spacecloud_tasks`: durable queue for SpaceCloud follow-up work. Cancellation delete tasks for mapped hall rooms are consumed by the Mac SpaceCloud watcher and marked `done`, `already_gone`, `needs_review`, or `failed`.
 
 Keep `RHYTHMJOY_EMAIL_DB_REQUIRED=0` for normal operation so DB errors fall back to calendar-only processing. Keep `RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` unless you intentionally want the importer to search Google Calendar by reservation number before creating a new event.
+
+`RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` enables the report-only SpaceCloud reservation-complete email intake from the Naver mail folder displayed as `스페이스클라우드`. In this phase it records DB rows, checks Google Calendar conflicts, and sends Telegram reports only. Set it back to `0` and restart `my_email_service.service` to disable the new intake without affecting the existing Naver reservation/cancellation importer.

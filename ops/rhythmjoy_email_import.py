@@ -2,6 +2,7 @@
 import argparse
 import email
 import hashlib
+import html
 import imaplib
 import json
 import logging
@@ -47,6 +48,10 @@ MAILBOXES = {
     **ROOM_MAILBOXES,
     'Cancellation': 'Cancellation',
     'Cancelhall': 'Cancelhall',
+}
+
+SPACECLOUD_MAILBOXES = {
+    '&wqTTmMd0wqTQdLd8xrC03A-': 'SpaceCloud',
 }
 
 CALENDAR_IDS = {
@@ -98,6 +103,13 @@ def get_required_env(name):
 
 def env_flag(name, default='0'):
     return os.environ.get(name, default).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def configured_mailboxes(config):
+    mailboxes = dict(MAILBOXES)
+    if config.get('spacecloud_email_enabled'):
+        mailboxes.update(SPACECLOUD_MAILBOXES)
+    return mailboxes
 
 
 def setup_logging():
@@ -226,6 +238,17 @@ def clean_time_or_none(value):
         hour, minute = value.split(':', 1)
         return f'{int(hour):02d}:{minute}:00'
     return None
+
+
+def spacecloud_room_key_from_calendar(calendar_key):
+    room_key = calendar_to_spacecloud_room_key(calendar_key)
+    if room_key:
+        return room_key
+    if calendar_key == 'Aroom':
+        return 'a'
+    if calendar_key == 'Broom':
+        return 'b'
+    return ''
 
 
 def db_datetime_or_none(value):
@@ -380,6 +403,52 @@ def build_cancellation_email_record(config, mail_key, mailbox, decoded_id, messa
             'start_time': clean_time_or_none(deletion.get('start_time')),
             'end_time': clean_time_or_none(deletion.get('end_time')),
         })
+    return record
+
+
+def build_spacecloud_email_record(config, mail_key, mailbox, decoded_id, message_id, email_received_at, subject, body, event_data, calendar_key):
+    record = build_email_record_base(
+        config,
+        mail_key,
+        mailbox,
+        decoded_id,
+        message_id,
+        email_received_at,
+        subject,
+        body,
+        'spacecloud_reservation',
+        event_data,
+    )
+    record['target_calendar'] = calendar_key or ''
+    record['spacecloud_room_key'] = spacecloud_room_key_from_calendar(calendar_key)
+    if event_data:
+        record.update({
+            'reservation_number': truncate_text(event_data.get('reservation_number'), 64),
+            'reserver_name': truncate_text(event_data.get('name'), 128),
+            'product': truncate_text(event_data.get('product'), 255),
+            'reservation_date': clean_date_or_none(event_data.get('date')),
+            'start_time': clean_time_or_none(event_data.get('start_time')),
+            'end_time': clean_time_or_none(event_data.get('end_time')),
+            'payment_status': truncate_text(event_data.get('payment_status'), 64),
+            'price': truncate_text(event_data.get('price'), 64),
+        })
+    return record
+
+
+def build_ignored_email_record(config, mail_key, mailbox, decoded_id, message_id, email_received_at, subject, body, reason):
+    record = build_email_record_base(
+        config,
+        mail_key,
+        mailbox,
+        decoded_id,
+        message_id,
+        email_received_at,
+        subject,
+        body,
+        'spacecloud_ignored',
+        {'reason': reason, 'subject': subject},
+    )
+    record['processing_status'] = 'ignored'
     return record
 
 
@@ -814,6 +883,57 @@ def notify_cancellation_parse_failure(config, mailbox, email_id, subject, email_
     send_telegram_message(config, text, logger)
 
 
+def format_spacecloud_conflicts(conflicts):
+    if not conflicts:
+        return '없음'
+    lines = []
+    for conflict in conflicts[:5]:
+        lines.append(
+            f"- {conflict.get('start', '-')}~{conflict.get('end', '-')} "
+            f"{conflict.get('summary', '-')} "
+            f"source={conflict.get('source') or '-'} "
+            f"예약번호={conflict.get('reservation_number') or '-'}"
+        )
+    if len(conflicts) > 5:
+        lines.append(f'외 {len(conflicts) - 5}건')
+    return '\n'.join(lines)
+
+
+def notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, subject, email_received_at, logger):
+    status = '네이버 우선 충돌 감지' if conflicts else '네이버 차단 후보 감지'
+    text = (
+        f'스페이스클라우드 예약완료 메일 감지({status})\n'
+        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
+        '현재 단계: report-only\n'
+        '아직 구글 캘린더 등록/네이버 예약불가 변경은 하지 않았습니다.\n\n'
+        f"상품: {event_data.get('product') or '-'}\n"
+        f"캘린더: {calendar_key or '-'}\n"
+        f"메일수신: {email_received_at or '-'}\n"
+        f"예약시간: {reservation_time_text(event_data)}\n"
+        f"예약자명: {event_data.get('name') or '-'}\n"
+        f"스페이스클라우드 예약ID: {event_data.get('reservation_number') or '-'}\n"
+        f"인원: {event_data.get('headcount') or '-'}\n"
+        f"결제: {event_data.get('payment_method') or '-'} / {event_data.get('price') or '-'}\n\n"
+        f'기존 구글 캘린더 겹침:\n{format_spacecloud_conflicts(conflicts)}\n\n'
+        f'메일제목: {subject or "-"}'
+    )
+    send_telegram_message(config, text, logger)
+
+
+def notify_spacecloud_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
+    text = (
+        '스페이스클라우드 예약완료 메일 파싱 실패\n'
+        f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
+        '현재 단계: report-only\n'
+        f'메일함: {mailbox}\n'
+        f'메일ID: {email_id}\n'
+        f'메일수신: {email_received_at or "-"}\n'
+        f'메일제목: {subject or "-"}\n\n'
+        '메일 양식이 예상과 다를 수 있으니 확인 필요'
+    )
+    send_telegram_message(config, text, logger)
+
+
 def find_calendar_event_by_reservation(service, target_calendar, reservation_number, logger):
     if not reservation_number:
         return None
@@ -904,6 +1024,146 @@ def product_to_calendar_key(product):
     if 'E홀' in product:
         return 'Ehall'
     return None
+
+
+def clean_spacecloud_body(body):
+    text = re.sub(r'(?is)<(script|style).*?</\1>', ' ', body or '')
+    text = re.sub(r'(?is)<br\s*/?>', '\n', text)
+    text = re.sub(r'(?is)</(td|tr|p|div|li|h\d)>', '\n', text)
+    text = re.sub(r'(?is)<[^>]+>', ' ', text)
+    text = html.unescape(text)
+    text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+    text = re.sub(r'\n\s*\n+', '\n', text)
+    return text.strip()
+
+
+def compact_spacecloud_text(body):
+    return re.sub(r'\s+', ' ', clean_spacecloud_body(body)).strip()
+
+
+def extract_spacecloud_field(text, label, following_labels):
+    labels = '|'.join(re.escape(item) for item in following_labels)
+    pattern = rf'{re.escape(label)}\s+(.+?)(?=\s+(?:{labels})(?:\s+|$)|$)'
+    match = re.search(pattern, text, re.DOTALL)
+    return match.group(1).strip() if match else ''
+
+
+def parse_spacecloud_reservation_id(raw_message):
+    text = raw_message.decode('utf-8', errors='replace') if isinstance(raw_message, bytes) else str(raw_message or '')
+    match = re.search(r'reservation(?:%2F|/)(\d{5,})(?:%2F|/)', text, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return ''
+
+
+def normalize_spacecloud_hour(hour_text, minute_text=''):
+    hour = int(hour_text)
+    minute = int(minute_text or 0)
+    return f'{hour:02d}:{minute:02d}'
+
+
+def parse_spacecloud_reservation(body, raw_message, subject):
+    if '예약 완료' not in (subject or '') and '예약승인완료' not in (body or ''):
+        return None
+
+    text = compact_spacecloud_text(body)
+    product_match = re.search(r'(A홀|B홀|C홀|D홀|E홀)\s*[^\s,]+(?:\s*[^\s,]+)?-?외부신발금지', text)
+    if not product_match:
+        product_match = re.search(r'(A홀|B홀|C홀|D홀|E홀)[^\n,]*', clean_spacecloud_body(body))
+    content_match = re.search(
+        r'예약내용\s+(\d{4})[./-](\d{1,2})[./-](\d{1,2})\s+(\d{1,2})(?::(\d{2}))?\s*시\s*-\s*(\d{1,2})(?::(\d{2}))?\s*시',
+        text,
+    )
+
+    labels = ['예약공간', '예약내용', '예약인원', '예약옵션', '요청사항', '예약자명', '결제수단', '결제금액', '호스트센터로 이동']
+    name = extract_spacecloud_field(text, '예약자명', ['결제수단', '결제금액', '호스트센터로 이동'])
+    price = extract_spacecloud_field(text, '결제금액', ['호스트센터로 이동'])
+    payment_method = extract_spacecloud_field(text, '결제수단', ['결제금액', '호스트센터로 이동'])
+    headcount = extract_spacecloud_field(text, '예약인원', labels)
+    space_name = extract_spacecloud_field(text, '예약공간', labels)
+
+    if not product_match or not content_match or not name:
+        return None
+
+    product = product_match.group(0).strip()
+    year, month, day, start_hour, start_minute, end_hour, end_minute = content_match.groups()
+    date_text = f'{year}-{int(month):02d}-{int(day):02d}'
+    start_time = normalize_spacecloud_hour(start_hour, start_minute)
+    end_time = normalize_spacecloud_hour(end_hour, end_minute)
+    reservation_id = parse_spacecloud_reservation_id(raw_message)
+
+    return {
+        'source_platform': 'spacecloud',
+        'source_mode': 'report_only',
+        'name': name,
+        'reservation_number': reservation_id or '',
+        'product': product,
+        'space_name': space_name,
+        'date': date_text,
+        'start_time': start_time,
+        'end_time': end_time,
+        'headcount': headcount,
+        'payment_status': '예약완료',
+        'payment_method': payment_method,
+        'price': price,
+    }
+
+
+def parse_google_event_datetime(value):
+    if not value:
+        return None
+    if value.endswith('Z'):
+        value = value[:-1] + '+00:00'
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=KST)
+    return parsed.astimezone(KST)
+
+
+def find_calendar_conflicts(service, calendar_key, event_data, logger):
+    if not calendar_key or calendar_key not in CALENDAR_IDS:
+        return []
+    if not event_data.get('date') or not event_data.get('start_time') or not event_data.get('end_time'):
+        return []
+
+    target_start = parse_datetime(event_data['date'], event_data['start_time']).replace(tzinfo=KST)
+    target_end = parse_datetime(event_data['date'], event_data['end_time']).replace(tzinfo=KST)
+    if target_end <= target_start:
+        target_end += timedelta(days=1)
+
+    day_start = f"{event_data['date']}T00:00:00+09:00"
+    day_end = f"{event_data['date']}T23:59:59+09:00"
+    events = service.events().list(
+        calendarId=CALENDAR_IDS[calendar_key],
+        timeMin=day_start,
+        timeMax=day_end,
+        singleEvents=True,
+        orderBy='startTime',
+    ).execute().get('items', [])
+
+    conflicts = []
+    for item in events:
+        start = parse_google_event_datetime(item.get('start', {}).get('dateTime'))
+        end = parse_google_event_datetime(item.get('end', {}).get('dateTime'))
+        if not start or not end:
+            continue
+        if target_start < end and target_end > start:
+            private = item.get('extendedProperties', {}).get('private', {})
+            conflicts.append({
+                'calendar_key': calendar_key,
+                'summary': item.get('summary', ''),
+                'start': start.strftime('%Y-%m-%d %H:%M'),
+                'end': end.strftime('%Y-%m-%d %H:%M'),
+                'source': private.get('source', ''),
+                'reservation_number': private.get('reservationNumber', ''),
+                'event_id': item.get('id', ''),
+            })
+    if conflicts:
+        logger.info('SpaceCloud reservation has calendar conflict calendar=%s reservation=%s conflicts=%s', calendar_key, event_data.get('reservation_number'), len(conflicts))
+    return conflicts
 
 
 def reservation_time_text(payload):
@@ -1158,6 +1418,66 @@ def process_message(config, service, imap_connection, mailbox, target_calendar, 
             mark_seen(imap_connection, email_id, logger)
             return
 
+        if mailbox in SPACECLOUD_MAILBOXES:
+            is_reservation_complete = '예약 완료' in subject or '예약승인완료' in body
+            if not is_reservation_complete:
+                record = build_ignored_email_record(
+                    config,
+                    mail_key,
+                    mailbox,
+                    decoded_id,
+                    message_id,
+                    email_received_at,
+                    subject,
+                    body,
+                    'spacecloud_non_reservation_complete',
+                )
+                upsert_email_event(config, logger, record)
+                logger.info('SpaceCloud email ignored mailbox=%s email_id=%s subject=%s', mailbox, decoded_id, subject)
+                mark_seen(imap_connection, email_id, logger)
+                return
+
+            event_data = parse_spacecloud_reservation(body, raw_message, subject)
+            calendar_key = product_to_calendar_key(event_data.get('product', '')) if event_data else None
+            record = build_spacecloud_email_record(
+                config,
+                mail_key,
+                mailbox,
+                decoded_id,
+                message_id,
+                email_received_at,
+                subject,
+                body,
+                event_data,
+                calendar_key,
+            )
+            email_row = upsert_email_event(config, logger, record)
+            email_record_id = email_row.get('id') if email_row else None
+            if event_data and calendar_key:
+                conflicts = find_calendar_conflicts(service, calendar_key, event_data, logger)
+                event_data['calendar_key'] = calendar_key
+                event_data['conflict_count'] = len(conflicts)
+                update_email_processing(
+                    config,
+                    email_record_id,
+                    'report_only_conflict' if conflicts else 'report_only_ready',
+                    logger,
+                    error_text='',
+                )
+                notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, subject, email_received_at, logger)
+            else:
+                logger.warning('SpaceCloud reservation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
+                update_email_processing(
+                    config,
+                    email_record_id,
+                    'parse_failed',
+                    logger,
+                    error_text='spacecloud_reservation_parser_no_match',
+                )
+                notify_spacecloud_parse_failure(config, mailbox, decoded_id, subject, email_received_at, logger)
+            mark_seen(imap_connection, email_id, logger)
+            return
+
         logger.warning('Unknown mailbox configured: %s', mailbox)
         mark_seen(imap_connection, email_id, logger)
     except Exception as error:
@@ -1180,7 +1500,7 @@ def run_poll_once(config, logger):
         imap_connection = imaplib.IMAP4_SSL(config['imap_server'], config['imap_port'])
         imap_connection.login(config['naver_mail_username'], config['naver_mail_password'])
 
-        for mailbox, target_calendar in MAILBOXES.items():
+        for mailbox, target_calendar in configured_mailboxes(config).items():
             logger.info("Checking mailbox '%s'", mailbox)
             status, _ = imap_connection.select(mailbox)
             if status != 'OK':
@@ -1263,6 +1583,7 @@ def build_config():
         'db_name': db_name,
         'store_raw_email_body': env_flag('RHYTHMJOY_EMAIL_STORE_RAW_BODY', '1'),
         'dedupe_google_calendar': env_flag('RHYTHMJOY_EMAIL_DEDUPE_GOOGLE', '0'),
+        'spacecloud_email_enabled': env_flag('RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED', '0'),
     }
 
 

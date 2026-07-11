@@ -164,6 +164,7 @@ Operational limits:
 - Automatic SpaceCloud deletion only proceeds when the clicked popup is a direct-added schedule and the room, date/time, and `naverReservationNo` in the memo match the DB task. Tasks without a reservation number are left as `needs_review` instead of being deleted automatically.
 - Google Calendar deletion and SpaceCloud deletion are reported separately. `Google Calendar 자동삭제 완료` does not mean SpaceCloud was deleted; SpaceCloud task status must be `done` or `already_gone`.
 - Telegram alerts are sent for host action items and state changes: successful SpaceCloud uploads, SpaceCloud login/session expiry, upload failures, delete tasks that need review, watcher cycle errors, Naver cancellation detection, and cancellation email parse failures.
+- SpaceCloud reservation-complete email intake starts as report-only. When `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1`, the Cafe24 email importer reads the Naver mail folder displayed as `스페이스클라우드`, records parsed reservations in the DB, checks Google Calendar conflicts, and sends Telegram reports. It does not create Google Calendar events or change Naver SmartPlace availability in this phase.
 
 ## Naver Email DB Ledger
 
@@ -196,9 +197,11 @@ DB_NAME=
 RHYTHMJOY_EMAIL_DB_REQUIRED=0
 RHYTHMJOY_EMAIL_STORE_RAW_BODY=1
 RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0
+RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=0
 ```
 
 `RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` preserves the old behavior. Set it to `1` only if you intentionally want the importer to search Google Calendar by reservation number before creating an event.
+Set `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` only for the report-only SpaceCloud reservation email intake. Toggle it back to `0` and restart `my_email_service.service` to return to the previous importer behavior.
 
 LaunchAgent example:
 
