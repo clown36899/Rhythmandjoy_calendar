@@ -51,7 +51,7 @@ Options:
   --from <YYYY-MM-DD>       Defaults to today in KST.
   --days <n>                Defaults to 370.
   --rooms <keys>            Defaults to a,b,c,d,e.
-  --interval-seconds <n>    Defaults to 60 for watch mode.
+  --interval-seconds <n>    Defaults to 30 for watch mode.
   --limit-per-cycle <n>     Defaults to 3.
   --delete-limit-per-cycle <n>
                             Defaults to 2.
@@ -70,7 +70,7 @@ Examples:
   node tools/spacecloud-watch.mjs check-naver-login
   node tools/spacecloud-watch.mjs notify-test
   node tools/spacecloud-watch.mjs once --dry-run
-  node tools/spacecloud-watch.mjs watch --interval-seconds 60 --limit-per-cycle 3
+  node tools/spacecloud-watch.mjs watch --interval-seconds 30 --limit-per-cycle 3
   node tools/spacecloud-watch.mjs once --legacy-calendar-plan --dry-run
 `;
 }
@@ -88,7 +88,7 @@ function parseArgs(argv) {
     notifyCooldownSeconds: DEFAULT_NOTIFY_COOLDOWN_SECONDS,
     days: 370,
     rooms: 'a,b,c,d,e',
-    intervalSeconds: 60,
+    intervalSeconds: 30,
     limitPerCycle: 3,
     deleteLimitPerCycle: 2,
     naverBlockLimitPerCycle: 2,

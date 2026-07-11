@@ -149,7 +149,7 @@ node tools/spacecloud-watch.mjs once --limit-per-cycle 3
 Run continuous watch mode:
 
 ```bash
-node tools/spacecloud-watch.mjs watch --interval-seconds 60 --limit-per-cycle 3
+node tools/spacecloud-watch.mjs watch --interval-seconds 30 --limit-per-cycle 3
 ```
 
 What it does each cycle:

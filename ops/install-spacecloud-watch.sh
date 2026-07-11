@@ -5,7 +5,7 @@ REPO_ROOT="${SPACE_CLOUD_WATCH_REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 LABEL="com.rhythmjoy.spacecloud-watch"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 LOG_DIR="$REPO_ROOT/state/spacecloud-watch"
-INTERVAL_SECONDS="${SPACE_CLOUD_WATCH_INTERVAL_SECONDS:-60}"
+INTERVAL_SECONDS="${SPACE_CLOUD_WATCH_INTERVAL_SECONDS:-30}"
 LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_LIMIT_PER_CYCLE:-3}"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$LOG_DIR"
