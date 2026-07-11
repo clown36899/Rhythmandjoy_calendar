@@ -202,9 +202,12 @@ Default production behavior uses the Naver email DB row as the durable source be
 
 Booking ledger identity:
 
-- If an email has a reservation number, the ledger key is based on `source_platform + reservation_number`.
+- If a Naver email has a reservation number, the ledger key is based on `source_platform + reservation_number`.
+- SpaceCloud email identity never relies on a reservation number. SpaceCloud ledger keys are based on `source_platform + calendar + date + start/end + normalized reserver name`.
 - If an email has no reservation number, the fallback key is based on `source_platform + calendar + date + start/end + reserver name`.
-- Current production samples show Naver reservation emails and SpaceCloud reservation-complete emails include reservation numbers. Earlier SpaceCloud cancellation emails stored before this parser change were `spacecloud_ignored`, so they have no parsed reservation number in the DB. Future SpaceCloud cancellation emails are parsed and then enriched from the existing ledger or reservation email record when the cancellation email itself omits the reservation id.
+- Reserver names are normalized before SpaceCloud matching: whitespace is removed and trailing `님` suffixes are stripped repeatedly, so `김보현`, `김보현님`, and `김 보현 님` match the same ledger identity.
+- Current production samples show Naver reservation emails include reservation numbers. SpaceCloud emails are treated as having no reliable reservation number even when a URL contains an internal numeric id. Earlier SpaceCloud cancellation emails stored before this parser change were `spacecloud_ignored`, so they have no parsed reservation number in the DB. Future SpaceCloud cancellation emails are parsed and then matched from the existing ledger or reservation email record by room/date/time/name.
+- SpaceCloud settlement/admin notices in the same mail folder are not bookings. They are recorded only as ignored admin mail with reason `spacecloud_admin_settlement` and never update the booking ledger or automation task queue.
 
 The older Google Calendar plan upload path remains as a legacy/backfill path for calendar records that already existed before the DB upload queue was enabled. New mapped hall reservations should enter through `upload` tasks instead.
 

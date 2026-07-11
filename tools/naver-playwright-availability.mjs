@@ -531,12 +531,6 @@ export async function setNaverAvailability(context, task, {
     row.finishedAt = new Date().toISOString();
     return row;
   }
-  if (!row.reservationNo) {
-    row.status = 'needs-review';
-    row.error = 'SpaceCloud reservation number missing; Naver availability change requires a durable reservation id';
-    row.finishedAt = new Date().toISOString();
-    return row;
-  }
 
   try {
     const meta = successStatusesForTarget(targetStatus);
