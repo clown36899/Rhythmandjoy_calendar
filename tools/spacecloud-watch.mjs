@@ -997,7 +997,7 @@ function isLoginProblem(message) {
 }
 
 function isTransientRemoteProblem(message) {
-  return /ssh failed|timed out|ETIMEDOUT|SIGKILL|Connection timed out|Connection reset|Broken pipe/i.test(String(message || ''));
+  return /ssh failed|timed out|ETIMEDOUT|SIGKILL|Connection timed out|Connection reset|Connection closed by|Broken pipe/i.test(String(message || ''));
 }
 
 function rowsFromResult(rowOrError, key = 'failed') {
