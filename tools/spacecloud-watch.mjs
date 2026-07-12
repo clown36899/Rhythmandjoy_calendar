@@ -1290,11 +1290,11 @@ function naverRestoreFailureMessage(rowOrError) {
   ]);
 }
 
-function cycleErrorMessage(errorText) {
-  return compactNotice('⚠️ 실패: 자동화 감시', [
-    '상태: 감시 주기 오류로 중지',
+function cycleErrorMessage(errorText, { transient = false } = {}) {
+  return compactNotice(transient ? '⚠️ 주의: 카페24 연결 재시도' : '⚠️ 실패: 자동화 감시 중지', [
+    `상태: ${transient ? '일시 연결 오류, 다음 주기 자동 재시도' : '감시 주기 오류로 중지'}`,
     `원인: ${cleanTelegramText(errorText || '-', 180)}`,
-    '조치: 로그 확인 후 재시작',
+    `조치: ${transient ? '자동 재시도 중, 반복되면 네트워크/카페24 확인' : '로그 확인 후 재시작'}`,
   ]);
 }
 
@@ -2417,7 +2417,7 @@ async function runWatch(args) {
           await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorRow.error));
           logLine('login needed; waiting for manual login');
         } else if (isTransientRemoteProblem(errorRow.error)) {
-          await notifyWithCooldown(args, 'spacecloud-cycle-error', cycleErrorMessage(errorRow.error), {
+          await notifyWithCooldown(args, 'spacecloud-cycle-error', cycleErrorMessage(errorRow.error, { transient: true }), {
             cooldownSeconds: Math.min(args.notifyCooldownSeconds, 60 * 60),
           });
           logLine('transient remote problem; will retry next cycle');
