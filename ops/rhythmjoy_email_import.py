@@ -1584,6 +1584,14 @@ def alert_time_text():
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
+def success_alert_title(text):
+    return f'✅ 성공: {text}'
+
+
+def failure_alert_title(text):
+    return f'⚠️ 실패: {text}'
+
+
 def alert_event_line(event_data):
     return short_alert_text(
         f"{event_data.get('product') or '-'} / "
@@ -1602,13 +1610,13 @@ def format_spacecloud_delete_status(task, calendar_key):
         task_id = task.get('id') or '-'
         status = task.get('status') or 'pending'
         status_text = {
-            'pending': '삭제 대기',
+            'pending': '스페이스클라우드 삭제 대기',
             'running': '삭제 처리 중',
-            'done': '삭제 완료',
-            'already_gone': '이미 없음으로 처리됨',
-            'needs_review': '확인 필요',
+            'done': '스페이스클라우드 삭제 완료',
+            'already_gone': '스페이스클라우드 이미 없음',
+            'needs_review': '스페이스클라우드 삭제 확인 필요',
             'google_pending': '스페이스클라우드 삭제 후 구글 정리 대기',
-            'failed': '삭제 실패',
+            'failed': '스페이스클라우드 삭제 실패',
         }.get(status, f'상태 {status}')
         return f'{status_text} (작업 #{task_id})'
     if calendar_to_spacecloud_room_key(calendar_key):
@@ -1617,6 +1625,9 @@ def format_spacecloud_delete_status(task, calendar_key):
 
 
 def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spacecloud_task, subject, email_received_at):
+    title = success_alert_title('네이버 취소 메일 수집')
+    if calendar_to_spacecloud_room_key(calendar_key) and not spacecloud_task:
+        title = failure_alert_title('네이버 취소 삭제작업 생성')
     if google_deleted_count:
         google_delete_status = '자동삭제 완료'
     elif spacecloud_task:
@@ -1626,7 +1637,7 @@ def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spac
     spacecloud_delete_status = format_spacecloud_delete_status(spacecloud_task, calendar_key)
 
     return (
-        '네이버 예약 취소 감지\n'
+        f'{title}\n'
         f'{alert_time_text()}\n\n'
         f'대상: {alert_event_line(deletion)}\n'
         f"예약번호: {deletion.get('reservation_number') or '-'}\n"
@@ -1645,7 +1656,7 @@ def notify_cancellation(config, deletion, calendar_key, google_deleted_count, sp
 
 def notify_cancellation_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
     text = (
-        '네이버 예약 취소 메일 파싱 실패\n'
+        f"{failure_alert_title('네이버 취소 메일 파싱')}\n"
         f'{alert_time_text()}\n\n'
         f'메일: {mailbox} / {email_id}\n'
         f'메일수신: {email_received_at or "-"}\n'
@@ -1657,16 +1668,16 @@ def notify_cancellation_parse_failure(config, mailbox, email_id, subject, email_
 
 def format_naver_block_task_status(config, task, conflicts):
     if not config.get('spacecloud_naver_block_enabled'):
-        return 'report-only: 네이버 반영 안 함'
+        return '네이버 예약불가 반영 안 함(report-only)'
     if task:
         suffix = f" / 구글 겹침 참고 {len(conflicts)}건" if conflicts else ''
-        return f"네이버 반영 작업 저장됨: task={task.get('id') or '-'} status={task.get('status') or '-'}{suffix}"
-    return '네이버 반영 작업 미생성: DB/방 매핑/파싱 상태 확인 필요'
+        return f"네이버 예약불가 반영 대기: 작업 #{task.get('id') or '-'} / {task.get('status') or '-'}{suffix}"
+    return '네이버 예약불가 작업 생성 실패: DB/방 매핑/파싱 확인'
 
 
 def format_spacecloud_google_status(config, google_event, conflicts):
     if google_event:
-        return f"자동생성 완료: event_id={google_event.get('id') or '-'}"
+        return f"구글 기록 완료: event_id={google_event.get('id') or '-'}"
     if config.get('spacecloud_naver_block_enabled'):
         if conflicts:
             return f'후순위 대기: 네이버 반영 후 기록, 기존 구글 겹침 {len(conflicts)}건은 검증 참고'
@@ -1678,8 +1689,11 @@ def notify_spacecloud_reservation_report(config, event_data, calendar_key, confl
     status = '구글 기록 겹침 참고' if conflicts else '네이버 반영 대기'
     current_step = format_naver_block_task_status(config, naver_block_task, conflicts)
     google_status = format_spacecloud_google_status(config, google_event, conflicts)
+    title = success_alert_title('스페이스클라우드 예약 메일 수집')
+    if config.get('spacecloud_naver_block_enabled') and not naver_block_task:
+        title = failure_alert_title('스페이스클라우드 예약 작업 생성')
     text = (
-        '스페이스클라우드 예약 메일 감지\n'
+        f'{title}\n'
         f'{alert_time_text()}\n\n'
         f'상태: {status}\n'
         f'대상: {alert_event_line(event_data)}\n'
@@ -1693,7 +1707,7 @@ def notify_spacecloud_reservation_report(config, event_data, calendar_key, confl
 
 def notify_spacecloud_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
     text = (
-        '스페이스클라우드 예약완료 메일 파싱 실패\n'
+        f"{failure_alert_title('스페이스클라우드 예약완료 메일 파싱')}\n"
         f'{alert_time_text()}\n\n'
         f'메일: {mailbox} / {email_id}\n'
         f'메일수신: {email_received_at or "-"}\n'
@@ -1705,16 +1719,19 @@ def notify_spacecloud_parse_failure(config, mailbox, email_id, subject, email_re
 
 def format_naver_restore_task_status(config, task):
     if not config.get('spacecloud_naver_block_enabled'):
-        return 'report-only: 네이버 예약가능 복구 안 함'
+        return '네이버 예약가능 복구 안 함(report-only)'
     if task:
-        return f"네이버 예약가능 복구 작업 저장됨: task={task.get('id') or '-'} status={task.get('status') or '-'}"
-    return '네이버 예약가능 복구 작업 미생성: DB/방 매핑/파싱 상태 확인 필요'
+        return f"네이버 예약가능 복구 대기: 작업 #{task.get('id') or '-'} / {task.get('status') or '-'}"
+    return '네이버 예약가능 복구 작업 생성 실패: DB/방 매핑/파싱 확인'
 
 
 def notify_spacecloud_cancellation_report(config, event_data, calendar_key, naver_restore_task, subject, email_received_at, logger):
     current_step = format_naver_restore_task_status(config, naver_restore_task)
+    title = success_alert_title('스페이스클라우드 취소 메일 수집')
+    if config.get('spacecloud_naver_block_enabled') and not naver_restore_task:
+        title = failure_alert_title('스페이스클라우드 취소 복구작업 생성')
     text = (
-        '스페이스클라우드 취소완료 메일 감지\n'
+        f'{title}\n'
         f'{alert_time_text()}\n\n'
         f'대상: {alert_event_line(event_data)}\n'
         f"네이버: {short_alert_text(current_step, 120)}\n"
@@ -1727,7 +1744,7 @@ def notify_spacecloud_cancellation_report(config, event_data, calendar_key, nave
 
 def notify_spacecloud_cancellation_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
     text = (
-        '스페이스클라우드 취소완료 메일 파싱 실패\n'
+        f"{failure_alert_title('스페이스클라우드 취소완료 메일 파싱')}\n"
         f'{alert_time_text()}\n\n'
         f'메일: {mailbox} / {email_id}\n'
         f'메일수신: {email_received_at or "-"}\n'

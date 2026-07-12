@@ -1155,7 +1155,7 @@ function loginNeededMessage(rowOrError) {
     ? rowOrError
     : rows.map((row) => row.error || row.status).filter(Boolean).join('\n');
   const candidates = typeof rowOrError === 'object' ? rowOrError?.uploadCandidates : null;
-  return compactNotice('스페이스클라우드 로그인 필요', [
+  return compactNotice('⚠️ 실패: 로그인 필요', [
     '상태: 세션 확인 대기',
     `후보: ${candidates ?? '-'}건`,
     rows.length ? `대상:\n${formatBriefRows(rows, 1)}` : '',
@@ -1166,7 +1166,7 @@ function loginNeededMessage(rowOrError) {
 
 function uploadFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
-  return compactNotice('스페이스클라우드 자동등록 확인 필요', [
+  return compactNotice('⚠️ 실패: 스페이스클라우드 자동등록', [
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),
     `원인: ${firstFailureReason(rowOrError)}`,
@@ -1183,7 +1183,7 @@ function uploadSuccessMessage(row) {
       'calendar-record-warning',
     ].includes(taskRow.status))),
   ];
-  return compactNotice('스페이스클라우드 자동등록 완료', [
+  return compactNotice('✅ 성공: 스페이스클라우드 등록', [
     `처리: ${uploadedRows.length}건 / 남은 후보 ${row.remainingInPlan ?? '-'}건`,
     formatBriefRows(uploadedRows),
     googleSummary(uploadedRows),
@@ -1193,7 +1193,7 @@ function uploadSuccessMessage(row) {
 function uploadTaskFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
   const allGoogle = rows.length && rows.every((row) => row.status === 'google-create-failed');
-  return compactNotice('스페이스클라우드 등록 확인 필요', [
+  return compactNotice(allGoogle ? '⚠️ 실패: 구글 달력 기록' : '⚠️ 실패: 스페이스클라우드 등록', [
     `상태: ${allGoogle ? '구글 기록 재시도 예정' : '자동 처리 중지'}`,
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),
@@ -1204,7 +1204,7 @@ function uploadTaskFailureMessage(rowOrError) {
 function deleteFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
   const allGoogle = rows.length && rows.every((row) => row.status === 'google-delete-failed');
-  return compactNotice('네이버 취소 → 스페이스클라우드 삭제 확인 필요', [
+  return compactNotice(allGoogle ? '⚠️ 실패: 구글 달력 삭제' : '⚠️ 실패: 스페이스클라우드 삭제', [
     `상태: ${allGoogle ? '구글 달력만 재시도' : '스페이스클라우드 삭제 미완료'}`,
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),
@@ -1218,7 +1218,7 @@ function deleteSuccessMessage(row) {
     'deleted',
     'already-gone',
   ].includes(taskRow.status));
-  return compactNotice('네이버 취소 → 스페이스클라우드 삭제 완료', [
+  return compactNotice('✅ 성공: 스페이스클라우드 삭제', [
     `처리: ${deletedRows.length}건`,
     formatBriefRows(deletedRows),
     googleSummary(deletedRows),
@@ -1246,7 +1246,7 @@ function naverBlockSuccessMessage(row) {
     'google-recorded',
     'calendar-record-warning',
   ].includes(taskRow.status));
-  return compactNotice('네이버 반영 성공', [
+  return compactNotice('✅ 성공: 네이버 예약불가 반영', [
     `처리: ${processed.length}건`,
     formatBriefRows(processed),
     googleSummary(processed),
@@ -1256,7 +1256,7 @@ function naverBlockSuccessMessage(row) {
 function naverBlockFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
   const allGoogle = rows.length && rows.every((row) => row.status === 'google-create-failed');
-  return compactNotice('네이버 반영 확인 필요', [
+  return compactNotice(allGoogle ? '⚠️ 실패: 구글 달력 기록' : '⚠️ 실패: 네이버 예약불가 반영', [
     `상태: ${allGoogle ? '구글 기록 재시도 예정' : '자동 처리 중지'}`,
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),
@@ -1272,7 +1272,7 @@ function naverRestoreSuccessMessage(row) {
     'restore-skipped-not-owned',
     'calendar-record-warning',
   ].includes(taskRow.status));
-  return compactNotice('네이버 예약가능 복구 완료', [
+  return compactNotice('✅ 성공: 네이버 예약가능 복구', [
     `처리: ${processed.length}건`,
     formatBriefRows(processed),
     googleSummary(processed),
@@ -1282,7 +1282,7 @@ function naverRestoreSuccessMessage(row) {
 function naverRestoreFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
   const allGoogle = rows.length && rows.every((row) => row.status === 'google-delete-failed');
-  return compactNotice('네이버 예약가능 복구 확인 필요', [
+  return compactNotice(allGoogle ? '⚠️ 실패: 구글 달력 삭제' : '⚠️ 실패: 네이버 예약가능 복구', [
     `상태: ${allGoogle ? '구글 삭제 재시도 예정' : '자동 처리 중지'}`,
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),
@@ -1291,7 +1291,7 @@ function naverRestoreFailureMessage(rowOrError) {
 }
 
 function cycleErrorMessage(errorText) {
-  return compactNotice('스페이스클라우드 자동화 점검 필요', [
+  return compactNotice('⚠️ 실패: 자동화 감시', [
     '상태: 감시 주기 오류로 중지',
     `원인: ${cleanTelegramText(errorText || '-', 180)}`,
     '조치: 로그 확인 후 재시작',
@@ -2471,10 +2471,10 @@ async function main() {
   }
 
   if (args.command === 'notify-test') {
-    const result = await sendTelegram(args, `스페이스클라우드 자동화 알림 테스트
+    const result = await sendTelegram(args, `✅ 성공: 텔레그램 알림 테스트
 ${kstNowText()}
 
-이 메시지가 보이면 등록 완료, 로그인 필요, 등록 실패, 삭제 확인 필요, 감시 주기 오류 알림도 텔레그램으로 전송됩니다.`);
+이 메시지가 보이면 성공 알림은 ✅ 성공, 실패/확인 필요 알림은 ⚠️ 실패로 전송됩니다.`);
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else console.log(result.sent ? 'Telegram notification OK' : `Telegram notification skipped: ${result.reason}`);
     return;
