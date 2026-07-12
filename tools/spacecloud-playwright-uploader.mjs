@@ -64,7 +64,10 @@ function normalizeName(value) {
 function displayReserverName(value) {
   const normalized = normalizeName(value);
   if (!normalized) return '';
-  return /[가-힣]/u.test(normalized) ? `${normalized}님` : normalized;
+  const chars = Array.from(normalized);
+  if (chars.length === 1) return '*님';
+  if (chars.length === 2) return `${chars[0]}*님`;
+  return `${chars[0]}${'*'.repeat(chars.length - 2)}${chars[chars.length - 1]}님`;
 }
 
 function slotTimeText(value) {
@@ -403,6 +406,7 @@ function popupDeleteVerification(popupText, row) {
   const startHour = hourFromSlot(row.startTime);
   const endHour = hourFromSlot(row.endTime);
   const nameKey = normalizeName(row.reserverName);
+  const maskedNameKey = normalizeName(displayReserverName(row.reserverName));
   const reservationNo = String(row.reservationNo || '').trim();
   const timePatterns = [
     `${startHour}:00~${endHour}:00`,
@@ -419,7 +423,10 @@ function popupDeleteVerification(popupText, row) {
     errors.push(`time-mismatch:${row.startTime}-${row.endTime}`);
   }
 
-  const nameMatched = Boolean(nameKey && normalized.includes(nameKey));
+  const nameMatched = Boolean(
+    (nameKey && normalized.includes(nameKey))
+    || (maskedNameKey && normalized.includes(maskedNameKey))
+  );
   const reservationNoMatched = Boolean(reservationNo && normalized.includes(reservationNo));
   const identityMode = reservationNo ? 'reservation-number' : 'reserver-name-fallback';
   if (reservationNo) {
@@ -438,6 +445,7 @@ function popupDeleteVerification(popupText, row) {
       nameMatched,
       reservationNoMatched,
       nameKey,
+      maskedNameKey,
       reservationNo: reservationNo || '',
     },
   };

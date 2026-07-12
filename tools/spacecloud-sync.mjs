@@ -335,7 +335,10 @@ function normalizeName(value) {
 function displayReserverName(value) {
   const normalized = normalizeName(value);
   if (!normalized) return '';
-  return /[가-힣]/u.test(normalized) ? `${normalized}님` : normalized;
+  const chars = Array.from(normalized);
+  if (chars.length === 1) return '*님';
+  if (chars.length === 2) return `${chars[0]}*님`;
+  return `${chars[0]}${'*'.repeat(chars.length - 2)}${chars[chars.length - 1]}님`;
 }
 
 function normalizeTitleName(title) {
