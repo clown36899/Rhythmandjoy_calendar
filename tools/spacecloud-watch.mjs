@@ -1048,6 +1048,8 @@ function telegramStatusText(status) {
     'already-available': '이미 예약가능',
     'restore-skipped-not-owned': '복구 생략',
     submitted: '등록 성공',
+    deleted: '삭제 성공',
+    'already-gone': '이미 없음',
     'google-recorded': '구글 기록 완료',
     'calendar-record-warning': '구글 기록 경고',
     'google-create-failed': '구글 기록 재시도',
@@ -1155,6 +1157,18 @@ function deleteFailureMessage(rowOrError) {
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),
     `원인: ${firstFailureReason(rowOrError)}`,
+  ]);
+}
+
+function deleteSuccessMessage(row) {
+  const deletedRows = (row.deleteTasks?.rows || []).filter((taskRow) => [
+    'deleted',
+    'already-gone',
+  ].includes(taskRow.status));
+  return compactNotice('스페이스클라우드 자동삭제 완료', [
+    `처리: ${deletedRows.length}건`,
+    formatBriefRows(deletedRows),
+    googleSummary(deletedRows),
   ]);
 }
 
@@ -2254,6 +2268,14 @@ async function runWatch(args) {
           const result = await sendTelegram(args, naverRestoreSuccessMessage(row));
           if (result.sent) logLine(`telegram sent: naver-restore-success count=${row.naverRestoreTasks.rows.length}`);
           else logLine(`telegram naver restore success skipped: ${result.reason}`);
+        }
+        if (row.deleteTasks?.rows?.some((taskRow) => [
+          'deleted',
+          'already-gone',
+        ].includes(taskRow.status))) {
+          const result = await sendTelegram(args, deleteSuccessMessage(row));
+          if (result.sent) logLine(`telegram sent: spacecloud-delete-success count=${row.deleteTasks.rows.length}`);
+          else logLine(`telegram delete success skipped: ${result.reason}`);
         }
         if (row.failed?.length) {
           const errorText = row.failed.map((failedRow) => failedRow.error).join('\n');
