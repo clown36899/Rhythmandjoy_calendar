@@ -1073,6 +1073,58 @@ function firstFailureReason(rowOrError) {
   return cleanTelegramText(row.error || row.reason || row.calendarRecordWarning || row.status || '-', 180);
 }
 
+function firstProblemRow(rowOrError) {
+  return rowsFromResult(rowOrError).find((item) => (
+    item.error
+    || item.reason
+    || item.calendarRecordWarning
+    || item.status
+  )) || {};
+}
+
+function deleteFailureReasonText(rowOrError) {
+  const rows = rowsFromResult(rowOrError);
+  if (rows.length && rows.every((row) => row.status === 'google-delete-failed')) {
+    return '스페이스클라우드 삭제는 완료됐고, 구글 달력 삭제만 재시도 예정';
+  }
+
+  const row = firstProblemRow(rowOrError);
+  const raw = String(row.error || row.reason || row.calendarRecordWarning || row.status || '');
+
+  if (/no visible SpaceCloud event candidate matched/i.test(raw)) {
+    return '네이버 예약은 취소됐지만, 스페이스클라우드 달력에서 같은 방/날짜/시간의 직접추가(추) 예약을 못 찾음';
+  }
+  if (/reservation-number-mismatch/i.test(raw)) {
+    return '스페이스클라우드 일정은 찾았지만, 메모의 네이버 예약번호가 취소 메일과 다름';
+  }
+  if (/reserver-name-mismatch/i.test(raw)) {
+    return '스페이스클라우드 일정은 찾았지만, 예약자명이 취소 메일과 다름';
+  }
+  if (/multiple direct event candidates matched/i.test(raw)) {
+    return '같은 방/날짜/시간에 직접추가(추) 예약 후보가 여러 개라 자동삭제 중지';
+  }
+  if (/multiple non-direct event candidates matched/i.test(raw)) {
+    return '같은 방/날짜/시간의 예약은 보였지만 직접추가(추) 예약으로 확정하지 못함';
+  }
+  if (/not-direct-added/i.test(raw)) {
+    return '스페이스클라우드 일정은 찾았지만 직접추가(추) 예약이 아니라 자동삭제하지 않음';
+  }
+  if (/room-mismatch/i.test(raw)) {
+    return '스페이스클라우드 일정은 찾았지만 방 정보가 취소 메일과 다름';
+  }
+  if (/date-mismatch/i.test(raw)) {
+    return '스페이스클라우드 일정은 찾았지만 날짜가 취소 메일과 다름';
+  }
+  if (/time-mismatch/i.test(raw)) {
+    return '스페이스클라우드 일정은 찾았지만 시간이 취소 메일과 다름';
+  }
+  if (/identity missing/i.test(raw)) {
+    return '취소 메일에 자동 검증할 예약자명/예약번호가 부족함';
+  }
+
+  return cleanTelegramText(raw || '-', 180);
+}
+
 function googleSummary(rows) {
   if (!rows.length) return '구글=-';
   const counts = new Map();
@@ -1152,11 +1204,12 @@ function uploadTaskFailureMessage(rowOrError) {
 function deleteFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
   const allGoogle = rows.length && rows.every((row) => row.status === 'google-delete-failed');
-  return compactNotice('스페이스클라우드 자동삭제 확인 필요', [
-    `상태: ${allGoogle ? '구글 삭제 재시도 예정' : '자동 처리 중지'}`,
+  return compactNotice('네이버 취소 → 스페이스클라우드 삭제 확인 필요', [
+    `상태: ${allGoogle ? '구글 달력만 재시도' : '스페이스클라우드 삭제 미완료'}`,
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),
-    `원인: ${firstFailureReason(rowOrError)}`,
+    `이유: ${deleteFailureReasonText(rowOrError)}`,
+    '조치: 스페이스클라우드 달력에서 대상 예약 확인',
   ]);
 }
 
@@ -1165,7 +1218,7 @@ function deleteSuccessMessage(row) {
     'deleted',
     'already-gone',
   ].includes(taskRow.status));
-  return compactNotice('스페이스클라우드 자동삭제 완료', [
+  return compactNotice('네이버 취소 → 스페이스클라우드 삭제 완료', [
     `처리: ${deletedRows.length}건`,
     formatBriefRows(deletedRows),
     googleSummary(deletedRows),

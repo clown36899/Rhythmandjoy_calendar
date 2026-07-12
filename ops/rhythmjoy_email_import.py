@@ -1601,9 +1601,18 @@ def format_spacecloud_delete_status(task, calendar_key):
     if task:
         task_id = task.get('id') or '-'
         status = task.get('status') or 'pending'
-        return f'삭제작업 대기(status={status}, task_id={task_id})'
+        status_text = {
+            'pending': '삭제 대기',
+            'running': '삭제 처리 중',
+            'done': '삭제 완료',
+            'already_gone': '이미 없음으로 처리됨',
+            'needs_review': '확인 필요',
+            'google_pending': '스페이스클라우드 삭제 후 구글 정리 대기',
+            'failed': '삭제 실패',
+        }.get(status, f'상태 {status}')
+        return f'{status_text} (작업 #{task_id})'
     if calendar_to_spacecloud_room_key(calendar_key):
-        return '삭제작업 큐 미등록(DB 비활성/오류 가능)'
+        return '삭제 작업을 만들지 못함(DB/큐 확인 필요)'
     return '대상 아님(스페이스클라우드 방 매핑 없음)'
 
 
@@ -1621,8 +1630,9 @@ def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spac
         f'{alert_time_text()}\n\n'
         f'대상: {alert_event_line(deletion)}\n'
         f"예약번호: {deletion.get('reservation_number') or '-'}\n"
-        f'구글: {calendar_key or "-"} / {google_delete_status} {google_deleted_count}건\n'
+        f'다음작업: 스페이스클라우드에서 같은 예약 삭제\n'
         f'스페이스클라우드: {short_alert_text(spacecloud_delete_status, 100)}\n'
+        f'구글달력: {calendar_key or "-"} / {google_delete_status} {google_deleted_count}건\n'
         f'메일수신: {email_received_at or "-"}\n'
         f'{alert_mail_line(subject)}'
     )
