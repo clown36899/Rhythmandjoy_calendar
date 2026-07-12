@@ -290,29 +290,110 @@ async function findDirectEventCandidates(page, {
 
   return page.evaluate(({ day, startHour, endHour }) => {
     const normalize = (value) => String(value || '').replace(/\s+/g, '');
+    const pad = (value) => String(value).padStart(2, '0');
     const timePatterns = [
-      `추${startHour}~${endHour}`,
-      `추${String(startHour).padStart(2, '0')}~${String(endHour).padStart(2, '0')}`,
-      `추${startHour}~${String(endHour).padStart(2, '0')}`,
-      `추${String(startHour).padStart(2, '0')}~${endHour}`,
+      `${startHour}~${endHour}`,
+      `${pad(startHour)}~${pad(endHour)}`,
+      `${startHour}~${pad(endHour)}`,
+      `${pad(startHour)}~${endHour}`,
+      `${startHour}:00~${endHour}:00`,
+      `${pad(startHour)}:00~${pad(endHour)}:00`,
+      `${startHour}:00~${pad(endHour)}:00`,
+      `${pad(startHour)}:00~${endHour}:00`,
     ];
+    const eventSelector = [
+      'a',
+      'button',
+      '[onclick]',
+      '[role="button"]',
+      '.type1',
+      '.type2',
+      '.type3',
+      '.type4',
+      '.type5',
+      '.type6',
+    ].join(',');
     const rows = [];
+    const visibleLinks = [];
+    let dayCellText = '';
     const dayCells = [...document.querySelectorAll('.booking_wrap')];
     for (const dayCell of dayCells) {
       const firstLine = String(dayCell.innerText || '').split(/\n/)[0]?.trim();
       if (Number(firstLine) !== day) continue;
-      const links = [...dayCell.querySelectorAll('a.type5')];
-      links.forEach((link, index) => {
-        const text = normalize(link.innerText || link.textContent || '');
+      dayCellText = String(dayCell.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+      const seenElements = new Set();
+      const seenTexts = new Set();
+      const links = [...dayCell.querySelectorAll(eventSelector)].filter((link) => {
+        if (seenElements.has(link)) return false;
+        seenElements.add(link);
+        return true;
+      });
+      links.forEach((link) => {
+        const visibleText = String(link.innerText || link.textContent || '').replace(/\s+/g, ' ').trim();
+        const text = normalize(visibleText);
+        if (!text) return;
+        const className = String(link.getAttribute('class') || '');
+        const href = String(link.getAttribute('href') || '');
+        const debugRow = {
+          text,
+          visibleText: visibleText.slice(0, 120),
+          className,
+          href,
+          tagName: String(link.tagName || '').toLowerCase(),
+        };
+        if (visibleLinks.length < 30) visibleLinks.push(debugRow);
         const timeMatches = timePatterns.some((pattern) => text.includes(pattern));
         if (timeMatches) {
-          link.setAttribute('data-codex-delete-candidate', String(index));
-          rows.push({ index, text });
+          const dedupeKey = `${text}|${href}|${className}`;
+          if (seenTexts.has(dedupeKey)) return;
+          seenTexts.add(dedupeKey);
+          const index = String(rows.length);
+          link.setAttribute('data-codex-delete-candidate', index);
+          rows.push({
+            index,
+            text,
+            visibleText,
+            className,
+            href,
+            tagName: debugRow.tagName,
+            directHint: text.includes('추') || /\btype5\b/.test(className),
+          });
         }
       });
     }
-    return rows;
+    return {
+      candidates: rows,
+      dayCellText,
+      visibleLinks,
+    };
   }, { day, startHour, endHour });
+}
+
+function selectDeleteCandidate(candidates) {
+  const rows = Array.isArray(candidates) ? candidates : [];
+  const directRows = rows.filter((candidate) => candidate.directHint);
+  if (directRows.length === 1) {
+    return {
+      candidate: directRows[0],
+      ignoredCandidates: rows.filter((candidate) => candidate !== directRows[0]),
+    };
+  }
+  if (directRows.length > 1) {
+    return {
+      error: `multiple direct event candidates matched: ${directRows.map((candidate) => candidate.text).join(' / ')}`,
+    };
+  }
+  if (rows.length === 1) {
+    return { candidate: rows[0], ignoredCandidates: [] };
+  }
+  if (rows.length > 1) {
+    return {
+      error: `multiple non-direct event candidates matched: ${rows.map((candidate) => candidate.text).join(' / ')}`,
+    };
+  }
+  return {
+    error: 'no visible SpaceCloud event candidate matched room/date/time',
+  };
 }
 
 function popupDeleteVerification(popupText, row) {
@@ -321,6 +402,8 @@ function popupDeleteVerification(popupText, row) {
   const room = SPACECLOUD_ROOMS[row.roomKey];
   const startHour = hourFromSlot(row.startTime);
   const endHour = hourFromSlot(row.endTime);
+  const nameKey = normalizeName(row.reserverName);
+  const reservationNo = String(row.reservationNo || '').trim();
   const timePatterns = [
     `${startHour}:00~${endHour}:00`,
     `${String(startHour).padStart(2, '0')}:00~${String(endHour).padStart(2, '0')}:00`,
@@ -335,13 +418,29 @@ function popupDeleteVerification(popupText, row) {
   if (!timePatterns.some((pattern) => normalized.includes(pattern))) {
     errors.push(`time-mismatch:${row.startTime}-${row.endTime}`);
   }
-  if (!row.reservationNo) {
-    errors.push('reservation-number-missing-in-task');
-  } else if (!normalized.includes(String(row.reservationNo))) {
-    errors.push(`reservation-number-mismatch:${row.reservationNo}`);
+
+  const nameMatched = Boolean(nameKey && normalized.includes(nameKey));
+  const reservationNoMatched = Boolean(reservationNo && normalized.includes(reservationNo));
+  const identityMode = reservationNo ? 'reservation-number' : 'reserver-name-fallback';
+  if (reservationNo) {
+    if (!reservationNoMatched) errors.push(`reservation-number-mismatch:${reservationNo}`);
+  } else if (nameKey) {
+    if (!nameMatched) errors.push(`reserver-name-mismatch:${nameKey}`);
+  } else {
+    errors.push('identity-missing');
   }
 
-  return { ok: errors.length === 0, errors };
+  return {
+    ok: errors.length === 0,
+    errors,
+    identity: {
+      mode: identityMode,
+      nameMatched,
+      reservationNoMatched,
+      nameKey,
+      reservationNo: reservationNo || '',
+    },
+  };
 }
 
 async function openDatePicker(page) {
@@ -607,9 +706,9 @@ export async function deleteSpacecloudDirectReservation(context, task) {
     startedAt: new Date().toISOString(),
   };
   row.reservationCalendarUrl = task.reservationCalendarUrl || reservationCalendarUrl(row.roomKey);
-  if (!row.reservationNo) {
+  if (!row.reservationNo && !normalizeName(row.reserverName)) {
     row.status = 'needs-review';
-    row.error = 'reservation number missing; automatic SpaceCloud delete requires room, time, and reservation number';
+    row.error = 'identity missing; automatic SpaceCloud delete requires reserver name or reservation number';
     row.finishedAt = new Date().toISOString();
     return row;
   }
@@ -633,22 +732,29 @@ export async function deleteSpacecloudDirectReservation(context, task) {
     }
 
     await gotoCalendarMonth(page, row.date);
-    const candidates = await findDirectEventCandidates(page, row);
+    const candidateSearch = await findDirectEventCandidates(page, row);
+    const candidates = candidateSearch.candidates || [];
+    row.candidateSearch = candidateSearch;
     row.candidates = candidates;
 
     if (candidates.length === 0) {
-      row.status = 'already-gone';
-      row.finishedAt = new Date().toISOString();
-      return row;
-    }
-    if (candidates.length > 1) {
       row.status = 'needs-review';
-      row.error = `multiple direct events matched: ${candidates.map((candidate) => candidate.text).join(' / ')}`;
+      row.error = 'no visible SpaceCloud event candidate matched room/date/time; not marking as deleted';
       row.finishedAt = new Date().toISOString();
       return row;
     }
 
-    const selector = `a.type5[data-codex-delete-candidate="${candidates[0].index}"]`;
+    const selection = selectDeleteCandidate(candidates);
+    if (!selection.candidate) {
+      row.status = 'needs-review';
+      row.error = selection.error;
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+    row.selectedCandidate = selection.candidate;
+    if (selection.ignoredCandidates?.length) row.ignoredCandidates = selection.ignoredCandidates;
+
+    const selector = `[data-codex-delete-candidate="${selection.candidate.index}"]`;
     await page.locator(selector).first().click({ timeout: 8000 });
     if (!(await waitVisible(page, '.layer_popup.reservation_state', 8000))) {
       throw new Error('reservation popup did not open after clicking event');
@@ -678,13 +784,17 @@ export async function deleteSpacecloudDirectReservation(context, task) {
     await page.waitForTimeout(1500);
 
     await waitHidden(page, '.layer_popup.reservation_state', 10000);
-    const remaining = await findDirectEventCandidates(page, row);
-    if (remaining.length === 0) {
+    const remainingSearch = await findDirectEventCandidates(page, row);
+    const remaining = remainingSearch.candidates || [];
+    const directRemaining = remaining.filter((candidate) => candidate.directHint);
+    row.remainingSearch = remainingSearch;
+    if (directRemaining.length === 0) {
       row.status = 'deleted';
+      if (remaining.length > 0) row.remainingNonDirectCandidates = remaining;
     } else {
       row.status = 'failed';
-      row.error = `event still visible after delete: ${remaining.map((candidate) => candidate.text).join(' / ')}`;
-      row.remaining = remaining;
+      row.error = `direct event still visible after delete: ${directRemaining.map((candidate) => candidate.text).join(' / ')}`;
+      row.remaining = directRemaining;
     }
     if (dialogTypes.length > 0) row.dialogTypes = dialogTypes;
     row.finishedAt = new Date().toISOString();
