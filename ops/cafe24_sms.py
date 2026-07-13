@@ -150,8 +150,9 @@ def parse_send_response(raw):
         remaining = int(rest) if rest.strip().isdigit() else None
     else:
         code, remaining = text, None
+    normalized_code = re.sub(r'[^a-z]+', '', code.lower())
     return {
-        'ok': code in ('success', 'reserved', 'TEST SUCCESS'),
+        'ok': normalized_code in ('success', 'reserved', 'testsuccess'),
         'code': code,
         'remaining': remaining,
         'raw': text,
