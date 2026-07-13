@@ -1,0 +1,126 @@
+# Ubuntu Main PC For SpaceCloud/Naver Automation
+
+This document records the Ubuntu mini PC setup used to move the browser automation role away from the Mac.
+
+## Roles
+
+- Cafe24 remains the server/source-of-truth layer: email ingestion, DB ledger, website, Google Calendar record updates, and Aligo SMS env.
+- The Ubuntu mini PC is the browser automation terminal: it reads the DB queue and applies Naver/SpaceCloud UI changes through Chrome/Playwright.
+- The Mac setup remains the rollback path. Do not delete the Mac launch agent unless the user explicitly asks.
+
+## Tested Ubuntu Device
+
+- SSH: `kiosk-j@172.30.1.13`
+- OS: Ubuntu 24.04
+- CPU: Intel Celeron J4005, 2 cores
+- RAM: 8 GB
+- Disk: about 116 GB root disk, about 94 GB free after setup
+- Kiosk Chrome: still runs separately with profile `/home/kiosk-j/.config/kiosk-chrome-profile`
+- Automation Chrome profile: `/home/kiosk-j/.spacecloud-automation`
+
+## Installed Packages
+
+The package source was repaired to include `main universe restricted multiverse` for `noble`, `noble-updates`, `noble-backports`, and `noble-security`.
+
+Installed:
+
+- `git`
+- `curl`
+- `nodejs`
+- `npm`
+- `xvfb`
+
+Repo-local dependency:
+
+```bash
+cd ~/Rhythmjoy_calendar
+npm install playwright
+```
+
+## Files Required On Ubuntu
+
+```text
+/home/kiosk-j/Rhythmjoy_calendar
+/home/kiosk-j/.ssh/swingenjoy_cafe24_ed25519
+/home/kiosk-j/.ssh/swingenjoy_cafe24_ed25519.pub
+/home/kiosk-j/.rhythmjoy-ingestion.env
+/home/kiosk-j/.spacecloud-automation
+/home/kiosk-j/rhythmjoy-logs/spacecloud-watch
+```
+
+The Cafe24 SSH key is required because `tools/spacecloud-watch.mjs` reads and mutates the server DB queue through SSH scripts.
+
+The local env file is used for Telegram notification settings. Aligo SMS values remain on Cafe24 and are loaded from the server env during SMS sends.
+
+## Validation Commands
+
+Run from the Ubuntu device:
+
+```bash
+cd ~/Rhythmjoy_calendar
+
+node tools/spacecloud-watch.mjs notify-test \
+  --env-file /home/kiosk-j/.rhythmjoy-ingestion.env \
+  --profile-dir /home/kiosk-j/.spacecloud-automation \
+  --work-dir /home/kiosk-j/rhythmjoy-logs/spacecloud-watch
+
+node tools/spacecloud-watch.mjs sms-test \
+  --to 01048017180 \
+  --sms-test-source naver \
+  --env-file /home/kiosk-j/.rhythmjoy-ingestion.env \
+  --profile-dir /home/kiosk-j/.spacecloud-automation \
+  --work-dir /home/kiosk-j/rhythmjoy-logs/spacecloud-watch \
+  --json
+
+xvfb-run -a node tools/spacecloud-watch.mjs once \
+  --env-file /home/kiosk-j/.rhythmjoy-ingestion.env \
+  --profile-dir /home/kiosk-j/.spacecloud-automation \
+  --work-dir /home/kiosk-j/rhythmjoy-logs/spacecloud-watch \
+  --no-telegram \
+  --json
+```
+
+## Service
+
+Install the user service without enabling it:
+
+```bash
+cd ~/Rhythmjoy_calendar
+bash ops/install-ubuntu-spacecloud-watch.sh
+```
+
+Enable only after both Naver and SpaceCloud are logged in inside `/home/kiosk-j/.spacecloud-automation`:
+
+```bash
+systemctl --user enable --now rhythmjoy-spacecloud-watch.service
+```
+
+Check logs:
+
+```bash
+tail -n 80 ~/rhythmjoy-logs/spacecloud-watch/launchd.log
+journalctl --user -u rhythmjoy-spacecloud-watch.service -n 80 --no-pager
+```
+
+Stop Ubuntu automation:
+
+```bash
+systemctl --user disable --now rhythmjoy-spacecloud-watch.service
+```
+
+## Mac Rollback
+
+The Mac launch agent is the rollback path. Re-enable it from the Mac repo:
+
+```bash
+cd /Users/inteyeo/Rhythmjoy_calendar
+bash ops/install-spacecloud-watch.sh
+```
+
+Do not run Mac and Ubuntu watchers at the same time after login. They share the same DB queue and can race on the same task.
+
+## Notes
+
+- The Ubuntu watcher should run through `xvfb-run` so the automation browser does not interrupt the kiosk display.
+- The watcher interval is 60 seconds and per-cycle limits are set to 1 to keep CPU usage predictable on the J4005.
+- Login is still required once on the Ubuntu automation Chrome profile for Naver and SpaceCloud.
