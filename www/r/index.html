@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>리듬앤조이 예약 안내</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #171717;
+      --muted: #666;
+      --line: #dedede;
+      --warn: #b42318;
+      --bg: #f7f7f5;
+      --panel: #fff;
+      --accent: #215f9a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+      line-height: 1.55;
+      word-break: keep-all;
+    }
+
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 24px 18px 44px;
+    }
+
+    header {
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--ink);
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 1.75rem;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    section {
+      margin-top: 18px;
+      padding: 18px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.15rem;
+      letter-spacing: 0;
+    }
+
+    .warning-title {
+      color: var(--warn);
+    }
+
+    ol,
+    ul {
+      margin: 0;
+      padding-left: 1.25rem;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    .key-info {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 8px 12px;
+      margin: 0;
+    }
+
+    .key-info dt {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .key-info dd {
+      margin: 0;
+      font-weight: 700;
+    }
+
+    a {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .note {
+      margin-top: 12px;
+      color: var(--warn);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>리듬앤조이 예약 안내</h1>
+      <p class="subtitle">예약 확정 후 이용 전 꼭 확인해주세요. 별도 인원추가금은 없습니다.</p>
+    </header>
+
+    <section>
+      <h2>입장 정보</h2>
+      <dl class="key-info">
+        <dt>주소</dt>
+        <dd>동작구 남부순환로 2077 건축회관 문구점 건물 지하 2층</dd>
+        <dt>건물 비번</dt>
+        <dd>8228*</dd>
+        <dt>지하 비번</dt>
+        <dd>따로 없습니다</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2 class="warning-title">금지사항: 위반 시 벌금 5만원</h2>
+      <ol>
+        <li>바닥에 스키드마크, 진한색 고무 자국을 남기는 신발과 쇠가 달린 탭신발은 금지입니다. 구비된 탭판 4개를 사용하거나 본인 탭보드 위에서만 사용 가능합니다.</li>
+        <li>징, 장구, 드럼 등 타악기 사용은 불가합니다.</li>
+        <li>외부신발은 금지입니다.</li>
+        <li>냄새나는 음식은 금지입니다. 치킨, 떡볶이, 김밥, 샌드위치, 닭강정, 음료 배달은 가능하지만 짬뽕 등 중식 배달은 절대 불가입니다.</li>
+      </ol>
+      <p class="note">적발 시 환불 없는 퇴장 조치가 진행됩니다.</p>
+    </section>
+
+    <section>
+      <h2>퇴실 전 확인</h2>
+      <ul>
+        <li>냉난방기를 끄지 않을 경우 만원 벌금이 있습니다.</li>
+        <li>오가실 때 건물 문단속을 꼭 확인해주세요.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>당일 3시간 안쪽 예약</h2>
+      <p>당일 3시간 안쪽 예약은 네이버지도 리듬앤조이에서 가능합니다.</p>
+      <p><a href="https://naver.me/F88eBpM0">네이버지도 리듬앤조이 열기</a></p>
+    </section>
+  </main>
+</body>
+</html>
