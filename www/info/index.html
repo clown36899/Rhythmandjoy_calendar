@@ -85,24 +85,72 @@
 
     .key-info {
       display: grid;
-      grid-template-columns: 76px minmax(0, 1fr);
-      gap: 8px 12px;
+      gap: 8px;
       margin: 0;
     }
 
-    .key-info dt {
+    .info-row {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr);
+      gap: 8px 12px;
+      align-items: center;
+    }
+
+    .address-row {
+      grid-template-columns: 76px minmax(0, 1fr) auto;
+    }
+
+    .info-label {
       color: var(--muted);
       font-weight: 800;
     }
 
-    .key-info dd {
-      margin: 0;
+    .info-value {
       font-weight: 800;
     }
 
     .address-value {
-      white-space: nowrap;
-      font-size: 0.94rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 0.93rem;
+      line-height: 1.35;
+      font-weight: 800;
+    }
+
+    .address-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .icon-action {
+      display: inline-flex;
+      width: 38px;
+      height: 38px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #bfd8cf;
+      border-radius: 8px;
+      background: var(--accent-bg);
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .icon-action svg {
+      width: 20px;
+      height: 20px;
+      stroke-width: 2.4;
+    }
+
+    .copy-status {
+      min-height: 1.2em;
+      margin-top: 5px;
+      color: var(--accent);
+      font-size: 0.82rem;
+      font-weight: 800;
     }
 
     .section-warning {
@@ -154,6 +202,14 @@
 
     .ok-mark {
       color: var(--accent);
+      font-size: 1.08em;
+      font-weight: 900;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .no-mark {
+      color: var(--warn);
       font-size: 1.08em;
       font-weight: 900;
       text-decoration: underline;
@@ -283,13 +339,27 @@
         padding: 15px;
       }
 
-      .key-info {
-        grid-template-columns: 64px minmax(0, 1fr);
+      .info-row {
+        grid-template-columns: 58px minmax(0, 1fr);
         gap: 7px 8px;
       }
 
+      .address-row {
+        grid-template-columns: 58px minmax(0, 1fr) auto;
+      }
+
       .address-value {
-        font-size: 0.72rem;
+        font-size: 0.73rem;
+      }
+
+      .icon-action {
+        width: 34px;
+        height: 34px;
+      }
+
+      .icon-action svg {
+        width: 18px;
+        height: 18px;
       }
     }
 
@@ -309,16 +379,44 @@
 
     <section>
       <h2>입장 정보</h2>
-      <dl class="key-info">
-        <dt>주소</dt>
-        <dd class="address-value">동작구 남부순환로 2077 건축회관 문구점 건물 지하 2층</dd>
-        <dt>건물 비번</dt>
-        <dd>8228*</dd>
-        <dt>지하 비번</dt>
-        <dd>따로 없습니다</dd>
-      </dl>
+      <div class="key-info">
+        <div class="info-row address-row">
+          <div class="info-label">주소 :</div>
+          <div class="address-value" id="studioAddress" data-copy-text="동작구 남부순환로 2077 건축회관 문구점 건물 지하 2층">
+            <span>동작구 남부순환로 2077 건축회관</span>
+            <span>문구점 건물 지하 2층</span>
+          </div>
+          <div class="address-actions" aria-label="주소 도구">
+            <button class="icon-action" type="button" data-copy-address aria-label="주소 복사" title="주소 복사">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+            <a class="icon-action" href="https://naver.me/F88eBpM0" target="_blank" rel="noopener" aria-label="네이버 지도 열기" title="네이버 지도">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+            </a>
+          </div>
+        </div>
+        <p class="copy-status" data-copy-status aria-live="polite"></p>
+        <div class="info-row">
+          <div class="info-label">건물 비번 :</div>
+          <div class="info-value">8228*</div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">지하 비번 :</div>
+          <div class="info-value">따로 없습니다</div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">문의 :</div>
+          <div class="info-value"><a href="tel:01048017180">010-4801-7180</a></div>
+        </div>
+      </div>
       <p class="fee-note">인원추가금없음</p>
-      <p class="shoe-note">탱고화 등 플로어신발 <span class="ok-mark">가능</span></p>
+      <p class="shoe-note">탱고화 등 플로어신발 <span class="ok-mark">가능</span> / 탭댄스화(쇠징) <span class="no-mark">불가</span></p>
     </section>
 
     <section class="section-warning">
@@ -380,6 +478,30 @@
     if (normalizedPlatform === 'naver' || normalizedPlatform === 'sc') {
       document.body.classList.add('platform-filtered');
       document.body.dataset.platform = normalizedPlatform;
+    }
+
+    const copyButton = document.querySelector('[data-copy-address]');
+    const addressNode = document.querySelector('#studioAddress');
+    const copyStatus = document.querySelector('[data-copy-status]');
+    if (copyButton && addressNode) {
+      copyButton.addEventListener('click', async () => {
+        const text = addressNode.dataset.copyText || addressNode.textContent.trim();
+        try {
+          await navigator.clipboard.writeText(text);
+          if (copyStatus) copyStatus.textContent = '주소 복사 완료';
+        } catch (error) {
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.setAttribute('readonly', '');
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          textarea.remove();
+          if (copyStatus) copyStatus.textContent = '주소 복사 완료';
+        }
+      });
     }
   </script>
 </body>
