@@ -15,6 +15,8 @@ APP_ROOT = Path(os.environ.get('RHYTHMJOY_APP_ROOT', '/home/clown313python/myapp
 ENV_FILE = Path(os.environ.get('RHYTHMJOY_ENV_FILE', APP_ROOT / '.env'))
 DEFAULT_SMS_URL = 'https://sslsms.cafe24.com/sms_sender.php'
 DEFAULT_REMAIN_URL = 'https://sslsms.cafe24.com/sms_remain.php'
+DEFAULT_ALIGO_SEND_URL = 'https://apis.aligo.in/send/'
+DEFAULT_ALIGO_REMAIN_URL = 'https://apis.aligo.in/remain/'
 
 
 class SmsConfigError(RuntimeError):
@@ -97,15 +99,30 @@ def infer_sms_type(message, requested='auto'):
 
 def load_config():
     load_env_file()
-    sender = os.environ.get('CAFE24_SMS_SENDER', '').strip()
-    sender_parts = split_phone(sender) if sender else ('', '', '')
+    provider = os.environ.get('RHYTHMJOY_SMS_PROVIDER', 'auto').strip().lower() or 'auto'
+    aligo_user_id = os.environ.get('ALIGO_SMS_USER_ID', os.environ.get('ALIGO_USER_ID', '')).strip()
+    aligo_api_key = os.environ.get('ALIGO_SMS_API_KEY', os.environ.get('ALIGO_API_KEY', '')).strip()
+    aligo_sender = os.environ.get('ALIGO_SMS_SENDER', os.environ.get('ALIGO_SENDER', '')).strip()
+    if provider == 'auto':
+        provider = 'aligo' if aligo_user_id and aligo_api_key and aligo_sender else 'cafe24'
+    if provider not in ('cafe24', 'aligo'):
+        raise SmsConfigError(f'Unsupported RHYTHMJOY_SMS_PROVIDER: {provider}')
+
+    cafe24_sender = os.environ.get('CAFE24_SMS_SENDER', '').strip()
+    cafe24_sender_parts = split_phone(cafe24_sender) if cafe24_sender else ('', '', '')
     return {
-        'user_id': get_required_env('CAFE24_SMS_USER_ID'),
-        'secure': get_required_env('CAFE24_SMS_SECURE_KEY'),
-        'sender': sender,
-        'sender_parts': sender_parts,
+        'provider': provider,
+        'user_id': os.environ.get('CAFE24_SMS_USER_ID', '').strip(),
+        'secure': os.environ.get('CAFE24_SMS_SECURE_KEY', '').strip(),
+        'sender': cafe24_sender,
+        'sender_parts': cafe24_sender_parts,
         'send_url': os.environ.get('CAFE24_SMS_SEND_URL', DEFAULT_SMS_URL),
         'remain_url': os.environ.get('CAFE24_SMS_REMAIN_URL', DEFAULT_REMAIN_URL),
+        'aligo_user_id': aligo_user_id,
+        'aligo_api_key': aligo_api_key,
+        'aligo_sender': aligo_sender,
+        'aligo_send_url': os.environ.get('ALIGO_SMS_SEND_URL', DEFAULT_ALIGO_SEND_URL),
+        'aligo_remain_url': os.environ.get('ALIGO_SMS_REMAIN_URL', DEFAULT_ALIGO_REMAIN_URL),
         'timeout': int(os.environ.get('CAFE24_SMS_TIMEOUT_SECONDS', '12')),
         'charset': os.environ.get('CAFE24_SMS_CHARSET', 'utf-8'),
         'dry_run': env_flag('CAFE24_SMS_DRY_RUN', '0'),
@@ -163,6 +180,10 @@ def build_send_payload(config, to, message, *, subject='', sms_type='auto', test
     sender = config['sender']
     if not sender:
         raise SmsConfigError('Missing required environment variable: CAFE24_SMS_SENDER')
+    if not config.get('user_id'):
+        raise SmsConfigError('Missing required environment variable: CAFE24_SMS_USER_ID')
+    if not config.get('secure'):
+        raise SmsConfigError('Missing required environment variable: CAFE24_SMS_SECURE_KEY')
     sphone1, sphone2, sphone3 = config['sender_parts']
     msg_type = infer_sms_type(message, sms_type)
     return {
@@ -182,8 +203,132 @@ def build_send_payload(config, to, message, *, subject='', sms_type='auto', test
     }
 
 
+def build_aligo_send_payload(config, to, message, *, subject='', sms_type='auto', testflag='', scheduled_date='', scheduled_time=''):
+    if not config.get('aligo_user_id'):
+        raise SmsConfigError('Missing required environment variable: ALIGO_SMS_USER_ID')
+    if not config.get('aligo_api_key'):
+        raise SmsConfigError('Missing required environment variable: ALIGO_SMS_API_KEY')
+    if not config.get('aligo_sender'):
+        raise SmsConfigError('Missing required environment variable: ALIGO_SMS_SENDER')
+    msg_type = infer_sms_type(message, sms_type)
+    payload = {
+        'key': config['aligo_api_key'],
+        'user_id': config['aligo_user_id'],
+        'sender': normalize_phone(config['aligo_sender']),
+        'receiver': normalize_phone(to),
+        'msg': message,
+        'msg_type': msg_type,
+        'testmode_yn': testflag,
+    }
+    if msg_type != 'SMS' and subject:
+        payload['title'] = subject
+    if scheduled_date:
+        payload['rdate'] = scheduled_date
+    if scheduled_time:
+        payload['rtime'] = scheduled_time
+    return payload
+
+
+def parse_aligo_json(raw):
+    try:
+        return json.loads(str(raw or '').strip() or '{}')
+    except json.JSONDecodeError as error:
+        raise SmsSendError(f'Aligo SMS returned non-JSON response: {str(raw or "")[:300]}') from error
+
+
+def aligo_result_ok(data):
+    return str(data.get('result_code') or '').strip() == '1'
+
+
+def aligo_remaining(data):
+    for key in ('SMS_CNT', 'sms_cnt', 'remain_cnt', 'remaining'):
+        value = data.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text.isdigit():
+            return int(text)
+    return None
+
+
+def send_aligo_sms(to, message, *, subject='', sms_type='auto', real=False, testflag='', config=None):
+    config = config or load_config()
+    testflag_value = '' if real else (testflag or 'Y')
+    payload = build_aligo_send_payload(
+        config,
+        to,
+        message,
+        subject=subject,
+        sms_type=sms_type,
+        testflag=testflag_value,
+    )
+    safe_payload = {**payload, 'key': '***'}
+    if config['dry_run']:
+        return {
+            'ok': True,
+            'provider': 'aligo',
+            'dryRun': True,
+            'payload': safe_payload,
+            'code': 'dry-run',
+            'raw': '',
+        }
+    raw = post_form(config['aligo_send_url'], payload, config['timeout'])
+    data = parse_aligo_json(raw)
+    return {
+        'ok': aligo_result_ok(data),
+        'provider': 'aligo',
+        'dryRun': False,
+        'testflag': testflag_value or '',
+        'to': hyphen_phone(to),
+        'sender': hyphen_phone(config['aligo_sender']),
+        'code': str(data.get('result_code') or ''),
+        'message': data.get('message') or '',
+        'msgId': data.get('msg_id') or data.get('mid') or '',
+        'successCount': data.get('success_cnt'),
+        'errorCount': data.get('error_cnt'),
+        'msgType': data.get('msg_type') or payload.get('msg_type'),
+        'remaining': aligo_remaining(data),
+        'raw': raw,
+    }
+
+
+def get_aligo_remaining_count(config=None):
+    config = config or load_config()
+    if not config.get('aligo_user_id'):
+        raise SmsConfigError('Missing required environment variable: ALIGO_SMS_USER_ID')
+    if not config.get('aligo_api_key'):
+        raise SmsConfigError('Missing required environment variable: ALIGO_SMS_API_KEY')
+    raw = post_form(config['aligo_remain_url'], {
+        'key': config['aligo_api_key'],
+        'user_id': config['aligo_user_id'],
+    }, config['timeout'])
+    data = parse_aligo_json(raw)
+    remaining = aligo_remaining(data)
+    return {
+        'ok': aligo_result_ok(data) or remaining is not None,
+        'provider': 'aligo',
+        'remaining': remaining,
+        'raw': raw,
+        'code': str(data.get('result_code') or ''),
+        'message': data.get('message') or '',
+        'sms': data.get('SMS_CNT'),
+        'lms': data.get('LMS_CNT'),
+        'mms': data.get('MMS_CNT'),
+    }
+
+
 def send_sms(to, message, *, subject='', sms_type='auto', real=False, testflag='', config=None):
     config = config or load_config()
+    if config.get('provider') == 'aligo':
+        return send_aligo_sms(
+            to,
+            message,
+            subject=subject,
+            sms_type=sms_type,
+            real=real,
+            testflag=testflag,
+            config=config,
+        )
     testflag_value = '' if real else (testflag or 'Y')
     payload = build_send_payload(
         config,
@@ -201,6 +346,7 @@ def send_sms(to, message, *, subject='', sms_type='auto', real=False, testflag='
     if config['dry_run']:
         return {
             'ok': True,
+            'provider': 'cafe24',
             'dryRun': True,
             'payload': safe_payload,
             'code': 'dry-run',
@@ -209,6 +355,7 @@ def send_sms(to, message, *, subject='', sms_type='auto', real=False, testflag='
     encoded = encode_payload(payload, charset=config['charset'])
     raw = post_form(config['send_url'], encoded, config['timeout'])
     parsed = parse_send_response(raw)
+    parsed['provider'] = 'cafe24'
     parsed['dryRun'] = False
     parsed['testflag'] = testflag_value or ''
     parsed['to'] = hyphen_phone(to)
@@ -218,6 +365,12 @@ def send_sms(to, message, *, subject='', sms_type='auto', real=False, testflag='
 
 def get_remaining_count(config=None):
     config = config or load_config()
+    if config.get('provider') == 'aligo':
+        return get_aligo_remaining_count(config)
+    if not config.get('user_id'):
+        raise SmsConfigError('Missing required environment variable: CAFE24_SMS_USER_ID')
+    if not config.get('secure'):
+        raise SmsConfigError('Missing required environment variable: CAFE24_SMS_SECURE_KEY')
     payload = encode_payload({
         'user_id': config['user_id'],
         'secure': config['secure'],
@@ -226,6 +379,7 @@ def get_remaining_count(config=None):
     text = raw.strip()
     return {
         'ok': text.isdigit(),
+        'provider': 'cafe24',
         'remaining': int(text) if text.isdigit() else None,
         'raw': text,
     }

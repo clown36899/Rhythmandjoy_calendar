@@ -337,6 +337,7 @@ function safeSmsResult(result) {
     status: result?.status || 'unknown',
     maskedPhone: result?.maskedPhone || '',
     templateName: result?.templateName || CONFIRMATION_SMS_TEMPLATE_NAME,
+    provider: result?.provider || '',
     providerCode: result?.providerCode || result?.code || '',
     remaining: Number.isFinite(result?.remaining) ? result.remaining : result?.remaining ?? null,
   };
@@ -507,6 +508,7 @@ try:
                 'deliveryId': saved.get('id'),
                 'maskedPhone': masked,
                 'templateName': template_name,
+                'provider': result.get('provider') or 'cafe24',
                 'providerCode': result.get('code') or '',
                 'remaining': result.get('remaining'),
                 'raw': str(result.get('raw') or '')[:80],
@@ -1419,8 +1421,11 @@ function formatSmsRows(rows, limit = 3) {
   const visible = rows.slice(0, limit);
   const lines = visible.map((row, index) => {
     const sms = row.sms || {};
-    const reason = sms.reason || sms.error || sms.providerCode || '';
-    return `${index + 1}. ${taskTargetText(row)} / ${sms.maskedPhone || '-'} (${smsStatusText(sms.status)}${reason ? `: ${cleanTelegramText(reason, 80)}` : ''})`;
+    const provider = sms.provider ? `${sms.provider} ` : '';
+    const reason = ['failed', 'skipped'].includes(sms.status)
+      ? (sms.reason || sms.error || sms.providerCode || '')
+      : '';
+    return `${index + 1}. ${taskTargetText(row)} / ${sms.maskedPhone || '-'} (${provider}${smsStatusText(sms.status)}${reason ? `: ${cleanTelegramText(reason, 80)}` : ''})`;
   });
   if (rows.length > visible.length) lines.push(`외 ${rows.length - visible.length}건`);
   return lines.join('\n') || '-';

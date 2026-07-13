@@ -111,6 +111,8 @@ The local Mac watcher defaults to DB queue mode. It does not scan the Google Cal
 
 SpaceCloud emails are matched without reservation numbers. The importer uses calendar/room, date, start/end time, and normalized reserver name; whitespace is removed and trailing `님` suffixes are stripped before matching. SpaceCloud cancellation emails are matched from an earlier `rhythmjoy_booking_ledger` or `spacecloud_reservation` DB row with the same normalized identity. If no matching identity is available, the task is retained for review instead of changing Naver availability automatically.
 
+Confirmation SMS is sent by the local watcher after a booking has been successfully applied to the opposite platform. `RHYTHMJOY_SMS_PROVIDER=auto` prefers Aligo when `ALIGO_SMS_USER_ID`, `ALIGO_SMS_API_KEY`, and `ALIGO_SMS_SENDER` are present; otherwise it falls back to the Cafe24 SMS settings. Register the Cafe24 server IP `1.234.23.64` in Aligo before enabling Aligo.
+
 Run this after restoring a DB backup or deploying the ledger for the first time:
 
 ```bash
