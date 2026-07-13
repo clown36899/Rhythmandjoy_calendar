@@ -8,12 +8,14 @@ import {
   checkSpacecloudLogin,
   createSpacecloudPlaywrightUploader,
   deleteSpacecloudDirectReservation,
+  fetchSpacecloudReservationPhone,
   openSpacecloudContext,
   spacecloudUploadEventFromTask,
   uploadSpacecloudDirectReservation,
 } from './spacecloud-playwright-uploader.mjs';
 import {
   checkNaverSmartplaceLogin,
+  fetchNaverReservationPhone,
   setNaverAvailability,
 } from './naver-playwright-availability.mjs';
 
@@ -25,6 +27,25 @@ const DEFAULT_ENV_FILE = '/Users/inteyeo/.rhythmjoy-ingestion.env';
 const DEFAULT_CAFE24_TARGET_ENV = 'ops/cafe24-production-target.env';
 const DEFAULT_NOTIFY_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'notify-state.json');
 const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
+const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
+const DEFAULT_CONFIRMATION_SMS_MESSAGE = `안녕하세요 리듬앤조이 예약확정 안내문자 입니다.
+
+외부신발 금지하고 있습니다.
+
+(외부신발은 금지 적발시 환불없는 퇴장조치하고있습니다.)
+
+오가실때 건물 문단속 냉난방점검 꼭 부탁드립니다.
+
+바닥에 스키드마크(고무 긁힌 자국)이나 탭신발은 금지이고 타악기 사용도 불가입니다.
+
+동작구 남부순환로 2077 문구점 지하2층
+
+당일 3시간 안쪽 예약은 아래링크 네이버지도 리듬앤조이에서 가능합니다
+https://naver.me/F88eBpM0
+
+건물비번 8228* 지하비번 따로없어요
+
+이용감사합니다.`;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -34,6 +55,7 @@ function usage() {
   node tools/spacecloud-watch.mjs check-login [options]
   node tools/spacecloud-watch.mjs check-naver-login [options]
   node tools/spacecloud-watch.mjs notify-test [options]
+  node tools/spacecloud-watch.mjs sms-test --to <phone> [options]
   node tools/spacecloud-watch.mjs once [options]
   node tools/spacecloud-watch.mjs watch [options]
 
@@ -63,12 +85,15 @@ Options:
   --dry-run                 Do not mutate DB rows, Google Calendar, or platform UI.
   --json                    Print machine-readable output for once/check-login.
   --no-telegram             Disable Telegram notifications.
+  --to <phone>              Recipient for sms-test.
+  --sms-test-task-id <id>   Optional fixed test id for duplicate-send checks.
 
 Examples:
   node tools/spacecloud-watch.mjs login
   node tools/spacecloud-watch.mjs check-login
   node tools/spacecloud-watch.mjs check-naver-login
   node tools/spacecloud-watch.mjs notify-test
+  node tools/spacecloud-watch.mjs sms-test --to 01000000000 --json
   node tools/spacecloud-watch.mjs once --dry-run
   node tools/spacecloud-watch.mjs watch --interval-seconds 30 --limit-per-cycle 3
   node tools/spacecloud-watch.mjs once --legacy-calendar-plan --dry-run
@@ -98,6 +123,8 @@ function parseArgs(argv) {
     dryRun: false,
     json: false,
     telegram: true,
+    smsTestTo: '',
+    smsTestTaskId: '',
   };
 
   for (let i = 3; i < argv.length; i += 1) {
@@ -147,6 +174,10 @@ function parseArgs(argv) {
       args.cafe24TargetEnv = next;
     } else if (key === 'notify-state') {
       args.notifyState = next;
+    } else if (key === 'to') {
+      args.smsTestTo = next;
+    } else if (key === 'sms-test-task-id') {
+      args.smsTestTaskId = next;
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -292,6 +323,236 @@ function runSshScript(target, script) {
     throw new Error((cp.stderr || cp.stdout || `ssh exited ${cp.status}`).trim());
   }
   return cp.stdout;
+}
+
+function normalizePhone(value) {
+  return String(value || '').replace(/\D+/g, '');
+}
+
+function maskPhone(value) {
+  const digits = normalizePhone(value);
+  if (digits.length < 7) return '';
+  return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
+}
+
+function confirmationSmsEnabled() {
+  return String(process.env.RHYTHMJOY_CONFIRMATION_SMS_ENABLED || '1').trim() !== '0';
+}
+
+function confirmationSmsMessage() {
+  return process.env.RHYTHMJOY_CONFIRMATION_SMS_MESSAGE || DEFAULT_CONFIRMATION_SMS_MESSAGE;
+}
+
+function safeSmsResult(result) {
+  const safe = {
+    status: result?.status || 'unknown',
+    maskedPhone: result?.maskedPhone || '',
+    templateName: result?.templateName || CONFIRMATION_SMS_TEMPLATE_NAME,
+    providerCode: result?.providerCode || result?.code || '',
+    remaining: Number.isFinite(result?.remaining) ? result.remaining : result?.remaining ?? null,
+  };
+  if (result?.reason) safe.reason = result.reason;
+  if (result?.error) safe.error = cleanTelegramText(result.error, 180);
+  if (result?.deliveryId) safe.deliveryId = result.deliveryId;
+  return safe;
+}
+
+async function sendRemoteConfirmationSms(args, {
+  task,
+  phone,
+  source,
+} = {}) {
+  if (!confirmationSmsEnabled()) {
+    return { status: 'disabled', reason: 'RHYTHMJOY_CONFIRMATION_SMS_ENABLED=0', maskedPhone: '' };
+  }
+  const to = normalizePhone(phone);
+  if (!/^01[016789]\d{7,8}$/.test(to)) {
+    return { status: 'skipped', reason: 'recipient-phone-missing', maskedPhone: '' };
+  }
+
+  const target = await loadCafe24Target(args);
+  const opsRoot = target.OPS_ROOT || '/home/clown313python/rhythmjoy_ops';
+  const payload = Buffer.from(JSON.stringify({
+    taskId: task.id || task.taskId,
+    taskType: task.taskType || task.task_type || '',
+    source: source || '',
+    to,
+    maskedPhone: maskPhone(to),
+    message: confirmationSmsMessage(),
+    subject: process.env.RHYTHMJOY_CONFIRMATION_SMS_SUBJECT || '리듬앤조이 예약확정 안내',
+    templateName: CONFIRMATION_SMS_TEMPLATE_NAME,
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export RHYTHMJOY_OPS_ROOT=${shellQuote(opsRoot)}
+export SMS_PAYLOAD_B64=${shellQuote(payload)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import hashlib
+import json
+import os
+import sys
+from pathlib import Path
+
+import pymysql
+
+ops_root = Path(os.environ['RHYTHMJOY_OPS_ROOT'])
+sys.path.insert(0, str(ops_root))
+import cafe24_sms
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+def mask_phone(value):
+    digits = ''.join(ch for ch in str(value or '') if ch.isdigit())
+    if len(digits) < 7:
+        return ''
+    return f'{digits[:3]}-****-{digits[-4:]}'
+
+def ensure_table(cur):
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS rhythmjoy_sms_deliveries (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            idempotency_key VARCHAR(160) NOT NULL,
+            source_task_type VARCHAR(32) NOT NULL DEFAULT '',
+            source_task_id BIGINT UNSIGNED NULL,
+            template_name VARCHAR(64) NOT NULL DEFAULT '',
+            recipient_phone_hash CHAR(64) NOT NULL DEFAULT '',
+            recipient_phone_last4 VARCHAR(4) NOT NULL DEFAULT '',
+            status VARCHAR(32) NOT NULL DEFAULT 'pending',
+            provider_code VARCHAR(64) NOT NULL DEFAULT '',
+            provider_remaining INT NULL,
+            provider_raw VARCHAR(255) NOT NULL DEFAULT '',
+            error_text TEXT NULL,
+            sent_at DATETIME NULL,
+            created_at DATETIME NULL,
+            updated_at DATETIME NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_idempotency_key (idempotency_key),
+            KEY idx_status (status),
+            KEY idx_task (source_task_type, source_task_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+payload = json.loads(base64.b64decode(os.environ['SMS_PAYLOAD_B64']).decode('utf-8'))
+task_id = int(payload.get('taskId') or 0)
+task_type = payload.get('taskType') or ''
+template_name = payload.get('templateName') or 'reservation-confirmed-v1'
+phone = ''.join(ch for ch in str(payload.get('to') or '') if ch.isdigit())
+masked = mask_phone(phone)
+idempotency_key = f'{template_name}|{task_type}|{task_id}'
+phone_hash = hashlib.sha256(phone.encode('utf-8')).hexdigest() if phone else ''
+
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=True,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        ensure_table(cur)
+        cur.execute('SELECT * FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
+        existing = cur.fetchone()
+        if existing and existing.get('status') == 'sent':
+            print(json.dumps({
+                'status': 'already_sent',
+                'deliveryId': existing.get('id'),
+                'maskedPhone': masked,
+                'templateName': template_name,
+                'providerCode': existing.get('provider_code') or '',
+                'remaining': existing.get('provider_remaining'),
+            }, ensure_ascii=False))
+            raise SystemExit(0)
+
+        try:
+            result = cafe24_sms.send_sms(
+                phone,
+                payload.get('message') or '',
+                subject=payload.get('subject') or '',
+                sms_type='auto',
+                real=True,
+            )
+            status = 'sent' if result.get('ok') else 'failed'
+            error_text = '' if result.get('ok') else json.dumps(result, ensure_ascii=False)[:1000]
+            cur.execute(
+                """
+                INSERT INTO rhythmjoy_sms_deliveries (
+                    idempotency_key, source_task_type, source_task_id, template_name,
+                    recipient_phone_hash, recipient_phone_last4, status,
+                    provider_code, provider_remaining, provider_raw, error_text,
+                    sent_at, created_at, updated_at
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,IF(%s='sent', NOW(), NULL),NOW(),NOW())
+                ON DUPLICATE KEY UPDATE
+                    status=VALUES(status),
+                    provider_code=VALUES(provider_code),
+                    provider_remaining=VALUES(provider_remaining),
+                    provider_raw=VALUES(provider_raw),
+                    error_text=VALUES(error_text),
+                    sent_at=IF(VALUES(status)='sent', NOW(), sent_at),
+                    updated_at=NOW()
+                """,
+                (
+                    idempotency_key, task_type, task_id or None, template_name,
+                    phone_hash, phone[-4:], status,
+                    result.get('code') or '', result.get('remaining'), str(result.get('raw') or '')[:255],
+                    error_text, status,
+                ),
+            )
+            cur.execute('SELECT id FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
+            saved = cur.fetchone() or {}
+            print(json.dumps({
+                'status': status,
+                'deliveryId': saved.get('id'),
+                'maskedPhone': masked,
+                'templateName': template_name,
+                'providerCode': result.get('code') or '',
+                'remaining': result.get('remaining'),
+                'raw': str(result.get('raw') or '')[:80],
+            }, ensure_ascii=False))
+        except Exception as error:
+            cur.execute(
+                """
+                INSERT INTO rhythmjoy_sms_deliveries (
+                    idempotency_key, source_task_type, source_task_id, template_name,
+                    recipient_phone_hash, recipient_phone_last4, status, error_text,
+                    created_at, updated_at
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,'failed',%s,NOW(),NOW())
+                ON DUPLICATE KEY UPDATE
+                    status='failed',
+                    error_text=VALUES(error_text),
+                    updated_at=NOW()
+                """,
+                (idempotency_key, task_type, task_id or None, template_name, phone_hash, phone[-4:], str(error)[:1000]),
+            )
+            cur.execute('SELECT id FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
+            saved = cur.fetchone() or {}
+            print(json.dumps({
+                'status': 'failed',
+                'deliveryId': saved.get('id'),
+                'maskedPhone': masked,
+                'templateName': template_name,
+                'error': str(error),
+            }, ensure_ascii=False))
+finally:
+    conn.close()
+PY
+`;
+  const result = JSON.parse(runSshScript(target, script).trim() || '{}');
+  return safeSmsResult(result);
 }
 
 const REMOTE_TASK_ENRICHMENT_PY = String.raw`
@@ -1139,6 +1400,43 @@ function googleSummary(rows) {
   return `구글=${statusText || '-'}${warnings ? ` / 경고 ${warnings}` : ''}`;
 }
 
+function smsStatusText(status) {
+  const map = {
+    sent: '발송 성공',
+    already_sent: '이미 발송됨',
+    skipped: '발송 생략',
+    failed: '발송 실패',
+    disabled: '문자 비활성',
+  };
+  return map[status] || status || '-';
+}
+
+function smsRowsFromCycle(row) {
+  const rows = [
+    ...(row.uploadTasks?.rows || []),
+    ...(row.naverBlockTasks?.rows || []),
+    ...(row.naverAvailabilityTasks?.rows || []),
+  ].filter((taskRow) => taskRow.sms);
+  const seen = new Set();
+  return rows.filter((taskRow) => {
+    const key = `${taskRow.taskType || ''}:${taskRow.taskId || taskRow.fingerprint || taskTargetText(taskRow)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatSmsRows(rows, limit = 3) {
+  const visible = rows.slice(0, limit);
+  const lines = visible.map((row, index) => {
+    const sms = row.sms || {};
+    const reason = sms.reason || sms.error || sms.providerCode || '';
+    return `${index + 1}. ${taskTargetText(row)} / ${sms.maskedPhone || '-'} (${smsStatusText(sms.status)}${reason ? `: ${cleanTelegramText(reason, 80)}` : ''})`;
+  });
+  if (rows.length > visible.length) lines.push(`외 ${rows.length - visible.length}건`);
+  return lines.join('\n') || '-';
+}
+
 function compactNotice(title, lines) {
   return [
     title,
@@ -1287,6 +1585,21 @@ function naverRestoreFailureMessage(rowOrError) {
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),
     `원인: ${firstFailureReason(rowOrError)}`,
+  ]);
+}
+
+function smsSuccessMessage(rows) {
+  return compactNotice('✅ 성공: 예약확정 문자 발송', [
+    `처리: ${rows.length}건`,
+    formatSmsRows(rows),
+  ]);
+}
+
+function smsFailureMessage(rows) {
+  return compactNotice('⚠️ 실패: 예약확정 문자', [
+    `대상: ${rows.length}건`,
+    formatSmsRows(rows),
+    '조치: 전화번호 조회 또는 카페24 문자 발송결과 확인',
   ]);
 }
 
@@ -1498,6 +1811,73 @@ function hasBlockingFailures(result) {
   return (result?.failed || []).some((row) => !isGoogleRetryableStatus(row.status));
 }
 
+async function sendNaverOriginConfirmationSms(args, context, task) {
+  const lookup = await fetchNaverReservationPhone(context, task, {
+    businessId: args.naverBusinessId,
+  });
+  if (lookup.status !== 'found') {
+    return {
+      status: 'skipped',
+      reason: lookup.reason || lookup.status || 'naver-phone-lookup-failed',
+      source: lookup.source || 'naver',
+      maskedPhone: lookup.maskedPhone || '',
+    };
+  }
+  return sendRemoteConfirmationSms(args, {
+    task,
+    phone: lookup.phone,
+    source: lookup.source || 'naver',
+  });
+}
+
+async function sendSpacecloudOriginConfirmationSms(args, context, task) {
+  const lookup = await fetchSpacecloudReservationPhone(context, task);
+  if (lookup.status !== 'found') {
+    return {
+      status: 'skipped',
+      reason: lookup.reason || lookup.status || 'spacecloud-phone-lookup-failed',
+      source: lookup.source || 'spacecloud',
+      maskedPhone: lookup.maskedPhone || '',
+    };
+  }
+  return sendRemoteConfirmationSms(args, {
+    task,
+    phone: lookup.phone,
+    source: lookup.source || 'spacecloud',
+  });
+}
+
+async function runSmsTest(args) {
+  if (!args.smsTestTo) {
+    throw new Error('sms-test requires --to <phone>');
+  }
+  const taskId = args.smsTestTaskId || String(Date.now());
+  if (!/^\d+$/.test(String(taskId))) {
+    throw new Error('--sms-test-task-id must be numeric');
+  }
+  const result = await sendRemoteConfirmationSms(args, {
+    task: {
+      id: taskId,
+      taskType: 'manual_sms_test',
+    },
+    phone: args.smsTestTo,
+    source: 'manual-test',
+  });
+  return {
+    ...result,
+    taskType: 'manual_sms_test',
+    taskId,
+  };
+}
+
+function smsSendOk(status) {
+  return status === 'sent' || status === 'already_sent' || status === 'disabled';
+}
+
+function smsNeedsAttention(row) {
+  return row?.sms && !smsSendOk(row.sms.status);
+}
+
 async function runUploadTasks(args, context = null) {
   if (args.dryRun) {
     return {
@@ -1576,6 +1956,17 @@ async function runUploadTasks(args, context = null) {
           }
           row.status = calendarStatus;
           row.finishedAt = new Date().toISOString();
+          if (row.status === 'google-recorded') {
+            try {
+              row.sms = await sendNaverOriginConfirmationSms(args, activeContext, task);
+            } catch (smsError) {
+              row.sms = {
+                status: 'failed',
+                reason: 'sms-send-exception',
+                error: String(smsError?.message || smsError),
+              };
+            }
+          }
         }
       } catch (error) {
         row = row || {
@@ -1974,6 +2365,18 @@ async function runNaverAvailabilityTasks(args, context = null) {
         }
       }
 
+      if (taskType !== 'naver_restore' && ['blocked', 'already-blocked', 'google-recorded'].includes(row.status)) {
+        try {
+          row.sms = await sendSpacecloudOriginConfirmationSms(args, activeContext, task);
+        } catch (smsError) {
+          row.sms = {
+            status: 'failed',
+            reason: 'sms-send-exception',
+            error: String(smsError?.message || smsError),
+          };
+        }
+      }
+
       rows.push(row);
       const status = taskType === 'naver_restore'
         ? dbStatusForNaverRestoreRow(row)
@@ -2330,6 +2733,19 @@ async function runWatch(args) {
           if (result.sent) logLine(`telegram sent: spacecloud-delete-success count=${row.deleteTasks.rows.length}`);
           else logLine(`telegram delete success skipped: ${result.reason}`);
         }
+        const smsRows = smsRowsFromCycle(row);
+        const smsSuccessRows = smsRows.filter((taskRow) => ['sent', 'already_sent'].includes(taskRow.sms?.status));
+        const smsFailureRows = smsRows.filter((taskRow) => smsNeedsAttention(taskRow));
+        if (smsSuccessRows.length) {
+          const result = await sendTelegram(args, smsSuccessMessage(smsSuccessRows));
+          if (result.sent) logLine(`telegram sent: confirmation-sms-success count=${smsSuccessRows.length}`);
+          else logLine(`telegram confirmation sms success skipped: ${result.reason}`);
+        }
+        if (smsFailureRows.length) {
+          const result = await sendTelegram(args, smsFailureMessage(smsFailureRows));
+          if (result.sent) logLine(`telegram sent: confirmation-sms-failed count=${smsFailureRows.length}`);
+          else logLine(`telegram confirmation sms failure skipped: ${result.reason}`);
+        }
         if (row.failed?.length) {
           const errorText = row.failed.map((failedRow) => failedRow.error).join('\n');
           if (isLoginProblem(errorText)) {
@@ -2477,6 +2893,13 @@ ${kstNowText()}
 이 메시지가 보이면 성공 알림은 ✅ 성공, 실패/확인 필요 알림은 ⚠️ 실패로 전송됩니다.`);
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else console.log(result.sent ? 'Telegram notification OK' : `Telegram notification skipped: ${result.reason}`);
+    return;
+  }
+
+  if (args.command === 'sms-test') {
+    const result = await runSmsTest(args);
+    if (args.json) console.log(JSON.stringify(result, null, 2));
+    else console.log(`${smsStatusText(result.status)}: ${result.maskedPhone || '-'} (${result.providerCode || result.reason || '-'})`);
     return;
   }
 

@@ -17,6 +17,21 @@ function naverCalendarUrl(businessId = NAVER_BOOKING_BUSINESS_ID) {
   return `https://partner.booking.naver.com/bizes/${businessId}/booking-calendar-view`;
 }
 
+function naverBookingListUrl(businessId = NAVER_BOOKING_BUSINESS_ID, {
+  date,
+  reservationNo,
+} = {}) {
+  const params = new URLSearchParams({
+    dateDropdownType: 'DIRECT',
+    startDateTime: normalizeDate(date),
+    endDateTime: normalizeDate(date),
+    dateFilter: 'USEDATE',
+    searchValueCode: 'BOOKING_ID',
+    searchValue: String(reservationNo || '').trim(),
+  });
+  return `https://partner.booking.naver.com/bizes/${businessId}/booking-list-view?${params}`;
+}
+
 function normalizeDate(value) {
   const text = String(value || '').trim().replace(/\./g, '-').replace(/\/+/g, '-').replace(/-+$/, '');
   const match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -105,6 +120,16 @@ function parseWeekPeriod(text) {
 
 function compactText(value) {
   return String(value || '').replace(/\s+/g, '');
+}
+
+function normalizePhone(value) {
+  return String(value || '').replace(/\D+/g, '');
+}
+
+function maskPhone(value) {
+  const digits = normalizePhone(value);
+  if (digits.length < 7) return '';
+  return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
 }
 
 async function visible(page, selector) {
@@ -622,6 +647,60 @@ export async function setNaverAvailability(context, task, {
     row.finishedAt = new Date().toISOString();
     return row;
   }
+}
+
+export async function fetchNaverReservationPhone(context, task, {
+  businessId = NAVER_BOOKING_BUSINESS_ID,
+  timeoutMs = 15000,
+} = {}) {
+  const page = await pageForContext(context);
+  const row = taskRow(task);
+  const reservationNo = row.reservationNo || task.reservation_number || '';
+  if (!reservationNo) {
+    return { status: 'not_found', reason: 'naver-reservation-number-missing', phone: '', maskedPhone: '' };
+  }
+  if (!row.date) {
+    return { status: 'not_found', reason: 'naver-reservation-date-missing', phone: '', maskedPhone: '' };
+  }
+
+  const targetUrl = naverBookingListUrl(businessId, {
+    date: row.date,
+    reservationNo,
+  });
+  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await page.evaluate((wantedReservationNo) => {
+      const text = document.body?.innerText || '';
+      const phones = [...text.matchAll(/01[016789][^0-9]{0,3}[0-9]{3,4}[^0-9]{0,3}[0-9]{4}/g)].map((match) => match[0]);
+      return {
+        hasReservation: text.includes(wantedReservationNo),
+        noResults: text.includes('검색된 예약내역이 없습니다'),
+        phones,
+      };
+    }, String(reservationNo));
+    if (last.hasReservation && last.phones.length) {
+      const phone = normalizePhone(last.phones[0]);
+      return {
+        status: 'found',
+        phone,
+        maskedPhone: maskPhone(phone),
+        source: 'naver-list',
+        reservationNo,
+      };
+    }
+    await page.waitForTimeout(500);
+  }
+
+  return {
+    status: 'not_found',
+    reason: last?.hasReservation ? 'naver-phone-not-visible' : 'naver-reservation-not-found',
+    phone: '',
+    maskedPhone: '',
+    source: 'naver-list',
+    reservationNo,
+  };
 }
 
 export async function checkNaverSmartplaceLogin(context, {

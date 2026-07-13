@@ -61,6 +61,39 @@ function normalizeName(value) {
     .trim();
 }
 
+function normalizePhone(value) {
+  return String(value || '').replace(/\D+/g, '');
+}
+
+function maskPhone(value) {
+  const digits = normalizePhone(value);
+  if (digits.length < 7) return '';
+  return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
+}
+
+function findPhoneInObject(value) {
+  const seen = new Set();
+  const stack = [value];
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current || seen.has(current)) continue;
+    if (typeof current === 'object') seen.add(current);
+    if (typeof current === 'string' || typeof current === 'number') {
+      const digits = normalizePhone(current);
+      if (/^01[016789]\d{7,8}$/.test(digits)) return digits;
+      continue;
+    }
+    if (Array.isArray(current)) {
+      stack.push(...current);
+      continue;
+    }
+    if (typeof current === 'object') {
+      stack.push(...Object.values(current));
+    }
+  }
+  return '';
+}
+
 function displayReserverName(value) {
   const normalized = normalizeName(value);
   if (!normalized) return '';
@@ -121,6 +154,18 @@ function parseTaskPayload(task) {
   } catch {
     return {};
   }
+}
+
+function spacecloudReservationIdFromTask(task) {
+  const payload = parseTaskPayload(task);
+  return String(
+    payload.spacecloud_reservation_id
+    || payload.spacecloudReservationId
+    || payload.reservationId
+    || task.spacecloudReservationId
+    || task.spacecloud_reservation_id
+    || ''
+  ).trim();
 }
 
 export function spacecloudUploadEventFromTask(task) {
@@ -370,6 +415,28 @@ async function findDirectEventCandidates(page, {
       visibleLinks,
     };
   }, { day, startHour, endHour });
+}
+
+async function waitForDirectEventCandidates(page, row, {
+  timeoutMs = 12000,
+  intervalMs = 500,
+} = {}) {
+  const started = Date.now();
+  let latest = null;
+  while (Date.now() - started <= timeoutMs) {
+    latest = await findDirectEventCandidates(page, row);
+    if ((latest.candidates || []).length > 0) {
+      return {
+        ...latest,
+        waitedMs: Date.now() - started,
+      };
+    }
+    await page.waitForTimeout(intervalMs);
+  }
+  return {
+    ...(latest || { candidates: [], dayCellText: '', visibleLinks: [] }),
+    waitedMs: Date.now() - started,
+  };
 }
 
 function selectDeleteCandidate(candidates) {
@@ -631,6 +698,79 @@ export async function uploadSpacecloudDirectReservation(context, event) {
   return row;
 }
 
+export async function fetchSpacecloudReservationPhone(context, task) {
+  const page = await pageForContext(context);
+  const roomKey = task.roomKey || task.room_key || parseTaskPayload(task).roomKey || parseTaskPayload(task).room_key || '';
+  const reservationId = spacecloudReservationIdFromTask(task);
+  if (!reservationId) {
+    return {
+      status: 'not_found',
+      reason: 'spacecloud-reservation-id-missing',
+      phone: '',
+      maskedPhone: '',
+      source: 'spacecloud-detail-api',
+    };
+  }
+  if (roomKey && page.url() !== reservationCalendarUrl(roomKey)) {
+    await page.goto(reservationCalendarUrl(roomKey), { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+  }
+
+  const detail = await page.evaluate(async (id) => {
+    const rawUserInfo = window.localStorage.getItem('spacecloud__userInfo') || '{}';
+    let accessToken = '';
+    try {
+      const userInfo = JSON.parse(rawUserInfo);
+      accessToken = userInfo.accessToken || userInfo.access_token || userInfo.token || '';
+    } catch {}
+    if (!accessToken) return { ok: false, status: 0, error: 'spacecloud-access-token-missing' };
+    const response = await fetch(`https://api.spacecloud.kr/partner/reservations/${encodeURIComponent(id)}`, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      credentials: 'include',
+    });
+    const text = await response.text();
+    let body = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = { raw: text.slice(0, 500) };
+    }
+    return { ok: response.ok, status: response.status, body };
+  }, reservationId);
+
+  if (!detail.ok) {
+    return {
+      status: 'not_found',
+      reason: detail.error || `spacecloud-detail-http-${detail.status}`,
+      phone: '',
+      maskedPhone: '',
+      source: 'spacecloud-detail-api',
+      reservationId,
+    };
+  }
+
+  const phone = findPhoneInObject(detail.body);
+  if (!phone) {
+    return {
+      status: 'not_found',
+      reason: 'spacecloud-phone-not-visible',
+      phone: '',
+      maskedPhone: '',
+      source: 'spacecloud-detail-api',
+      reservationId,
+    };
+  }
+  return {
+    status: 'found',
+    phone,
+    maskedPhone: maskPhone(phone),
+    source: 'spacecloud-detail-api',
+    reservationId,
+  };
+}
+
 export async function createSpacecloudPlaywrightUploader({
   context,
   planPath,
@@ -740,7 +880,7 @@ export async function deleteSpacecloudDirectReservation(context, task) {
     }
 
     await gotoCalendarMonth(page, row.date);
-    const candidateSearch = await findDirectEventCandidates(page, row);
+    const candidateSearch = await waitForDirectEventCandidates(page, row);
     const candidates = candidateSearch.candidates || [];
     row.candidateSearch = candidateSearch;
     row.candidates = candidates;

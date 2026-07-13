@@ -689,6 +689,31 @@ def ensure_db_tables(config, logger):
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rhythmjoy_sms_deliveries (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    idempotency_key VARCHAR(160) NOT NULL,
+                    source_task_type VARCHAR(32) NOT NULL DEFAULT '',
+                    source_task_id BIGINT UNSIGNED NULL,
+                    template_name VARCHAR(64) NOT NULL DEFAULT '',
+                    recipient_phone_hash CHAR(64) NOT NULL DEFAULT '',
+                    recipient_phone_last4 VARCHAR(4) NOT NULL DEFAULT '',
+                    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    provider_code VARCHAR(64) NOT NULL DEFAULT '',
+                    provider_remaining INT NULL,
+                    provider_raw VARCHAR(255) NOT NULL DEFAULT '',
+                    error_text TEXT NULL,
+                    sent_at DATETIME NULL,
+                    created_at DATETIME NULL,
+                    updated_at DATETIME NULL,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uq_idempotency_key (idempotency_key),
+                    KEY idx_status (status),
+                    KEY idx_task (source_task_type, source_task_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
             ensure_db_column(cursor, 'rhythmjoy_naver_email_events', 'email_received_at', 'DATETIME NULL AFTER message_id')
             ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'reserver_name_key', "VARCHAR(128) NOT NULL DEFAULT '' AFTER reserver_name")
             ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'claim_token', "VARCHAR(64) NOT NULL DEFAULT '' AFTER locked_at")
@@ -2026,6 +2051,7 @@ def parse_spacecloud_booking_details(body, raw_message, source_mode, payment_sta
     return {
         'source_platform': 'spacecloud',
         'source_mode': source_mode,
+        'spacecloud_reservation_id': parse_spacecloud_reservation_id(raw_message),
         'name': name,
         'reservation_number': '',
         'product': product,
