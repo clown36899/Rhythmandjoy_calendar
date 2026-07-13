@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>예약 확정 안내</title>
+  <title>리듬앤조이 연습실 예약 확정 안내문자</title>
   <style>
     :root {
       color-scheme: light;
@@ -272,7 +272,7 @@
 <body>
   <main>
     <header>
-      <h1>예약 확정 안내</h1>
+      <h1>리듬앤조이 연습실 예약 확정 안내문자</h1>
       <p class="subtitle">입장 정보와 금지사항을 이용 전 확인해주세요.</p>
     </header>
 
@@ -286,6 +286,7 @@
         <dt>지하 비번</dt>
         <dd>따로 없습니다</dd>
       </dl>
+      <p class="small-note">*인원추가금없습니다*</p>
     </section>
 
     <section class="section-warning">
@@ -343,9 +344,10 @@
   <script>
     const params = new URLSearchParams(window.location.search);
     const platform = params.get('p');
-    if (platform === 'naver' || platform === 'sc') {
+    const normalizedPlatform = platform === 'n' ? 'naver' : (platform === 's' ? 'sc' : platform);
+    if (normalizedPlatform === 'naver' || normalizedPlatform === 'sc') {
       document.body.classList.add('platform-filtered');
-      document.body.dataset.platform = platform;
+      document.body.dataset.platform = normalizedPlatform;
     }
   </script>
 </body>

@@ -28,7 +28,8 @@ const DEFAULT_CAFE24_TARGET_ENV = 'ops/cafe24-production-target.env';
 const DEFAULT_NOTIFY_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'notify-state.json');
 const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
 const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
-const DEFAULT_CONFIRMATION_INFO_URL = 'https://리듬앤조이일정표.com/info/';
+const CONFIRMATION_SMS_TITLE = '리듬앤조이 연습실 예약 확정 안내문자';
+const DEFAULT_CONFIRMATION_INFO_URL = 'https://리듬앤조이일정표.com/info';
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -72,6 +73,8 @@ Options:
   --sms-test-task-id <id>   Optional fixed test id for duplicate-send checks.
   --sms-test-task-type <type>
                             Optional source task type for sms-test records.
+  --sms-test-source <source>
+                            Optional source for sms-test links: naver or spacecloud.
 
 Examples:
   node tools/spacecloud-watch.mjs login
@@ -79,6 +82,7 @@ Examples:
   node tools/spacecloud-watch.mjs check-naver-login
   node tools/spacecloud-watch.mjs notify-test
   node tools/spacecloud-watch.mjs sms-test --to 01000000000 --json
+  node tools/spacecloud-watch.mjs sms-test --to 01000000000 --sms-test-source naver --json
   node tools/spacecloud-watch.mjs once --dry-run
   node tools/spacecloud-watch.mjs watch --interval-seconds 30 --limit-per-cycle 3
   node tools/spacecloud-watch.mjs once --legacy-calendar-plan --dry-run
@@ -111,6 +115,7 @@ function parseArgs(argv) {
     smsTestTo: '',
     smsTestTaskId: '',
     smsTestTaskType: 'manual_sms_test',
+    smsTestSource: 'manual-test',
   };
 
   for (let i = 3; i < argv.length; i += 1) {
@@ -166,6 +171,8 @@ function parseArgs(argv) {
       args.smsTestTaskId = next;
     } else if (key === 'sms-test-task-type') {
       args.smsTestTaskType = next;
+    } else if (key === 'sms-test-source') {
+      args.smsTestSource = next;
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -329,8 +336,8 @@ function confirmationSmsEnabled() {
 
 function confirmationPlatformCode(source) {
   const normalized = String(source || '').trim().toLowerCase();
-  if (normalized.includes('naver')) return 'naver';
-  if (normalized.includes('spacecloud')) return 'sc';
+  if (normalized === 'n' || normalized.includes('naver')) return 'n';
+  if (normalized === 's' || normalized === 'sc' || normalized.includes('spacecloud')) return 's';
   return '';
 }
 
@@ -342,7 +349,7 @@ function confirmationInfoUrl(source) {
 }
 
 function confirmationSmsMessage(source = '') {
-  return process.env.RHYTHMJOY_CONFIRMATION_SMS_MESSAGE || `리듬앤조이 예약확정 안내
+  return process.env.RHYTHMJOY_CONFIRMATION_SMS_MESSAGE || `${CONFIRMATION_SMS_TITLE}
 비번, 정보확인: ${confirmationInfoUrl(source)}`;
 }
 
@@ -383,7 +390,7 @@ async function sendRemoteConfirmationSms(args, {
     to,
     maskedPhone: maskPhone(to),
     message: confirmationSmsMessage(source),
-    subject: process.env.RHYTHMJOY_CONFIRMATION_SMS_SUBJECT || '리듬앤조이 예약확정 안내',
+    subject: process.env.RHYTHMJOY_CONFIRMATION_SMS_SUBJECT || CONFIRMATION_SMS_TITLE,
     templateName: CONFIRMATION_SMS_TEMPLATE_NAME,
   }), 'utf8').toString('base64');
   const script = `
@@ -1869,7 +1876,7 @@ async function runSmsTest(args) {
       taskType: args.smsTestTaskType || 'manual_sms_test',
     },
     phone: args.smsTestTo,
-    source: 'manual-test',
+    source: args.smsTestSource || 'manual-test',
   });
   return {
     ...result,
