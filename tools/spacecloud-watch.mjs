@@ -28,8 +28,7 @@ const DEFAULT_CAFE24_TARGET_ENV = 'ops/cafe24-production-target.env';
 const DEFAULT_NOTIFY_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'notify-state.json');
 const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
 const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
-const DEFAULT_CONFIRMATION_SMS_MESSAGE = `리듬앤조이 예약확정 안내
-비번, 정보확인: https://리듬앤조이일정표.com/info/`;
+const DEFAULT_CONFIRMATION_INFO_URL = 'https://리듬앤조이일정표.com/info/';
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -328,8 +327,23 @@ function confirmationSmsEnabled() {
   return String(process.env.RHYTHMJOY_CONFIRMATION_SMS_ENABLED || '1').trim() !== '0';
 }
 
-function confirmationSmsMessage() {
-  return process.env.RHYTHMJOY_CONFIRMATION_SMS_MESSAGE || DEFAULT_CONFIRMATION_SMS_MESSAGE;
+function confirmationPlatformCode(source) {
+  const normalized = String(source || '').trim().toLowerCase();
+  if (normalized.includes('naver')) return 'naver';
+  if (normalized.includes('spacecloud')) return 'sc';
+  return '';
+}
+
+function confirmationInfoUrl(source) {
+  const platformCode = confirmationPlatformCode(source);
+  return platformCode
+    ? `${DEFAULT_CONFIRMATION_INFO_URL}?p=${platformCode}`
+    : DEFAULT_CONFIRMATION_INFO_URL;
+}
+
+function confirmationSmsMessage(source = '') {
+  return process.env.RHYTHMJOY_CONFIRMATION_SMS_MESSAGE || `리듬앤조이 예약확정 안내
+비번, 정보확인: ${confirmationInfoUrl(source)}`;
 }
 
 function safeSmsResult(result) {
@@ -368,7 +382,7 @@ async function sendRemoteConfirmationSms(args, {
     source: source || '',
     to,
     maskedPhone: maskPhone(to),
-    message: confirmationSmsMessage(),
+    message: confirmationSmsMessage(source),
     subject: process.env.RHYTHMJOY_CONFIRMATION_SMS_SUBJECT || '리듬앤조이 예약확정 안내',
     templateName: CONFIRMATION_SMS_TEMPLATE_NAME,
   }), 'utf8').toString('base64');
