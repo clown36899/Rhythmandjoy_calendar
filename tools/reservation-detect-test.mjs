@@ -36,6 +36,8 @@ send SMS, or change Naver/SpaceCloud availability.
 Options:
   --platform <name>       naver, spacecloud, or both. Defaults to both.
   --profile-dir <path>    Dedicated Chrome profile. Defaults to ${DEFAULT_PROFILE_DIR}.
+  --cdp-url <url>         Attach to an already-open Chrome debugging endpoint.
+                          Example: http://127.0.0.1:9223
   --work-dir <path>       Output directory. Defaults to ${DEFAULT_WORK_DIR}.
   --from <YYYY-MM-DD>     Start date. Defaults to today in KST.
   --to <YYYY-MM-DD>       End date, exclusive. Defaults to --from + --days.
@@ -63,6 +65,7 @@ function parseArgs(argv) {
     command: argv[2] || 'help',
     platform: 'both',
     profileDir: DEFAULT_PROFILE_DIR,
+    cdpUrl: '',
     workDir: DEFAULT_WORK_DIR,
     days: DEFAULT_DAYS,
     rooms: 'a,b,c,d,e',
@@ -104,6 +107,8 @@ function parseArgs(argv) {
       args[key] = next;
     } else if (key === 'profile-dir') {
       args.profileDir = next;
+    } else if (key === 'cdp-url') {
+      args.cdpUrl = next;
     } else if (key === 'work-dir') {
       args.workDir = next;
     } else if (key === 'naver-business-id') {
@@ -622,6 +627,17 @@ async function loadPlaywright() {
 
 async function openContext(args) {
   const { chromium } = await loadPlaywright();
+  if (args.cdpUrl) {
+    const browser = await chromium.connectOverCDP(args.cdpUrl);
+    const contexts = browser.contexts();
+    if (contexts.length === 0) {
+      throw new Error(`No Chrome context available from ${args.cdpUrl}`);
+    }
+    const context = contexts[0];
+    context.__reservationDetectBrowser = browser;
+    return context;
+  }
+
   await fs.mkdir(args.profileDir, { recursive: true });
   const launchOptions = {
     headless: args.headless,

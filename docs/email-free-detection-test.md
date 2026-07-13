@@ -23,7 +23,19 @@ This file covers only step 2 and the local comparison proof.
 
 ## Commands
 
-Open the login pages in the test profile:
+Open a normal Chrome test profile with a local debugging port. Do not use a
+Playwright-launched login browser for Naver login testing; the user logs in
+manually in normal Chrome, and the detector attaches after login.
+
+```bash
+open -na "Google Chrome" --args \
+  --user-data-dir="$PWD/state/platform-detect-test/email-free-auth-profile" \
+  --remote-debugging-port=9223 \
+  --no-first-run \
+  --no-default-browser-check
+```
+
+Open the old network-capture login pages in the test profile:
 
 ```bash
 node tools/reservation-detect-test.mjs login --platform both --keep-open
@@ -47,6 +59,26 @@ Run parser self-checks without opening a browser:
 node tools/reservation-detect-test.mjs self-test
 ```
 
+Run the visible UI feed scanner against the already-open logged-in Chrome:
+
+```bash
+node tools/visible-reservation-feed-test.mjs scan \
+  --cdp-url http://127.0.0.1:9223 \
+  --platform both \
+  --limit 10
+```
+
+Run two 60-second visible UI cycles:
+
+```bash
+node tools/visible-reservation-feed-test.mjs watch \
+  --cdp-url http://127.0.0.1:9223 \
+  --platform both \
+  --limit 8 \
+  --interval-seconds 60 \
+  --cycles 2
+```
+
 If the local repo has no `playwright` install, use the bundled Codex runtime:
 
 ```bash
@@ -56,11 +88,18 @@ node tools/reservation-detect-test.mjs scan --platform both --from 2026-07-14 --
 
 ## Output
 
-Each scan writes:
+The old network-capture scanner writes:
 
 ```text
 state/platform-detect-test/snapshots/<timestamp>.json
 state/platform-detect-test/latest.json
+```
+
+The visible UI feed scanner writes:
+
+```text
+state/platform-detect-test/visible-feed/snapshots/<timestamp>.json
+state/platform-detect-test/visible-feed/latest.json
 ```
 
 The snapshot contains:
@@ -91,5 +130,63 @@ Checked locally on 2026-07-14:
 - `node tools/reservation-detect-test.mjs self-test`
 - Naver read-only scan while logged out: correctly reports `loginRequired` and `0` reservation candidates.
 - SpaceCloud read-only scan while logged out: correctly reports `loginRequired` and `0` reservation candidates.
+- `node --check tools/visible-reservation-feed-test.mjs`
+- Visible UI scan against an already logged-in normal Chrome CDP profile:
+  - `naver_applications:10`
+  - `naver_cancellations:10`
+  - `spacecloud_confirmed:10`
+  - `spacecloud_canceled:10`
+- Visible UI watch test with 60-second interval and two cycles:
+  - cycle 1: `naver_applications:8 naver_cancellations:8 spacecloud_confirmed:8 spacecloud_canceled:8`
+  - cycle 2: `naver_applications:8 naver_cancellations:8 spacecloud_confirmed:8 spacecloud_canceled:8`
 
-The next required test is manual login in the test profile, then `scan` over a date range that contains known Naver and SpaceCloud reservations/cancellations.
+## Visible UI Feed Findings
+
+This route is the preferred email-free product candidate because it uses pages
+the operator can see after logging in. It does not call hidden platform APIs.
+
+Naver SmartPlace:
+
+- Reservation list URL:
+  `https://partner.booking.naver.com/bizes/1257912/booking-list-view`
+- New/confirmed candidate feed:
+  - set `dateFilter=REGDATE`
+  - use a recent application-date range
+  - sort by `신청일시`
+- Cancellation feed:
+  - do not use `countFilter=CANCELLED`; in testing that returned `0` rows on
+    the list page even though canceled rows existed.
+  - read both future use-date rows and recent application-date rows.
+  - sort each page by `취소일시`.
+  - keep only rows whose visible status is `취소`.
+- The SmartPlace main dashboard has useful shortcuts for `오늘 확정`,
+  `오늘 이용`, and `오늘 취소`, but it is not enough for all future
+  synchronization because it is scoped to today.
+
+SpaceCloud:
+
+- Reservation list URL:
+  `https://partner.spacecloud.kr/reservation`
+- Native visible status filters:
+  - `RSCMP`: reservation confirmed
+  - `RCCMP`: canceled/refunded
+- Confirmed reservations expose reservation number, room, use date/time, masked
+  reserver identity, and phone on the list.
+- Canceled/refunded rows expose reservation number, room, use date/time, and
+  identity on the list. Detail pages expose cancellation date/time.
+
+## Product Caveats
+
+- A 60-second reload/read cycle is required. Without refreshing or reopening
+  the list pages, new events will not reliably appear.
+- The detector should store the last seen reservation ids in DB and create work
+  only for new or changed ids.
+- SpaceCloud canceled list is not proven to sort by cancellation time from the
+  visible list. For production, combine the `RCCMP` list with an active
+  reservation status audit for previously seen SpaceCloud reservation numbers.
+- If a page becomes blank, redirects to login, or shows repeated platform
+  errors, stop the cycle and send a Telegram login-needed alert instead of
+  retrying aggressively.
+- Current Cafe24 VPS is not a safe browser runner: it has about 1GB RAM and only
+  about 205MB available while DB, Apache, Node, email import, and calendar cache
+  are active. Keep browser UI work on the Ubuntu mini PC or a larger VPS.
