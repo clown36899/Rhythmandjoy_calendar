@@ -121,6 +121,7 @@ require_hostname
 require_exact_targets
 
 install -d "$APP_ROOT" "$OPS_ROOT"
+install -d -m 0700 "$OPS_ROOT/backups/db"
 install -m 0644 "$TARGET_ENV" "$OPS_ROOT/cafe24-production-target.env"
 rsync -a --delete \
     --exclude='.env' \
@@ -150,6 +151,7 @@ install_apache_conf "$REPO_ROOT/ops/rhythmjoy-calendar-static.conf"
 install_apache_conf "$REPO_ROOT/ops/$APACHE_HTTP_CONF"
 install_apache_conf "$REPO_ROOT/ops/$APACHE_HTTPS_CONF"
 install -m 0644 "$REPO_ROOT/ops/rhythmjoy-certbot.cron" /etc/cron.d/rhythmjoy-certbot
+install -m 0644 "$REPO_ROOT/ops/rhythmjoy-db-backup.cron" /etc/cron.d/rhythmjoy-db-backup
 install -d /etc/letsencrypt/renewal-hooks/deploy
 install -m 0755 "$REPO_ROOT/ops/reload-httpd-after-certbot.sh" /etc/letsencrypt/renewal-hooks/deploy/reload-httpd-after-certbot.sh
 

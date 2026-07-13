@@ -1,0 +1,6 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Rhythmjoy reservation DB backup.
+# Dumps contain customer/reservation data, so they are stored on Cafe24 only and never committed to Git.
+23 4 * * * root /home/clown313python/rhythmjoy_ops/backup-cafe24-db.sh >> /home/clown313python/rhythmjoy_ops/backups/db/backup.log 2>&1

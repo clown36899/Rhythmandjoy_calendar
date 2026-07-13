@@ -182,4 +182,4 @@ DB dumps and live reservation/customer data
 
 If rebuilding on a new machine, recover secrets from the existing Cafe24/Ubuntu environment or re-create them manually, then re-login to Naver and SpaceCloud.
 
-Use `ops/backup-cafe24-db.sh` on Cafe24 for DB backups, and store important dump files in a private backup location outside Git.
+Use `ops/backup-cafe24-db.sh` on Cafe24 for DB backups. The restore script installs `/etc/cron.d/rhythmjoy-db-backup`, which creates one DB dump per day under `/home/clown313python/rhythmjoy_ops/backups/db` and keeps 30 days by default. Store important dump files in a private backup location outside Git if recovery after total Cafe24 loss is required.

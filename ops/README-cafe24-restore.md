@@ -31,6 +31,7 @@ Do not put DB passwords, API keys, tokens, Google service account JSON, or TLS p
 - Python package snapshot from Cafe24: `ops/cafe24-requirements.txt`
 - Canonical non-secret production target: `ops/cafe24-production-target.env`
 - DB backup helper: `ops/backup-cafe24-db.sh`
+- DB backup cron: `ops/rhythmjoy-db-backup.cron`
 - Deploy helper: `ops/deploy-cafe24.sh`
 - Restore helper: `ops/restore-cafe24.sh`
 
@@ -61,6 +62,8 @@ The helper reads DB credentials from `/home/clown313python/myapp/.env`, writes c
 ```
 
 and keeps 30 days by default. Copy important dump files to a private offline backup if the goal is recovery after total Cafe24 loss.
+
+The restore script also installs `/etc/cron.d/rhythmjoy-db-backup`, which runs the helper once per day at 04:23 server time.
 
 ## Restore outline
 
