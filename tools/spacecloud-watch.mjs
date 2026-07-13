@@ -529,7 +529,7 @@ try:
                 'deliveryId': saved.get('id'),
                 'maskedPhone': masked,
                 'templateName': template_name,
-                'provider': result.get('provider') or 'cafe24',
+                'provider': result.get('provider') or 'aligo',
                 'providerCode': result.get('code') or '',
                 'remaining': result.get('remaining'),
                 'raw': str(result.get('raw') or '')[:80],
@@ -1614,15 +1614,15 @@ function smsFailureMessage(rows) {
   return compactNotice('⚠️ 실패: 예약확정 문자', [
     `대상: ${rows.length}건`,
     formatSmsRows(rows),
-    '조치: 전화번호 조회 또는 카페24 문자 발송결과 확인',
+    '조치: 전화번호 조회 또는 알리고 전송결과 확인',
   ]);
 }
 
 function cycleErrorMessage(errorText, { transient = false } = {}) {
-  return compactNotice(transient ? '⚠️ 주의: 카페24 연결 재시도' : '⚠️ 실패: 자동화 감시 중지', [
+  return compactNotice(transient ? '⚠️ 주의: 서버 연결 재시도' : '⚠️ 실패: 자동화 감시 중지', [
     `상태: ${transient ? '일시 연결 오류, 다음 주기 자동 재시도' : '감시 주기 오류로 중지'}`,
     `원인: ${cleanTelegramText(errorText || '-', 180)}`,
-    `조치: ${transient ? '자동 재시도 중, 반복되면 네트워크/카페24 확인' : '로그 확인 후 재시작'}`,
+    `조치: ${transient ? '자동 재시도 중, 반복되면 네트워크/서버 연결 확인' : '로그 확인 후 재시작'}`,
   ]);
 }
 
