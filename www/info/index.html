@@ -91,18 +91,20 @@
 
     .info-row {
       display: grid;
-      grid-template-columns: 76px minmax(0, 1fr);
-      gap: 8px 12px;
+      grid-template-columns: max-content minmax(0, 1fr);
+      gap: 8px 14px;
       align-items: center;
     }
 
     .address-row {
-      grid-template-columns: 76px minmax(0, 1fr) auto;
+      grid-template-columns: max-content minmax(0, 1fr) auto;
+      align-items: center;
     }
 
     .info-label {
       color: var(--muted);
       font-weight: 800;
+      white-space: nowrap;
     }
 
     .info-value {
@@ -116,6 +118,19 @@
       font-size: 0.93rem;
       line-height: 1.35;
       font-weight: 800;
+    }
+
+    .address-copy-text {
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      text-align: left;
+      font: inherit;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .address-actions {
@@ -145,12 +160,28 @@
       stroke-width: 2.4;
     }
 
-    .copy-status {
-      min-height: 1.2em;
-      margin-top: 5px;
-      color: var(--accent);
-      font-size: 0.82rem;
+    .copy-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      z-index: 20;
+      max-width: calc(100vw - 32px);
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(23, 23, 23, 0.92);
+      color: #fff;
+      font-size: 0.92rem;
       font-weight: 800;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 8px);
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      white-space: nowrap;
+    }
+
+    .copy-toast.is-visible {
+      opacity: 1;
+      transform: translate(-50%, 0);
     }
 
     .section-warning {
@@ -340,12 +371,12 @@
       }
 
       .info-row {
-        grid-template-columns: 58px minmax(0, 1fr);
+        grid-template-columns: max-content minmax(0, 1fr);
         gap: 7px 8px;
       }
 
       .address-row {
-        grid-template-columns: 58px minmax(0, 1fr) auto;
+        grid-template-columns: max-content minmax(0, 1fr) auto;
       }
 
       .address-value {
@@ -382,12 +413,12 @@
       <div class="key-info">
         <div class="info-row address-row">
           <div class="info-label">주소 :</div>
-          <div class="address-value" id="studioAddress" data-copy-text="동작구 남부순환로 2077 건축회관 문구점 건물 지하 2층">
+          <button class="address-value address-copy-text" id="studioAddress" type="button" data-copy-text="동작구 남부순환로 2077 건축회관 문구점 건물 지하 2층" data-copy-trigger aria-label="주소 복사">
             <span>동작구 남부순환로 2077 건축회관</span>
             <span>문구점 건물 지하 2층</span>
-          </div>
+          </button>
           <div class="address-actions" aria-label="주소 도구">
-            <button class="icon-action" type="button" data-copy-address aria-label="주소 복사" title="주소 복사">
+            <button class="icon-action" type="button" data-copy-trigger aria-label="주소 복사" title="주소 복사">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                 <rect x="9" y="9" width="10" height="10" rx="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
@@ -401,14 +432,13 @@
             </a>
           </div>
         </div>
-        <p class="copy-status" data-copy-status aria-live="polite"></p>
         <div class="info-row">
-          <div class="info-label">건물 비번 :</div>
+          <div class="info-label">건물비번 :</div>
           <div class="info-value">8228*</div>
         </div>
         <div class="info-row">
-          <div class="info-label">지하 비번 :</div>
-          <div class="info-value">따로 없습니다</div>
+          <div class="info-label">지하비번 :</div>
+          <div class="info-value">따로 없습니다. CCTV 녹화 중입니다.</div>
         </div>
         <div class="info-row">
           <div class="info-label">문의 :</div>
@@ -470,6 +500,7 @@
       <p class="small-note"><a href="https://naver.me/F88eBpM0">네이버지도 리듬앤조이 열기</a></p>
     </section>
   </main>
+  <div class="copy-toast" data-copy-toast role="status" aria-live="polite">주소 복사 완료</div>
 
   <script>
     const params = new URLSearchParams(window.location.search);
@@ -480,15 +511,24 @@
       document.body.dataset.platform = normalizedPlatform;
     }
 
-    const copyButton = document.querySelector('[data-copy-address]');
+    const copyTriggers = document.querySelectorAll('[data-copy-trigger]');
     const addressNode = document.querySelector('#studioAddress');
-    const copyStatus = document.querySelector('[data-copy-status]');
-    if (copyButton && addressNode) {
-      copyButton.addEventListener('click', async () => {
+    const copyToast = document.querySelector('[data-copy-toast]');
+    let copyToastTimer = null;
+    const showCopyToast = () => {
+      if (!copyToast) return;
+      copyToast.classList.add('is-visible');
+      clearTimeout(copyToastTimer);
+      copyToastTimer = setTimeout(() => {
+        copyToast.classList.remove('is-visible');
+      }, 1500);
+    };
+    if (copyTriggers.length && addressNode) {
+      copyTriggers.forEach((copyTrigger) => copyTrigger.addEventListener('click', async () => {
         const text = addressNode.dataset.copyText || addressNode.textContent.trim();
         try {
           await navigator.clipboard.writeText(text);
-          if (copyStatus) copyStatus.textContent = '주소 복사 완료';
+          showCopyToast();
         } catch (error) {
           const textarea = document.createElement('textarea');
           textarea.value = text;
@@ -499,9 +539,9 @@
           textarea.select();
           document.execCommand('copy');
           textarea.remove();
-          if (copyStatus) copyStatus.textContent = '주소 복사 완료';
+          showCopyToast();
         }
-      });
+      }));
     }
   </script>
 </body>
