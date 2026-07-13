@@ -87,6 +87,8 @@ Options:
   --no-telegram             Disable Telegram notifications.
   --to <phone>              Recipient for sms-test.
   --sms-test-task-id <id>   Optional fixed test id for duplicate-send checks.
+  --sms-test-task-type <type>
+                            Optional source task type for sms-test records.
 
 Examples:
   node tools/spacecloud-watch.mjs login
@@ -125,6 +127,7 @@ function parseArgs(argv) {
     telegram: true,
     smsTestTo: '',
     smsTestTaskId: '',
+    smsTestTaskType: 'manual_sms_test',
   };
 
   for (let i = 3; i < argv.length; i += 1) {
@@ -178,6 +181,8 @@ function parseArgs(argv) {
       args.smsTestTo = next;
     } else if (key === 'sms-test-task-id') {
       args.smsTestTaskId = next;
+    } else if (key === 'sms-test-task-type') {
+      args.smsTestTaskType = next;
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -1858,14 +1863,14 @@ async function runSmsTest(args) {
   const result = await sendRemoteConfirmationSms(args, {
     task: {
       id: taskId,
-      taskType: 'manual_sms_test',
+      taskType: args.smsTestTaskType || 'manual_sms_test',
     },
     phone: args.smsTestTo,
     source: 'manual-test',
   });
   return {
     ...result,
-    taskType: 'manual_sms_test',
+    taskType: args.smsTestTaskType || 'manual_sms_test',
     taskId,
   };
 }
