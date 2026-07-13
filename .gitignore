@@ -9,6 +9,7 @@
 config/spacecloud-sync.local.json
 state/spacecloud-sync-log.json
 state/spacecloud-watch/
+state/platform-detect-test/
 *.pem
 *.key
 *service-account*.json
