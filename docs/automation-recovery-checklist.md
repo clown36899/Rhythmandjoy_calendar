@@ -18,10 +18,12 @@ The working branch is:
 main
 ```
 
-At review time, local `main` and `origin/main` matched exactly:
+Confirm local `main` and `origin/main` before rebuilding or deploying:
 
-```text
-0a8f8b7a2b02561cb9485f6e5fd74656e0ffc31a
+```bash
+git status --short
+git rev-parse main
+git ls-remote origin refs/heads/main
 ```
 
 If Codex or the local Mac workspace is removed, restore the code with:
@@ -35,7 +37,13 @@ cd Rhythmandjoy_calendar
 
 - Cafe24 is the server/source-of-truth layer: email ingestion, DB ledger, public website, Google Calendar record updates, and Aligo SMS environment.
 - Ubuntu mini PC is the browser automation runner: it reads the Cafe24 DB queue and applies changes through Naver SmartPlace and SpaceCloud browser sessions.
-- MacBook watcher is disabled and must stay disabled during normal operation. Running Mac and Ubuntu watchers together can race on the same DB queue.
+- MacBook watcher is disabled during normal operation, but remains a usable rollback/manual execution path. Running Mac and Ubuntu watchers together can race on the same DB queue.
+
+Development history, major issues, and before/after watcher state are recorded in:
+
+```text
+docs/automation-development-history.md
+```
 
 ## Ubuntu Mini PC Runtime
 
@@ -169,6 +177,9 @@ Telegram bot token
 Aligo API key
 Chrome browser cookies/session profile
 local .env files with secrets
+DB dumps and live reservation/customer data
 ```
 
 If rebuilding on a new machine, recover secrets from the existing Cafe24/Ubuntu environment or re-create them manually, then re-login to Naver and SpaceCloud.
+
+Use `ops/backup-cafe24-db.sh` on Cafe24 for DB backups, and store important dump files in a private backup location outside Git.
