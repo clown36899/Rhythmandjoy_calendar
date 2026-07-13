@@ -24,10 +24,50 @@ if [[ ! -r "$SERVER_ENV_FILE" ]]; then
   exit 2
 fi
 
-set -a
-# shellcheck disable=SC1090
-source "$SERVER_ENV_FILE"
-set +a
+read_env_value() {
+  local key="$1"
+  awk -v key="$key" '
+    function trim(s) {
+      sub(/^[[:space:]]+/, "", s)
+      sub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    {
+      line = $0
+      sub(/\r$/, "", line)
+      if (line ~ /^[[:space:]]*$/ || line ~ /^[[:space:]]*#/) {
+        next
+      }
+      sub(/^[[:space:]]*export[[:space:]]+/, "", line)
+      eq = index(line, "=")
+      if (eq == 0) {
+        next
+      }
+      k = trim(substr(line, 1, eq - 1))
+      if (k != key) {
+        next
+      }
+      v = trim(substr(line, eq + 1))
+      quote = sprintf("%c", 39)
+      if ((substr(v, 1, 1) == "\"" && substr(v, length(v), 1) == "\"") ||
+          (substr(v, 1, 1) == quote && substr(v, length(v), 1) == quote)) {
+        v = substr(v, 2, length(v) - 2)
+      }
+      print v
+      exit
+    }
+  ' "$SERVER_ENV_FILE"
+}
+
+for env_name in DB_SERVERNAME DB_USERNAME DB_PASSWORD DB_NAME DB_PORT; do
+  if [[ -z "${!env_name:-}" ]]; then
+    env_value="$(read_env_value "$env_name")"
+    if [[ -n "$env_value" ]]; then
+      printf -v "$env_name" '%s' "$env_value"
+      export "$env_name"
+    fi
+  fi
+done
 
 for required in DB_SERVERNAME DB_USERNAME DB_PASSWORD DB_NAME; do
   if [[ -z "${!required:-}" ]]; then

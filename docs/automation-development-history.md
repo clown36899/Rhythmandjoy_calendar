@@ -134,6 +134,14 @@ Cafe24 SMS setup was separate and unnecessary once Aligo was chosen.
 Resolution:
 Aligo is the only SMS provider. Cafe24 remains the server, DB, and email-ingestion host, but not the SMS sender.
 
+### DB Backup Script Must Not Source The Whole Server Env
+
+Issue:
+The Cafe24 server `.env` can contain lines that are valid for the app but not valid as a Bash `source` file.
+
+Resolution:
+`ops/backup-cafe24-db.sh` parses only the DB variables it needs (`DB_SERVERNAME`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME`, and optional `DB_PORT`) instead of sourcing the full file.
+
 ## Mac Watcher State
 
 Mac watcher files remain in Git:
