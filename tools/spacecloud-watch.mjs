@@ -29,7 +29,7 @@ const DEFAULT_NOTIFY_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'notify-state.json
 const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
 const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
 const DEFAULT_CONFIRMATION_SMS_MESSAGE = `리듬앤조이 예약확정 안내
-비번, 정보확인: https://리듬앤조이일정표.com/r/`;
+비번, 정보확인: https://리듬앤조이일정표.com/info/`;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
