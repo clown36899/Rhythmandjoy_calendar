@@ -28,14 +28,16 @@ const DEFAULT_CAFE24_TARGET_ENV = 'ops/cafe24-production-target.env';
 const DEFAULT_NOTIFY_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'notify-state.json');
 const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
 const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
-const DEFAULT_CONFIRMATION_SMS_MESSAGE = `안녕하세요 리듬앤조이 예약확정 안내문자 입니다.
+const DEFAULT_CONFIRMATION_SMS_MESSAGE = `안녕하세요 리듬앤조이 예약확정 안내문자 입니다.(별도 인원추가금 없어요)
 
 !! 금지사항!! 벌금5만원
-1.바닥에 스키드마크(고무 긁힌 자국)이나 쇠가달린 탭신발은 금지이고(구비되어있는 탭판4개 사용가능 혹은 본인 탭보드에서만가능)
+1.바닥에 스키드마크(진한색 고무 자국), 쇠가달린 탭신발 금지(구비되어있는 탭판4개 사용 혹은 본인 탭보드에서만가능)
 2.징, 장구, 드럼등 타악기 사용 불가입니다.
 3.외부신발 금지하고 있습니다.
 4.냄새나는 음식금지. 치킨, 떡뽁이, 김밥, 샌드위치, 닭강정등은 가능 짬뽕등 중식배달 절대불가, 음료배달가능
-(외부신발은 적발시 환불없는 퇴장조치하고있습니다.)
+(적발시 환불없는 퇴장조치하고있습니다.)
+
+냉난방기 안끌경우 만원벌금있습니다.
 
 동작구 남부순환로 2077 건축회관 문구점 건물 지하2층
 
