@@ -30,6 +30,7 @@
       background: var(--bg);
       color: var(--ink);
       font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+      font-size: 15px;
       line-height: 1.55;
       letter-spacing: 0;
       word-break: keep-all;
@@ -103,36 +104,28 @@
 
     .info-label {
       color: var(--muted);
+      font-size: 0.92rem;
       font-weight: 800;
       white-space: nowrap;
     }
 
     .info-value {
+      font-size: 0.92rem;
       font-weight: 800;
     }
 
     .inline-note {
       color: var(--warn);
-      font-size: 0.9rem;
+      font-size: 0.82rem;
       font-weight: 900;
       white-space: nowrap;
-    }
-
-    .info-notice {
-      padding: 9px 12px;
-      border: 1px solid #bfd8cf;
-      border-radius: 8px;
-      background: var(--accent-bg);
-      color: #1d4038;
-      font-weight: 900;
-      text-align: center;
     }
 
     .address-value {
       display: flex;
       flex-direction: column;
       gap: 2px;
-      font-size: 0.93rem;
+      font-size: 0.86rem;
       line-height: 1.35;
       font-weight: 800;
     }
@@ -154,6 +147,14 @@
       display: flex;
       gap: 6px;
       align-items: center;
+    }
+
+    .address-helper {
+      margin: -2px 0 4px 72px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+      line-height: 1.45;
     }
 
     .icon-action {
@@ -223,6 +224,7 @@
       color: #3b2200;
       font-weight: 900;
       line-height: 1.2;
+      font-size: 0.9rem;
     }
 
     .fee-note {
@@ -244,6 +246,7 @@
       border-radius: 8px;
       background: var(--accent-bg);
       color: #1d4038;
+      font-size: 0.92rem;
       font-weight: 800;
       text-align: center;
     }
@@ -271,6 +274,7 @@
       border-radius: 8px;
       background: var(--warn-bg);
       color: var(--warn);
+      font-size: 0.92rem;
       font-weight: 900;
     }
 
@@ -282,6 +286,7 @@
     .number-list li {
       padding: 10px 0;
       border-top: 1px solid #f3c9bd;
+      font-size: 0.92rem;
     }
 
     .number-list li:first-child {
@@ -298,6 +303,7 @@
     .plain-list li {
       padding: 10px 0;
       border-top: 1px solid var(--line);
+      font-size: 0.92rem;
     }
 
     .plain-list li:first-child {
@@ -333,12 +339,13 @@
 
     .platform-card h3 {
       margin: 0 0 8px;
-      font-size: 1rem;
+      font-size: 0.95rem;
       letter-spacing: 0;
     }
 
     .platform-card p {
       margin-top: 6px;
+      font-size: 0.88rem;
     }
 
     a {
@@ -352,20 +359,42 @@
       padding: 12px 14px;
       border-radius: 8px;
       background: var(--accent-bg);
+      font-size: 0.92rem;
       text-decoration: none;
       line-height: 1.35;
     }
 
     .platform-hint {
       margin-top: 6px;
-      font-size: 0.84rem;
+      font-size: 0.8rem;
       line-height: 1.45;
     }
 
     .small-note {
       margin-top: 10px;
-      font-size: 0.86rem;
+      font-size: 0.8rem;
       line-height: 1.5;
+    }
+
+    .cctv-note {
+      text-align: center;
+    }
+
+    .quick-booking-note {
+      margin: 8px 4px 0;
+      padding: 0 3px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.45;
+      text-align: center;
+    }
+
+    .quick-booking-note p {
+      margin: 2px 0;
+    }
+
+    .quick-booking-note a {
+      font-weight: 800;
     }
 
     @media (max-width: 520px) {
@@ -449,23 +478,37 @@
             </a>
           </div>
         </div>
+        <p class="address-helper">사당역 7번 출구 대로변, 도보 2분 / 드림디포 문구점 지하</p>
         <div class="info-row">
           <div class="info-label">건물비번 :</div>
           <div class="info-value">8228* <span class="inline-note">(인원추가금없음)</span></div>
         </div>
-        <p class="info-notice">물품 파손 및 안전 관리를 위해 CCTV 24시간 작동중</p>
       </div>
       <p class="shoe-note">탱고화 등 플로어신발 <span class="ok-mark">가능</span> / 탭댄스화(쇠징) <span class="no-mark">불가</span></p>
     </section>
 
+    <div class="quick-booking-note">
+      <p>일정은 비어있는데(<a href="https://리듬앤조이일정표.com/" target="_blank" rel="noopener noreferrer">일정표</a>) 시간이 지나 예약이 안되는 경우<br>문자로 문의 <a href="sms:01048017180">010-4801-7180</a></p>
+    </div>
+
     <section class="section-warning">
       <h2 class="warning-title">금지사항 <span class="fine-mark">위반 시 벌금 5만원</span></h2>
       <p class="fine-banner">금지사항 적발 시 환불 없는 퇴장 조치가 진행됩니다.</p>
+      <p class="small-note">기준은 복구 가능여부입니다.</p>
       <ol class="number-list">
         <li><strong>외부신발 금지:</strong> 바닥에 스키드마크, 진한색 고무 자국을 남기는 신발과 쇠가 달린 탭신발은 금지입니다. 구비된 탭판 4개를 사용하거나 본인 탭보드 위에서만 사용 가능합니다.</li>
         <li><strong>타악기 금지:</strong> 징, 장구, 드럼 등 타악기 사용은 불가합니다.</li>
         <li><strong>냄새나는 음식 금지:</strong> 치킨, 떡볶이, 김밥, 샌드위치, 닭강정, 음료 배달은 가능하지만 짬뽕 등 중식 배달은 절대 불가입니다.</li>
       </ol>
+      <p class="small-note cctv-note">물품 파손 및 안전 관리를 위해 <strong>CCTV 24시간 작동중</strong></p>
+    </section>
+
+    <section>
+      <h2>퇴실 전 확인</h2>
+      <ul class="plain-list">
+        <li><strong>냉난방기 확인:</strong> 끄지 않을 경우 <span class="fine-mark">벌금 1만원</span>이 있습니다.</li>
+        <li><strong>문단속 확인:</strong> 야간에는 건물문 꼭 닫아주세요.</li>
+      </ul>
     </section>
 
     <section>
@@ -486,14 +529,6 @@
     </section>
 
     <section>
-      <h2>퇴실 전 확인</h2>
-      <ul class="plain-list">
-        <li><strong>냉난방기 확인:</strong> 끄지 않을 경우 <span class="fine-mark">벌금 1만원</span>이 있습니다.</li>
-        <li><strong>문단속 확인:</strong> 오가실 때 건물 문단속을 꼭 확인해주세요.</li>
-      </ul>
-    </section>
-
-    <section>
       <h2>주차 안내</h2>
       <ul class="plain-list">
         <li><strong>건물 주차는 기본적으로 불가:</strong> 사당역 공영주차장 이용을 권장합니다.</li>
@@ -503,10 +538,8 @@
     </section>
 
     <section>
-      <h2>예약 링크</h2>
-      <p><a href="https://리듬앤조이일정표.com/">리듬앤조이 전체 일정표 보기</a></p>
-      <p class="small-note">당일 3시간 안쪽 예약은 네이버지도 리듬앤조이에서 가능합니다.</p>
-      <p class="small-note"><a href="https://naver.me/F88eBpM0">네이버지도 리듬앤조이 열기</a></p>
+      <h2>전체일정표</h2>
+      <p><a href="https://리듬앤조이일정표.com/" target="_blank" rel="noopener noreferrer">리듬앤조이일정표.com</a></p>
     </section>
 
     <section>
