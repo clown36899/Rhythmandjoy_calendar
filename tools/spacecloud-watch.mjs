@@ -389,7 +389,7 @@ import pymysql
 
 ops_root = Path(os.environ['RHYTHMJOY_OPS_ROOT'])
 sys.path.insert(0, str(ops_root))
-import cafe24_sms
+import aligo_sms
 
 def load_env(path):
     for raw in Path(path).read_text(encoding='utf-8').splitlines():
@@ -467,7 +467,7 @@ try:
             raise SystemExit(0)
 
         try:
-            result = cafe24_sms.send_sms(
+            result = aligo_sms.send_sms(
                 phone,
                 payload.get('message') or '',
                 subject=payload.get('subject') or '',

@@ -243,43 +243,42 @@ Set `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1` only when the local Mac watche
 
 Set `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` for SpaceCloud reservation email intake. Add `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1` only when the local Mac watcher is installed, logged into Naver SmartPlace, and ready to consume `naver_block` tasks. Google Calendar creation for SpaceCloud-origin reservations is intentionally done by the local watcher after Naver SmartPlace availability is applied. Toggle the relevant flag back to `0` and restart `my_email_service.service` to return to the previous importer behavior.
 
-## Cafe24 SMS Sender
+## Aligo SMS Sender
 
-Cafe24 SMS hosting is wired as a standalone sender first. Reservation-confirmed auto-SMS should call this module only after the final message template and recipient-phone extraction path are confirmed.
+Aligo SMS is the only confirmation SMS sender. Reservation-confirmed auto-SMS calls this module after the booking has been applied to the opposite platform.
 
 Required production secrets in `/home/clown313python/myapp/.env`:
 
 ```bash
-CAFE24_SMS_USER_ID=
-CAFE24_SMS_SECURE_KEY=
-CAFE24_SMS_SENDER=
-CAFE24_SMS_TIMEOUT_SECONDS=12
-CAFE24_SMS_CHARSET=utf-8
-CAFE24_SMS_DRY_RUN=0
+ALIGO_SMS_USER_ID=
+ALIGO_SMS_API_KEY=
+ALIGO_SMS_SENDER=
+ALIGO_SMS_TIMEOUT_SECONDS=12
+ALIGO_SMS_DRY_RUN=0
 ```
 
-Cafe24 setup requirements:
+Aligo setup requirements:
 
-- The sender number must show `등록` in `SMS 관리 > 발신번호 관리`.
-- `CAFE24_SMS_SECURE_KEY` is issued from `SMS 관리 > 소스예제 > 인증키`.
-- `SMS 관리 > API 발송IP 설정` must allow the server IP, or API IP restriction must be disabled.
+- The sender number must be registered in Aligo.
+- `ALIGO_SMS_API_KEY` is issued from `문자API > 신청/인증`.
+- `문자API > 신청/인증 > 발송 서버 IP` must allow the Cafe24 server IP `1.234.23.64`.
 
 Test request without sending a real SMS:
 
 ```bash
-python3 ops/cafe24_sms.py send --to 01026787180 --message "리듬앤조이 문자 발송 테스트입니다." --json
+python3 ops/aligo_sms.py send --to 01026787180 --message "리듬앤조이 문자 발송 테스트입니다." --json
 ```
 
 Actual send after registration/key/IP settings are ready:
 
 ```bash
-python3 ops/cafe24_sms.py send --to 01026787180 --message "리듬앤조이 문자 발송 테스트입니다." --real --json
+python3 ops/aligo_sms.py send --to 01026787180 --message "리듬앤조이 문자 발송 테스트입니다." --real --json
 ```
 
 Remaining count:
 
 ```bash
-python3 ops/cafe24_sms.py remain --json
+python3 ops/aligo_sms.py remain --json
 ```
 
 LaunchAgent example:
