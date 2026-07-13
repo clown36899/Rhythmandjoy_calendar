@@ -2930,6 +2930,10 @@ body.info-page-open {
   border-color: #777;
 }
 
+.mobile-info-hidden {
+  display: none !important;
+}
+
 /* 1000px 이상에서는 버튼 숨김 (데스크탑 모드) */
 @media (min-width: 1001px) {
   .info-btn {
