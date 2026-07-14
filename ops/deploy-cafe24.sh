@@ -111,7 +111,7 @@ if ! grep -Fxq "$VPS_HOSTNAME" <<<"$remote_hostnames"; then
 fi
 
 ssh "${ssh_opts[@]}" "$SSH_TARGET" "install -d $(remote_quote "$REMOTE_RELEASE_DIR")"
-rsync -az --delete \
+rsync -az --delete --delete-excluded \
     -e "ssh -i $(remote_quote "$SSH_KEY") -o IdentitiesOnly=yes" \
     --exclude='.git/' \
     --exclude='.env' \
@@ -120,6 +120,7 @@ rsync -az --delete \
     --exclude='.claude/' \
     --exclude='.codex/' \
     --exclude='.playwright-mcp/' \
+    --exclude='state/' \
     --exclude='.vscode/sftp.json' \
     --exclude='www/.vscode/' \
     --exclude='static/rhythmjoycalendar-*.json' \
