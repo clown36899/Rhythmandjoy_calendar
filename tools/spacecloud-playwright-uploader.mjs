@@ -807,7 +807,7 @@ export async function fetchSpacecloudReservationPhone(context, task) {
 
 export async function cancelSpacecloudConfirmedReservation(context, task, {
   reasonCode = 'PRSCH',
-  reasonText = '.',
+  reasonText = '',
 } = {}) {
   const page = await pageForContext(context);
   const payload = parseTaskPayload(task);
@@ -907,7 +907,7 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
     if (await reasonSelect.count() !== 1) throw new Error('SpaceCloud cancel reason select not visible');
     await reasonSelect.first().selectOption(reasonCode);
     const reasonInput = page.locator('textarea#cancel_gr1, textarea[name="cancel_gr"]').filter({ visible: true }).first();
-    if (await reasonInput.count() && await reasonInput.isEnabled().catch(() => false)) {
+    if (reasonText && await reasonInput.count() && await reasonInput.isEnabled().catch(() => false)) {
       await reasonInput.fill(reasonText.slice(0, 100), { timeout: 5000 });
     }
 
