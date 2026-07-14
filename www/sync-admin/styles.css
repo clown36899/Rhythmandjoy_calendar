@@ -507,6 +507,30 @@ input[readonly] {
   font-weight: 800;
 }
 
+.grid-cell.time-dawn {
+  background: #e6f7ee;
+}
+
+.grid-cell.time-before {
+  background: #fff1d8;
+}
+
+.grid-cell.time-after {
+  background: #e2f1ff;
+}
+
+.grid-cell.header.time-dawn {
+  background: #d7f0e3;
+}
+
+.grid-cell.header.time-before {
+  background: #ffe3b3;
+}
+
+.grid-cell.header.time-after {
+  background: #cbe6ff;
+}
+
 .grid-cell.header {
   display: grid;
   place-items: center;
@@ -530,6 +554,18 @@ input[readonly] {
 
 .grid-cell.slot:hover {
   background: #f5fbf9;
+}
+
+.grid-cell.slot.time-dawn:hover {
+  background: #d7f0e3;
+}
+
+.grid-cell.slot.time-before:hover {
+  background: #ffe5bd;
+}
+
+.grid-cell.slot.time-after:hover {
+  background: #d3eaff;
 }
 
 .grid-cell.has-event {
@@ -608,6 +644,88 @@ input[readonly] {
   font-weight: 800;
 }
 
+.price-reference {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.price-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.price-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.band-swatch {
+  width: 18px;
+  height: 12px;
+  border: 1px solid rgba(24, 33, 31, 0.1);
+  border-radius: 3px;
+}
+
+.band-swatch.band-dawn {
+  background: #d7f0e3;
+}
+
+.band-swatch.band-before {
+  background: #ffe3b3;
+}
+
+.band-swatch.band-after {
+  background: #cbe6ff;
+}
+
+.price-reference-note {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.price-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.price-table {
+  min-width: 680px;
+  font-size: 12px;
+}
+
+.price-table th,
+.price-table td {
+  padding: 9px 10px;
+}
+
+.price-table th:first-child {
+  width: 68px;
+}
+
+.price-pair {
+  display: grid;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.price-pair span:first-child {
+  color: var(--text);
+  font-weight: 900;
+}
+
+.price-pair span:last-child {
+  color: #6b4acb;
+  font-weight: 900;
+}
+
 .two-column {
   min-width: 0;
   display: grid;
@@ -653,15 +771,24 @@ input[readonly] {
 }
 
 .auth-box {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: end;
+  display: block;
   margin-bottom: 14px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8fbfa;
+}
+
+.auth-summary strong,
+.auth-summary span {
+  display: block;
+}
+
+.auth-summary span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .session-row {
@@ -772,6 +899,73 @@ th {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.task-main {
+  font-weight: 800;
+}
+
+.conflict-flow {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.conflict-side {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfa;
+}
+
+.conflict-side.keep {
+  border-color: #b9e3d2;
+  background: #effaf5;
+}
+
+.conflict-side.cancel {
+  border-color: #f0c7c3;
+  background: #fff6f5;
+}
+
+.conflict-platform {
+  font-weight: 900;
+}
+
+.conflict-state {
+  display: inline-flex;
+  margin-left: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.conflict-meta,
+.conflict-sms {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.conflict-sms {
+  color: var(--text);
+}
+
+.conflict-x {
+  color: var(--danger);
+  font-weight: 900;
+}
+
+.conflict-arrow {
+  align-self: center;
+  color: var(--muted);
+  font-weight: 900;
 }
 
 body.modal-open {
@@ -898,6 +1092,7 @@ body.modal-open {
   .profile-box {
     grid-template-columns: 1fr;
   }
+
 }
 
 @media (max-width: 640px) {
@@ -948,6 +1143,15 @@ body.modal-open {
   .room-filter {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .conflict-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .conflict-arrow {
+    justify-self: center;
+    transform: rotate(90deg);
   }
 
   .form-grid {

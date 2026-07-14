@@ -98,6 +98,7 @@
           </div>
           <div class="schedule-grid" id="scheduleGrid" aria-label="일정 그리드"></div>
         </div>
+        <div class="price-reference" id="priceReference" aria-label="플랫폼별 가격 비교"></div>
       </section>
 
       <section class="panel" id="sessions">
@@ -108,11 +109,11 @@
             </div>
           </div>
           <div class="auth-box">
-            <label>
-              <span>관리 토큰</span>
-              <input id="adminToken" type="password" autocomplete="off" placeholder="서버 SYNC_ADMIN_TOKEN">
-            </label>
-            <button type="button" class="primary-button" id="saveAdminToken">DB 연결</button>
+            <div class="auth-summary">
+              <strong>관리자 DB 연결</strong>
+              <span id="adminTokenStatus">자동 연결 확인 중</span>
+            </div>
+            <input id="adminToken" type="hidden" autocomplete="off" aria-hidden="true">
           </div>
           <div class="session-list">
             <article class="session-row" data-platform="naver">
@@ -216,6 +217,7 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="../calendar_set/calendar_v10/revenue-policy.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

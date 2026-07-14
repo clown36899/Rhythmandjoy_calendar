@@ -1,6 +1,7 @@
 (function () {
   const rooms = ["A", "B", "C", "D", "E"];
   const hours = Array.from({ length: 24 }, (_, index) => index);
+  const revenuePolicy = window.RhythmjoyRevenuePolicy || null;
   const apiUrl = "./api.php";
   const storageKey = "rhythmjoy.syncAdmin.drafts.v1";
   const profileKey = "rhythmjoy.syncAdmin.profile.v1";
@@ -14,7 +15,7 @@
     tasks: [],
     sessions: loadJson(sessionKey, {}),
     apiMode: "local",
-    lastApiMessage: "관리 토큰 입력 전",
+    lastApiMessage: "DB 연결 확인 전",
   };
 
   const el = {
@@ -23,6 +24,7 @@
     nextDay: document.getElementById("nextDay"),
     scheduleWrap: document.getElementById("scheduleWrap"),
     scheduleGrid: document.getElementById("scheduleGrid"),
+    priceReference: document.getElementById("priceReference"),
     scheduleTimeNav: document.getElementById("scheduleTimeNav"),
     scheduleNowText: document.getElementById("scheduleNowText"),
     scrollToNow: document.getElementById("scrollToNow"),
@@ -44,13 +46,13 @@
     lastScan: document.getElementById("lastScan"),
     runCheck: document.getElementById("runCheck"),
     adminToken: document.getElementById("adminToken"),
-    saveAdminToken: document.getElementById("saveAdminToken"),
     profilePath: document.getElementById("profilePath"),
     saveProfile: document.getElementById("saveProfile"),
     clearDrafts: document.getElementById("clearDrafts"),
     toast: document.getElementById("toast"),
     apiState: document.getElementById("apiState"),
     apiStatus: document.getElementById("apiStatus"),
+    adminTokenStatus: document.getElementById("adminTokenStatus"),
     naverStatus: document.getElementById("naverStatus"),
     spacecloudStatus: document.getElementById("spacecloudStatus"),
   };
@@ -60,7 +62,7 @@
   function init() {
     syncTokenFromUrl();
     el.activeDate.value = state.activeDate;
-    el.adminToken.value = localStorage.getItem(tokenKey) || "";
+    if (el.adminToken) el.adminToken.value = localStorage.getItem(tokenKey) || "";
     el.profilePath.value = localStorage.getItem(profileKey) || el.profilePath.value;
     fillTimeSelects();
     bindEvents();
@@ -107,7 +109,6 @@
     el.clearDrafts.addEventListener("click", clearDrafts);
     el.runCheck.addEventListener("click", runReadOnlyCheck);
     el.scrollToNow.addEventListener("click", scrollScheduleToNow);
-    el.saveAdminToken.addEventListener("click", saveAdminToken);
     if (el.saveProfile) el.saveProfile.addEventListener("click", saveProfile);
     window.addEventListener("resize", updateCurrentTimeNavigator);
     window.addEventListener("resize", scheduleActiveNavUpdate);
@@ -190,7 +191,7 @@
 
   async function refreshFromApi(options = {}) {
     if (!adminToken()) {
-      setApiState("warn", "로컬 초안", "관리 토큰을 입력하면 DB에 연결됩니다.");
+      setApiState("warn", "DB 연결 필요", "운영 설정 확인이 필요합니다.");
       return false;
     }
 
@@ -285,6 +286,7 @@
 
   function renderAll() {
     renderSchedule();
+    renderPriceReference();
     renderTasks();
     renderStatus();
     renderSessions();
@@ -301,6 +303,7 @@
     el.scheduleGrid.appendChild(corner);
     hours.forEach((hour) => {
       const headerCell = cell(scheduleHourLabel(hour), "header");
+      headerCell.classList.add(timeBandClass(hour), timeBandWeekendClass());
       headerCell.title = formatHour(hour);
       placeGridItem(headerCell, 1, hour + 2);
       el.scheduleGrid.appendChild(headerCell);
@@ -313,6 +316,7 @@
       el.scheduleGrid.appendChild(roomCell);
       hours.forEach((hour) => {
         const slot = cell("", "slot");
+        slot.classList.add(timeBandClass(hour), timeBandWeekendClass());
         slot.dataset.room = room;
         slot.dataset.hour = String(hour);
         placeGridItem(slot, rowIndex, hour + 2);
@@ -399,7 +403,7 @@
       const badgeClass = taskBadgeClass(task);
       row.innerHTML = `
         <td><span class="status-badge ${badgeClass}">${escapeHtml(taskStatusText(task))}</span></td>
-        <td>${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}${reservationNumberLine(task)}<br><span class="row-source">${escapeHtml(taskDetailText(task))}${paymentSuffix(task)}</span></td>
+        <td>${taskBookingCellHtml(task)}</td>
         <td>${escapeHtml(platformText(task.naver))}</td>
         <td>${escapeHtml(platformText(task.spacecloud))}</td>
         <td>${formatDateTime(task.updatedAt || task.createdAt)}</td>
@@ -492,18 +496,6 @@
     showToast("로컬 읽기 점검 시간이 기록됐습니다.");
   }
 
-  function saveAdminToken() {
-    const token = el.adminToken.value.trim();
-    if (token) {
-      localStorage.setItem(tokenKey, token);
-      showToast("관리 토큰을 저장했습니다. DB 연결을 확인합니다.");
-    } else {
-      localStorage.removeItem(tokenKey);
-      showToast("관리 토큰을 비웠습니다. 로컬 초안 모드입니다.");
-    }
-    refreshFromApi({ silent: false });
-  }
-
   async function saveProfile() {
     const profilePath = el.profilePath.value.trim();
     localStorage.setItem(profileKey, profilePath);
@@ -586,7 +578,7 @@
     return [
       `${event.name || "예약"} ${formatHour(event.start)}-${formatHour(event.end)}`,
       source,
-      payment ? `결제 ${payment}` : "결제금액 미수집",
+      payment ? `실결제 ${payment}` : "실결제 금액 미수집",
     ].join(" / ");
   }
 
@@ -596,9 +588,87 @@
       <span class="event-main">${escapeHtml(event.name || "예약")} · ${formatHour(event.start)}-${formatHour(event.end)}</span>
       <span class="event-meta">
         <span>${escapeHtml(sourceShortText(event.source))}</span>
-        <span class="${payment ? "payment-amount" : "payment-missing"}">${escapeHtml(payment || "금액 미수집")}</span>
+        ${payment ? `<span class="payment-amount">${escapeHtml(payment)}</span>` : ""}
       </span>
     `;
+  }
+
+  function renderPriceReference() {
+    if (!el.priceReference) return;
+    const pricing = revenuePolicy?.ROOM_PRICING || null;
+    if (!pricing) {
+      el.priceReference.innerHTML = "";
+      return;
+    }
+    const visibleRooms = state.roomFilter === "all" ? rooms : [state.roomFilter];
+    const rows = visibleRooms
+      .map((room) => {
+        const config = pricing[room.toLowerCase()];
+        if (!config) return "";
+        return `
+          <tr>
+            <th>${escapeHtml(room)}홀</th>
+            <td>${pricePairHtml(config.dawnHourly)}</td>
+            <td>${pricePairHtml(config.before16)}</td>
+            <td>${pricePairHtml(config.after16)}</td>
+            <td>${pricePairHtml(config.overnight)}</td>
+          </tr>
+        `;
+      })
+      .filter(Boolean)
+      .join("");
+    el.priceReference.innerHTML = `
+      <div class="price-legend">
+        <span><i class="band-swatch band-dawn"></i>00-06 새벽</span>
+        <span><i class="band-swatch band-before"></i>06-16 평일 낮</span>
+        <span><i class="band-swatch band-after"></i>16-24 / 주말·공휴일</span>
+      </div>
+      <div class="price-reference-note">가격은 사이트 안내표 기준 참고값입니다. 예약 카드의 금액은 DB에 수집된 실제 결제금액이 있을 때만 표시합니다.</div>
+      <div class="price-table-wrap">
+        <table class="price-table">
+          <thead>
+            <tr>
+              <th>방</th>
+              <th>새벽 시간당</th>
+              <th>평일 16시 전</th>
+              <th>16시 후/휴일</th>
+              <th>새벽 통대관</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function pricePairHtml(naverAmount) {
+    const naver = Number(naverAmount || 0);
+    if (!naver) return "-";
+    const spacecloud = Math.round(naver * 1.1);
+    return `
+      <span class="price-pair">
+        <span>네이버 ${formatWon(naver)}</span>
+        <span>SC ${formatWon(spacecloud)}</span>
+      </span>
+    `;
+  }
+
+  function timeBandClass(hour) {
+    if (hour >= 0 && hour < 6) return "time-dawn";
+    if (!isWeekendOrHolidayDate(state.activeDate) && hour < 16) return "time-before";
+    return "time-after";
+  }
+
+  function timeBandWeekendClass() {
+    return isWeekendOrHolidayDate(state.activeDate) ? "holiday-pricing" : "weekday-pricing";
+  }
+
+  function isWeekendOrHolidayDate(dateText) {
+    const date = new Date(`${dateText}T00:00:00+09:00`);
+    const day = date.getDay();
+    if (day === 0 || day === 6) return true;
+    const holidays = revenuePolicy?.HOLIDAYS_BY_YEAR?.[date.getFullYear()] || [];
+    return holidays.includes(dateText);
   }
 
   function sourceClass(source) {
@@ -632,6 +702,10 @@
     const text = String(value || "").trim();
     if (!text || text === "N/A") return "";
     return text;
+  }
+
+  function formatWon(amount) {
+    return `${Number(amount || 0).toLocaleString()}원`;
   }
 
   function scheduleHourLabel(hour) {
@@ -704,6 +778,9 @@
     el.apiState.classList.toggle("warn", level === "warn");
     el.apiStatus.textContent = label;
     el.apiState.title = message;
+    if (el.adminTokenStatus) {
+      el.adminTokenStatus.textContent = level === "ready" ? "DB 연결됨" : (message || label);
+    }
   }
 
   function applyApiData(data) {
@@ -761,6 +838,7 @@
       resultStatus: item.resultStatus || "",
       smsStatus: item.smsStatus || "",
       error: item.error || "",
+      conflict: item.conflict || null,
       date: item.date || "",
       room: item.room || "",
       start: Number(item.startHour),
@@ -793,7 +871,7 @@
   }
 
   function adminToken() {
-    return (localStorage.getItem(tokenKey) || el.adminToken.value || "").trim();
+    return (localStorage.getItem(tokenKey) || el.adminToken?.value || "").trim();
   }
 
   function syncTokenFromUrl() {
@@ -900,6 +978,57 @@
       parts.push(`오류 ${task.error}`);
     }
     return parts.filter(Boolean).join(" / ");
+  }
+
+  function taskBookingCellHtml(task) {
+    if (isDuplicateCancelTask(task) && task.conflict) {
+      return duplicateCancelCellHtml(task);
+    }
+    const suffix = task.taskType ? "" : paymentSuffix(task);
+    return `${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}${reservationNumberLine(task)}<br><span class="row-source">${escapeHtml(taskDetailText(task))}${suffix}</span>`;
+  }
+
+  function duplicateCancelCellHtml(task) {
+    const winner = task.conflict?.winner || null;
+    const loser = task.conflict?.loser || null;
+    return `
+      <div class="task-main">${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)} · ${escapeHtml(task.name || "이름 없음")}${reservationNumberLine(task)}</div>
+      <div class="conflict-flow">
+        ${conflictSideHtml(winner, "winner", task)}
+        <span class="conflict-arrow">→</span>
+        ${conflictSideHtml(loser, "loser", task)}
+      </div>
+    `;
+  }
+
+  function conflictSideHtml(side, role, task) {
+    const isCanceled = role === "loser";
+    const platform = side?.platformLabel || (isCanceled ? canceledPlatformLabel(task) : confirmedPlatformLabel(task));
+    const stateText = isCanceled ? "예약취소" : "예약확정";
+    const stateClass = isCanceled ? "cancel" : "keep";
+    const smsText = isCanceled ? `취소문자 ${smsStatusText(task.smsStatus || "대기")}` : "확정 유지";
+    const received = side?.receivedAt ? `접수 ${formatDateTime(side.receivedAt) || side.receivedAt}` : "";
+    const reservationNo = side?.reservationNo ? `예약번호 ${side.reservationNo}` : "";
+    return `
+      <div class="conflict-side ${stateClass}">
+        <div class="conflict-platform">${escapeHtml(platform)} <span class="conflict-state">${escapeHtml(stateText)}</span></div>
+        <div class="conflict-meta">${escapeHtml(received || reservationNo || "-")}</div>
+        ${reservationNo && received ? `<div class="conflict-meta">${escapeHtml(reservationNo)}</div>` : ""}
+        <div class="conflict-sms">${isCanceled ? '<span class="conflict-x">X</span> ' : ""}${escapeHtml(smsText)}</div>
+      </div>
+    `;
+  }
+
+  function confirmedPlatformLabel(task) {
+    if (task.taskType === "spacecloud_cancel") return "네이버";
+    if (task.taskType === "naver_cancel") return "스페이스클라우드";
+    return "선예약";
+  }
+
+  function canceledPlatformLabel(task) {
+    if (task.taskType === "spacecloud_cancel") return "스페이스클라우드";
+    if (task.taskType === "naver_cancel") return "네이버";
+    return "후예약";
   }
 
   function smsStatusText(status) {

@@ -82,7 +82,7 @@ function require_admin_token($env, $payload) {
         json_response(array(
             'ok' => false,
             'error' => 'auth_required',
-            'message' => '관리 토큰이 필요합니다.',
+            'message' => '관리자 인증 설정 확인이 필요합니다.',
         ), 401);
     }
 }
@@ -426,12 +426,38 @@ function task_platform_statuses($task_type, $platform, $status) {
     return array($naver ?: '대기', $spacecloud ?: '대기');
 }
 
+function task_conflict_booking($booking) {
+    if (!is_array($booking)) {
+        return null;
+    }
+    $platform = isset($booking['source_platform']) ? (string) $booking['source_platform'] : '';
+    $start = isset($booking['start_time']) ? (string) $booking['start_time'] : '';
+    $end = isset($booking['end_time']) ? (string) $booking['end_time'] : '';
+    return array(
+        'platform' => $platform,
+        'platformLabel' => $platform === 'naver' ? '네이버' : ($platform === 'spacecloud' ? '스페이스클라우드' : '예약'),
+        'date' => isset($booking['reservation_date']) ? (string) $booking['reservation_date'] : '',
+        'room' => strtoupper((string) (isset($booking['room_key']) ? $booking['room_key'] : '')),
+        'startHour' => hour_from_time_value($start, false),
+        'endHour' => hour_from_time_value($end, true),
+        'name' => isset($booking['reserver_name']) ? (string) $booking['reserver_name'] : '',
+        'reservationNo' => isset($booking['reservation_number']) ? (string) $booking['reservation_number'] : '',
+        'receivedAt' => isset($booking['last_event_at']) ? (string) $booking['last_event_at'] : '',
+    );
+}
+
 function normalize_task_row($row) {
     $task_type = $row['task_type'] ?: $row['action_type'];
     $result = json_decode((string) ($row['result_text'] ?: ''), true);
     if (!is_array($result)) {
         $result = array();
     }
+    $payload = json_decode((string) (isset($row['payload_json']) ? $row['payload_json'] : ''), true);
+    if (!is_array($payload)) {
+        $payload = array();
+    }
+    $winning = task_conflict_booking(isset($payload['winningBooking']) ? $payload['winningBooking'] : null);
+    $losing = task_conflict_booking(isset($payload['losingBooking']) ? $payload['losingBooking'] : null);
     $sms = isset($result['sms']) && is_array($result['sms']) ? $result['sms'] : array();
     list($naver_status, $spacecloud_status) = task_platform_statuses($task_type, $row['platform'], $row['status']);
     return array(
@@ -446,6 +472,10 @@ function normalize_task_row($row) {
         'resultStatus' => isset($result['status']) ? (string) $result['status'] : '',
         'smsStatus' => isset($sms['status']) ? (string) $sms['status'] : '',
         'error' => isset($result['error']) ? (string) $result['error'] : '',
+        'conflict' => ($winning || $losing) ? array(
+            'winner' => $winning,
+            'loser' => $losing,
+        ) : null,
         'date' => $row['reservation_date'],
         'room' => strtoupper((string) $row['room_key']),
         'startHour' => hour_from_time_value($row['start_time_text'], false),
@@ -467,6 +497,7 @@ function recent_task_rows($pdo) {
                COALESCE(l.task_type, t.action_type) AS task_type,
                COALESCE(l.status, t.status) AS status,
                COALESCE(l.result_text, t.result_text) AS result_text,
+               COALESCE(l.payload_json, '') AS payload_json,
                r.reservation_date, r.room_key,
                CONCAT(LPAD(r.start_hour, 2, '0'), ':00') AS start_time_text,
                IF(r.end_hour = 24, '00:00', CONCAT(LPAD(r.end_hour, 2, '0'), ':00')) AS end_time_text,
@@ -496,6 +527,7 @@ function recent_task_rows($pdo) {
                l.task_type AS task_type,
                l.status,
                l.result_text,
+               l.payload_json,
                l.reservation_date,
                l.room_key,
                TIME_FORMAT(l.start_time, '%H:%i') AS start_time_text,
