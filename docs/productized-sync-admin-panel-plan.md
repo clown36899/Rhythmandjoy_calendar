@@ -46,6 +46,10 @@ Naver Reservation <-> SpaceCloud synchronization
 
 Important decisions:
 
+- The first packaged version is a single-admin product shell, not a full
+  multi-tenant SaaS.
+- Rhythmjoy is the first admin/user and must keep working while the product
+  shell is built.
 - Event detection interval: 3 minutes is enough.
 - Naver access should use a customer-added manager/admin account where possible.
 - SpaceCloud access should use the customer-authorized logged-in session method
@@ -54,6 +58,21 @@ Important decisions:
 - No hidden API/token extraction as a production method.
 - Use visible logged-in platform screens and low-frequency sequential execution.
 - Google Calendar is optional output/record only, not the source of truth.
+
+The final packaged flow should feel like a product:
+
+```text
+open admin panel
+  -> complete first-run login session setup for Naver and SpaceCloud
+  -> see schedule and sync health
+  -> add/cancel reservations from the panel
+  -> automation applies both platforms
+  -> panel shows task result and alerts on login/session issues
+```
+
+This means the admin panel must include login-session setup controls. The admin
+opens a browser session from the panel, logs in manually, then the system records
+the profile/session state and uses it for later optimized scans/actions.
 
 ## Optimized Runner Model
 
@@ -101,9 +120,20 @@ Increase only after real timing and memory data prove it.
 
 Build a management panel backed by the DB ledger instead of Google Calendar.
 
+Do not make this look like a document archive or back-office file folder. The
+first screen must be an operational schedule tool:
+
+- clear room/time grid;
+- quick reservation entry;
+- visible sync status;
+- direct login/session setup controls;
+- actionable task/result states.
+
 The panel should show:
 
 - room schedule by day/week/month;
+- first-run setup progress: Naver login, SpaceCloud login, room mapping, test
+  scan;
 - source platform: Naver, SpaceCloud, admin/manual;
 - platform action status for each side;
 - conflicts and needs-review items;
@@ -112,6 +142,9 @@ The panel should show:
 
 The panel should allow:
 
+- launch or attach to Naver login session setup;
+- launch or attach to SpaceCloud login session setup;
+- run read-only login/session checks;
 - add reservation manually;
 - cancel/restore a manual reservation;
 - retry a failed sync task;
@@ -257,16 +290,24 @@ kiosk Chrome current memory: about 450MB, observed peak about 1.0GB
 
 ### Phase 5: Admin Panel MVP
 
-- [ ] Choose implementation path:
-  - simple server-rendered HTML first, or
-  - existing static calendar + JSON API, or
-  - FullCalendar admin view.
+- [x] Choose implementation path:
+  - static product shell under `www/sync-admin/` first;
+  - DB/API wiring follows after UI flow is validated.
+- [x] Add initial static admin panel scaffold:
+  - `www/sync-admin/index.html`
+  - schedule grid
+  - manual reservation form
+  - local draft task list
+  - Naver/SpaceCloud login session setup controls
+  - automation profile path field
 - [ ] Add authenticated admin route.
 - [ ] Show weekly schedule with room filters.
 - [ ] Add manual reservation form.
 - [ ] Add conflict validation before saving.
 - [ ] Create platform sync tasks from manual reservations.
 - [ ] Add task status and retry controls.
+- [ ] Wire first-run login/session setup controls to the runner instead of
+  local UI state.
 
 ### Phase 6: Migration And VPS Readiness
 
