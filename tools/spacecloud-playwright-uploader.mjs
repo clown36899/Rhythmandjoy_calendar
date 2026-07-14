@@ -807,7 +807,7 @@ export async function fetchSpacecloudReservationPhone(context, task) {
 
 export async function cancelSpacecloudConfirmedReservation(context, task, {
   reasonCode = 'PRSCH',
-  reasonText = '다른 예약앱 선대관으로 인한 중복 예약 취소',
+  reasonText = '.',
 } = {}) {
   const page = await pageForContext(context);
   const payload = parseTaskPayload(task);
