@@ -66,6 +66,7 @@
     renderAll();
     updateActiveNav();
     refreshFromApi({ silent: true });
+    window.setInterval(() => refreshFromApi({ silent: true }), 60000);
     window.setInterval(updateCurrentTimeNavigator, 60000);
   }
 
@@ -120,7 +121,7 @@
     });
 
     document.querySelectorAll("[data-open-login]").forEach((button) => {
-      button.addEventListener("click", () => markSessionReady(button.dataset.openLogin));
+      button.addEventListener("click", () => openLoginWindow(button.dataset.openLogin));
     });
 
     document.querySelectorAll("[data-open-reservation-modal]").forEach((link) => {
@@ -423,14 +424,46 @@
 
   function updateSession(platform, label) {
     const row = document.querySelector(`.session-row[data-platform="${platform}"]`);
-    const session = state.sessions[platform];
-    if (session?.readyAt || session?.ready_at) {
-      row.classList.add("ready");
-      label.textContent = `준비됨 ${formatDateTime(session.readyAt || session.ready_at)}`;
-    } else {
-      row.classList.remove("ready");
-      label.textContent = "세션 확인 필요";
-    }
+    const session = state.sessions[platform] || {};
+    const status = normalizeSessionStatus(session.status, session.readyAt || session.ready_at);
+    const checkedAt = session.lastCheckedAt || session.last_checked_at || session.updatedAt || session.updated_at || session.readyAt || session.ready_at;
+    const note = session.note || "";
+
+    row.classList.remove("ready", "warn", "failed", "checking", "needs-check");
+    row.classList.add(sessionStatusClass(status));
+    label.textContent = checkedAt
+      ? `${sessionStatusLabel(status)} ${formatDateTime(checkedAt)}`
+      : sessionStatusLabel(status);
+    row.title = note ? `${sessionStatusLabel(status)}: ${note}` : sessionStatusLabel(status);
+  }
+
+  function normalizeSessionStatus(status, readyAt) {
+    const value = String(status || "").trim().toLowerCase();
+    if (["ready", "ok", "logged_in"].includes(value)) return "ready";
+    if (["login_required", "needs_login", "auth_required", "expired"].includes(value)) return "login_required";
+    if (["check_failed", "failed", "error"].includes(value)) return "check_failed";
+    if (["checking", "running"].includes(value)) return "checking";
+    return readyAt ? "ready" : "needs_check";
+  }
+
+  function sessionStatusLabel(status) {
+    return {
+      ready: "정상",
+      login_required: "로그인 필요",
+      check_failed: "점검 실패",
+      checking: "점검 중",
+      needs_check: "상태 대기",
+    }[status] || "상태 대기";
+  }
+
+  function sessionStatusClass(status) {
+    return {
+      ready: "ready",
+      login_required: "warn",
+      check_failed: "failed",
+      checking: "checking",
+      needs_check: "needs-check",
+    }[status] || "needs-check";
   }
 
   async function runReadOnlyCheck() {
@@ -481,28 +514,13 @@
     showToast("프로필 경로가 로컬에 저장됐습니다.");
   }
 
-  async function markSessionReady(platform) {
+  function openLoginWindow(platform) {
     const urls = {
       naver: "https://partner.booking.naver.com/",
       spacecloud: "https://partner.spacecloud.kr/",
     };
     window.open(urls[platform], "_blank", "noopener,noreferrer");
-    const readyAt = new Date().toISOString();
-    state.sessions[platform] = { readyAt };
-    localStorage.setItem(sessionKey, JSON.stringify(state.sessions));
-    renderSessions();
-
-    if (adminToken()) {
-      try {
-        const data = await apiRequest("session_ready", { date: state.activeDate, platform });
-        applyApiData(data);
-        renderAll();
-      } catch (error) {
-        setApiState("warn", "로컬 초안", error.message || "세션 DB 기록 실패");
-      }
-    }
-
-    showToast(`${platform === "naver" ? "네이버" : "스페이스클라우드"} 로그인 창을 열었습니다.`);
+    showToast(`${platform === "naver" ? "네이버" : "스페이스클라우드"} 로그인 창을 열었습니다. 상태는 미니PC 다음 점검 후 갱신됩니다.`);
   }
 
   async function clearDrafts() {
@@ -688,6 +706,9 @@
       acc[platform] = {
         readyAt: sessions[platform].ready_at || "",
         status: sessions[platform].status || "",
+        note: sessions[platform].note || "",
+        lastCheckedAt: sessions[platform].last_checked_at || "",
+        updatedAt: sessions[platform].updated_at || "",
       };
       return acc;
     }, {});

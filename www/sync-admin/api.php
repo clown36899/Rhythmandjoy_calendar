@@ -223,7 +223,8 @@ function session_rows($pdo) {
     $stmt = $pdo->query("
         SELECT platform, status, note,
                DATE_FORMAT(ready_at, '%Y-%m-%dT%H:%i:%s+09:00') AS ready_at,
-               DATE_FORMAT(last_checked_at, '%Y-%m-%dT%H:%i:%s+09:00') AS last_checked_at
+               DATE_FORMAT(last_checked_at, '%Y-%m-%dT%H:%i:%s+09:00') AS last_checked_at,
+               DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
         FROM rhythmjoy_admin_sessions
         ORDER BY platform
     ");

@@ -673,6 +673,19 @@ h2 {
   color: var(--ok);
 }
 
+.session-row.warn span,
+.session-row.needs-check span {
+  color: var(--warning);
+}
+
+.session-row.failed span {
+  color: var(--danger);
+}
+
+.session-row.checking span {
+  color: var(--accent-2);
+}
+
 .profile-box {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

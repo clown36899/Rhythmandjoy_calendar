@@ -1315,6 +1315,91 @@ PY
   return JSON.parse(runSshScript(target, script).trim() || '{}');
 }
 
+async function updateRemoteAdminSessions(args, sessions) {
+  if (!Array.isArray(sessions) || sessions.length === 0) return { updated: 0 };
+  const target = await loadCafe24Target(args);
+  const payload = Buffer.from(JSON.stringify(sessions.map((session) => ({
+    platform: session.platform,
+    status: session.status,
+    note: String(session.note || '').slice(0, 240),
+  }))), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export SESSION_UPDATE_B64=${shellQuote(payload)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+payload = json.loads(base64.b64decode(os.environ['SESSION_UPDATE_B64']).decode('utf-8'))
+allowed_platforms = {'naver', 'spacecloud'}
+allowed_statuses = {'ready', 'login_required', 'check_failed', 'checking', 'needs_check'}
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=True,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS rhythmjoy_admin_sessions (
+                platform VARCHAR(32) NOT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'needs_check',
+                ready_at DATETIME NULL,
+                last_checked_at DATETIME NULL,
+                note VARCHAR(255) NOT NULL DEFAULT '',
+                updated_at DATETIME NOT NULL,
+                PRIMARY KEY (platform)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        updated = 0
+        for row in payload:
+            platform = str(row.get('platform') or '').strip()
+            if platform not in allowed_platforms:
+                continue
+            status = str(row.get('status') or '').strip()
+            if status not in allowed_statuses:
+                status = 'check_failed'
+            note = str(row.get('note') or '')[:255]
+            cur.execute(
+                """
+                INSERT INTO rhythmjoy_admin_sessions (platform, status, ready_at, last_checked_at, note, updated_at)
+                VALUES (%s, %s, IF(%s='ready', NOW(), NULL), NOW(), %s, NOW())
+                ON DUPLICATE KEY UPDATE
+                    status=VALUES(status),
+                    ready_at=IF(VALUES(status)='ready', NOW(), NULL),
+                    last_checked_at=NOW(),
+                    note=VALUES(note),
+                    updated_at=NOW()
+                """,
+                (platform, status, status, note),
+            )
+            updated += cur.rowcount
+        print(json.dumps({'updated': updated}, ensure_ascii=False))
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '{}');
+}
+
 async function createRemoteGoogleEventForTask(args, taskId, taskType) {
   const target = await loadCafe24Target(args);
   const payload = Buffer.from(JSON.stringify({ taskId, taskType }), 'utf8').toString('base64');
@@ -3493,6 +3578,50 @@ async function runCheckNaverLogin(args) {
   }
 }
 
+async function checkAutomationSessionStatuses(args, context) {
+  const statuses = [];
+  const addStatus = (platform, result, error = null) => {
+    if (error) {
+      statuses.push({
+        platform,
+        status: 'check_failed',
+        note: String(error?.message || error).slice(0, 240),
+      });
+      return;
+    }
+    statuses.push({
+      platform,
+      status: result?.ok ? 'ready' : 'login_required',
+      note: String(result?.ok ? '자동화 화면 확인됨' : (result?.reason || 'login may be required')).slice(0, 240),
+    });
+  };
+
+  try {
+    addStatus('naver', await checkNaverSmartplaceLogin(context, {
+      businessId: args.naverBusinessId,
+      timeoutMs: 15000,
+    }));
+  } catch (error) {
+    addStatus('naver', null, error);
+  }
+
+  try {
+    addStatus('spacecloud', await checkSpacecloudLogin(context, {
+      timeoutMs: 15000,
+    }));
+  } catch (error) {
+    addStatus('spacecloud', null, error);
+  }
+
+  try {
+    await updateRemoteAdminSessions(args, statuses);
+  } catch (error) {
+    logLine(`session status DB update failed: ${String(error?.message || error)}`);
+  }
+
+  return statuses;
+}
+
 async function runCycle(args, context = null) {
   const workDir = args.workDir;
   const planPath = path.join(workDir, 'latest-plan.json');
@@ -3533,6 +3662,8 @@ async function runCycle(args, context = null) {
       marked: 0,
       failed: [],
     };
+
+    row.sessionStatus = await checkAutomationSessionStatuses(args, await getContext());
 
     row.uploadTasks = await runUploadTasks(args, activeContext);
     if (['planned', 'dry-run'].includes(row.status) && row.uploadTasks.attempted > 0) {
