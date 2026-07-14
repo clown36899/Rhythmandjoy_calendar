@@ -1,15 +1,19 @@
 (function () {
   const rooms = ["A", "B", "C", "D", "E"];
   const hours = Array.from({ length: 17 }, (_, index) => index + 8);
+  const apiUrl = "./api.php";
   const storageKey = "rhythmjoy.syncAdmin.drafts.v1";
   const profileKey = "rhythmjoy.syncAdmin.profile.v1";
   const sessionKey = "rhythmjoy.syncAdmin.sessions.v1";
+  const tokenKey = "rhythmjoy.syncAdmin.adminToken.v1";
 
   const state = {
     activeDate: today(),
     roomFilter: "all",
     drafts: loadJson(storageKey, []),
     sessions: loadJson(sessionKey, {}),
+    apiMode: "local",
+    lastApiMessage: "관리 토큰 입력 전",
   };
 
   const el = {
@@ -29,10 +33,14 @@
     pendingCount: document.getElementById("pendingCount"),
     lastScan: document.getElementById("lastScan"),
     runCheck: document.getElementById("runCheck"),
+    adminToken: document.getElementById("adminToken"),
+    saveAdminToken: document.getElementById("saveAdminToken"),
     profilePath: document.getElementById("profilePath"),
     saveProfile: document.getElementById("saveProfile"),
     clearDrafts: document.getElementById("clearDrafts"),
     toast: document.getElementById("toast"),
+    apiState: document.getElementById("apiState"),
+    apiStatus: document.getElementById("apiStatus"),
     naverStatus: document.getElementById("naverStatus"),
     spacecloudStatus: document.getElementById("spacecloudStatus"),
   };
@@ -41,10 +49,12 @@
 
   function init() {
     el.activeDate.value = state.activeDate;
+    el.adminToken.value = localStorage.getItem(tokenKey) || "";
     el.profilePath.value = localStorage.getItem(profileKey) || el.profilePath.value;
     fillTimeSelects();
     bindEvents();
     renderAll();
+    refreshFromApi({ silent: true });
   }
 
   function bindEvents() {
@@ -53,6 +63,7 @@
     el.activeDate.addEventListener("change", () => {
       state.activeDate = el.activeDate.value || today();
       renderAll();
+      refreshFromApi({ silent: true });
     });
 
     document.querySelectorAll("[data-room-filter]").forEach((button) => {
@@ -68,6 +79,7 @@
     el.form.addEventListener("submit", createDraftTask);
     el.clearDrafts.addEventListener("click", clearDrafts);
     el.runCheck.addEventListener("click", runReadOnlyCheck);
+    el.saveAdminToken.addEventListener("click", saveAdminToken);
     el.saveProfile.addEventListener("click", saveProfile);
 
     document.querySelectorAll("[data-open-login]").forEach((button) => {
@@ -86,12 +98,57 @@
     el.endInput.value = "21";
   }
 
-  function createDraftTask(event) {
+  async function refreshFromApi(options = {}) {
+    if (!adminToken()) {
+      setApiState("warn", "로컬 초안", "관리 토큰을 입력하면 DB에 연결됩니다.");
+      return false;
+    }
+
+    try {
+      const data = await apiRequest("bootstrap", { date: state.activeDate });
+      applyApiData(data);
+      setApiState("ready", data.mode === "db-live-queue" ? "DB 큐" : "DB 테스트", "DB API 연결됨");
+      renderAll();
+      return true;
+    } catch (error) {
+      setApiState("warn", "로컬 초안", error.message || "DB API 연결 실패");
+      if (!options.silent) showToast(error.message || "DB API 연결 실패");
+      renderAll();
+      return false;
+    }
+  }
+
+  async function createDraftTask(event) {
     event.preventDefault();
     const start = Number(el.startInput.value);
     const end = Number(el.endInput.value);
     const room = el.roomInput.value;
     if (!validateRange(room, start, end)) return;
+
+    const payload = {
+      date: state.activeDate,
+      room,
+      start,
+      end,
+      name: el.nameInput.value.trim(),
+      phone: el.phoneInput.value.trim(),
+      memo: el.memoInput.value.trim(),
+    };
+
+    if (adminToken()) {
+      try {
+        const data = await apiRequest("create_reservation", payload);
+        applyApiData(data);
+        resetForm(room, start, end);
+        setApiState("ready", data.mode === "db-live-queue" ? "DB 큐" : "DB 테스트", "DB 작업 생성됨");
+        renderAll();
+        showToast("DB에 동기화 작업을 생성했습니다.");
+        return;
+      } catch (error) {
+        showToast(error.message || "DB 작업 생성 실패. 로컬 초안으로 저장합니다.");
+        setApiState("warn", "로컬 초안", error.message || "DB 작업 생성 실패");
+      }
+    }
 
     const task = {
       id: `draft-${Date.now()}`,
@@ -100,9 +157,9 @@
       room,
       start,
       end,
-      name: el.nameInput.value.trim(),
-      phone: el.phoneInput.value.trim(),
-      memo: el.memoInput.value.trim(),
+      name: payload.name,
+      phone: payload.phone,
+      memo: payload.memo,
       status: "pending",
       naver: "대기",
       spacecloud: "대기",
@@ -110,12 +167,9 @@
 
     state.drafts.unshift(task);
     persistDrafts();
-    el.form.reset();
-    el.roomInput.value = room;
-    el.startInput.value = String(start);
-    el.endInput.value = String(end);
+    resetForm(room, start, end);
     renderAll();
-    showToast("동기화 작업 초안이 생성됐습니다.");
+    showToast("로컬 동기화 작업 초안이 생성됐습니다.");
   }
 
   function validateRange(room, start, end) {
@@ -183,11 +237,12 @@
     }
     rows.forEach((task) => {
       const row = document.createElement("tr");
+      const doneClass = task.status === "done" || task.status === "synced" ? " done" : "";
       row.innerHTML = `
-        <td><span class="status-badge">${escapeHtml(statusText(task.status))}</span></td>
+        <td><span class="status-badge${doneClass}">${escapeHtml(statusText(task.status))}</span></td>
         <td>${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}</td>
-        <td>${escapeHtml(task.naver)}</td>
-        <td>${escapeHtml(task.spacecloud)}</td>
+        <td>${escapeHtml(platformText(task.naver))}</td>
+        <td>${escapeHtml(platformText(task.spacecloud))}</td>
         <td>${formatDateTime(task.createdAt)}</td>
       `;
       el.taskRows.appendChild(row);
@@ -208,43 +263,104 @@
   function updateSession(platform, label) {
     const row = document.querySelector(`.session-row[data-platform="${platform}"]`);
     const session = state.sessions[platform];
-    if (session?.readyAt) {
+    if (session?.readyAt || session?.ready_at) {
       row.classList.add("ready");
-      label.textContent = `준비됨 ${formatDateTime(session.readyAt)}`;
+      label.textContent = `준비됨 ${formatDateTime(session.readyAt || session.ready_at)}`;
     } else {
       row.classList.remove("ready");
       label.textContent = "세션 확인 필요";
     }
   }
 
-  function runReadOnlyCheck() {
+  async function runReadOnlyCheck() {
+    if (adminToken()) {
+      try {
+        const data = await apiRequest("read_check", { date: state.activeDate });
+        applyApiData(data);
+        setApiState("ready", data.mode === "db-live-queue" ? "DB 큐" : "DB 테스트", "읽기 점검 기록됨");
+        renderAll();
+        showToast("DB에 읽기 점검 요청을 기록했습니다.");
+        return;
+      } catch (error) {
+        setApiState("warn", "로컬 초안", error.message || "읽기 점검 기록 실패");
+        showToast(error.message || "읽기 점검 기록 실패");
+      }
+    }
     const now = new Date().toISOString();
     el.lastScan.textContent = formatDateTime(now);
-    showToast("읽기 점검 요청이 기록됐습니다. DB/API 연결은 다음 단계입니다.");
+    showToast("로컬 읽기 점검 시간이 기록됐습니다.");
   }
 
-  function saveProfile() {
-    localStorage.setItem(profileKey, el.profilePath.value.trim());
-    showToast("프로필 경로가 저장됐습니다.");
+  function saveAdminToken() {
+    const token = el.adminToken.value.trim();
+    if (token) {
+      localStorage.setItem(tokenKey, token);
+      showToast("관리 토큰을 저장했습니다. DB 연결을 확인합니다.");
+    } else {
+      localStorage.removeItem(tokenKey);
+      showToast("관리 토큰을 비웠습니다. 로컬 초안 모드입니다.");
+    }
+    refreshFromApi({ silent: false });
   }
 
-  function markSessionReady(platform) {
+  async function saveProfile() {
+    const profilePath = el.profilePath.value.trim();
+    localStorage.setItem(profileKey, profilePath);
+    if (adminToken()) {
+      try {
+        const data = await apiRequest("save_profile", { date: state.activeDate, profilePath });
+        applyApiData(data);
+        renderAll();
+        showToast("프로필 경로를 DB에 저장했습니다.");
+        return;
+      } catch (error) {
+        setApiState("warn", "로컬 초안", error.message || "프로필 DB 저장 실패");
+      }
+    }
+    showToast("프로필 경로가 로컬에 저장됐습니다.");
+  }
+
+  async function markSessionReady(platform) {
     const urls = {
       naver: "https://partner.booking.naver.com/",
       spacecloud: "https://partner.spacecloud.kr/",
     };
     window.open(urls[platform], "_blank", "noopener,noreferrer");
-    state.sessions[platform] = { readyAt: new Date().toISOString() };
+    const readyAt = new Date().toISOString();
+    state.sessions[platform] = { readyAt };
     localStorage.setItem(sessionKey, JSON.stringify(state.sessions));
     renderSessions();
+
+    if (adminToken()) {
+      try {
+        const data = await apiRequest("session_ready", { date: state.activeDate, platform });
+        applyApiData(data);
+        renderAll();
+      } catch (error) {
+        setApiState("warn", "로컬 초안", error.message || "세션 DB 기록 실패");
+      }
+    }
+
     showToast(`${platform === "naver" ? "네이버" : "스페이스클라우드"} 로그인 창을 열었습니다.`);
   }
 
-  function clearDrafts() {
+  async function clearDrafts() {
+    if (adminToken()) {
+      try {
+        const data = await apiRequest("clear_drafts", { date: state.activeDate });
+        applyApiData(data);
+        renderAll();
+        showToast("DB 대기 작업을 취소 처리했습니다.");
+        return;
+      } catch (error) {
+        setApiState("warn", "로컬 초안", error.message || "DB 초안 정리 실패");
+        showToast(error.message || "DB 초안 정리 실패");
+      }
+    }
     state.drafts = [];
     persistDrafts();
     renderAll();
-    showToast("작업 초안을 비웠습니다.");
+    showToast("로컬 작업 초안을 비웠습니다.");
   }
 
   function selectSlot(room, hour) {
@@ -277,10 +393,87 @@
     state.activeDate = toDateInputValue(date);
     el.activeDate.value = state.activeDate;
     renderAll();
+    refreshFromApi({ silent: true });
+  }
+
+  function resetForm(room, start, end) {
+    el.form.reset();
+    el.roomInput.value = room;
+    el.startInput.value = String(start);
+    el.endInput.value = String(end);
   }
 
   function persistDrafts() {
     localStorage.setItem(storageKey, JSON.stringify(state.drafts));
+  }
+
+  function setApiState(level, label, message) {
+    state.apiMode = level;
+    state.lastApiMessage = message;
+    el.apiState.classList.toggle("ready", level === "ready");
+    el.apiState.classList.toggle("warn", level === "warn");
+    el.apiStatus.textContent = label;
+    el.apiState.title = message;
+  }
+
+  function applyApiData(data) {
+    const settings = data.settings || {};
+    const sessions = data.sessions || {};
+    state.sessions = Object.keys(sessions).reduce((acc, platform) => {
+      acc[platform] = {
+        readyAt: sessions[platform].ready_at || "",
+        status: sessions[platform].status || "",
+      };
+      return acc;
+    }, {});
+    localStorage.setItem(sessionKey, JSON.stringify(state.sessions));
+
+    if (settings.automation_profile) {
+      el.profilePath.value = settings.automation_profile;
+      localStorage.setItem(profileKey, settings.automation_profile);
+    }
+    if (settings.last_read_check_at) {
+      el.lastScan.textContent = formatDateTime(settings.last_read_check_at);
+    } else if (data.serverTime) {
+      el.lastScan.textContent = formatDateTime(data.serverTime);
+    }
+
+    state.drafts = (data.reservations || []).map((item) => ({
+      id: `db-${item.id}`,
+      dbId: item.id,
+      createdAt: item.createdAt,
+      date: item.date,
+      room: item.room,
+      start: Number(item.startHour),
+      end: Number(item.endHour),
+      name: item.name,
+      phone: item.phoneMasked || "",
+      memo: item.memo || "",
+      status: item.status || "pending",
+      naver: item.naverStatus || "pending",
+      spacecloud: item.spacecloudStatus || "pending",
+    }));
+  }
+
+  async function apiRequest(action, payload) {
+    const response = await fetch(`${apiUrl}?action=${encodeURIComponent(action)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Rhythmjoy-Admin-Token": adminToken(),
+      },
+      credentials: "same-origin",
+      body: JSON.stringify(Object.assign({ action }, payload || {})),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.message || `API 오류 ${response.status}`);
+    }
+    return data;
+  }
+
+  function adminToken() {
+    return (localStorage.getItem(tokenKey) || el.adminToken.value || "").trim();
   }
 
   function cell(text, className) {
@@ -326,7 +519,20 @@
   }
 
   function statusText(status) {
-    return status === "done" ? "완료" : "대기";
+    if (status === "done" || status === "synced") return "완료";
+    if (status === "running") return "진행";
+    if (status === "failed") return "실패";
+    if (status === "canceled") return "취소";
+    return "대기";
+  }
+
+  function platformText(status) {
+    if (status === "done" || status === "synced") return "완료";
+    if (status === "running") return "진행";
+    if (status === "failed") return "실패";
+    if (status === "canceled") return "취소";
+    if (status === "pending") return "대기";
+    return status || "대기";
   }
 
   function showToast(message) {

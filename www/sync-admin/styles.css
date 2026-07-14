@@ -193,6 +193,7 @@ h2 {
 }
 
 .topbar input,
+.auth-box input,
 .profile-box input,
 .form-grid input,
 .form-grid select {
@@ -245,7 +246,7 @@ h2 {
 
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
   gap: 12px;
   align-items: center;
   padding: 16px;
@@ -270,6 +271,22 @@ h2 {
 .status-strip strong {
   margin-top: 4px;
   font-size: 20px;
+}
+
+.api-state.ready {
+  border-left-color: var(--ok);
+}
+
+.api-state.ready strong {
+  color: var(--ok);
+}
+
+.api-state.warn {
+  border-left-color: var(--warning);
+}
+
+.api-state.warn strong {
+  color: var(--warning);
 }
 
 .panel {
@@ -384,12 +401,14 @@ h2 {
 }
 
 .form-grid label,
+.auth-box label,
 .profile-box label {
   display: grid;
   gap: 7px;
 }
 
 .form-grid span,
+.auth-box span,
 .profile-box span {
   color: var(--muted);
   font-size: 13px;
@@ -410,6 +429,18 @@ h2 {
 .session-list {
   display: grid;
   gap: 10px;
+}
+
+.auth-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfa;
 }
 
 .session-row {
@@ -535,6 +566,7 @@ th {
   .topbar,
   .panel-heading,
   .session-row,
+  .auth-box,
   .profile-box {
     align-items: stretch;
     flex-direction: column;
@@ -546,6 +578,7 @@ th {
 
   .status-strip,
   .two-column,
+  .auth-box,
   .profile-box {
     grid-template-columns: 1fr;
   }
