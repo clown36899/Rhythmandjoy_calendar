@@ -696,6 +696,7 @@ try:
             SELECT
                 id,
                 task_type AS taskType,
+                email_event_id AS emailEventId,
                 status,
                 room_key AS roomKey,
                 reservation_number AS reservationNo,
@@ -809,6 +810,7 @@ try:
             SELECT
                 id,
                 task_type AS taskType,
+                email_event_id AS emailEventId,
                 status,
                 room_key AS roomKey,
                 reservation_number AS reservationNo,
@@ -1328,6 +1330,7 @@ function telegramStatusText(status) {
     'google-create-failed': '구글 기록 재시도',
     'google-delete-failed': '구글 삭제 재시도',
     'naver-conflict': '네이버 충돌',
+    'later-reservation-conflict': '후예약 취소 필요',
     'needs-review': '확인 필요',
   };
   return map[status] || status || '-';
@@ -1353,6 +1356,38 @@ function firstProblemRow(rowOrError) {
     || item.calendarRecordWarning
     || item.status
   )) || {};
+}
+
+function notificationKeyForRows(prefix, rowOrError) {
+  const row = firstProblemRow(rowOrError);
+  const target = [
+    row.taskId || row.id || '',
+    row.roomKey || row.room_key || '',
+    row.date || row.reservation_date || '',
+    row.startTime || row.start_time || '',
+    row.endTime || row.end_time || '',
+  ].filter(Boolean).join('|');
+  return target ? `${prefix}:${target}` : prefix;
+}
+
+function isLaterReservationConflictRow(row) {
+  return row?.status === 'later-reservation-conflict';
+}
+
+function formatConflictBookingLine(label, booking) {
+  if (!booking) return `${label}: -`;
+  const platform = {
+    naver: '네이버',
+    spacecloud: '스페이스클라우드',
+    admin: '관리자',
+    'google-backfill': '구글기록',
+  }[booking.sourcePlatform || booking.source_platform] || booking.sourcePlatform || booking.source_platform || '-';
+  const reservationNo = booking.reservationNumber || booking.reservation_number || '';
+  const name = booking.reserverName || booking.reserver_name || '-';
+  const time = `${booking.date || booking.reservation_date || '-'} ${booking.startTime || booking.start_time || '-'}-${displayEndTime(booking.startTime || booking.start_time || '', booking.endTime || booking.end_time || '')}`;
+  const room = booking.roomKey || booking.room_key || '-';
+  const received = booking.lastEventAt || booking.last_event_at || booking.createdAt || booking.created_at || '-';
+  return `${label}: ${platform} / ${room} / ${time} / ${name}${reservationNo ? ` / ${reservationNo}` : ''} / 접수 ${received}`;
 }
 
 function deleteFailureReasonText(rowOrError) {
@@ -1569,6 +1604,17 @@ function naverBlockSuccessMessage(row) {
 function naverBlockFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
   const allGoogle = rows.length && rows.every((row) => row.status === 'google-create-failed');
+  const allLaterConflicts = rows.length && rows.every(isLaterReservationConflictRow);
+  if (allLaterConflicts) {
+    const row = rows[0] || {};
+    return compactNotice('⚠️ 중복예약: 후예약 취소 필요', [
+      '판정: 먼저 들어온 예약 우선',
+      formatConflictBookingLine('선예약', row.winningBooking),
+      formatConflictBookingLine('취소대상', row.losingBooking || row),
+      `상태: ${row.error || '네이버 확정 슬롯이 있어 스페이스클라우드 예약을 반영할 수 없음'}`,
+      '다음: 후예약 플랫폼 취소 후 선대관 안내 문자 발송',
+    ]);
+  }
   return compactNotice(allGoogle ? '⚠️ 실패: 구글 달력 기록' : '⚠️ 실패: 네이버 예약불가 반영', [
     `상태: ${allGoogle ? '구글 기록 재시도 예정' : '자동 처리 중지'}`,
     `대상: ${rows.length || '-'}건`,
@@ -1658,7 +1704,7 @@ function dbStatusForNaverBlockRow(row) {
   if (row.status === 'calendar-record-warning') return 'done';
   if (row.status === 'google-create-failed') return 'google_pending';
   if (row.status === 'google-conflict') return 'needs_review';
-  if (row.status === 'naver-conflict' || row.status === 'needs-review') return 'needs_review';
+  if (row.status === 'naver-conflict' || row.status === 'later-reservation-conflict' || row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   return 'failed';
 }
@@ -1843,6 +1889,147 @@ function adminPanelSmsSkipped(task, source) {
     reason: 'admin-panel-task',
     source,
     maskedPhone: payloadForTask(task).phone_last4 ? `****-${payloadForTask(task).phone_last4}` : '',
+  };
+}
+
+async function classifyNaverConflict(args, task, row) {
+  if (row?.status !== 'naver-conflict') return row;
+
+  const target = await loadCafe24Target(args);
+  const payload = Buffer.from(JSON.stringify({
+    taskId: task.id || task.taskId || null,
+    ledgerId: task.ledgerId || null,
+    roomKey: task.roomKey || task.room_key || '',
+    date: task.date || task.reservation_date || '',
+    startTime: task.startTime || task.start_time || '',
+    endTime: task.endTime || task.end_time || '',
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export CONFLICT_PAYLOAD_B64=${shellQuote(payload)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+def time_value(value):
+    text = str(value or '')
+    if len(text) == 5:
+        return text + ':00'
+    return text
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+payload = json.loads(base64.b64decode(os.environ['CONFLICT_PAYLOAD_B64']).decode('utf-8'))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=True,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id,
+                source_platform AS sourcePlatform,
+                source_mode AS sourceMode,
+                current_status AS currentStatus,
+                room_key AS roomKey,
+                DATE_FORMAT(reservation_date, '%%Y-%%m-%%d') AS date,
+                TIME_FORMAT(start_time, '%%H:%%i') AS startTime,
+                TIME_FORMAT(end_time, '%%H:%%i') AS endTime,
+                reserver_name AS reserverName,
+                reservation_number AS reservationNumber,
+                product,
+                DATE_FORMAT(last_event_at, '%%Y-%%m-%%d %%H:%%i:%%s') AS lastEventAt,
+                DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i:%%s') AS createdAt
+            FROM rhythmjoy_booking_ledger
+            WHERE current_status='confirmed'
+              AND room_key=%s
+              AND reservation_date=%s
+              AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+              AND start_time < %s
+              AND end_time > %s
+            ORDER BY
+              COALESCE(last_event_at, created_at, '9999-12-31 23:59:59') ASC,
+              id ASC
+            """,
+            (
+                payload.get('roomKey') or '',
+                payload.get('date') or None,
+                time_value(payload.get('endTime')),
+                time_value(payload.get('startTime')),
+            ),
+        )
+        overlaps = cur.fetchall()
+    current = None
+    for item in overlaps:
+        if payload.get('ledgerId') and int(item.get('id') or 0) == int(payload.get('ledgerId') or 0):
+            current = item
+            break
+    if current is None:
+        for item in overlaps:
+            if item.get('sourcePlatform') == 'spacecloud':
+                current = item
+                break
+    winner = overlaps[0] if overlaps else None
+    print(json.dumps({
+        'overlaps': overlaps,
+        'current': current,
+        'winner': winner,
+        'isLaterReservation': bool(winner and current and winner.get('id') != current.get('id')),
+    }, ensure_ascii=False))
+finally:
+    conn.close()
+PY
+`;
+
+  let classification = {};
+  try {
+    classification = JSON.parse(runSshScript(target, script).trim() || '{}');
+  } catch (error) {
+    return {
+      ...row,
+      conflictClassificationError: String(error?.message || error),
+    };
+  }
+
+  if (classification.isLaterReservation) {
+    const winner = classification.winner || null;
+    const current = classification.current || null;
+    return {
+      ...row,
+      status: 'later-reservation-conflict',
+      originalStatus: 'naver-conflict',
+      priorityRule: 'first-confirmed-email-wins',
+      winningBooking: winner,
+      losingBooking: current,
+      overlapBookings: classification.overlaps || [],
+      error: '후예약 충돌: 선예약이 이미 확정되어 후예약 취소 처리가 필요합니다.',
+      nextAction: 'cancel-later-reservation-and-send-prior-booking-sms',
+    };
+  }
+
+  return {
+    ...row,
+    priorityRule: 'first-confirmed-email-wins',
+    overlapBookings: classification.overlaps || [],
   };
 }
 
@@ -2391,6 +2578,7 @@ async function runNaverAvailabilityTasks(args, context = null) {
               targetStatus: 'unavailable',
             });
             row.taskType = taskType;
+            row = await classifyNaverConflict(args, task, row);
             if (['blocked', 'already-blocked'].includes(row.status)) {
               let calendarStatus = 'google-recorded';
               try {
@@ -2809,7 +2997,7 @@ async function runWatch(args) {
             });
             logLine(`google calendar record pending after db upload; will retry: ${JSON.stringify(row.uploadTasks.failed)}`);
           } else {
-            await notifyWithCooldown(args, 'spacecloud-upload-task-failed', uploadTaskFailureMessage(row.uploadTasks));
+            await notifyWithCooldown(args, notificationKeyForRows('spacecloud-upload-task-failed', row.uploadTasks), uploadTaskFailureMessage(row.uploadTasks));
             logLine(`stopping after db upload failure: ${JSON.stringify(row.uploadTasks.failed)}`);
             break;
           }
@@ -2825,7 +3013,7 @@ async function runWatch(args) {
             });
             logLine(`google calendar delete pending after spacecloud delete; will retry: ${JSON.stringify(row.deleteTasks.failed)}`);
           } else {
-            await notifyWithCooldown(args, 'spacecloud-delete-failed', deleteFailureMessage(row.deleteTasks));
+            await notifyWithCooldown(args, notificationKeyForRows('spacecloud-delete-failed', row.deleteTasks), deleteFailureMessage(row.deleteTasks));
             logLine(`stopping after delete failure: ${JSON.stringify(row.deleteTasks.failed)}`);
             break;
           }
@@ -2841,7 +3029,7 @@ async function runWatch(args) {
             });
             logLine(`google calendar record pending after naver block; will retry: ${JSON.stringify(row.naverBlockTasks.failed)}`);
           } else {
-            await notifyWithCooldown(args, 'naver-block-failed', naverBlockFailureMessage(row.naverBlockTasks));
+            await notifyWithCooldown(args, notificationKeyForRows('naver-block-failed', row.naverBlockTasks), naverBlockFailureMessage(row.naverBlockTasks));
             logLine(`stopping after naver block failure: ${JSON.stringify(row.naverBlockTasks.failed)}`);
             break;
           }
@@ -2857,7 +3045,7 @@ async function runWatch(args) {
             });
             logLine(`google calendar delete pending after naver restore; will retry: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
           } else {
-            await notifyWithCooldown(args, 'naver-restore-failed', naverRestoreFailureMessage(row.naverRestoreTasks));
+            await notifyWithCooldown(args, notificationKeyForRows('naver-restore-failed', row.naverRestoreTasks), naverRestoreFailureMessage(row.naverRestoreTasks));
             logLine(`stopping after naver restore failure: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
             break;
           }
