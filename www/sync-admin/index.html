@@ -48,6 +48,7 @@
         <div class="topbar-actions">
           <button type="button" class="icon-button" id="prevDay" aria-label="이전 날짜">‹</button>
           <input type="date" id="activeDate" aria-label="조회 날짜">
+          <span class="weekday-label" id="weekdayLabel">수요일</span>
           <button type="button" class="today-button" id="todayButton">오늘</button>
           <button type="button" class="icon-button" id="nextDay" aria-label="다음 날짜">›</button>
         </div>
@@ -67,6 +68,14 @@
           <strong id="dayRevenue">-</strong>
         </div>
         <div>
+          <span>선택월 수익</span>
+          <strong id="monthRevenue">-</strong>
+        </div>
+        <div>
+          <span>올해 수익</span>
+          <strong id="yearRevenue">-</strong>
+        </div>
+        <div>
           <span>대기 작업</span>
           <strong id="pendingCount">0</strong>
         </div>
@@ -74,7 +83,7 @@
           <span>마지막 점검</span>
           <strong id="lastScan">대기</strong>
         </div>
-        <button type="button" class="primary-button" id="runCheck">읽기 점검</button>
+        <button type="button" class="secondary-button" id="monthRevenueButton">월별 수익</button>
       </section>
 
       <section class="panel" id="schedule">
@@ -180,6 +189,24 @@
         <div class="detail-list" id="eventDetailList"></div>
         <div class="form-actions">
           <button type="button" class="primary-button" id="doneEventDetailModal">확인</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="revenueModal" hidden>
+    <div class="modal-panel revenue-modal-panel" role="dialog" aria-modal="true" aria-labelledby="revenueModalTitle" tabindex="-1">
+      <div class="modal-heading">
+        <div>
+          <h2 id="revenueModalTitle">월별 수익</h2>
+          <p id="revenueModalSummary">원장에 수집된 결제금액 기준입니다.</p>
+        </div>
+        <button type="button" class="icon-button modal-close" id="closeRevenueModal" aria-label="월별 수익 닫기">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="revenue-list" id="revenueMonthList"></div>
+        <div class="form-actions">
+          <button type="button" class="primary-button" id="doneRevenueModal">확인</button>
         </div>
       </div>
     </div>

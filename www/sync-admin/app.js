@@ -14,6 +14,7 @@
     drafts: loadJson(storageKey, []),
     tasks: [],
     sessions: loadJson(sessionKey, {}),
+    revenueStats: null,
     apiMode: "local",
     lastApiMessage: "DB 연결 확인 전",
   };
@@ -22,6 +23,7 @@
     activeDate: document.getElementById("activeDate"),
     prevDay: document.getElementById("prevDay"),
     nextDay: document.getElementById("nextDay"),
+    weekdayLabel: document.getElementById("weekdayLabel"),
     todayButton: document.getElementById("todayButton"),
     scheduleWrap: document.getElementById("scheduleWrap"),
     scheduleGrid: document.getElementById("scheduleGrid"),
@@ -48,9 +50,16 @@
     taskRows: document.getElementById("taskRows"),
     todayCount: document.getElementById("todayCount"),
     dayRevenue: document.getElementById("dayRevenue"),
+    monthRevenue: document.getElementById("monthRevenue"),
+    yearRevenue: document.getElementById("yearRevenue"),
+    monthRevenueButton: document.getElementById("monthRevenueButton"),
+    revenueModal: document.getElementById("revenueModal"),
+    revenueModalSummary: document.getElementById("revenueModalSummary"),
+    revenueMonthList: document.getElementById("revenueMonthList"),
+    closeRevenueModal: document.getElementById("closeRevenueModal"),
+    doneRevenueModal: document.getElementById("doneRevenueModal"),
     pendingCount: document.getElementById("pendingCount"),
     lastScan: document.getElementById("lastScan"),
-    runCheck: document.getElementById("runCheck"),
     adminToken: document.getElementById("adminToken"),
     profilePath: document.getElementById("profilePath"),
     saveProfile: document.getElementById("saveProfile"),
@@ -115,8 +124,18 @@
     el.eventDetailModal.addEventListener("click", (event) => {
       if (event.target === el.eventDetailModal) closeEventDetailModal();
     });
+    el.monthRevenueButton.addEventListener("click", openRevenueModal);
+    el.closeRevenueModal.addEventListener("click", closeRevenueModal);
+    el.doneRevenueModal.addEventListener("click", closeRevenueModal);
+    el.revenueModal.addEventListener("click", (event) => {
+      if (event.target === el.revenueModal) closeRevenueModal();
+    });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      if (!el.revenueModal.hidden) {
+        closeRevenueModal();
+        return;
+      }
       if (!el.eventDetailModal.hidden) {
         closeEventDetailModal();
         return;
@@ -124,7 +143,6 @@
       if (!el.reservationModal.hidden) closeReservationModal();
     });
     el.clearDrafts.addEventListener("click", clearDrafts);
-    el.runCheck.addEventListener("click", runReadOnlyCheck);
     el.scrollToNow.addEventListener("click", scrollScheduleToNow);
     if (el.saveProfile) el.saveProfile.addEventListener("click", saveProfile);
     window.addEventListener("resize", updateCurrentTimeNavigator);
@@ -447,6 +465,15 @@
     const missing = todays.filter((item) => !parsePaymentAmount(item.price)).length;
     el.dayRevenue.textContent = revenue > 0 ? `${revenue.toLocaleString()}원` : "-";
     el.dayRevenue.title = missing ? `금액 미수집 ${missing}건` : "수집된 결제금액 합계";
+    const selectedMonth = revenueSelectedMonth();
+    el.monthRevenue.textContent = formatRevenueStat(selectedMonth?.total);
+    el.monthRevenue.title = selectedMonth
+      ? `확정 ${selectedMonth.confirmedCount || 0}건 / 금액 미수집 ${selectedMonth.missingCount || 0}건`
+      : "선택월 원장 수익 합계";
+    el.yearRevenue.textContent = formatRevenueStat(state.revenueStats?.yearTotal);
+    el.yearRevenue.title = state.revenueStats
+      ? `확정 ${state.revenueStats.yearConfirmedCount || 0}건 / 금액 미수집 ${state.revenueStats.yearMissingCount || 0}건`
+      : "선택연도 원장 수익 합계";
     el.pendingCount.textContent = String(state.drafts.filter((item) => item.status === "pending").length);
   }
 
@@ -503,25 +530,6 @@
       checking: "checking",
       needs_check: "needs-check",
     }[status] || "needs-check";
-  }
-
-  async function runReadOnlyCheck() {
-    if (adminToken()) {
-      try {
-        const data = await apiRequest("read_check", { date: state.activeDate });
-        applyApiData(data);
-        setApiState("ready", data.mode === "db-live-queue" ? "DB 큐" : "DB 테스트", "읽기 점검 기록됨");
-        renderAll();
-        showToast("DB에 읽기 점검 요청을 기록했습니다.");
-        return;
-      } catch (error) {
-        setApiState("warn", "로컬 초안", error.message || "읽기 점검 기록 실패");
-        showToast(error.message || "읽기 점검 기록 실패");
-      }
-    }
-    const now = new Date().toISOString();
-    el.lastScan.textContent = formatDateTime(now);
-    showToast("로컬 읽기 점검 시간이 기록됐습니다.");
   }
 
   async function saveProfile() {
@@ -810,6 +818,54 @@
 
   function updateDateControls() {
     el.todayButton.disabled = state.activeDate === today();
+    if (el.weekdayLabel) {
+      el.weekdayLabel.textContent = weekdayText(state.activeDate);
+      el.weekdayLabel.classList.toggle("is-today", state.activeDate === today());
+      el.weekdayLabel.title = state.activeDate;
+    }
+  }
+
+  function weekdayText(dateText) {
+    const date = new Date(`${dateText}T00:00:00+09:00`);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("ko-KR", { weekday: "long" }).format(date);
+  }
+
+  function revenueSelectedMonth() {
+    const monthKey = String(state.activeDate || "").slice(0, 7);
+    return (state.revenueStats?.months || []).find((item) => item.month === monthKey) || null;
+  }
+
+  function formatRevenueStat(value) {
+    const amount = Number(value || 0);
+    return amount > 0 ? `${amount.toLocaleString()}원` : "-";
+  }
+
+  function renderRevenueModal() {
+    const stats = state.revenueStats;
+    const selectedMonthKey = String(state.activeDate || "").slice(0, 7);
+    const year = String(state.activeDate || "").slice(0, 4);
+    const months = stats?.months || [];
+    el.revenueModalSummary.textContent = `${year}년 월별 수익 · 연총합 ${formatRevenueStat(stats?.yearTotal)}`;
+    if (!months.length) {
+      el.revenueMonthList.innerHTML = '<p class="empty-note">표시할 수익 통계가 없습니다.</p>';
+      return;
+    }
+    el.revenueMonthList.innerHTML = months.map((item) => `
+      <article class="revenue-row ${item.month === selectedMonthKey ? "active" : ""}">
+        <div>
+          <strong>${escapeHtml(formatMonthLabel(item.month))}</strong>
+          <span>확정 ${Number(item.confirmedCount || 0).toLocaleString()}건 · 금액 미수집 ${Number(item.missingCount || 0).toLocaleString()}건</span>
+        </div>
+        <b>${escapeHtml(formatRevenueStat(item.total))}</b>
+      </article>
+    `).join("");
+  }
+
+  function formatMonthLabel(monthKey) {
+    const match = String(monthKey || "").match(/^(\d{4})-(\d{2})$/);
+    if (!match) return monthKey || "";
+    return `${Number(match[2])}월`;
   }
 
   function resetForm(room, start, end) {
@@ -850,8 +906,25 @@
     updateModalOpenState();
   }
 
+  function openRevenueModal() {
+    renderRevenueModal();
+    el.revenueModal.hidden = false;
+    document.body.classList.add("modal-open");
+    window.setTimeout(() => {
+      el.doneRevenueModal.focus();
+    }, 0);
+  }
+
+  function closeRevenueModal() {
+    el.revenueModal.hidden = true;
+    updateModalOpenState();
+  }
+
   function updateModalOpenState() {
-    document.body.classList.toggle("modal-open", !el.reservationModal.hidden || !el.eventDetailModal.hidden);
+    document.body.classList.toggle(
+      "modal-open",
+      !el.reservationModal.hidden || !el.eventDetailModal.hidden || !el.revenueModal.hidden,
+    );
   }
 
   function updateModalSlotSummary() {
@@ -896,11 +969,11 @@
       el.profilePath.value = settings.automation_profile;
       localStorage.setItem(profileKey, settings.automation_profile);
     }
-    if (settings.last_read_check_at) {
-      el.lastScan.textContent = formatDateTime(settings.last_read_check_at);
-    } else if (data.serverTime) {
+    if (data.serverTime) {
       el.lastScan.textContent = formatDateTime(data.serverTime);
     }
+
+    state.revenueStats = data.revenueStats || null;
 
     state.drafts = (data.reservations || []).map((item) => ({
       id: `db-${item.id}`,
@@ -1433,6 +1506,9 @@
   }
 
   function syncTargetNote(task) {
+    if (task.taskType === "naver_restore" && task.resultStatus === "restore-skipped-not-owned") {
+      return "복구 생략: 자동화가 만든 예약불가가 아니거나 선예약 보호 대상";
+    }
     if (task.error) return `오류 ${humanTaskError(task.error)}`;
     return "";
   }

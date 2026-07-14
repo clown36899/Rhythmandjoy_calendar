@@ -248,6 +248,25 @@ h2 {
   gap: 8px;
 }
 
+.weekday-label {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfa;
+  color: #43514e;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.weekday-label.is-today {
+  border-color: #9bd7c3;
+  background: #eaf8f3;
+  color: var(--accent);
+}
+
 .topbar input,
 .auth-box input,
 .profile-box input,
@@ -330,7 +349,7 @@ input[readonly] {
 
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 12px;
   align-items: center;
   padding: 16px;
@@ -355,6 +374,11 @@ input[readonly] {
 .status-strip strong {
   margin-top: 4px;
   font-size: 20px;
+}
+
+.status-strip .secondary-button {
+  align-self: stretch;
+  white-space: nowrap;
 }
 
 .api-state.ready {
@@ -1168,6 +1192,59 @@ body.modal-open {
   padding: 20px;
 }
 
+.revenue-modal-panel {
+  width: min(560px, 100%);
+}
+
+.revenue-list {
+  display: grid;
+  gap: 8px;
+}
+
+.revenue-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.revenue-row.active {
+  border-color: #9bd7c3;
+  background: #effaf5;
+}
+
+.revenue-row strong,
+.revenue-row span {
+  display: block;
+}
+
+.revenue-row strong {
+  font-size: 16px;
+}
+
+.revenue-row span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.revenue-row b {
+  flex: 0 0 auto;
+  color: #0b5f4e;
+  white-space: nowrap;
+}
+
+.empty-note {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .detail-modal-panel {
   width: min(720px, 100%);
 }
@@ -1354,6 +1431,7 @@ body.modal-open {
   }
 
   .topbar-actions input,
+  .topbar-actions .weekday-label,
   .topbar-actions .today-button,
   .form-actions button {
     flex: 1;

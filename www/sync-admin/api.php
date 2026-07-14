@@ -378,6 +378,79 @@ function reservation_rows($pdo, $date) {
     return $rows;
 }
 
+function parse_price_amount($value) {
+    $digits = preg_replace('/\D+/', '', (string) $value);
+    return $digits === '' ? 0 : intval($digits);
+}
+
+function empty_month_revenue($month) {
+    return array(
+        'month' => $month,
+        'total' => 0,
+        'confirmedCount' => 0,
+        'missingCount' => 0,
+    );
+}
+
+function revenue_stats($pdo, $date) {
+    $year = substr($date, 0, 4);
+    $selected_month = substr($date, 0, 7);
+    $start_date = $year . '-01-01';
+    $end_date = $year . '-12-31';
+    $stmt = $pdo->prepare("
+        SELECT DATE_FORMAT(reservation_date, '%Y-%m') AS month_key, price
+        FROM rhythmjoy_booking_ledger
+        WHERE reservation_date BETWEEN ? AND ?
+          AND current_status <> 'canceled'
+          AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+        ORDER BY reservation_date ASC, id ASC
+    ");
+    $stmt->execute(array($start_date, $end_date));
+
+    $by_month = array();
+    for ($month = 1; $month <= 12; $month += 1) {
+        $key = sprintf('%s-%02d', $year, $month);
+        $by_month[$key] = empty_month_revenue($key);
+    }
+
+    foreach ($stmt->fetchAll() as $row) {
+        $key = $row['month_key'];
+        if (!isset($by_month[$key])) {
+            $by_month[$key] = empty_month_revenue($key);
+        }
+        $amount = parse_price_amount($row['price']);
+        $by_month[$key]['confirmedCount'] += 1;
+        if ($amount > 0) {
+            $by_month[$key]['total'] += $amount;
+        } else {
+            $by_month[$key]['missingCount'] += 1;
+        }
+    }
+
+    $months = array_values($by_month);
+    $year_total = 0;
+    $year_confirmed_count = 0;
+    $year_missing_count = 0;
+    foreach ($months as $month_row) {
+        $year_total += intval($month_row['total']);
+        $year_confirmed_count += intval($month_row['confirmedCount']);
+        $year_missing_count += intval($month_row['missingCount']);
+    }
+
+    $selected = isset($by_month[$selected_month]) ? $by_month[$selected_month] : empty_month_revenue($selected_month);
+    return array(
+        'year' => intval($year),
+        'selectedMonth' => $selected_month,
+        'selectedMonthTotal' => intval($selected['total']),
+        'selectedMonthConfirmedCount' => intval($selected['confirmedCount']),
+        'selectedMonthMissingCount' => intval($selected['missingCount']),
+        'yearTotal' => $year_total,
+        'yearConfirmedCount' => $year_confirmed_count,
+        'yearMissingCount' => $year_missing_count,
+        'months' => $months,
+    );
+}
+
 function task_action_label($task_type, $platform, $action_type) {
     if ($task_type === 'spacecloud_cancel') {
         return '중복 후예약 취소 - 스페이스클라우드';
@@ -577,6 +650,7 @@ function bootstrap_payload($pdo, $date, $env) {
         'sessions' => session_rows($pdo),
         'reservations' => reservation_rows($pdo, $date),
         'tasks' => recent_task_rows($pdo),
+        'revenueStats' => revenue_stats($pdo, $date),
     );
 }
 
@@ -960,11 +1034,6 @@ try {
 
     if ($action === 'save_profile') {
         upsert_setting($pdo, 'automation_profile', trim((string) (isset($payload['profilePath']) ? $payload['profilePath'] : '')));
-        json_response(bootstrap_payload($pdo, $date, $env));
-    }
-
-    if ($action === 'read_check') {
-        upsert_setting($pdo, 'last_read_check_at', date('c'));
         json_response(bootstrap_payload($pdo, $date, $env));
     }
 
