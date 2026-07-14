@@ -64,6 +64,7 @@
     fillTimeSelects();
     bindEvents();
     renderAll();
+    updateActiveNav();
     refreshFromApi({ silent: true });
     window.setInterval(updateCurrentTimeNavigator, 60000);
   }
@@ -107,6 +108,16 @@
     el.saveAdminToken.addEventListener("click", saveAdminToken);
     el.saveProfile.addEventListener("click", saveProfile);
     window.addEventListener("resize", updateCurrentTimeNavigator);
+    window.addEventListener("resize", scheduleActiveNavUpdate);
+    window.addEventListener("scroll", scheduleActiveNavUpdate, { passive: true });
+
+    document.querySelectorAll(".nav-link[href^='#']").forEach((link) => {
+      link.addEventListener("click", () => {
+        const targetId = link.getAttribute("href").slice(1);
+        setActiveNav(targetId);
+        window.setTimeout(updateActiveNav, 220);
+      });
+    });
 
     document.querySelectorAll("[data-open-login]").forEach((button) => {
       button.addEventListener("click", () => markSessionReady(button.dataset.openLogin));
@@ -120,6 +131,48 @@
     });
 
     el.scheduleWrap.addEventListener("scroll", updateCurrentTimeNavigator, { passive: true });
+  }
+
+  function scheduleActiveNavUpdate() {
+    if (scheduleActiveNavUpdate.queued) return;
+    scheduleActiveNavUpdate.queued = true;
+    window.requestAnimationFrame(() => {
+      scheduleActiveNavUpdate.queued = false;
+      updateActiveNav();
+    });
+  }
+
+  function updateActiveNav() {
+    const links = Array.from(document.querySelectorAll(".nav-link[href^='#']"));
+    const sections = links
+      .map((link) => document.querySelector(link.getAttribute("href")))
+      .filter(Boolean);
+    if (!sections.length) return;
+
+    const activeLine = Math.min(window.innerHeight * 0.42, 360);
+    let activeId = sections[0].id;
+    let bestScore = Number.POSITIVE_INFINITY;
+    sections.forEach((section) => {
+      const rect = section.getBoundingClientRect();
+      const visibleTop = Math.max(0, rect.top);
+      const visibleBottom = Math.min(window.innerHeight, rect.bottom);
+      const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+      if (!visibleHeight) return;
+      const sectionLine = rect.top <= activeLine && rect.bottom >= activeLine;
+      const distance = Math.abs(rect.top - activeLine);
+      const score = sectionLine ? 0 : distance + Math.max(0, 220 - visibleHeight);
+      if (score < bestScore) {
+        bestScore = score;
+        activeId = section.id;
+      }
+    });
+    setActiveNav(activeId);
+  }
+
+  function setActiveNav(targetId) {
+    document.querySelectorAll(".nav-link[href^='#']").forEach((link) => {
+      link.classList.toggle("active", link.getAttribute("href") === `#${targetId}`);
+    });
   }
 
   function fillTimeSelects() {

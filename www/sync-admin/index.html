@@ -18,15 +18,23 @@
       </div>
       <nav>
         <a href="#schedule" class="nav-link active">일정</a>
-        <a href="#new-reservation" class="nav-link" data-open-reservation-modal>예약 입력</a>
         <a href="#sessions" class="nav-link">로그인 세션</a>
         <a href="#tasks" class="nav-link">작업 상태</a>
       </nav>
-      <div class="runner-state">
-        <span class="state-dot"></span>
-        <div>
-          <strong>3분 감시</strong>
-          <span>순차 실행 모드</span>
+      <div class="side-bottom">
+        <button type="button" class="reservation-cta" data-open-reservation-modal>
+          <span class="reservation-plus" aria-hidden="true">+</span>
+          <span>
+            <strong>예약 입력</strong>
+            <small>빈 시간에 새 예약 동기화 작업 추가</small>
+          </span>
+        </button>
+        <div class="runner-state">
+          <span class="state-dot"></span>
+          <div>
+            <strong>3분 감시</strong>
+            <span>순차 실행 모드</span>
+          </div>
         </div>
       </div>
     </aside>

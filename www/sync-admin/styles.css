@@ -105,6 +105,7 @@ button {
   text-decoration: none;
   padding: 11px 12px;
   border-radius: 8px;
+  transition: background 0.14s ease, color 0.14s ease;
 }
 
 .nav-link.active,
@@ -113,8 +114,62 @@ button {
   color: #ffffff;
 }
 
-.runner-state {
+.side-bottom {
   margin-top: auto;
+  display: grid;
+  gap: 12px;
+}
+
+.reservation-cta {
+  width: 100%;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(147, 197, 253, 0.5);
+  border-radius: 8px;
+  padding: 12px;
+  background: #1f6feb;
+  color: #fff;
+  text-align: left;
+  box-shadow: 0 10px 24px rgba(31, 111, 235, 0.24);
+}
+
+.reservation-cta:hover {
+  background: #1a5fd0;
+}
+
+.reservation-plus {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.reservation-cta strong,
+.reservation-cta small {
+  display: block;
+}
+
+.reservation-cta strong {
+  font-size: 15px;
+}
+
+.reservation-cta small {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.runner-state {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -767,6 +822,10 @@ body.modal-open {
     text-align: center;
   }
 
+  .side-bottom {
+    margin-top: 0;
+  }
+
   .runner-state {
     margin-top: 0;
   }
@@ -806,7 +865,11 @@ body.modal-open {
   }
 
   .side-nav nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .reservation-cta {
+    min-height: 58px;
   }
 
   .topbar-actions,
