@@ -48,6 +48,7 @@
   init();
 
   function init() {
+    syncTokenFromUrl();
     el.activeDate.value = state.activeDate;
     el.adminToken.value = localStorage.getItem(tokenKey) || "";
     el.profilePath.value = localStorage.getItem(profileKey) || el.profilePath.value;
@@ -240,7 +241,7 @@
       const doneClass = task.status === "done" || task.status === "synced" ? " done" : "";
       row.innerHTML = `
         <td><span class="status-badge${doneClass}">${escapeHtml(statusText(task.status))}</span></td>
-        <td>${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}</td>
+        <td>${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}<br><span class="row-source">${escapeHtml(task.sourceLabel || sourceText(task.source))}</span></td>
         <td>${escapeHtml(platformText(task.naver))}</td>
         <td>${escapeHtml(platformText(task.spacecloud))}</td>
         <td>${formatDateTime(task.createdAt)}</td>
@@ -449,6 +450,10 @@
       name: item.name,
       phone: item.phoneMasked || "",
       memo: item.memo || "",
+      source: item.source || "",
+      sourceLabel: item.sourceLabel || "",
+      reservationNo: item.reservationNo || "",
+      product: item.product || "",
       status: item.status || "pending",
       naver: item.naverStatus || "pending",
       spacecloud: item.spacecloudStatus || "pending",
@@ -474,6 +479,17 @@
 
   function adminToken() {
     return (localStorage.getItem(tokenKey) || el.adminToken.value || "").trim();
+  }
+
+  function syncTokenFromUrl() {
+    const hash = window.location.hash || "";
+    const params = new URLSearchParams(window.location.search || "");
+    const tokenFromHash = hash.startsWith("#token=") ? decodeURIComponent(hash.slice(7)) : "";
+    const tokenFromQuery = params.get("token") || "";
+    const token = (tokenFromHash || tokenFromQuery).trim();
+    if (!token) return;
+    localStorage.setItem(tokenKey, token);
+    window.history.replaceState(null, document.title, window.location.pathname);
   }
 
   function cell(text, className) {
@@ -520,6 +536,7 @@
 
   function statusText(status) {
     if (status === "done" || status === "synced") return "완료";
+    if (status === "confirmed") return "확정";
     if (status === "running") return "진행";
     if (status === "failed") return "실패";
     if (status === "canceled") return "취소";
@@ -528,11 +545,19 @@
 
   function platformText(status) {
     if (status === "done" || status === "synced") return "완료";
+    if (status === "source") return "원본";
     if (status === "running") return "진행";
     if (status === "failed") return "실패";
     if (status === "canceled") return "취소";
     if (status === "pending") return "대기";
     return status || "대기";
+  }
+
+  function sourceText(source) {
+    if (source === "naver") return "네이버 원장";
+    if (source === "spacecloud") return "스페이스클라우드 원장";
+    if (source === "admin") return "관리자 입력";
+    return source || "예약 원장";
   }
 
   function showToast(message) {

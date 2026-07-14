@@ -244,7 +244,69 @@ function task_summary_rows($pdo) {
     return $summary;
 }
 
-function reservation_rows($pdo, $date) {
+function hour_from_time_value($value, $is_end) {
+    $value = (string) $value;
+    if (!preg_match('/^(\d{2}):(\d{2})/', $value, $matches)) {
+        return $is_end ? 24 : 0;
+    }
+    $hour = intval($matches[1]);
+    $minute = intval($matches[2]);
+    if ($is_end && $hour === 0 && $minute === 0) {
+        return 24;
+    }
+    if ($is_end && $hour === 23 && $minute >= 45) {
+        return 24;
+    }
+    return $hour;
+}
+
+function ledger_reservation_rows($pdo, $date) {
+    $stmt = $pdo->prepare("
+        SELECT id, ledger_key, source_platform, current_status, target_calendar,
+               room_key, reservation_number, reserver_name, product,
+               reservation_date,
+               TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
+               TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
+               DATE_FORMAT(last_event_at, '%Y-%m-%dT%H:%i:%s+09:00') AS last_event_at,
+               DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
+               DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+        FROM rhythmjoy_booking_ledger
+        WHERE reservation_date = ?
+          AND current_status <> 'canceled'
+        ORDER BY room_key ASC, start_time ASC, id ASC
+    ");
+    $stmt->execute(array($date));
+    $rows = array();
+    foreach ($stmt->fetchAll() as $row) {
+        $source = $row['source_platform'] ?: 'ledger';
+        $room = strtoupper($row['room_key']);
+        $start_hour = hour_from_time_value($row['start_time_text'], false);
+        $end_hour = hour_from_time_value($row['end_time_text'], true);
+        $rows[] = array(
+            'id' => intval($row['id']),
+            'key' => $row['ledger_key'],
+            'date' => $row['reservation_date'],
+            'room' => $room,
+            'startHour' => $start_hour,
+            'endHour' => $end_hour,
+            'name' => $row['reserver_name'],
+            'phoneMasked' => '',
+            'memo' => $row['reservation_number'] ? '예약번호 ' . $row['reservation_number'] : '',
+            'source' => $source,
+            'sourceLabel' => $source === 'naver' ? '네이버 원장' : ($source === 'spacecloud' ? '스페이스클라우드 원장' : '예약 원장'),
+            'status' => $row['current_status'] ?: 'confirmed',
+            'naverStatus' => $source === 'naver' ? 'source' : 'synced',
+            'spacecloudStatus' => $source === 'spacecloud' ? 'source' : 'synced',
+            'reservationNo' => $row['reservation_number'],
+            'product' => $row['product'],
+            'createdAt' => $row['created_at'] ?: $row['last_event_at'],
+            'updatedAt' => $row['updated_at'] ?: $row['last_event_at'],
+        );
+    }
+    return $rows;
+}
+
+function admin_reservation_rows($pdo, $date) {
     $task_summary = task_summary_rows($pdo);
     $stmt = $pdo->prepare("
         SELECT id, reservation_key, reservation_date, room_key, start_hour, end_hour,
@@ -271,13 +333,33 @@ function reservation_rows($pdo, $date) {
             'phoneMasked' => mask_phone($row['phone_last4']),
             'memo' => $row['memo'],
             'source' => $row['source'],
+            'sourceLabel' => '관리자 입력',
             'status' => $row['status'],
             'naverStatus' => isset($summary['naver']) ? $summary['naver'] : 'pending',
             'spacecloudStatus' => isset($summary['spacecloud']) ? $summary['spacecloud'] : 'pending',
+            'reservationNo' => '',
+            'product' => '',
             'createdAt' => $row['created_at'],
             'updatedAt' => $row['updated_at'],
         );
     }
+    return $rows;
+}
+
+function reservation_rows($pdo, $date) {
+    $rows = array_merge(
+        ledger_reservation_rows($pdo, $date),
+        admin_reservation_rows($pdo, $date)
+    );
+    usort($rows, function($a, $b) {
+        if ($a['room'] === $b['room']) {
+            if ($a['startHour'] === $b['startHour']) {
+                return strcmp((string) $a['source'], (string) $b['source']);
+            }
+            return $a['startHour'] < $b['startHour'] ? -1 : 1;
+        }
+        return strcmp($a['room'], $b['room']);
+    });
     return $rows;
 }
 

@@ -517,6 +517,14 @@ th {
   color: var(--ok);
 }
 
+.row-source {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .toast {
   position: fixed;
   left: 50%;
