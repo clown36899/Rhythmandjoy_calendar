@@ -596,7 +596,7 @@ def enrich_task_row(cur, row):
         row['ledgerKey'] = ledger_key
         cur.execute(
             """
-            SELECT id, current_status, DATE_FORMAT(last_event_at, '%%Y-%%m-%%d %%H:%%i:%%s') AS last_event_at
+            SELECT id, current_status, CAST(last_event_at AS CHAR) AS last_event_at
             FROM rhythmjoy_booking_ledger
             WHERE ledger_key=%s
             LIMIT 1
@@ -702,12 +702,12 @@ try:
                 reservation_number AS reservationNo,
                 reserver_name AS reserverName,
                 product,
-                DATE_FORMAT(reservation_date, '%%Y-%%m-%%d') AS date,
-                TIME_FORMAT(start_time, '%%H:%%i') AS startTime,
-                TIME_FORMAT(end_time, '%%H:%%i') AS endTime,
+                CAST(reservation_date AS CHAR) AS date,
+                CONCAT(LPAD(HOUR(start_time), 2, '0'), ':', LPAD(MINUTE(start_time), 2, '0')) AS startTime,
+                CONCAT(LPAD(HOUR(end_time), 2, '0'), ':', LPAD(MINUTE(end_time), 2, '0')) AS endTime,
                 payload_json AS payloadJson,
                 attempts,
-                DATE_FORMAT(locked_at, '%%Y-%%m-%%d %%H:%%i:%%s') AS lockedAt,
+                CAST(locked_at AS CHAR) AS lockedAt,
                 result_text AS resultText
             FROM rhythmjoy_spacecloud_tasks
             WHERE task_type=%s
@@ -816,12 +816,12 @@ try:
                 reservation_number AS reservationNo,
                 reserver_name AS reserverName,
                 product,
-                DATE_FORMAT(reservation_date, '%%Y-%%m-%%d') AS date,
-                TIME_FORMAT(start_time, '%%H:%%i') AS startTime,
-                TIME_FORMAT(end_time, '%%H:%%i') AS endTime,
+                CAST(reservation_date AS CHAR) AS date,
+                CONCAT(LPAD(HOUR(start_time), 2, '0'), ':', LPAD(MINUTE(start_time), 2, '0')) AS startTime,
+                CONCAT(LPAD(HOUR(end_time), 2, '0'), ':', LPAD(MINUTE(end_time), 2, '0')) AS endTime,
                 payload_json AS payloadJson,
                 attempts,
-                DATE_FORMAT(locked_at, '%%Y-%%m-%%d %%H:%%i:%%s') AS lockedAt,
+                CAST(locked_at AS CHAR) AS lockedAt,
                 result_text AS resultText
             FROM rhythmjoy_spacecloud_tasks
             WHERE task_type IN ({placeholders})
@@ -1951,14 +1951,14 @@ try:
                 source_mode AS sourceMode,
                 current_status AS currentStatus,
                 room_key AS roomKey,
-                DATE_FORMAT(reservation_date, '%%Y-%%m-%%d') AS date,
-                TIME_FORMAT(start_time, '%%H:%%i') AS startTime,
-                TIME_FORMAT(end_time, '%%H:%%i') AS endTime,
+                CAST(reservation_date AS CHAR) AS date,
+                CONCAT(LPAD(HOUR(start_time), 2, '0'), ':', LPAD(MINUTE(start_time), 2, '0')) AS startTime,
+                CONCAT(LPAD(HOUR(end_time), 2, '0'), ':', LPAD(MINUTE(end_time), 2, '0')) AS endTime,
                 reserver_name AS reserverName,
                 reservation_number AS reservationNumber,
                 product,
-                DATE_FORMAT(last_event_at, '%%Y-%%m-%%d %%H:%%i:%%s') AS lastEventAt,
-                DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i:%%s') AS createdAt
+                CAST(last_event_at AS CHAR) AS lastEventAt,
+                CAST(created_at AS CHAR) AS createdAt
             FROM rhythmjoy_booking_ledger
             WHERE current_status='confirmed'
               AND room_key=%s
