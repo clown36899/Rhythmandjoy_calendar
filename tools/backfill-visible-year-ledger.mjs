@@ -345,7 +345,13 @@ async function extractNaverVisibleRows(page) {
       if (!reservationNumber || !text) continue;
       const status = text.match(/^(확정|취소|완료|신청|노쇼)/)?.[1] || '';
       const phoneRaw = text.match(/010-\d{3,4}-\d{4}/)?.[0] || '';
-      const name = phoneRaw ? text.slice(status.length, text.indexOf(phoneRaw)).trim() : '';
+      const maskedPhone = text.match(/\*{3,}\d{4}/)?.[0] || '';
+      const reservationIndex = text.indexOf(reservationNumber);
+      const beforeReservationNo = reservationIndex >= 0 ? text.slice(status.length, reservationIndex).trim() : '';
+      const name = beforeReservationNo
+        .replace(phoneRaw || maskedPhone, '')
+        .replace(/\s+/g, ' ')
+        .trim();
       const useRange = text.match(/\d{2,4}\.\s*\d{1,2}\.\s*\d{1,2}\.\([^)]*\)\s*(오전|오후)\s*\d{1,2}:\d{2}\s*~\s*(오전|오후)?\s*\d{1,2}:\d{2}/)?.[0] || '';
       const room = text.match(/(A홀|B홀|C홀|D홀|E홀)[^ ]*/)?.[0] || '';
       const dateTimes = text.match(/\d{2,4}\.\s*\d{1,2}\.\s*\d{1,2}\.\([^)]*\)\s*(오전|오후)\s*\d{1,2}:\d{2}/g) || [];
@@ -354,7 +360,7 @@ async function extractNaverVisibleRows(page) {
         reservationNumber,
         status,
         name,
-        phoneLast4: normalizePhoneLocal(phoneRaw).slice(-4),
+        phoneLast4: normalizePhoneLocal(phoneRaw || maskedPhone).slice(-4),
         useRange,
         room,
         appliedAtText: dateTimes[1] || '',
@@ -370,41 +376,48 @@ async function extractNaverVisibleRows(page) {
 }
 
 async function scrollNaverList(page, byNo) {
+  const byNoThisPage = new Set();
   let stable = 0;
-  let lastCount = byNo.size;
+  let lastCount = 0;
+  let lastHeight = 0;
   let lastTop = -1;
-  for (let step = 0; step < 140; step += 1) {
+  for (let step = 0; step < 220; step += 1) {
     for (const row of await extractNaverVisibleRows(page)) {
       const current = byNo.get(row.reservationNumber);
       if (!current || row.rawText.length > current.rawText.length) byNo.set(row.reservationNumber, row);
+      byNoThisPage.add(row.reservationNumber);
     }
     const state = await page.evaluate(() => {
+      const compactLocal = (value) => String(value || '').replace(/\s+/g, ' ').trim();
       const candidates = [
         document.querySelector('[class*="booking-list-table-wrap"]'),
         document.scrollingElement,
       ].filter(Boolean);
       const el = candidates.find((item) => item.scrollHeight > item.clientHeight + 20) || document.scrollingElement;
+      const expected = Number((compactLocal(document.body.innerText).match(/예약\s*([\d,]+)\s*건/)?.[1] || '0').replace(/,/g, ''));
       return {
         top: el.scrollTop,
         client: el.clientHeight,
         height: el.scrollHeight,
+        expected,
       };
     });
-    if (state.top + state.client >= state.height - 8) break;
-    if (byNo.size === lastCount && state.top === lastTop) stable += 1;
+    if (state.expected && byNoThisPage.size >= state.expected) break;
+    if (byNoThisPage.size === lastCount && state.top === lastTop && state.height === lastHeight) stable += 1;
     else stable = 0;
-    if (stable >= 5) break;
-    lastCount = byNo.size;
+    if (stable >= 8) break;
+    lastCount = byNoThisPage.size;
+    lastHeight = state.height;
     lastTop = state.top;
-    await page.evaluate(() => {
+    await page.evaluate((atBottom) => {
       const candidates = [
         document.querySelector('[class*="booking-list-table-wrap"]'),
         document.scrollingElement,
       ].filter(Boolean);
       const el = candidates.find((item) => item.scrollHeight > item.clientHeight + 20) || document.scrollingElement;
-      el.scrollTop += Math.max(420, el.clientHeight - 120);
-    });
-    await page.waitForTimeout(260);
+      el.scrollTop = atBottom ? el.scrollHeight : el.scrollTop + Math.max(420, el.clientHeight - 120);
+    }, state.top + state.client >= state.height - 8);
+    await page.waitForTimeout(state.top + state.client >= state.height - 8 ? 900 : 320);
   }
 }
 
