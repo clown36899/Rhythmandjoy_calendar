@@ -829,9 +829,10 @@
       naver: item.naverStatus || "pending",
       spacecloud: item.spacecloudStatus || "pending",
     }));
-    state.tasks = (data.tasks || []).map((item) => ({
+    state.tasks = annotateTaskRelations((data.tasks || []).map((item) => ({
       id: item.id,
       liveTaskId: item.liveTaskId || "",
+      sourceTaskId: item.sourceTaskId || "",
       taskType: item.taskType || "",
       actionLabel: item.actionLabel || "",
       status: item.status || "pending",
@@ -850,7 +851,7 @@
       spacecloud: item.spacecloudStatus || "pending",
       createdAt: item.createdAt || "",
       updatedAt: item.updatedAt || "",
-    }));
+    })));
   }
 
   async function apiRequest(action, payload) {
@@ -932,11 +933,190 @@
     }).format(date);
   }
 
+  function annotateTaskRelations(tasks) {
+    const duplicateCancelBySourceTask = new Map();
+    const conflictsByWinnerNo = new Map();
+    const conflictsBySlot = new Map();
+
+    tasks.forEach((task) => {
+      if (isDuplicateCancelTask(task) && task.sourceTaskId) {
+        duplicateCancelBySourceTask.set(String(task.sourceTaskId), task);
+      }
+      if (!hasConflictTask(task)) return;
+      const winnerNo = task.conflict?.winner?.reservationNo || "";
+      if (winnerNo) {
+        const list = conflictsByWinnerNo.get(winnerNo) || [];
+        list.push(task);
+        conflictsByWinnerNo.set(winnerNo, list);
+      }
+      const key = taskConflictSlotKey(task);
+      if (key) {
+        const list = conflictsBySlot.get(key) || [];
+        list.push(task);
+        conflictsBySlot.set(key, list);
+      }
+    });
+
+    return tasks.map((task) => {
+      const relatedConflict = relatedConflictForTask(task, conflictsByWinnerNo, conflictsBySlot, duplicateCancelBySourceTask);
+      const relatedCancel = relatedConflict
+        ? duplicateCancelBySourceTask.get(String(relatedConflict.liveTaskId || relatedConflict.id))
+        : duplicateCancelBySourceTask.get(String(task.liveTaskId || task.id));
+      const resolution = buildTaskResolution(task, relatedConflict, relatedCancel);
+      return resolution ? { ...task, resolution } : task;
+    });
+  }
+
+  function hasConflictTask(task) {
+    return !!(task?.conflict?.winner || task?.conflict?.loser);
+  }
+
+  function taskConflictSlotKey(task) {
+    const side = task.conflict?.winner || task.conflict?.loser || null;
+    if (!side) return "";
+    const date = side.date || task.date;
+    const room = side.room || task.room;
+    const start = Number.isFinite(side.startHour) ? side.startHour : task.start;
+    const end = Number.isFinite(side.endHour) ? side.endHour : task.end;
+    return `${date}|${room}|${start}|${end}`;
+  }
+
+  function taskSlotKey(task) {
+    return `${task.date}|${task.room}|${task.start}|${task.end}`;
+  }
+
+  function relatedConflictForTask(task, conflictsByWinnerNo, conflictsBySlot, duplicateCancelBySourceTask) {
+    if (hasConflictTask(task)) return task;
+    if (task.taskType !== "upload" || task.status !== "failed") return null;
+    const byReservation = task.reservationNo ? (conflictsByWinnerNo.get(task.reservationNo) || []) : [];
+    const candidates = byReservation.length ? byReservation : (conflictsBySlot.get(taskSlotKey(task)) || []);
+    if (!candidates.length) return null;
+    return candidates.find((candidate) => {
+      const relatedCancel = duplicateCancelBySourceTask.get(String(candidate.liveTaskId || candidate.id));
+      return relatedCancel && isTaskDone(relatedCancel);
+    }) || candidates[0];
+  }
+
+  function buildTaskResolution(task, relatedConflict, relatedCancel) {
+    if (isDuplicateCancelTask(task)) {
+      return duplicateCancelResolution(task);
+    }
+    if (relatedConflict && task.taskType === "upload" && task.status === "failed") {
+      return linkedUploadFailureResolution(task, relatedConflict, relatedCancel);
+    }
+    if (hasConflictTask(task)) {
+      return conflictDetectionResolution(task, relatedCancel);
+    }
+    return null;
+  }
+
+  function duplicateCancelResolution(task) {
+    if (isTaskDone(task)) {
+      return {
+        state: "resolved",
+        statusLabel: task.resultStatus === "already-canceled" ? "이미 취소됨" : "중복취소 완료",
+        summary: task.resultStatus === "already-canceled" ? "후예약은 이미 취소된 상태입니다." : "후예약 취소 완료",
+        note: task.smsStatus ? `취소문자 ${smsStatusText(task.smsStatus)}` : "",
+        smsStatus: task.smsStatus,
+        conflict: task.conflict,
+      };
+    }
+    if (task.status === "running") {
+      return {
+        state: "running",
+        statusLabel: "중복취소 진행",
+        summary: "후예약 취소 작업 진행 중",
+        smsStatus: task.smsStatus,
+        conflict: task.conflict,
+      };
+    }
+    if (task.status === "pending") {
+      return {
+        state: "pending",
+        statusLabel: "중복취소 대기",
+        summary: "후예약 취소 대기",
+        smsStatus: task.smsStatus,
+        conflict: task.conflict,
+      };
+    }
+    return {
+      state: "attention",
+      statusLabel: task.status === "failed" ? "취소 실패" : "취소 확인 필요",
+      summary: task.error ? `취소 확인 필요: ${humanTaskError(task.error)}` : "후예약 취소 확인 필요",
+      smsStatus: task.smsStatus,
+      conflict: task.conflict,
+    };
+  }
+
+  function linkedUploadFailureResolution(task, relatedConflict, relatedCancel) {
+    const cancelState = relatedCancel ? duplicateCancelResolution(relatedCancel) : null;
+    const resolved = cancelState?.state === "resolved";
+    return {
+      state: resolved ? "linked-resolved" : "linked-attention",
+      statusLabel: resolved ? "중복처리 연결" : "중복처리 확인",
+      summary: resolved
+        ? "등록 실패 후 중복처리로 연결됨"
+        : "등록 실패 후 후예약 충돌로 연결됨",
+      note: resolved
+        ? "재시도 성공이 아니라 선예약 유지 후 후예약 취소로 정리됨"
+        : "후예약 취소 상태를 확인해야 합니다.",
+      relatedTaskId: relatedCancel?.liveTaskId || relatedCancel?.id || relatedConflict?.liveTaskId || relatedConflict?.id || "",
+      relatedTaskLabel: cancelState?.statusLabel || taskStatusText(relatedConflict),
+      originalError: humanTaskError(task.error),
+      smsStatus: cancelState?.smsStatus || "",
+      conflict: relatedConflict.conflict,
+    };
+  }
+
+  function conflictDetectionResolution(task, relatedCancel) {
+    if (relatedCancel) {
+      const cancelState = duplicateCancelResolution(relatedCancel);
+      return {
+        state: cancelState.state === "resolved" ? "resolved" : cancelState.state,
+        statusLabel: cancelState.state === "resolved" ? "중복처리 완료" : cancelState.statusLabel,
+        summary: cancelState.state === "resolved"
+          ? "후예약 충돌 감지 후 취소까지 완료"
+          : `후예약 충돌 감지 후 ${cancelState.summary}`,
+        note: cancelState.note,
+        relatedTaskId: relatedCancel.liveTaskId || relatedCancel.id || "",
+        relatedTaskLabel: cancelState.statusLabel,
+        smsStatus: cancelState.smsStatus,
+        conflict: task.conflict,
+      };
+    }
+    if (task.resultStatus === "later-reservation-conflict" || task.status === "needs_review") {
+      return {
+        state: "attention",
+        statusLabel: "취소 확인 필요",
+        summary: "후예약 충돌 감지됨",
+        note: "연결된 후예약 취소 작업을 찾지 못했습니다.",
+        conflict: task.conflict,
+      };
+    }
+    return null;
+  }
+
+  function isTaskDone(task) {
+    return task?.status === "done"
+      || task?.status === "synced"
+      || task?.resultStatus === "canceled"
+      || task?.resultStatus === "already-canceled";
+  }
+
+  function humanTaskError(error) {
+    const text = String(error || "").trim();
+    if (!text) return "";
+    if (/modal still visible after submit/i.test(text)) return "등록 후 확인창이 닫히지 않음";
+    if (/later-reservation-conflict|후예약 충돌/i.test(text)) return "선예약 중복 충돌";
+    return text;
+  }
+
   function statusText(status) {
     if (status === "done" || status === "synced") return "완료";
     if (status === "confirmed") return "확정";
     if (status === "running") return "진행";
     if (status === "failed") return "실패";
+    if (status === "needs_review") return "확인필요";
     if (status === "canceled") return "취소";
     return "대기";
   }
@@ -946,6 +1126,7 @@
   }
 
   function taskStatusText(task) {
+    if (task.resolution?.statusLabel) return task.resolution.statusLabel;
     if (isDuplicateCancelTask(task)) {
       if (task.status === "done" || task.resultStatus === "canceled") return "중복취소 완료";
       if (task.resultStatus === "already-canceled") return "이미 취소됨";
@@ -959,6 +1140,10 @@
   }
 
   function taskBadgeClass(task) {
+    if (task.resolution?.state === "resolved" || task.resolution?.state === "linked-resolved") return "done";
+    if (task.resolution?.state === "running") return "running";
+    if (task.resolution?.state === "pending") return "pending";
+    if (task.resolution?.state === "linked-attention" || task.resolution?.state === "attention") return "failed";
     if (task.status === "done" || task.status === "synced" || task.resultStatus === "canceled" || task.resultStatus === "already-canceled") return "done";
     if (task.status === "failed" || task.status === "needs_review") return "failed";
     if (task.status === "running") return "running";
@@ -971,11 +1156,23 @@
     if (isDuplicateCancelTask(task)) {
       parts.push("선대관 중복으로 후예약 취소");
     }
+    if (task.resolution?.summary) {
+      parts.push(task.resolution.summary);
+    }
+    if (task.resolution?.relatedTaskId) {
+      parts.push(`연결작업 #${task.resolution.relatedTaskId} ${task.resolution.relatedTaskLabel || ""}`.trim());
+    }
+    if (task.resolution?.note) {
+      parts.push(task.resolution.note);
+    }
+    if (task.resolution?.originalError) {
+      parts.push(`원실패 ${task.resolution.originalError}`);
+    }
     if (task.smsStatus) {
       parts.push(`문자 ${smsStatusText(task.smsStatus)}`);
     }
-    if (task.error) {
-      parts.push(`오류 ${task.error}`);
+    if (task.error && !task.resolution) {
+      parts.push(`오류 ${humanTaskError(task.error)}`);
     }
     return parts.filter(Boolean).join(" / ");
   }
@@ -984,15 +1181,48 @@
     if (isDuplicateCancelTask(task) && task.conflict) {
       return duplicateCancelCellHtml(task);
     }
+    if (task.resolution?.conflict && task.taskType === "upload" && task.status === "failed") {
+      return linkedFailureCellHtml(task);
+    }
+    if (hasConflictTask(task)) {
+      return duplicateCancelCellHtml(task);
+    }
     const suffix = task.taskType ? "" : paymentSuffix(task);
     return `${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}${reservationNumberLine(task)}<br><span class="row-source">${escapeHtml(taskDetailText(task))}${suffix}</span>`;
   }
 
   function duplicateCancelCellHtml(task) {
-    const winner = task.conflict?.winner || null;
-    const loser = task.conflict?.loser || null;
     return `
       <div class="task-main">${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)} · ${escapeHtml(task.name || "이름 없음")}${reservationNumberLine(task)}</div>
+      ${taskResolutionLineHtml(task)}
+      ${conflictFlowHtml(task.conflict, task)}
+    `;
+  }
+
+  function linkedFailureCellHtml(task) {
+    return `
+      <div class="task-main">${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)} · ${escapeHtml(task.name || "이름 없음")}${reservationNumberLine(task)}</div>
+      ${taskResolutionLineHtml(task)}
+      ${conflictFlowHtml(task.resolution.conflict, task)}
+    `;
+  }
+
+  function taskResolutionLineHtml(task) {
+    if (!task.resolution) return `<span class="row-source">${escapeHtml(taskDetailText(task))}</span>`;
+    return `
+      <div class="task-resolution ${escapeHtml(task.resolution.state || "")}">
+        <strong>${escapeHtml(task.resolution.summary || taskStatusText(task))}</strong>
+        ${task.resolution.note ? `<span>${escapeHtml(task.resolution.note)}</span>` : ""}
+        ${task.resolution.originalError ? `<span>원실패: ${escapeHtml(task.resolution.originalError)}</span>` : ""}
+        ${task.resolution.relatedTaskId ? `<span class="resolution-pill">연결작업 #${escapeHtml(task.resolution.relatedTaskId)} ${escapeHtml(task.resolution.relatedTaskLabel || "")}</span>` : ""}
+      </div>
+    `;
+  }
+
+  function conflictFlowHtml(conflict, task) {
+    const winner = conflict?.winner || null;
+    const loser = conflict?.loser || null;
+    return `
       <div class="conflict-flow">
         ${conflictSideHtml(winner, "winner", task)}
         <span class="conflict-arrow">→</span>
@@ -1006,7 +1236,7 @@
     const platform = side?.platformLabel || (isCanceled ? canceledPlatformLabel(task) : confirmedPlatformLabel(task));
     const stateText = isCanceled ? "예약취소" : "예약확정";
     const stateClass = isCanceled ? "cancel" : "keep";
-    const smsText = isCanceled ? `취소문자 ${smsStatusText(task.smsStatus || "대기")}` : "확정 유지";
+    const smsText = isCanceled ? `취소문자 ${smsStatusText(task.resolution?.smsStatus || task.smsStatus || "대기")}` : "확정 유지";
     const received = side?.receivedAt ? `접수 ${formatDateTime(side.receivedAt) || side.receivedAt}` : "";
     const reservationNo = side?.reservationNo ? `예약번호 ${side.reservationNo}` : "";
     return `
@@ -1048,6 +1278,9 @@
     if (status === "source") return "원본";
     if (status === "running") return "진행";
     if (status === "failed") return "실패";
+    if (status === "needs_review") return "확인필요";
+    if (status === "already-canceled") return "이미취소";
+    if (status === "google_pending") return "구글대기";
     if (status === "canceled") return "취소";
     if (status === "pending") return "대기";
     return status || "대기";

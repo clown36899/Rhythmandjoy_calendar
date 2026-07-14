@@ -905,6 +905,57 @@ th {
   font-weight: 800;
 }
 
+.task-resolution {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 8px;
+  margin-top: 7px;
+  padding: 7px 9px;
+  border: 1px solid #d5e3df;
+  border-radius: 8px;
+  background: #f7fbf9;
+  color: #31413d;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.task-resolution.resolved,
+.task-resolution.linked-resolved {
+  border-color: #b9e3d2;
+  background: #effaf5;
+  color: #0b5f4e;
+}
+
+.task-resolution.attention,
+.task-resolution.linked-attention {
+  border-color: #f0c7c3;
+  background: #fff6f5;
+  color: #9f251a;
+}
+
+.task-resolution.running,
+.task-resolution.pending {
+  border-color: #f2d6a6;
+  background: #fffbeb;
+  color: #8a4d0a;
+}
+
+.task-resolution strong {
+  font-size: 12px;
+}
+
+.resolution-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(11, 127, 104, 0.1);
+  color: #0b5f4e;
+}
+
 .conflict-flow {
   display: grid;
   grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr);

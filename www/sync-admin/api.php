@@ -456,14 +456,25 @@ function normalize_task_row($row) {
     if (!is_array($payload)) {
         $payload = array();
     }
-    $winning = task_conflict_booking(isset($payload['winningBooking']) ? $payload['winningBooking'] : null);
-    $losing = task_conflict_booking(isset($payload['losingBooking']) ? $payload['losingBooking'] : null);
+    $winning_source = isset($result['winningBooking']) ? $result['winningBooking'] : (isset($payload['winningBooking']) ? $payload['winningBooking'] : null);
+    $losing_source = isset($result['losingBooking']) ? $result['losingBooking'] : (isset($payload['losingBooking']) ? $payload['losingBooking'] : null);
+    $winning = task_conflict_booking($winning_source);
+    $losing = task_conflict_booking($losing_source);
     $sms = isset($result['sms']) && is_array($result['sms']) ? $result['sms'] : array();
+    $source_task_id = null;
+    if (isset($payload['sourceTaskId'])) {
+        $source_task_id = intval($payload['sourceTaskId']);
+    } elseif (isset($result['sourceTaskId'])) {
+        $source_task_id = intval($result['sourceTaskId']);
+    } elseif (isset($result['priorNaverBlockTaskId'])) {
+        $source_task_id = intval($result['priorNaverBlockTaskId']);
+    }
     list($naver_status, $spacecloud_status) = task_platform_statuses($task_type, $row['platform'], $row['status']);
     return array(
         'id' => (string) $row['id'],
         'reservationId' => $row['reservation_id'] !== null ? intval($row['reservation_id']) : null,
         'liveTaskId' => $row['live_task_id'] !== null ? intval($row['live_task_id']) : null,
+        'sourceTaskId' => $source_task_id,
         'taskType' => $task_type,
         'platform' => $row['platform'],
         'actionType' => $row['action_type'],
