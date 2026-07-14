@@ -22,6 +22,7 @@
     activeDate: document.getElementById("activeDate"),
     prevDay: document.getElementById("prevDay"),
     nextDay: document.getElementById("nextDay"),
+    todayButton: document.getElementById("todayButton"),
     scheduleWrap: document.getElementById("scheduleWrap"),
     scheduleGrid: document.getElementById("scheduleGrid"),
     priceReference: document.getElementById("priceReference"),
@@ -76,6 +77,7 @@
   function bindEvents() {
     el.prevDay.addEventListener("click", () => moveDay(-1));
     el.nextDay.addEventListener("click", () => moveDay(1));
+    el.todayButton.addEventListener("click", goToday);
     el.activeDate.addEventListener("change", () => {
       state.activeDate = el.activeDate.value || today();
       renderAll();
@@ -285,6 +287,7 @@
   }
 
   function renderAll() {
+    updateDateControls();
     renderSchedule();
     renderPriceReference();
     renderTasks();
@@ -735,6 +738,19 @@
     el.activeDate.value = state.activeDate;
     renderAll();
     refreshFromApi({ silent: true });
+  }
+
+  function goToday() {
+    const nextDate = today();
+    if (state.activeDate === nextDate) return;
+    state.activeDate = nextDate;
+    el.activeDate.value = state.activeDate;
+    renderAll();
+    refreshFromApi({ silent: true });
+  }
+
+  function updateDateControls() {
+    el.todayButton.disabled = state.activeDate === today();
   }
 
   function resetForm(room, start, end) {

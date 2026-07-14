@@ -262,6 +262,7 @@ h2 {
 }
 
 .icon-button,
+.today-button,
 .primary-button,
 .secondary-button,
 .chip {
@@ -280,6 +281,13 @@ h2 {
   font-size: 24px;
 }
 
+.today-button {
+  min-width: 58px;
+  background: #eff8ff;
+  border-color: #b8daf6;
+  color: #155f91;
+}
+
 .primary-button {
   background: var(--accent);
   color: #fff;
@@ -296,18 +304,21 @@ h2 {
 }
 
 .secondary-button:hover,
+.today-button:hover,
 .icon-button:hover {
   border-color: #aebbb7;
 }
 
 .primary-button:disabled,
 .secondary-button:disabled,
+.today-button:disabled,
 .icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
 .secondary-button:disabled:hover,
+.today-button:disabled:hover,
 .icon-button:disabled:hover {
   border-color: var(--line);
 }
@@ -1249,6 +1260,7 @@ body.modal-open {
   }
 
   .topbar-actions input,
+  .topbar-actions .today-button,
   .form-actions button {
     flex: 1;
   }
