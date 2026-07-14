@@ -396,7 +396,9 @@ function elapsedText(laterValue, earlierValue) {
 
 function reservationSmsTimeText(task) {
   const date = String(task.date || task.reservation_date || '').trim();
-  const [, month = '', day = ''] = date.match(/^(\d{4})-(\d{2})-(\d{2})$/) || [];
+  const dateMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const month = dateMatch?.[2] || '';
+  const day = dateMatch?.[3] || '';
   const dateText = month && day ? `${Number(month)}/${Number(day)}` : date || '-';
   const room = String(task.roomKey || task.room_key || '').toUpperCase();
   const start = task.startTime || task.start_time || '-';
