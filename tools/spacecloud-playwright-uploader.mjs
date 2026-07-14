@@ -71,6 +71,10 @@ function maskPhone(value) {
   return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
 }
 
+function redactPhone(value) {
+  return String(value || '').replace(/01[016789][-\s]?\d{3,4}[-\s]?\d{4}/g, (match) => maskPhone(match));
+}
+
 function findPhoneInObject(value) {
   const seen = new Set();
   const stack = [value];
@@ -166,6 +170,59 @@ function spacecloudReservationIdFromTask(task) {
     || task.spacecloud_reservation_id
     || ''
   ).trim();
+}
+
+async function fetchSpacecloudReservationDetail(page, reservationId) {
+  return page.evaluate(async (id) => {
+    const rawUserInfo = window.localStorage.getItem('spacecloud__userInfo') || '{}';
+    let accessToken = '';
+    try {
+      const userInfo = JSON.parse(rawUserInfo);
+      accessToken = userInfo.accessToken || userInfo.access_token || userInfo.token || '';
+    } catch {}
+    if (!accessToken) return { ok: false, status: 0, error: 'spacecloud-access-token-missing' };
+    const response = await fetch(`https://api.spacecloud.kr/partner/reservations/${encodeURIComponent(id)}`, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      credentials: 'include',
+    });
+    const text = await response.text();
+    let body = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = { raw: text.slice(0, 500) };
+    }
+    return { ok: response.ok, status: response.status, body };
+  }, reservationId);
+}
+
+function spacecloudReservationStatus(detail) {
+  return String(detail?.body?.RSV_STAT_CD || detail?.body?.status || '').trim();
+}
+
+function displayHour(value) {
+  const time = slotTimeText(value);
+  if (time === '24:00') return '24';
+  return String(Number(time.slice(0, 2)));
+}
+
+function verifySpacecloudReservationText(text, row, reservationId) {
+  const compact = compactText(text);
+  const errors = [];
+  if (!compact.includes(`예약번호:${reservationId}`)) errors.push('reservation-id');
+  const name = normalizeName(row.reserverName);
+  if (name && !compact.includes(name)) errors.push('reserver-name');
+  const dateText = row.date.replace(/-/g, '.');
+  if (!compact.includes(dateText)) errors.push('date');
+  const startHour = displayHour(row.startTime);
+  const endHour = displayHour(row.endTime);
+  if (!compact.includes(`${startHour}시~${endHour}시`)) errors.push('time');
+  const roomName = SPACECLOUD_ROOMS[row.roomKey]?.name || '';
+  if (roomName && !compact.includes(roomName)) errors.push('room');
+  return { ok: errors.length === 0, errors };
 }
 
 export function spacecloudUploadEventFromTask(task) {
@@ -715,30 +772,7 @@ export async function fetchSpacecloudReservationPhone(context, task) {
     await page.goto(reservationCalendarUrl(roomKey), { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
   }
 
-  const detail = await page.evaluate(async (id) => {
-    const rawUserInfo = window.localStorage.getItem('spacecloud__userInfo') || '{}';
-    let accessToken = '';
-    try {
-      const userInfo = JSON.parse(rawUserInfo);
-      accessToken = userInfo.accessToken || userInfo.access_token || userInfo.token || '';
-    } catch {}
-    if (!accessToken) return { ok: false, status: 0, error: 'spacecloud-access-token-missing' };
-    const response = await fetch(`https://api.spacecloud.kr/partner/reservations/${encodeURIComponent(id)}`, {
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      credentials: 'include',
-    });
-    const text = await response.text();
-    let body = null;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = { raw: text.slice(0, 500) };
-    }
-    return { ok: response.ok, status: response.status, body };
-  }, reservationId);
+  const detail = await fetchSpacecloudReservationDetail(page, reservationId);
 
   if (!detail.ok) {
     return {
@@ -769,6 +803,146 @@ export async function fetchSpacecloudReservationPhone(context, task) {
     source: 'spacecloud-detail-api',
     reservationId,
   };
+}
+
+export async function cancelSpacecloudConfirmedReservation(context, task, {
+  reasonCode = 'PRSCH',
+  reasonText = '다른 예약앱 선대관으로 인한 중복 예약 취소',
+} = {}) {
+  const page = await pageForContext(context);
+  const payload = parseTaskPayload(task);
+  const reservationId = spacecloudReservationIdFromTask(task);
+  const roomKey = task.roomKey || task.room_key || payload.roomKey || payload.room_key || '';
+  const row = {
+    taskId: task.id || task.taskId || null,
+    taskType: task.taskType || task.task_type || 'spacecloud_cancel',
+    roomKey,
+    date: normalizeDate(task.date || task.reservation_date || payload.date),
+    startTime: slotTimeText(task.startTime || task.start_time || payload.start_time || payload.startTime),
+    endTime: slotTimeText(task.endTime || task.end_time || payload.end_time || payload.endTime),
+    reserverName: task.reserverName || task.reserver_name || payload.name || '',
+    reservationId,
+    product: task.product || payload.product || '',
+    reasonCode,
+    startedAt: new Date().toISOString(),
+  };
+  if (!reservationId) {
+    row.status = 'needs-review';
+    row.error = 'spacecloud reservation id missing; cannot cancel confirmed reservation';
+    row.finishedAt = new Date().toISOString();
+    return row;
+  }
+
+  const dialogTypes = [];
+  const onDialog = async (dialog) => {
+    dialogTypes.push(dialog.type());
+    if (dialog.type() === 'confirm' || dialog.type() === 'alert') await dialog.accept();
+    else await dialog.dismiss();
+  };
+
+  page.on('dialog', onDialog);
+  try {
+    await page.goto(`https://partner.spacecloud.kr/reservation/${encodeURIComponent(reservationId)}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
+    });
+    await page.waitForTimeout(1200);
+    const detailBefore = await fetchSpacecloudReservationDetail(page, reservationId);
+    row.beforeStatusCode = spacecloudReservationStatus(detailBefore);
+    if (!detailBefore.ok) {
+      row.status = 'needs-review';
+      row.error = detailBefore.error || `spacecloud-detail-http-${detailBefore.status}`;
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+
+    let phone = findPhoneInObject(detailBefore.body);
+    const bodyText = await page.locator('body').innerText({ timeout: 10000 });
+    if (!phone) {
+      const textPhone = bodyText.match(/01[016789][-\s]?\d{3,4}[-\s]?\d{4}/)?.[0] || '';
+      phone = normalizePhone(textPhone);
+    }
+    row.maskedPhone = maskPhone(phone);
+    if (!/^01[016789]\d{7,8}$/.test(phone)) {
+      row.status = 'needs-review';
+      row.error = 'recipient phone missing; cancellation blocked before SpaceCloud cancel click';
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+    Object.defineProperty(row, 'phone', { value: phone, enumerable: false });
+
+    if (row.beforeStatusCode && row.beforeStatusCode !== 'RSCMP') {
+      row.status = row.beforeStatusCode === 'RCCMP' ? 'already-canceled' : 'needs-review';
+      row.error = row.status === 'needs-review' ? `unexpected SpaceCloud status before cancel: ${row.beforeStatusCode}` : '';
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+
+    row.detailVerification = verifySpacecloudReservationText(bodyText, row, reservationId);
+    if (!row.detailVerification.ok) {
+      row.status = 'needs-review';
+      row.error = `SpaceCloud detail verification failed: ${row.detailVerification.errors.join(', ')}`;
+      row.textPreview = redactPhone(bodyText).replace(/\s+/g, ' ').slice(0, 500);
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+
+    const cancelButton = page.locator('a.btn_cancel.one_type').filter({ hasText: '예약취소', visible: true });
+    const cancelCount = await cancelButton.count();
+    if (cancelCount !== 1) throw new Error(`visible SpaceCloud cancel button count ${cancelCount}`);
+    await cancelButton.first().click({ timeout: 8000 });
+    await page.waitForTimeout(1000);
+
+    const modalText = await page.locator('body').innerText({ timeout: 10000 });
+    row.cancelModalVerification = verifySpacecloudReservationText(modalText, row, reservationId);
+    if (!row.cancelModalVerification.ok) {
+      row.status = 'needs-review';
+      row.error = `SpaceCloud cancel modal verification failed: ${row.cancelModalVerification.errors.join(', ')}`;
+      row.finishedAt = new Date().toISOString();
+      await page.locator('.btn_pop_close').filter({ visible: true }).first().click({ timeout: 3000 }).catch(() => {});
+      return row;
+    }
+
+    const reasonSelect = page.locator('select#select').filter({ visible: true });
+    if (await reasonSelect.count() !== 1) throw new Error('SpaceCloud cancel reason select not visible');
+    await reasonSelect.first().selectOption(reasonCode);
+    const reasonInput = page.locator('textarea#cancel_gr1, textarea[name="cancel_gr"]').filter({ visible: true }).first();
+    if (await reasonInput.count()) {
+      await reasonInput.fill(reasonText.slice(0, 100), { timeout: 5000 });
+    }
+
+    const confirmButton = page.locator('a.btn.btn_full.btn_default').filter({ hasText: '확인', visible: true });
+    if (await confirmButton.count() !== 1) throw new Error('SpaceCloud cancel confirm button not visible');
+    await confirmButton.first().click({ timeout: 8000 });
+
+    let afterStatus = '';
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await page.waitForTimeout(1000);
+      const detailAfter = await fetchSpacecloudReservationDetail(page, reservationId).catch(() => null);
+      afterStatus = spacecloudReservationStatus(detailAfter);
+      if (afterStatus && afterStatus !== 'RSCMP') break;
+    }
+    row.afterStatusCode = afterStatus;
+    if (afterStatus === 'RCCMP') {
+      row.status = 'canceled';
+    } else {
+      row.status = 'failed';
+      row.error = `SpaceCloud status did not become canceled after confirm: ${afterStatus || 'unknown'}`;
+    }
+    if (dialogTypes.length > 0) row.dialogTypes = dialogTypes;
+    row.finishedAt = new Date().toISOString();
+    return row;
+  } catch (error) {
+    row.status = row.status || 'failed';
+    row.error = String(error?.message || error);
+    row.finishedAt = new Date().toISOString();
+    try {
+      await page.locator('.btn_pop_close, a.btn_close, button.btn_close').filter({ visible: true }).first().click({ timeout: 3000 });
+    } catch {}
+    return row;
+  } finally {
+    page.off('dialog', onDialog);
+  }
 }
 
 export async function createSpacecloudPlaywrightUploader({

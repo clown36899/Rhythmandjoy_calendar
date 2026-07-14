@@ -5,6 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import {
+  cancelSpacecloudConfirmedReservation,
   checkSpacecloudLogin,
   createSpacecloudPlaywrightUploader,
   deleteSpacecloudDirectReservation,
@@ -29,6 +30,8 @@ const DEFAULT_NOTIFY_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'notify-state.json
 const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
 const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
 const CONFIRMATION_SMS_TITLE = '리듬앤조이 연습실 예약 확정 안내문자';
+const PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME = 'spacecloud-prior-booking-canceled-v1';
+const PRIOR_BOOKING_CANCEL_SMS_TITLE = '리듬앤조이 연습실 예약취소 안내';
 const DEFAULT_CONFIRMATION_INFO_URL = 'https://리듬앤조이일정표.com/info';
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -63,6 +66,8 @@ Options:
                             Defaults to 2.
   --naver-block-limit-per-cycle <n>
                             Defaults to 2.
+  --spacecloud-cancel-limit-per-cycle <n>
+                            Defaults to 1.
   --naver-business-id <id>  Defaults to 1257912.
   --legacy-calendar-plan    Also run the older Google Calendar cache upload plan.
   --headless                Run Chrome headless. Not recommended for first login.
@@ -106,6 +111,7 @@ function parseArgs(argv) {
     limitPerCycle: 3,
     deleteLimitPerCycle: 2,
     naverBlockLimitPerCycle: 2,
+    spacecloudCancelLimitPerCycle: 1,
     naverBusinessId: '1257912',
     legacyCalendarPlan: false,
     headless: false,
@@ -147,7 +153,15 @@ function parseArgs(argv) {
     if (!next || next.startsWith('--')) throw new Error(`Missing value for ${arg}`);
     i += 1;
 
-    if (['days', 'interval-seconds', 'limit-per-cycle', 'delete-limit-per-cycle', 'naver-block-limit-per-cycle', 'notify-cooldown-seconds'].includes(key)) {
+    if ([
+      'days',
+      'interval-seconds',
+      'limit-per-cycle',
+      'delete-limit-per-cycle',
+      'naver-block-limit-per-cycle',
+      'spacecloud-cancel-limit-per-cycle',
+      'notify-cooldown-seconds',
+    ].includes(key)) {
       const parsed = Number.parseInt(next, 10);
       if (!Number.isFinite(parsed) || parsed < 1) throw new Error(`${arg} must be a positive integer`);
       args[key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = parsed;
@@ -353,6 +367,61 @@ function confirmationSmsMessage(source = '') {
 비번, 정보확인: ${confirmationInfoUrl(source)}`;
 }
 
+function parseEventAt(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const normalized = text.includes('T') ? text : text.replace(' ', 'T');
+  const date = new Date(normalized.includes('+') || normalized.endsWith('Z') ? normalized : `${normalized}+09:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function receiptTimeText(value) {
+  const date = parseEventAt(value);
+  if (!date) return '--:--';
+  const kst = new Date(date.getTime() + KST_OFFSET_MS);
+  return `${String(kst.getUTCHours()).padStart(2, '0')}:${String(kst.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+function elapsedText(laterValue, earlierValue) {
+  const later = parseEventAt(laterValue);
+  const earlier = parseEventAt(earlierValue);
+  if (!later || !earlier) return '';
+  const totalSeconds = Math.max(0, Math.round((later.getTime() - earlier.getTime()) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}초 차이`;
+  if (seconds === 0) return `${minutes}분 차이`;
+  return `${minutes}분 ${seconds}초 차이`;
+}
+
+function reservationSmsTimeText(task) {
+  const date = String(task.date || task.reservation_date || '').trim();
+  const [, month = '', day = ''] = date.match(/^(\d{4})-(\d{2})-(\d{2})$/) || [];
+  const dateText = month && day ? `${Number(month)}/${Number(day)}` : date || '-';
+  const room = String(task.roomKey || task.room_key || '').toUpperCase();
+  const start = task.startTime || task.start_time || '-';
+  const end = displayEndTime(start, task.endTime || task.end_time || '');
+  return `${dateText} ${room}홀 ${start}-${end}`;
+}
+
+function priorBookingCancelSmsMessage(task) {
+  const payload = payloadForTask(task);
+  const winning = payload.winningBooking || {};
+  const losing = payload.losingBooking || {};
+  const winnerAt = winning.lastEventAt || winning.last_event_at || '';
+  const loserAt = losing.lastEventAt || losing.last_event_at || task.ledgerLastEventAt || task.ledger_last_event_at || '';
+  const elapsed = elapsedText(loserAt, winnerAt);
+  const elapsedPart = elapsed ? ` (${elapsed})` : '';
+  return [
+    '예약 취소 안내',
+    '리듬앤조이 연습실 예약이 선대관으로 취소되었습니다.',
+    `예약내역 : ${reservationSmsTimeText(task)}`,
+    `네이버 예약이 ${receiptTimeText(winnerAt)}에 먼저 접수되어 해당 예약은 취소 처리되었습니다.`,
+    `고객님 예약 접수: ${receiptTimeText(loserAt)}${elapsedPart}`,
+    '불편을 드려 죄송합니다. 다른 시간대로 재예약 부탁드립니다.',
+  ].join('\n');
+}
+
 function safeSmsResult(result) {
   const safe = {
     status: result?.status || 'unknown',
@@ -368,13 +437,17 @@ function safeSmsResult(result) {
   return safe;
 }
 
-async function sendRemoteConfirmationSms(args, {
+async function sendRemoteSms(args, {
   task,
   phone,
   source,
+  message,
+  subject,
+  templateName,
+  enabled = true,
 } = {}) {
-  if (!confirmationSmsEnabled()) {
-    return { status: 'disabled', reason: 'RHYTHMJOY_CONFIRMATION_SMS_ENABLED=0', maskedPhone: '' };
+  if (!enabled) {
+    return { status: 'disabled', reason: 'sms-disabled', maskedPhone: '' };
   }
   const to = normalizePhone(phone);
   if (!/^01[016789]\d{7,8}$/.test(to)) {
@@ -389,9 +462,9 @@ async function sendRemoteConfirmationSms(args, {
     source: source || '',
     to,
     maskedPhone: maskPhone(to),
-    message: confirmationSmsMessage(source),
-    subject: process.env.RHYTHMJOY_CONFIRMATION_SMS_SUBJECT || CONFIRMATION_SMS_TITLE,
-    templateName: CONFIRMATION_SMS_TEMPLATE_NAME,
+    message: message || '',
+    subject: subject || '',
+    templateName: templateName || 'manual-sms-v1',
   }), 'utf8').toString('base64');
   const script = `
 set -e
@@ -567,6 +640,40 @@ PY
   return safeSmsResult(result);
 }
 
+async function sendRemoteConfirmationSms(args, {
+  task,
+  phone,
+  source,
+} = {}) {
+  return sendRemoteSms(args, {
+    task,
+    phone,
+    source,
+    message: confirmationSmsMessage(source),
+    subject: process.env.RHYTHMJOY_CONFIRMATION_SMS_SUBJECT || CONFIRMATION_SMS_TITLE,
+    templateName: CONFIRMATION_SMS_TEMPLATE_NAME,
+    enabled: confirmationSmsEnabled(),
+  });
+}
+
+async function sendPriorBookingCancellationSms(args, {
+  task,
+  phone,
+} = {}) {
+  return sendRemoteSms(args, {
+    task: {
+      ...task,
+      taskType: task.taskType || task.task_type || 'spacecloud_cancel',
+    },
+    phone,
+    source: 'spacecloud-cancel',
+    message: priorBookingCancelSmsMessage(task),
+    subject: process.env.RHYTHMJOY_PRIOR_BOOKING_CANCEL_SMS_SUBJECT || PRIOR_BOOKING_CANCEL_SMS_TITLE,
+    templateName: PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME,
+    enabled: String(process.env.RHYTHMJOY_PRIOR_BOOKING_CANCEL_SMS_ENABLED || '1').trim() !== '0',
+  });
+}
+
 const REMOTE_TASK_ENRICHMENT_PY = String.raw`
 def parse_payload(row):
     try:
@@ -578,7 +685,7 @@ def parse_payload(row):
 def source_platform_for_task(task_type):
     if task_type in ('upload', 'delete'):
         return 'naver'
-    if task_type in ('naver_block', 'naver_restore'):
+    if task_type in ('naver_block', 'naver_restore', 'spacecloud_cancel'):
         return 'spacecloud'
     return ''
 
@@ -891,6 +998,122 @@ async function fetchRemoteNaverAvailabilityTasks(args) {
     taskTypes: ['naver_block', 'naver_restore'],
     limit: args.naverBlockLimitPerCycle,
   });
+}
+
+async function fetchRemoteSpacecloudCancelTasks(args) {
+  return fetchRemoteTasks(args, {
+    taskType: 'spacecloud_cancel',
+    limit: args.spacecloudCancelLimitPerCycle,
+  });
+}
+
+async function createRemoteSpacecloudCancelTask(args, sourceTask, conflictRow) {
+  const target = await loadCafe24Target(args);
+  const sourcePayload = payloadForTask(sourceTask);
+  const losing = conflictRow.losingBooking || {};
+  const winning = conflictRow.winningBooking || {};
+  const reservationId = String(
+    sourcePayload.spacecloud_reservation_id
+    || sourcePayload.spacecloudReservationId
+    || conflictRow.reservationId
+    || ''
+  ).trim();
+  const payload = {
+    ...sourcePayload,
+    sourceTaskId: sourceTask.id || sourceTask.taskId || null,
+    sourceTaskType: sourceTask.taskType || sourceTask.task_type || 'naver_block',
+    source: 'spacecloud-later-reservation-conflict',
+    action: 'cancel-spacecloud-confirmed-reservation',
+    priorityRule: conflictRow.priorityRule || 'first-confirmed-email-wins',
+    winningBooking: winning,
+    losingBooking: losing,
+    spacecloud_reservation_id: reservationId,
+    originalPayload: sourcePayload,
+  };
+  const insertPayload = Buffer.from(JSON.stringify({
+    dedupeKey: `spacecloud_cancel|${sourceTask.id || sourceTask.taskId || ''}|${reservationId}`.slice(0, 96),
+    emailEventId: sourceTask.emailEventId || sourceTask.email_event_id || null,
+    roomKey: sourceTask.roomKey || sourceTask.room_key || losing.roomKey || losing.room_key || '',
+    reservationNumber: reservationId,
+    reserverName: sourceTask.reserverName || sourceTask.reserver_name || losing.reserverName || losing.reserver_name || '',
+    product: sourceTask.product || losing.product || sourcePayload.product || '',
+    date: sourceTask.date || sourceTask.reservation_date || losing.date || losing.reservation_date || '',
+    startTime: sourceTask.startTime || sourceTask.start_time || losing.startTime || losing.start_time || '',
+    endTime: sourceTask.endTime || sourceTask.end_time || losing.endTime || losing.end_time || '',
+    payload,
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export SPACECLOUD_CANCEL_TASK_B64=${shellQuote(insertPayload)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+def none_if_empty(value):
+    text = str(value or '').strip()
+    return text or None
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+row = json.loads(base64.b64decode(os.environ['SPACECLOUD_CANCEL_TASK_B64']).decode('utf-8'))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=True,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO rhythmjoy_spacecloud_tasks (
+                dedupe_key, email_event_id, task_type, status,
+                room_key, reservation_number, reserver_name, product,
+                reservation_date, start_time, end_time, payload_json,
+                created_at, updated_at
+            )
+            VALUES (%s,%s,'spacecloud_cancel','pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
+            ON DUPLICATE KEY UPDATE
+                status=IF(status IN ('done', 'needs_review', 'failed'), status, 'pending'),
+                payload_json=VALUES(payload_json),
+                updated_at=NOW()
+            """,
+            (
+                row.get('dedupeKey'),
+                row.get('emailEventId'),
+                row.get('roomKey') or '',
+                row.get('reservationNumber') or '',
+                row.get('reserverName') or '',
+                row.get('product') or '',
+                none_if_empty(row.get('date')),
+                none_if_empty(row.get('startTime')),
+                none_if_empty(row.get('endTime')),
+                json.dumps(row.get('payload') or {}, ensure_ascii=False, separators=(',', ':')),
+            ),
+        )
+        cur.execute('SELECT id, status FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=%s LIMIT 1', (row.get('dedupeKey'),))
+        saved = cur.fetchone() or {}
+    print(json.dumps({'id': saved.get('id'), 'status': saved.get('status'), 'dedupeKey': row.get('dedupeKey')}, ensure_ascii=False))
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '{}');
 }
 
 async function updateRemoteTask(args, taskId, status, resultText) {
@@ -1331,6 +1554,9 @@ function telegramStatusText(status) {
     'google-delete-failed': '구글 삭제 재시도',
     'naver-conflict': '네이버 충돌',
     'later-reservation-conflict': '후예약 취소 필요',
+    'spacecloud-cancel-queued': '후예약 취소 대기',
+    canceled: '취소 성공',
+    'already-canceled': '이미 취소됨',
     'needs-review': '확인 필요',
   };
   return map[status] || status || '-';
@@ -1463,6 +1689,7 @@ function smsRowsFromCycle(row) {
     ...(row.uploadTasks?.rows || []),
     ...(row.naverBlockTasks?.rows || []),
     ...(row.naverAvailabilityTasks?.rows || []),
+    ...(row.spacecloudCancelTasks?.rows || []),
   ].filter((taskRow) => taskRow.sms);
   const seen = new Set();
   return rows.filter((taskRow) => {
@@ -1649,15 +1876,45 @@ function naverRestoreFailureMessage(rowOrError) {
   ]);
 }
 
+function spacecloudCancelSuccessMessage(row) {
+  const processed = (row.spacecloudCancelTasks?.rows || []).filter((taskRow) => [
+    'canceled',
+    'already-canceled',
+  ].includes(taskRow.status));
+  return compactNotice('✅ 성공: 스페이스클라우드 후예약 취소', [
+    `처리: ${processed.length}건`,
+    formatBriefRows(processed),
+    `문자: ${processed.map((taskRow) => smsStatusText(taskRow.sms?.status)).filter(Boolean).join(', ') || '-'}`,
+  ]);
+}
+
+function spacecloudCancelFailureMessage(rowOrError) {
+  const rows = rowsFromResult(rowOrError);
+  return compactNotice('⚠️ 실패: 스페이스클라우드 후예약 취소', [
+    '상태: 자동 처리 중지',
+    `대상: ${rows.length || '-'}건`,
+    formatBriefRows(rows),
+    `원인: ${firstFailureReason(rowOrError)}`,
+    '기준: 전화번호 확보 전에는 취소하지 않음',
+  ]);
+}
+
+function smsMessageKind(rows) {
+  const templateNames = new Set(rows.map((row) => row.sms?.templateName).filter(Boolean));
+  if (templateNames.size === 1 && templateNames.has(PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME)) return '후예약 취소 문자';
+  if (templateNames.size === 1 && templateNames.has(CONFIRMATION_SMS_TEMPLATE_NAME)) return '예약확정 문자';
+  return '문자';
+}
+
 function smsSuccessMessage(rows) {
-  return compactNotice('✅ 성공: 예약확정 문자 발송', [
+  return compactNotice(`✅ 성공: ${smsMessageKind(rows)} 발송`, [
     `처리: ${rows.length}건`,
     formatSmsRows(rows),
   ]);
 }
 
 function smsFailureMessage(rows) {
-  return compactNotice('⚠️ 실패: 예약확정 문자', [
+  return compactNotice(`⚠️ 실패: ${smsMessageKind(rows)}`, [
     `대상: ${rows.length}건`,
     formatSmsRows(rows),
     '조치: 전화번호 조회 또는 알리고 전송결과 확인',
@@ -1701,10 +1958,21 @@ function dbStatusForNaverBlockRow(row) {
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'blocked' || row.status === 'already-blocked' || row.status === 'google-recorded') return 'done';
+  if (row.status === 'spacecloud-cancel-queued') return 'done';
   if (row.status === 'calendar-record-warning') return 'done';
   if (row.status === 'google-create-failed') return 'google_pending';
   if (row.status === 'google-conflict') return 'needs_review';
   if (row.status === 'naver-conflict' || row.status === 'later-reservation-conflict' || row.status === 'needs-review') return 'needs_review';
+  if (isLoginProblem(row.error)) return 'pending';
+  return 'failed';
+}
+
+function dbStatusForSpacecloudCancelRow(row) {
+  if (row.status === 'stale-running-needs-review') return 'needs_review';
+  if (row.status === 'missing-ledger-needs-review') return 'needs_review';
+  if (row.status === 'stale-ledger-skip') return 'done';
+  if (row.status === 'canceled' || row.status === 'already-canceled') return 'done';
+  if (row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   return 'failed';
 }
@@ -1740,7 +2008,7 @@ function basicTaskSummary(task) {
 }
 
 function expectedLedgerStatus(taskType) {
-  if (taskType === 'upload' || taskType === 'naver_block') return 'confirmed';
+  if (taskType === 'upload' || taskType === 'naver_block' || taskType === 'spacecloud_cancel') return 'confirmed';
   if (taskType === 'delete' || taskType === 'naver_restore') return 'canceled';
   return '';
 }
@@ -1800,6 +2068,7 @@ function ledgerIssueForTask(task, taskType) {
   const expected = expectedLedgerStatus(taskType);
   if (!expected) return null;
   if (!task.ledgerStatus) return 'missing';
+  if (taskType === 'spacecloud_cancel' && task.ledgerStatus === 'canceled') return 'already-canceled';
   if (task.ledgerStatus !== expected) return 'stale';
   return null;
 }
@@ -1807,6 +2076,16 @@ function ledgerIssueForTask(task, taskType) {
 function ledgerIssueRow(task, taskType, issue) {
   if (issue === 'missing') return missingLedgerNeedsReviewRow(task, taskType);
   if (issue === 'stale') return staleLedgerSkipRow(task, taskType);
+  if (issue === 'already-canceled') {
+    return {
+      ...basicTaskSummary(task),
+      taskType,
+      status: 'already-canceled',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      reason: 'booking ledger is already canceled',
+    };
+  }
   return null;
 }
 
@@ -2455,6 +2734,96 @@ async function runNaverBlockTasks(args, context = null) {
   };
 }
 
+async function runSpacecloudCancelTasks(args, context = null) {
+  if (args.dryRun) {
+    return {
+      status: 'spacecloud-cancel-dry-run',
+      fetched: 0,
+      attempted: 0,
+      rows: [],
+      failed: [],
+    };
+  }
+  const tasks = await fetchRemoteSpacecloudCancelTasks(args);
+  if (tasks.length === 0) {
+    return {
+      status: 'no-spacecloud-cancel-tasks',
+      fetched: tasks.length,
+      attempted: 0,
+      rows: [],
+      failed: [],
+    };
+  }
+
+  let ownedContext = null;
+  const activeContext = context || await openSpacecloudContext({
+    profileDir: args.profileDir,
+    headless: args.headless,
+  }).then((created) => {
+    ownedContext = created;
+    return created;
+  });
+
+  const rows = [];
+  try {
+    for (const task of tasks) {
+      let row;
+      if (task.status === 'running') {
+        row = staleRunningNeedsReviewRow(task, 'spacecloud_cancel');
+      } else {
+        const ledgerIssue = ledgerIssueForTask(task, 'spacecloud_cancel');
+        if (ledgerIssue) {
+          row = ledgerIssueRow(task, 'spacecloud_cancel', ledgerIssue);
+        } else {
+          row = await cancelSpacecloudConfirmedReservation(activeContext, task);
+          row.smsPreview = priorBookingCancelSmsMessage(task);
+          if (row.status === 'canceled') {
+            try {
+              row.sms = await sendPriorBookingCancellationSms(args, {
+                task,
+                phone: row.phone,
+              });
+            } catch (smsError) {
+              row.sms = {
+                status: 'failed',
+                reason: 'sms-send-exception',
+                error: String(smsError?.message || smsError),
+                templateName: PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME,
+              };
+            }
+          }
+        }
+      }
+
+      rows.push(row);
+      const status = dbStatusForSpacecloudCancelRow(row);
+      await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      if (status === 'pending' && isLoginProblem(row.error)) {
+        break;
+      }
+      if (status === 'failed' || status === 'needs_review') {
+        break;
+      }
+      await sleep(800);
+    }
+  } finally {
+    if (ownedContext) await ownedContext.close();
+  }
+
+  const failed = rows.filter((row) => ![
+    'canceled',
+    'already-canceled',
+    'stale-ledger-skip',
+  ].includes(row.status));
+  return {
+    status: failed.length ? 'spacecloud-cancel-needs-review' : 'spacecloud-cancel-processed',
+    fetched: tasks.length,
+    attempted: rows.length,
+    rows,
+    failed,
+  };
+}
+
 function splitNaverAvailabilityResult(result) {
   const blockRows = (result.rows || []).filter((row) => row.taskType !== 'naver_restore');
   const restoreRows = (result.rows || []).filter((row) => row.taskType === 'naver_restore');
@@ -2579,6 +2948,16 @@ async function runNaverAvailabilityTasks(args, context = null) {
             });
             row.taskType = taskType;
             row = await classifyNaverConflict(args, task, row);
+            if (row.status === 'later-reservation-conflict') {
+              try {
+                row.spacecloudCancelTask = await createRemoteSpacecloudCancelTask(args, task, row);
+                row.status = 'spacecloud-cancel-queued';
+                row.error = '';
+              } catch (error) {
+                row.status = 'needs-review';
+                row.error = `failed to queue SpaceCloud cancellation: ${String(error?.message || error)}`;
+              }
+            }
             if (['blocked', 'already-blocked'].includes(row.status)) {
               let calendarStatus = 'google-recorded';
               try {
@@ -2633,13 +3012,14 @@ async function runNaverAvailabilityTasks(args, context = null) {
         'stale-ledger-skip',
       ].includes(row.status);
     }
-    return ![
-      'blocked',
-      'already-blocked',
-      'google-recorded',
-      'calendar-record-warning',
-      'stale-ledger-skip',
-    ].includes(row.status);
+      return ![
+        'blocked',
+        'already-blocked',
+        'google-recorded',
+        'calendar-record-warning',
+        'spacecloud-cancel-queued',
+        'stale-ledger-skip',
+      ].includes(row.status);
   });
   return {
     status: failed.length ? 'naver-availability-needs-review' : 'naver-availability-processed',
@@ -2890,6 +3270,13 @@ async function runCycle(args, context = null) {
       }
     }
 
+    if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.deleteTasks) && !hasBlockingFailures(row.naverAvailabilityTasks)) {
+      row.spacecloudCancelTasks = await runSpacecloudCancelTasks(args, activeContext);
+      if (['planned', 'dry-run', 'idle'].includes(row.status) && row.spacecloudCancelTasks.attempted > 0) {
+        row.status = row.spacecloudCancelTasks.failed.length ? 'spacecloud-cancel-needs-review' : 'spacecloud-cancel-processed';
+      }
+    }
+
     if (!args.legacyCalendarPlan && row.status === 'planned') {
       row.status = 'idle';
     }
@@ -2918,7 +3305,7 @@ async function runWatch(args) {
     while (!stopping) {
       try {
         const row = await runCycle(args, context);
-        logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; uploadTasks=${row.uploadTasks?.attempted || 0}; deleteTasks=${row.deleteTasks?.attempted || 0}; naverBlockTasks=${row.naverBlockTasks?.attempted || 0}; naverRestoreTasks=${row.naverRestoreTasks?.attempted || 0}`);
+        logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; uploadTasks=${row.uploadTasks?.attempted || 0}; deleteTasks=${row.deleteTasks?.attempted || 0}; naverBlockTasks=${row.naverBlockTasks?.attempted || 0}; naverRestoreTasks=${row.naverRestoreTasks?.attempted || 0}; spacecloudCancelTasks=${row.spacecloudCancelTasks?.attempted || 0}`);
         if (row.uploadedRows?.length || row.uploadTasks?.rows?.some((taskRow) => [
           'google-recorded',
           'submitted',
@@ -2961,6 +3348,14 @@ async function runWatch(args) {
           const result = await sendTelegram(args, deleteSuccessMessage(row));
           if (result.sent) logLine(`telegram sent: spacecloud-delete-success count=${row.deleteTasks.rows.length}`);
           else logLine(`telegram delete success skipped: ${result.reason}`);
+        }
+        if (row.spacecloudCancelTasks?.rows?.some((taskRow) => [
+          'canceled',
+          'already-canceled',
+        ].includes(taskRow.status))) {
+          const result = await sendTelegram(args, spacecloudCancelSuccessMessage(row));
+          if (result.sent) logLine(`telegram sent: spacecloud-cancel-success count=${row.spacecloudCancelTasks.rows.length}`);
+          else logLine(`telegram spacecloud cancel success skipped: ${result.reason}`);
         }
         const smsRows = smsRowsFromCycle(row);
         const smsSuccessRows = smsRows.filter((taskRow) => ['sent', 'already_sent'].includes(taskRow.sms?.status));
@@ -3047,6 +3442,17 @@ async function runWatch(args) {
           } else {
             await notifyWithCooldown(args, notificationKeyForRows('naver-restore-failed', row.naverRestoreTasks), naverRestoreFailureMessage(row.naverRestoreTasks));
             logLine(`stopping after naver restore failure: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
+            break;
+          }
+        }
+        if (row.spacecloudCancelTasks?.failed?.length) {
+          const errorText = row.spacecloudCancelTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
+          if (isLoginProblem(errorText)) {
+            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.spacecloudCancelTasks));
+            logLine(`login needed during spacecloud cancel; waiting for manual login: ${JSON.stringify(row.spacecloudCancelTasks.failed)}`);
+          } else {
+            await notifyWithCooldown(args, notificationKeyForRows('spacecloud-cancel-failed', row.spacecloudCancelTasks), spacecloudCancelFailureMessage(row.spacecloudCancelTasks));
+            logLine(`stopping after spacecloud cancel failure: ${JSON.stringify(row.spacecloudCancelTasks.failed)}`);
             break;
           }
         }
