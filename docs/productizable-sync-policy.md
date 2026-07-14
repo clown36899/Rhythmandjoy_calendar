@@ -6,6 +6,27 @@ This document defines what can be used for a sellable reservation-sync service.
 It is intentionally conservative: if a method depends on hidden endpoints, broad
 scraping, or unclear platform permission, it must stay out of production.
 
+## Non-Negotiable Product Constraints
+
+These are hard constraints for this project:
+
+1. Naver Reservation and SpaceCloud are mandatory channels. The product exists
+   only to synchronize these two services and prevent double bookings.
+2. Assume there is no official Naver/SpaceCloud booking sync API available to
+   this project. Do not design around future official API access unless a real
+   written partner/API agreement exists.
+3. The sellable product must use techniques that can be explained to a customer
+   as operator-authorized automation. It must not depend on bypassing login,
+   CAPTCHA, access controls, or rate limits.
+4. Automation must run at a human-scale cadence with backoff and alerts. Avoid
+   behavior likely to be classified as bot abuse.
+5. The product must be cost-competitive with SPACE UP-like direct competitors.
+   A customer-per-dedicated-VPS architecture is not acceptable for the default
+   plan because it cannot compete with low monthly pricing.
+6. Extra features such as SMS, landing pages, AI reports, settlement tools, or
+   custom reservation pages are secondary. They must never obscure or compromise
+   the core Naver/SpaceCloud synchronization.
+
 ## Product Rule
 
 Use only methods that can be explained to a customer and defended operationally:
@@ -120,6 +141,25 @@ service may use logged-in visible UI feed reading only with these constraints:
 
 This is sellable as operator-authorized UI synchronization, not as an official
 platform API integration.
+
+## Cost-Competitive Architecture Rule
+
+The default commercial architecture must minimize always-on browser cost:
+
+1. Prefer email/notification intake or visible list-feed detection for event
+   discovery.
+2. Do not keep one full browser permanently active per customer unless the plan
+   price explicitly pays for that dedicated runner.
+3. Prefer short-lived browser action sessions: start or attach to a customer
+   profile only when work exists, apply/verify the platform change, then release
+   resources.
+4. Use shared runners only with strict customer profile isolation and per-account
+   rate limits.
+5. Keep dedicated VPS/runner as a premium plan, not the default.
+
+If a design cannot plausibly fit a 29,000 to 39,000 KRW/month entry-level price,
+it is not competitive with SPACE UP-like services and should be treated as an
+internal/managed premium design only.
 
 ## Monitoring Cadence
 
