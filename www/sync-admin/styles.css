@@ -964,6 +964,14 @@ th {
   margin-top: 8px;
 }
 
+.sync-flow {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .conflict-side {
   min-width: 0;
   padding: 10px;
@@ -972,9 +980,38 @@ th {
   background: #f8fbfa;
 }
 
+.sync-side {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d6e6ff;
+  border-radius: 8px;
+  background: #f5f9ff;
+}
+
 .conflict-side.keep {
   border-color: #b9e3d2;
   background: #effaf5;
+}
+
+.sync-side.source {
+  border-color: #c9e8dc;
+  background: #f0fbf6;
+}
+
+.sync-side.target {
+  border-color: #b8daf6;
+  background: #eff8ff;
+}
+
+.sync-side.attention {
+  border-color: #f0c7c3;
+  background: #fff6f5;
+}
+
+.sync-side.running,
+.sync-side.pending {
+  border-color: #f2d6a6;
+  background: #fffbeb;
 }
 
 .conflict-side.cancel {
@@ -1196,7 +1233,8 @@ body.modal-open {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .conflict-flow {
+  .conflict-flow,
+  .sync-flow {
     grid-template-columns: 1fr;
   }
 

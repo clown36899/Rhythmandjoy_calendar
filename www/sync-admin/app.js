@@ -404,9 +404,9 @@
       row.innerHTML = `
         <td><span class="status-badge ${badgeClass}">${escapeHtml(taskStatusText(task))}</span></td>
         <td>${taskBookingCellHtml(task)}</td>
-        <td>${escapeHtml(platformText(task.naver))}</td>
-        <td>${escapeHtml(platformText(task.spacecloud))}</td>
-        <td>${formatDateTime(task.updatedAt || task.createdAt)}</td>
+        <td>${escapeHtml(taskPlatformText(task, "naver"))}</td>
+        <td>${escapeHtml(taskPlatformText(task, "spacecloud"))}</td>
+        <td>${formatDateTime(task.displayUpdatedAt || task.updatedAt || task.createdAt)}</td>
       `;
       el.taskRows.appendChild(row);
     });
@@ -937,8 +937,13 @@
     const duplicateCancelBySourceTask = new Map();
     const conflictsByWinnerNo = new Map();
     const conflictsBySlot = new Map();
+    const taskByLiveTask = new Map();
 
     tasks.forEach((task) => {
+      const liveKey = taskLiveKey(task);
+      if (liveKey) {
+        taskByLiveTask.set(liveKey, task);
+      }
       if (isDuplicateCancelTask(task) && task.sourceTaskId) {
         duplicateCancelBySourceTask.set(String(task.sourceTaskId), task);
       }
@@ -957,14 +962,40 @@
       }
     });
 
-    return tasks.map((task) => {
+    const hiddenTasks = new Set();
+    const annotated = tasks.map((task) => {
       const relatedConflict = relatedConflictForTask(task, conflictsByWinnerNo, conflictsBySlot, duplicateCancelBySourceTask);
       const relatedCancel = relatedConflict
         ? duplicateCancelBySourceTask.get(String(relatedConflict.liveTaskId || relatedConflict.id))
         : duplicateCancelBySourceTask.get(String(task.liveTaskId || task.id));
       const resolution = buildTaskResolution(task, relatedConflict, relatedCancel);
-      return resolution ? { ...task, resolution } : task;
+      const displayUpdatedAt = latestTimestamp(task.updatedAt, relatedCancel?.updatedAt, relatedConflict?.updatedAt);
+      return resolution ? { ...task, resolution, displayUpdatedAt } : { ...task, displayUpdatedAt };
     });
+
+    annotated.forEach((task) => {
+      if (!isDuplicateCancelTask(task) || !task.sourceTaskId) return;
+      const source = taskByLiveTask.get(String(task.sourceTaskId));
+      if (source && hasConflictTask(source)) {
+        hiddenTasks.add(taskRowKey(task));
+      }
+    });
+
+    return annotated
+      .filter((task) => !hiddenTasks.has(taskRowKey(task)))
+      .sort((a, b) => String(b.displayUpdatedAt || b.updatedAt || b.createdAt).localeCompare(String(a.displayUpdatedAt || a.updatedAt || a.createdAt)));
+  }
+
+  function taskLiveKey(task) {
+    return task?.liveTaskId ? String(task.liveTaskId) : "";
+  }
+
+  function taskRowKey(task) {
+    return `${task?.liveTaskId ? "live" : "row"}:${task?.liveTaskId || task?.id || ""}`;
+  }
+
+  function latestTimestamp(...values) {
+    return values.filter(Boolean).sort().pop() || "";
   }
 
   function hasConflictTask(task) {
@@ -1075,7 +1106,7 @@
         state: cancelState.state === "resolved" ? "resolved" : cancelState.state,
         statusLabel: cancelState.state === "resolved" ? "중복처리 완료" : cancelState.statusLabel,
         summary: cancelState.state === "resolved"
-          ? "후예약 충돌 감지 후 취소까지 완료"
+          ? "선예약 유지 · 후예약 취소 완료"
           : `후예약 충돌 감지 후 ${cancelState.summary}`,
         note: cancelState.note,
         relatedTaskId: relatedCancel.liveTaskId || relatedCancel.id || "",
@@ -1150,6 +1181,19 @@
     return "pending";
   }
 
+  function taskPlatformText(task, platform) {
+    const conflict = task.resolution?.conflict || null;
+    if (conflict) {
+      if (conflict.winner?.platform === platform) return "확정유지";
+      if (conflict.loser?.platform === platform) {
+        if (task.resolution?.state === "resolved" || task.resolution?.state === "linked-resolved") return "취소완료";
+        if (task.resolution?.state === "running") return "취소중";
+        return "취소필요";
+      }
+    }
+    return platformText(task[platform]);
+  }
+
   function taskDetailText(task) {
     const label = task.actionLabel || task.sourceLabel || sourceText(task.source);
     const parts = [label];
@@ -1187,8 +1231,83 @@
     if (hasConflictTask(task)) {
       return duplicateCancelCellHtml(task);
     }
+    if (isSyncFlowTask(task)) {
+      return syncFlowCellHtml(task);
+    }
     const suffix = task.taskType ? "" : paymentSuffix(task);
     return `${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}${reservationNumberLine(task)}<br><span class="row-source">${escapeHtml(taskDetailText(task))}${suffix}</span>`;
+  }
+
+  function isSyncFlowTask(task) {
+    return ["upload", "delete", "naver_block", "naver_restore"].includes(task.taskType);
+  }
+
+  function syncFlowCellHtml(task) {
+    const flow = syncFlowInfo(task);
+    return `
+      <div class="task-main">${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)} · ${escapeHtml(task.name || "이름 없음")}${reservationNumberLine(task)}</div>
+      <div class="sync-flow">
+        ${syncFlowSideHtml(flow.source, "source")}
+        <span class="conflict-arrow">→</span>
+        ${syncFlowSideHtml(flow.target, syncTargetStateClass(task))}
+      </div>
+    `;
+  }
+
+  function syncFlowInfo(task) {
+    const targetStatus = taskStatusText(task);
+    if (task.taskType === "naver_block") {
+      return {
+        source: { platform: "스페이스클라우드", state: "예약확정", meta: syncReservationMeta(task), note: syncSmsNote(task, "확정문자") },
+        target: { platform: "네이버", state: `예약불가 ${targetStatus}`, meta: "", note: syncTargetNote(task) },
+      };
+    }
+    if (task.taskType === "naver_restore") {
+      return {
+        source: { platform: "스페이스클라우드", state: "예약취소", meta: syncReservationMeta(task), note: "" },
+        target: { platform: "네이버", state: `예약가능 복구 ${targetStatus}`, meta: "", note: syncTargetNote(task) },
+      };
+    }
+    if (task.taskType === "delete") {
+      return {
+        source: { platform: "네이버", state: "예약취소", meta: syncReservationMeta(task), note: "" },
+        target: { platform: "스페이스클라우드", state: `예약삭제 ${targetStatus}`, meta: "", note: syncTargetNote(task) },
+      };
+    }
+    return {
+      source: { platform: "네이버", state: "예약확정", meta: syncReservationMeta(task), note: syncSmsNote(task, "확정문자") },
+      target: { platform: "스페이스클라우드", state: `예약등록 ${targetStatus}`, meta: "", note: syncTargetNote(task) },
+    };
+  }
+
+  function syncFlowSideHtml(side, roleClass) {
+    return `
+      <div class="sync-side ${escapeHtml(roleClass)}">
+        <div class="conflict-platform">${escapeHtml(side.platform)} <span class="conflict-state">${escapeHtml(side.state)}</span></div>
+        ${side.meta ? `<div class="conflict-meta">${escapeHtml(side.meta)}</div>` : ""}
+        ${side.note ? `<div class="conflict-sms">${escapeHtml(side.note)}</div>` : ""}
+      </div>
+    `;
+  }
+
+  function syncTargetStateClass(task) {
+    if (task.status === "failed" || task.status === "needs_review") return "attention";
+    if (task.status === "running") return "running";
+    if (task.status === "pending") return "pending";
+    return "target";
+  }
+
+  function syncReservationMeta(task) {
+    return task.reservationNo ? `예약번호 ${task.reservationNo}` : "";
+  }
+
+  function syncSmsNote(task, label) {
+    return task.smsStatus ? `${label} ${smsStatusText(task.smsStatus)}` : "";
+  }
+
+  function syncTargetNote(task) {
+    if (task.error) return `오류 ${humanTaskError(task.error)}`;
+    return "";
   }
 
   function duplicateCancelCellHtml(task) {
