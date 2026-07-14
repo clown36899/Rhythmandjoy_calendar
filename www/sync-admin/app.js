@@ -108,7 +108,7 @@
     el.runCheck.addEventListener("click", runReadOnlyCheck);
     el.scrollToNow.addEventListener("click", scrollScheduleToNow);
     el.saveAdminToken.addEventListener("click", saveAdminToken);
-    el.saveProfile.addEventListener("click", saveProfile);
+    if (el.saveProfile) el.saveProfile.addEventListener("click", saveProfile);
     window.addEventListener("resize", updateCurrentTimeNavigator);
     window.addEventListener("resize", scheduleActiveNavUpdate);
     window.addEventListener("scroll", scheduleActiveNavUpdate, { passive: true });
@@ -429,6 +429,8 @@
     const status = normalizeSessionStatus(session.status, session.readyAt || session.ready_at);
     const checkedAt = session.lastCheckedAt || session.last_checked_at || session.updatedAt || session.updated_at || session.readyAt || session.ready_at;
     const note = session.note || "";
+    const loginButton = row.querySelector("[data-open-login]");
+    const isReady = status === "ready";
 
     row.classList.remove("ready", "warn", "failed", "checking", "needs-check");
     row.classList.add(sessionStatusClass(status));
@@ -436,6 +438,10 @@
       ? `${sessionStatusLabel(status)} ${formatDateTime(checkedAt)}`
       : sessionStatusLabel(status);
     row.title = note ? `${sessionStatusLabel(status)}: ${note}` : sessionStatusLabel(status);
+    if (loginButton) {
+      loginButton.disabled = isReady;
+      loginButton.title = isReady ? "정상 상태라 재로그인이 필요 없습니다." : "로그인 세션을 다시 연결합니다.";
+    }
   }
 
   function normalizeSessionStatus(status, readyAt) {

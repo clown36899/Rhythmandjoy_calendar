@@ -300,6 +300,23 @@ h2 {
   border-color: #aebbb7;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled,
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.secondary-button:disabled:hover,
+.icon-button:disabled:hover {
+  border-color: var(--line);
+}
+
+input[readonly] {
+  color: var(--muted);
+  background: #f4f7f6;
+}
+
 .status-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
