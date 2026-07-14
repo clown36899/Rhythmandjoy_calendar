@@ -247,7 +247,7 @@ h2 {
 
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
   gap: 12px;
   align-items: center;
   padding: 16px;
@@ -467,14 +467,14 @@ h2 {
 
 .event-block {
   z-index: 6;
+  display: grid;
+  gap: 2px;
   align-self: center;
   justify-self: stretch;
   min-width: 0;
   margin: 4px 3px;
   padding: 4px 7px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   border: 1px solid #a8c5ef;
   border-radius: 6px;
   background: #dcebff;
@@ -483,6 +483,57 @@ h2 {
   font-weight: 800;
   line-height: 1.15;
   pointer-events: none;
+}
+
+.event-block.source-naver {
+  border-color: #91cfac;
+  background: #dff6e9;
+  color: #115a32;
+}
+
+.event-block.source-spacecloud {
+  border-color: #b8aceb;
+  background: #ece8ff;
+  color: #402a8c;
+}
+
+.event-block.source-admin {
+  border-color: #e7c26d;
+  background: #fff4cf;
+  color: #75530a;
+}
+
+.event-block.source-ledger {
+  border-color: #bcc7cf;
+  background: #edf2f5;
+  color: #34424a;
+}
+
+.event-main,
+.event-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(24, 33, 31, 0.72);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.payment-amount {
+  color: #0b5f4e;
+  font-weight: 900;
+}
+
+.payment-missing {
+  color: #9a3412;
+  font-weight: 800;
 }
 
 .two-column {

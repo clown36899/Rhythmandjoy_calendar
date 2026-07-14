@@ -334,6 +334,8 @@ async function extractNaverRows(page, args) {
   return page.evaluate((limit) => {
     const compactLocal = (value) => String(value || '').replace(/\s+/g, ' ').trim();
     const normalizePhoneLocal = (value) => String(value || '').replace(/\D+/g, '');
+    const priceTextLocal = (value) => String(value || '').match(/\d[\d,]*\s*원/)?.[0]?.replace(/\s+/g, '') || '';
+    const priceAmountLocal = (value) => Number(priceTextLocal(value).replace(/\D+/g, '') || 0);
     const maskNameLocal = (name) => {
       const clean = String(name || '').replace(/\s+/g, '').trim();
       if (!clean) return '';
@@ -371,6 +373,8 @@ async function extractNaverRows(page, args) {
         appliedAtText: dateTimes[1] || '',
         confirmedAtText: dateTimes[2] || '',
         canceledAtText: dateTimes[3] || '',
+        priceText: priceTextLocal(text),
+        priceAmount: priceAmountLocal(text),
         sourceHref: href,
       };
     });
@@ -451,6 +455,8 @@ async function extractSpacecloudRows(page, args) {
   return page.evaluate((limit) => {
     const compactLocal = (value) => String(value || '').replace(/\s+/g, ' ').trim();
     const normalizePhoneLocal = (value) => String(value || '').replace(/\D+/g, '');
+    const priceTextLocal = (value) => String(value || '').match(/\d[\d,]*\s*원/)?.[0]?.replace(/\s+/g, '') || '';
+    const priceAmountLocal = (value) => Number(priceTextLocal(value).replace(/\D+/g, '') || 0);
     const maskNameLocal = (name) => {
       const clean = String(name || '').replace(/\s+/g, '').trim();
       if (!clean) return '';
@@ -475,6 +481,8 @@ async function extractSpacecloudRows(page, args) {
         phoneLast4: normalizePhoneLocal(phoneRaw).slice(-4),
         useRange,
         room,
+        priceText: priceTextLocal(text),
+        priceAmount: priceAmountLocal(text),
         sourceHref: href,
       };
     }).filter((row) => row.reservationNo);

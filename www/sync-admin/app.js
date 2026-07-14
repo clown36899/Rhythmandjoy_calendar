@@ -38,6 +38,7 @@
     endInput: document.getElementById("endInput"),
     taskRows: document.getElementById("taskRows"),
     todayCount: document.getElementById("todayCount"),
+    dayRevenue: document.getElementById("dayRevenue"),
     pendingCount: document.getElementById("pendingCount"),
     lastScan: document.getElementById("lastScan"),
     runCheck: document.getElementById("runCheck"),
@@ -270,8 +271,8 @@
       });
       eventsStartingForRoom(room).forEach((event) => {
         const block = document.createElement("div");
-        block.className = "event-block";
-        block.textContent = eventTitle(event);
+        block.className = `event-block ${sourceClass(event.source)}`;
+        block.innerHTML = eventBlockHtml(event);
         block.title = eventTitle(event);
         block.draggable = false;
         block.style.gridColumn = `${event.start + 2} / ${event.end + 2}`;
@@ -343,7 +344,7 @@
       const doneClass = task.status === "done" || task.status === "synced" ? " done" : "";
       row.innerHTML = `
         <td><span class="status-badge${doneClass}">${escapeHtml(statusText(task.status))}</span></td>
-        <td>${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}<br><span class="row-source">${escapeHtml(task.sourceLabel || sourceText(task.source))}</span></td>
+        <td>${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}<br><span class="row-source">${escapeHtml(task.sourceLabel || sourceText(task.source))}${paymentSuffix(task)}</span></td>
         <td>${escapeHtml(platformText(task.naver))}</td>
         <td>${escapeHtml(platformText(task.spacecloud))}</td>
         <td>${formatDateTime(task.createdAt)}</td>
@@ -355,6 +356,10 @@
   function renderStatus() {
     const todays = state.drafts.filter((item) => item.date === state.activeDate);
     el.todayCount.textContent = String(todays.length);
+    const revenue = todays.reduce((total, item) => total + parsePaymentAmount(item.price), 0);
+    const missing = todays.filter((item) => !parsePaymentAmount(item.price)).length;
+    el.dayRevenue.textContent = revenue > 0 ? `${revenue.toLocaleString()}원` : "-";
+    el.dayRevenue.title = missing ? `금액 미수집 ${missing}건` : "수집된 결제금액 합계";
     el.pendingCount.textContent = String(state.drafts.filter((item) => item.status === "pending").length);
   }
 
@@ -498,7 +503,57 @@
   }
 
   function eventTitle(event) {
-    return `${event.name || "예약"} ${formatHour(event.start)}-${formatHour(event.end)}`;
+    const payment = formatPayment(event.price);
+    const source = event.sourceLabel || sourceText(event.source);
+    return [
+      `${event.name || "예약"} ${formatHour(event.start)}-${formatHour(event.end)}`,
+      source,
+      payment ? `결제 ${payment}` : "결제금액 미수집",
+    ].join(" / ");
+  }
+
+  function eventBlockHtml(event) {
+    const payment = formatPayment(event.price);
+    return `
+      <span class="event-main">${escapeHtml(event.name || "예약")} · ${formatHour(event.start)}-${formatHour(event.end)}</span>
+      <span class="event-meta">
+        <span>${escapeHtml(sourceShortText(event.source))}</span>
+        <span class="${payment ? "payment-amount" : "payment-missing"}">${escapeHtml(payment || "금액 미수집")}</span>
+      </span>
+    `;
+  }
+
+  function sourceClass(source) {
+    if (source === "naver") return "source-naver";
+    if (source === "spacecloud") return "source-spacecloud";
+    if (source === "admin") return "source-admin";
+    return "source-ledger";
+  }
+
+  function sourceShortText(source) {
+    if (source === "naver") return "네이버";
+    if (source === "spacecloud") return "SC";
+    if (source === "admin") return "관리자";
+    return "원장";
+  }
+
+  function paymentSuffix(task) {
+    const payment = formatPayment(task.price);
+    if (!payment) return ' · <span class="payment-missing">금액 미수집</span>';
+    return ` · <span class="payment-amount">${escapeHtml(payment)}</span>`;
+  }
+
+  function parsePaymentAmount(value) {
+    const digits = String(value || "").replace(/[^\d]/g, "");
+    return digits ? Number(digits) : 0;
+  }
+
+  function formatPayment(value) {
+    const amount = parsePaymentAmount(value);
+    if (amount > 0) return `${amount.toLocaleString()}원`;
+    const text = String(value || "").trim();
+    if (!text || text === "N/A") return "";
+    return text;
   }
 
   function scheduleHourLabel(hour) {
@@ -610,6 +665,8 @@
       sourceLabel: item.sourceLabel || "",
       reservationNo: item.reservationNo || "",
       product: item.product || "",
+      paymentStatus: item.paymentStatus || "",
+      price: item.price || "",
       status: item.status || "pending",
       naver: item.naverStatus || "pending",
       spacecloud: item.spacecloudStatus || "pending",

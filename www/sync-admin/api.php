@@ -272,6 +272,7 @@ function ledger_reservation_rows($pdo, $date) {
     $stmt = $pdo->prepare("
         SELECT id, ledger_key, source_platform, current_status, target_calendar,
                room_key, reservation_number, reserver_name, product,
+               payment_status, price,
                reservation_date,
                TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
                TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
@@ -308,6 +309,8 @@ function ledger_reservation_rows($pdo, $date) {
             'spacecloudStatus' => $source === 'spacecloud' ? 'source' : 'synced',
             'reservationNo' => $row['reservation_number'],
             'product' => $row['product'],
+            'paymentStatus' => $row['payment_status'],
+            'price' => $row['price'],
             'createdAt' => $row['created_at'] ?: $row['last_event_at'],
             'updatedAt' => $row['updated_at'] ?: $row['last_event_at'],
         );
@@ -348,6 +351,8 @@ function admin_reservation_rows($pdo, $date) {
             'spacecloudStatus' => isset($summary['spacecloud']) ? $summary['spacecloud'] : 'pending',
             'reservationNo' => '',
             'product' => '',
+            'paymentStatus' => '',
+            'price' => '',
             'createdAt' => $row['created_at'],
             'updatedAt' => $row['updated_at'],
         );
