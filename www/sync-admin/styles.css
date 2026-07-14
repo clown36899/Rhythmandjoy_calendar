@@ -12,6 +12,7 @@
   --danger: #b42318;
   --ok: #07804f;
   --shadow: 0 12px 30px rgba(24, 33, 31, 0.08);
+  --schedule-room-col: 68px;
 }
 
 * {
@@ -332,7 +333,7 @@ h2 {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  overflow-x: auto;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -340,9 +341,9 @@ h2 {
 .schedule-grid {
   position: relative;
   width: 100%;
-  min-width: 1400px;
+  min-width: 0;
   display: grid;
-  grid-template-columns: 92px repeat(24, minmax(54px, 1fr));
+  grid-template-columns: var(--schedule-room-col) repeat(24, minmax(0, 1fr));
 }
 
 .schedule-time-nav {
@@ -401,13 +402,31 @@ h2 {
   white-space: nowrap;
 }
 
+.schedule-now-marker.pulse {
+  animation: nowPulse 0.9s ease;
+}
+
+@keyframes nowPulse {
+  0% {
+    box-shadow: 0 0 0 1px rgba(180, 35, 24, 0.18);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(180, 35, 24, 0.16);
+  }
+  100% {
+    box-shadow: 0 0 0 1px rgba(180, 35, 24, 0.18);
+  }
+}
+
 .grid-cell {
-  min-height: 48px;
+  min-width: 0;
+  min-height: 46px;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  padding: 8px;
+  padding: 6px 4px;
   background: #fff;
   position: relative;
+  overflow: hidden;
 }
 
 .grid-cell.header,
@@ -416,9 +435,21 @@ h2 {
   font-weight: 800;
 }
 
+.grid-cell.header {
+  display: grid;
+  place-items: center;
+  color: #485551;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .grid-cell.room {
   display: flex;
   align-items: center;
+  padding: 6px 8px;
+  font-size: 14px;
+  white-space: nowrap;
 }
 
 .grid-cell.slot {
@@ -430,19 +461,28 @@ h2 {
 }
 
 .grid-cell.has-event {
-  background: #e8f2ff;
+  background: #f0f6ff;
   border-color: #b7cdf4;
 }
 
-.event-pill {
-  display: block;
-  width: 100%;
+.event-block {
+  z-index: 6;
+  align-self: center;
+  justify-self: stretch;
+  min-width: 0;
+  margin: 4px 3px;
+  padding: 4px 7px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  font-weight: 800;
+  border: 1px solid #a8c5ef;
+  border-radius: 6px;
+  background: #dcebff;
   color: #123e71;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.15;
+  pointer-events: none;
 }
 
 .two-column {
@@ -654,6 +694,10 @@ body.modal-open {
 }
 
 @media (max-width: 980px) {
+  :root {
+    --schedule-room-col: 54px;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
   }
@@ -702,6 +746,10 @@ body.modal-open {
 }
 
 @media (max-width: 640px) {
+  :root {
+    --schedule-room-col: 44px;
+  }
+
   body {
     font-size: 14px;
   }
@@ -749,6 +797,35 @@ body.modal-open {
 
   .status-strip strong {
     font-size: 18px;
+  }
+
+  .schedule-time-nav {
+    top: 6px;
+    right: 6px;
+  }
+
+  .schedule-now-marker span {
+    display: none;
+  }
+
+  .grid-cell {
+    min-height: 40px;
+    padding: 4px 2px;
+  }
+
+  .grid-cell.header {
+    font-size: 10px;
+  }
+
+  .grid-cell.room {
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+
+  .event-block {
+    margin: 3px 2px;
+    padding: 3px 5px;
+    font-size: 10px;
   }
 
   h1 {

@@ -237,27 +237,46 @@
   function renderSchedule() {
     const visibleRooms = state.roomFilter === "all" ? rooms : [state.roomFilter];
     el.scheduleGrid.innerHTML = "";
-    el.scheduleGrid.style.gridTemplateColumns = `92px repeat(${hours.length}, minmax(64px, 1fr))`;
+    el.scheduleGrid.style.gridTemplateColumns = `var(--schedule-room-col) repeat(${hours.length}, minmax(0, 1fr))`;
+    el.scheduleGrid.style.gridTemplateRows = `repeat(${visibleRooms.length + 1}, minmax(40px, auto))`;
 
-    el.scheduleGrid.appendChild(cell("", "header"));
-    hours.forEach((hour) => el.scheduleGrid.appendChild(cell(formatHour(hour), "header")));
+    const corner = cell("", "header");
+    placeGridItem(corner, 1, 1);
+    el.scheduleGrid.appendChild(corner);
+    hours.forEach((hour) => {
+      const headerCell = cell(scheduleHourLabel(hour), "header");
+      headerCell.title = formatHour(hour);
+      placeGridItem(headerCell, 1, hour + 2);
+      el.scheduleGrid.appendChild(headerCell);
+    });
 
-    visibleRooms.forEach((room) => {
-      el.scheduleGrid.appendChild(cell(`${room}홀`, "room"));
+    visibleRooms.forEach((room, roomIndex) => {
+      const rowIndex = roomIndex + 2;
+      const roomCell = cell(`${room}홀`, "room");
+      placeGridItem(roomCell, rowIndex, 1);
+      el.scheduleGrid.appendChild(roomCell);
       hours.forEach((hour) => {
         const slot = cell("", "slot");
         slot.dataset.room = room;
         slot.dataset.hour = String(hour);
+        placeGridItem(slot, rowIndex, hour + 2);
         const events = eventsForSlot(room, hour);
         if (events.length) {
           slot.classList.add("has-event");
-          const eventLabel = document.createElement("span");
-          eventLabel.className = "event-pill";
-          eventLabel.textContent = `${events[0].name || "예약"} ${formatHour(events[0].start)}-${formatHour(events[0].end)}`;
-          slot.appendChild(eventLabel);
+          slot.title = eventTitle(events[0]);
         }
         slot.addEventListener("click", () => selectSlot(room, hour));
         el.scheduleGrid.appendChild(slot);
+      });
+      eventsStartingForRoom(room).forEach((event) => {
+        const block = document.createElement("div");
+        block.className = "event-block";
+        block.textContent = eventTitle(event);
+        block.title = eventTitle(event);
+        block.draggable = false;
+        block.style.gridColumn = `${event.start + 2} / ${event.end + 2}`;
+        block.style.gridRow = String(rowIndex);
+        el.scheduleGrid.appendChild(block);
       });
     });
     updateCurrentTimeNavigator();
@@ -277,8 +296,8 @@
       return;
     }
 
-    const rowHeaderWidth = 92;
-    const usableWidth = Math.max(1, el.scheduleGrid.scrollWidth - rowHeaderWidth);
+    const rowHeaderWidth = scheduleRoomColumnWidth();
+    const usableWidth = Math.max(1, el.scheduleGrid.clientWidth - rowHeaderWidth);
     const left = rowHeaderWidth + ((currentHour - firstHour) / (lastHour - firstHour)) * usableWidth;
     const label = `현재 ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
     marker.hidden = false;
@@ -304,9 +323,10 @@
     const marker = ensureCurrentTimeMarker();
     updateCurrentTimeNavigator();
     if (marker.hidden) return;
-    const markerLeft = Number.parseFloat(marker.style.left || "0");
-    const targetLeft = Math.max(0, markerLeft - el.scheduleWrap.clientWidth / 2);
-    el.scheduleWrap.scrollTo({ left: targetLeft, behavior: "smooth" });
+    marker.classList.remove("pulse");
+    void marker.offsetWidth;
+    marker.classList.add("pulse");
+    el.scheduleWrap.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
   function renderTasks() {
@@ -464,6 +484,37 @@
     ));
   }
 
+  function eventsStartingForRoom(room) {
+    return state.drafts
+      .filter((item) => (
+        item.date === state.activeDate &&
+        item.room === room &&
+        item.status !== "canceled" &&
+        Number.isFinite(item.start) &&
+        Number.isFinite(item.end) &&
+        item.end > item.start
+      ))
+      .sort((a, b) => a.start - b.start || a.end - b.end);
+  }
+
+  function eventTitle(event) {
+    return `${event.name || "예약"} ${formatHour(event.start)}-${formatHour(event.end)}`;
+  }
+
+  function scheduleHourLabel(hour) {
+    return String(hour).padStart(2, "0");
+  }
+
+  function placeGridItem(node, row, column) {
+    node.style.gridRow = String(row);
+    node.style.gridColumn = String(column);
+  }
+
+  function scheduleRoomColumnWidth() {
+    const header = el.scheduleGrid.querySelector(".grid-cell.header");
+    return header ? header.getBoundingClientRect().width : 68;
+  }
+
   function ensureEndAfterStart() {
     const start = Number(el.startInput.value);
     const end = Number(el.endInput.value);
@@ -601,6 +652,7 @@
     const node = document.createElement("div");
     node.className = `grid-cell ${className}`;
     node.textContent = text;
+    node.draggable = false;
     return node;
   }
 
