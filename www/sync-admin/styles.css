@@ -734,6 +734,21 @@ th {
   color: var(--ok);
 }
 
+.status-badge.failed {
+  background: #fff1f0;
+  color: var(--danger);
+}
+
+.status-badge.running {
+  background: #eff6ff;
+  color: var(--accent-2);
+}
+
+.status-badge.pending {
+  background: #fff7ed;
+  color: var(--warning);
+}
+
 .row-source {
   display: inline-block;
   margin-top: 4px;

@@ -378,12 +378,99 @@ function reservation_rows($pdo, $date) {
     return $rows;
 }
 
+function task_action_label($task_type, $platform, $action_type) {
+    if ($task_type === 'spacecloud_cancel') {
+        return '중복 후예약 취소 - 스페이스클라우드';
+    }
+    if ($task_type === 'naver_cancel') {
+        return '중복 후예약 취소 - 네이버';
+    }
+    if ($task_type === 'upload') {
+        return '스페이스클라우드 등록';
+    }
+    if ($task_type === 'delete') {
+        return '스페이스클라우드 삭제';
+    }
+    if ($task_type === 'naver_block') {
+        return '네이버 예약불가 반영';
+    }
+    if ($task_type === 'naver_restore') {
+        return '네이버 예약가능 복구';
+    }
+    if ($platform || $action_type) {
+        return trim($platform . ' ' . $action_type);
+    }
+    return '동기화 작업';
+}
+
+function task_platform_statuses($task_type, $platform, $status) {
+    $naver = '';
+    $spacecloud = '';
+    if ($task_type === 'naver_cancel') {
+        $naver = $status;
+        $spacecloud = 'source';
+    } elseif ($task_type === 'spacecloud_cancel') {
+        $naver = 'source';
+        $spacecloud = $status;
+    } elseif ($task_type === 'naver_block' || $task_type === 'naver_restore') {
+        $naver = $status;
+        $spacecloud = 'source';
+    } elseif ($task_type === 'upload' || $task_type === 'delete') {
+        $naver = 'source';
+        $spacecloud = $status;
+    } elseif ($platform === 'naver') {
+        $naver = $status;
+    } elseif ($platform === 'spacecloud') {
+        $spacecloud = $status;
+    }
+    return array($naver ?: '대기', $spacecloud ?: '대기');
+}
+
+function normalize_task_row($row) {
+    $task_type = $row['task_type'] ?: $row['action_type'];
+    $result = json_decode((string) ($row['result_text'] ?: ''), true);
+    if (!is_array($result)) {
+        $result = array();
+    }
+    $sms = isset($result['sms']) && is_array($result['sms']) ? $result['sms'] : array();
+    list($naver_status, $spacecloud_status) = task_platform_statuses($task_type, $row['platform'], $row['status']);
+    return array(
+        'id' => (string) $row['id'],
+        'reservationId' => $row['reservation_id'] !== null ? intval($row['reservation_id']) : null,
+        'liveTaskId' => $row['live_task_id'] !== null ? intval($row['live_task_id']) : null,
+        'taskType' => $task_type,
+        'platform' => $row['platform'],
+        'actionType' => $row['action_type'],
+        'actionLabel' => task_action_label($task_type, $row['platform'], $row['action_type']),
+        'status' => $row['status'],
+        'resultStatus' => isset($result['status']) ? (string) $result['status'] : '',
+        'smsStatus' => isset($sms['status']) ? (string) $sms['status'] : '',
+        'error' => isset($result['error']) ? (string) $result['error'] : '',
+        'date' => $row['reservation_date'],
+        'room' => strtoupper((string) $row['room_key']),
+        'startHour' => hour_from_time_value($row['start_time_text'], false),
+        'endHour' => hour_from_time_value($row['end_time_text'], true),
+        'name' => $row['reserver_name'],
+        'reservationNo' => $row['reservation_number'],
+        'product' => $row['product'],
+        'naverStatus' => $naver_status,
+        'spacecloudStatus' => $spacecloud_status,
+        'createdAt' => $row['created_at'],
+        'updatedAt' => $row['updated_at'],
+    );
+}
+
 function recent_task_rows($pdo) {
+    $rows = array();
     $stmt = $pdo->query("
         SELECT t.id, t.reservation_id, t.live_task_id, t.platform, t.action_type,
+               COALESCE(l.task_type, t.action_type) AS task_type,
                COALESCE(l.status, t.status) AS status,
                COALESCE(l.result_text, t.result_text) AS result_text,
-               r.reservation_date, r.room_key, r.start_hour, r.end_hour, r.reserver_name,
+               r.reservation_date, r.room_key,
+               CONCAT(LPAD(r.start_hour, 2, '0'), ':00') AS start_time_text,
+               IF(r.end_hour = 24, '00:00', CONCAT(LPAD(r.end_hour, 2, '0'), ':00')) AS end_time_text,
+               r.reserver_name, '' AS reservation_number, '' AS product,
                DATE_FORMAT(t.created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
                DATE_FORMAT(GREATEST(t.updated_at, COALESCE(l.updated_at, t.updated_at)), '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
         FROM rhythmjoy_admin_sync_tasks t
@@ -391,9 +478,48 @@ function recent_task_rows($pdo) {
         LEFT JOIN rhythmjoy_spacecloud_tasks l ON l.id = t.live_task_id
         WHERE t.status <> 'canceled'
         ORDER BY t.id DESC
+        LIMIT 60
+    ");
+    foreach ($stmt->fetchAll() as $row) {
+        $rows[] = normalize_task_row($row);
+    }
+
+    $stmt = $pdo->query("
+        SELECT CONCAT('live-', l.id) AS id,
+               NULL AS reservation_id,
+               l.id AS live_task_id,
+               CASE
+                   WHEN l.task_type IN ('naver_block', 'naver_restore', 'naver_cancel') THEN 'naver'
+                   ELSE 'spacecloud'
+               END AS platform,
+               l.task_type AS action_type,
+               l.task_type AS task_type,
+               l.status,
+               l.result_text,
+               l.reservation_date,
+               l.room_key,
+               TIME_FORMAT(l.start_time, '%H:%i') AS start_time_text,
+               TIME_FORMAT(l.end_time, '%H:%i') AS end_time_text,
+               l.reserver_name,
+               l.reservation_number,
+               l.product,
+               DATE_FORMAT(l.created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
+               DATE_FORMAT(l.updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+        FROM rhythmjoy_spacecloud_tasks l
+        LEFT JOIN rhythmjoy_admin_sync_tasks t ON t.live_task_id = l.id
+        WHERE t.id IS NULL
+          AND l.task_type IN ('upload', 'delete', 'naver_block', 'naver_restore', 'spacecloud_cancel', 'naver_cancel')
+        ORDER BY l.updated_at DESC, l.id DESC
         LIMIT 80
     ");
-    return $stmt->fetchAll();
+    foreach ($stmt->fetchAll() as $row) {
+        $rows[] = normalize_task_row($row);
+    }
+
+    usort($rows, function($a, $b) {
+        return strcmp((string) $b['updatedAt'], (string) $a['updatedAt']);
+    });
+    return array_slice($rows, 0, 80);
 }
 
 function bootstrap_payload($pdo, $date, $env) {

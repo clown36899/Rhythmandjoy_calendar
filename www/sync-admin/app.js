@@ -11,6 +11,7 @@
     activeDate: today(),
     roomFilter: "all",
     drafts: loadJson(storageKey, []),
+    tasks: [],
     sessions: loadJson(sessionKey, {}),
     apiMode: "local",
     lastApiMessage: "관리 토큰 입력 전",
@@ -385,23 +386,23 @@
   }
 
   function renderTasks() {
-    const rows = state.drafts.slice(0, 30);
+    const rows = (state.tasks.length ? state.tasks : state.drafts).slice(0, 30);
     el.taskRows.innerHTML = "";
     if (!rows.length) {
       const row = document.createElement("tr");
-      row.innerHTML = '<td colspan="5">아직 생성된 작업 초안이 없습니다.</td>';
+      row.innerHTML = '<td colspan="5">아직 표시할 작업이 없습니다.</td>';
       el.taskRows.appendChild(row);
       return;
     }
     rows.forEach((task) => {
       const row = document.createElement("tr");
-      const doneClass = task.status === "done" || task.status === "synced" ? " done" : "";
+      const badgeClass = taskBadgeClass(task);
       row.innerHTML = `
-        <td><span class="status-badge${doneClass}">${escapeHtml(statusText(task.status))}</span></td>
-        <td>${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}<br><span class="row-source">${escapeHtml(task.sourceLabel || sourceText(task.source))}${paymentSuffix(task)}</span></td>
+        <td><span class="status-badge ${badgeClass}">${escapeHtml(taskStatusText(task))}</span></td>
+        <td>${escapeHtml(task.date)} ${escapeHtml(task.room)}홀 ${formatHour(task.start)}-${formatHour(task.end)}<br>${escapeHtml(task.name || "이름 없음")}${reservationNumberLine(task)}<br><span class="row-source">${escapeHtml(taskDetailText(task))}${paymentSuffix(task)}</span></td>
         <td>${escapeHtml(platformText(task.naver))}</td>
         <td>${escapeHtml(platformText(task.spacecloud))}</td>
-        <td>${formatDateTime(task.createdAt)}</td>
+        <td>${formatDateTime(task.updatedAt || task.createdAt)}</td>
       `;
       el.taskRows.appendChild(row);
     });
@@ -745,6 +746,27 @@
       naver: item.naverStatus || "pending",
       spacecloud: item.spacecloudStatus || "pending",
     }));
+    state.tasks = (data.tasks || []).map((item) => ({
+      id: item.id,
+      liveTaskId: item.liveTaskId || "",
+      taskType: item.taskType || "",
+      actionLabel: item.actionLabel || "",
+      status: item.status || "pending",
+      resultStatus: item.resultStatus || "",
+      smsStatus: item.smsStatus || "",
+      error: item.error || "",
+      date: item.date || "",
+      room: item.room || "",
+      start: Number(item.startHour),
+      end: Number(item.endHour),
+      name: item.name || "",
+      reservationNo: item.reservationNo || "",
+      product: item.product || "",
+      naver: item.naverStatus || "pending",
+      spacecloud: item.spacecloudStatus || "pending",
+      createdAt: item.createdAt || "",
+      updatedAt: item.updatedAt || "",
+    }));
   }
 
   async function apiRequest(action, payload) {
@@ -833,6 +855,57 @@
     if (status === "failed") return "실패";
     if (status === "canceled") return "취소";
     return "대기";
+  }
+
+  function isDuplicateCancelTask(task) {
+    return task.taskType === "spacecloud_cancel" || task.taskType === "naver_cancel";
+  }
+
+  function taskStatusText(task) {
+    if (isDuplicateCancelTask(task)) {
+      if (task.status === "done" || task.resultStatus === "canceled") return "중복취소 완료";
+      if (task.resultStatus === "already-canceled") return "이미 취소됨";
+      if (task.status === "running") return "중복취소 진행";
+      if (task.status === "pending") return "중복취소 대기";
+      if (task.status === "needs_review") return "취소 확인 필요";
+      if (task.status === "failed") return "취소 실패";
+      return "중복취소";
+    }
+    return statusText(task.status);
+  }
+
+  function taskBadgeClass(task) {
+    if (task.status === "done" || task.status === "synced" || task.resultStatus === "canceled" || task.resultStatus === "already-canceled") return "done";
+    if (task.status === "failed" || task.status === "needs_review") return "failed";
+    if (task.status === "running") return "running";
+    return "pending";
+  }
+
+  function taskDetailText(task) {
+    const label = task.actionLabel || task.sourceLabel || sourceText(task.source);
+    const parts = [label];
+    if (isDuplicateCancelTask(task)) {
+      parts.push("선대관 중복으로 후예약 취소");
+    }
+    if (task.smsStatus) {
+      parts.push(`문자 ${smsStatusText(task.smsStatus)}`);
+    }
+    if (task.error) {
+      parts.push(`오류 ${task.error}`);
+    }
+    return parts.filter(Boolean).join(" / ");
+  }
+
+  function smsStatusText(status) {
+    if (status === "sent") return "발송";
+    if (status === "already_sent") return "발송완료";
+    if (status === "skipped") return "생략";
+    if (status === "failed") return "실패";
+    return status;
+  }
+
+  function reservationNumberLine(task) {
+    return task.reservationNo ? `<br><span class="row-source">예약번호 ${escapeHtml(task.reservationNo)}</span>` : "";
   }
 
   function platformText(status) {
