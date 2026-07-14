@@ -972,7 +972,23 @@ th {
   margin-top: 8px;
 }
 
+.story-flow {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr) auto minmax(150px, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .conflict-side {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfa;
+}
+
+.story-step {
   min-width: 0;
   padding: 10px;
   border: 1px solid var(--line);
@@ -991,6 +1007,32 @@ th {
 .conflict-side.keep {
   border-color: #b9e3d2;
   background: #effaf5;
+}
+
+.story-step.source {
+  border-color: #bfd9f2;
+  background: #f3f8ff;
+}
+
+.story-step.check {
+  border-color: #f2d6a6;
+  background: #fffbeb;
+}
+
+.story-step.cancel-done {
+  border-color: #b9e3d2;
+  background: #effaf5;
+}
+
+.story-step.attention {
+  border-color: #f0c7c3;
+  background: #fff6f5;
+}
+
+.story-step.running,
+.story-step.pending {
+  border-color: #f2d6a6;
+  background: #fffbeb;
 }
 
 .sync-side.source {
@@ -1234,6 +1276,7 @@ body.modal-open {
   }
 
   .conflict-flow,
+  .story-flow,
   .sync-flow {
     grid-template-columns: 1fr;
   }

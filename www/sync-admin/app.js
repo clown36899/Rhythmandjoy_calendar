@@ -935,6 +935,7 @@
 
   function annotateTaskRelations(tasks) {
     const duplicateCancelBySourceTask = new Map();
+    const restoreBySourceTask = new Map();
     const conflictsByWinnerNo = new Map();
     const conflictsBySlot = new Map();
     const taskByLiveTask = new Map();
@@ -946,6 +947,9 @@
       }
       if (isDuplicateCancelTask(task) && task.sourceTaskId) {
         duplicateCancelBySourceTask.set(String(task.sourceTaskId), task);
+      }
+      if (task.taskType === "naver_restore" && task.sourceTaskId) {
+        restoreBySourceTask.set(String(task.sourceTaskId), task);
       }
       if (!hasConflictTask(task)) return;
       const winnerNo = task.conflict?.winner?.reservationNo || "";
@@ -968,8 +972,11 @@
       const relatedCancel = relatedConflict
         ? duplicateCancelBySourceTask.get(String(relatedConflict.liveTaskId || relatedConflict.id))
         : duplicateCancelBySourceTask.get(String(task.liveTaskId || task.id));
-      const resolution = buildTaskResolution(task, relatedConflict, relatedCancel);
-      const displayUpdatedAt = latestTimestamp(task.updatedAt, relatedCancel?.updatedAt, relatedConflict?.updatedAt);
+      const relatedRestore = relatedConflict
+        ? restoreBySourceTask.get(String(relatedConflict.liveTaskId || relatedConflict.id))
+        : restoreBySourceTask.get(String(task.liveTaskId || task.id));
+      const resolution = buildTaskResolution(task, relatedConflict, relatedCancel, relatedRestore);
+      const displayUpdatedAt = latestTimestamp(task.updatedAt, relatedCancel?.updatedAt, relatedRestore?.updatedAt, relatedConflict?.updatedAt);
       return resolution ? { ...task, resolution, displayUpdatedAt } : { ...task, displayUpdatedAt };
     });
 
@@ -977,6 +984,17 @@
       if (!isDuplicateCancelTask(task) || !task.sourceTaskId) return;
       const source = taskByLiveTask.get(String(task.sourceTaskId));
       if (source && hasConflictTask(source)) {
+        hiddenTasks.add(taskRowKey(task));
+      }
+    });
+    annotated.forEach((task) => {
+      if (task.taskType === "naver_restore" && task.sourceTaskId) {
+        const source = taskByLiveTask.get(String(task.sourceTaskId));
+        if (source && hasConflictTask(source)) {
+          hiddenTasks.add(taskRowKey(task));
+        }
+      }
+      if (task.resolution?.sourceConflictTaskId && taskByLiveTask.has(String(task.resolution.sourceConflictTaskId))) {
         hiddenTasks.add(taskRowKey(task));
       }
     });
@@ -1028,15 +1046,15 @@
     }) || candidates[0];
   }
 
-  function buildTaskResolution(task, relatedConflict, relatedCancel) {
+  function buildTaskResolution(task, relatedConflict, relatedCancel, relatedRestore) {
     if (isDuplicateCancelTask(task)) {
       return duplicateCancelResolution(task);
     }
+    if (hasConflictTask(task)) {
+      return conflictDetectionResolution(task, relatedCancel, relatedRestore);
+    }
     if (relatedConflict && task.taskType === "upload" && task.status === "failed") {
       return linkedUploadFailureResolution(task, relatedConflict, relatedCancel);
-    }
-    if (hasConflictTask(task)) {
-      return conflictDetectionResolution(task, relatedCancel);
     }
     return null;
   }
@@ -1095,11 +1113,12 @@
       relatedTaskLabel: cancelState?.statusLabel || taskStatusText(relatedConflict),
       originalError: humanTaskError(task.error),
       smsStatus: cancelState?.smsStatus || "",
+      sourceConflictTaskId: relatedConflict.liveTaskId || relatedConflict.id || "",
       conflict: relatedConflict.conflict,
     };
   }
 
-  function conflictDetectionResolution(task, relatedCancel) {
+  function conflictDetectionResolution(task, relatedCancel, relatedRestore) {
     if (relatedCancel) {
       const cancelState = duplicateCancelResolution(relatedCancel);
       return {
@@ -1108,7 +1127,7 @@
         summary: cancelState.state === "resolved"
           ? "선예약 유지 · 후예약 취소 완료"
           : `후예약 충돌 감지 후 ${cancelState.summary}`,
-        note: cancelState.note,
+        note: joinNotes(cancelState.note, restoreTaskNote(relatedRestore)),
         relatedTaskId: relatedCancel.liveTaskId || relatedCancel.id || "",
         relatedTaskLabel: cancelState.statusLabel,
         smsStatus: cancelState.smsStatus,
@@ -1125,6 +1144,19 @@
       };
     }
     return null;
+  }
+
+  function restoreTaskNote(task) {
+    if (!task) return "";
+    if (task.resultStatus === "restore-skipped-not-owned") return "네이버 선예약 보호";
+    if (isTaskDone(task)) return "네이버 복구 완료";
+    if (task.status === "running") return "네이버 복구 진행";
+    if (task.status === "failed" || task.status === "needs_review") return "네이버 복구 확인 필요";
+    return "";
+  }
+
+  function joinNotes(...notes) {
+    return notes.filter(Boolean).join(" / ");
   }
 
   function isTaskDone(task) {
@@ -1157,6 +1189,7 @@
   }
 
   function taskStatusText(task) {
+    if (task.taskType === "naver_restore" && task.resultStatus === "restore-skipped-not-owned") return "복구생략";
     if (task.resolution?.statusLabel) return task.resolution.statusLabel;
     if (isDuplicateCancelTask(task)) {
       if (task.status === "done" || task.resultStatus === "canceled") return "중복취소 완료";
@@ -1333,7 +1366,6 @@
         <strong>${escapeHtml(task.resolution.summary || taskStatusText(task))}</strong>
         ${task.resolution.note ? `<span>${escapeHtml(task.resolution.note)}</span>` : ""}
         ${task.resolution.originalError ? `<span>원실패: ${escapeHtml(task.resolution.originalError)}</span>` : ""}
-        ${task.resolution.relatedTaskId ? `<span class="resolution-pill">연결작업 #${escapeHtml(task.resolution.relatedTaskId)} ${escapeHtml(task.resolution.relatedTaskLabel || "")}</span>` : ""}
       </div>
     `;
   }
@@ -1341,13 +1373,73 @@
   function conflictFlowHtml(conflict, task) {
     const winner = conflict?.winner || null;
     const loser = conflict?.loser || null;
+    const cancelPlatform = loser?.platformLabel || canceledPlatformLabel(task);
+    const winnerPlatform = winner?.platformLabel || confirmedPlatformLabel(task);
     return `
-      <div class="conflict-flow">
-        ${conflictSideHtml(winner, "winner", task)}
+      <div class="story-flow">
+        ${storyStepHtml({
+          platform: cancelPlatform,
+          state: "예약완료",
+          meta: storyReceivedText(loser),
+          extra: storyReservationNoText(loser),
+        }, "source")}
         <span class="conflict-arrow">→</span>
-        ${conflictSideHtml(loser, "loser", task)}
+        ${storyStepHtml({
+          platform: `${winnerPlatform} 중복확인`,
+          state: "선예약 있음",
+          meta: storyReceivedText(winner, "선예약 접수"),
+          extra: storyReservationNoText(winner),
+        }, "check")}
+        <span class="conflict-arrow">→</span>
+        ${storyStepHtml({
+          platform: cancelPlatform,
+          state: duplicateCancelStateText(task),
+          meta: storyProcessedText(task),
+          extra: duplicateCancelSmsText(task),
+        }, duplicateCancelStepClass(task))}
       </div>
     `;
+  }
+
+  function storyStepHtml(step, className) {
+    return `
+      <div class="story-step ${escapeHtml(className)}">
+        <div class="conflict-platform">${escapeHtml(step.platform)} <span class="conflict-state">${escapeHtml(step.state)}</span></div>
+        ${step.meta ? `<div class="conflict-meta">${escapeHtml(step.meta)}</div>` : ""}
+        ${step.extra ? `<div class="conflict-sms">${escapeHtml(step.extra)}</div>` : ""}
+      </div>
+    `;
+  }
+
+  function storyReceivedText(side, label = "접수") {
+    return side?.receivedAt ? `${label} ${formatDateTime(side.receivedAt) || side.receivedAt}` : "";
+  }
+
+  function storyReservationNoText(side) {
+    return side?.reservationNo ? `예약번호 ${side.reservationNo}` : "";
+  }
+
+  function storyProcessedText(task) {
+    return task.displayUpdatedAt || task.updatedAt ? `처리 ${formatDateTime(task.displayUpdatedAt || task.updatedAt)}` : "";
+  }
+
+  function duplicateCancelStateText(task) {
+    if (task.resolution?.state === "resolved" || task.resolution?.state === "linked-resolved") return "예약취소 완료";
+    if (task.resolution?.state === "running") return "예약취소 진행";
+    if (task.resolution?.state === "pending") return "예약취소 대기";
+    return "예약취소 확인필요";
+  }
+
+  function duplicateCancelStepClass(task) {
+    if (task.resolution?.state === "resolved" || task.resolution?.state === "linked-resolved") return "cancel-done";
+    if (task.resolution?.state === "running") return "running";
+    if (task.resolution?.state === "pending") return "pending";
+    return "attention";
+  }
+
+  function duplicateCancelSmsText(task) {
+    const status = task.resolution?.smsStatus || task.smsStatus || "";
+    return status ? `취소문자 ${smsStatusText(status)}` : "";
   }
 
   function conflictSideHtml(side, role, task) {
