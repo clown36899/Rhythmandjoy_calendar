@@ -29,6 +29,11 @@
     scheduleTimeNav: document.getElementById("scheduleTimeNav"),
     scheduleNowText: document.getElementById("scheduleNowText"),
     scrollToNow: document.getElementById("scrollToNow"),
+    eventDetailModal: document.getElementById("eventDetailModal"),
+    eventDetailSummary: document.getElementById("eventDetailSummary"),
+    eventDetailList: document.getElementById("eventDetailList"),
+    closeEventDetailModal: document.getElementById("closeEventDetailModal"),
+    doneEventDetailModal: document.getElementById("doneEventDetailModal"),
     reservationModal: document.getElementById("reservationModal"),
     modalSlotSummary: document.getElementById("modalSlotSummary"),
     closeReservationModal: document.getElementById("closeReservationModal"),
@@ -105,8 +110,18 @@
     el.reservationModal.addEventListener("click", (event) => {
       if (event.target === el.reservationModal) closeReservationModal();
     });
+    el.closeEventDetailModal.addEventListener("click", closeEventDetailModal);
+    el.doneEventDetailModal.addEventListener("click", closeEventDetailModal);
+    el.eventDetailModal.addEventListener("click", (event) => {
+      if (event.target === el.eventDetailModal) closeEventDetailModal();
+    });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && !el.reservationModal.hidden) closeReservationModal();
+      if (event.key !== "Escape") return;
+      if (!el.eventDetailModal.hidden) {
+        closeEventDetailModal();
+        return;
+      }
+      if (!el.reservationModal.hidden) closeReservationModal();
     });
     el.clearDrafts.addEventListener("click", clearDrafts);
     el.runCheck.addEventListener("click", runReadOnlyCheck);
@@ -328,7 +343,13 @@
           slot.classList.add("has-event");
           slot.title = eventTitle(events[0]);
         }
-        slot.addEventListener("click", () => selectSlot(room, hour));
+        slot.addEventListener("click", () => {
+          if (events.length) {
+            openEventDetailModal(events, `${room}홀 ${formatHour(hour)} 기준`);
+            return;
+          }
+          selectSlot(room, hour);
+        });
         el.scheduleGrid.appendChild(slot);
       });
       eventsStartingForRoom(room).forEach((event) => {
@@ -337,6 +358,10 @@
         block.innerHTML = eventBlockHtml(event);
         block.title = eventTitle(event);
         block.draggable = false;
+        block.addEventListener("click", (clickEvent) => {
+          clickEvent.stopPropagation();
+          openEventDetailModal([event], `${event.room}홀 ${formatHour(event.start)}-${formatHour(event.end)}`);
+        });
         block.style.gridColumn = `${event.start + 2} / ${event.end + 2}`;
         block.style.gridRow = String(rowIndex);
         el.scheduleGrid.appendChild(block);
@@ -596,6 +621,40 @@
     `;
   }
 
+  function eventDetailCardHtml(event) {
+    const rows = [
+      ["예약자", event.name || "이름 없음"],
+      ["일시", `${event.date} ${event.room}홀 ${formatHour(event.start)}-${formatHour(event.end)}`],
+      ["원천", event.sourceLabel || sourceText(event.source)],
+      ["예약번호", event.reservationNo || ""],
+      ["상품", event.product || ""],
+      ["결제금액", formatPayment(event.price) || ""],
+      ["결제상태", event.paymentStatus || ""],
+      ["네이버", platformText(event.naver)],
+      ["스페이스클라우드", platformText(event.spacecloud)],
+      ["연락처", event.phone || ""],
+      ["메모", event.memo || ""],
+      ["등록시각", formatDateTime(event.createdAt) || ""],
+    ].filter(([, value]) => String(value || "").trim());
+
+    return `
+      <article class="detail-card ${escapeHtml(sourceClass(event.source))}">
+        <div class="detail-card-head">
+          <strong>${escapeHtml(event.name || "예약")}</strong>
+          <span>${escapeHtml(sourceShortText(event.source))}</span>
+        </div>
+        <dl class="detail-grid">
+          ${rows.map(([label, value]) => `
+            <div>
+              <dt>${escapeHtml(label)}</dt>
+              <dd>${escapeHtml(value)}</dd>
+            </div>
+          `).join("")}
+        </dl>
+      </article>
+    `;
+  }
+
   function renderPriceReference() {
     if (!el.priceReference) return;
     const pricing = revenuePolicy?.ROOM_PRICING || null;
@@ -773,7 +832,26 @@
 
   function closeReservationModal() {
     el.reservationModal.hidden = true;
-    document.body.classList.remove("modal-open");
+    updateModalOpenState();
+  }
+
+  function openEventDetailModal(events, summary) {
+    el.eventDetailSummary.textContent = `${state.activeDate} ${summary}`;
+    el.eventDetailList.innerHTML = events.map(eventDetailCardHtml).join("");
+    el.eventDetailModal.hidden = false;
+    document.body.classList.add("modal-open");
+    window.setTimeout(() => {
+      el.doneEventDetailModal.focus();
+    }, 0);
+  }
+
+  function closeEventDetailModal() {
+    el.eventDetailModal.hidden = true;
+    updateModalOpenState();
+  }
+
+  function updateModalOpenState() {
+    document.body.classList.toggle("modal-open", !el.reservationModal.hidden || !el.eventDetailModal.hidden);
   }
 
   function updateModalSlotSummary() {

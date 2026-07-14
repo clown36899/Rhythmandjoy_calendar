@@ -167,6 +167,24 @@
     </main>
   </div>
 
+  <div class="modal-backdrop" id="eventDetailModal" hidden>
+    <div class="modal-panel detail-modal-panel" role="dialog" aria-modal="true" aria-labelledby="eventDetailTitle" tabindex="-1">
+      <div class="modal-heading">
+        <div>
+          <h2 id="eventDetailTitle">예약 상세</h2>
+          <p id="eventDetailSummary">선택한 일정의 상세 정보입니다.</p>
+        </div>
+        <button type="button" class="icon-button modal-close" id="closeEventDetailModal" aria-label="예약 상세 닫기">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-list" id="eventDetailList"></div>
+        <div class="form-actions">
+          <button type="button" class="primary-button" id="doneEventDetailModal">확인</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="reservationModal" hidden>
     <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="reservationModalTitle" tabindex="-1">
       <div class="modal-heading">

@@ -601,7 +601,9 @@ input[readonly] {
   font-size: 11px;
   font-weight: 800;
   line-height: 1.15;
-  pointer-events: none;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
 }
 
 .event-block.source-naver {
@@ -1160,6 +1162,98 @@ body.modal-open {
   padding: 20px;
 }
 
+.modal-body {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.detail-modal-panel {
+  width: min(720px, 100%);
+}
+
+.detail-list {
+  display: grid;
+  gap: 12px;
+}
+
+.detail-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfa;
+  overflow: hidden;
+}
+
+.detail-card.source-naver {
+  border-color: #91cfac;
+  background: #f3fbf6;
+}
+
+.detail-card.source-spacecloud {
+  border-color: #b8aceb;
+  background: #f7f5ff;
+}
+
+.detail-card.source-admin {
+  border-color: #e7c26d;
+  background: #fffaf0;
+}
+
+.detail-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border-bottom: 1px solid rgba(151, 164, 159, 0.35);
+}
+
+.detail-card-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 18px;
+}
+
+.detail-card-head span {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 2px 14px 12px;
+}
+
+.detail-grid div {
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(151, 164, 159, 0.22);
+}
+
+.detail-grid dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.detail-grid dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .toast {
   position: fixed;
   left: 50%;
@@ -1280,6 +1374,14 @@ body.modal-open {
 
   .modal-form {
     padding: 16px;
+  }
+
+  .modal-body {
+    padding: 16px;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
   }
 
   .room-filter {
