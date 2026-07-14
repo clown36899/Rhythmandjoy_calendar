@@ -11,6 +11,8 @@ This document records how the current reservation automation was built, why the 
 - MacBook watcher is not deleted. It remains a working rollback/manual execution path, but it must not run at the same time as the Ubuntu watcher.
 - Google Calendar is a record/output layer, not the booking source of truth.
 - The booking source of truth starts from Naver email intake and the DB rows written by `ops/rhythmjoy_email_import.py`.
+- Stable rollback tag before productized sync/admin-panel work:
+  `stable/ubuntu-mini-pc-working-20260714`.
 
 ## Development Timeline
 

@@ -2,6 +2,18 @@
 
 This document records the Ubuntu mini PC setup used to move the browser automation role away from the Mac.
 
+## Stable Rollback Baseline
+
+Before productized multi-customer sync/admin-panel work, the known working
+Ubuntu mini PC automation state was tagged as:
+
+```text
+stable/ubuntu-mini-pc-working-20260714
+```
+
+Use that tag if the new productized runner work must be abandoned and the
+current single-business Rhythmjoy automation needs to be restored.
+
 ## Roles
 
 - Cafe24 remains the server/source-of-truth layer: email ingestion, DB ledger, website, Google Calendar record updates, and Aligo SMS env.
