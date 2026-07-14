@@ -18,7 +18,7 @@
       </div>
       <nav>
         <a href="#schedule" class="nav-link active">일정</a>
-        <a href="#new-reservation" class="nav-link">예약 입력</a>
+        <a href="#new-reservation" class="nav-link" data-open-reservation-modal>예약 입력</a>
         <a href="#sessions" class="nav-link">로그인 세션</a>
         <a href="#tasks" class="nav-link">작업 상태</a>
       </nav>
@@ -79,58 +79,16 @@
             <button type="button" class="chip" data-room-filter="E">E홀</button>
           </div>
         </div>
-        <div class="schedule-wrap">
+        <div class="schedule-wrap" id="scheduleWrap">
+          <div class="schedule-time-nav" id="scheduleTimeNav" hidden>
+            <span id="scheduleNowText">현재 시간</span>
+            <button type="button" class="secondary-button compact-button" id="scrollToNow">현재시간</button>
+          </div>
           <div class="schedule-grid" id="scheduleGrid" aria-label="일정 그리드"></div>
         </div>
       </section>
 
-      <section class="two-column">
-        <form class="panel" id="new-reservation">
-          <div class="panel-heading">
-            <div>
-              <h2>예약 입력</h2>
-              <p>저장하면 우리 DB에 작업을 남기고, 실행기는 그 작업을 브라우저 자동화로 처리하는 흐름입니다.</p>
-            </div>
-          </div>
-          <div class="form-grid">
-            <label>
-              <span>방</span>
-              <select id="roomInput" required>
-                <option value="A">A홀</option>
-                <option value="B">B홀</option>
-                <option value="C">C홀</option>
-                <option value="D">D홀</option>
-                <option value="E">E홀</option>
-              </select>
-            </label>
-            <label>
-              <span>예약자</span>
-              <input id="nameInput" type="text" autocomplete="name" placeholder="예약자명" required>
-            </label>
-            <label>
-              <span>시작</span>
-              <select id="startInput" required></select>
-            </label>
-            <label>
-              <span>종료</span>
-              <select id="endInput" required></select>
-            </label>
-            <label class="wide">
-              <span>연락처</span>
-              <input id="phoneInput" type="tel" inputmode="tel" placeholder="010-0000-0000">
-            </label>
-            <label class="wide">
-              <span>메모</span>
-              <input id="memoInput" type="text" placeholder="관리자 메모">
-            </label>
-          </div>
-          <div class="form-actions">
-            <button type="reset" class="secondary-button">초기화</button>
-            <button type="submit" class="primary-button">동기화 작업 만들기</button>
-          </div>
-        </form>
-
-        <section class="panel" id="sessions">
+      <section class="panel" id="sessions">
           <div class="panel-heading">
             <div>
               <h2>로그인 세션</h2>
@@ -167,7 +125,6 @@
             </label>
             <button type="button" class="primary-button" id="saveProfile">저장</button>
           </div>
-        </section>
       </section>
 
       <section class="panel" id="tasks">
@@ -194,6 +151,56 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div class="modal-backdrop" id="reservationModal" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="reservationModalTitle" tabindex="-1">
+      <div class="modal-heading">
+        <div>
+          <h2 id="reservationModalTitle">예약 입력</h2>
+          <p id="modalSlotSummary">일정표에서 선택한 시간에 예약 작업을 만듭니다.</p>
+        </div>
+        <button type="button" class="icon-button modal-close" id="closeReservationModal" aria-label="예약 입력 닫기">×</button>
+      </div>
+      <form class="modal-form" id="new-reservation">
+        <div class="form-grid">
+          <label>
+            <span>방</span>
+            <select id="roomInput" required>
+              <option value="A">A홀</option>
+              <option value="B">B홀</option>
+              <option value="C">C홀</option>
+              <option value="D">D홀</option>
+              <option value="E">E홀</option>
+            </select>
+          </label>
+          <label>
+            <span>예약자</span>
+            <input id="nameInput" type="text" autocomplete="name" placeholder="예약자명" required>
+          </label>
+          <label>
+            <span>시작</span>
+            <select id="startInput" required></select>
+          </label>
+          <label>
+            <span>종료</span>
+            <select id="endInput" required></select>
+          </label>
+          <label class="wide">
+            <span>연락처</span>
+            <input id="phoneInput" type="tel" inputmode="tel" placeholder="010-0000-0000">
+          </label>
+          <label class="wide">
+            <span>메모</span>
+            <input id="memoInput" type="text" placeholder="관리자 메모">
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="secondary-button" id="cancelReservationModal">취소</button>
+          <button type="submit" class="primary-button">동기화 작업 만들기</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

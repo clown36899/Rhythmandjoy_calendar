@@ -1,6 +1,6 @@
 (function () {
   const rooms = ["A", "B", "C", "D", "E"];
-  const hours = Array.from({ length: 17 }, (_, index) => index + 8);
+  const hours = Array.from({ length: 24 }, (_, index) => index);
   const apiUrl = "./api.php";
   const storageKey = "rhythmjoy.syncAdmin.drafts.v1";
   const profileKey = "rhythmjoy.syncAdmin.profile.v1";
@@ -20,7 +20,15 @@
     activeDate: document.getElementById("activeDate"),
     prevDay: document.getElementById("prevDay"),
     nextDay: document.getElementById("nextDay"),
+    scheduleWrap: document.getElementById("scheduleWrap"),
     scheduleGrid: document.getElementById("scheduleGrid"),
+    scheduleTimeNav: document.getElementById("scheduleTimeNav"),
+    scheduleNowText: document.getElementById("scheduleNowText"),
+    scrollToNow: document.getElementById("scrollToNow"),
+    reservationModal: document.getElementById("reservationModal"),
+    modalSlotSummary: document.getElementById("modalSlotSummary"),
+    closeReservationModal: document.getElementById("closeReservationModal"),
+    cancelReservationModal: document.getElementById("cancelReservationModal"),
     form: document.getElementById("new-reservation"),
     roomInput: document.getElementById("roomInput"),
     nameInput: document.getElementById("nameInput"),
@@ -56,6 +64,7 @@
     bindEvents();
     renderAll();
     refreshFromApi({ silent: true });
+    window.setInterval(updateCurrentTimeNavigator, 60000);
   }
 
   function bindEvents() {
@@ -76,23 +85,47 @@
       });
     });
 
-    el.startInput.addEventListener("change", ensureEndAfterStart);
+    el.roomInput.addEventListener("change", updateModalSlotSummary);
+    el.startInput.addEventListener("change", () => {
+      ensureEndAfterStart();
+      updateModalSlotSummary();
+    });
+    el.endInput.addEventListener("change", updateModalSlotSummary);
     el.form.addEventListener("submit", createDraftTask);
+    el.closeReservationModal.addEventListener("click", closeReservationModal);
+    el.cancelReservationModal.addEventListener("click", closeReservationModal);
+    el.reservationModal.addEventListener("click", (event) => {
+      if (event.target === el.reservationModal) closeReservationModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !el.reservationModal.hidden) closeReservationModal();
+    });
     el.clearDrafts.addEventListener("click", clearDrafts);
     el.runCheck.addEventListener("click", runReadOnlyCheck);
+    el.scrollToNow.addEventListener("click", scrollScheduleToNow);
     el.saveAdminToken.addEventListener("click", saveAdminToken);
     el.saveProfile.addEventListener("click", saveProfile);
+    window.addEventListener("resize", updateCurrentTimeNavigator);
 
     document.querySelectorAll("[data-open-login]").forEach((button) => {
       button.addEventListener("click", () => markSessionReady(button.dataset.openLogin));
     });
+
+    document.querySelectorAll("[data-open-reservation-modal]").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        openReservationModal();
+      });
+    });
+
+    el.scheduleWrap.addEventListener("scroll", updateCurrentTimeNavigator, { passive: true });
   }
 
   function fillTimeSelects() {
-    for (const hour of Array.from({ length: 17 }, (_, index) => index + 8)) {
+    for (const hour of Array.from({ length: 24 }, (_, index) => index)) {
       el.startInput.appendChild(option(hour, formatHour(hour)));
     }
-    for (const hour of Array.from({ length: 17 }, (_, index) => index + 9)) {
+    for (const hour of Array.from({ length: 24 }, (_, index) => index + 1)) {
       el.endInput.appendChild(option(hour, formatHour(hour)));
     }
     el.startInput.value = "19";
@@ -141,6 +174,7 @@
         const data = await apiRequest("create_reservation", payload);
         applyApiData(data);
         resetForm(room, start, end);
+        closeReservationModal();
         setApiState("ready", data.mode === "db-live-queue" ? "DB 큐" : "DB 테스트", "DB 작업 생성됨");
         renderAll();
         showToast("DB에 동기화 작업을 생성했습니다.");
@@ -169,6 +203,7 @@
     state.drafts.unshift(task);
     persistDrafts();
     resetForm(room, start, end);
+    closeReservationModal();
     renderAll();
     showToast("로컬 동기화 작업 초안이 생성됐습니다.");
   }
@@ -225,6 +260,53 @@
         el.scheduleGrid.appendChild(slot);
       });
     });
+    updateCurrentTimeNavigator();
+  }
+
+  function updateCurrentTimeNavigator() {
+    const marker = ensureCurrentTimeMarker();
+    const now = new Date();
+    const currentHour = now.getHours() + now.getMinutes() / 60;
+    const firstHour = hours[0];
+    const lastHour = 24;
+    const isToday = state.activeDate === today();
+    const inRange = currentHour >= firstHour && currentHour <= lastHour;
+    if (!isToday || !inRange) {
+      marker.hidden = true;
+      el.scheduleTimeNav.hidden = true;
+      return;
+    }
+
+    const rowHeaderWidth = 92;
+    const usableWidth = Math.max(1, el.scheduleGrid.scrollWidth - rowHeaderWidth);
+    const left = rowHeaderWidth + ((currentHour - firstHour) / (lastHour - firstHour)) * usableWidth;
+    const label = `현재 ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+    marker.hidden = false;
+    marker.style.left = `${left}px`;
+    marker.querySelector("span").textContent = label;
+    el.scheduleTimeNav.hidden = false;
+    el.scheduleNowText.textContent = label;
+  }
+
+  function ensureCurrentTimeMarker() {
+    let marker = el.scheduleGrid.querySelector(".schedule-now-marker");
+    if (!marker) {
+      marker = document.createElement("div");
+      marker.className = "schedule-now-marker";
+      marker.hidden = true;
+      marker.innerHTML = "<span></span>";
+      el.scheduleGrid.appendChild(marker);
+    }
+    return marker;
+  }
+
+  function scrollScheduleToNow() {
+    const marker = ensureCurrentTimeMarker();
+    updateCurrentTimeNavigator();
+    if (marker.hidden) return;
+    const markerLeft = Number.parseFloat(marker.style.left || "0");
+    const targetLeft = Math.max(0, markerLeft - el.scheduleWrap.clientWidth / 2);
+    el.scheduleWrap.scrollTo({ left: targetLeft, behavior: "smooth" });
   }
 
   function renderTasks() {
@@ -369,7 +451,7 @@
     el.startInput.value = String(hour);
     el.endInput.value = String(Math.min(24, hour + 1));
     ensureEndAfterStart();
-    document.getElementById("new-reservation").scrollIntoView({ behavior: "smooth", block: "start" });
+    openReservationModal();
   }
 
   function eventsForSlot(room, hour) {
@@ -402,6 +484,29 @@
     el.roomInput.value = room;
     el.startInput.value = String(start);
     el.endInput.value = String(end);
+    updateModalSlotSummary();
+  }
+
+  function openReservationModal() {
+    updateModalSlotSummary();
+    el.reservationModal.hidden = false;
+    document.body.classList.add("modal-open");
+    window.setTimeout(() => {
+      el.form.querySelector("input, select, button")?.focus();
+      el.nameInput.focus();
+    }, 0);
+  }
+
+  function closeReservationModal() {
+    el.reservationModal.hidden = true;
+    document.body.classList.remove("modal-open");
+  }
+
+  function updateModalSlotSummary() {
+    const room = el.roomInput.value || "A";
+    const start = Number(el.startInput.value || 19);
+    const end = Number(el.endInput.value || Math.min(24, start + 1));
+    el.modalSlotSummary.textContent = `${state.activeDate} ${room}홀 ${formatHour(start)}-${formatHour(end)}`;
   }
 
   function persistDrafts() {
@@ -519,6 +624,10 @@
 
   function formatHour(hour) {
     return `${String(hour).padStart(2, "0")}:00`;
+  }
+
+  function pad2(value) {
+    return String(value).padStart(2, "0");
   }
 
   function formatDateTime(value) {

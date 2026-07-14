@@ -328,6 +328,7 @@ h2 {
 }
 
 .schedule-wrap {
+  position: relative;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -337,10 +338,67 @@ h2 {
 }
 
 .schedule-grid {
+  position: relative;
   width: 100%;
-  min-width: 900px;
+  min-width: 1400px;
   display: grid;
-  grid-template-columns: 92px repeat(17, minmax(64px, 1fr));
+  grid-template-columns: 92px repeat(24, minmax(54px, 1fr));
+}
+
+.schedule-time-nav {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid rgba(180, 35, 24, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 24px rgba(24, 33, 31, 0.1);
+}
+
+.schedule-time-nav[hidden] {
+  display: none;
+}
+
+.schedule-time-nav span {
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.compact-button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.schedule-now-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  z-index: 7;
+  background: var(--danger);
+  box-shadow: 0 0 0 1px rgba(180, 35, 24, 0.18);
+  pointer-events: none;
+}
+
+.schedule-now-marker span {
+  position: absolute;
+  top: 8px;
+  left: 7px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .grid-cell {
@@ -525,6 +583,57 @@ th {
   font-weight: 700;
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 32, 29, 0.48);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal-panel {
+  width: min(640px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 24px 60px rgba(16, 32, 29, 0.24);
+}
+
+.modal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 20px 20px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-heading p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.modal-close {
+  flex: 0 0 auto;
+}
+
+.modal-form {
+  padding: 20px;
+}
+
 .toast {
   position: fixed;
   left: 50%;
@@ -610,6 +719,23 @@ th {
   .topbar-actions input,
   .form-actions button {
     flex: 1;
+  }
+
+  .modal-backdrop {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .modal-panel {
+    max-height: calc(100vh - 24px);
+  }
+
+  .modal-heading {
+    padding: 18px 16px 12px;
+  }
+
+  .modal-form {
+    padding: 16px;
   }
 
   .room-filter {

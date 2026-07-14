@@ -1822,11 +1822,36 @@ function isGoogleRetryableStatus(status) {
   return status === 'google-create-failed' || status === 'google-delete-failed';
 }
 
+function payloadForTask(task) {
+  const raw = task?.payloadJson || task?.payload_json || '{}';
+  try {
+    const parsed = JSON.parse(raw || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isAdminPanelTask(task) {
+  const payload = payloadForTask(task);
+  return payload.source === 'admin-panel' || payload.source_mode === 'admin-panel';
+}
+
+function adminPanelSmsSkipped(task, source) {
+  return {
+    status: 'disabled',
+    reason: 'admin-panel-task',
+    source,
+    maskedPhone: payloadForTask(task).phone_last4 ? `****-${payloadForTask(task).phone_last4}` : '',
+  };
+}
+
 function hasBlockingFailures(result) {
   return (result?.failed || []).some((row) => !isGoogleRetryableStatus(row.status));
 }
 
 async function sendNaverOriginConfirmationSms(args, context, task) {
+  if (isAdminPanelTask(task)) return adminPanelSmsSkipped(task, 'admin-panel');
   const lookup = await fetchNaverReservationPhone(context, task, {
     businessId: args.naverBusinessId,
   });
@@ -1846,6 +1871,7 @@ async function sendNaverOriginConfirmationSms(args, context, task) {
 }
 
 async function sendSpacecloudOriginConfirmationSms(args, context, task) {
+  if (isAdminPanelTask(task)) return adminPanelSmsSkipped(task, 'admin-panel');
   const lookup = await fetchSpacecloudReservationPhone(context, task);
   if (lookup.status !== 'found') {
     return {
