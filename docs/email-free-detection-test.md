@@ -79,6 +79,19 @@ node tools/visible-reservation-feed-test.mjs watch \
   --cycles 2
 ```
 
+Run the same visible UI feed scanner by briefly opening a saved customer profile
+and closing it after each scan:
+
+```bash
+node tools/visible-reservation-feed-test.mjs scan \
+  --profile-dir state/platform-detect-test/email-free-auth-profile \
+  --platform both \
+  --limit 10
+```
+
+Use this mode for cost testing. It avoids keeping one browser permanently open
+per customer while still using a customer-authorized browser session.
+
 If the local repo has no `playwright` install, use the bundled Codex runtime:
 
 ```bash

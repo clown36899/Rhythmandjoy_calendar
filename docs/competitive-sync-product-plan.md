@@ -194,6 +194,27 @@ Mac profile reuse test on 2026-07-14:
   the same profile-reuse test after the customer logs in to Naver in this
   profile.
 
+Short-lived profile launch test on 2026-07-14:
+
+- `tools/visible-reservation-feed-test.mjs` now supports `--profile-dir`.
+- The scanner can launch a persistent customer profile, read visible feed pages,
+  write local snapshots, and close the browser at the end of the cycle.
+- Mac test command:
+  `node tools/visible-reservation-feed-test.mjs scan --profile-dir state/platform-detect-test/email-free-auth-profile --platform both --limit 5`
+- Result:
+  - elapsed: about 13 seconds
+  - `spacecloud_confirmed:5`
+  - `spacecloud_canceled:5`
+  - browser process closed after scan
+- Two-cycle watch test also reopened and closed the same profile successfully:
+  `spacecloud_confirmed:5`, `spacecloud_canceled:5` on both cycles.
+- Docker/Linux headless profile test succeeded with a fresh logged-out profile:
+  all feed counts were `0`, which is expected without customer login.
+
+Conclusion: the detector no longer requires an always-open browser for idle
+periods. A shared runner can launch a customer's isolated profile only for scan
+or action windows, then release CPU/RAM.
+
 ### Phase 2: Prove Action Worker Without Always-On Chrome
 
 - Queue one Naver -> SpaceCloud action.

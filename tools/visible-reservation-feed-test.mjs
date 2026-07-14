@@ -16,14 +16,21 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function usage() {
   return `Usage:
   node tools/visible-reservation-feed-test.mjs scan --cdp-url <url> [options]
+  node tools/visible-reservation-feed-test.mjs scan --profile-dir <path> [options]
   node tools/visible-reservation-feed-test.mjs watch --cdp-url <url> [options]
+  node tools/visible-reservation-feed-test.mjs watch --profile-dir <path> [options]
 
-Read-only visible UI feed test. It attaches to an already-open, logged-in Chrome
-debugging endpoint and reads reservation list pages that an operator can see.
+Read-only visible UI feed test. It attaches to an already-open logged-in Chrome
+debugging endpoint, or briefly opens a customer browser profile, and reads
+reservation list pages that an operator can see.
 It does not call hidden platform APIs and does not change platform data.
 
 Options:
-  --cdp-url <url>             Required. Example: http://127.0.0.1:9223
+  --cdp-url <url>             Attach to an already-open Chrome. Example: http://127.0.0.1:9223
+  --profile-dir <path>        Open this persistent browser profile for the scan, then close it.
+  --headless                  Launch profile mode headlessly. Defaults to headed.
+  --channel <name>            Browser channel for profile mode. Auto-tries chrome when omitted.
+  --executable-path <path>    Browser executable for profile mode.
   --platform <name>           naver, spacecloud, or both. Defaults to both.
   --naver-business-id <id>    Defaults to ${DEFAULT_NAVER_BUSINESS_ID}.
   --work-dir <path>           Defaults to ${DEFAULT_WORK_DIR}.
@@ -38,6 +45,7 @@ Options:
 
 Examples:
   node tools/visible-reservation-feed-test.mjs scan --cdp-url http://127.0.0.1:9223
+  node tools/visible-reservation-feed-test.mjs scan --profile-dir state/customer-profiles/demo --platform both --headless
   node tools/visible-reservation-feed-test.mjs watch --cdp-url http://127.0.0.1:9223 --interval-seconds 60 --cycles 3
 `;
 }
@@ -46,6 +54,10 @@ function parseArgs(argv) {
   const args = {
     command: argv[2] || 'help',
     cdpUrl: '',
+    profileDir: '',
+    headless: false,
+    channel: '',
+    executablePath: '',
     platform: 'both',
     naverBusinessId: DEFAULT_NAVER_BUSINESS_ID,
     workDir: DEFAULT_WORK_DIR,
@@ -62,6 +74,10 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === '--json') {
       args.json = true;
+      continue;
+    }
+    if (arg === '--headless') {
+      args.headless = true;
       continue;
     }
     if (!arg.startsWith('--')) throw new Error(`Unexpected argument: ${arg}`);
@@ -83,6 +99,12 @@ function parseArgs(argv) {
       args[key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = parsed;
     } else if (key === 'cdp-url') {
       args.cdpUrl = next;
+    } else if (key === 'profile-dir') {
+      args.profileDir = next;
+    } else if (key === 'channel') {
+      args.channel = next;
+    } else if (key === 'executable-path') {
+      args.executablePath = next;
     } else if (key === 'platform') {
       args.platform = next;
     } else if (key === 'naver-business-id') {
@@ -96,7 +118,13 @@ function parseArgs(argv) {
 
   if (!['scan', 'watch', 'help'].includes(args.command)) throw new Error(`Unknown command: ${args.command}`);
   if (!['naver', 'spacecloud', 'both'].includes(args.platform)) throw new Error('--platform must be naver, spacecloud, or both');
-  if (args.command !== 'help' && !args.cdpUrl) throw new Error('--cdp-url is required');
+  if (args.command !== 'help') {
+    if (!args.cdpUrl && !args.profileDir) throw new Error('Either --cdp-url or --profile-dir is required');
+    if (args.cdpUrl && args.profileDir) throw new Error('Use only one of --cdp-url or --profile-dir');
+    if (args.cdpUrl && (args.headless || args.channel || args.executablePath)) {
+      throw new Error('--headless, --channel, and --executable-path are only valid with --profile-dir');
+    }
+  }
   return args;
 }
 
@@ -172,11 +200,58 @@ async function loadPlaywright() {
 
 async function openPage(args) {
   const { chromium } = await loadPlaywright();
-  const browser = await chromium.connectOverCDP(args.cdpUrl);
-  const context = browser.contexts()[0];
-  if (!context) throw new Error(`No Chrome context available from ${args.cdpUrl}`);
-  const page = await context.newPage();
-  return { browser, page };
+  if (args.cdpUrl) {
+    const browser = await chromium.connectOverCDP(args.cdpUrl);
+    const context = browser.contexts()[0];
+    if (!context) throw new Error(`No Chrome context available from ${args.cdpUrl}`);
+    const page = await context.newPage();
+    return {
+      page,
+      source: 'cdp',
+      close: async () => {
+        await page.close().catch(() => {});
+        await browser.close().catch(() => {});
+      },
+    };
+  }
+
+  await fs.mkdir(args.profileDir, { recursive: true });
+  const launchOptions = {
+    headless: args.headless,
+    viewport: { width: 1440, height: 1000 },
+    locale: 'ko-KR',
+    args: [
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-features=Translate',
+    ],
+  };
+  if (args.executablePath) launchOptions.executablePath = args.executablePath;
+  if (args.channel) launchOptions.channel = args.channel;
+
+  let context;
+  if (args.channel || args.executablePath) {
+    context = await chromium.launchPersistentContext(args.profileDir, launchOptions);
+  } else {
+    try {
+      context = await chromium.launchPersistentContext(args.profileDir, {
+        ...launchOptions,
+        channel: 'chrome',
+      });
+    } catch (error) {
+      if (!/channel|executable|Chrome/i.test(String(error?.message || error))) throw error;
+      context = await chromium.launchPersistentContext(args.profileDir, launchOptions);
+    }
+  }
+
+  const page = context.pages()[0] || await context.newPage();
+  return {
+    page,
+    source: 'profile',
+    close: async () => {
+      await context.close().catch(() => {});
+    },
+  };
 }
 
 async function settle(page, args) {
@@ -413,12 +488,21 @@ async function scanSpacecloudFeed(page, args, statusCode, feed) {
 }
 
 async function runScan(args) {
-  const { browser, page } = await openPage(args);
+  const session = await openPage(args);
+  const { page } = session;
   const result = {
     generatedAt: new Date().toISOString(),
     mode: 'visible-ui-feed',
     platform: args.platform,
-    cdpUrl: args.cdpUrl.replace(/\/\/.*@/, '//***@'),
+    runner: args.cdpUrl
+      ? { type: 'cdp', cdpUrl: args.cdpUrl.replace(/\/\/.*@/, '//***@') }
+      : {
+          type: 'profile',
+          profileDir: args.profileDir,
+          headless: args.headless,
+          channel: args.channel || 'auto',
+          executablePath: args.executablePath || '',
+        },
     feeds: [],
   };
 
@@ -432,8 +516,7 @@ async function runScan(args) {
       result.feeds.push(await scanSpacecloudFeed(page, args, 'RCCMP', 'spacecloud_canceled'));
     }
   } finally {
-    await page.close().catch(() => {});
-    await browser.close().catch(() => {});
+    await session.close();
   }
 
   const snapshotFile = path.join(args.workDir, 'snapshots', `${timestampForFile()}.json`);

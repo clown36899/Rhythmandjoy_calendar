@@ -56,7 +56,51 @@ Result:
 - The visible-feed detector also ran inside the container by attaching to a
   headless Chromium CDP endpoint.
 
-3. Local host Chrome memory observation after one feed scan:
+3. Short-lived profile launch mode:
+
+```bash
+node tools/visible-reservation-feed-test.mjs scan \
+  --profile-dir state/platform-detect-test/email-free-auth-profile \
+  --platform both \
+  --limit 5 \
+  --work-dir state/platform-detect-test/profile-launch-visible-feed
+```
+
+Result:
+
+- Browser opened only for the scan and closed afterward.
+- Elapsed time on the Mac host was about 13 seconds.
+- The existing SpaceCloud session in the profile was reused:
+  `spacecloud_confirmed:5`, `spacecloud_canceled:5`.
+- Naver returned 0 rows because that specific test profile was logged out of
+  Naver.
+
+4. Docker Linux short-lived headless profile:
+
+```bash
+docker run --rm -i --ipc=host \
+  -v "$PWD:/repo" \
+  -v "$PWD/state/vps-sim-test/docker-work:/work" \
+  -w /repo \
+  -e NODE_PATH=/work/node_modules \
+  -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+  mcr.microsoft.com/playwright:v1.55.0-jammy \
+  node tools/visible-reservation-feed-test.mjs scan \
+    --profile-dir /work/short-lived-profile \
+    --platform both \
+    --limit 2 \
+    --work-dir /work/profile-launch-visible-feed \
+    --headless
+```
+
+Result:
+
+- Linux container opened a persistent profile, loaded both platforms, wrote a
+  snapshot, and closed.
+- Elapsed time on the Mac Docker environment was about 9 seconds.
+- Feed counts were 0 because this was a new logged-out profile.
+
+5. Local host Chrome memory observation after one feed scan:
 
 ```text
 Chrome process count: 6
