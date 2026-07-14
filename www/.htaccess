@@ -1,0 +1,3 @@
+<FilesMatch "^\.env(\..*)?$|^rhythmjoycalendar-.*\.json$">
+    Require all denied
+</FilesMatch>
