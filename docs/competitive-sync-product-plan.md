@@ -178,6 +178,22 @@ Success criteria:
 - Browser can close after scan and reuse the same profile next cycle.
 - No platform data is changed during detection scans.
 
+Mac profile reuse test on 2026-07-14:
+
+- Test profile: `state/platform-detect-test/email-free-auth-profile`
+- Flow: scan while open -> close Chrome -> reopen same profile -> scan -> close
+  Chrome -> reopen same profile -> scan -> close Chrome.
+- Result:
+  - baseline: `spacecloud_confirmed:5`, `spacecloud_canceled:5`
+  - reopen 1: `spacecloud_confirmed:5`, `spacecloud_canceled:5`
+  - reopen 2: `spacecloud_confirmed:5`, `spacecloud_canceled:5`
+- Conclusion: SpaceCloud session state survived short browser shutdown/reopen
+  cycles in the same customer profile.
+- Naver result in the same profile was `naver_applications:0` and
+  `naver_cancellations:0` because that profile redirected to Naver login. Repeat
+  the same profile-reuse test after the customer logs in to Naver in this
+  profile.
+
 ### Phase 2: Prove Action Worker Without Always-On Chrome
 
 - Queue one Naver -> SpaceCloud action.
