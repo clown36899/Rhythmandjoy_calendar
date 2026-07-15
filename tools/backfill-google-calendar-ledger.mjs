@@ -248,6 +248,10 @@ function priceText(value) {
   return String(value || '').match(/\d[\d,]*\s*원/)?.[0]?.replace(/\s+/g, '') || '';
 }
 
+function amountNumber(value) {
+  return Number(String(value || '').replace(/\D+/g, '') || 0);
+}
+
 function fallbackName(event) {
   const title = String(event.title || '').trim();
   if (!title) return '구글수기';
@@ -436,6 +440,7 @@ function buildGoogleLedgerEvent(rawEvent) {
     endTime: normalized.endTime,
     paymentStatus,
     price,
+    grossAmount: amountNumber(price),
     eventAt: mysqlDateTimeFromIso(updated),
     googleEventId,
     googleTitle: event.title || '',
@@ -651,8 +656,23 @@ conn = pymysql.connect(
     cursorclass=pymysql.cursors.DictCursor,
 )
 changed = []
+
+def ensure_column(cur, table, column, definition):
+    cur.execute("SHOW TABLES LIKE %s", (table,))
+    if not cur.fetchone():
+        return
+    cur.execute("SHOW COLUMNS FROM " + table + " LIKE %s", (column,))
+    if cur.fetchone():
+        return
+    cur.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition)
+
 try:
     with conn.cursor() as cur:
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'gross_amount', 'INT UNSIGNED NULL AFTER price')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'fee_amount', 'INT UNSIGNED NULL AFTER gross_amount')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'net_amount', 'INT UNSIGNED NULL AFTER fee_amount')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'amount_source', "VARCHAR(64) NOT NULL DEFAULT '' AFTER net_amount")
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'payment_method', "VARCHAR(64) NOT NULL DEFAULT '' AFTER amount_source")
         for item in actions:
             payload_json = json.dumps({
                 'source': 'google-calendar-backfill',
@@ -669,6 +689,7 @@ try:
                     target_calendar, room_key, reservation_number, reserver_name, reserver_name_key, product,
                     reservation_date, start_time, end_time,
                     payment_status, price,
+                    gross_amount, fee_amount, net_amount, amount_source, payment_method,
                     confirmed_email_received_at, canceled_email_received_at, last_event_at,
                     payload_json, cancel_payload_json, created_at, updated_at
                 )
@@ -677,6 +698,7 @@ try:
                     %s, %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s,
+                    %s, NULL, NULL, 'google-calendar-backfill', '',
                     COALESCE(%s, NOW()), NULL, COALESCE(%s, NOW()),
                     %s, NULL, NOW(), NOW()
                 )
@@ -693,6 +715,8 @@ try:
                     end_time=VALUES(end_time),
                     payment_status=VALUES(payment_status),
                     price=IF(VALUES(price) <> '', VALUES(price), price),
+                    gross_amount=COALESCE(VALUES(gross_amount), gross_amount),
+                    amount_source=IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source),
                     confirmed_email_received_at=COALESCE(VALUES(confirmed_email_received_at), confirmed_email_received_at),
                     last_event_at=COALESCE(VALUES(last_event_at), last_event_at, NOW()),
                     payload_json=VALUES(payload_json),
@@ -710,6 +734,7 @@ try:
                 item['endTime'] == '24:00' and '00:00:00' or item['endTime'] + ':00',
                 item['paymentStatus'],
                 item['price'],
+                int(item.get('grossAmount') or 0) or None,
                 event_at,
                 event_at,
                 payload_json,

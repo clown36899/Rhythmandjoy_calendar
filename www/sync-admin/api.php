@@ -112,6 +112,19 @@ function db_connect($env) {
     ));
 }
 
+function ensure_column($pdo, $table, $column, $definition) {
+    $stmt = $pdo->prepare("SHOW TABLES LIKE ?");
+    $stmt->execute(array($table));
+    if (!$stmt->fetch()) {
+        return;
+    }
+    $stmt = $pdo->prepare("SHOW COLUMNS FROM `$table` LIKE ?");
+    $stmt->execute(array($column));
+    if (!$stmt->fetch()) {
+        $pdo->exec("ALTER TABLE `$table` ADD COLUMN `$column` $definition");
+    }
+}
+
 function ensure_schema($pdo) {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS rhythmjoy_admin_settings (
@@ -171,11 +184,12 @@ function ensure_schema($pdo) {
             KEY idx_status (status)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
-    $column = $pdo->prepare("SHOW COLUMNS FROM rhythmjoy_admin_sync_tasks LIKE ?");
-    $column->execute(array('live_task_id'));
-    if (!$column->fetch()) {
-        $pdo->exec("ALTER TABLE rhythmjoy_admin_sync_tasks ADD COLUMN live_task_id BIGINT UNSIGNED NULL AFTER reservation_id");
-    }
+    ensure_column($pdo, 'rhythmjoy_admin_sync_tasks', 'live_task_id', 'BIGINT UNSIGNED NULL AFTER reservation_id');
+    ensure_column($pdo, 'rhythmjoy_booking_ledger', 'gross_amount', 'INT UNSIGNED NULL AFTER price');
+    ensure_column($pdo, 'rhythmjoy_booking_ledger', 'fee_amount', 'INT UNSIGNED NULL AFTER gross_amount');
+    ensure_column($pdo, 'rhythmjoy_booking_ledger', 'net_amount', 'INT UNSIGNED NULL AFTER fee_amount');
+    ensure_column($pdo, 'rhythmjoy_booking_ledger', 'amount_source', "VARCHAR(64) NOT NULL DEFAULT '' AFTER net_amount");
+    ensure_column($pdo, 'rhythmjoy_booking_ledger', 'payment_method', "VARCHAR(64) NOT NULL DEFAULT '' AFTER amount_source");
 }
 
 function clean_date_value($value) {
@@ -273,7 +287,7 @@ function ledger_reservation_rows($pdo, $date) {
     $stmt = $pdo->prepare("
         SELECT id, ledger_key, source_platform, current_status, target_calendar,
                room_key, reservation_number, reserver_name, product,
-               payment_status, price,
+               payment_status, price, gross_amount, fee_amount, net_amount, amount_source, payment_method,
                reservation_date,
                TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
                TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
@@ -312,6 +326,11 @@ function ledger_reservation_rows($pdo, $date) {
             'product' => $row['product'],
             'paymentStatus' => $row['payment_status'],
             'price' => $row['price'],
+            'grossAmount' => ledger_gross_amount($row),
+            'netAmount' => ledger_net_amount($row),
+            'feeAmount' => ledger_fee_amount($row),
+            'amountSource' => $row['amount_source'],
+            'paymentMethod' => $row['payment_method'],
             'createdAt' => $row['created_at'] ?: $row['last_event_at'],
             'updatedAt' => $row['updated_at'] ?: $row['last_event_at'],
         );
@@ -354,6 +373,11 @@ function admin_reservation_rows($pdo, $date) {
             'product' => '',
             'paymentStatus' => '',
             'price' => '',
+            'grossAmount' => 0,
+            'netAmount' => 0,
+            'feeAmount' => 0,
+            'amountSource' => '',
+            'paymentMethod' => '',
             'createdAt' => $row['created_at'],
             'updatedAt' => $row['updated_at'],
         );
@@ -378,9 +402,126 @@ function reservation_rows($pdo, $date) {
     return $rows;
 }
 
+function empty_month_day_summary($date) {
+    $rooms = array();
+    foreach (array('A', 'B', 'C', 'D', 'E') as $room) {
+        $rooms[$room] = 0;
+    }
+    return array(
+        'date' => $date,
+        'day' => intval(substr($date, -2)),
+        'count' => 0,
+        'revenue' => 0,
+        'netRevenue' => 0,
+        'feeRevenue' => 0,
+        'missingCount' => 0,
+        'rooms' => $rooms,
+    );
+}
+
+function add_month_day_summary(&$day, $room, $row) {
+    $room = strtoupper(substr(trim((string) $room), 0, 1));
+    $day['count'] += 1;
+    if (isset($day['rooms'][$room])) {
+        $day['rooms'][$room] += 1;
+    }
+    $amount = ledger_gross_amount($row);
+    if ($amount > 0) {
+        $day['revenue'] += $amount;
+    } else {
+        $day['missingCount'] += 1;
+    }
+    $day['netRevenue'] += ledger_net_amount($row);
+    $day['feeRevenue'] += ledger_fee_amount($row);
+}
+
+function month_summary($pdo, $date) {
+    $month = substr($date, 0, 7);
+    $month_start = $month . '-01';
+    $month_end = date('Y-m-t', strtotime($month_start));
+    $days = array();
+    $day_count = intval(date('t', strtotime($month_start)));
+
+    for ($day = 1; $day <= $day_count; $day += 1) {
+        $key = sprintf('%s-%02d', $month, $day);
+        $days[$key] = empty_month_day_summary($key);
+    }
+
+    $ledger = $pdo->prepare("
+        SELECT reservation_date, room_key, price, gross_amount, fee_amount, net_amount
+        FROM rhythmjoy_booking_ledger
+        WHERE reservation_date BETWEEN ? AND ?
+          AND current_status <> 'canceled'
+          AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+        ORDER BY reservation_date ASC, room_key ASC, start_time ASC, id ASC
+    ");
+    $ledger->execute(array($month_start, $month_end));
+    foreach ($ledger->fetchAll() as $row) {
+        $key = $row['reservation_date'];
+        if (!isset($days[$key])) {
+            $days[$key] = empty_month_day_summary($key);
+        }
+        add_month_day_summary($days[$key], $row['room_key'], $row);
+    }
+
+    $admin = $pdo->prepare("
+        SELECT reservation_date, room_key
+        FROM rhythmjoy_admin_reservations
+        WHERE reservation_date BETWEEN ? AND ?
+          AND status <> 'canceled'
+        ORDER BY reservation_date ASC, room_key ASC, start_hour ASC, id ASC
+    ");
+    $admin->execute(array($month_start, $month_end));
+    foreach ($admin->fetchAll() as $row) {
+        $key = $row['reservation_date'];
+        if (!isset($days[$key])) {
+            $days[$key] = empty_month_day_summary($key);
+        }
+        add_month_day_summary($days[$key], $row['room_key'], array('price' => ''));
+    }
+
+    $total_count = 0;
+    $total_revenue = 0;
+    $total_net_revenue = 0;
+    $total_fee_revenue = 0;
+    $missing_count = 0;
+    foreach ($days as $day) {
+        $total_count += intval($day['count']);
+        $total_revenue += intval($day['revenue']);
+        $total_net_revenue += intval($day['netRevenue']);
+        $total_fee_revenue += intval($day['feeRevenue']);
+        $missing_count += intval($day['missingCount']);
+    }
+
+    return array(
+        'month' => $month,
+        'startDate' => $month_start,
+        'endDate' => $month_end,
+        'count' => $total_count,
+        'revenue' => $total_revenue,
+        'netRevenue' => $total_net_revenue,
+        'feeRevenue' => $total_fee_revenue,
+        'missingCount' => $missing_count,
+        'days' => array_values($days),
+    );
+}
+
 function parse_price_amount($value) {
     $digits = preg_replace('/\D+/', '', (string) $value);
     return $digits === '' ? 0 : intval($digits);
+}
+
+function ledger_gross_amount($row) {
+    $gross = isset($row['gross_amount']) ? intval($row['gross_amount']) : 0;
+    return $gross > 0 ? $gross : parse_price_amount(isset($row['price']) ? $row['price'] : '');
+}
+
+function ledger_net_amount($row) {
+    return isset($row['net_amount']) ? intval($row['net_amount']) : 0;
+}
+
+function ledger_fee_amount($row) {
+    return isset($row['fee_amount']) ? intval($row['fee_amount']) : 0;
 }
 
 function time_text_to_minutes($value, $is_end) {
@@ -409,6 +550,8 @@ function empty_year_revenue($year) {
     return array(
         'year' => intval($year),
         'total' => 0,
+        'netTotal' => 0,
+        'feeTotal' => 0,
         'confirmedCount' => 0,
         'missingCount' => 0,
         'hours' => 0,
@@ -425,6 +568,8 @@ function empty_room_year_revenue($year, $room_key) {
         'room' => strtolower($room_key),
         'roomLabel' => room_label($room_key),
         'total' => 0,
+        'netTotal' => 0,
+        'feeTotal' => 0,
         'confirmedCount' => 0,
         'missingCount' => 0,
         'hours' => 0,
@@ -490,6 +635,8 @@ function empty_period_bucket($key, $label) {
         'key' => $key,
         'label' => $label,
         'total' => 0,
+        'netTotal' => 0,
+        'feeTotal' => 0,
         'confirmedCount' => 0,
         'missingCount' => 0,
         'hours' => 0,
@@ -542,7 +689,7 @@ function collect_period_revenue($pdo, $start_date, $end_date) {
         SELECT room_key,
                TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
                TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
-               price
+               price, gross_amount, fee_amount, net_amount
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN ? AND ?
           AND current_status <> 'canceled'
@@ -555,13 +702,17 @@ function collect_period_revenue($pdo, $start_date, $end_date) {
         if (!isset($buckets[$room])) {
             continue;
         }
-        $amount = parse_price_amount($row['price']);
+        $amount = ledger_gross_amount($row);
+        $net_amount = ledger_net_amount($row);
+        $fee_amount = ledger_fee_amount($row);
         $start = time_text_to_minutes($row['start_time_text'], false);
         $end = time_text_to_minutes($row['end_time_text'], true);
         $hours = max(0, ($end - $start) / 60);
         foreach (array('all', $room) as $key) {
             $buckets[$key]['confirmedCount'] += 1;
             $buckets[$key]['hours'] += $hours;
+            $buckets[$key]['netTotal'] += $net_amount;
+            $buckets[$key]['feeTotal'] += $fee_amount;
             if ($amount > 0) {
                 $buckets[$key]['total'] += $amount;
             } else {
@@ -660,7 +811,7 @@ function collect_month_revenue_for_year($pdo, $year) {
     $stmt = $pdo->prepare("
         SELECT DATE_FORMAT(reservation_date, '%Y-%m') AS month_key,
                DAYOFWEEK(reservation_date) AS day_of_week,
-               price
+               price, gross_amount, fee_amount, net_amount
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN ? AND ?
           AND current_status <> 'canceled'
@@ -673,7 +824,9 @@ function collect_month_revenue_for_year($pdo, $year) {
         if (!isset($by_month[$key])) {
             $by_month[$key] = empty_month_revenue($key);
         }
-        $amount = parse_price_amount($row['price']);
+        $amount = ledger_gross_amount($row);
+        $by_month[$key]['netTotal'] += ledger_net_amount($row);
+        $by_month[$key]['feeTotal'] += ledger_fee_amount($row);
         $by_month[$key]['confirmedCount'] += 1;
         if ($amount > 0) {
             $by_month[$key]['total'] += $amount;
@@ -743,7 +896,7 @@ function revenue_comparison_stats($pdo) {
                room_key,
                TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
                TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
-               price
+               price, gross_amount, fee_amount, net_amount
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN '2025-01-01' AND '2026-12-31'
           AND current_status <> 'canceled'
@@ -757,15 +910,21 @@ function revenue_comparison_stats($pdo) {
         if (!isset($by_year[$year]) || !isset($by_room[$year][$room])) {
             continue;
         }
-        $amount = parse_price_amount($row['price']);
+        $amount = ledger_gross_amount($row);
+        $net_amount = ledger_net_amount($row);
+        $fee_amount = ledger_fee_amount($row);
         $start = time_text_to_minutes($row['start_time_text'], false);
         $end = time_text_to_minutes($row['end_time_text'], true);
         $hours = max(0, ($end - $start) / 60);
 
         $by_year[$year]['confirmedCount'] += 1;
         $by_year[$year]['hours'] += $hours;
+        $by_year[$year]['netTotal'] += $net_amount;
+        $by_year[$year]['feeTotal'] += $fee_amount;
         $by_room[$year][$room]['confirmedCount'] += 1;
         $by_room[$year][$room]['hours'] += $hours;
+        $by_room[$year][$room]['netTotal'] += $net_amount;
+        $by_room[$year][$room]['feeTotal'] += $fee_amount;
         if ($amount > 0) {
             $by_year[$year]['total'] += $amount;
             $by_room[$year][$room]['total'] += $amount;
@@ -854,6 +1013,8 @@ function empty_month_revenue($month) {
     return array(
         'month' => $month,
         'total' => 0,
+        'netTotal' => 0,
+        'feeTotal' => 0,
         'confirmedCount' => 0,
         'missingCount' => 0,
         'calendarDays' => $days,
@@ -888,7 +1049,7 @@ function revenue_stats($pdo, $date) {
     $stmt = $pdo->prepare("
         SELECT DATE_FORMAT(reservation_date, '%Y-%m') AS month_key,
                DAYOFWEEK(reservation_date) AS day_of_week,
-               price
+               price, gross_amount, fee_amount, net_amount
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN ? AND ?
           AND current_status <> 'canceled'
@@ -908,7 +1069,9 @@ function revenue_stats($pdo, $date) {
         if (!isset($by_month[$key])) {
             $by_month[$key] = empty_month_revenue($key);
         }
-        $amount = parse_price_amount($row['price']);
+        $amount = ledger_gross_amount($row);
+        $by_month[$key]['netTotal'] += ledger_net_amount($row);
+        $by_month[$key]['feeTotal'] += ledger_fee_amount($row);
         $by_month[$key]['confirmedCount'] += 1;
         if ($amount > 0) {
             $by_month[$key]['total'] += $amount;
@@ -932,10 +1095,14 @@ function revenue_stats($pdo, $date) {
         $months[] = finalize_month_revenue($month_row);
     }
     $year_total = 0;
+    $year_net_total = 0;
+    $year_fee_total = 0;
     $year_confirmed_count = 0;
     $year_missing_count = 0;
     foreach ($months as $month_row) {
         $year_total += intval($month_row['total']);
+        $year_net_total += intval($month_row['netTotal']);
+        $year_fee_total += intval($month_row['feeTotal']);
         $year_confirmed_count += intval($month_row['confirmedCount']);
         $year_missing_count += intval($month_row['missingCount']);
     }
@@ -945,9 +1112,13 @@ function revenue_stats($pdo, $date) {
         'year' => intval($year),
         'selectedMonth' => $selected_month,
         'selectedMonthTotal' => intval($selected['total']),
+        'selectedMonthNetTotal' => intval($selected['netTotal']),
+        'selectedMonthFeeTotal' => intval($selected['feeTotal']),
         'selectedMonthConfirmedCount' => intval($selected['confirmedCount']),
         'selectedMonthMissingCount' => intval($selected['missingCount']),
         'yearTotal' => $year_total,
+        'yearNetTotal' => $year_net_total,
+        'yearFeeTotal' => $year_fee_total,
         'yearConfirmedCount' => $year_confirmed_count,
         'yearMissingCount' => $year_missing_count,
         'months' => $months,
@@ -1260,6 +1431,7 @@ function insert_admin_ledger_anchor($pdo, $source_platform, $event, $calendar_ke
             target_calendar, room_key, reservation_number, reserver_name, reserver_name_key, product,
             reservation_date, start_time, end_time,
             payment_status, price,
+            gross_amount, fee_amount, net_amount, amount_source, payment_method,
             confirmed_email_event_id, confirmed_email_received_at, last_event_at,
             payload_json, created_at, updated_at
         )
@@ -1268,6 +1440,7 @@ function insert_admin_ledger_anchor($pdo, $source_platform, $event, $calendar_ke
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?,
             '관리자입력', '',
+            NULL, NULL, NULL, 'admin_anchor', '',
             NULL, NOW(), NOW(),
             ?, NOW(), NOW()
         )
@@ -1283,6 +1456,7 @@ function insert_admin_ledger_anchor($pdo, $source_platform, $event, $calendar_ke
             start_time=VALUES(start_time),
             end_time=VALUES(end_time),
             payment_status=VALUES(payment_status),
+            amount_source=VALUES(amount_source),
             confirmed_email_received_at=NOW(),
             last_event_at=NOW(),
             payload_json=VALUES(payload_json),
@@ -1523,6 +1697,23 @@ try {
 
     if ($action === 'bootstrap') {
         json_response(bootstrap_payload($pdo, $date, $env));
+    }
+
+    if ($action === 'month_summary') {
+        json_response(array(
+            'ok' => true,
+            'serverTime' => date('c'),
+            'monthSummary' => month_summary($pdo, $date),
+        ));
+    }
+
+    if ($action === 'day_reservations') {
+        json_response(array(
+            'ok' => true,
+            'serverTime' => date('c'),
+            'date' => $date,
+            'reservations' => reservation_rows($pdo, $date),
+        ));
     }
 
     if ($action === 'create_reservation') {

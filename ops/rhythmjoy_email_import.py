@@ -356,6 +356,35 @@ def truncate_text(value, limit):
     return text[:limit]
 
 
+def parse_amount_value(value):
+    if value is None:
+        return 0
+    digits = re.sub(r'\D+', '', str(value))
+    return int(digits) if digits else 0
+
+
+def event_amount_fields(source_platform, event_data):
+    gross_amount = parse_amount_value(event_data.get('gross_amount') or event_data.get('price'))
+    fee_amount = parse_amount_value(event_data.get('fee_amount'))
+    net_amount = parse_amount_value(event_data.get('net_amount'))
+    source_mode = event_data.get('source_mode') or ''
+    if event_data.get('amount_source'):
+        amount_source = str(event_data.get('amount_source'))
+    elif source_mode:
+        amount_source = source_mode
+    elif source_platform:
+        amount_source = f'{source_platform}_email'
+    else:
+        amount_source = ''
+    return {
+        'gross_amount': gross_amount if gross_amount > 0 else None,
+        'fee_amount': fee_amount if fee_amount > 0 else None,
+        'net_amount': net_amount if net_amount > 0 else None,
+        'amount_source': truncate_text(amount_source, 64),
+        'payment_method': truncate_text(event_data.get('payment_method'), 64),
+    }
+
+
 def compact_json(value):
     if not value:
         return ''
@@ -716,6 +745,11 @@ def ensure_db_tables(config, logger):
             )
             ensure_db_column(cursor, 'rhythmjoy_naver_email_events', 'email_received_at', 'DATETIME NULL AFTER message_id')
             ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'reserver_name_key', "VARCHAR(128) NOT NULL DEFAULT '' AFTER reserver_name")
+            ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'gross_amount', 'INT UNSIGNED NULL AFTER price')
+            ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'fee_amount', 'INT UNSIGNED NULL AFTER gross_amount')
+            ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'net_amount', 'INT UNSIGNED NULL AFTER fee_amount')
+            ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'amount_source', "VARCHAR(64) NOT NULL DEFAULT '' AFTER net_amount")
+            ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'payment_method', "VARCHAR(64) NOT NULL DEFAULT '' AFTER amount_source")
             ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'claim_token', "VARCHAR(64) NOT NULL DEFAULT '' AFTER locked_at")
         logger.info('Email DB tables checked')
     except Exception as error:
@@ -866,7 +900,7 @@ def booking_ledger_key(source_platform, event_data, calendar_key):
 def booking_ledger_row(source_platform, event_data, calendar_key, email_event_id, email_received_at):
     event_at = booking_event_at(email_received_at)
     reservation_number = '' if source_platform == 'spacecloud' else event_data.get('reservation_number') or ''
-    return {
+    row = {
         'ledger_key': booking_ledger_key(source_platform, event_data, calendar_key),
         'source_platform': source_platform or '',
         'source_mode': event_data.get('source_mode') or '',
@@ -885,6 +919,8 @@ def booking_ledger_row(source_platform, event_data, calendar_key, email_event_id
         'event_at': event_at,
         'payload_json': json.dumps(event_data, ensure_ascii=False, separators=(',', ':')),
     }
+    row.update(event_amount_fields(source_platform, event_data))
+    return row
 
 
 def db_select_booking_ledger(config, ledger_key):
@@ -923,6 +959,7 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                     target_calendar, room_key, reservation_number, reserver_name, reserver_name_key, product,
                     reservation_date, start_time, end_time,
                     payment_status, price,
+                    gross_amount, fee_amount, net_amount, amount_source, payment_method,
                     confirmed_email_event_id, confirmed_email_received_at, last_event_at,
                     payload_json, created_at, updated_at
                 )
@@ -931,6 +968,7 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                     %(target_calendar)s, %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(reserver_name_key)s, %(product)s,
                     %(reservation_date)s, %(start_time)s, %(end_time)s,
                     %(payment_status)s, %(price)s,
+                    %(gross_amount)s, %(fee_amount)s, %(net_amount)s, %(amount_source)s, %(payment_method)s,
                     %(email_event_id)s, %(event_at)s, %(event_at)s,
                     %(payload_json)s, NOW(), NOW()
                 )
@@ -948,6 +986,11 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                     end_time=VALUES(end_time),
                     payment_status=VALUES(payment_status),
                     price=VALUES(price),
+                    gross_amount=VALUES(gross_amount),
+                    fee_amount=COALESCE(VALUES(fee_amount), fee_amount),
+                    net_amount=COALESCE(VALUES(net_amount), net_amount),
+                    amount_source=VALUES(amount_source),
+                    payment_method=VALUES(payment_method),
                     confirmed_email_event_id=VALUES(confirmed_email_event_id),
                     confirmed_email_received_at=VALUES(confirmed_email_received_at),
                     last_event_at=IF(VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(confirmed_email_received_at), last_event_at),
@@ -990,6 +1033,7 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                     target_calendar, room_key, reservation_number, reserver_name, reserver_name_key, product,
                     reservation_date, start_time, end_time,
                     payment_status, price,
+                    gross_amount, fee_amount, net_amount, amount_source, payment_method,
                     canceled_email_event_id, canceled_email_received_at, last_event_at,
                     cancel_payload_json, created_at, updated_at
                 )
@@ -998,6 +1042,7 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                     %(target_calendar)s, %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(reserver_name_key)s, %(product)s,
                     %(reservation_date)s, %(start_time)s, %(end_time)s,
                     %(payment_status)s, %(price)s,
+                    %(gross_amount)s, %(fee_amount)s, %(net_amount)s, %(amount_source)s, %(payment_method)s,
                     %(email_event_id)s, %(event_at)s, %(event_at)s,
                     %(payload_json)s, NOW(), NOW()
                 )
@@ -1015,6 +1060,11 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                     end_time=VALUES(end_time),
                     payment_status=VALUES(payment_status),
                     price=IF(VALUES(price) <> '', VALUES(price), price),
+                    gross_amount=COALESCE(VALUES(gross_amount), gross_amount),
+                    fee_amount=COALESCE(VALUES(fee_amount), fee_amount),
+                    net_amount=COALESCE(VALUES(net_amount), net_amount),
+                    amount_source=IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source),
+                    payment_method=IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method),
                     canceled_email_event_id=VALUES(canceled_email_event_id),
                     canceled_email_received_at=VALUES(canceled_email_received_at),
                     last_event_at=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(canceled_email_received_at), last_event_at),

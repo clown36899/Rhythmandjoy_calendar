@@ -173,6 +173,17 @@ function priceText(value) {
   return amount > 0 ? `${amount.toLocaleString('ko-KR')}원` : '';
 }
 
+function amountNumber(value) {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value) : 0;
+  const digits = String(value).replace(/\D+/g, '');
+  return digits ? Number(digits) : 0;
+}
+
+function derivedFee(gross, net) {
+  return gross > 0 && net > 0 && gross >= net ? gross - net : 0;
+}
+
 function ledgerKey(platform, event) {
   let rawKey = '';
   if (platform !== 'spacecloud' && event.reservationNumber) {
@@ -257,6 +268,9 @@ function spacecloudStatus(row, exportRow = null) {
 function buildNaverEvent(row) {
   const room = roomKey(row.room);
   const currentStatus = naverStatus(row);
+  const grossAmount = amountNumber(row.gross || row.payment || row.net);
+  const netAmount = amountNumber(row.net);
+  const feeAmount = derivedFee(grossAmount, netAmount);
   const eventAt = currentStatus === 'canceled'
     ? parseKoreanDateTime(row.cancel_at) || parseKoreanDateTime(row.confirm_at) || parseKoreanDateTime(row.apply_at)
     : parseKoreanDateTime(row.confirm_at) || parseKoreanDateTime(row.apply_at);
@@ -274,7 +288,12 @@ function buildNaverEvent(row) {
     startTime: shortTime(row.start),
     endTime: shortTime(row.end),
     paymentStatus: currentStatus === 'canceled' ? (row.cancel_reason || '예약취소') : (row.status || '예약확정'),
-    price: priceText(row.net || row.gross || row.payment),
+    price: priceText(grossAmount || netAmount),
+    grossAmount,
+    feeAmount,
+    netAmount,
+    amountSource: 'naver-platform-export',
+    paymentMethod: String(row.payment_method || row.pay_method || '').trim(),
     eventAt,
     payload: {
       source: 'naver-export',
@@ -293,6 +312,9 @@ function buildSpacecloudEvent(row, exportRow = null) {
   const start = reservation.RSV_STRT_DATETIME || '';
   const end = reservation.RSV_END_DATETIME || '';
   const currentStatus = spacecloudStatus(row, exportRow);
+  const grossAmount = amountNumber(reservation.TOT_PAY_PRC || payment.PAY_AMT || exportRow?.gross || exportRow?.payment || row.TOT_PAY_PRC);
+  const netAmount = amountNumber(exportRow?.net || row.SETL_OBJ_AMT || row.PG_SETL_AMT);
+  const feeAmount = derivedFee(grossAmount, netAmount);
   const eventAt = mysqlDateTimeFromIso(
     reservation.RSV_STAT_CHG_YMDT || payment.APRV_YMDT || reservation.created_at || payment.created_at,
   );
@@ -310,7 +332,12 @@ function buildSpacecloudEvent(row, exportRow = null) {
     startTime: timeFromIso(start),
     endTime: timeFromIso(end) === '00:00' && dateFromIso(start) === dateFromIso(end) ? '24:00' : timeFromIso(end),
     paymentStatus: currentStatus === 'canceled' ? '예약취소' : '정산완료',
-    price: priceText(exportRow?.net || reservation.TOT_PAY_PRC || payment.PAY_AMT || row.SETL_OBJ_AMT),
+    price: priceText(grossAmount || netAmount),
+    grossAmount,
+    feeAmount,
+    netAmount,
+    amountSource: 'spacecloud-settlement-api',
+    paymentMethod: String(payment.PAY_MEANS_NM || row.PG || '').trim(),
     eventAt,
     payload: {
       source: 'spacecloud-settlement-api',
@@ -389,6 +416,7 @@ try:
                 CAST(start_time AS CHAR) AS start_time,
                 CAST(end_time AS CHAR) AS end_time,
                 payment_status, price,
+                gross_amount, fee_amount, net_amount, amount_source, payment_method,
                 CAST(confirmed_email_received_at AS CHAR) AS confirmed_email_received_at,
                 CAST(canceled_email_received_at AS CHAR) AS canceled_email_received_at,
                 CAST(last_event_at AS CHAR) AS last_event_at
@@ -499,6 +527,11 @@ function buildAction(existing, event, match) {
     endTime: dbTime(event.endTime),
     paymentStatus: event.paymentStatus,
     price: event.price,
+    grossAmount: event.grossAmount || 0,
+    feeAmount: event.feeAmount || 0,
+    netAmount: event.netAmount || 0,
+    amountSource: event.amountSource || '',
+    paymentMethod: event.paymentMethod || '',
     eventAt: event.eventAt,
     payload: event.payload,
     slotKey: slotKey(event),
@@ -581,8 +614,23 @@ conn = pymysql.connect(
     cursorclass=pymysql.cursors.DictCursor,
 )
 changed = []
+
+def ensure_column(cur, table, column, definition):
+    cur.execute("SHOW TABLES LIKE %s", (table,))
+    if not cur.fetchone():
+        return
+    cur.execute("SHOW COLUMNS FROM " + table + " LIKE %s", (column,))
+    if cur.fetchone():
+        return
+    cur.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition)
+
 try:
     with conn.cursor() as cur:
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'gross_amount', 'INT UNSIGNED NULL AFTER price')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'fee_amount', 'INT UNSIGNED NULL AFTER gross_amount')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'net_amount', 'INT UNSIGNED NULL AFTER fee_amount')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'amount_source', "VARCHAR(64) NOT NULL DEFAULT '' AFTER net_amount")
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'payment_method', "VARCHAR(64) NOT NULL DEFAULT '' AFTER amount_source")
         for item in payload['actions']:
             payload_json = json.dumps(item['payload'], ensure_ascii=False, separators=(',', ':'))
             event_at = item.get('eventAt') or None
@@ -605,6 +653,11 @@ try:
                         end_time=%s,
                         payment_status=%s,
                         price=%s,
+                        gross_amount=%s,
+                        fee_amount=%s,
+                        net_amount=%s,
+                        amount_source=%s,
+                        payment_method=%s,
                         confirmed_email_received_at=CASE
                             WHEN %s='confirmed' THEN COALESCE(%s, confirmed_email_received_at, last_event_at)
                             ELSE confirmed_email_received_at
@@ -634,6 +687,11 @@ try:
                     item['endTime'],
                     item['paymentStatus'],
                     item['price'],
+                    item['grossAmount'] or None,
+                    item['feeAmount'] or None,
+                    item['netAmount'] or None,
+                    item['amountSource'],
+                    item['paymentMethod'],
                     item['currentStatus'], event_at,
                     item['currentStatus'], event_at,
                     event_at,
@@ -650,6 +708,7 @@ try:
                         target_calendar, room_key, reservation_number, reserver_name, reserver_name_key, product,
                         reservation_date, start_time, end_time,
                         payment_status, price,
+                        gross_amount, fee_amount, net_amount, amount_source, payment_method,
                         confirmed_email_received_at, canceled_email_received_at, last_event_at,
                         payload_json, cancel_payload_json, created_at, updated_at
                     )
@@ -658,6 +717,7 @@ try:
                         %s, %s, %s, %s, %s, %s,
                         %s, %s, %s,
                         %s, %s,
+                        %s, %s, %s, %s, %s,
                         IF(%s='confirmed', %s, NULL),
                         IF(%s='canceled', %s, NULL),
                         COALESCE(%s, NOW()),
@@ -680,6 +740,11 @@ try:
                         end_time=VALUES(end_time),
                         payment_status=VALUES(payment_status),
                         price=VALUES(price),
+                        gross_amount=COALESCE(VALUES(gross_amount), gross_amount),
+                        fee_amount=COALESCE(VALUES(fee_amount), fee_amount),
+                        net_amount=COALESCE(VALUES(net_amount), net_amount),
+                        amount_source=IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source),
+                        payment_method=IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method),
                         confirmed_email_received_at=COALESCE(VALUES(confirmed_email_received_at), confirmed_email_received_at),
                         canceled_email_received_at=COALESCE(VALUES(canceled_email_received_at), canceled_email_received_at),
                         last_event_at=COALESCE(VALUES(last_event_at), last_event_at, NOW()),
@@ -702,6 +767,11 @@ try:
                     item['endTime'],
                     item['paymentStatus'],
                     item['price'],
+                    item['grossAmount'] or None,
+                    item['feeAmount'] or None,
+                    item['netAmount'] or None,
+                    item['amountSource'],
+                    item['paymentMethod'],
                     item['currentStatus'], event_at,
                     item['currentStatus'], event_at,
                     event_at,
@@ -753,7 +823,7 @@ try:
         cur.execute("""
             SELECT YEAR(reservation_date) AS y, source_platform, current_status,
                    COUNT(*) AS count,
-                   SUM(CAST(REPLACE(REPLACE(COALESCE(price, '0'), ',', ''), '원', '') AS UNSIGNED)) AS revenue
+                   SUM(COALESCE(gross_amount, CAST(REPLACE(REPLACE(REPLACE(COALESCE(price, '0'), ',', ''), '원', ''), '￦', '') AS UNSIGNED))) AS revenue
             FROM rhythmjoy_booking_ledger
             WHERE reservation_date >= %s AND reservation_date < %s
             GROUP BY YEAR(reservation_date), source_platform, current_status

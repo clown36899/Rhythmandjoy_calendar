@@ -180,6 +180,10 @@ function priceText(value) {
   return String(value || '').match(/\d[\d,]*\s*원/)?.[0]?.replace(/\s+/g, '') || '';
 }
 
+function amountNumber(value) {
+  return Number(String(value || '').replace(/\D+/g, '') || 0);
+}
+
 function statusToCurrent(platform, status) {
   if (platform === 'naver') {
     if (status === '취소') return 'canceled';
@@ -471,6 +475,11 @@ async function collectNaverYear(page, args) {
       product: row.room || `${parsedRoom.toUpperCase()}홀`,
       paymentStatus: naverStatusPayment(row.status),
       price: row.price,
+      grossAmount: amountNumber(row.price),
+      feeAmount: 0,
+      netAmount: 0,
+      amountSource: 'visible-site-year-backfill',
+      paymentMethod: '',
       eventAt,
       sourceHref: row.sourceHref,
       sourceMode: 'visible-site-year-backfill',
@@ -580,6 +589,11 @@ async function collectSpacecloudYear(page, args) {
       product: row.room || `${parsedRoom.toUpperCase()}홀`,
       paymentStatus: spacecloudStatusPayment(row.status),
       price: row.price,
+      grossAmount: amountNumber(row.price),
+      feeAmount: 0,
+      netAmount: 0,
+      amountSource: 'visible-site-year-backfill',
+      paymentMethod: '',
       eventAt: '',
       sourceHref: row.sourceHref,
       sourceMode: 'visible-site-year-backfill',
@@ -745,6 +759,11 @@ function buildAction(existing, event, match) {
     target_calendar: event.targetCalendar,
     payment_status: event.paymentStatus,
     price: event.price,
+    gross_amount: event.grossAmount || 0,
+    fee_amount: event.feeAmount || 0,
+    net_amount: event.netAmount || 0,
+    amount_source: event.amountSource || '',
+    payment_method: event.paymentMethod || '',
     source_href: event.sourceHref,
     observed_at: new Date().toISOString(),
   };
@@ -768,6 +787,11 @@ function buildAction(existing, event, match) {
     endTime: dbTime(event.endTime),
     paymentStatus: event.paymentStatus,
     price: event.price,
+    grossAmount: event.grossAmount || 0,
+    feeAmount: event.feeAmount || 0,
+    netAmount: event.netAmount || 0,
+    amountSource: event.amountSource || '',
+    paymentMethod: event.paymentMethod || '',
     eventAt: event.eventAt || null,
     payload,
     slotKey: slotKey(event),
@@ -909,8 +933,23 @@ conn = pymysql.connect(
     cursorclass=pymysql.cursors.DictCursor,
 )
 changed = []
+
+def ensure_column(cur, table, column, definition):
+    cur.execute("SHOW TABLES LIKE %s", (table,))
+    if not cur.fetchone():
+        return
+    cur.execute("SHOW COLUMNS FROM " + table + " LIKE %s", (column,))
+    if cur.fetchone():
+        return
+    cur.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition)
+
 try:
     with conn.cursor() as cur:
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'gross_amount', 'INT UNSIGNED NULL AFTER price')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'fee_amount', 'INT UNSIGNED NULL AFTER gross_amount')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'net_amount', 'INT UNSIGNED NULL AFTER fee_amount')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'amount_source', "VARCHAR(64) NOT NULL DEFAULT '' AFTER net_amount")
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'payment_method', "VARCHAR(64) NOT NULL DEFAULT '' AFTER amount_source")
         for item in actions:
             payload_json = json.dumps(item['payload'], ensure_ascii=False, separators=(',', ':'))
             event_at = item.get('eventAt') or None
@@ -931,6 +970,11 @@ try:
                         end_time=%s,
                         payment_status=IF(%s <> '', %s, payment_status),
                         price=IF(%s <> '', %s, price),
+                        gross_amount=COALESCE(%s, gross_amount),
+                        fee_amount=COALESCE(%s, fee_amount),
+                        net_amount=COALESCE(%s, net_amount),
+                        amount_source=IF(%s <> '', %s, amount_source),
+                        payment_method=IF(%s <> '', %s, payment_method),
                         confirmed_email_received_at=CASE
                             WHEN %s='confirmed' AND %s IS NOT NULL THEN %s
                             ELSE confirmed_email_received_at
@@ -962,6 +1006,13 @@ try:
                     item['paymentStatus'],
                     item['price'],
                     item['price'],
+                    item['grossAmount'] or None,
+                    item['feeAmount'] or None,
+                    item['netAmount'] or None,
+                    item['amountSource'],
+                    item['amountSource'],
+                    item['paymentMethod'],
+                    item['paymentMethod'],
                     item['currentStatus'],
                     event_at,
                     event_at,
@@ -984,6 +1035,7 @@ try:
                         target_calendar, room_key, reservation_number, reserver_name, reserver_name_key, product,
                         reservation_date, start_time, end_time,
                         payment_status, price,
+                        gross_amount, fee_amount, net_amount, amount_source, payment_method,
                         confirmed_email_received_at, canceled_email_received_at, last_event_at,
                         payload_json, cancel_payload_json, created_at, updated_at
                     )
@@ -992,6 +1044,7 @@ try:
                         %s, %s, %s, %s, %s, %s,
                         %s, %s, %s,
                         %s, %s,
+                        %s, %s, %s, %s, %s,
                         IF(%s='confirmed', %s, NULL),
                         IF(%s='canceled', %s, NULL),
                         COALESCE(%s, NOW()),
@@ -1010,6 +1063,11 @@ try:
                         end_time=VALUES(end_time),
                         payment_status=VALUES(payment_status),
                         price=IF(VALUES(price) <> '', VALUES(price), price),
+                        gross_amount=COALESCE(VALUES(gross_amount), gross_amount),
+                        fee_amount=COALESCE(VALUES(fee_amount), fee_amount),
+                        net_amount=COALESCE(VALUES(net_amount), net_amount),
+                        amount_source=IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source),
+                        payment_method=IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method),
                         last_event_at=VALUES(last_event_at),
                         payload_json=IF(VALUES(payload_json) IS NOT NULL, VALUES(payload_json), payload_json),
                         cancel_payload_json=IF(VALUES(cancel_payload_json) IS NOT NULL, VALUES(cancel_payload_json), cancel_payload_json),
@@ -1030,6 +1088,11 @@ try:
                     item['endTime'],
                     item['paymentStatus'],
                     item['price'],
+                    item['grossAmount'] or None,
+                    item['feeAmount'] or None,
+                    item['netAmount'] or None,
+                    item['amountSource'],
+                    item['paymentMethod'],
                     item['currentStatus'], event_at,
                     item['currentStatus'], event_at,
                     event_at,

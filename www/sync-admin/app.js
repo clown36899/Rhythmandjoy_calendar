@@ -10,12 +10,17 @@
 
   const state = {
     activeDate: today(),
+    scheduleView: "day",
     roomFilter: "all",
     drafts: loadJson(storageKey, []),
     tasks: [],
     sessions: loadJson(sessionKey, {}),
     revenueStats: null,
     revenueComparison: null,
+    monthSummary: null,
+    monthSummaryLoading: false,
+    dayModalDate: "",
+    dayModalEvents: [],
     apiMode: "local",
     lastApiMessage: "DB 연결 확인 전",
   };
@@ -28,10 +33,20 @@
     todayButton: document.getElementById("todayButton"),
     scheduleWrap: document.getElementById("scheduleWrap"),
     scheduleGrid: document.getElementById("scheduleGrid"),
+    monthWrap: document.getElementById("monthWrap"),
+    monthCalendar: document.getElementById("monthCalendar"),
+    dayViewButton: document.getElementById("dayViewButton"),
+    monthViewButton: document.getElementById("monthViewButton"),
     priceReference: document.getElementById("priceReference"),
     scheduleTimeNav: document.getElementById("scheduleTimeNav"),
     scheduleNowText: document.getElementById("scheduleNowText"),
     scrollToNow: document.getElementById("scrollToNow"),
+    dayScheduleModal: document.getElementById("dayScheduleModal"),
+    dayScheduleTitle: document.getElementById("dayScheduleTitle"),
+    dayScheduleSummary: document.getElementById("dayScheduleSummary"),
+    dayScheduleGrid: document.getElementById("dayScheduleGrid"),
+    closeDayScheduleModal: document.getElementById("closeDayScheduleModal"),
+    doneDayScheduleModal: document.getElementById("doneDayScheduleModal"),
     eventDetailModal: document.getElementById("eventDetailModal"),
     eventDetailSummary: document.getElementById("eventDetailSummary"),
     eventDetailList: document.getElementById("eventDetailList"),
@@ -95,6 +110,9 @@
     el.todayButton.addEventListener("click", goToday);
     el.activeDate.addEventListener("change", () => {
       state.activeDate = el.activeDate.value || today();
+      if (state.scheduleView === "month") {
+        state.monthSummary = null;
+      }
       renderAll();
       refreshFromApi({ silent: true });
     });
@@ -106,6 +124,9 @@
         button.classList.add("active");
         renderSchedule();
       });
+    });
+    document.querySelectorAll("[data-schedule-view]").forEach((button) => {
+      button.addEventListener("click", () => setScheduleView(button.dataset.scheduleView));
     });
 
     el.roomInput.addEventListener("change", updateModalSlotSummary);
@@ -119,6 +140,11 @@
     el.cancelReservationModal.addEventListener("click", closeReservationModal);
     el.reservationModal.addEventListener("click", (event) => {
       if (event.target === el.reservationModal) closeReservationModal();
+    });
+    el.closeDayScheduleModal.addEventListener("click", closeDayScheduleModal);
+    el.doneDayScheduleModal.addEventListener("click", closeDayScheduleModal);
+    el.dayScheduleModal.addEventListener("click", (event) => {
+      if (event.target === el.dayScheduleModal) closeDayScheduleModal();
     });
     el.closeEventDetailModal.addEventListener("click", closeEventDetailModal);
     el.doneEventDetailModal.addEventListener("click", closeEventDetailModal);
@@ -139,6 +165,10 @@
       }
       if (!el.eventDetailModal.hidden) {
         closeEventDetailModal();
+        return;
+      }
+      if (!el.dayScheduleModal.hidden) {
+        closeDayScheduleModal();
         return;
       }
       if (!el.reservationModal.hidden) closeReservationModal();
@@ -179,6 +209,41 @@
       scheduleActiveNavUpdate.queued = false;
       updateActiveNav();
     });
+  }
+
+  function setScheduleView(view) {
+    const nextView = view === "month" ? "month" : "day";
+    if (state.scheduleView === nextView) return;
+    state.scheduleView = nextView;
+    renderSchedule();
+    if (nextView === "month") {
+      refreshMonthSummary({ silent: true });
+    }
+  }
+
+  async function refreshMonthSummary(options = {}) {
+    if (!adminToken()) {
+      state.monthSummary = null;
+      renderMonthCalendar();
+      return false;
+    }
+    state.monthSummaryLoading = true;
+    renderMonthCalendar();
+    try {
+      const data = await apiRequest("month_summary", { date: state.activeDate });
+      state.monthSummary = data.monthSummary || null;
+      if (data.serverTime) {
+        el.lastScan.textContent = formatDateTime(data.serverTime);
+      }
+      state.monthSummaryLoading = false;
+      renderMonthCalendar();
+      return true;
+    } catch (error) {
+      state.monthSummaryLoading = false;
+      if (!options.silent) showToast(error.message || "월간 요약 조회 실패");
+      renderMonthCalendar();
+      return false;
+    }
   }
 
   function updateActiveNav() {
@@ -236,6 +301,9 @@
       applyApiData(data);
       setApiState("ready", data.mode === "db-live-queue" ? "DB 큐" : "DB 테스트", "DB API 연결됨");
       renderAll();
+      if (state.scheduleView === "month") {
+        refreshMonthSummary({ silent: true });
+      }
       return true;
     } catch (error) {
       setApiState("warn", "로컬 초안", error.message || "DB API 연결 실패");
@@ -331,48 +399,79 @@
   }
 
   function renderSchedule() {
+    updateScheduleViewControls();
+    if (state.scheduleView === "month") {
+      el.scheduleWrap.hidden = true;
+      el.monthWrap.hidden = false;
+      el.priceReference.hidden = true;
+      el.scheduleTimeNav.hidden = true;
+      renderMonthCalendar();
+      return;
+    }
+    el.scheduleWrap.hidden = false;
+    el.monthWrap.hidden = true;
+    el.priceReference.hidden = false;
+    renderDaySchedule();
+  }
+
+  function renderDaySchedule() {
     const visibleRooms = state.roomFilter === "all" ? rooms : [state.roomFilter];
-    el.scheduleGrid.innerHTML = "";
-    el.scheduleGrid.style.gridTemplateColumns = `var(--schedule-room-col) repeat(${hours.length}, minmax(0, 1fr))`;
-    el.scheduleGrid.style.gridTemplateRows = `repeat(${visibleRooms.length + 1}, minmax(40px, auto))`;
+    renderScheduleGrid(el.scheduleGrid, state.activeDate, state.drafts, visibleRooms, {
+      slotMode: "create",
+      showNow: true,
+    });
+    updateCurrentTimeNavigator();
+  }
+
+  function renderScheduleGrid(grid, date, events, visibleRooms, options = {}) {
+    const roomList = visibleRooms && visibleRooms.length ? visibleRooms : rooms;
+    const scheduleEvents = Array.isArray(events) ? events : [];
+    grid.innerHTML = "";
+    grid.style.gridTemplateColumns = `var(--schedule-room-col) repeat(${hours.length}, minmax(0, 1fr))`;
+    grid.style.gridTemplateRows = `repeat(${roomList.length + 1}, minmax(40px, auto))`;
 
     const corner = cell("", "header");
     placeGridItem(corner, 1, 1);
-    el.scheduleGrid.appendChild(corner);
+    grid.appendChild(corner);
     hours.forEach((hour) => {
       const headerCell = cell(scheduleHourLabel(hour), "header");
-      headerCell.classList.add(timeBandClass(hour), timeBandWeekendClass());
+      headerCell.classList.add(timeBandClassForDate(date, hour), timeBandWeekendClassForDate(date));
       headerCell.title = formatHour(hour);
       placeGridItem(headerCell, 1, hour + 2);
-      el.scheduleGrid.appendChild(headerCell);
+      grid.appendChild(headerCell);
     });
 
-    visibleRooms.forEach((room, roomIndex) => {
+    roomList.forEach((room, roomIndex) => {
       const rowIndex = roomIndex + 2;
       const roomCell = cell(`${room}홀`, "room");
       placeGridItem(roomCell, rowIndex, 1);
-      el.scheduleGrid.appendChild(roomCell);
+      grid.appendChild(roomCell);
       hours.forEach((hour) => {
         const slot = cell("", "slot");
-        slot.classList.add(timeBandClass(hour), timeBandWeekendClass());
+        slot.classList.add(timeBandClassForDate(date, hour), timeBandWeekendClassForDate(date));
+        if (options.slotMode !== "create") {
+          slot.classList.add("readonly-slot");
+        }
         slot.dataset.room = room;
         slot.dataset.hour = String(hour);
         placeGridItem(slot, rowIndex, hour + 2);
-        const events = eventsForSlot(room, hour);
-        if (events.length) {
+        const slotEvents = eventsForSlotInList(scheduleEvents, date, room, hour);
+        if (slotEvents.length) {
           slot.classList.add("has-event");
-          slot.title = eventTitle(events[0]);
+          slot.title = eventTitle(slotEvents[0]);
         }
         slot.addEventListener("click", () => {
-          if (events.length) {
-            openEventDetailModal(events, `${room}홀 ${formatHour(hour)} 기준`);
+          if (slotEvents.length) {
+            openEventDetailModal(slotEvents, `${room}홀 ${formatHour(hour)} 기준`);
             return;
           }
-          selectSlot(room, hour);
+          if (options.slotMode === "create") {
+            selectSlot(room, hour);
+          }
         });
-        el.scheduleGrid.appendChild(slot);
+        grid.appendChild(slot);
       });
-      eventsStartingForRoom(room).forEach((event) => {
+      eventsStartingForRoomInList(scheduleEvents, date, room).forEach((event) => {
         const block = document.createElement("div");
         block.className = `event-block ${sourceClass(event.source)}`;
         block.innerHTML = eventBlockHtml(event);
@@ -384,10 +483,128 @@
         });
         block.style.gridColumn = `${event.start + 2} / ${event.end + 2}`;
         block.style.gridRow = String(rowIndex);
-        el.scheduleGrid.appendChild(block);
+        grid.appendChild(block);
       });
     });
-    updateCurrentTimeNavigator();
+  }
+
+  function renderMonthCalendar() {
+    if (!el.monthCalendar) return;
+    if (state.scheduleView !== "month") return;
+
+    const monthKey = selectedMonthKey();
+    if (state.monthSummary?.month !== monthKey) {
+      if (state.monthSummaryLoading) {
+        el.monthCalendar.innerHTML = '<p class="empty-note month-note">월간 요약을 불러오는 중입니다.</p>';
+      } else {
+        el.monthCalendar.innerHTML = '<p class="empty-note month-note">월간 요약 조회가 필요합니다.</p>';
+      }
+      return;
+    }
+
+    const summary = state.monthSummary;
+    const dayMap = new Map((summary.days || []).map((day) => [day.date, day]));
+    const firstDate = new Date(`${monthKey}-01T00:00:00+09:00`);
+    const daysInMonth = new Date(firstDate.getFullYear(), firstDate.getMonth() + 1, 0).getDate();
+    const leading = firstDate.getDay();
+    const totalCells = Math.ceil((leading + daysInMonth) / 7) * 7;
+    const fragment = document.createDocumentFragment();
+
+    ["일", "월", "화", "수", "목", "금", "토"].forEach((label, index) => {
+      const head = document.createElement("div");
+      head.className = `month-weekday ${index === 0 ? "sunday" : ""} ${index === 6 ? "saturday" : ""}`;
+      head.textContent = label;
+      fragment.appendChild(head);
+    });
+
+    for (let index = 0; index < totalCells; index += 1) {
+      const dayNumber = index - leading + 1;
+      if (dayNumber < 1 || dayNumber > daysInMonth) {
+        const empty = document.createElement("div");
+        empty.className = "month-day empty";
+        fragment.appendChild(empty);
+        continue;
+      }
+      const date = `${monthKey}-${pad2(dayNumber)}`;
+      const day = dayMap.get(date) || emptyMonthDay(date);
+      fragment.appendChild(monthDayButton(date, day));
+    }
+
+    el.monthCalendar.innerHTML = "";
+    el.monthCalendar.appendChild(fragment);
+  }
+
+  function monthDayButton(date, day) {
+    const button = document.createElement("button");
+    const weekday = new Date(`${date}T00:00:00+09:00`).getDay();
+    const roomCount = monthDayRoomCount(day);
+    const filteredOut = state.roomFilter !== "all" && roomCount === 0;
+    button.type = "button";
+    button.className = [
+      "month-day",
+      date === state.activeDate ? "selected" : "",
+      date === today() ? "today" : "",
+      weekday === 0 ? "sunday" : "",
+      weekday === 6 ? "saturday" : "",
+      filteredOut ? "filtered-out" : "",
+    ].filter(Boolean).join(" ");
+    button.draggable = false;
+    button.dataset.date = date;
+    button.innerHTML = `
+      <span class="month-day-head">
+        <strong>${Number(day.day || date.slice(-2))}</strong>
+        <small>${escapeHtml(weekdayShortText(date))}</small>
+      </span>
+      <span class="month-day-revenue">${escapeHtml(formatRevenueStat(monthDayRevenue(day)))}</span>
+      <span class="month-day-meta">${monthDayCount(day)}건${monthDayMissing(day) ? ` · 미수집 ${monthDayMissing(day)}` : ""}</span>
+      ${monthRoomSummaryHtml(day)}
+    `;
+    button.title = `${date} ${monthDayCount(day)}건 / ${formatRevenueStat(monthDayRevenue(day))}`;
+    button.addEventListener("click", () => openDayScheduleModal(date));
+    return button;
+  }
+
+  function emptyMonthDay(date) {
+    return {
+      date,
+      day: Number(date.slice(-2)),
+      count: 0,
+      revenue: 0,
+      missingCount: 0,
+      rooms: {},
+    };
+  }
+
+  function monthDayCount(day) {
+    return Number(day.count || 0);
+  }
+
+  function monthDayRevenue(day) {
+    if (state.roomFilter === "all") return Number(day.revenue || 0);
+    return Number(day.revenue || 0);
+  }
+
+  function monthDayMissing(day) {
+    return Number(day.missingCount || 0);
+  }
+
+  function monthDayRoomCount(day) {
+    if (state.roomFilter === "all") return Number(day.count || 0);
+    return Number(day.rooms?.[state.roomFilter] || 0);
+  }
+
+  function monthRoomSummaryHtml(day) {
+    const entries = state.roomFilter === "all"
+      ? rooms
+        .map((room) => [room, Number(day.rooms?.[room] || 0)])
+        .filter(([, count]) => count > 0)
+      : [[state.roomFilter, Number(day.rooms?.[state.roomFilter] || 0)]].filter(([, count]) => count > 0);
+    if (!entries.length) return '<span class="month-room-list empty">예약 없음</span>';
+    return `
+      <span class="month-room-list">
+        ${entries.map(([room, count]) => `<i class="room-dot room-${escapeHtml(room.toLowerCase())}">${escapeHtml(room)} ${count}</i>`).join("")}
+      </span>
+    `;
   }
 
   function updateCurrentTimeNavigator() {
@@ -463,18 +680,32 @@
   function renderStatus() {
     const todays = state.drafts.filter((item) => item.date === state.activeDate);
     el.todayCount.textContent = String(todays.length);
-    const revenue = todays.reduce((total, item) => total + parsePaymentAmount(item.price), 0);
-    const missing = todays.filter((item) => !parsePaymentAmount(item.price)).length;
+    const revenue = todays.reduce((total, item) => total + eventGrossAmount(item), 0);
+    const netRevenue = todays.reduce((total, item) => total + eventNetAmount(item), 0);
+    const feeRevenue = todays.reduce((total, item) => total + eventFeeAmount(item), 0);
+    const missing = todays.filter((item) => !eventGrossAmount(item)).length;
     el.dayRevenue.textContent = revenue > 0 ? `${revenue.toLocaleString()}원` : "-";
-    el.dayRevenue.title = missing ? `금액 미수집 ${missing}건` : "수집된 결제금액 합계";
+    el.dayRevenue.title = amountSummaryTitle("예약매출", revenue, netRevenue, feeRevenue, missing);
     const selectedMonth = revenueSelectedMonth();
     el.monthRevenue.textContent = formatRevenueStat(selectedMonth?.total);
     el.monthRevenue.title = selectedMonth
-      ? `확정 ${selectedMonth.confirmedCount || 0}건 / 금액 미수집 ${selectedMonth.missingCount || 0}건`
+      ? amountSummaryTitle(
+        `${selectedMonth.confirmedCount || 0}건`,
+        selectedMonth.total,
+        selectedMonth.netTotal,
+        selectedMonth.feeTotal,
+        selectedMonth.missingCount,
+      )
       : "선택월 원장 수익 합계";
     el.yearRevenue.textContent = formatRevenueStat(state.revenueStats?.yearTotal);
     el.yearRevenue.title = state.revenueStats
-      ? `확정 ${state.revenueStats.yearConfirmedCount || 0}건 / 금액 미수집 ${state.revenueStats.yearMissingCount || 0}건`
+      ? amountSummaryTitle(
+        `${state.revenueStats.yearConfirmedCount || 0}건`,
+        state.revenueStats.yearTotal,
+        state.revenueStats.yearNetTotal,
+        state.revenueStats.yearFeeTotal,
+        state.revenueStats.yearMissingCount,
+      )
       : "선택연도 원장 수익 합계";
     el.pendingCount.textContent = String(state.drafts.filter((item) => item.status === "pending").length);
   }
@@ -587,9 +818,9 @@
     openReservationModal();
   }
 
-  function eventsForSlot(room, hour) {
-    return state.drafts.filter((item) => (
-      item.date === state.activeDate &&
+  function eventsForSlotInList(events, date, room, hour) {
+    return events.filter((item) => (
+      item.date === date &&
       item.room === room &&
       item.status !== "canceled" &&
       hour >= item.start &&
@@ -597,10 +828,10 @@
     ));
   }
 
-  function eventsStartingForRoom(room) {
-    return state.drafts
+  function eventsStartingForRoomInList(events, date, room) {
+    return events
       .filter((item) => (
-        item.date === state.activeDate &&
+        item.date === date &&
         item.room === room &&
         item.status !== "canceled" &&
         Number.isFinite(item.start) &&
@@ -610,8 +841,16 @@
       .sort((a, b) => a.start - b.start || a.end - b.end);
   }
 
+  function eventsForSlot(room, hour) {
+    return eventsForSlotInList(state.drafts, state.activeDate, room, hour);
+  }
+
+  function eventsStartingForRoom(room) {
+    return eventsStartingForRoomInList(state.drafts, state.activeDate, room);
+  }
+
   function eventTitle(event) {
-    const payment = formatPayment(event.price);
+    const payment = formatPayment(eventGrossAmount(event));
     const source = event.sourceLabel || sourceText(event.source);
     return [
       `${event.name || "예약"} ${formatHour(event.start)}-${formatHour(event.end)}`,
@@ -621,7 +860,7 @@
   }
 
   function eventBlockHtml(event) {
-    const payment = formatPayment(event.price);
+    const payment = formatPayment(eventGrossAmount(event));
     return `
       <span class="event-main">${escapeHtml(event.name || "예약")} · ${formatHour(event.start)}-${formatHour(event.end)}</span>
       <span class="event-meta">
@@ -638,7 +877,11 @@
       ["원천", event.sourceLabel || sourceText(event.source)],
       ["예약번호", event.reservationNo || ""],
       ["상품", event.product || ""],
-      ["결제금액", formatPayment(event.price) || ""],
+      ["예약매출", formatPayment(eventGrossAmount(event)) || ""],
+      ["정산입금", formatPayment(eventNetAmount(event)) || ""],
+      ["수수료", formatPayment(eventFeeAmount(event)) || ""],
+      ["결제수단", event.paymentMethod || ""],
+      ["금액출처", amountSourceText(event.amountSource) || ""],
       ["결제상태", event.paymentStatus || ""],
       ["네이버", platformText(event.naver)],
       ["스페이스클라우드", platformText(event.spacecloud)],
@@ -726,13 +969,21 @@
   }
 
   function timeBandClass(hour) {
+    return timeBandClassForDate(state.activeDate, hour);
+  }
+
+  function timeBandClassForDate(date, hour) {
     if (hour >= 0 && hour < 6) return "time-dawn";
-    if (!isWeekendOrHolidayDate(state.activeDate) && hour < 16) return "time-before";
+    if (!isWeekendOrHolidayDate(date) && hour < 16) return "time-before";
     return "time-after";
   }
 
   function timeBandWeekendClass() {
-    return isWeekendOrHolidayDate(state.activeDate) ? "holiday-pricing" : "weekday-pricing";
+    return timeBandWeekendClassForDate(state.activeDate);
+  }
+
+  function timeBandWeekendClassForDate(date) {
+    return isWeekendOrHolidayDate(date) ? "holiday-pricing" : "weekday-pricing";
   }
 
   function isWeekendOrHolidayDate(dateText) {
@@ -758,7 +1009,7 @@
   }
 
   function paymentSuffix(task) {
-    const payment = formatPayment(task.price);
+    const payment = formatPayment(eventGrossAmount(task));
     if (!payment) return ' · <span class="payment-missing">금액 미수집</span>';
     return ` · <span class="payment-amount">${escapeHtml(payment)}</span>`;
   }
@@ -774,6 +1025,41 @@
     const text = String(value || "").trim();
     if (!text || text === "N/A") return "";
     return text;
+  }
+
+  function eventGrossAmount(event) {
+    const amount = Number(event?.grossAmount || 0);
+    return amount > 0 ? amount : parsePaymentAmount(event?.price);
+  }
+
+  function eventNetAmount(event) {
+    return Number(event?.netAmount || 0);
+  }
+
+  function eventFeeAmount(event) {
+    return Number(event?.feeAmount || 0);
+  }
+
+  function amountSummaryTitle(label, gross, net, fee, missing) {
+    const parts = [`${label} ${formatRevenueStat(gross)}`];
+    if (Number(net || 0) > 0) parts.push(`정산입금 ${formatRevenueStat(net)}`);
+    if (Number(fee || 0) > 0) parts.push(`수수료 ${formatRevenueStat(fee)}`);
+    if (Number(missing || 0) > 0) parts.push(`금액 미수집 ${Number(missing).toLocaleString()}건`);
+    return parts.join(" / ");
+  }
+
+  function amountSourceText(value) {
+    return {
+      naver_email: "네이버 이메일",
+      naver_export: "네이버 내보내기",
+      "naver-platform-export": "네이버 내보내기",
+      spacecloud_email: "스페이스클라우드 이메일",
+      spacecloud_settlement: "스페이스클라우드 정산",
+      "spacecloud-settlement-api": "스페이스클라우드 정산",
+      "google-calendar-backfill": "구글 캘린더 백필",
+      "visible-site-price": "사이트 화면 수집",
+      admin_anchor: "관리자 입력",
+    }[String(value || "")] || value || "";
   }
 
   function formatWon(amount) {
@@ -802,9 +1088,17 @@
 
   function moveDay(delta) {
     const date = new Date(`${state.activeDate}T00:00:00`);
-    date.setDate(date.getDate() + delta);
+    if (state.scheduleView === "month") {
+      date.setMonth(date.getMonth() + delta);
+      date.setDate(1);
+    } else {
+      date.setDate(date.getDate() + delta);
+    }
     state.activeDate = toDateInputValue(date);
     el.activeDate.value = state.activeDate;
+    if (state.scheduleView === "month") {
+      state.monthSummary = null;
+    }
     renderAll();
     refreshFromApi({ silent: true });
   }
@@ -814,6 +1108,9 @@
     if (state.activeDate === nextDate) return;
     state.activeDate = nextDate;
     el.activeDate.value = state.activeDate;
+    if (state.scheduleView === "month") {
+      state.monthSummary = null;
+    }
     renderAll();
     refreshFromApi({ silent: true });
   }
@@ -827,14 +1124,35 @@
     }
   }
 
+  function updateScheduleViewControls() {
+    if (el.dayViewButton) {
+      el.dayViewButton.classList.toggle("active", state.scheduleView === "day");
+      el.dayViewButton.setAttribute("aria-selected", state.scheduleView === "day" ? "true" : "false");
+    }
+    if (el.monthViewButton) {
+      el.monthViewButton.classList.toggle("active", state.scheduleView === "month");
+      el.monthViewButton.setAttribute("aria-selected", state.scheduleView === "month" ? "true" : "false");
+    }
+  }
+
   function weekdayText(dateText) {
     const date = new Date(`${dateText}T00:00:00+09:00`);
     if (Number.isNaN(date.getTime())) return "";
     return new Intl.DateTimeFormat("ko-KR", { weekday: "long" }).format(date);
   }
 
+  function weekdayShortText(dateText) {
+    const date = new Date(`${dateText}T00:00:00+09:00`);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("ko-KR", { weekday: "short" }).format(date).replace("요일", "");
+  }
+
+  function selectedMonthKey() {
+    return String(state.activeDate || "").slice(0, 7);
+  }
+
   function revenueSelectedMonth() {
-    const monthKey = String(state.activeDate || "").slice(0, 7);
+    const monthKey = selectedMonthKey();
     return (state.revenueStats?.months || []).find((item) => item.month === monthKey) || null;
   }
 
@@ -897,7 +1215,10 @@
             ${months.map((item) => `
               <tr class="${item.month === selectedMonthKey ? "active" : ""}">
                 <th>${escapeHtml(formatMonthLabel(item.month))}</th>
-                <td>${escapeHtml(formatRevenueStat(item.total))}</td>
+                <td>
+                  <strong>${escapeHtml(formatRevenueStat(item.total))}</strong>
+                  ${amountBreakdownSmall(item)}
+                </td>
                 <td>${Number(item.confirmedCount || 0).toLocaleString()}건</td>
                 <td>${escapeHtml(formatRevenueStat(item.dayAverage))}</td>
                 <td>${escapeHtml(formatRevenueStat(item.weekendAverage))}</td>
@@ -932,10 +1253,12 @@
                 <td>
                   <strong>${escapeHtml(formatRevenueStat(row.year2025?.total))}</strong>
                   <small>${Number(row.year2025?.confirmedCount || 0).toLocaleString()}건 · 건당 ${escapeHtml(formatRevenueStat(row.year2025?.bookingAverage))}</small>
+                  ${amountBreakdownSmall(row.year2025)}
                 </td>
                 <td>
                   <strong>${escapeHtml(formatRevenueStat(row.year2026?.total))}</strong>
                   <small>${Number(row.year2026?.confirmedCount || 0).toLocaleString()}건 · 건당 ${escapeHtml(formatRevenueStat(row.year2026?.bookingAverage))}</small>
+                  ${amountBreakdownSmall(row.year2026)}
                 </td>
                 <td class="${signedClass(row.revenueDiff)}">
                   ${escapeHtml(formatSignedWon(row.revenueDiff))}
@@ -979,6 +1302,7 @@
               <span>${escapeHtml(String(item.year))}년</span>
               <strong>${escapeHtml(formatRevenueStat(item.total))}</strong>
               <small>${Number(item.confirmedCount || 0).toLocaleString()}건 · ${formatHours(item.hours)} · 시간당 ${escapeHtml(formatRevenueStat(item.hourAverage))}</small>
+              ${amountBreakdownSmall(item)}
             </article>
           `).join("")}
         </div>
@@ -1049,6 +1373,14 @@
         </div>
       </article>
     `;
+  }
+
+  function amountBreakdownSmall(item) {
+    if (!item) return "";
+    const net = Number(item.netTotal || 0);
+    const fee = Number(item.feeTotal || 0);
+    if (!net && !fee) return "";
+    return `<small>정산 ${escapeHtml(formatRevenueStat(net))}${fee ? ` · 수수료 ${escapeHtml(formatRevenueStat(fee))}` : ""}</small>`;
   }
 
   function impactRowHtml(row) {
@@ -1150,8 +1482,39 @@
     updateModalOpenState();
   }
 
+  async function openDayScheduleModal(date) {
+    state.dayModalDate = date;
+    const visibleRooms = state.roomFilter === "all" ? rooms : [state.roomFilter];
+    let events = date === state.activeDate ? state.drafts : [];
+    if (date !== state.activeDate && adminToken()) {
+      try {
+        const data = await apiRequest("day_reservations", { date });
+        events = (data.reservations || []).map(reservationItemFromApi);
+      } catch (error) {
+        showToast(error.message || "일간 일정 조회 실패");
+      }
+    }
+    state.dayModalEvents = events;
+    const revenue = events.reduce((total, item) => total + eventGrossAmount(item), 0);
+    const missing = events.filter((item) => !eventGrossAmount(item)).length;
+    el.dayScheduleTitle.textContent = `${date} ${weekdayText(date)} 일간 일정`;
+    el.dayScheduleSummary.textContent = `${events.length}건 · ${revenue > 0 ? formatWon(revenue) : "금액 없음"}${missing ? ` · 금액 미수집 ${missing}건` : ""}`;
+    renderScheduleGrid(el.dayScheduleGrid, date, events, visibleRooms, { slotMode: "view" });
+    el.dayScheduleModal.hidden = false;
+    document.body.classList.add("modal-open");
+    window.setTimeout(() => {
+      el.doneDayScheduleModal.focus();
+    }, 0);
+  }
+
+  function closeDayScheduleModal() {
+    el.dayScheduleModal.hidden = true;
+    updateModalOpenState();
+  }
+
   function openEventDetailModal(events, summary) {
-    el.eventDetailSummary.textContent = `${state.activeDate} ${summary}`;
+    const detailDate = events?.[0]?.date || state.dayModalDate || state.activeDate;
+    el.eventDetailSummary.textContent = `${detailDate} ${summary}`;
     el.eventDetailList.innerHTML = events.map(eventDetailCardHtml).join("");
     el.eventDetailModal.hidden = false;
     document.body.classList.add("modal-open");
@@ -1185,7 +1548,7 @@
   function updateModalOpenState() {
     document.body.classList.toggle(
       "modal-open",
-      !el.reservationModal.hidden || !el.eventDetailModal.hidden || !el.revenueModal.hidden,
+      !el.reservationModal.hidden || !el.dayScheduleModal.hidden || !el.eventDetailModal.hidden || !el.revenueModal.hidden,
     );
   }
 
@@ -1194,6 +1557,35 @@
     const start = Number(el.startInput.value || 19);
     const end = Number(el.endInput.value || Math.min(24, start + 1));
     el.modalSlotSummary.textContent = `${state.activeDate} ${room}홀 ${formatHour(start)}-${formatHour(end)}`;
+  }
+
+  function reservationItemFromApi(item) {
+    return {
+      id: `db-${item.id}`,
+      dbId: item.id,
+      createdAt: item.createdAt,
+      date: item.date,
+      room: item.room,
+      start: Number(item.startHour),
+      end: Number(item.endHour),
+      name: item.name,
+      phone: item.phoneMasked || "",
+      memo: item.memo || "",
+      source: item.source || "",
+      sourceLabel: item.sourceLabel || "",
+      reservationNo: item.reservationNo || "",
+      product: item.product || "",
+      paymentStatus: item.paymentStatus || "",
+      price: item.price || "",
+      grossAmount: Number(item.grossAmount || 0),
+      netAmount: Number(item.netAmount || 0),
+      feeAmount: Number(item.feeAmount || 0),
+      amountSource: item.amountSource || "",
+      paymentMethod: item.paymentMethod || "",
+      status: item.status || "pending",
+      naver: item.naverStatus || "pending",
+      spacecloud: item.spacecloudStatus || "pending",
+    };
   }
 
   function persistDrafts() {
@@ -1237,28 +1629,11 @@
 
     state.revenueStats = data.revenueStats || null;
     state.revenueComparison = data.revenueComparison || null;
+    if (state.monthSummary && state.monthSummary.month !== selectedMonthKey()) {
+      state.monthSummary = null;
+    }
 
-    state.drafts = (data.reservations || []).map((item) => ({
-      id: `db-${item.id}`,
-      dbId: item.id,
-      createdAt: item.createdAt,
-      date: item.date,
-      room: item.room,
-      start: Number(item.startHour),
-      end: Number(item.endHour),
-      name: item.name,
-      phone: item.phoneMasked || "",
-      memo: item.memo || "",
-      source: item.source || "",
-      sourceLabel: item.sourceLabel || "",
-      reservationNo: item.reservationNo || "",
-      product: item.product || "",
-      paymentStatus: item.paymentStatus || "",
-      price: item.price || "",
-      status: item.status || "pending",
-      naver: item.naverStatus || "pending",
-      spacecloud: item.spacecloudStatus || "pending",
-    }));
+    state.drafts = (data.reservations || []).map(reservationItemFromApi);
     state.tasks = annotateTaskRelations((data.tasks || []).map((item) => ({
       id: item.id,
       liveTaskId: item.liveTaskId || "",

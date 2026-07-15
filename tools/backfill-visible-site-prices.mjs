@@ -275,13 +275,33 @@ conn = pymysql.connect(
     cursorclass=pymysql.cursors.DictCursor,
 )
 changed = []
+
+def ensure_column(cur, table, column, definition):
+    cur.execute("SHOW TABLES LIKE %s", (table,))
+    if not cur.fetchone():
+        return
+    cur.execute("SHOW COLUMNS FROM " + table + " LIKE %s", (column,))
+    if cur.fetchone():
+        return
+    cur.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition)
+
 try:
     with conn.cursor() as cur:
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'gross_amount', 'INT UNSIGNED NULL AFTER price')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'fee_amount', 'INT UNSIGNED NULL AFTER gross_amount')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'net_amount', 'INT UNSIGNED NULL AFTER fee_amount')
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'amount_source', "VARCHAR(64) NOT NULL DEFAULT '' AFTER net_amount")
+        ensure_column(cur, 'rhythmjoy_booking_ledger', 'payment_method', "VARCHAR(64) NOT NULL DEFAULT '' AFTER amount_source")
         for item in updates:
             cur.execute("""
                 UPDATE rhythmjoy_booking_ledger
                 SET
                     price=%s,
+                    gross_amount=%s,
+                    amount_source=CASE
+                        WHEN amount_source IS NULL OR amount_source='' THEN 'visible-site-price'
+                        ELSE amount_source
+                    END,
                     payment_status=CASE
                         WHEN payment_status IS NULL OR payment_status='' THEN %s
                         ELSE payment_status
@@ -295,6 +315,7 @@ try:
                   AND (price IS NULL OR price='' OR price='N/A' OR price='0')
             """, (
                 item['price'],
+                int(item.get('priceAmount') or 0) or None,
                 item.get('paymentStatus') or '',
                 item.get('reservationNumber') or '',
                 item.get('reservationNumber') or '',
@@ -486,6 +507,7 @@ function buildUpdates(candidates, naverRows, spacecloudRows) {
         platform: 'naver',
         reservationNumber: reservationNo,
         price: site.price,
+        priceAmount: site.priceAmount || priceAmount(site.price),
         paymentStatus: '결제완료',
         match: 'reservation-number',
         date: candidate.reservation_date,
@@ -513,6 +535,7 @@ function buildUpdates(candidates, naverRows, spacecloudRows) {
       platform: 'spacecloud',
       reservationNumber: site.reservationNumber,
       price: site.price,
+      priceAmount: site.priceAmount || priceAmount(site.price),
       paymentStatus: site.status === '이용완료' ? '이용완료' : '예약완료',
       match: 'date-room-time',
       date: candidate.reservation_date,

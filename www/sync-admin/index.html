@@ -92,13 +92,19 @@
             <h2>일정표</h2>
             <p>방과 시간을 보면서 바로 입력할 수 있는 운영 화면입니다.</p>
           </div>
-          <div class="room-filter" role="tablist" aria-label="방 필터">
-            <button type="button" class="chip active" data-room-filter="all">전체</button>
-            <button type="button" class="chip" data-room-filter="A">A홀</button>
-            <button type="button" class="chip" data-room-filter="B">B홀</button>
-            <button type="button" class="chip" data-room-filter="C">C홀</button>
-            <button type="button" class="chip" data-room-filter="D">D홀</button>
-            <button type="button" class="chip" data-room-filter="E">E홀</button>
+          <div class="schedule-controls">
+            <div class="view-toggle" role="tablist" aria-label="일정 보기 방식">
+              <button type="button" class="chip active" id="dayViewButton" data-schedule-view="day">일간</button>
+              <button type="button" class="chip" id="monthViewButton" data-schedule-view="month">월간</button>
+            </div>
+            <div class="room-filter" role="tablist" aria-label="방 필터">
+              <button type="button" class="chip active" data-room-filter="all">전체</button>
+              <button type="button" class="chip" data-room-filter="A">A홀</button>
+              <button type="button" class="chip" data-room-filter="B">B홀</button>
+              <button type="button" class="chip" data-room-filter="C">C홀</button>
+              <button type="button" class="chip" data-room-filter="D">D홀</button>
+              <button type="button" class="chip" data-room-filter="E">E홀</button>
+            </div>
           </div>
         </div>
         <div class="schedule-wrap" id="scheduleWrap">
@@ -107,6 +113,9 @@
             <button type="button" class="secondary-button compact-button" id="scrollToNow">현재시간</button>
           </div>
           <div class="schedule-grid" id="scheduleGrid" aria-label="일정 그리드"></div>
+        </div>
+        <div class="month-wrap" id="monthWrap" hidden>
+          <div class="month-calendar" id="monthCalendar" aria-label="월간 일정표"></div>
         </div>
         <div class="price-reference" id="priceReference" aria-label="플랫폼별 가격 비교"></div>
       </section>
@@ -174,6 +183,26 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div class="modal-backdrop" id="dayScheduleModal" hidden>
+    <div class="modal-panel day-schedule-modal-panel" role="dialog" aria-modal="true" aria-labelledby="dayScheduleTitle" tabindex="-1">
+      <div class="modal-heading">
+        <div>
+          <h2 id="dayScheduleTitle">일간 일정</h2>
+          <p id="dayScheduleSummary">선택한 날짜의 예약 현황입니다.</p>
+        </div>
+        <button type="button" class="icon-button modal-close" id="closeDayScheduleModal" aria-label="일간 일정 닫기">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="schedule-wrap modal-schedule-wrap">
+          <div class="schedule-grid" id="dayScheduleGrid" aria-label="일간 일정 그리드"></div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="primary-button" id="doneDayScheduleModal">확인</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="modal-backdrop" id="eventDetailModal" hidden>

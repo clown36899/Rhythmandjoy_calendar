@@ -416,10 +416,28 @@ input[readonly] {
   font-size: 14px;
 }
 
+.schedule-controls {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.view-toggle,
 .room-filter {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.view-toggle {
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfa;
+}
+
+.view-toggle .chip {
+  min-height: 34px;
 }
 
 .chip {
@@ -589,6 +607,26 @@ input[readonly] {
 
 .grid-cell.slot:hover {
   background: #f5fbf9;
+}
+
+.grid-cell.slot.readonly-slot {
+  cursor: default;
+}
+
+.grid-cell.slot.readonly-slot:hover {
+  background: #fff;
+}
+
+.grid-cell.slot.readonly-slot.time-dawn:hover {
+  background: #e6f7ee;
+}
+
+.grid-cell.slot.readonly-slot.time-before:hover {
+  background: #fff1d8;
+}
+
+.grid-cell.slot.readonly-slot.time-after:hover {
+  background: #e2f1ff;
 }
 
 .grid-cell.slot.time-dawn:hover {
@@ -761,6 +799,193 @@ input[readonly] {
 .price-pair span:last-child {
   color: #6b4acb;
   font-weight: 900;
+}
+
+.month-wrap {
+  min-width: 0;
+}
+
+.month-wrap[hidden] {
+  display: none;
+}
+
+.month-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.month-note {
+  grid-column: 1 / -1;
+  padding: 28px;
+  background: #fff;
+}
+
+.month-weekday,
+.month-day {
+  min-width: 0;
+  border: 0;
+}
+
+.month-weekday {
+  display: grid;
+  place-items: center;
+  min-height: 36px;
+  background: #f2f6f5;
+  color: #45524f;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.month-weekday.sunday {
+  color: var(--danger);
+}
+
+.month-weekday.saturday {
+  color: #1f6feb;
+}
+
+.month-day {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 116px;
+  padding: 10px;
+  background: #fff;
+  color: var(--text);
+  text-align: left;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  cursor: pointer;
+  user-select: none;
+}
+
+.month-day.empty {
+  background: #f8fbfa;
+  cursor: default;
+}
+
+.month-day:not(.empty):hover {
+  background: #f3fbf8;
+}
+
+.month-day.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: #f1fbf7;
+}
+
+.month-day.today .month-day-head strong {
+  background: var(--danger);
+  color: #fff;
+}
+
+.month-day.filtered-out {
+  opacity: 0.48;
+}
+
+.month-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.month-day-head strong {
+  display: grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.month-day-head small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.month-day.sunday .month-day-head small {
+  color: var(--danger);
+}
+
+.month-day.saturday .month-day-head small {
+  color: #1f6feb;
+}
+
+.month-day-revenue {
+  min-width: 0;
+  overflow: hidden;
+  color: #0b5f4e;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.month-day-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.month-room-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.month-room-list.empty {
+  color: #9aa5a1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.room-dot {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  border-radius: 999px;
+  padding: 0 7px;
+  background: #edf2f5;
+  color: #34424a;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.room-dot.room-a {
+  background: #fff3c8;
+  color: #74520a;
+}
+
+.room-dot.room-b {
+  background: #e3f2ff;
+  color: #155f91;
+}
+
+.room-dot.room-c {
+  background: #e2f4f5;
+  color: #28656a;
+}
+
+.room-dot.room-d {
+  background: #e8f3e5;
+  color: #3b6531;
+}
+
+.room-dot.room-e {
+  background: #e8eaec;
+  color: #34383b;
 }
 
 .two-column {
@@ -1194,6 +1419,14 @@ body.modal-open {
 
 .revenue-modal-panel {
   width: min(1280px, 100%);
+}
+
+.day-schedule-modal-panel {
+  width: min(1480px, 100%);
+}
+
+.modal-schedule-wrap {
+  min-height: 280px;
 }
 
 .revenue-list {
@@ -1868,6 +2101,10 @@ body.modal-open {
     display: grid;
   }
 
+  .schedule-controls {
+    justify-items: stretch;
+  }
+
   .status-strip,
   .two-column,
   .auth-box,
@@ -1939,6 +2176,32 @@ body.modal-open {
   .room-filter {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .view-toggle {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .month-day {
+    min-height: 94px;
+    padding: 7px;
+    gap: 4px;
+  }
+
+  .month-day-revenue {
+    font-size: 13px;
+  }
+
+  .month-day-meta,
+  .month-room-list.empty {
+    font-size: 10px;
+  }
+
+  .room-dot {
+    min-height: 17px;
+    padding: 0 5px;
+    font-size: 9px;
   }
 
   .conflict-flow,
