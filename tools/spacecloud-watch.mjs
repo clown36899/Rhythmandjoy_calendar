@@ -1684,6 +1684,22 @@ function compactTelegramText(text) {
   return `${normalized.slice(0, Math.max(0, limit - suffix.length))}${suffix}`;
 }
 
+function maskChatId(value) {
+  const text = String(value || '');
+  if (text.length <= 6) return '*'.repeat(text.length);
+  return `${text.slice(0, 3)}...${text.slice(-3)}`;
+}
+
+function telegramDeliverySummary(result) {
+  if (!result?.sent) return result?.reason || 'not-sent';
+  const parts = [];
+  if (result.messageId) parts.push(`message_id=${result.messageId}`);
+  if (result.chatId) parts.push(`chat=${maskChatId(result.chatId)}`);
+  if (result.chatType) parts.push(`type=${result.chatType}`);
+  if (result.chatName) parts.push(`name=${result.chatName}`);
+  return parts.join(' ') || 'accepted';
+}
+
 async function sendTelegram(args, text) {
   if (!args.telegram) return { sent: false, reason: 'disabled' };
   const message = compactTelegramText(text);
@@ -1709,11 +1725,31 @@ async function sendTelegram(args, text) {
       body: JSON.stringify({ chat_id: chatId, text: message }),
       signal: controller.signal,
     });
+    const body = await response.text().catch(() => '');
     if (!response.ok) {
-      const body = await response.text().catch(() => '');
       throw new Error(`telegram http ${response.status}: ${body.slice(0, 160)}`);
     }
-    return { sent: true, reason: '' };
+    let data = null;
+    try {
+      data = body ? JSON.parse(body) : null;
+    } catch {
+      data = null;
+    }
+    if (data && data.ok === false) {
+      throw new Error(`telegram api rejected: ${JSON.stringify(data).slice(0, 180)}`);
+    }
+    const messageResult = data?.result || {};
+    const chat = messageResult.chat || {};
+    const result = {
+      sent: true,
+      reason: '',
+      messageId: messageResult.message_id || null,
+      chatId: chat.id ? String(chat.id) : String(chatId),
+      chatType: chat.type || '',
+      chatName: chat.title || chat.username || [chat.first_name, chat.last_name].filter(Boolean).join(' ').trim() || '',
+    };
+    logLine(`telegram accepted: ${telegramDeliverySummary(result)}`);
+    return result;
   } finally {
     clearTimeout(timer);
   }
@@ -1739,7 +1775,7 @@ async function notifyWithCooldown(args, key, text, {
       textPreview: compactTelegramText(text).replace(/\s+/g, ' ').slice(0, 240),
     };
     await writeJson(args.notifyState, state);
-    if (result.sent) logLine(`telegram sent: ${key}`);
+    if (result.sent) logLine(`telegram sent: ${key} ${telegramDeliverySummary(result)}`);
     return result;
   } catch (error) {
     state[key] = {
