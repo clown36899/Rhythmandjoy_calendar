@@ -1169,7 +1169,10 @@
     el.revenueModal.hidden = false;
     document.body.classList.add("modal-open");
     window.setTimeout(() => {
-      el.doneRevenueModal.focus();
+      const body = el.revenueModal.querySelector(".modal-body");
+      const panel = el.revenueModal.querySelector(".modal-panel");
+      if (body) body.scrollTop = 0;
+      if (panel) panel.focus();
     }, 0);
   }
 
