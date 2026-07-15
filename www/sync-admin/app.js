@@ -327,6 +327,7 @@
     renderTasks();
     renderStatus();
     renderSessions();
+    if (!el.revenueModal.hidden) renderRevenueModal();
   }
 
   function renderSchedule() {
