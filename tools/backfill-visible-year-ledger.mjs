@@ -212,6 +212,15 @@ function to24Hour(ampm, hourValue, minuteValue) {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
+function inferNaverEndAmpm(startAmpm, startHourValue, endAmpm, endHourValue) {
+  if (endAmpm) return endAmpm;
+  const startHour = Number(startHourValue);
+  const endHour = Number(endHourValue);
+  if (startAmpm === '오전' && endHour === 12 && startHour < 12) return '오후';
+  if (startAmpm === '오전' && endHour < startHour) return '오후';
+  return startAmpm;
+}
+
 function parseNaverUseRange(useRange) {
   const match = String(useRange || '').match(/(\d{2,4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\([^)]*\)\s*(오전|오후)\s*(\d{1,2}):(\d{2})\s*~\s*(?:(오전|오후)\s*)?(\d{1,2}):(\d{2})/);
   if (!match) return null;
@@ -219,7 +228,8 @@ function parseNaverUseRange(useRange) {
   if (year < 100) year += 2000;
   const date = `${year}-${String(Number(match[2])).padStart(2, '0')}-${String(Number(match[3])).padStart(2, '0')}`;
   const startTime = `${to24Hour(match[4], match[5], match[6])}:00`;
-  const endTime = `${to24Hour(match[7] || match[4], match[8], match[9])}:00`;
+  const endAmpm = inferNaverEndAmpm(match[4], match[5], match[7], match[8]);
+  const endTime = `${to24Hour(endAmpm, match[8], match[9])}:00`;
   return { date, startTime, endTime };
 }
 
