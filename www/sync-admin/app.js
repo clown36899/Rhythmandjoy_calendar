@@ -853,37 +853,17 @@
       el.revenueMonthList.innerHTML = '<p class="empty-note">표시할 수익 통계가 없습니다.</p>';
       return;
     }
-    const monthlyHtml = months.map((item) => `
-      <article class="revenue-row ${item.month === selectedMonthKey ? "active" : ""}">
-        <div class="revenue-row-main">
-          <div class="revenue-row-head">
-            <div>
-              <strong>${escapeHtml(formatMonthLabel(item.month))}</strong>
-              <span>확정 ${Number(item.confirmedCount || 0).toLocaleString()}건 · 금액 미수집 ${Number(item.missingCount || 0).toLocaleString()}건</span>
-            </div>
-            <b>${escapeHtml(formatRevenueStat(item.total))}</b>
-          </div>
-          <dl class="revenue-metrics" aria-label="${escapeHtml(formatMonthLabel(item.month))} 상세 수익 통계">
-            ${revenueMetricHtml("일평균", item.dayAverage)}
-            ${revenueMetricHtml("평일평균", item.weekdayAverage)}
-            ${revenueMetricHtml("주말평균", item.weekendAverage)}
-            ${revenueMetricHtml("토요일평균", item.saturdayAverage)}
-            ${revenueMetricHtml("일요일평균", item.sundayAverage)}
-            ${revenueMetricHtml("건당평균", item.bookingAverage)}
-          </dl>
-        </div>
-      </article>
-    `).join("");
+    const monthlyHtml = comparison?.monthlyComparison?.length
+      ? monthlyComparisonHtml(comparison.monthlyComparison, selectedMonthKey)
+      : selectedYearMonthlyHtml(months, selectedMonthKey);
     el.revenueMonthList.innerHTML = `
       ${comparison ? revenueComparisonHtml(comparison) : ""}
       <section class="revenue-section">
         <div class="revenue-section-heading">
-          <h3>${escapeHtml(year)}년 월별 수익</h3>
-          <p>선택 연도 원장 기준 · 연총합 ${escapeHtml(formatRevenueStat(stats?.yearTotal))}</p>
+          <h3>월별 수익 비교</h3>
+          <p>2025년과 2026년을 같은 월 기준으로 압축 비교합니다. 선택 연도 ${escapeHtml(year)}년 연총합 ${escapeHtml(formatRevenueStat(stats?.yearTotal))}</p>
         </div>
-        <div class="revenue-list compact-list">
-          ${monthlyHtml || '<p class="empty-note">표시할 월별 수익 통계가 없습니다.</p>'}
-        </div>
+        ${monthlyHtml || '<p class="empty-note">표시할 월별 수익 통계가 없습니다.</p>'}
       </section>
     `;
   }
@@ -893,6 +873,82 @@
       <div>
         <dt>${escapeHtml(label)}</dt>
         <dd>${escapeHtml(formatRevenueStat(value))}</dd>
+      </div>
+    `;
+  }
+
+  function selectedYearMonthlyHtml(months, selectedMonthKey) {
+    if (!months.length) return "";
+    return `
+      <div class="monthly-compare-wrap">
+        <table class="monthly-compare-table">
+          <thead>
+            <tr>
+              <th>월</th>
+              <th>매출</th>
+              <th>예약</th>
+              <th>일평균</th>
+              <th>주말평균</th>
+              <th>건당평균</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${months.map((item) => `
+              <tr class="${item.month === selectedMonthKey ? "active" : ""}">
+                <th>${escapeHtml(formatMonthLabel(item.month))}</th>
+                <td>${escapeHtml(formatRevenueStat(item.total))}</td>
+                <td>${Number(item.confirmedCount || 0).toLocaleString()}건</td>
+                <td>${escapeHtml(formatRevenueStat(item.dayAverage))}</td>
+                <td>${escapeHtml(formatRevenueStat(item.weekendAverage))}</td>
+                <td>${escapeHtml(formatRevenueStat(item.bookingAverage))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function monthlyComparisonHtml(rows, selectedMonthKey) {
+    const selectedMonth = Number(String(selectedMonthKey || "").slice(5, 7));
+    return `
+      <div class="monthly-compare-wrap">
+        <table class="monthly-compare-table">
+          <thead>
+            <tr>
+              <th>월</th>
+              <th>2025</th>
+              <th>2026</th>
+              <th>매출 증감</th>
+              <th>예약수</th>
+              <th>건당평균</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr class="${Number(row.month || 0) === selectedMonth ? "active" : ""}">
+                <th>${escapeHtml(row.label || "")}</th>
+                <td>
+                  <strong>${escapeHtml(formatRevenueStat(row.year2025?.total))}</strong>
+                  <small>${Number(row.year2025?.confirmedCount || 0).toLocaleString()}건 · 건당 ${escapeHtml(formatRevenueStat(row.year2025?.bookingAverage))}</small>
+                </td>
+                <td>
+                  <strong>${escapeHtml(formatRevenueStat(row.year2026?.total))}</strong>
+                  <small>${Number(row.year2026?.confirmedCount || 0).toLocaleString()}건 · 건당 ${escapeHtml(formatRevenueStat(row.year2026?.bookingAverage))}</small>
+                </td>
+                <td class="${signedClass(row.revenueDiff)}">
+                  ${escapeHtml(formatSignedWon(row.revenueDiff))}
+                  <small>${escapeHtml(formatSignedPercent(row.revenueRate))}</small>
+                </td>
+                <td class="${signedClass(row.countDiff)}">
+                  ${escapeHtml(formatSignedCount(row.countDiff))}
+                  <small>${escapeHtml(formatSignedPercent(row.countRate))}</small>
+                </td>
+                <td class="${signedClass(row.bookingAverageDiff)}">${escapeHtml(formatSignedWon(row.bookingAverageDiff))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
       </div>
     `;
   }

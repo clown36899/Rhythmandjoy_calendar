@@ -647,6 +647,84 @@ function period_analysis_row($pdo, $key, $label, $base_start, $base_end, $next_s
     );
 }
 
+function collect_month_revenue_for_year($pdo, $year) {
+    $year = intval($year);
+    $start_date = sprintf('%04d-01-01', $year);
+    $end_date = sprintf('%04d-12-31', $year);
+    $by_month = array();
+    for ($month = 1; $month <= 12; $month += 1) {
+        $key = sprintf('%04d-%02d', $year, $month);
+        $by_month[$key] = empty_month_revenue($key);
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT DATE_FORMAT(reservation_date, '%Y-%m') AS month_key,
+               DAYOFWEEK(reservation_date) AS day_of_week,
+               price
+        FROM rhythmjoy_booking_ledger
+        WHERE reservation_date BETWEEN ? AND ?
+          AND current_status <> 'canceled'
+          AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+        ORDER BY reservation_date ASC, id ASC
+    ");
+    $stmt->execute(array($start_date, $end_date));
+    foreach ($stmt->fetchAll() as $row) {
+        $key = $row['month_key'];
+        if (!isset($by_month[$key])) {
+            $by_month[$key] = empty_month_revenue($key);
+        }
+        $amount = parse_price_amount($row['price']);
+        $by_month[$key]['confirmedCount'] += 1;
+        if ($amount > 0) {
+            $by_month[$key]['total'] += $amount;
+            $day_of_week = intval($row['day_of_week']);
+            if ($day_of_week === 1) {
+                $by_month[$key]['weekendTotal'] += $amount;
+                $by_month[$key]['sundayTotal'] += $amount;
+            } elseif ($day_of_week === 7) {
+                $by_month[$key]['weekendTotal'] += $amount;
+                $by_month[$key]['saturdayTotal'] += $amount;
+            } else {
+                $by_month[$key]['weekdayTotal'] += $amount;
+            }
+        } else {
+            $by_month[$key]['missingCount'] += 1;
+        }
+    }
+
+    $months = array();
+    foreach ($by_month as $month_row) {
+        $months[] = finalize_month_revenue($month_row);
+    }
+    return $months;
+}
+
+function monthly_comparison_stats($pdo) {
+    $base_months = collect_month_revenue_for_year($pdo, 2025);
+    $next_months = collect_month_revenue_for_year($pdo, 2026);
+    $rows = array();
+    for ($index = 0; $index < 12; $index += 1) {
+        $base = $base_months[$index];
+        $next = $next_months[$index];
+        $base_total = intval($base['total']);
+        $next_total = intval($next['total']);
+        $base_count = intval($base['confirmedCount']);
+        $next_count = intval($next['confirmedCount']);
+        $rows[] = array(
+            'month' => $index + 1,
+            'label' => sprintf('%d월', $index + 1),
+            'year2025' => $base,
+            'year2026' => $next,
+            'revenueDiff' => $next_total - $base_total,
+            'revenueRate' => percent_change($base_total, $next_total),
+            'countDiff' => $next_count - $base_count,
+            'countRate' => percent_change($base_count, $next_count),
+            'bookingAverageDiff' => intval($next['bookingAverage']) - intval($base['bookingAverage']),
+        );
+    }
+    return $rows;
+}
+
 function revenue_comparison_stats($pdo) {
     $years = array(2025, 2026);
     $rooms = array('a', 'b', 'c', 'd', 'e');
@@ -740,6 +818,7 @@ function revenue_comparison_stats($pdo) {
             period_analysis_row($pdo, 'firstHalf', '상반기', '2025-01-01', '2025-06-30', '2026-01-01', '2026-06-30'),
             period_analysis_row($pdo, 'secondHalfToDate', '하반기 현재일까지', '2025-07-01', $h2_base_end, '2026-07-01', $as_of),
         ),
+        'monthlyComparison' => monthly_comparison_stats($pdo),
         'pricePolicy' => array(
             'basis' => '네이버 기본가 기준. 스페이스클라우드는 플랫폼 수수료/표시가가 다를 수 있습니다.',
             'columns' => array(
