@@ -182,6 +182,12 @@ function normalizeTimeRange(event) {
   const rawEndTime = formatHourMinute(end);
   const notes = [];
 
+  if (endMinute % 60 !== 0 && endMinute % 60 >= 45) {
+    const roundedEnd = Math.min(24 * 60, Math.ceil(endMinute / 60) * 60);
+    notes.push(`normalized-end-${rawEndTime}-to-${formatSlotTime(roundedEnd)}`);
+    endMinute = roundedEnd;
+  }
+
   if (endDayDistance === 1 && endMinute === 0) {
     endMinute = 24 * 60;
   } else if (endDayDistance === 0 && endMinute === 23 * 60 + 59) {
@@ -321,11 +327,20 @@ function isExactOvernightMs(startMs, endMs) {
     && kstHour(endMs) === 6;
 }
 
+function dateTimeKeyToMs(dateKey, timeKey) {
+  const [year, month, day] = String(dateKey || '').split('-').map(Number);
+  const [rawHour, rawMinute] = String(timeKey || '00:00').split(':').map(Number);
+  if (![year, month, day, rawHour, rawMinute].every(Number.isFinite)) return NaN;
+  const hour = rawHour === 24 ? 0 : rawHour;
+  const dayOffset = rawHour === 24 ? 1 : 0;
+  return Date.UTC(year, month - 1, day + dayOffset, hour, rawMinute, 0) - KST_OFFSET_MS;
+}
+
 function calculateBackfillGuidePrice(event, normalized) {
   const roomKey = event.roomKey;
   const { roomPrice, source, year } = getPricingForDate(roomKey, normalized.date);
-  const startMs = Date.parse(event.start);
-  const endMs = Date.parse(event.end || event.start);
+  const startMs = dateTimeKeyToMs(normalized.date, normalized.startTime);
+  const endMs = dateTimeKeyToMs(normalized.date, normalized.endTime);
   if (!roomPrice || Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) {
     return { ok: false, guideAmount: 0, source };
   }
