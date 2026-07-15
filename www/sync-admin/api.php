@@ -383,6 +383,201 @@ function parse_price_amount($value) {
     return $digits === '' ? 0 : intval($digits);
 }
 
+function time_text_to_minutes($value, $is_end) {
+    $value = (string) $value;
+    if (!preg_match('/^(\d{2}):(\d{2})/', $value, $matches)) {
+        return $is_end ? 24 * 60 : 0;
+    }
+    $hour = intval($matches[1]);
+    $minute = intval($matches[2]);
+    if ($is_end && $hour === 0 && $minute === 0) {
+        return 24 * 60;
+    }
+    return $hour * 60 + $minute;
+}
+
+function room_label($room_key) {
+    return strtoupper((string) $room_key) . '홀';
+}
+
+function year_days($year) {
+    return intval(date('L', strtotime($year . '-01-01'))) === 1 ? 366 : 365;
+}
+
+function empty_year_revenue($year) {
+    $capacity = year_days($year) * 24;
+    return array(
+        'year' => intval($year),
+        'total' => 0,
+        'confirmedCount' => 0,
+        'missingCount' => 0,
+        'hours' => 0,
+        'capacityHours' => $capacity * 5,
+        'bookingAverage' => 0,
+        'hourAverage' => 0,
+        'occupancyRate' => 0,
+    );
+}
+
+function empty_room_year_revenue($year, $room_key) {
+    return array(
+        'year' => intval($year),
+        'room' => strtolower($room_key),
+        'roomLabel' => room_label($room_key),
+        'total' => 0,
+        'confirmedCount' => 0,
+        'missingCount' => 0,
+        'hours' => 0,
+        'capacityHours' => year_days($year) * 24,
+        'bookingAverage' => 0,
+        'hourAverage' => 0,
+        'occupancyRate' => 0,
+    );
+}
+
+function finalize_revenue_bucket($row) {
+    $hours = floatval($row['hours']);
+    $total = intval($row['total']);
+    $count = intval($row['confirmedCount']);
+    $priced_count = max(1, $count - intval($row['missingCount']));
+    $capacity = max(1, floatval($row['capacityHours']));
+    $row['hours'] = round($hours, 2);
+    $row['bookingAverage'] = intval(round($total / $priced_count));
+    $row['hourAverage'] = $hours > 0 ? intval(round($total / $hours)) : 0;
+    $row['occupancyRate'] = round(($hours / $capacity) * 100, 2);
+    return $row;
+}
+
+function price_policy_rows() {
+    $old = array(
+        'a' => array('before16' => 10000, 'after16' => 12000, 'overnight' => 30000),
+        'b' => array('before16' => 8000, 'after16' => 10000, 'overnight' => 20000),
+        'c' => array('before16' => 4000, 'after16' => 6000, 'overnight' => 15000),
+        'd' => array('before16' => 3000, 'after16' => 5000, 'overnight' => 15000),
+        'e' => array('before16' => 8000, 'after16' => 10000, 'overnight' => 20000),
+    );
+    $current = array(
+        'a' => array('before16' => 13000, 'after16' => 20000, 'overnight' => 30000),
+        'b' => array('before16' => 10000, 'after16' => 12000, 'overnight' => 20000),
+        'c' => array('before16' => 4000, 'after16' => 6000, 'overnight' => 15000),
+        'd' => array('before16' => 3000, 'after16' => 5000, 'overnight' => 15000),
+        'e' => array('before16' => 10000, 'after16' => 12000, 'overnight' => 20000),
+    );
+    $rows = array();
+    foreach (array('a', 'b', 'c', 'd', 'e') as $room) {
+        $items = array();
+        foreach (array('before16', 'after16', 'overnight') as $key) {
+            $before = intval($old[$room][$key]);
+            $after = intval($current[$room][$key]);
+            $items[$key] = array(
+                'before' => $before,
+                'after' => $after,
+                'diff' => $after - $before,
+                'rate' => $before > 0 ? round((($after - $before) / $before) * 100, 1) : 0,
+            );
+        }
+        $rows[] = array(
+            'room' => $room,
+            'roomLabel' => room_label($room),
+            'prices' => $items,
+        );
+    }
+    return $rows;
+}
+
+function revenue_comparison_stats($pdo) {
+    $years = array(2025, 2026);
+    $rooms = array('a', 'b', 'c', 'd', 'e');
+    $by_year = array();
+    $by_room = array();
+    foreach ($years as $year) {
+        $by_year[$year] = empty_year_revenue($year);
+        $by_room[$year] = array();
+        foreach ($rooms as $room) {
+            $by_room[$year][$room] = empty_room_year_revenue($year, $room);
+        }
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT YEAR(reservation_date) AS year_key,
+               room_key,
+               TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
+               TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
+               price
+        FROM rhythmjoy_booking_ledger
+        WHERE reservation_date BETWEEN '2025-01-01' AND '2026-12-31'
+          AND current_status <> 'canceled'
+          AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+        ORDER BY reservation_date ASC, start_time ASC, id ASC
+    ");
+    $stmt->execute();
+    foreach ($stmt->fetchAll() as $row) {
+        $year = intval($row['year_key']);
+        $room = strtolower((string) $row['room_key']);
+        if (!isset($by_year[$year]) || !isset($by_room[$year][$room])) {
+            continue;
+        }
+        $amount = parse_price_amount($row['price']);
+        $start = time_text_to_minutes($row['start_time_text'], false);
+        $end = time_text_to_minutes($row['end_time_text'], true);
+        $hours = max(0, ($end - $start) / 60);
+
+        $by_year[$year]['confirmedCount'] += 1;
+        $by_year[$year]['hours'] += $hours;
+        $by_room[$year][$room]['confirmedCount'] += 1;
+        $by_room[$year][$room]['hours'] += $hours;
+        if ($amount > 0) {
+            $by_year[$year]['total'] += $amount;
+            $by_room[$year][$room]['total'] += $amount;
+        } else {
+            $by_year[$year]['missingCount'] += 1;
+            $by_room[$year][$room]['missingCount'] += 1;
+        }
+    }
+
+    foreach ($years as $year) {
+        $by_year[$year] = finalize_revenue_bucket($by_year[$year]);
+        foreach ($rooms as $room) {
+            $by_room[$year][$room] = finalize_revenue_bucket($by_room[$year][$room]);
+        }
+    }
+
+    $room_compare = array();
+    foreach ($rooms as $room) {
+        $base = $by_room[2025][$room];
+        $next = $by_room[2026][$room];
+        $base_total = intval($base['total']);
+        $next_total = intval($next['total']);
+        $room_compare[] = array(
+            'room' => $room,
+            'roomLabel' => room_label($room),
+            'year2025' => $base,
+            'year2026' => $next,
+            'revenueDiff' => $next_total - $base_total,
+            'revenueRate' => $base_total > 0 ? round((($next_total - $base_total) / $base_total) * 100, 1) : 0,
+            'countDiff' => intval($next['confirmedCount']) - intval($base['confirmedCount']),
+            'hoursDiff' => round(floatval($next['hours']) - floatval($base['hours']), 2),
+            'occupancyDiff' => round(floatval($next['occupancyRate']) - floatval($base['occupancyRate']), 2),
+        );
+    }
+
+    return array(
+        'baseYear' => 2025,
+        'compareYear' => 2026,
+        'yearSummary' => array_values($by_year),
+        'roomComparison' => $room_compare,
+        'pricePolicy' => array(
+            'basis' => '네이버 기본가 기준. 스페이스클라우드는 플랫폼 수수료/표시가가 다를 수 있습니다.',
+            'columns' => array(
+                'before16' => '16시 이전',
+                'after16' => '16시 이후/주말',
+                'overnight' => '새벽 통대관',
+            ),
+            'rows' => price_policy_rows(),
+        ),
+    );
+}
+
 function empty_month_revenue($month) {
     $start = strtotime($month . '-01');
     $days = $start ? intval(date('t', $start)) : 0;
@@ -706,6 +901,7 @@ function bootstrap_payload($pdo, $date, $env) {
         'reservations' => reservation_rows($pdo, $date),
         'tasks' => recent_task_rows($pdo),
         'revenueStats' => revenue_stats($pdo, $date),
+        'revenueComparison' => revenue_comparison_stats($pdo),
     );
 }
 
