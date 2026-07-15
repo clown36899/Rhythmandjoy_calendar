@@ -31,6 +31,7 @@ const CALENDAR_BY_ROOM = {
 function usage() {
   return `Usage:
   node tools/backfill-visible-year-ledger.mjs run [options]
+  node tools/backfill-visible-year-ledger.mjs self-test
 
 Reads visible Naver SmartPlace and SpaceCloud reservation lists for one year,
 compares them with rhythmjoy_booking_ledger, and optionally backfills missing
@@ -118,7 +119,7 @@ function parseArgs(argv) {
     }
   }
 
-  if (!['run', 'help'].includes(args.command)) throw new Error(`Unknown command: ${args.command}`);
+  if (!['run', 'self-test', 'help'].includes(args.command)) throw new Error(`Unknown command: ${args.command}`);
   if (args.year < 2000 || args.year > 2100) throw new Error('--year must be a four digit year');
   return args;
 }
@@ -1161,10 +1162,41 @@ async function run(args) {
   return report;
 }
 
+function assertDeepEqual(actual, expected, label) {
+  const actualJson = JSON.stringify(actual);
+  const expectedJson = JSON.stringify(expected);
+  if (actualJson !== expectedJson) {
+    throw new Error(`${label}\nexpected: ${expectedJson}\nactual:   ${actualJson}`);
+  }
+}
+
+function runSelfTest() {
+  assertDeepEqual(
+    parseNaverUseRange('2026. 6. 18.(목) 오전 10:00~12:00'),
+    { date: '2026-06-18', startTime: '10:00:00', endTime: '12:00:00' },
+    'Naver implicit noon end range',
+  );
+  assertDeepEqual(
+    parseNaverUseRange('2026. 6. 18.(목) 오전 11:00~1:00'),
+    { date: '2026-06-18', startTime: '11:00:00', endTime: '13:00:00' },
+    'Naver implicit PM rollover range',
+  );
+  assertDeepEqual(
+    parseNaverUseRange('2026. 6. 18.(목) 오후 11:00~오후 11:59'),
+    { date: '2026-06-18', startTime: '23:00:00', endTime: '23:59:00' },
+    'Naver explicit PM late range',
+  );
+  console.log('self-test ok');
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   if (args.command === 'help') {
     console.log(usage());
+    return;
+  }
+  if (args.command === 'self-test') {
+    runSelfTest();
     return;
   }
   const report = await run(args);

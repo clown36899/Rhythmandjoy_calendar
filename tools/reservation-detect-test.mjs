@@ -236,6 +236,15 @@ function timeTokenToParts(hourRaw, minuteRaw, meridiemRaw = '') {
   return { hour, minute };
 }
 
+function inferEndMeridiem(startMeridiem, startHourRaw, endMeridiem, endHourRaw) {
+  if (endMeridiem) return endMeridiem;
+  const startHour = Number(startHourRaw);
+  const endHour = Number(endHourRaw);
+  if (startMeridiem === '오전' && endHour === 12 && startHour < 12) return '오후';
+  if (startMeridiem === '오전' && endHour < startHour) return '오후';
+  return startMeridiem;
+}
+
 function parseTimeRangeText(value) {
   const text = String(value || '');
   const matches = [...text.matchAll(/(?:^|[^\d])(오전|오후)?\s*(\d{1,2})(?::(\d{2}))?\s*[~\-–]\s*(오전|오후)?\s*(\d{1,2})(?::(\d{2}))?(?!\d)/g)];
@@ -252,7 +261,8 @@ function parseTimeRangeText(value) {
   });
   if (!match) return { startTime: '', endTime: '' };
   const start = timeTokenToParts(match[2], match[3], match[1]);
-  const end = timeTokenToParts(match[5], match[6], match[4] || match[1]);
+  const endMeridiem = inferEndMeridiem(match[1], match[2], match[4], match[5]);
+  const end = timeTokenToParts(match[5], match[6], endMeridiem);
   if (!start || !end) return { startTime: '', endTime: '' };
   return {
     startTime: timeToText(start.hour, start.minute),
@@ -1116,6 +1126,16 @@ function runSelfTest() {
     parseTimeRangeText('오후 1:00 ~ 오후 2:00'),
     { startTime: '13:00', endTime: '14:00' },
     'Korean PM range',
+  );
+  assertDeepEqual(
+    parseTimeRangeText('오전 10:00~12:00'),
+    { startTime: '10:00', endTime: '12:00' },
+    'Implicit noon end range',
+  );
+  assertDeepEqual(
+    parseTimeRangeText('오전 11:00~1:00'),
+    { startTime: '11:00', endTime: '13:00' },
+    'Implicit PM rollover range',
   );
   assertDeepEqual(
     parseTimeRangeText('2026-07-14'),
