@@ -485,6 +485,168 @@ function price_policy_rows() {
     return $rows;
 }
 
+function empty_period_bucket($key, $label) {
+    return array(
+        'key' => $key,
+        'label' => $label,
+        'total' => 0,
+        'confirmedCount' => 0,
+        'missingCount' => 0,
+        'hours' => 0,
+        'bookingAverage' => 0,
+        'hourAverage' => 0,
+    );
+}
+
+function finalize_period_bucket($row) {
+    $hours = floatval($row['hours']);
+    $total = intval($row['total']);
+    $priced_count = max(1, intval($row['confirmedCount']) - intval($row['missingCount']));
+    $row['total'] = $total;
+    $row['confirmedCount'] = intval($row['confirmedCount']);
+    $row['missingCount'] = intval($row['missingCount']);
+    $row['hours'] = round($hours, 2);
+    $row['bookingAverage'] = intval(round($total / $priced_count));
+    $row['hourAverage'] = $hours > 0 ? intval(round($total / $hours)) : 0;
+    return $row;
+}
+
+function percent_change($base, $next) {
+    $base = floatval($base);
+    $next = floatval($next);
+    if (abs($base) < 0.00001) {
+        return abs($next) < 0.00001 ? 0 : 100;
+    }
+    return round((($next - $base) / $base) * 100, 1);
+}
+
+function period_day_count($start_date, $end_date) {
+    $start = strtotime($start_date);
+    $end = strtotime($end_date);
+    if (!$start || !$end || $end < $start) {
+        return 0;
+    }
+    return intval(floor(($end - $start) / 86400)) + 1;
+}
+
+function collect_period_revenue($pdo, $start_date, $end_date) {
+    $rooms = array('a', 'b', 'c', 'd', 'e');
+    $buckets = array(
+        'all' => empty_period_bucket('all', '전체'),
+    );
+    foreach ($rooms as $room) {
+        $buckets[$room] = empty_period_bucket($room, room_label($room));
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT room_key,
+               TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
+               TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
+               price
+        FROM rhythmjoy_booking_ledger
+        WHERE reservation_date BETWEEN ? AND ?
+          AND current_status <> 'canceled'
+          AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+        ORDER BY reservation_date ASC, start_time ASC, id ASC
+    ");
+    $stmt->execute(array($start_date, $end_date));
+    foreach ($stmt->fetchAll() as $row) {
+        $room = strtolower((string) $row['room_key']);
+        if (!isset($buckets[$room])) {
+            continue;
+        }
+        $amount = parse_price_amount($row['price']);
+        $start = time_text_to_minutes($row['start_time_text'], false);
+        $end = time_text_to_minutes($row['end_time_text'], true);
+        $hours = max(0, ($end - $start) / 60);
+        foreach (array('all', $room) as $key) {
+            $buckets[$key]['confirmedCount'] += 1;
+            $buckets[$key]['hours'] += $hours;
+            if ($amount > 0) {
+                $buckets[$key]['total'] += $amount;
+            } else {
+                $buckets[$key]['missingCount'] += 1;
+            }
+        }
+    }
+
+    foreach ($buckets as $key => $bucket) {
+        $buckets[$key] = finalize_period_bucket($bucket);
+    }
+    return $buckets;
+}
+
+function compare_period_row($key, $base, $next) {
+    $base_total = intval($base['total']);
+    $next_total = intval($next['total']);
+    $base_hours = floatval($base['hours']);
+    $next_hours = floatval($next['hours']);
+    $base_hour_average = $base_hours > 0 ? $base_total / $base_hours : 0;
+    $next_hour_average = $next_hours > 0 ? $next_total / $next_hours : 0;
+    $price_effect = ($next_hour_average - $base_hour_average) * (($base_hours + $next_hours) / 2);
+    $volume_effect = ($next_hours - $base_hours) * (($base_hour_average + $next_hour_average) / 2);
+    $revenue_diff = $next_total - $base_total;
+
+    $assessment_key = 'flat';
+    $assessment_label = '변화 작음';
+    if ($revenue_diff > 0 && $price_effect >= 0 && $volume_effect >= 0) {
+        $assessment_key = 'growth';
+        $assessment_label = '가격+대관 증가';
+    } elseif ($revenue_diff > 0 && $price_effect > abs($volume_effect)) {
+        $assessment_key = 'price';
+        $assessment_label = '가격효과 우세';
+    } elseif ($revenue_diff > 0 && $volume_effect > 0) {
+        $assessment_key = 'volume';
+        $assessment_label = '대관량 우세';
+    } elseif ($revenue_diff < 0 && $price_effect > 0 && $volume_effect < 0) {
+        $assessment_key = 'volume_drop';
+        $assessment_label = '대관량 감소';
+    } elseif ($revenue_diff < 0) {
+        $assessment_key = 'decline';
+        $assessment_label = '매출 하락';
+    }
+
+    return array(
+        'key' => $key,
+        'label' => $base['label'],
+        'year2025' => $base,
+        'year2026' => $next,
+        'revenueDiff' => $revenue_diff,
+        'revenueRate' => percent_change($base_total, $next_total),
+        'countDiff' => intval($next['confirmedCount']) - intval($base['confirmedCount']),
+        'countRate' => percent_change(intval($base['confirmedCount']), intval($next['confirmedCount'])),
+        'hoursDiff' => round($next_hours - $base_hours, 2),
+        'hoursRate' => percent_change($base_hours, $next_hours),
+        'hourAverageDiff' => intval(round($next_hour_average - $base_hour_average)),
+        'hourAverageRate' => percent_change($base_hour_average, $next_hour_average),
+        'priceEffect' => intval(round($price_effect)),
+        'volumeEffect' => intval(round($volume_effect)),
+        'assessmentKey' => $assessment_key,
+        'assessmentLabel' => $assessment_label,
+    );
+}
+
+function period_analysis_row($pdo, $key, $label, $base_start, $base_end, $next_start, $next_end) {
+    $room_order = array('all', 'a', 'b', 'c', 'd', 'e');
+    $base = collect_period_revenue($pdo, $base_start, $base_end);
+    $next = collect_period_revenue($pdo, $next_start, $next_end);
+    $rows = array();
+    foreach ($room_order as $room) {
+        if (isset($base[$room]) && isset($next[$room])) {
+            $rows[] = compare_period_row($room, $base[$room], $next[$room]);
+        }
+    }
+    return array(
+        'key' => $key,
+        'label' => $label,
+        'baseRange' => $base_start . ' ~ ' . $base_end,
+        'compareRange' => $next_start . ' ~ ' . $next_end,
+        'baseDays' => period_day_count($base_start, $base_end),
+        'compareDays' => period_day_count($next_start, $next_end),
+        'rows' => $rows,
+    );
+}
+
 function revenue_comparison_stats($pdo) {
     $years = array(2025, 2026);
     $rooms = array('a', 'b', 'c', 'd', 'e');
@@ -561,11 +723,23 @@ function revenue_comparison_stats($pdo) {
         );
     }
 
+    $as_of = date('Y-m-d');
+    if ($as_of < '2026-07-01') {
+        $as_of = '2026-07-01';
+    } elseif ($as_of > '2026-12-31') {
+        $as_of = '2026-12-31';
+    }
+    $h2_base_end = '2025-' . substr($as_of, 5, 5);
+
     return array(
         'baseYear' => 2025,
         'compareYear' => 2026,
         'yearSummary' => array_values($by_year),
         'roomComparison' => $room_compare,
+        'periodAnalysis' => array(
+            period_analysis_row($pdo, 'firstHalf', '상반기', '2025-01-01', '2025-06-30', '2026-01-01', '2026-06-30'),
+            period_analysis_row($pdo, 'secondHalfToDate', '하반기 현재일까지', '2025-07-01', $h2_base_end, '2026-07-01', $as_of),
+        ),
         'pricePolicy' => array(
             'basis' => '네이버 기본가 기준. 스페이스클라우드는 플랫폼 수수료/표시가가 다를 수 있습니다.',
             'columns' => array(

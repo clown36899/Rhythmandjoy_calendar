@@ -1193,7 +1193,7 @@ body.modal-open {
 }
 
 .revenue-modal-panel {
-  width: min(1080px, 100%);
+  width: min(1280px, 100%);
 }
 
 .revenue-list {
@@ -1296,6 +1296,197 @@ body.modal-open {
   font-size: 13px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.impact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.impact-card {
+  min-width: 0;
+  border: 1px solid #d8e7e1;
+  border-radius: 8px;
+  background: #fbfefd;
+  overflow: hidden;
+}
+
+.impact-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #d8e7e1;
+  background: linear-gradient(180deg, #f7fcfa 0%, #eff8f4 100%);
+}
+
+.impact-card-header h4,
+.impact-card-header p {
+  margin: 0;
+}
+
+.impact-card-header h4 {
+  color: #13251f;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.impact-card-header p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.impact-total {
+  min-width: 132px;
+  text-align: right;
+}
+
+.impact-total span,
+.impact-total strong,
+.impact-total small {
+  display: block;
+}
+
+.impact-total span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.impact-total strong {
+  margin-top: 2px;
+  font-size: 16px;
+  line-height: 1.1;
+}
+
+.impact-total small {
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.impact-table-wrap {
+  overflow-x: auto;
+}
+
+.impact-table {
+  width: 100%;
+  min-width: 590px;
+  border-collapse: collapse;
+}
+
+.impact-table th,
+.impact-table td {
+  padding: 6px 7px;
+  border-bottom: 1px solid #e5efeb;
+  color: #1d302b;
+  font-size: 11px;
+  font-weight: 850;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.impact-table thead th {
+  background: #eef6f2;
+  color: #51645f;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.impact-table tbody tr:last-child th,
+.impact-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.impact-table tbody th {
+  color: #10221d;
+  font-weight: 950;
+}
+
+.impact-table small {
+  display: block;
+  margin-top: 1px;
+  color: currentColor;
+  font-size: 10px;
+  font-weight: 900;
+  opacity: 0.78;
+}
+
+.impact-total-row th,
+.impact-total-row td {
+  background: #f2faf7;
+  font-weight: 950;
+}
+
+.impact-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 92px;
+  min-height: 22px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #eef2f0;
+  color: #4e625d;
+  font-size: 10px;
+  font-weight: 950;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.impact-badge.growth,
+.impact-badge.volume {
+  background: #e5f7ef;
+  color: #08734c;
+}
+
+.impact-badge.price {
+  background: #eef1ff;
+  color: #4e42b6;
+}
+
+.impact-badge.volume_drop,
+.impact-badge.decline {
+  background: #fff0ef;
+  color: #b93030;
+}
+
+.year-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.year-mini-card {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #d8e7e1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.year-mini-card span {
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.year-mini-card strong {
+  color: #13251f;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.year-mini-card small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
 }
 
 .comparison-table-wrap {
@@ -1459,6 +1650,17 @@ body.modal-open {
 .detail-list {
   display: grid;
   gap: 12px;
+}
+
+@media (max-width: 1120px) {
+  .impact-grid,
+  .year-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .impact-table {
+    min-width: 720px;
+  }
 }
 
 .detail-card {

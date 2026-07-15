@@ -848,7 +848,7 @@
     const selectedMonthKey = String(state.activeDate || "").slice(0, 7);
     const year = String(state.activeDate || "").slice(0, 4);
     const months = stats?.months || [];
-    el.revenueModalSummary.textContent = `${comparison?.baseYear || 2025}년 / ${comparison?.compareYear || 2026}년 수익, 대관시간, 가격 변동 비교`;
+    el.revenueModalSummary.textContent = `${comparison?.baseYear || 2025}년 / ${comparison?.compareYear || 2026}년 상반기, 하반기 현재일 기준 비교`;
     if (!months.length && !comparison) {
       el.revenueMonthList.innerHTML = '<p class="empty-note">표시할 수익 통계가 없습니다.</p>';
       return;
@@ -899,64 +899,31 @@
 
   function revenueComparisonHtml(comparison) {
     const yearRows = comparison.yearSummary || [];
-    const roomRows = comparison.roomComparison || [];
+    const periodRows = comparison.periodAnalysis || [];
     const priceRows = comparison.pricePolicy?.rows || [];
     return `
       <section class="revenue-section">
         <div class="revenue-section-heading">
-          <h3>연도 요약</h3>
-          <p>확정/예정 예약 포함 · 취소건 제외</p>
+          <h3>가격/대관량 영향 비교</h3>
+          <p>2025년 같은 기간 대비 · 전체와 A-E 전체 방을 같이 비교합니다.</p>
         </div>
-        <div class="year-compare-grid">
-          ${yearRows.map((item) => `
-            <article class="year-card">
-              <span>${escapeHtml(String(item.year))}년</span>
-              <strong>${escapeHtml(formatRevenueStat(item.total))}</strong>
-              <dl>
-                <div><dt>예약</dt><dd>${Number(item.confirmedCount || 0).toLocaleString()}건</dd></div>
-                <div><dt>대관</dt><dd>${formatHours(item.hours)}</dd></div>
-                <div><dt>대관률</dt><dd>${formatPercent(item.occupancyRate)}</dd></div>
-                <div><dt>시간당</dt><dd>${escapeHtml(formatRevenueStat(item.hourAverage))}</dd></div>
-              </dl>
-            </article>
-          `).join("")}
+        <div class="impact-grid">
+          ${periodRows.map(periodImpactCardHtml).join("")}
         </div>
       </section>
       <section class="revenue-section">
         <div class="revenue-section-heading">
-          <h3>방별 25→26 비교</h3>
-          <p>수익 증감, 예약 건수, 대관 시간, 대관률을 한 줄에서 비교합니다.</p>
+          <h3>연도 총합</h3>
+          <p>확정/예정 예약 포함 · 취소건 제외 · 기간 보정 전 전체 합계</p>
         </div>
-        <div class="comparison-table-wrap">
-          <table class="comparison-table">
-            <thead>
-              <tr>
-                <th>방</th>
-                <th>2025 수익</th>
-                <th>2026 수익</th>
-                <th>증감</th>
-                <th>예약</th>
-                <th>대관시간</th>
-                <th>대관률</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${roomRows.map((row) => `
-                <tr>
-                  <th>${escapeHtml(row.roomLabel)}</th>
-                  <td>${escapeHtml(formatRevenueStat(row.year2025?.total))}</td>
-                  <td>${escapeHtml(formatRevenueStat(row.year2026?.total))}</td>
-                  <td class="${signedClass(row.revenueDiff)}">
-                    ${escapeHtml(formatSignedWon(row.revenueDiff))}
-                    <small>${escapeHtml(formatSignedPercent(row.revenueRate))}</small>
-                  </td>
-                  <td class="${signedClass(row.countDiff)}">${escapeHtml(formatSignedCount(row.countDiff))}</td>
-                  <td class="${signedClass(row.hoursDiff)}">${escapeHtml(formatSignedHours(row.hoursDiff))}</td>
-                  <td class="${signedClass(row.occupancyDiff)}">${escapeHtml(formatSignedPercent(row.occupancyDiff))}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
+        <div class="year-summary-strip">
+          ${yearRows.map((item) => `
+            <article class="year-mini-card">
+              <span>${escapeHtml(String(item.year))}년</span>
+              <strong>${escapeHtml(formatRevenueStat(item.total))}</strong>
+              <small>${Number(item.confirmedCount || 0).toLocaleString()}건 · ${formatHours(item.hours)} · 시간당 ${escapeHtml(formatRevenueStat(item.hourAverage))}</small>
+            </article>
+          `).join("")}
         </div>
       </section>
       <section class="revenue-section">
@@ -986,6 +953,65 @@
         </div>
       </section>
     `;
+  }
+
+  function periodImpactCardHtml(period) {
+    const rows = period.rows || [];
+    const total = rows.find((row) => row.key === "all") || rows[0] || {};
+    return `
+      <article class="impact-card">
+        <header class="impact-card-header">
+          <div>
+            <h4>${escapeHtml(period.label || "")}</h4>
+            <p>${escapeHtml(compactDateRange(period.baseRange))} → ${escapeHtml(compactDateRange(period.compareRange))}</p>
+          </div>
+          <div class="impact-total ${signedClass(total.revenueDiff)}">
+            <span>전체 매출</span>
+            <strong>${escapeHtml(formatSignedWon(total.revenueDiff))}</strong>
+            <small>${escapeHtml(formatSignedPercent(total.revenueRate))}</small>
+          </div>
+        </header>
+        <div class="impact-table-wrap">
+          <table class="impact-table">
+            <thead>
+              <tr>
+                <th>방</th>
+                <th>예약수</th>
+                <th>대관시간</th>
+                <th>매출</th>
+                <th>시간단가</th>
+                <th>가격효과</th>
+                <th>대관량효과</th>
+                <th>판정</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(impactRowHtml).join("")}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    `;
+  }
+
+  function impactRowHtml(row) {
+    const isTotal = row.key === "all";
+    return `
+      <tr class="${isTotal ? "impact-total-row" : ""}">
+        <th>${escapeHtml(row.label || "")}</th>
+        <td class="${signedClass(row.countDiff)}">${escapeHtml(formatSignedCount(row.countDiff))}<small>${escapeHtml(formatSignedPercent(row.countRate))}</small></td>
+        <td class="${signedClass(row.hoursDiff)}">${escapeHtml(formatSignedHours(row.hoursDiff))}<small>${escapeHtml(formatSignedPercent(row.hoursRate))}</small></td>
+        <td class="${signedClass(row.revenueDiff)}">${escapeHtml(formatSignedWon(row.revenueDiff))}<small>${escapeHtml(formatSignedPercent(row.revenueRate))}</small></td>
+        <td class="${signedClass(row.hourAverageDiff)}">${escapeHtml(formatSignedWon(row.hourAverageDiff))}<small>${escapeHtml(formatSignedPercent(row.hourAverageRate))}</small></td>
+        <td class="${signedClass(row.priceEffect)}">${escapeHtml(formatSignedWon(row.priceEffect))}</td>
+        <td class="${signedClass(row.volumeEffect)}">${escapeHtml(formatSignedWon(row.volumeEffect))}</td>
+        <td><span class="impact-badge ${escapeHtml(row.assessmentKey || "flat")}">${escapeHtml(row.assessmentLabel || "")}</span></td>
+      </tr>
+    `;
+  }
+
+  function compactDateRange(rangeText) {
+    return String(rangeText || "").replace(/2025-|2026-/g, "").replace(/\s*~\s*/g, "~");
   }
 
   function priceChangeCellHtml(item) {
