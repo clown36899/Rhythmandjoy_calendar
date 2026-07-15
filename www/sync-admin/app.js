@@ -853,13 +853,34 @@
     }
     el.revenueMonthList.innerHTML = months.map((item) => `
       <article class="revenue-row ${item.month === selectedMonthKey ? "active" : ""}">
-        <div>
-          <strong>${escapeHtml(formatMonthLabel(item.month))}</strong>
-          <span>확정 ${Number(item.confirmedCount || 0).toLocaleString()}건 · 금액 미수집 ${Number(item.missingCount || 0).toLocaleString()}건</span>
+        <div class="revenue-row-main">
+          <div class="revenue-row-head">
+            <div>
+              <strong>${escapeHtml(formatMonthLabel(item.month))}</strong>
+              <span>확정 ${Number(item.confirmedCount || 0).toLocaleString()}건 · 금액 미수집 ${Number(item.missingCount || 0).toLocaleString()}건</span>
+            </div>
+            <b>${escapeHtml(formatRevenueStat(item.total))}</b>
+          </div>
+          <dl class="revenue-metrics" aria-label="${escapeHtml(formatMonthLabel(item.month))} 상세 수익 통계">
+            ${revenueMetricHtml("일평균", item.dayAverage)}
+            ${revenueMetricHtml("평일평균", item.weekdayAverage)}
+            ${revenueMetricHtml("주말평균", item.weekendAverage)}
+            ${revenueMetricHtml("토요일평균", item.saturdayAverage)}
+            ${revenueMetricHtml("일요일평균", item.sundayAverage)}
+            ${revenueMetricHtml("건당평균", item.bookingAverage)}
+          </dl>
         </div>
-        <b>${escapeHtml(formatRevenueStat(item.total))}</b>
       </article>
     `).join("");
+  }
+
+  function revenueMetricHtml(label, value) {
+    return `
+      <div>
+        <dt>${escapeHtml(label)}</dt>
+        <dd>${escapeHtml(formatRevenueStat(value))}</dd>
+      </div>
+    `;
   }
 
   function formatMonthLabel(monthKey) {

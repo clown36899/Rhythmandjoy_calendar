@@ -384,12 +384,52 @@ function parse_price_amount($value) {
 }
 
 function empty_month_revenue($month) {
+    $start = strtotime($month . '-01');
+    $days = $start ? intval(date('t', $start)) : 0;
+    $weekday_days = 0;
+    $weekend_days = 0;
+    $saturday_days = 0;
+    $sunday_days = 0;
+    for ($day = 1; $day <= $days; $day += 1) {
+        $ts = strtotime(sprintf('%s-%02d', $month, $day));
+        $weekday = intval(date('w', $ts));
+        if ($weekday === 0) {
+            $weekend_days += 1;
+            $sunday_days += 1;
+        } elseif ($weekday === 6) {
+            $weekend_days += 1;
+            $saturday_days += 1;
+        } else {
+            $weekday_days += 1;
+        }
+    }
     return array(
         'month' => $month,
         'total' => 0,
         'confirmedCount' => 0,
         'missingCount' => 0,
+        'calendarDays' => $days,
+        'weekdayDays' => $weekday_days,
+        'weekendDays' => $weekend_days,
+        'saturdayDays' => $saturday_days,
+        'sundayDays' => $sunday_days,
+        'weekdayTotal' => 0,
+        'weekendTotal' => 0,
+        'saturdayTotal' => 0,
+        'sundayTotal' => 0,
     );
+}
+
+function finalize_month_revenue($row) {
+    $total = intval($row['total']);
+    $confirmed_count = intval($row['confirmedCount']);
+    $row['dayAverage'] = intval(round($total / max(1, intval($row['calendarDays']))));
+    $row['weekdayAverage'] = intval(round(intval($row['weekdayTotal']) / max(1, intval($row['weekdayDays']))));
+    $row['weekendAverage'] = intval(round(intval($row['weekendTotal']) / max(1, intval($row['weekendDays']))));
+    $row['saturdayAverage'] = intval(round(intval($row['saturdayTotal']) / max(1, intval($row['saturdayDays']))));
+    $row['sundayAverage'] = intval(round(intval($row['sundayTotal']) / max(1, intval($row['sundayDays']))));
+    $row['bookingAverage'] = intval(round($total / max(1, $confirmed_count - intval($row['missingCount']))));
+    return $row;
 }
 
 function revenue_stats($pdo, $date) {
@@ -398,7 +438,9 @@ function revenue_stats($pdo, $date) {
     $start_date = $year . '-01-01';
     $end_date = $year . '-12-31';
     $stmt = $pdo->prepare("
-        SELECT DATE_FORMAT(reservation_date, '%Y-%m') AS month_key, price
+        SELECT DATE_FORMAT(reservation_date, '%Y-%m') AS month_key,
+               DAYOFWEEK(reservation_date) AS day_of_week,
+               price
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN ? AND ?
           AND current_status <> 'canceled'
@@ -422,12 +464,25 @@ function revenue_stats($pdo, $date) {
         $by_month[$key]['confirmedCount'] += 1;
         if ($amount > 0) {
             $by_month[$key]['total'] += $amount;
+            $day_of_week = intval($row['day_of_week']);
+            if ($day_of_week === 1) {
+                $by_month[$key]['weekendTotal'] += $amount;
+                $by_month[$key]['sundayTotal'] += $amount;
+            } elseif ($day_of_week === 7) {
+                $by_month[$key]['weekendTotal'] += $amount;
+                $by_month[$key]['saturdayTotal'] += $amount;
+            } else {
+                $by_month[$key]['weekdayTotal'] += $amount;
+            }
         } else {
             $by_month[$key]['missingCount'] += 1;
         }
     }
 
-    $months = array_values($by_month);
+    $months = array();
+    foreach ($by_month as $month_row) {
+        $months[] = finalize_month_revenue($month_row);
+    }
     $year_total = 0;
     $year_confirmed_count = 0;
     $year_missing_count = 0;

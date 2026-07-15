@@ -1202,10 +1202,7 @@ body.modal-open {
 }
 
 .revenue-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  display: block;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1217,9 +1214,18 @@ body.modal-open {
   background: #effaf5;
 }
 
+.revenue-row-main,
 .revenue-row strong,
-.revenue-row span {
+.revenue-row span,
+.revenue-row b {
   display: block;
+}
+
+.revenue-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
 }
 
 .revenue-row strong {
@@ -1236,6 +1242,40 @@ body.modal-open {
 .revenue-row b {
   flex: 0 0 auto;
   color: #0b5f4e;
+  white-space: nowrap;
+}
+
+.revenue-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.revenue-metrics div {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #dbe7e2;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.revenue-metrics dt,
+.revenue-metrics dd {
+  margin: 0;
+}
+
+.revenue-metrics dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.revenue-metrics dd {
+  margin-top: 2px;
+  color: #18342d;
+  font-size: 13px;
+  font-weight: 900;
   white-space: nowrap;
 }
 
@@ -1460,6 +1500,10 @@ body.modal-open {
 
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .revenue-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .room-filter {
