@@ -709,6 +709,12 @@ def source_platform_for_task(task_type):
         return 'naver'
     return ''
 
+def task_time_value(value):
+    text = str(value or '')
+    if len(text) == 5:
+        return text + ':00'
+    return text
+
 def enrich_task_row(cur, row):
     payload = parse_payload(row)
     task_type = row.get('taskType') or ''
@@ -740,6 +746,9 @@ def enrich_task_row(cur, row):
         row['priorNaverBlockChanged'] = False
         row['priorNaverBlockTaskId'] = None
         row['priorNaverBlockStatus'] = ''
+        row['restoreSafeWithoutPriorBlock'] = False
+        row['restoreActiveOverlapCount'] = 0
+        row['restoreBlockingBookings'] = []
         wanted_name = importer.normalize_reserver_name_for_match(row.get('reserverName'))
         cur.execute(
             """
@@ -771,6 +780,38 @@ def enrich_task_row(cur, row):
                 or any(slot.get('status') == 'blocked' for slot in (result.get('appliedSlots') or []) if isinstance(slot, dict))
             )
             break
+        cur.execute(
+            """
+            SELECT
+                id,
+                source_platform AS sourcePlatform,
+                source_mode AS sourceMode,
+                reservation_number AS reservationNumber,
+                reserver_name AS reserverName,
+                CAST(last_event_at AS CHAR) AS lastEventAt,
+                CONCAT(LPAD(HOUR(start_time), 2, '0'), ':', LPAD(MINUTE(start_time), 2, '0')) AS startTime,
+                CONCAT(LPAD(HOUR(end_time), 2, '0'), ':', LPAD(MINUTE(end_time), 2, '0')) AS endTime
+            FROM rhythmjoy_booking_ledger
+            WHERE current_status='confirmed'
+              AND room_key=%s
+              AND reservation_date=%s
+              AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+              AND start_time < %s
+              AND end_time > %s
+            ORDER BY COALESCE(last_event_at, created_at, '9999-12-31 23:59:59') ASC, id ASC
+            LIMIT 10
+            """,
+            (
+                row.get('roomKey'),
+                row.get('date'),
+                task_time_value(row.get('endTime')),
+                task_time_value(row.get('startTime')),
+            ),
+        )
+        active_overlaps = cur.fetchall()
+        row['restoreActiveOverlapCount'] = len(active_overlaps)
+        row['restoreBlockingBookings'] = active_overlaps[:5]
+        row['restoreSafeWithoutPriorBlock'] = len(active_overlaps) == 0
 `;
 
 async function fetchRemoteTasks(args, { taskType, limit }) {
@@ -2356,9 +2397,14 @@ function restoreSkippedNotOwnedRow(task) {
     priorNaverBlockTaskId: task.priorNaverBlockTaskId || null,
     priorNaverBlockStatus: task.priorNaverBlockStatus || '',
     priorNaverBlockChanged: !!task.priorNaverBlockChanged,
+    restoreSafeWithoutPriorBlock: !!task.restoreSafeWithoutPriorBlock,
+    restoreActiveOverlapCount: task.restoreActiveOverlapCount || 0,
+    restoreBlockingBookings: task.restoreBlockingBookings || [],
     startedAt: new Date().toISOString(),
     finishedAt: new Date().toISOString(),
-    reason: 'automatic restore skipped because no prior automation-owned Naver block was found',
+    reason: task.restoreActiveOverlapCount
+      ? 'automatic restore skipped because another active booking overlaps this canceled SpaceCloud slot'
+      : 'automatic restore skipped because no prior automation-owned Naver block was found',
   };
 }
 
@@ -3293,7 +3339,7 @@ async function runNaverAvailabilityTasks(args, context = null) {
               startedAt: new Date().toISOString(),
               naverAlreadyRestored: true,
             };
-          } else if (task.priorNaverBlockChanged !== true) {
+          } else if (task.priorNaverBlockChanged !== true && task.restoreSafeWithoutPriorBlock !== true) {
             row = restoreSkippedNotOwnedRow(task);
           } else {
             row = await setNaverAvailability(activeContext, task, {

@@ -1023,6 +1023,82 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                 """,
                 row,
             )
+            if source_platform == 'spacecloud':
+                matched_ids = []
+                matched_id = event_data.get('matched_booking_ledger_id')
+                try:
+                    if matched_id:
+                        matched_ids.append(int(matched_id))
+                except (TypeError, ValueError):
+                    matched_ids = []
+
+                if matched_ids:
+                    cursor.execute(
+                        f"""
+                        UPDATE rhythmjoy_booking_ledger
+                        SET current_status='canceled',
+                            canceled_email_event_id=%s,
+                            canceled_email_received_at=%s,
+                            last_event_at=IF(%s >= COALESCE(last_event_at, '1000-01-01 00:00:00'), %s, last_event_at),
+                            cancel_payload_json=%s,
+                            updated_at=NOW()
+                        WHERE id IN ({','.join(['%s'] * len(matched_ids))})
+                          AND source_platform <> 'naver'
+                        """,
+                        [
+                            email_event_id,
+                            row['event_at'],
+                            row['event_at'],
+                            row['event_at'],
+                            row['payload_json'],
+                            *matched_ids,
+                        ],
+                    )
+                    logger.info('SpaceCloud cancellation marked matched ledger rows canceled ids=%s', matched_ids)
+
+                cursor.execute(
+                    """
+                    UPDATE rhythmjoy_booking_ledger
+                    SET current_status='canceled',
+                        canceled_email_event_id=%s,
+                        canceled_email_received_at=%s,
+                        last_event_at=IF(%s >= COALESCE(last_event_at, '1000-01-01 00:00:00'), %s, last_event_at),
+                        cancel_payload_json=%s,
+                        updated_at=NOW()
+                    WHERE current_status='confirmed'
+                      AND source_platform <> 'naver'
+                      AND id <> LAST_INSERT_ID()
+                      AND target_calendar=%s
+                      AND room_key=%s
+                      AND reservation_date=%s
+                      AND start_time=%s
+                      AND end_time=%s
+                      AND reserver_name_key=%s
+                    """,
+                    (
+                        email_event_id,
+                        row['event_at'],
+                        row['event_at'],
+                        row['event_at'],
+                        row['payload_json'],
+                        row['target_calendar'],
+                        row['room_key'],
+                        row['reservation_date'],
+                        row['start_time'],
+                        row['end_time'],
+                        row['reserver_name_key'],
+                    ),
+                )
+                if cursor.rowcount:
+                    logger.info(
+                        'SpaceCloud cancellation marked matching non-Naver ledger rows canceled count=%s calendar=%s date=%s time=%s-%s name_key=%s',
+                        cursor.rowcount,
+                        row['target_calendar'],
+                        row['reservation_date'],
+                        row['start_time'],
+                        row['end_time'],
+                        row['reserver_name_key'],
+                    )
         ledger = db_select_booking_ledger(config, row['ledger_key'])
         logger.info(
             'Booking ledger canceled ledger=%s id=%s platform=%s reservation=%s status=%s',
