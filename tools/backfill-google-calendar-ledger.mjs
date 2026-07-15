@@ -256,6 +256,105 @@ function productName(roomKey) {
   return room ? room.name : `${String(roomKey || '').toUpperCase()}홀`;
 }
 
+const HISTORICAL_ROOM_PRICING = {
+  2025: {
+    a: { before16: 10000, after16: 12000, dawnHourly: 10000, overnight: 30000 },
+    b: { before16: 8000, after16: 10000, dawnHourly: 8000, overnight: 20000 },
+    c: { before16: 4000, after16: 6000, dawnHourly: 4000, overnight: 15000 },
+    d: { before16: 3000, after16: 5000, dawnHourly: 3000, overnight: 15000 },
+    e: { before16: 8000, after16: 10000, dawnHourly: 8000, overnight: 20000 },
+  },
+};
+
+function dateYear(dateKey) {
+  return Number.parseInt(String(dateKey || '').slice(0, 4), 10);
+}
+
+function getPricingForDate(roomKey, dateKey) {
+  const year = dateYear(dateKey);
+  const historical = HISTORICAL_ROOM_PRICING[year]?.[roomKey];
+  if (historical) {
+    return {
+      roomPrice: historical,
+      source: `${year}-price-table`,
+      year,
+    };
+  }
+  return {
+    roomPrice: policy.ROOM_PRICING[roomKey],
+    source: 'current-price-table',
+    year,
+  };
+}
+
+function kstDate(ms) {
+  return new Date(ms + KST_OFFSET_MS);
+}
+
+function kstHour(ms) {
+  return kstDate(ms).getUTCHours();
+}
+
+function kstDay(ms) {
+  return kstDate(ms).getUTCDay();
+}
+
+function kstDateString(ms) {
+  return kstDate(ms).toISOString().slice(0, 10);
+}
+
+function isWeekendOrHolidayMs(ms, holidaySet) {
+  const day = kstDay(ms);
+  return day === 0 || day === 6 || holidaySet.has(kstDateString(ms));
+}
+
+function nextKstHourBoundaryMs(ms) {
+  const date = kstDate(ms);
+  date.setUTCMinutes(0, 0, 0);
+  date.setUTCHours(date.getUTCHours() + 1);
+  return date.getTime() - KST_OFFSET_MS;
+}
+
+function isExactOvernightMs(startMs, endMs) {
+  return (endMs - startMs) / (60 * 60 * 1000) === 6
+    && kstHour(startMs) === 0
+    && kstHour(endMs) === 6;
+}
+
+function calculateBackfillGuidePrice(event, normalized) {
+  const roomKey = event.roomKey;
+  const { roomPrice, source, year } = getPricingForDate(roomKey, normalized.date);
+  const startMs = Date.parse(event.start);
+  const endMs = Date.parse(event.end || event.start);
+  if (!roomPrice || Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) {
+    return { ok: false, guideAmount: 0, source };
+  }
+
+  const holidaySet = policy.makeHolidaySet([year]);
+  if (isExactOvernightMs(startMs, endMs)) {
+    return { ok: true, guideAmount: roomPrice.overnight, source };
+  }
+
+  let cursor = startMs;
+  let guideAmount = 0;
+  while (cursor < endMs) {
+    const next = Math.min(endMs, nextKstHourBoundaryMs(cursor));
+    const hours = (next - cursor) / (60 * 60 * 1000);
+    const hour = kstHour(cursor);
+    const rate = hour >= 0 && hour < 6
+      ? roomPrice.dawnHourly
+      : (isWeekendOrHolidayMs(cursor, holidaySet) || hour >= 16 ? roomPrice.after16 : roomPrice.before16);
+    guideAmount += rate * hours;
+    cursor = next;
+  }
+
+  return {
+    ok: true,
+    guideAmount: Math.round(guideAmount),
+    source,
+  };
+}
+
 function mysqlDateTimeFromIso(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
@@ -297,7 +396,7 @@ function buildGoogleLedgerEvent(rawEvent) {
   const reserverName = fieldFromDescription(description, '예약자명') || fallbackName(event);
   const reservationNumber = fieldFromDescription(description, '예약번호');
   const describedPrice = fieldFromDescription(description, '결제금액');
-  const calculation = policy.calculateEventPrice(event);
+  const calculation = calculateBackfillGuidePrice(event, normalized);
   const fallbackPrice = calculation.ok && calculation.guideAmount > 0
     ? `${calculation.guideAmount.toLocaleString('ko-KR')}원`
     : '';
@@ -327,7 +426,7 @@ function buildGoogleLedgerEvent(rawEvent) {
     googleTitle: event.title || '',
     description,
     normalizationNotes: normalized.notes,
-    priceSource: describedPrice ? 'description' : (fallbackPrice ? 'calculated-guide' : 'missing'),
+    priceSource: describedPrice ? 'description' : (fallbackPrice ? calculation.source : 'missing'),
   };
   built.ledgerKey = ledgerKey(built);
   built.slotKey = slotKey(built);
