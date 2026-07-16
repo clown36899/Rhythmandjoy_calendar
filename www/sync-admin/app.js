@@ -1358,13 +1358,41 @@
     return amount > 0 ? `${amount.toLocaleString()}원` : "-";
   }
 
+  function kstTodayParts() {
+    const parts = new Intl.DateTimeFormat("ko-KR", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return {
+      year: Number(byType.year || 0),
+      month: Number(byType.month || 0),
+      day: Number(byType.day || 0),
+    };
+  }
+
+  function comparisonMonthCaution(month, year = 2026) {
+    const today = kstTodayParts();
+    const targetMonth = Number(month || 0);
+    if (!targetMonth || year < today.year) return "";
+    if (year > today.year || targetMonth > today.month) {
+      return '<small class="data-caution">미래 예약 일부</small>';
+    }
+    if (year === today.year && targetMonth === today.month) {
+      return '<small class="data-caution">진행 중인 월</small>';
+    }
+    return "";
+  }
+
   function renderRevenueModal() {
     const stats = state.revenueStats;
     const comparison = state.revenueComparison;
     const selectedMonthKey = String(state.activeDate || "").slice(0, 7);
     const year = String(state.activeDate || "").slice(0, 4);
     const months = stats?.months || [];
-    el.revenueModalSummary.textContent = `${comparison?.baseYear || 2025}년 / ${comparison?.compareYear || 2026}년 상반기, 하반기 현재일 기준 비교`;
+    el.revenueModalSummary.textContent = `DB 원장 매출 기준 · ${comparison?.baseYear || 2025}년 / ${comparison?.compareYear || 2026}년 같은 기간 비교`;
     if (!months.length && !comparison) {
       el.revenueMonthList.innerHTML = '<p class="empty-note">표시할 수익 통계가 없습니다.</p>';
       return;
@@ -1377,7 +1405,7 @@
       <section class="revenue-section">
         <div class="revenue-section-heading">
           <h3>월별 수익 비교</h3>
-          <p>2025년과 2026년을 같은 월 기준으로 압축 비교합니다. 선택 연도 ${escapeHtml(year)}년 연총합 ${escapeHtml(formatRevenueStat(stats?.yearTotal))}</p>
+          <p>DB 원장 기준입니다. 2026년 현재월은 진행 중, 이후 월은 이미 들어온 미래 예약만 포함합니다. 선택 연도 ${escapeHtml(year)}년 연총합 ${escapeHtml(formatRevenueStat(stats?.yearTotal))}</p>
         </div>
         ${monthlyHtml || '<p class="empty-note">표시할 월별 수익 통계가 없습니다.</p>'}
       </section>
@@ -1455,6 +1483,7 @@
                 <td>
                   <strong>${escapeHtml(formatRevenueStat(row.year2026?.total))}</strong>
                   <small>${Number(row.year2026?.confirmedCount || 0).toLocaleString()}건 · 건당 ${escapeHtml(formatRevenueStat(row.year2026?.bookingAverage))}</small>
+                  ${comparisonMonthCaution(row.month, 2026)}
                   ${amountBreakdownSmall(row.year2026)}
                 </td>
                 <td class="${signedClass(row.revenueDiff)}">
@@ -1481,8 +1510,8 @@
     return `
       <section class="revenue-section">
         <div class="revenue-section-heading">
-          <h3>가격/대관량 영향 비교</h3>
-          <p>2025년 같은 기간 대비 · 전체와 A-E 전체 방을 같이 비교합니다.</p>
+          <h3>시간단가/대관량 영향 비교</h3>
+          <p>실제 DB 원장 매출을 시간단가 변화와 대관시간 변화로 나눠 본 참고값입니다. 순수 가격표 효과만 분리한 값은 아닙니다.</p>
         </div>
         <div class="impact-grid">
           ${periodRows.map(periodImpactCardHtml).join("")}
@@ -1491,7 +1520,7 @@
       <section class="revenue-section">
         <div class="revenue-section-heading">
           <h3>연도 총합</h3>
-          <p>확정/예정 예약 포함 · 취소건 제외 · 기간 보정 전 전체 합계</p>
+          <p>DB 원장 매출 기준 · 취소건 제외 · 현금/수기 복구분 포함 · 기간 보정 전 전체 합계</p>
         </div>
         <div class="year-summary-strip">
           ${yearRows.map((item) => `
@@ -1558,7 +1587,7 @@
                 <th>대관시간</th>
                 <th>매출</th>
                 <th>시간단가</th>
-                <th>가격효과</th>
+                <th>시간단가효과</th>
                 <th>대관량효과</th>
                 <th>판정</th>
               </tr>

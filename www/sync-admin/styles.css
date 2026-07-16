@@ -1783,6 +1783,10 @@ body.modal-open {
   white-space: nowrap;
 }
 
+.monthly-compare-table .data-caution {
+  color: #a15c00;
+}
+
 .comparison-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);

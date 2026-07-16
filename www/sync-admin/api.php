@@ -782,10 +782,10 @@ function compare_period_row($key, $base, $next) {
     $assessment_label = '변화 작음';
     if ($revenue_diff > 0 && $price_effect >= 0 && $volume_effect >= 0) {
         $assessment_key = 'growth';
-        $assessment_label = '가격+대관 증가';
+        $assessment_label = '단가+대관 증가';
     } elseif ($revenue_diff > 0 && $price_effect > abs($volume_effect)) {
         $assessment_key = 'price';
-        $assessment_label = '가격효과 우세';
+        $assessment_label = '시간단가 우세';
     } elseif ($revenue_diff > 0 && $volume_effect > 0) {
         $assessment_key = 'volume';
         $assessment_label = '대관량 우세';
@@ -1019,7 +1019,7 @@ function revenue_comparison_stats($pdo) {
         ),
         'monthlyComparison' => monthly_comparison_stats($pdo),
         'pricePolicy' => array(
-            'basis' => '네이버 기본가 기준. 스페이스클라우드는 플랫폼 수수료/표시가가 다를 수 있습니다.',
+            'basis' => '네이버 기본가 기준. 스페이스클라우드는 플랫폼 수수료/표시가가 다를 수 있습니다. 실제 매출 비교는 DB 원장 금액을 기준으로 합니다.',
             'columns' => array(
                 'before16' => '16시 이전',
                 'after16' => '16시 이후/주말',
