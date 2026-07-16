@@ -8,6 +8,7 @@
 !.env.example
 config/spacecloud-sync.local.json
 state/spacecloud-sync-log.json
+state/
 state/spacecloud-watch/
 state/platform-detect-test/
 state/vps-sim-test/
