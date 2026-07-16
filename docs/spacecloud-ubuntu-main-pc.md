@@ -103,6 +103,17 @@ cd ~/Rhythmjoy_calendar
 bash ops/install-ubuntu-spacecloud-watch.sh
 ```
 
+For SpaceCloud NOW / Naver immediate-booking operation, install the watcher with the faster duplicate-resolution mode:
+
+```bash
+cd ~/Rhythmjoy_calendar
+SPACE_CLOUD_WATCH_NOW_MODE=1 \
+SPACE_CLOUD_WATCH_INTERVAL_SECONDS=10 \
+SPACE_CLOUD_WATCH_NAVER_BLOCK_LIMIT_PER_CYCLE=2 \
+SPACE_CLOUD_WATCH_RESTORE_GRACE_SECONDS=45 \
+bash ops/install-ubuntu-spacecloud-watch.sh
+```
+
 Enable only after both Naver and SpaceCloud are logged in inside `/home/kiosk-j/.spacecloud-automation`:
 
 ```bash

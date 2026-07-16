@@ -7,6 +7,19 @@ PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 LOG_DIR="$REPO_ROOT/state/spacecloud-watch"
 INTERVAL_SECONDS="${SPACE_CLOUD_WATCH_INTERVAL_SECONDS:-30}"
 LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_LIMIT_PER_CYCLE:-3}"
+DELETE_LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_DELETE_LIMIT_PER_CYCLE:-2}"
+NAVER_BLOCK_LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_NAVER_BLOCK_LIMIT_PER_CYCLE:-2}"
+NAVER_CANCEL_LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_NAVER_CANCEL_LIMIT_PER_CYCLE:-1}"
+SPACECLOUD_CANCEL_LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_SPACECLOUD_CANCEL_LIMIT_PER_CYCLE:-1}"
+NOW_MODE="${SPACE_CLOUD_WATCH_NOW_MODE:-0}"
+URGENT_WINDOW_MINUTES="${SPACE_CLOUD_WATCH_URGENT_WINDOW_MINUTES:-180}"
+RESTORE_GRACE_SECONDS="${SPACE_CLOUD_WATCH_RESTORE_GRACE_SECONDS:-45}"
+SESSION_CHECK_INTERVAL_SECONDS="${SPACE_CLOUD_WATCH_SESSION_CHECK_INTERVAL_SECONDS:-180}"
+
+EXTRA_ARGS=""
+if [[ "$NOW_MODE" == "1" ]]; then
+  EXTRA_ARGS="--now-mode --urgent-window-minutes $URGENT_WINDOW_MINUTES --restore-grace-seconds $RESTORE_GRACE_SECONDS --session-check-interval-seconds $SESSION_CHECK_INTERVAL_SECONDS"
+fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$LOG_DIR"
 
@@ -21,7 +34,7 @@ cat > "$PLIST_PATH" <<PLIST
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>cd "$REPO_ROOT" &amp;&amp; NODE_BIN="\$(command -v node)" &amp;&amp; exec "\$NODE_BIN" tools/spacecloud-watch.mjs watch --interval-seconds $INTERVAL_SECONDS --limit-per-cycle $LIMIT_PER_CYCLE</string>
+        <string>cd "$REPO_ROOT" &amp;&amp; NODE_BIN="\$(command -v node)" &amp;&amp; exec "\$NODE_BIN" tools/spacecloud-watch.mjs watch --interval-seconds $INTERVAL_SECONDS --limit-per-cycle $LIMIT_PER_CYCLE --delete-limit-per-cycle $DELETE_LIMIT_PER_CYCLE --naver-block-limit-per-cycle $NAVER_BLOCK_LIMIT_PER_CYCLE --naver-cancel-limit-per-cycle $NAVER_CANCEL_LIMIT_PER_CYCLE --spacecloud-cancel-limit-per-cycle $SPACECLOUD_CANCEL_LIMIT_PER_CYCLE $EXTRA_ARGS</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

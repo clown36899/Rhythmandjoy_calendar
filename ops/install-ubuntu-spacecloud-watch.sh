@@ -11,6 +11,12 @@ INTERVAL_SECONDS="${SPACE_CLOUD_WATCH_INTERVAL_SECONDS:-60}"
 LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_LIMIT_PER_CYCLE:-1}"
 DELETE_LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_DELETE_LIMIT_PER_CYCLE:-1}"
 NAVER_BLOCK_LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_NAVER_BLOCK_LIMIT_PER_CYCLE:-1}"
+NAVER_CANCEL_LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_NAVER_CANCEL_LIMIT_PER_CYCLE:-1}"
+SPACECLOUD_CANCEL_LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_SPACECLOUD_CANCEL_LIMIT_PER_CYCLE:-1}"
+NOW_MODE="${SPACE_CLOUD_WATCH_NOW_MODE:-0}"
+URGENT_WINDOW_MINUTES="${SPACE_CLOUD_WATCH_URGENT_WINDOW_MINUTES:-180}"
+RESTORE_GRACE_SECONDS="${SPACE_CLOUD_WATCH_RESTORE_GRACE_SECONDS:-45}"
+SESSION_CHECK_INTERVAL_SECONDS="${SPACE_CLOUD_WATCH_SESSION_CHECK_INTERVAL_SECONDS:-180}"
 ENABLE_SERVICE="${1:-}"
 
 NODE_BIN="$(command -v node || true)"
@@ -28,6 +34,11 @@ fi
 
 mkdir -p "$(dirname "$SERVICE_PATH")" "$LOG_DIR" "$PROFILE_DIR"
 
+EXTRA_ARGS=""
+if [[ "$NOW_MODE" == "1" ]]; then
+  EXTRA_ARGS="--now-mode --urgent-window-minutes $URGENT_WINDOW_MINUTES --restore-grace-seconds $RESTORE_GRACE_SECONDS --session-check-interval-seconds $SESSION_CHECK_INTERVAL_SECONDS"
+fi
+
 cat > "$SERVICE_PATH" <<SERVICE
 [Unit]
 Description=Rhythmjoy SpaceCloud/Naver automation watcher
@@ -39,7 +50,7 @@ Type=simple
 WorkingDirectory=$REPO_ROOT
 Environment=HOME=$HOME
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=$XVFB_RUN_BIN -a $NODE_BIN $REPO_ROOT/tools/spacecloud-watch.mjs watch --interval-seconds $INTERVAL_SECONDS --limit-per-cycle $LIMIT_PER_CYCLE --delete-limit-per-cycle $DELETE_LIMIT_PER_CYCLE --naver-block-limit-per-cycle $NAVER_BLOCK_LIMIT_PER_CYCLE --env-file $ENV_FILE --profile-dir $PROFILE_DIR --work-dir $LOG_DIR
+ExecStart=$XVFB_RUN_BIN -a $NODE_BIN $REPO_ROOT/tools/spacecloud-watch.mjs watch --interval-seconds $INTERVAL_SECONDS --limit-per-cycle $LIMIT_PER_CYCLE --delete-limit-per-cycle $DELETE_LIMIT_PER_CYCLE --naver-block-limit-per-cycle $NAVER_BLOCK_LIMIT_PER_CYCLE --naver-cancel-limit-per-cycle $NAVER_CANCEL_LIMIT_PER_CYCLE --spacecloud-cancel-limit-per-cycle $SPACECLOUD_CANCEL_LIMIT_PER_CYCLE $EXTRA_ARGS --env-file $ENV_FILE --profile-dir $PROFILE_DIR --work-dir $LOG_DIR
 Restart=always
 RestartSec=10
 StandardOutput=append:$LOG_DIR/launchd.log

@@ -245,6 +245,23 @@ Set `RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1` only when the active browser w
 
 Set `RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` for SpaceCloud reservation email intake. Add `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1` only when the active browser watcher is installed, logged into Naver SmartPlace, and ready to consume `naver_block` tasks. Google Calendar creation for SpaceCloud-origin reservations is intentionally done by the browser watcher after Naver SmartPlace availability is applied. Toggle the relevant flag back to `0` and restart `my_email_service.service` to return to the previous importer behavior.
 
+NOW mode is for running Naver and SpaceCloud as both-immediate-booking channels. It does not claim to prevent every simultaneous booking before it exists; it minimizes the time to detect an overlap, keep the first confirmed booking, cancel the later booking, send the cancellation SMS, and report the story to Telegram. Use it only when duplicate cancellation automation has been tested in both directions.
+
+```bash
+SPACE_CLOUD_WATCH_NOW_MODE=1
+SPACE_CLOUD_WATCH_INTERVAL_SECONDS=10
+SPACE_CLOUD_WATCH_LIMIT_PER_CYCLE=1
+SPACE_CLOUD_WATCH_DELETE_LIMIT_PER_CYCLE=1
+SPACE_CLOUD_WATCH_NAVER_BLOCK_LIMIT_PER_CYCLE=2
+SPACE_CLOUD_WATCH_NAVER_CANCEL_LIMIT_PER_CYCLE=1
+SPACE_CLOUD_WATCH_SPACECLOUD_CANCEL_LIMIT_PER_CYCLE=1
+SPACE_CLOUD_WATCH_URGENT_WINDOW_MINUTES=180
+SPACE_CLOUD_WATCH_RESTORE_GRACE_SECONDS=45
+SPACE_CLOUD_WATCH_SESSION_CHECK_INTERVAL_SECONDS=180
+```
+
+In NOW mode the watcher prioritizes already-queued later-booking cancellations, then Naver availability changes, then normal uploads. Naver restore tasks wait briefly before reopening availability so a fast cancel-and-rebook sequence does not reopen a slot that has already been rebooked.
+
 ## Aligo SMS Sender
 
 Aligo SMS is the only confirmation SMS sender. Reservation-confirmed auto-SMS calls this module after the booking has been applied to the opposite platform.

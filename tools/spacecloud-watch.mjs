@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -44,6 +45,7 @@ function usage() {
   node tools/spacecloud-watch.mjs check-naver-login [options]
   node tools/spacecloud-watch.mjs notify-test [options]
   node tools/spacecloud-watch.mjs sms-test --to <phone> [options]
+  node tools/spacecloud-watch.mjs now-mode-self-test
   node tools/spacecloud-watch.mjs once [options]
   node tools/spacecloud-watch.mjs watch [options]
 
@@ -71,6 +73,13 @@ Options:
                             Defaults to 1.
   --spacecloud-cancel-limit-per-cycle <n>
                             Defaults to 1.
+  --now-mode                Prioritize duplicate cancellation and near-time availability work.
+  --urgent-window-minutes <n>
+                            Defaults to 180.
+  --restore-grace-seconds <n>
+                            Defaults to 45 in now-mode.
+  --session-check-interval-seconds <n>
+                            Defaults to 180 in now-mode.
   --naver-business-id <id>  Defaults to 1257912.
   --legacy-calendar-plan    Also run the older Google Calendar cache upload plan.
   --headless                Run Chrome headless. Not recommended for first login.
@@ -116,6 +125,10 @@ function parseArgs(argv) {
     naverBlockLimitPerCycle: 2,
     naverCancelLimitPerCycle: 1,
     spacecloudCancelLimitPerCycle: 1,
+    nowMode: false,
+    urgentWindowMinutes: 180,
+    restoreGraceSeconds: 45,
+    sessionCheckIntervalSeconds: 180,
     naverBusinessId: '1257912',
     legacyCalendarPlan: false,
     headless: false,
@@ -150,6 +163,10 @@ function parseArgs(argv) {
       args.legacyCalendarPlan = true;
       continue;
     }
+    if (arg === '--now-mode') {
+      args.nowMode = true;
+      continue;
+    }
     if (!arg.startsWith('--')) throw new Error(`Unexpected argument: ${arg}`);
 
     const key = arg.slice(2);
@@ -166,6 +183,9 @@ function parseArgs(argv) {
       'naver-cancel-limit-per-cycle',
       'spacecloud-cancel-limit-per-cycle',
       'notify-cooldown-seconds',
+      'urgent-window-minutes',
+      'restore-grace-seconds',
+      'session-check-interval-seconds',
     ].includes(key)) {
       const parsed = Number.parseInt(next, 10);
       if (!Number.isFinite(parsed) || parsed < 1) throw new Error(`${arg} must be a positive integer`);
@@ -823,6 +843,8 @@ export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
 export RHYTHMJOY_OPS_ROOT=${shellQuote(opsRoot)}
 export RHYTHMJOY_TASK_TYPE=${shellQuote(taskType)}
 export TASK_LIMIT=${shellQuote(limit)}
+export RHYTHMJOY_NOW_MODE=${shellQuote(args.nowMode ? '1' : '0')}
+export RHYTHMJOY_URGENT_WINDOW_MINUTES=${shellQuote(args.urgentWindowMinutes)}
 ${shellQuote(target.PYTHON_BIN)} <<'PY'
 import json
 import os
@@ -876,6 +898,8 @@ try:
                 payload_json AS payloadJson,
                 attempts,
                 CAST(locked_at AS CHAR) AS lockedAt,
+                CAST(created_at AS CHAR) AS createdAt,
+                CAST(updated_at AS CHAR) AS updatedAt,
                 result_text AS resultText
             FROM rhythmjoy_spacecloud_tasks
             WHERE task_type=%s
@@ -890,6 +914,14 @@ try:
                 WHEN status='pending' THEN 1
                 ELSE 2
               END,
+              CASE
+                WHEN %s = '1'
+                  AND reservation_date IS NOT NULL
+                  AND start_time IS NOT NULL
+                  AND TIMESTAMP(reservation_date, start_time) <= DATE_ADD(NOW(), INTERVAL %s MINUTE)
+                THEN 0
+                ELSE 1
+              END,
               created_at ASC,
               id ASC
             LIMIT %s
@@ -898,6 +930,8 @@ try:
             (
                 os.environ['RHYTHMJOY_TASK_TYPE'],
                 os.environ['RHYTHMJOY_TASK_TYPE'],
+                os.environ.get('RHYTHMJOY_NOW_MODE', '0'),
+                int(os.environ.get('RHYTHMJOY_URGENT_WINDOW_MINUTES', '180')),
                 int(os.environ.get('TASK_LIMIT', '2')),
             )
         )
@@ -932,6 +966,8 @@ export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
 export RHYTHMJOY_OPS_ROOT=${shellQuote(opsRoot)}
 export RHYTHMJOY_TASK_TYPES=${shellQuote(JSON.stringify(taskTypes))}
 export TASK_LIMIT=${shellQuote(limit)}
+export RHYTHMJOY_NOW_MODE=${shellQuote(args.nowMode ? '1' : '0')}
+export RHYTHMJOY_URGENT_WINDOW_MINUTES=${shellQuote(args.urgentWindowMinutes)}
 ${shellQuote(target.PYTHON_BIN)} <<'PY'
 import json
 import os
@@ -990,6 +1026,8 @@ try:
                 payload_json AS payloadJson,
                 attempts,
                 CAST(locked_at AS CHAR) AS lockedAt,
+                CAST(created_at AS CHAR) AS createdAt,
+                CAST(updated_at AS CHAR) AS updatedAt,
                 result_text AS resultText
             FROM rhythmjoy_spacecloud_tasks
             WHERE task_type IN ({placeholders})
@@ -1004,12 +1042,32 @@ try:
                 WHEN status='pending' THEN 1
                 ELSE 2
               END,
+              CASE
+                WHEN %s = '1' AND task_type='naver_block' THEN 0
+                WHEN %s = '1' AND task_type='naver_restore' THEN 2
+                ELSE 1
+              END,
+              CASE
+                WHEN %s = '1'
+                  AND reservation_date IS NOT NULL
+                  AND start_time IS NOT NULL
+                  AND TIMESTAMP(reservation_date, start_time) <= DATE_ADD(NOW(), INTERVAL %s MINUTE)
+                THEN 0
+                ELSE 1
+              END,
               created_at ASC,
               id ASC
             LIMIT %s
             FOR UPDATE
             """,
-            [*task_types, int(os.environ.get('TASK_LIMIT', '2'))],
+            [
+                *task_types,
+                os.environ.get('RHYTHMJOY_NOW_MODE', '0'),
+                os.environ.get('RHYTHMJOY_NOW_MODE', '0'),
+                os.environ.get('RHYTHMJOY_NOW_MODE', '0'),
+                int(os.environ.get('RHYTHMJOY_URGENT_WINDOW_MINUTES', '180')),
+                int(os.environ.get('TASK_LIMIT', '2')),
+            ],
         )
         rows = cur.fetchall()
         for row in rows:
@@ -2317,6 +2375,7 @@ function dbStatusForNaverRestoreRow(row) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip' || row.status === 'restore-skipped-not-owned') return 'done';
+  if (row.status === 'restore-grace-wait') return 'pending';
   if (row.status === 'restored' || row.status === 'already-available') return 'done';
   if (row.status === 'calendar-record-warning') return 'done';
   if (row.status === 'google-delete-failed') return 'google_pending';
@@ -2340,6 +2399,36 @@ function basicTaskSummary(task) {
     ledgerId: task.ledgerId || task.ledger_id || null,
     ledgerKey: task.ledgerKey || task.ledger_key || '',
     ledgerLastEventAt: task.ledgerLastEventAt || task.ledger_last_event_at || '',
+    createdAt: task.createdAt || task.created_at || '',
+    updatedAt: task.updatedAt || task.updated_at || '',
+  };
+}
+
+function parseKstMysqlTimestamp(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const normalized = text.includes('T') ? text : text.replace(' ', 'T');
+  const parsed = new Date(`${normalized}+09:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function taskAgeSeconds(task, now = new Date()) {
+  const created = parseKstMysqlTimestamp(task.createdAt || task.created_at);
+  if (!created) return null;
+  return Math.max(0, Math.floor((now.getTime() - created.getTime()) / 1000));
+}
+
+function restoreGraceWaitRow(task, graceSeconds) {
+  const ageSeconds = taskAgeSeconds(task);
+  return {
+    ...basicTaskSummary(task),
+    taskType: 'naver_restore',
+    status: 'restore-grace-wait',
+    ageSeconds,
+    graceSeconds,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    reason: `waiting ${graceSeconds}s before restoring Naver availability to absorb quick cancel/rebook changes`,
   };
 }
 
@@ -3325,6 +3414,19 @@ function splitNaverAvailabilityResult(result) {
   };
 }
 
+function mergeTaskResults(...results) {
+  const valid = results.filter(Boolean);
+  const rows = valid.flatMap((result) => result.rows || []);
+  const failed = valid.flatMap((result) => result.failed || []);
+  return {
+    status: failed.length ? 'task-needs-review' : 'task-processed',
+    fetched: valid.reduce((sum, result) => sum + (result.fetched || 0), 0),
+    attempted: valid.reduce((sum, result) => sum + (result.attempted || 0), 0),
+    rows,
+    failed,
+  };
+}
+
 async function runNaverAvailabilityTasks(args, context = null) {
   if (args.dryRun) {
     return {
@@ -3367,7 +3469,14 @@ async function runNaverAvailabilityTasks(args, context = null) {
         if (ledgerIssue) {
           row = ledgerIssueRow(task, taskType, ledgerIssue);
         } else if (taskType === 'naver_restore') {
-          if (task.status === 'google_pending') {
+          if (args.nowMode && task.status !== 'google_pending') {
+            const ageSeconds = taskAgeSeconds(task);
+            if (ageSeconds !== null && ageSeconds < args.restoreGraceSeconds) {
+              row = restoreGraceWaitRow(task, args.restoreGraceSeconds);
+            }
+          }
+
+          if (!row && task.status === 'google_pending') {
             row = {
               ...naverBlockTaskSummary(task),
               taskType,
@@ -3375,9 +3484,9 @@ async function runNaverAvailabilityTasks(args, context = null) {
               startedAt: new Date().toISOString(),
               naverAlreadyRestored: true,
             };
-          } else if (task.priorNaverBlockChanged !== true && task.restoreSafeWithoutPriorBlock !== true) {
+          } else if (!row && task.priorNaverBlockChanged !== true && task.restoreSafeWithoutPriorBlock !== true) {
             row = restoreSkippedNotOwnedRow(task);
-          } else {
+          } else if (!row) {
             row = await setNaverAvailability(activeContext, task, {
               businessId: args.naverBusinessId,
               targetStatus: 'available',
@@ -3486,6 +3595,7 @@ async function runNaverAvailabilityTasks(args, context = null) {
         'restored',
         'already-available',
         'restore-skipped-not-owned',
+        'restore-grace-wait',
         'calendar-record-warning',
         'stale-ledger-skip',
       ].includes(row.status);
@@ -3660,6 +3770,63 @@ async function runCheckNaverLogin(args) {
   }
 }
 
+function runNowModeSelfTest() {
+  const parsed = parseArgs([
+    'node',
+    'tools/spacecloud-watch.mjs',
+    'watch',
+    '--now-mode',
+    '--urgent-window-minutes',
+    '180',
+    '--restore-grace-seconds',
+    '45',
+    '--session-check-interval-seconds',
+    '180',
+  ]);
+  assert.equal(parsed.nowMode, true);
+  assert.equal(parsed.urgentWindowMinutes, 180);
+  assert.equal(parsed.restoreGraceSeconds, 45);
+  assert.equal(parsed.sessionCheckIntervalSeconds, 180);
+
+  const freshTask = {
+    id: 1,
+    taskType: 'naver_restore',
+    roomKey: 'a',
+    date: '2026-07-16',
+    startTime: '20:00',
+    endTime: '22:00',
+    createdAt: new Date(Date.now() + KST_OFFSET_MS - 10_000)
+      .toISOString()
+      .slice(0, 19)
+      .replace('T', ' '),
+  };
+  const waitRow = restoreGraceWaitRow(freshTask, 45);
+  assert.equal(waitRow.status, 'restore-grace-wait');
+  assert.equal(dbStatusForNaverRestoreRow(waitRow), 'pending');
+
+  const merged = mergeTaskResults(
+    { fetched: 1, attempted: 1, rows: [{ status: 'canceled' }], failed: [] },
+    { fetched: 1, attempted: 1, rows: [{ status: 'already-canceled' }], failed: [] },
+  );
+  assert.equal(merged.fetched, 2);
+  assert.equal(merged.attempted, 2);
+  assert.equal(merged.rows.length, 2);
+  assert.equal(merged.failed.length, 0);
+
+  assert.equal(hasBlockingFailures({ failed: [{ status: 'google-create-failed' }] }), false);
+  assert.equal(hasBlockingFailures({ failed: [{ status: 'needs-review' }] }), true);
+
+  return {
+    ok: true,
+    checks: [
+      'now-mode argument parsing',
+      'restore grace keeps task pending',
+      'same-cycle cancellation result merge',
+      'google-only retry does not block urgent flow',
+    ],
+  };
+}
+
 async function checkAutomationSessionStatuses(args, context) {
   const statuses = [];
   const addStatus = (platform, result, error = null) => {
@@ -3704,6 +3871,93 @@ async function checkAutomationSessionStatuses(args, context) {
   return statuses;
 }
 
+async function maybeCheckAutomationSessionStatuses(args, context, workDir) {
+  if (!args.nowMode || args.sessionCheckIntervalSeconds <= 0) {
+    return checkAutomationSessionStatuses(args, context);
+  }
+
+  const statePath = path.join(workDir, 'session-check-state.json');
+  const state = await readJsonObject(statePath);
+  const lastCheckedAt = state.checkedAt ? new Date(state.checkedAt).getTime() : 0;
+  const now = Date.now();
+  if (lastCheckedAt && now - lastCheckedAt < args.sessionCheckIntervalSeconds * 1000) {
+    return [{
+      platform: 'all',
+      status: 'check_skipped',
+      note: `NOW mode: session check skipped until ${args.sessionCheckIntervalSeconds}s interval passes`,
+    }];
+  }
+
+  const statuses = await checkAutomationSessionStatuses(args, context);
+  await writeJson(statePath, {
+    checkedAt: new Date(now).toISOString(),
+    statuses,
+  });
+  return statuses;
+}
+
+function setCycleStatusFromResult(row, result, { processed, needsReview }) {
+  if (!result || result.attempted <= 0) return;
+  row.status = hasBlockingFailures(result) ? needsReview : processed;
+}
+
+async function runNowModeCycleTasks(args, row, activeContext) {
+  const firstSpacecloudCancel = await runSpacecloudCancelTasks(args, activeContext);
+  row.spacecloudCancelTasks = firstSpacecloudCancel;
+  setCycleStatusFromResult(row, row.spacecloudCancelTasks, {
+    processed: 'spacecloud-cancel-processed',
+    needsReview: 'spacecloud-cancel-needs-review',
+  });
+  if (hasBlockingFailures(row.spacecloudCancelTasks)) return;
+
+  const firstNaverCancel = await runNaverCancelTasks(args, activeContext);
+  row.naverCancelTasks = firstNaverCancel;
+  setCycleStatusFromResult(row, row.naverCancelTasks, {
+    processed: 'naver-cancel-processed',
+    needsReview: 'naver-cancel-needs-review',
+  });
+  if (hasBlockingFailures(row.naverCancelTasks)) return;
+
+  row.naverAvailabilityTasks = await runNaverAvailabilityTasks(args, activeContext);
+  const split = splitNaverAvailabilityResult(row.naverAvailabilityTasks);
+  row.naverBlockTasks = split.naverBlockTasks;
+  row.naverRestoreTasks = split.naverRestoreTasks;
+  setCycleStatusFromResult(row, row.naverAvailabilityTasks, {
+    processed: row.naverAvailabilityTasks.failed?.length ? 'naver-availability-google-pending' : 'naver-availability-processed',
+    needsReview: 'naver-availability-needs-review',
+  });
+  if (hasBlockingFailures(row.naverAvailabilityTasks)) return;
+
+  const secondSpacecloudCancel = await runSpacecloudCancelTasks(args, activeContext);
+  row.spacecloudCancelTasks = mergeTaskResults(row.spacecloudCancelTasks, secondSpacecloudCancel);
+  setCycleStatusFromResult(row, row.spacecloudCancelTasks, {
+    processed: 'spacecloud-cancel-processed',
+    needsReview: 'spacecloud-cancel-needs-review',
+  });
+  if (hasBlockingFailures(row.spacecloudCancelTasks)) return;
+
+  row.uploadTasks = await runUploadTasks(args, activeContext);
+  setCycleStatusFromResult(row, row.uploadTasks, {
+    processed: row.uploadTasks.failed?.length ? 'upload-task-google-pending' : 'upload-task-processed',
+    needsReview: 'upload-task-needs-review',
+  });
+  if (hasBlockingFailures(row.uploadTasks)) return;
+
+  const secondNaverCancel = await runNaverCancelTasks(args, activeContext);
+  row.naverCancelTasks = mergeTaskResults(row.naverCancelTasks, secondNaverCancel);
+  setCycleStatusFromResult(row, row.naverCancelTasks, {
+    processed: 'naver-cancel-processed',
+    needsReview: 'naver-cancel-needs-review',
+  });
+  if (hasBlockingFailures(row.naverCancelTasks)) return;
+
+  row.deleteTasks = await runDeleteTasks(args, activeContext);
+  setCycleStatusFromResult(row, row.deleteTasks, {
+    processed: row.deleteTasks.failed?.length ? 'delete-google-pending' : 'delete-processed',
+    needsReview: 'delete-needs-review',
+  });
+}
+
 async function runCycle(args, context = null) {
   const workDir = args.workDir;
   const planPath = path.join(workDir, 'latest-plan.json');
@@ -3745,66 +3999,70 @@ async function runCycle(args, context = null) {
       failed: [],
     };
 
-    row.sessionStatus = await checkAutomationSessionStatuses(args, await getContext());
+    row.sessionStatus = await maybeCheckAutomationSessionStatuses(args, await getContext(), workDir);
 
-    row.uploadTasks = await runUploadTasks(args, activeContext);
-    if (['planned', 'dry-run'].includes(row.status) && row.uploadTasks.attempted > 0) {
-      row.status = hasBlockingFailures(row.uploadTasks)
-        ? 'upload-task-needs-review'
-        : (row.uploadTasks.failed.length ? 'upload-task-google-pending' : 'upload-task-processed');
-    }
-
-    if (!hasBlockingFailures(row.uploadTasks)) {
-      row.naverCancelTasks = await runNaverCancelTasks(args, activeContext);
-      if (['planned', 'dry-run', 'idle', 'upload-task-processed'].includes(row.status) && row.naverCancelTasks.attempted > 0) {
-        row.status = row.naverCancelTasks.failed.length ? 'naver-cancel-needs-review' : 'naver-cancel-processed';
+    if (args.nowMode) {
+      await runNowModeCycleTasks(args, row, activeContext);
+    } else {
+      row.uploadTasks = await runUploadTasks(args, activeContext);
+      if (['planned', 'dry-run'].includes(row.status) && row.uploadTasks.attempted > 0) {
+        row.status = hasBlockingFailures(row.uploadTasks)
+          ? 'upload-task-needs-review'
+          : (row.uploadTasks.failed.length ? 'upload-task-google-pending' : 'upload-task-processed');
       }
-    }
 
-    if (args.legacyCalendarPlan && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && plan.upload.length > 0 && !args.dryRun) {
-      const uploader = await createSpacecloudPlaywrightUploader({
-        context: await getContext(),
-        planPath,
-        resultsPath,
-      });
-      const result = await uploader.runBatch(args.limitPerCycle);
-      const allResults = await readResults(resultsPath);
-      const marked = markSubmittedRows(args, allResults);
-      const uploadedRows = (result.rows || []).filter((uploadRow) => uploadRow.status === 'submitted');
-      row.status = result.failed?.length ? 'failed' : 'uploaded';
-      row.attempted = result.attempted;
-      row.submittedInPlan = result.submitted;
-      row.remainingInPlan = result.remaining;
-      row.marked = marked;
-      row.failed = result.failed;
-      row.uploadedRows = uploadedRows;
-    }
-
-    if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks)) {
-      row.deleteTasks = await runDeleteTasks(args, activeContext);
-      if (['planned', 'dry-run'].includes(row.status) && row.deleteTasks.attempted > 0) {
-        row.status = hasBlockingFailures(row.deleteTasks)
-          ? 'delete-needs-review'
-          : (row.deleteTasks.failed.length ? 'delete-google-pending' : 'delete-processed');
+      if (!hasBlockingFailures(row.uploadTasks)) {
+        row.naverCancelTasks = await runNaverCancelTasks(args, activeContext);
+        if (['planned', 'dry-run', 'idle', 'upload-task-processed'].includes(row.status) && row.naverCancelTasks.attempted > 0) {
+          row.status = row.naverCancelTasks.failed.length ? 'naver-cancel-needs-review' : 'naver-cancel-processed';
+        }
       }
-    }
 
-    if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && !hasBlockingFailures(row.deleteTasks)) {
-      row.naverAvailabilityTasks = await runNaverAvailabilityTasks(args, activeContext);
-      const split = splitNaverAvailabilityResult(row.naverAvailabilityTasks);
-      row.naverBlockTasks = split.naverBlockTasks;
-      row.naverRestoreTasks = split.naverRestoreTasks;
-      if (['planned', 'dry-run'].includes(row.status) && row.naverAvailabilityTasks.attempted > 0) {
-        row.status = hasBlockingFailures(row.naverAvailabilityTasks)
-          ? 'naver-availability-needs-review'
-          : (row.naverAvailabilityTasks.failed.length ? 'naver-availability-google-pending' : 'naver-availability-processed');
+      if (args.legacyCalendarPlan && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && plan.upload.length > 0 && !args.dryRun) {
+        const uploader = await createSpacecloudPlaywrightUploader({
+          context: await getContext(),
+          planPath,
+          resultsPath,
+        });
+        const result = await uploader.runBatch(args.limitPerCycle);
+        const allResults = await readResults(resultsPath);
+        const marked = markSubmittedRows(args, allResults);
+        const uploadedRows = (result.rows || []).filter((uploadRow) => uploadRow.status === 'submitted');
+        row.status = result.failed?.length ? 'failed' : 'uploaded';
+        row.attempted = result.attempted;
+        row.submittedInPlan = result.submitted;
+        row.remainingInPlan = result.remaining;
+        row.marked = marked;
+        row.failed = result.failed;
+        row.uploadedRows = uploadedRows;
       }
-    }
 
-    if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && !hasBlockingFailures(row.deleteTasks) && !hasBlockingFailures(row.naverAvailabilityTasks)) {
-      row.spacecloudCancelTasks = await runSpacecloudCancelTasks(args, activeContext);
-      if (['planned', 'dry-run', 'idle'].includes(row.status) && row.spacecloudCancelTasks.attempted > 0) {
-        row.status = row.spacecloudCancelTasks.failed.length ? 'spacecloud-cancel-needs-review' : 'spacecloud-cancel-processed';
+      if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks)) {
+        row.deleteTasks = await runDeleteTasks(args, activeContext);
+        if (['planned', 'dry-run'].includes(row.status) && row.deleteTasks.attempted > 0) {
+          row.status = hasBlockingFailures(row.deleteTasks)
+            ? 'delete-needs-review'
+            : (row.deleteTasks.failed.length ? 'delete-google-pending' : 'delete-processed');
+        }
+      }
+
+      if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && !hasBlockingFailures(row.deleteTasks)) {
+        row.naverAvailabilityTasks = await runNaverAvailabilityTasks(args, activeContext);
+        const split = splitNaverAvailabilityResult(row.naverAvailabilityTasks);
+        row.naverBlockTasks = split.naverBlockTasks;
+        row.naverRestoreTasks = split.naverRestoreTasks;
+        if (['planned', 'dry-run'].includes(row.status) && row.naverAvailabilityTasks.attempted > 0) {
+          row.status = hasBlockingFailures(row.naverAvailabilityTasks)
+            ? 'naver-availability-needs-review'
+            : (row.naverAvailabilityTasks.failed.length ? 'naver-availability-google-pending' : 'naver-availability-processed');
+        }
+      }
+
+      if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && !hasBlockingFailures(row.deleteTasks) && !hasBlockingFailures(row.naverAvailabilityTasks)) {
+        row.spacecloudCancelTasks = await runSpacecloudCancelTasks(args, activeContext);
+        if (['planned', 'dry-run', 'idle'].includes(row.status) && row.spacecloudCancelTasks.attempted > 0) {
+          row.status = row.spacecloudCancelTasks.failed.length ? 'spacecloud-cancel-needs-review' : 'spacecloud-cancel-processed';
+        }
       }
     }
 
@@ -4078,6 +4336,13 @@ ${kstNowText()}
 이 메시지가 보이면 성공 알림은 ✅ 성공, 실패/확인 필요 알림은 ⚠️ 실패로 전송됩니다.`);
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else console.log(result.sent ? 'Telegram notification OK' : `Telegram notification skipped: ${result.reason}`);
+    return;
+  }
+
+  if (args.command === 'now-mode-self-test') {
+    const result = runNowModeSelfTest();
+    if (args.json) console.log(JSON.stringify(result, null, 2));
+    else console.log(`NOW mode self-test OK: ${result.checks.join(', ')}`);
     return;
   }
 
