@@ -1492,6 +1492,16 @@ function industry_comparison_deltas($rows) {
         if ($base['studioKey'] === 'able' || $base['events'] < 20) {
             continue;
         }
+        $base_avg_per_hour = $base['hours'] > 0 ? ($base['gross'] / $base['hours']) : 0;
+        $next_avg_per_hour = $next['hours'] > 0 ? ($next['gross'] / $next['hours']) : 0;
+        $hours_diff = round($next['hours'] - $base['hours'], 1);
+        $hours_per_room_month_diff = round($next['hoursPerRoomMonth'] - $base['hoursPerRoomMonth'], 1);
+        $volume_revenue_effect = intval(round($hours_diff * $base_avg_per_hour));
+        $rate_revenue_effect = intval(round(($next_avg_per_hour - $base_avg_per_hour) * $next['hours']));
+        $lost_revenue_estimate = $volume_revenue_effect < 0 ? abs($volume_revenue_effect) : 0;
+        $lost_revenue_per_room_month_estimate = $hours_per_room_month_diff < 0
+            ? intval(round(abs($hours_per_room_month_diff) * $base_avg_per_hour))
+            : 0;
         $result[] = array(
             'studioKey' => $next['studioKey'],
             'studioLabel' => $next['studioLabel'],
@@ -1500,13 +1510,19 @@ function industry_comparison_deltas($rows) {
             'roomLabels' => $next['roomLabels'],
             'eventsDiff' => $next['events'] - $base['events'],
             'eventsRate' => percent_change($base['events'], $next['events']),
-            'hoursDiff' => round($next['hours'] - $base['hours'], 1),
+            'hoursDiff' => $hours_diff,
             'hoursRate' => percent_change($base['hours'], $next['hours']),
             'grossDiff' => $next['gross'] - $base['gross'],
             'grossRate' => percent_change($base['gross'], $next['gross']),
             'avgPerHourDiff' => $next['avgPerHour'] - $base['avgPerHour'],
             'avgPerHourRate' => percent_change($base['avgPerHour'], $next['avgPerHour']),
-            'hoursPerRoomMonthDiff' => round($next['hoursPerRoomMonth'] - $base['hoursPerRoomMonth'], 1),
+            'baseAvgPerHour' => intval(round($base_avg_per_hour)),
+            'nextAvgPerHour' => intval(round($next_avg_per_hour)),
+            'volumeRevenueEffect' => $volume_revenue_effect,
+            'rateRevenueEffect' => $rate_revenue_effect,
+            'lostRevenueEstimate' => $lost_revenue_estimate,
+            'lostRevenuePerRoomMonthEstimate' => $lost_revenue_per_room_month_estimate,
+            'hoursPerRoomMonthDiff' => $hours_per_room_month_diff,
             'grossPerRoomMonthDiff' => $next['grossPerRoomMonth'] - $base['grossPerRoomMonth'],
         );
     }

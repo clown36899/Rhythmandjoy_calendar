@@ -490,6 +490,10 @@
         grid.appendChild(block);
       });
     });
+
+    if (options.showNow) {
+      updateScheduleGridCurrentTime(grid, date);
+    }
   }
 
   function renderMonthCalendar() {
@@ -612,44 +616,55 @@
   }
 
   function updateCurrentTimeNavigator() {
-    const marker = ensureCurrentTimeMarker();
+    const marker = ensureCurrentTimeMarker(el.scheduleGrid);
     const now = new Date();
-    const currentHour = now.getHours() + now.getMinutes() / 60;
-    const firstHour = hours[0];
-    const lastHour = 24;
-    const isToday = state.activeDate === today();
-    const inRange = currentHour >= firstHour && currentHour <= lastHour;
-    if (!isToday || !inRange) {
-      marker.hidden = true;
+    const visible = updateScheduleGridCurrentTime(el.scheduleGrid, state.activeDate, now);
+    if (!visible) {
       el.scheduleTimeNav.hidden = true;
       return;
     }
 
-    const rowHeaderWidth = scheduleRoomColumnWidth();
-    const usableWidth = Math.max(1, el.scheduleGrid.clientWidth - rowHeaderWidth);
-    const left = rowHeaderWidth + ((currentHour - firstHour) / (lastHour - firstHour)) * usableWidth;
     const label = `현재 ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-    marker.hidden = false;
-    marker.style.left = `${left}px`;
-    marker.querySelector("span").textContent = label;
     el.scheduleTimeNav.hidden = false;
     el.scheduleNowText.textContent = label;
+    marker.querySelector("span").textContent = label;
   }
 
-  function ensureCurrentTimeMarker() {
-    let marker = el.scheduleGrid.querySelector(".schedule-now-marker");
+  function updateScheduleGridCurrentTime(grid, date, now = new Date()) {
+    const marker = ensureCurrentTimeMarker(grid);
+    const currentHour = now.getHours() + now.getMinutes() / 60;
+    const firstHour = hours[0];
+    const lastHour = 24;
+    const isToday = date === today();
+    const inRange = currentHour >= firstHour && currentHour <= lastHour;
+    if (!isToday || !inRange || !grid.clientWidth) {
+      marker.hidden = true;
+      return false;
+    }
+
+    const rowHeaderWidth = scheduleRoomColumnWidth(grid);
+    const usableWidth = Math.max(1, grid.clientWidth - rowHeaderWidth);
+    const left = rowHeaderWidth + ((currentHour - firstHour) / (lastHour - firstHour)) * usableWidth;
+    marker.hidden = false;
+    marker.style.left = `${left}px`;
+    marker.querySelector("span").textContent = `현재 ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+    return true;
+  }
+
+  function ensureCurrentTimeMarker(grid = el.scheduleGrid) {
+    let marker = grid.querySelector(".schedule-now-marker");
     if (!marker) {
       marker = document.createElement("div");
       marker.className = "schedule-now-marker";
       marker.hidden = true;
       marker.innerHTML = "<span></span>";
-      el.scheduleGrid.appendChild(marker);
+      grid.appendChild(marker);
     }
     return marker;
   }
 
   function scrollScheduleToNow() {
-    const marker = ensureCurrentTimeMarker();
+    const marker = ensureCurrentTimeMarker(el.scheduleGrid);
     updateCurrentTimeNavigator();
     if (marker.hidden) return;
     marker.classList.remove("pulse");
@@ -1006,7 +1021,7 @@
       <section class="industry-section">
         <div class="revenue-section-heading">
           <h3>2025 상반기 대비 2026 상반기</h3>
-          <p>에이블은 2025 상반기 공개 캘린더가 부족해 전년대비에서 제외했습니다.</p>
+          <p>시간감소 추정은 2025년 시간당 매출에 줄어든 대관시간을 곱한 값입니다. 경쟁사는 공지 가격 기준 추정치입니다.</p>
         </div>
         ${industryDeltaHtml(deltas)}
       </section>
@@ -1083,6 +1098,8 @@
               <th>대관시간</th>
               <th>방당 월매출</th>
               <th>시간당</th>
+              <th>시간감소 추정</th>
+              <th>단가보정</th>
               <th>판정</th>
             </tr>
           </thead>
@@ -1107,6 +1124,18 @@
                   <td class="${signedClass(row.avgPerHourDiff)}">
                     ${escapeHtml(formatSignedWon(row.avgPerHourDiff))}
                     <small>${escapeHtml(formatSignedPercent(row.avgPerHourRate))}</small>
+                  </td>
+                  <td class="${Number(row.lostRevenueEstimate || 0) > 0 ? "negative" : signedClass(row.volumeRevenueEffect)}">
+                    ${Number(row.lostRevenueEstimate || 0) > 0
+                      ? `-${escapeHtml(formatRevenueStat(row.lostRevenueEstimate))}`
+                      : escapeHtml(formatSignedWon(row.volumeRevenueEffect))}
+                    <small>${Number(row.lostRevenuePerRoomMonthEstimate || 0) > 0
+                      ? `방/월 -${escapeHtml(formatRevenueStat(row.lostRevenuePerRoomMonthEstimate))}`
+                      : "감소 없음"}</small>
+                  </td>
+                  <td class="${signedClass(row.rateRevenueEffect)}">
+                    ${escapeHtml(formatSignedWon(row.rateRevenueEffect))}
+                    <small>시간당 ${escapeHtml(formatRevenueStat(row.baseAvgPerHour))} → ${escapeHtml(formatRevenueStat(row.nextAvgPerHour))}</small>
                   </td>
                   <td><span class="impact-badge ${escapeHtml(assessment.key)}">${escapeHtml(assessment.label)}</span></td>
                 </tr>
@@ -1272,8 +1301,8 @@
     node.style.gridColumn = String(column);
   }
 
-  function scheduleRoomColumnWidth() {
-    const header = el.scheduleGrid.querySelector(".grid-cell.header");
+  function scheduleRoomColumnWidth(grid = el.scheduleGrid) {
+    const header = grid.querySelector(".grid-cell.header");
     return header ? header.getBoundingClientRect().width : 68;
   }
 
@@ -1728,6 +1757,9 @@
     renderScheduleGrid(el.dayScheduleGrid, date, events, visibleRooms, { slotMode: "view" });
     el.dayScheduleModal.hidden = false;
     document.body.classList.add("modal-open");
+    window.requestAnimationFrame(() => {
+      updateScheduleGridCurrentTime(el.dayScheduleGrid, date);
+    });
     window.setTimeout(() => {
       el.doneDayScheduleModal.focus();
     }, 0);
