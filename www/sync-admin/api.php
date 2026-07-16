@@ -190,6 +190,46 @@ function ensure_schema($pdo) {
     ensure_column($pdo, 'rhythmjoy_booking_ledger', 'net_amount', 'INT UNSIGNED NULL AFTER fee_amount');
     ensure_column($pdo, 'rhythmjoy_booking_ledger', 'amount_source', "VARCHAR(64) NOT NULL DEFAULT '' AFTER net_amount");
     ensure_column($pdo, 'rhythmjoy_booking_ledger', 'payment_method', "VARCHAR(64) NOT NULL DEFAULT '' AFTER amount_source");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS rhythmjoy_industry_comparison_snapshots (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            snapshot_key VARCHAR(120) NOT NULL,
+            title VARCHAR(160) NOT NULL DEFAULT '',
+            basis TEXT NULL,
+            source_notes TEXT NULL,
+            generated_at DATETIME NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_snapshot_key (snapshot_key)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS rhythmjoy_industry_comparison_rows (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            snapshot_id BIGINT UNSIGNED NOT NULL,
+            period_key VARCHAR(40) NOT NULL,
+            period_label VARCHAR(80) NOT NULL,
+            period_months DECIMAL(6,2) NOT NULL DEFAULT 1,
+            studio_key VARCHAR(40) NOT NULL,
+            studio_label VARCHAR(80) NOT NULL,
+            group_key VARCHAR(40) NOT NULL,
+            group_label VARCHAR(80) NOT NULL,
+            room_labels VARCHAR(255) NOT NULL DEFAULT '',
+            room_count SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+            events_count INT UNSIGNED NOT NULL DEFAULT 0,
+            hours DECIMAL(10,2) NOT NULL DEFAULT 0,
+            gross_amount INT UNSIGNED NOT NULL DEFAULT 0,
+            avg_per_hour INT UNSIGNED NOT NULL DEFAULT 0,
+            avg_per_event INT UNSIGNED NOT NULL DEFAULT 0,
+            amount_basis VARCHAR(80) NOT NULL DEFAULT '',
+            note VARCHAR(255) NOT NULL DEFAULT '',
+            display_order SMALLINT NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_snapshot_period (snapshot_id, period_key),
+            KEY idx_group (group_key, studio_key)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
 }
 
 function clean_date_value($value) {
@@ -1312,6 +1352,240 @@ function recent_task_rows($pdo) {
     return array_slice($rows, 0, 80);
 }
 
+function industry_snapshot_key() {
+    return 'industry-size-segment-2026-07-16-v1';
+}
+
+function industry_source_notes() {
+    return array(
+        'basis' => '방 개수 차이를 보정하기 위해 방 크기군별 방 1개당 월평균 대관시간/매출로 비교합니다.',
+        'amountBasis' => '리듬앤조이는 DB 원장 실결제 총액, 경쟁사는 공개 캘린더 대관시간에 공지 가격을 적용한 추정 총액입니다.',
+        'sources' => array(
+            array('label' => '리듬앤조이 DB 원장', 'url' => 'rhythmjoy_booking_ledger'),
+            array('label' => '에이블 사당 공개 캘린더/공지 가격', 'url' => 'https://ablesadang.imweb.me/'),
+            array('label' => '디앤에스 공개 캘린더/공지 가격', 'url' => 'https://sites.google.com/view/clubspace'),
+            array('label' => '디앤에스 스페이스클라우드 가격 보조자료', 'url' => 'https://clubspace.co.kr/space/15'),
+            array('label' => '디앤에스 쉐어잇 가격 보조자료', 'url' => 'https://shareit.kr/store/3354'),
+        ),
+        'review' => array(
+            '전체 연습실 총합 비교는 방 개수와 방 크기 차이 때문에 왜곡됩니다. 이 화면은 대형/중형/소형 크기군으로 나누고 방 1개당 월평균으로 봅니다.',
+            'A홀은 경쟁 대형홀보다 시간당 단가와 방당 매출이 높지만, 대관시간은 낮습니다. 전체 가격 인하보다 빈 시간대 쿠폰/프로모션이 우선입니다.',
+            'B/E 중형군은 경쟁 중형군보다 대관시간이 낮고 시간당 단가가 높습니다. 상시 인하보다 특정 방/시간대 할인 테스트가 타당합니다.',
+            'C/D 소형군은 대관시간이 크게 밀리지 않고 단가도 이미 낮습니다. 가격 인하 우선순위는 B/E보다 낮습니다.',
+            '경쟁사 공개 캘린더는 내부 블록, 현장 결제, 취소 반영 방식이 다를 수 있으므로 방향성 비교용입니다.',
+        ),
+        'exclusions' => array(
+            '에이블은 2025 상반기 공개 캘린더 데이터가 사실상 비어 있어 전년대비 판단에서 제외했습니다.',
+            '디앤에스 V/W/X/Y/Z는 방 크기 분류가 불확실해 크기군 비교 표에서는 제외했습니다.',
+            '디앤에스 A/S는 소형/미확정으로 표기합니다. 정확한 평수가 확인되기 전까지 소형 기준의 보조 비교군입니다.',
+        ),
+    );
+}
+
+function industry_seed_rows() {
+    return array(
+        array('2025_H1', '2025 상반기', 6, 'rhythmjoy', '리듬앤조이', 'large', '대형(20평+)', 'A홀', 1, 497, 1350.0, 14165000, 10493, 28400, 'actual_db', 'DB 원장 실결제', 110),
+        array('2025_H1', '2025 상반기', 6, 'rhythmjoy', '리듬앤조이', 'medium', '중형(10평전후)', 'B홀,E홀', 2, 923, 2044.0, 19490833, 9536, 21117, 'actual_db', 'DB 원장 실결제', 210),
+        array('2025_H1', '2025 상반기', 6, 'rhythmjoy', '리듬앤조이', 'small', '소형(6평미만)', 'C홀,D홀', 2, 793, 1450.0, 7473000, 5154, 9424, 'actual_db', 'DB 원장 실결제', 310),
+        array('2025_H1', '2025 상반기', 6, 'dns', '디앤에스', 'large', '대형(20평+)', 'B홀,G홀', 2, 938, 2352.0, 21600000, 9184, 23028, 'public_price_estimate', '공개 캘린더 × 공지 가격 추정', 120),
+        array('2025_H1', '2025 상반기', 6, 'dns', '디앤에스', 'medium', '중형(10평전후)', 'C홀,D홀,E홀,F홀', 4, 2132, 4502.0, 23442000, 5207, 10995, 'public_price_estimate', '공개 캘린더 × 공지 가격 추정', 220),
+        array('2025_H1', '2025 상반기', 6, 'dns', '디앤에스', 'small', '소형/미확정', 'A홀,S홀', 2, 828, 1695.0, 9156500, 5402, 11059, 'public_price_estimate', '평수 미확정 보조 비교군', 320),
+        array('2026_H1', '2026 상반기', 6, 'rhythmjoy', '리듬앤조이', 'large', '대형(20평+)', 'A홀', 1, 344, 968.0, 14654000, 15138, 42599, 'actual_db', 'DB 원장 실결제', 110),
+        array('2026_H1', '2026 상반기', 6, 'rhythmjoy', '리듬앤조이', 'medium', '중형(10평전후)', 'B홀,E홀', 2, 769, 1649.0, 17776200, 10780, 23116, 'actual_db', 'DB 원장 실결제', 210),
+        array('2026_H1', '2026 상반기', 6, 'rhythmjoy', '리듬앤조이', 'small', '소형(6평미만)', 'C홀,D홀', 2, 916, 1520.0, 7622000, 5014, 8319, 'actual_db', 'DB 원장 실결제', 310),
+        array('2026_H1', '2026 상반기', 6, 'able', '에이블 사당', 'large', '대형(20평+)', 'D홀(B2)', 1, 358, 1096.0, 11650000, 10630, 32542, 'public_price_estimate', '공개 캘린더 × 공지 가격 추정', 130),
+        array('2026_H1', '2026 상반기', 6, 'able', '에이블 사당', 'medium', '중형(10평전후)', 'A홀,B홀,C홀(B1)', 3, 1256, 3022.0, 19492000, 6450, 15519, 'public_price_estimate', '공개 캘린더 × 공지 가격 추정', 230),
+        array('2026_H1', '2026 상반기', 6, 'able', '에이블 사당', 'small', '경계(6평)', 'E홀(B2)', 1, 245, 503.0, 2748000, 5463, 11216, 'public_price_estimate', '6평 경계 비교군', 330),
+        array('2026_H1', '2026 상반기', 6, 'dns', '디앤에스', 'large', '대형(20평+)', 'B홀,G홀', 2, 891, 2101.0, 19870000, 9457, 22301, 'public_price_estimate', '공개 캘린더 × 공지 가격 추정', 120),
+        array('2026_H1', '2026 상반기', 6, 'dns', '디앤에스', 'medium', '중형(10평전후)', 'C홀,D홀,E홀,F홀', 4, 1877, 3820.0, 19990000, 5233, 10650, 'public_price_estimate', '공개 캘린더 × 공지 가격 추정', 220),
+        array('2026_H1', '2026 상반기', 6, 'dns', '디앤에스', 'small', '소형/미확정', 'A홀,S홀', 2, 827, 1684.0, 9358000, 5557, 11316, 'public_price_estimate', '평수 미확정 보조 비교군', 320)
+    );
+}
+
+function ensure_industry_comparison_seed($pdo) {
+    $snapshot_key = industry_snapshot_key();
+    $stmt = $pdo->prepare("SELECT id FROM rhythmjoy_industry_comparison_snapshots WHERE snapshot_key=? LIMIT 1");
+    $stmt->execute(array($snapshot_key));
+    if ($stmt->fetch()) {
+        return;
+    }
+
+    $notes = industry_source_notes();
+    $pdo->beginTransaction();
+    try {
+        $insert_snapshot = $pdo->prepare("
+            INSERT INTO rhythmjoy_industry_comparison_snapshots (
+                snapshot_key, title, basis, source_notes, generated_at, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, NOW())
+        ");
+        $insert_snapshot->execute(array(
+            $snapshot_key,
+            '사당권 연습실 업계 비교 2026-07-16',
+            $notes['basis'],
+            json_encode($notes, JSON_UNESCAPED_UNICODE),
+            '2026-07-16 14:18:00',
+        ));
+        $snapshot_id = intval($pdo->lastInsertId());
+        $insert_row = $pdo->prepare("
+            INSERT INTO rhythmjoy_industry_comparison_rows (
+                snapshot_id, period_key, period_label, period_months,
+                studio_key, studio_label, group_key, group_label,
+                room_labels, room_count, events_count, hours, gross_amount,
+                avg_per_hour, avg_per_event, amount_basis, note, display_order, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ");
+        foreach (industry_seed_rows() as $row) {
+            $insert_row->execute(array_merge(array($snapshot_id), $row));
+        }
+        $pdo->commit();
+    } catch (Exception $error) {
+        $pdo->rollBack();
+        throw $error;
+    }
+}
+
+function industry_row_from_db($row) {
+    $room_count = max(1, intval($row['room_count']));
+    $months = max(0.1, floatval($row['period_months']));
+    $hours = floatval($row['hours']);
+    $gross = intval($row['gross_amount']);
+    return array(
+        'periodKey' => $row['period_key'],
+        'periodLabel' => $row['period_label'],
+        'studioKey' => $row['studio_key'],
+        'studioLabel' => $row['studio_label'],
+        'groupKey' => $row['group_key'],
+        'groupLabel' => $row['group_label'],
+        'roomLabels' => $row['room_labels'],
+        'roomCount' => $room_count,
+        'events' => intval($row['events_count']),
+        'hours' => round($hours, 1),
+        'gross' => $gross,
+        'avgPerHour' => intval($row['avg_per_hour']),
+        'avgPerEvent' => intval($row['avg_per_event']),
+        'hoursPerRoomMonth' => round($hours / $room_count / $months, 1),
+        'grossPerRoomMonth' => intval(round($gross / $room_count / $months)),
+        'amountBasis' => $row['amount_basis'],
+        'note' => $row['note'],
+        'displayOrder' => intval($row['display_order']),
+    );
+}
+
+function industry_comparison_deltas($rows) {
+    $by_key = array();
+    foreach ($rows as $row) {
+        $key = $row['studioKey'] . '|' . $row['groupKey'];
+        if (!isset($by_key[$key])) {
+            $by_key[$key] = array();
+        }
+        $by_key[$key][$row['periodKey']] = $row;
+    }
+    $result = array();
+    foreach ($by_key as $periods) {
+        if (!isset($periods['2025_H1'], $periods['2026_H1'])) {
+            continue;
+        }
+        $base = $periods['2025_H1'];
+        $next = $periods['2026_H1'];
+        if ($base['studioKey'] === 'able' || $base['events'] < 20) {
+            continue;
+        }
+        $result[] = array(
+            'studioKey' => $next['studioKey'],
+            'studioLabel' => $next['studioLabel'],
+            'groupKey' => $next['groupKey'],
+            'groupLabel' => $next['groupLabel'],
+            'roomLabels' => $next['roomLabels'],
+            'eventsDiff' => $next['events'] - $base['events'],
+            'eventsRate' => percent_change($base['events'], $next['events']),
+            'hoursDiff' => round($next['hours'] - $base['hours'], 1),
+            'hoursRate' => percent_change($base['hours'], $next['hours']),
+            'grossDiff' => $next['gross'] - $base['gross'],
+            'grossRate' => percent_change($base['gross'], $next['gross']),
+            'avgPerHourDiff' => $next['avgPerHour'] - $base['avgPerHour'],
+            'avgPerHourRate' => percent_change($base['avgPerHour'], $next['avgPerHour']),
+            'hoursPerRoomMonthDiff' => round($next['hoursPerRoomMonth'] - $base['hoursPerRoomMonth'], 1),
+            'grossPerRoomMonthDiff' => $next['grossPerRoomMonth'] - $base['grossPerRoomMonth'],
+        );
+    }
+    usort($result, function($a, $b) {
+        $group_order = array('large' => 1, 'medium' => 2, 'small' => 3);
+        $a_group = isset($group_order[$a['groupKey']]) ? $group_order[$a['groupKey']] : 9;
+        $b_group = isset($group_order[$b['groupKey']]) ? $group_order[$b['groupKey']] : 9;
+        if ($a_group !== $b_group) {
+            return $a_group - $b_group;
+        }
+        return strcmp($a['studioLabel'], $b['studioLabel']);
+    });
+    return $result;
+}
+
+function industry_comparison_stats($pdo) {
+    ensure_industry_comparison_seed($pdo);
+    $snapshot_key = industry_snapshot_key();
+    $stmt = $pdo->prepare("SELECT * FROM rhythmjoy_industry_comparison_snapshots WHERE snapshot_key=? LIMIT 1");
+    $stmt->execute(array($snapshot_key));
+    $snapshot = $stmt->fetch();
+    if (!$snapshot) {
+        return null;
+    }
+    $stmt = $pdo->prepare("
+        SELECT *
+        FROM rhythmjoy_industry_comparison_rows
+        WHERE snapshot_id=?
+        ORDER BY display_order ASC, studio_label ASC, period_key ASC
+    ");
+    $stmt->execute(array(intval($snapshot['id'])));
+    $rows = array_map('industry_row_from_db', $stmt->fetchAll());
+    $notes = json_decode((string) $snapshot['source_notes'], true);
+    if (!is_array($notes)) {
+        $notes = industry_source_notes();
+    }
+
+    $groups = array();
+    $group_labels = array('large' => '대형(20평 이상)', 'medium' => '중형(10평 전후)', 'small' => '소형/경계');
+    foreach ($rows as $row) {
+        if ($row['periodKey'] !== '2026_H1') {
+            continue;
+        }
+        $key = $row['groupKey'];
+        if (!isset($groups[$key])) {
+            $groups[$key] = array(
+                'key' => $key,
+                'label' => isset($group_labels[$key]) ? $group_labels[$key] : $row['groupLabel'],
+                'rows' => array(),
+            );
+        }
+        $groups[$key]['rows'][] = $row;
+    }
+
+    $ordered_groups = array();
+    foreach (array('large', 'medium', 'small') as $key) {
+        if (isset($groups[$key])) {
+            $ordered_groups[] = $groups[$key];
+        }
+    }
+
+    return array(
+        'snapshot' => array(
+            'key' => $snapshot['snapshot_key'],
+            'title' => $snapshot['title'],
+            'generatedAt' => $snapshot['generated_at'],
+            'basis' => $snapshot['basis'],
+        ),
+        'currentPeriod' => '2026_H1',
+        'basePeriod' => '2025_H1',
+        'groups' => $ordered_groups,
+        'deltas' => industry_comparison_deltas($rows),
+        'review' => isset($notes['review']) ? $notes['review'] : array(),
+        'exclusions' => isset($notes['exclusions']) ? $notes['exclusions'] : array(),
+        'sources' => isset($notes['sources']) ? $notes['sources'] : array(),
+        'amountBasis' => isset($notes['amountBasis']) ? $notes['amountBasis'] : '',
+    );
+}
+
 function bootstrap_payload($pdo, $date, $env) {
     $settings = setting_rows($pdo);
     return array(
@@ -1326,6 +1600,7 @@ function bootstrap_payload($pdo, $date, $env) {
         'tasks' => recent_task_rows($pdo),
         'revenueStats' => revenue_stats($pdo, $date),
         'revenueComparison' => revenue_comparison_stats($pdo),
+        'industryComparison' => industry_comparison_stats($pdo),
     );
 }
 

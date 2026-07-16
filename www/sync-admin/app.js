@@ -17,6 +17,7 @@
     sessions: loadJson(sessionKey, {}),
     revenueStats: null,
     revenueComparison: null,
+    industryComparison: null,
     monthSummary: null,
     monthSummaryLoading: false,
     dayModalDate: "",
@@ -74,6 +75,8 @@
     revenueMonthList: document.getElementById("revenueMonthList"),
     closeRevenueModal: document.getElementById("closeRevenueModal"),
     doneRevenueModal: document.getElementById("doneRevenueModal"),
+    industryOverview: document.getElementById("industryOverview"),
+    industryComparison: document.getElementById("industryComparison"),
     pendingCount: document.getElementById("pendingCount"),
     lastScan: document.getElementById("lastScan"),
     adminToken: document.getElementById("adminToken"),
@@ -395,6 +398,7 @@
     renderTasks();
     renderStatus();
     renderSessions();
+    renderIndustryComparison();
     if (!el.revenueModal.hidden) renderRevenueModal();
   }
 
@@ -952,6 +956,199 @@
           </thead>
           <tbody>${rows}</tbody>
         </table>
+      </div>
+    `;
+  }
+
+  function renderIndustryComparison() {
+    if (!el.industryComparison) return;
+    const data = state.industryComparison;
+    if (!data) {
+      if (el.industryOverview) {
+        el.industryOverview.innerHTML = '<p class="empty-note">업계비교 DB 데이터를 불러오지 못했습니다.</p>';
+      }
+      el.industryComparison.innerHTML = "";
+      return;
+    }
+
+    if (el.industryOverview) {
+      const review = data.review || [];
+      el.industryOverview.innerHTML = `
+        <div class="industry-summary-strip">
+          <article>
+            <span>분석 기준</span>
+            <strong>방 1개당 월평균</strong>
+            <p>${escapeHtml(data.snapshot?.basis || "방 크기와 방 개수를 보정한 비교입니다.")}</p>
+          </article>
+          <article>
+            <span>금액 기준</span>
+            <strong>실결제 + 추정가</strong>
+            <p>${escapeHtml(data.amountBasis || "리듬앤조이는 DB 원장, 경쟁사는 공개 가격 추정입니다.")}</p>
+          </article>
+          <article>
+            <span>현재 판단</span>
+            <strong>B/E 우선 점검</strong>
+            <p>B/E는 대관시간이 낮고 단가가 높아 상시 인하보다 방/시간대 쿠폰 테스트가 우선입니다.</p>
+          </article>
+        </div>
+        <div class="industry-review-list">
+          ${review.slice(0, 5).map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+        </div>
+      `;
+    }
+
+    const groups = data.groups || [];
+    const deltas = data.deltas || [];
+    el.industryComparison.innerHTML = `
+      <div class="industry-group-grid">
+        ${groups.map(industryGroupHtml).join("")}
+      </div>
+      <section class="industry-section">
+        <div class="revenue-section-heading">
+          <h3>2025 상반기 대비 2026 상반기</h3>
+          <p>에이블은 2025 상반기 공개 캘린더가 부족해 전년대비에서 제외했습니다.</p>
+        </div>
+        ${industryDeltaHtml(deltas)}
+      </section>
+      <section class="industry-section">
+        <div class="revenue-section-heading">
+          <h3>자료 범위</h3>
+          <p>수집 출처와 제외 조건입니다. 경쟁사 금액은 정산액이 아니라 공지 가격 추정치입니다.</p>
+        </div>
+        ${industrySourceHtml(data.sources || [], data.exclusions || [])}
+      </section>
+    `;
+  }
+
+  function industryGroupHtml(group) {
+    const rows = group.rows || [];
+    return `
+      <article class="industry-group-card industry-${escapeHtml(group.key || "")}">
+        <header>
+          <div>
+            <h3>${escapeHtml(group.label || "")}</h3>
+            <p>2026 상반기 · 방 1개당 월평균 기준</p>
+          </div>
+        </header>
+        <div class="industry-studio-list">
+          ${rows.map(industryStudioRowHtml).join("")}
+        </div>
+      </article>
+    `;
+  }
+
+  function industryStudioRowHtml(row) {
+    const own = row.studioKey === "rhythmjoy";
+    return `
+      <article class="industry-studio-row ${own ? "own" : ""}">
+        <div class="industry-studio-head">
+          <div>
+            <strong>${escapeHtml(row.studioLabel || "")}</strong>
+            <span>${escapeHtml(row.roomLabels || row.groupLabel || "")}</span>
+          </div>
+          <b>${own ? "우리" : "경쟁"}</b>
+        </div>
+        <dl class="industry-metrics">
+          <div>
+            <dt>대관시간/방/월</dt>
+            <dd>${escapeHtml(formatHours(row.hoursPerRoomMonth))}</dd>
+          </div>
+          <div>
+            <dt>매출/방/월</dt>
+            <dd>${escapeHtml(formatRevenueStat(row.grossPerRoomMonth))}</dd>
+          </div>
+          <div>
+            <dt>시간당</dt>
+            <dd>${escapeHtml(formatRevenueStat(row.avgPerHour))}</dd>
+          </div>
+          <div>
+            <dt>기간 총 예약</dt>
+            <dd>${Number(row.events || 0).toLocaleString()}건</dd>
+          </div>
+        </dl>
+        <p class="industry-row-note">${escapeHtml(row.note || row.amountBasis || "")}</p>
+      </article>
+    `;
+  }
+
+  function industryDeltaHtml(rows) {
+    if (!rows.length) return '<p class="empty-note">전년대비 비교 데이터가 없습니다.</p>';
+    return `
+      <div class="industry-delta-table-wrap">
+        <table class="industry-delta-table">
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>업체/방</th>
+              <th>대관시간</th>
+              <th>방당 월매출</th>
+              <th>시간당</th>
+              <th>판정</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => {
+              const assessment = industryDeltaAssessment(row);
+              return `
+                <tr class="${row.studioKey === "rhythmjoy" ? "own" : ""}">
+                  <th>${escapeHtml(row.groupLabel || "")}</th>
+                  <td>
+                    <strong>${escapeHtml(row.studioLabel || "")}</strong>
+                    <small>${escapeHtml(row.roomLabels || "")}</small>
+                  </td>
+                  <td class="${signedClass(row.hoursPerRoomMonthDiff)}">
+                    ${escapeHtml(formatSignedHours(row.hoursPerRoomMonthDiff))}
+                    <small>${escapeHtml(formatSignedPercent(row.hoursRate))}</small>
+                  </td>
+                  <td class="${signedClass(row.grossPerRoomMonthDiff)}">
+                    ${escapeHtml(formatSignedWon(row.grossPerRoomMonthDiff))}
+                    <small>${escapeHtml(formatSignedPercent(row.grossRate))}</small>
+                  </td>
+                  <td class="${signedClass(row.avgPerHourDiff)}">
+                    ${escapeHtml(formatSignedWon(row.avgPerHourDiff))}
+                    <small>${escapeHtml(formatSignedPercent(row.avgPerHourRate))}</small>
+                  </td>
+                  <td><span class="impact-badge ${escapeHtml(assessment.key)}">${escapeHtml(assessment.label)}</span></td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function industryDeltaAssessment(row) {
+    const hours = Number(row.hoursPerRoomMonthDiff || 0);
+    const gross = Number(row.grossPerRoomMonthDiff || 0);
+    if (hours < -10 && gross >= 0) return { key: "price", label: "단가로 방어" };
+    if (hours < -10 && gross < 0) return { key: "volume_drop", label: "대관량 감소" };
+    if (hours > 5 && gross >= 0) return { key: "volume", label: "대관량 우위" };
+    if (gross < 0) return { key: "decline", label: "매출 하락" };
+    return { key: "flat", label: "보합" };
+  }
+
+  function industrySourceHtml(sources, exclusions) {
+    return `
+      <div class="industry-source-grid">
+        <div>
+          <h4>출처</h4>
+          <ul>
+            ${sources.map((source) => `
+              <li>
+                ${String(source.url || "").startsWith("http")
+                  ? `<a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.label || source.url)}</a>`
+                  : `<span>${escapeHtml(source.label || source.url || "")}</span>`}
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+        <div>
+          <h4>제외/주의</h4>
+          <ul>
+            ${exclusions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+        </div>
       </div>
     `;
   }
@@ -1629,6 +1826,7 @@
 
     state.revenueStats = data.revenueStats || null;
     state.revenueComparison = data.revenueComparison || null;
+    state.industryComparison = data.industryComparison || null;
     if (state.monthSummary && state.monthSummary.month !== selectedMonthKey()) {
       state.monthSummary = null;
     }
