@@ -643,10 +643,10 @@ function price_policy_rows() {
     );
     $current = array(
         'a' => array('before16' => 13000, 'after16' => 20000, 'overnight' => 30000),
-        'b' => array('before16' => 10000, 'after16' => 12000, 'overnight' => 20000),
+        'b' => array('before16' => 8000, 'after16' => 12000, 'overnight' => 20000),
         'c' => array('before16' => 4000, 'after16' => 6000, 'overnight' => 15000),
         'd' => array('before16' => 3000, 'after16' => 5000, 'overnight' => 15000),
-        'e' => array('before16' => 10000, 'after16' => 12000, 'overnight' => 20000),
+        'e' => array('before16' => 8000, 'after16' => 12000, 'overnight' => 20000),
     );
     $rows = array();
     foreach (array('a', 'b', 'c', 'd', 'e') as $room) {
@@ -1019,10 +1019,10 @@ function revenue_comparison_stats($pdo) {
         ),
         'monthlyComparison' => monthly_comparison_stats($pdo),
         'pricePolicy' => array(
-            'basis' => '네이버 기본가 기준. 스페이스클라우드는 플랫폼 수수료/표시가가 다를 수 있습니다. 실제 매출 비교는 DB 원장 금액을 기준으로 합니다.',
+            'basis' => '네이버와 스페이스클라우드 동일 기본가 기준. 실제 매출 비교는 DB 원장 금액을 기준으로 합니다.',
             'columns' => array(
-                'before16' => '16시 이전',
-                'after16' => '16시 이후/주말',
+                'before16' => '평일 낮',
+                'after16' => '16시 이후/주말/공휴일',
                 'overnight' => '새벽 통대관',
             ),
             'rows' => price_policy_rows(),

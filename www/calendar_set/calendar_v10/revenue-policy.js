@@ -19,7 +19,7 @@
       size: "16평",
       calendarId: "22dd1532ca7404714f0c24348825f131f3c559acf6361031fe71e80977e4a817@group.calendar.google.com",
       color: "#5796c8",
-      before16: 10000,
+      before16: 8000,
       after16: 12000,
       dawnHourly: 5000,
       overnight: 20000
@@ -49,7 +49,7 @@
       size: "15평",
       calendarId: "aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com",
       color: "#4c4c4c",
-      before16: 10000,
+      before16: 8000,
       after16: 12000,
       dawnHourly: 5000,
       overnight: 20000
@@ -188,7 +188,7 @@
     }
 
     if (hour < 16) {
-      return { rate: roomPrice.before16, type: "16시전" };
+      return { rate: roomPrice.before16, type: "평일 낮" };
     }
 
     return { rate: roomPrice.after16, type: "16시후" };
@@ -258,9 +258,7 @@
 
     const channel = getBookingChannel(event);
     const roundedGuideAmount = Math.round(guideAmount);
-    const paymentAmount = channel === "spacecloud"
-      ? Math.round(roundedGuideAmount * 1.1)
-      : roundedGuideAmount;
+    const paymentAmount = roundedGuideAmount;
 
     return {
       ok: true,

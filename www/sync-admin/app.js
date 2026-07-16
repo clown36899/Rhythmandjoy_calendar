@@ -964,8 +964,8 @@
             <tr>
               <th>방</th>
               <th>새벽 시간당</th>
-              <th>평일 16시 전</th>
-              <th>16시 후/휴일</th>
+              <th>평일 낮</th>
+              <th>16시 후/주말/공휴일</th>
               <th>새벽 통대관</th>
             </tr>
           </thead>
@@ -1185,11 +1185,10 @@
   function pricePairHtml(naverAmount) {
     const naver = Number(naverAmount || 0);
     if (!naver) return "-";
-    const spacecloud = Math.round(naver * 1.1);
     return `
       <span class="price-pair">
         <span>네이버 ${formatWon(naver)}</span>
-        <span>SC ${formatWon(spacecloud)}</span>
+        <span>SC ${formatWon(naver)}</span>
       </span>
     `;
   }
@@ -1572,8 +1571,8 @@
             <thead>
               <tr>
                 <th>방</th>
-                <th>16시 이전</th>
-                <th>16시 이후/주말</th>
+                <th>평일 낮</th>
+                <th>16시 이후/주말/공휴일</th>
                 <th>새벽 통대관</th>
               </tr>
             </thead>
