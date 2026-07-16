@@ -249,7 +249,9 @@ NOW mode is for running Naver and SpaceCloud as both-immediate-booking channels.
 
 ```bash
 SPACE_CLOUD_WATCH_NOW_MODE=1
-SPACE_CLOUD_WATCH_INTERVAL_SECONDS=10
+SPACE_CLOUD_WATCH_INTERVAL_SECONDS=30
+SPACE_CLOUD_WATCH_URGENT_INTERVAL_SECONDS=15
+SPACE_CLOUD_WATCH_URGENT_COOLDOWN_SECONDS=300
 SPACE_CLOUD_WATCH_LIMIT_PER_CYCLE=1
 SPACE_CLOUD_WATCH_DELETE_LIMIT_PER_CYCLE=1
 SPACE_CLOUD_WATCH_NAVER_BLOCK_LIMIT_PER_CYCLE=2
@@ -258,9 +260,10 @@ SPACE_CLOUD_WATCH_SPACECLOUD_CANCEL_LIMIT_PER_CYCLE=1
 SPACE_CLOUD_WATCH_URGENT_WINDOW_MINUTES=180
 SPACE_CLOUD_WATCH_RESTORE_GRACE_SECONDS=45
 SPACE_CLOUD_WATCH_SESSION_CHECK_INTERVAL_SECONDS=180
+SPACE_CLOUD_WATCH_DAILY_RECONCILE_HOUR=5
 ```
 
-In NOW mode the watcher prioritizes already-queued later-booking cancellations, then Naver availability changes, then normal uploads. Naver restore tasks wait briefly before reopening availability so a fast cancel-and-rebook sequence does not reopen a slot that has already been rebooked.
+In NOW mode the watcher prioritizes already-queued later-booking cancellations, then Naver availability changes, then normal uploads. The normal loop stays at 30 seconds, but after real work or a pending urgent row it temporarily runs every 15 seconds for 5 minutes. Naver restore tasks wait briefly before reopening availability so a fast cancel-and-rebook sequence does not reopen a slot that has already been rebooked. The watcher also sends one daily DB health summary after the configured KST hour.
 
 ## Aligo SMS Sender
 

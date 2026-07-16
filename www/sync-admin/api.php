@@ -230,6 +230,27 @@ function ensure_schema($pdo) {
             KEY idx_group (group_key, studio_key)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS rhythmjoy_price_policy_history (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            policy_key VARCHAR(120) NOT NULL,
+            effective_date DATE NOT NULL,
+            room_key VARCHAR(8) NOT NULL,
+            room_label VARCHAR(20) NOT NULL DEFAULT '',
+            dawn_hourly INT UNSIGNED NOT NULL DEFAULT 0,
+            weekday_day INT UNSIGNED NOT NULL DEFAULT 0,
+            after_hourly INT UNSIGNED NOT NULL DEFAULT 0,
+            overnight INT UNSIGNED NOT NULL DEFAULT 0,
+            naver_amount_same TINYINT(1) NOT NULL DEFAULT 1,
+            spacecloud_amount_same TINYINT(1) NOT NULL DEFAULT 1,
+            note VARCHAR(255) NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_policy_key (policy_key),
+            KEY idx_effective_room (effective_date, room_key)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    ensure_price_policy_history_seed($pdo);
 }
 
 function clean_date_value($value) {
@@ -633,6 +654,78 @@ function finalize_revenue_bucket($row) {
     return $row;
 }
 
+function price_policy_seed_rows() {
+    return array(
+        array('2025-base-a', '2025-01-01', 'a', 'A홀', 0, 10000, 12000, 30000, '2025년 가격표 기준. 새벽 시간당 가격은 당시 별도 표기 없음'),
+        array('2025-base-b', '2025-01-01', 'b', 'B홀', 0, 8000, 10000, 20000, '2025년 가격표 기준. 새벽 시간당 가격은 당시 별도 표기 없음'),
+        array('2025-base-c', '2025-01-01', 'c', 'C홀', 0, 4000, 6000, 15000, '2025년 가격표 기준. 새벽 시간당 가격은 당시 별도 표기 없음'),
+        array('2025-base-d', '2025-01-01', 'd', 'D홀', 0, 3000, 5000, 15000, '2025년 가격표 기준. 새벽 시간당 가격은 당시 별도 표기 없음'),
+        array('2025-base-e', '2025-01-01', 'e', 'E홀', 0, 8000, 10000, 20000, '2025년 가격표 기준. 새벽 시간당 가격은 당시 별도 표기 없음'),
+        array('2026-current-a', '2026-01-01', 'a', 'A홀', 7000, 13000, 20000, 30000, '2026년 기본가. 플랫폼별 실제 결제/수수료는 원장 금액 기준'),
+        array('2026-current-b', '2026-01-01', 'b', 'B홀', 5000, 10000, 12000, 20000, '2026년 기본가. 2026-07-16 이전 평일 낮 10,000원'),
+        array('2026-current-c', '2026-01-01', 'c', 'C홀', 4000, 4000, 6000, 15000, '2026년 기본가'),
+        array('2026-current-d', '2026-01-01', 'd', 'D홀', 3000, 3000, 5000, 15000, '2026년 기본가'),
+        array('2026-current-e', '2026-01-01', 'e', 'E홀', 5000, 10000, 12000, 20000, '2026년 기본가. 2026-07-16 이전 평일 낮 10,000원'),
+        array('2026-07-16-be-a', '2026-07-16', 'a', 'A홀', 7000, 13000, 20000, 30000, '스페이스클라우드 가격을 네이버와 동일하게 정렬'),
+        array('2026-07-16-be-b', '2026-07-16', 'b', 'B홀', 5000, 8000, 12000, 20000, 'B홀 평일 낮 8,000원 테스트 시작'),
+        array('2026-07-16-be-c', '2026-07-16', 'c', 'C홀', 4000, 4000, 6000, 15000, '스페이스클라우드 가격을 네이버와 동일하게 정렬'),
+        array('2026-07-16-be-d', '2026-07-16', 'd', 'D홀', 3000, 3000, 5000, 15000, '스페이스클라우드 가격을 네이버와 동일하게 정렬'),
+        array('2026-07-16-be-e', '2026-07-16', 'e', 'E홀', 5000, 8000, 12000, 20000, 'E홀 평일 낮 8,000원 테스트 시작'),
+    );
+}
+
+function ensure_price_policy_history_seed($pdo) {
+    $stmt = $pdo->prepare("
+        INSERT INTO rhythmjoy_price_policy_history (
+            policy_key, effective_date, room_key, room_label,
+            dawn_hourly, weekday_day, after_hourly, overnight,
+            naver_amount_same, spacecloud_amount_same, note, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, NOW())
+        ON DUPLICATE KEY UPDATE
+            effective_date = VALUES(effective_date),
+            room_key = VALUES(room_key),
+            room_label = VALUES(room_label),
+            dawn_hourly = VALUES(dawn_hourly),
+            weekday_day = VALUES(weekday_day),
+            after_hourly = VALUES(after_hourly),
+            overnight = VALUES(overnight),
+            naver_amount_same = VALUES(naver_amount_same),
+            spacecloud_amount_same = VALUES(spacecloud_amount_same),
+            note = VALUES(note)
+    ");
+    foreach (price_policy_seed_rows() as $row) {
+        $stmt->execute($row);
+    }
+}
+
+function price_policy_history_rows($pdo) {
+    $stmt = $pdo->query("
+        SELECT policy_key, effective_date, room_key, room_label,
+               dawn_hourly, weekday_day, after_hourly, overnight,
+               naver_amount_same, spacecloud_amount_same, note
+        FROM rhythmjoy_price_policy_history
+        ORDER BY effective_date ASC, FIELD(room_key, 'a', 'b', 'c', 'd', 'e'), id ASC
+    ");
+    $rows = array();
+    foreach ($stmt->fetchAll() as $row) {
+        $rows[] = array(
+            'key' => $row['policy_key'],
+            'effectiveDate' => $row['effective_date'],
+            'room' => $row['room_key'],
+            'roomLabel' => $row['room_label'] ?: room_label($row['room_key']),
+            'dawnHourly' => intval($row['dawn_hourly']),
+            'weekdayDay' => intval($row['weekday_day']),
+            'afterHourly' => intval($row['after_hourly']),
+            'overnight' => intval($row['overnight']),
+            'naverAmountSame' => intval($row['naver_amount_same']) === 1,
+            'spacecloudAmountSame' => intval($row['spacecloud_amount_same']) === 1,
+            'note' => $row['note'],
+        );
+    }
+    return $rows;
+}
+
 function price_policy_rows() {
     $old = array(
         'a' => array('before16' => 10000, 'after16' => 12000, 'overnight' => 30000),
@@ -714,6 +807,146 @@ function period_day_count($start_date, $end_date) {
         return 0;
     }
     return intval(floor(($end - $start) / 86400)) + 1;
+}
+
+function weekday_count_between($start_date, $end_date) {
+    $start = strtotime($start_date);
+    $end = strtotime($end_date);
+    if (!$start || !$end || $end < $start) {
+        return 0;
+    }
+    $count = 0;
+    for ($ts = $start; $ts <= $end; $ts += 86400) {
+        $weekday = intval(date('w', $ts));
+        if ($weekday >= 1 && $weekday <= 5) {
+            $count += 1;
+        }
+    }
+    return $count;
+}
+
+function overlap_minutes($start_a, $end_a, $start_b, $end_b) {
+    return max(0, min($end_a, $end_b) - max($start_a, $start_b));
+}
+
+function collect_be_weekday_day_metrics($pdo, $start_date, $end_date) {
+    $bucket = array(
+        'startDate' => $start_date,
+        'endDate' => $end_date,
+        'weekdayDays' => weekday_count_between($start_date, $end_date),
+        'count' => 0,
+        'hours' => 0,
+        'gross' => 0,
+        'net' => 0,
+        'fee' => 0,
+        'missingCount' => 0,
+        'rooms' => array(
+            'b' => array('room' => 'b', 'roomLabel' => 'B홀', 'count' => 0, 'hours' => 0, 'gross' => 0),
+            'e' => array('room' => 'e', 'roomLabel' => 'E홀', 'count' => 0, 'hours' => 0, 'gross' => 0),
+        ),
+    );
+
+    $stmt = $pdo->prepare("
+        SELECT room_key,
+               TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
+               TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
+               price, gross_amount, fee_amount, net_amount
+        FROM rhythmjoy_booking_ledger
+        WHERE reservation_date BETWEEN ? AND ?
+          AND room_key IN ('b', 'e', 'B', 'E')
+          AND DAYOFWEEK(reservation_date) BETWEEN 2 AND 6
+          AND current_status <> 'canceled'
+          AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+        ORDER BY reservation_date ASC, start_time ASC, id ASC
+    ");
+    $stmt->execute(array($start_date, $end_date));
+    foreach ($stmt->fetchAll() as $row) {
+        $room = strtolower((string) $row['room_key']);
+        if (!isset($bucket['rooms'][$room])) {
+            continue;
+        }
+        $start = time_text_to_minutes($row['start_time_text'], false);
+        $end = time_text_to_minutes($row['end_time_text'], true);
+        $total_minutes = max(1, $end - $start);
+        $minutes = overlap_minutes($start, $end, 6 * 60, 16 * 60);
+        if ($minutes <= 0) {
+            continue;
+        }
+        $portion = $minutes / $total_minutes;
+        $gross = ledger_gross_amount($row);
+        $net = ledger_net_amount($row);
+        $fee = ledger_fee_amount($row);
+        $gross_part = intval(round($gross * $portion));
+        $net_part = intval(round($net * $portion));
+        $fee_part = intval(round($fee * $portion));
+        $hours = round($minutes / 60, 4);
+
+        $bucket['count'] += 1;
+        $bucket['hours'] += $hours;
+        $bucket['gross'] += $gross_part;
+        $bucket['net'] += $net_part;
+        $bucket['fee'] += $fee_part;
+        if ($gross <= 0) {
+            $bucket['missingCount'] += 1;
+        }
+        $bucket['rooms'][$room]['count'] += 1;
+        $bucket['rooms'][$room]['hours'] += $hours;
+        $bucket['rooms'][$room]['gross'] += $gross_part;
+    }
+
+    $bucket['hours'] = round($bucket['hours'], 2);
+    $bucket['hourAverage'] = $bucket['hours'] > 0 ? intval(round($bucket['gross'] / $bucket['hours'])) : 0;
+    $bucket['dayAverage'] = intval(round($bucket['gross'] / max(1, $bucket['weekdayDays'])));
+    foreach ($bucket['rooms'] as $room => $row) {
+        $row['hours'] = round(floatval($row['hours']), 2);
+        $row['hourAverage'] = $row['hours'] > 0 ? intval(round(intval($row['gross']) / $row['hours'])) : 0;
+        $bucket['rooms'][$room] = $row;
+    }
+    $bucket['rooms'] = array_values($bucket['rooms']);
+    return $bucket;
+}
+
+function be_weekday_day_experiment($pdo) {
+    $start = '2026-07-16';
+    $today = date('Y-m-d');
+    $after_end = $today < $start ? $start : $today;
+    $after_max = date('Y-m-d', strtotime($start . ' +27 days'));
+    if ($after_end > $after_max) {
+        $after_end = $after_max;
+    }
+    $days = max(1, period_day_count($start, $after_end));
+    $before_start = date('Y-m-d', strtotime($start . ' -' . $days . ' days'));
+    $before_end = date('Y-m-d', strtotime($start . ' -1 day'));
+    $last_year_start = date('Y-m-d', strtotime($start . ' -1 year'));
+    $last_year_end = date('Y-m-d', strtotime($after_end . ' -1 year'));
+
+    $before = collect_be_weekday_day_metrics($pdo, $before_start, $before_end);
+    $after = collect_be_weekday_day_metrics($pdo, $start, $after_end);
+    $last_year = collect_be_weekday_day_metrics($pdo, $last_year_start, $last_year_end);
+    $required_rate = 25.0;
+    $before_daily_hours = floatval($before['hours']) / max(1, intval($before['weekdayDays']));
+    $required_after_hours = $before_daily_hours * 1.25 * max(1, intval($after['weekdayDays']));
+    $after_hours = floatval($after['hours']);
+    $progress = $required_after_hours > 0 ? round(($after_hours / $required_after_hours) * 100, 1) : 0;
+    $gross_diff = intval($after['gross']) - intval(round(intval($before['gross']) / max(1, intval($before['weekdayDays'])) * max(1, intval($after['weekdayDays']))));
+
+    return array(
+        'key' => 'be-weekday-day-8000',
+        'label' => 'B/E 평일 낮 8,000원 성과 추적',
+        'policyStartDate' => $start,
+        'basis' => 'B/E홀 평일 06-16시 겹치는 예약시간만 비례 계산합니다. 10,000원에서 8,000원으로 낮추면 같은 매출을 유지하려면 대관시간이 약 25% 늘어야 합니다.',
+        'requiredHoursIncreaseRate' => $required_rate,
+        'before' => $before,
+        'after' => $after,
+        'lastYearSame' => $last_year,
+        'breakEven' => array(
+            'requiredHours' => round($required_after_hours, 2),
+            'actualHours' => round($after_hours, 2),
+            'progressRate' => $progress,
+            'grossDiffVsBeforePace' => $gross_diff,
+            'verdict' => $after_hours >= $required_after_hours ? '손익분기 이상' : '추적 중',
+        ),
+    );
 }
 
 function collect_period_revenue($pdo, $start_date, $end_date) {
@@ -1026,6 +1259,10 @@ function revenue_comparison_stats($pdo) {
                 'overnight' => '새벽 통대관',
             ),
             'rows' => price_policy_rows(),
+            'history' => price_policy_history_rows($pdo),
+        ),
+        'experiments' => array(
+            'beWeekdayDay' => be_weekday_day_experiment($pdo),
         ),
     );
 }

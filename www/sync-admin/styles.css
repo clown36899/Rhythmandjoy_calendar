@@ -362,7 +362,8 @@ input[readonly] {
 }
 
 .status-strip span,
-.status-strip strong {
+.status-strip strong,
+.status-strip small {
   display: block;
 }
 
@@ -374,6 +375,16 @@ input[readonly] {
 .status-strip strong {
   margin-top: 4px;
   font-size: 20px;
+}
+
+.status-strip small {
+  min-height: 16px;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .status-strip .secondary-button {
@@ -1722,6 +1733,125 @@ body.modal-open {
   font-weight: 850;
 }
 
+.experiment-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.experiment-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #d8e7e1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.experiment-card span,
+.experiment-card strong,
+.experiment-card small,
+.experiment-card b {
+  display: block;
+}
+
+.experiment-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.experiment-card strong {
+  color: #13251f;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.experiment-card small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.experiment-card b {
+  margin-top: 2px;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.experiment-card.watch-card {
+  border-color: #f2d6a6;
+  background: #fffbeb;
+}
+
+.experiment-card.positive-card {
+  border-color: #b9e3d2;
+  background: #effaf5;
+}
+
+.price-history-wrap {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.price-history-wrap h4 {
+  margin: 0;
+  color: #13251f;
+  font-size: 15px;
+}
+
+.price-history-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.price-history-card {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d8e7e1;
+  border-radius: 8px;
+  background: #fbfefd;
+}
+
+.price-history-card header {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+
+.price-history-card header strong {
+  color: #13251f;
+  font-size: 14px;
+}
+
+.price-history-card header span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.price-history-rooms {
+  display: grid;
+  gap: 4px;
+}
+
+.price-history-rooms span {
+  display: block;
+  min-width: 0;
+  color: #32433f;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.price-history-rooms b {
+  color: #10221d;
+}
+
 .monthly-compare-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
@@ -2251,6 +2381,8 @@ body.modal-open {
   .impact-grid,
   .industry-group-grid,
   .industry-summary-strip,
+  .experiment-grid,
+  .price-history-list,
   .year-summary-strip {
     grid-template-columns: 1fr;
   }

@@ -13,12 +13,15 @@ NAVER_CANCEL_LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_NAVER_CANCEL_LIMIT_PER_CYCLE:-
 SPACECLOUD_CANCEL_LIMIT_PER_CYCLE="${SPACE_CLOUD_WATCH_SPACECLOUD_CANCEL_LIMIT_PER_CYCLE:-1}"
 NOW_MODE="${SPACE_CLOUD_WATCH_NOW_MODE:-0}"
 URGENT_WINDOW_MINUTES="${SPACE_CLOUD_WATCH_URGENT_WINDOW_MINUTES:-180}"
+URGENT_INTERVAL_SECONDS="${SPACE_CLOUD_WATCH_URGENT_INTERVAL_SECONDS:-15}"
+URGENT_COOLDOWN_SECONDS="${SPACE_CLOUD_WATCH_URGENT_COOLDOWN_SECONDS:-300}"
 RESTORE_GRACE_SECONDS="${SPACE_CLOUD_WATCH_RESTORE_GRACE_SECONDS:-45}"
 SESSION_CHECK_INTERVAL_SECONDS="${SPACE_CLOUD_WATCH_SESSION_CHECK_INTERVAL_SECONDS:-180}"
+DAILY_RECONCILE_HOUR="${SPACE_CLOUD_WATCH_DAILY_RECONCILE_HOUR:-5}"
 
 EXTRA_ARGS=""
 if [[ "$NOW_MODE" == "1" ]]; then
-  EXTRA_ARGS="--now-mode --urgent-window-minutes $URGENT_WINDOW_MINUTES --restore-grace-seconds $RESTORE_GRACE_SECONDS --session-check-interval-seconds $SESSION_CHECK_INTERVAL_SECONDS"
+  EXTRA_ARGS="--now-mode --urgent-window-minutes $URGENT_WINDOW_MINUTES --urgent-interval-seconds $URGENT_INTERVAL_SECONDS --urgent-cooldown-seconds $URGENT_COOLDOWN_SECONDS --restore-grace-seconds $RESTORE_GRACE_SECONDS --session-check-interval-seconds $SESSION_CHECK_INTERVAL_SECONDS"
 fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$LOG_DIR"
@@ -34,7 +37,7 @@ cat > "$PLIST_PATH" <<PLIST
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>cd "$REPO_ROOT" &amp;&amp; NODE_BIN="\$(command -v node)" &amp;&amp; exec "\$NODE_BIN" tools/spacecloud-watch.mjs watch --interval-seconds $INTERVAL_SECONDS --limit-per-cycle $LIMIT_PER_CYCLE --delete-limit-per-cycle $DELETE_LIMIT_PER_CYCLE --naver-block-limit-per-cycle $NAVER_BLOCK_LIMIT_PER_CYCLE --naver-cancel-limit-per-cycle $NAVER_CANCEL_LIMIT_PER_CYCLE --spacecloud-cancel-limit-per-cycle $SPACECLOUD_CANCEL_LIMIT_PER_CYCLE $EXTRA_ARGS</string>
+        <string>cd "$REPO_ROOT" &amp;&amp; NODE_BIN="\$(command -v node)" &amp;&amp; exec "\$NODE_BIN" tools/spacecloud-watch.mjs watch --interval-seconds $INTERVAL_SECONDS --limit-per-cycle $LIMIT_PER_CYCLE --delete-limit-per-cycle $DELETE_LIMIT_PER_CYCLE --naver-block-limit-per-cycle $NAVER_BLOCK_LIMIT_PER_CYCLE --naver-cancel-limit-per-cycle $NAVER_CANCEL_LIMIT_PER_CYCLE --spacecloud-cancel-limit-per-cycle $SPACECLOUD_CANCEL_LIMIT_PER_CYCLE $EXTRA_ARGS --daily-reconcile-hour $DAILY_RECONCILE_HOUR --daily-reconcile-state "$LOG_DIR/daily-reconcile-state.json"</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

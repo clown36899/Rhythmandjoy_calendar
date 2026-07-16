@@ -30,6 +30,7 @@ const DEFAULT_ENV_FILE = '/Users/inteyeo/.rhythmjoy-ingestion.env';
 const DEFAULT_CAFE24_TARGET_ENV = 'ops/cafe24-production-target.env';
 const DEFAULT_NOTIFY_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'notify-state.json');
 const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
+const DEFAULT_DAILY_RECONCILE_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'daily-reconcile-state.json');
 const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
 const CONFIRMATION_SMS_TITLE = '리듬앤조이 연습실 예약 확정 안내문자';
 const PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME = 'spacecloud-prior-booking-canceled-v1';
@@ -60,6 +61,11 @@ Options:
   --notify-state <path>     Defaults to ${DEFAULT_NOTIFY_STATE_PATH}.
   --notify-cooldown-seconds <n>
                             Defaults to ${DEFAULT_NOTIFY_COOLDOWN_SECONDS}.
+  --daily-reconcile-hour <0-23>
+                            Defaults to 5. Sends one daily DB health summary.
+  --daily-reconcile-state <path>
+                            Defaults to ${DEFAULT_DAILY_RECONCILE_STATE_PATH}.
+  --no-daily-reconcile      Disable daily DB health summary.
   --from <YYYY-MM-DD>       Defaults to today in KST.
   --days <n>                Defaults to 370.
   --rooms <keys>            Defaults to a,b,c,d,e.
@@ -76,6 +82,10 @@ Options:
   --now-mode                Prioritize duplicate cancellation and near-time availability work.
   --urgent-window-minutes <n>
                             Defaults to 180.
+  --urgent-interval-seconds <n>
+                            Defaults to 15 in now-mode.
+  --urgent-cooldown-seconds <n>
+                            Defaults to 300 in now-mode.
   --restore-grace-seconds <n>
                             Defaults to 45 in now-mode.
   --session-check-interval-seconds <n>
@@ -117,6 +127,9 @@ function parseArgs(argv) {
     cafe24TargetEnv: DEFAULT_CAFE24_TARGET_ENV,
     notifyState: DEFAULT_NOTIFY_STATE_PATH,
     notifyCooldownSeconds: DEFAULT_NOTIFY_COOLDOWN_SECONDS,
+    dailyReconcileHour: 5,
+    dailyReconcileState: DEFAULT_DAILY_RECONCILE_STATE_PATH,
+    dailyReconcile: true,
     days: 370,
     rooms: 'a,b,c,d,e',
     intervalSeconds: 30,
@@ -127,6 +140,8 @@ function parseArgs(argv) {
     spacecloudCancelLimitPerCycle: 1,
     nowMode: false,
     urgentWindowMinutes: 180,
+    urgentIntervalSeconds: 15,
+    urgentCooldownSeconds: 300,
     restoreGraceSeconds: 45,
     sessionCheckIntervalSeconds: 180,
     naverBusinessId: '1257912',
@@ -159,6 +174,10 @@ function parseArgs(argv) {
       args.telegram = false;
       continue;
     }
+    if (arg === '--no-daily-reconcile') {
+      args.dailyReconcile = false;
+      continue;
+    }
     if (arg === '--legacy-calendar-plan') {
       args.legacyCalendarPlan = true;
       continue;
@@ -184,12 +203,18 @@ function parseArgs(argv) {
       'spacecloud-cancel-limit-per-cycle',
       'notify-cooldown-seconds',
       'urgent-window-minutes',
+      'urgent-interval-seconds',
+      'urgent-cooldown-seconds',
       'restore-grace-seconds',
       'session-check-interval-seconds',
     ].includes(key)) {
       const parsed = Number.parseInt(next, 10);
       if (!Number.isFinite(parsed) || parsed < 1) throw new Error(`${arg} must be a positive integer`);
       args[key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = parsed;
+    } else if (key === 'daily-reconcile-hour') {
+      const parsed = Number.parseInt(next, 10);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 23) throw new Error(`${arg} must be 0-23`);
+      args.dailyReconcileHour = parsed;
     } else if (['config', 'state', 'from', 'rooms'].includes(key)) {
       args[key] = next;
     } else if (key === 'naver-business-id') {
@@ -204,6 +229,8 @@ function parseArgs(argv) {
       args.cafe24TargetEnv = next;
     } else if (key === 'notify-state') {
       args.notifyState = next;
+    } else if (key === 'daily-reconcile-state') {
+      args.dailyReconcileState = next;
     } else if (key === 'to') {
       args.smsTestTo = next;
     } else if (key === 'sms-test-task-id') {
@@ -1845,6 +1872,140 @@ async function notifyWithCooldown(args, key, text, {
     await writeJson(args.notifyState, state);
     logLine(`telegram failed: ${String(error?.message || error)}`);
     return { sent: false, reason: String(error?.message || error) };
+  }
+}
+
+function kstDateHour() {
+  const shifted = new Date(Date.now() + KST_OFFSET_MS);
+  return {
+    date: `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`,
+    hour: shifted.getUTCHours(),
+  };
+}
+
+async function fetchRemoteDailyReconcile(args) {
+  const target = await loadCafe24Target(args);
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+def table_exists(cur, name):
+    cur.execute("SHOW TABLES LIKE %s", (name,))
+    return cur.fetchone() is not None
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=True,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+out = {'ok': True, 'sessions': [], 'taskSummary': [], 'attention': {}, 'amounts': {}}
+with conn:
+    with conn.cursor() as cur:
+        if table_exists(cur, 'rhythmjoy_admin_sessions'):
+            cur.execute("""
+                SELECT platform, status, CAST(last_checked_at AS CHAR) AS lastCheckedAt,
+                       CAST(updated_at AS CHAR) AS updatedAt, note
+                FROM rhythmjoy_admin_sessions
+                ORDER BY platform
+            """)
+            out['sessions'] = cur.fetchall()
+        if table_exists(cur, 'rhythmjoy_spacecloud_tasks'):
+            cur.execute("""
+                SELECT task_type AS taskType, status, COUNT(*) AS cnt
+                FROM rhythmjoy_spacecloud_tasks
+                WHERE updated_at >= DATE_SUB(NOW(), INTERVAL 1 DAY)
+                GROUP BY task_type, status
+                ORDER BY task_type, status
+            """)
+            out['taskSummary'] = cur.fetchall()
+            cur.execute("""
+                SELECT
+                  SUM(status IN ('pending','running','claimed')) AS pending,
+                  SUM(status IN ('failed','needs_review','needs-review')) AS failed,
+                  SUM(task_type IN ('naver_block','naver_restore','spacecloud_cancel','naver_cancel') AND status IN ('pending','running','claimed')) AS urgentPending
+                FROM rhythmjoy_spacecloud_tasks
+            """)
+            out['attention'] = cur.fetchone() or {}
+        if table_exists(cur, 'rhythmjoy_booking_ledger'):
+            cur.execute("""
+                SELECT
+                  SUM(CASE WHEN reservation_date >= CURDATE() AND current_status <> 'canceled' AND COALESCE(gross_amount, 0)=0 THEN 1 ELSE 0 END) AS futureMissingAmount,
+                  SUM(CASE WHEN reservation_date = CURDATE() AND current_status <> 'canceled' THEN 1 ELSE 0 END) AS todayReservations,
+                  SUM(CASE WHEN reservation_date = CURDATE() AND current_status <> 'canceled' THEN COALESCE(gross_amount, price, 0) ELSE 0 END) AS todayGross,
+                  SUM(CASE WHEN reservation_date = CURDATE() AND current_status <> 'canceled' THEN COALESCE(net_amount, 0) ELSE 0 END) AS todayNet
+                FROM rhythmjoy_booking_ledger
+                WHERE COALESCE(source_mode, '') <> 'admin-task-anchor'
+            """)
+            out['amounts'] = cur.fetchone() or {}
+print(json.dumps(out, ensure_ascii=False, default=str))
+PY
+`;
+  const stdout = runSshScript(target, script);
+  return JSON.parse(stdout);
+}
+
+function dailyReconcileMessage(data) {
+  const sessions = (data.sessions || []).map((row) => {
+    const label = row.platform === 'naver' ? '네이버' : row.platform === 'spacecloud' ? 'SC' : row.platform;
+    const ok = /ready|ok|logged_in/i.test(String(row.status || ''));
+    return `${ok ? '✅' : '⚠️'} ${label}: ${row.status || 'unknown'}${row.lastCheckedAt ? ` (${row.lastCheckedAt.slice(5, 16)})` : ''}`;
+  });
+  const attention = data.attention || {};
+  const amounts = data.amounts || {};
+  const taskLines = (data.taskSummary || [])
+    .filter((row) => Number(row.cnt || 0) > 0)
+    .slice(0, 8)
+    .map((row) => `- ${row.taskType}/${row.status}: ${Number(row.cnt || 0).toLocaleString()}건`);
+  return [
+    '✅ 자동화 일일 점검',
+    new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+    '',
+    sessions.length ? sessions.join('\n') : '세션: 기록 없음',
+    '',
+    `대기 ${Number(attention.pending || 0).toLocaleString()}건 / 실패 ${Number(attention.failed || 0).toLocaleString()}건 / 긴급대기 ${Number(attention.urgentPending || 0).toLocaleString()}건`,
+    `오늘 예약 ${Number(amounts.todayReservations || 0).toLocaleString()}건 / 결제 ${Number(amounts.todayGross || 0).toLocaleString()}원 / 정산 ${Number(amounts.todayNet || 0).toLocaleString()}원`,
+    `미래 금액 미수집 ${Number(amounts.futureMissingAmount || 0).toLocaleString()}건`,
+    taskLines.length ? `\n최근 24시간 작업\n${taskLines.join('\n')}` : '',
+    TELEGRAM_LOG_HINT,
+  ].filter(Boolean).join('\n');
+}
+
+async function maybeSendDailyReconcile(args) {
+  if (!args.dailyReconcile || !args.telegram) return;
+  const now = kstDateHour();
+  if (now.hour < args.dailyReconcileHour) return;
+  const state = await readJsonObject(args.dailyReconcileState);
+  if (state.lastSentDate === now.date) return;
+  try {
+    const data = await fetchRemoteDailyReconcile(args);
+    const result = await sendTelegram(args, dailyReconcileMessage(data));
+    await writeJson(args.dailyReconcileState, {
+      lastSentDate: now.date,
+      lastAttemptAt: new Date().toISOString(),
+      result,
+    });
+    if (result.sent) logLine('telegram sent: daily-reconcile');
+  } catch (error) {
+    logLine(`daily reconcile failed: ${String(error?.message || error)}`);
   }
 }
 
@@ -3785,6 +3946,8 @@ function runNowModeSelfTest() {
   ]);
   assert.equal(parsed.nowMode, true);
   assert.equal(parsed.urgentWindowMinutes, 180);
+  assert.equal(parsed.urgentIntervalSeconds, 15);
+  assert.equal(parsed.urgentCooldownSeconds, 300);
   assert.equal(parsed.restoreGraceSeconds, 45);
   assert.equal(parsed.sessionCheckIntervalSeconds, 180);
 
@@ -4077,6 +4240,41 @@ async function runCycle(args, context = null) {
   }
 }
 
+function resultAttempted(result) {
+  return Number(result?.attempted || 0) > 0
+    || Number(result?.fetched || 0) > 0
+    || (Array.isArray(result?.failed) && result.failed.length > 0)
+    || (Array.isArray(result?.rows) && result.rows.some((row) => [
+      'pending',
+      'restore-grace-wait',
+      'needs-review',
+      'google-create-failed',
+      'google-delete-failed',
+    ].includes(String(row.status || ''))));
+}
+
+function cycleNeedsUrgentFollowUp(row) {
+  if (!row || typeof row !== 'object') return false;
+  if (Number(row.attempted || 0) > 0 || (Array.isArray(row.failed) && row.failed.length > 0)) return true;
+  return [
+    row.uploadTasks,
+    row.deleteTasks,
+    row.naverBlockTasks,
+    row.naverRestoreTasks,
+    row.naverAvailabilityTasks,
+    row.spacecloudCancelTasks,
+    row.naverCancelTasks,
+  ].some(resultAttempted);
+}
+
+function watchSleepSeconds(args, urgentUntil) {
+  if (!args.nowMode) return args.intervalSeconds;
+  if (Date.now() < urgentUntil) {
+    return Math.max(5, Math.min(args.intervalSeconds, args.urgentIntervalSeconds));
+  }
+  return args.intervalSeconds;
+}
+
 async function runWatch(args) {
   const context = await openSpacecloudContext({
     profileDir: args.profileDir,
@@ -4088,12 +4286,16 @@ async function runWatch(args) {
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
+  let urgentUntil = 0;
 
-  logLine(`watch started; interval=${args.intervalSeconds}s profile=${args.profileDir} mode=${args.legacyCalendarPlan ? 'db+legacy-calendar-plan' : 'db-queue'}`);
+  logLine(`watch started; interval=${args.intervalSeconds}s urgent=${args.nowMode ? `${args.urgentIntervalSeconds}s/${args.urgentCooldownSeconds}s` : 'off'} profile=${args.profileDir} mode=${args.legacyCalendarPlan ? 'db+legacy-calendar-plan' : 'db-queue'}`);
   try {
     while (!stopping) {
       try {
         const row = await runCycle(args, context);
+        if (args.nowMode && cycleNeedsUrgentFollowUp(row)) {
+          urgentUntil = Math.max(urgentUntil, Date.now() + args.urgentCooldownSeconds * 1000);
+        }
         logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; uploadTasks=${row.uploadTasks?.attempted || 0}; naverCancelTasks=${row.naverCancelTasks?.attempted || 0}; deleteTasks=${row.deleteTasks?.attempted || 0}; naverBlockTasks=${row.naverBlockTasks?.attempted || 0}; naverRestoreTasks=${row.naverRestoreTasks?.attempted || 0}; spacecloudCancelTasks=${row.spacecloudCancelTasks?.attempted || 0}`);
         if (row.uploadedRows?.length || row.uploadTasks?.rows?.some((taskRow) => [
           'google-recorded',
@@ -4286,7 +4488,12 @@ async function runWatch(args) {
         }
       }
 
-      const waitUntil = Date.now() + args.intervalSeconds * 1000;
+      await maybeSendDailyReconcile(args);
+      const sleepSeconds = watchSleepSeconds(args, urgentUntil);
+      if (args.nowMode && sleepSeconds !== args.intervalSeconds) {
+        logLine(`urgent follow-up interval active; next cycle in ${sleepSeconds}s`);
+      }
+      const waitUntil = Date.now() + sleepSeconds * 1000;
       while (!stopping && Date.now() < waitUntil) {
         await sleep(Math.min(1000, waitUntil - Date.now()));
       }

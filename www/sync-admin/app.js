@@ -67,8 +67,11 @@
     taskRows: document.getElementById("taskRows"),
     todayCount: document.getElementById("todayCount"),
     dayRevenue: document.getElementById("dayRevenue"),
+    dayRevenueNet: document.getElementById("dayRevenueNet"),
     monthRevenue: document.getElementById("monthRevenue"),
+    monthRevenueNet: document.getElementById("monthRevenueNet"),
     yearRevenue: document.getElementById("yearRevenue"),
+    yearRevenueNet: document.getElementById("yearRevenueNet"),
     monthRevenueButton: document.getElementById("monthRevenueButton"),
     revenueModal: document.getElementById("revenueModal"),
     revenueModalSummary: document.getElementById("revenueModalSummary"),
@@ -704,9 +707,15 @@
     const feeRevenue = todays.reduce((total, item) => total + eventFeeAmount(item), 0);
     const missing = todays.filter((item) => !eventGrossAmount(item)).length;
     el.dayRevenue.textContent = revenue > 0 ? `${revenue.toLocaleString()}원` : "-";
+    if (el.dayRevenueNet) {
+      el.dayRevenueNet.textContent = amountBreakdownLine(netRevenue, feeRevenue, missing);
+    }
     el.dayRevenue.title = amountSummaryTitle("예약매출", revenue, netRevenue, feeRevenue, missing);
     const selectedMonth = revenueSelectedMonth();
     el.monthRevenue.textContent = formatRevenueStat(selectedMonth?.total);
+    if (el.monthRevenueNet) {
+      el.monthRevenueNet.textContent = amountBreakdownLine(selectedMonth?.netTotal, selectedMonth?.feeTotal, selectedMonth?.missingCount);
+    }
     el.monthRevenue.title = selectedMonth
       ? amountSummaryTitle(
         `${selectedMonth.confirmedCount || 0}건`,
@@ -717,6 +726,13 @@
       )
       : "선택월 원장 수익 합계";
     el.yearRevenue.textContent = formatRevenueStat(state.revenueStats?.yearTotal);
+    if (el.yearRevenueNet) {
+      el.yearRevenueNet.textContent = amountBreakdownLine(
+        state.revenueStats?.yearNetTotal,
+        state.revenueStats?.yearFeeTotal,
+        state.revenueStats?.yearMissingCount,
+      );
+    }
     el.yearRevenue.title = state.revenueStats
       ? amountSummaryTitle(
         `${state.revenueStats.yearConfirmedCount || 0}건`,
@@ -1535,6 +1551,8 @@
     const yearRows = comparison.yearSummary || [];
     const periodRows = comparison.periodAnalysis || [];
     const priceRows = comparison.pricePolicy?.rows || [];
+    const priceHistory = comparison.pricePolicy?.history || [];
+    const beExperiment = comparison.experiments?.beWeekdayDay || null;
     return `
       <section class="revenue-section">
         <div class="revenue-section-heading">
@@ -1561,6 +1579,7 @@
           `).join("")}
         </div>
       </section>
+      ${beExperiment ? beExperimentHtml(beExperiment) : ""}
       <section class="revenue-section">
         <div class="revenue-section-heading">
           <h3>가격 변동</h3>
@@ -1586,7 +1605,81 @@
             </tbody>
           </table>
         </div>
+        ${priceHistory.length ? priceHistoryHtml(priceHistory) : ""}
       </section>
+    `;
+  }
+
+  function beExperimentHtml(item) {
+    const before = item.before || {};
+    const after = item.after || {};
+    const lastYear = item.lastYearSame || {};
+    const breakEven = item.breakEven || {};
+    return `
+      <section class="revenue-section">
+        <div class="revenue-section-heading">
+          <h3>B/E 평일 낮 8,000원 추적</h3>
+          <p>${escapeHtml(item.basis || "B/E 평일 낮 가격 테스트입니다.")}</p>
+        </div>
+        <div class="experiment-grid">
+          ${experimentMetricCard("변경 전 기준", before)}
+          ${experimentMetricCard("변경 후 현재", after)}
+          ${experimentMetricCard("작년 같은 기간", lastYear)}
+          <article class="experiment-card ${Number(breakEven.grossDiffVsBeforePace || 0) >= 0 ? "positive-card" : "watch-card"}">
+            <span>손익분기</span>
+            <strong>${escapeHtml(formatPercent(breakEven.progressRate))}</strong>
+            <small>필요 ${escapeHtml(formatHours(breakEven.requiredHours))} / 현재 ${escapeHtml(formatHours(breakEven.actualHours))}</small>
+            <small class="${signedClass(breakEven.grossDiffVsBeforePace)}">전 기준 환산 ${escapeHtml(formatSignedWon(breakEven.grossDiffVsBeforePace))}</small>
+            <b>${escapeHtml(breakEven.verdict || "추적 중")}</b>
+          </article>
+        </div>
+      </section>
+    `;
+  }
+
+  function experimentMetricCard(label, row) {
+    return `
+      <article class="experiment-card">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(formatRevenueStat(row.gross))}</strong>
+        <small>${escapeHtml(compactDateRange(`${row.startDate || ""}~${row.endDate || ""}`))}</small>
+        <small>${Number(row.count || 0).toLocaleString()}건 · ${escapeHtml(formatHours(row.hours))} · 시간당 ${escapeHtml(formatRevenueStat(row.hourAverage))}</small>
+        ${Number(row.net || 0) || Number(row.fee || 0) ? `<small>정산 ${escapeHtml(formatRevenueStat(row.net))} · 수수료 ${escapeHtml(formatRevenueStat(row.fee))}</small>` : ""}
+      </article>
+    `;
+  }
+
+  function priceHistoryHtml(rows) {
+    const byDate = rows.reduce((map, row) => {
+      const key = row.effectiveDate || "";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(row);
+      return map;
+    }, new Map());
+    return `
+      <div class="price-history-wrap">
+        <h4>가격 변경 이력</h4>
+        <div class="price-history-list">
+          ${Array.from(byDate.entries()).map(([date, items]) => `
+            <article class="price-history-card">
+              <header>
+                <strong>${escapeHtml(date)}</strong>
+                <span>${escapeHtml(items[0]?.note || "")}</span>
+              </header>
+              <div class="price-history-rooms">
+                ${items.map((row) => `
+                  <span>
+                    <b>${escapeHtml(row.roomLabel || "")}</b>
+                    낮 ${escapeHtml(formatRevenueStat(row.weekdayDay))}
+                    · 저녁 ${escapeHtml(formatRevenueStat(row.afterHourly))}
+                    · 통 ${escapeHtml(formatRevenueStat(row.overnight))}
+                  </span>
+                `).join("")}
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      </div>
     `;
   }
 
@@ -1635,6 +1728,14 @@
     const fee = Number(item.feeTotal || 0);
     if (!net && !fee) return "";
     return `<small>정산 ${escapeHtml(formatRevenueStat(net))}${fee ? ` · 수수료 ${escapeHtml(formatRevenueStat(fee))}` : ""}</small>`;
+  }
+
+  function amountBreakdownLine(net, fee, missing = 0) {
+    const parts = [];
+    if (Number(net || 0) > 0) parts.push(`정산 ${formatRevenueStat(net)}`);
+    if (Number(fee || 0) > 0) parts.push(`수수료 ${formatRevenueStat(fee)}`);
+    if (Number(missing || 0) > 0) parts.push(`미수집 ${Number(missing).toLocaleString()}건`);
+    return parts.join(" · ");
   }
 
   function impactRowHtml(row) {
