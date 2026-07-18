@@ -1626,7 +1626,7 @@ function reflection_audit_summary($pdo) {
             SUM(audit_status='ok') AS ok_count,
             MAX(checked_at) AS last_checked_at
         FROM rhythmjoy_reflection_audits
-        WHERE checked_at >= DATE_SUB(NOW(), INTERVAL 2 DAY)
+        WHERE checked_at = (SELECT MAX(checked_at) FROM rhythmjoy_reflection_audits)
     ");
     $row = $stmt->fetch();
     if (!$row) {
@@ -1652,8 +1652,7 @@ function reflection_audit_rows($pdo) {
                DATE_FORMAT(first_seen_at, '%Y-%m-%dT%H:%i:%s+09:00') AS first_seen_at,
                DATE_FORMAT(resolved_at, '%Y-%m-%dT%H:%i:%s+09:00') AS resolved_at
         FROM rhythmjoy_reflection_audits
-        WHERE audit_status <> 'ok'
-           OR checked_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        WHERE checked_at = (SELECT MAX(checked_at) FROM rhythmjoy_reflection_audits)
         ORDER BY
             FIELD(audit_status, 'issue', 'waiting', 'ok') ASC,
             FIELD(severity, 'critical', 'warning', 'info') ASC,
