@@ -137,6 +137,7 @@ install -d "$APP_ROOT/static/email_log"
 chown -R clown313python:clown313python "$APP_ROOT/static/email_log"
 install -m 0755 "$REPO_ROOT/ops/rhythmjoy_calendar_cache.py" "$OPS_ROOT/rhythmjoy_calendar_cache.py"
 install -m 0755 "$REPO_ROOT/ops/rhythmjoy_email_import.py" "$OPS_ROOT/rhythmjoy_email_import.py"
+install -m 0755 "$REPO_ROOT/ops/rhythmjoy_reflection_audit.py" "$OPS_ROOT/rhythmjoy_reflection_audit.py"
 install -m 0755 "$REPO_ROOT/ops/aligo_sms.py" "$OPS_ROOT/aligo_sms.py"
 install -m 0755 "$REPO_ROOT/ops/backup-cafe24-db.sh" "$OPS_ROOT/backup-cafe24-db.sh"
 rm -f "$OPS_ROOT/cafe24_sms.py"
@@ -145,6 +146,8 @@ install -m 0644 "$REPO_ROOT/ops/naver_booking_googleimport/import_email.py" "$AP
 
 install -m 0644 "$REPO_ROOT/ops/rhythmjoy-calendar-cache.service" "/etc/systemd/system/$CACHE_SERVICE"
 install -m 0644 "$REPO_ROOT/ops/my_email_service.service" "/etc/systemd/system/$LEGACY_EMAIL_SERVICE"
+install -m 0644 "$REPO_ROOT/ops/rhythmjoy-reflection-audit.service" /etc/systemd/system/rhythmjoy-reflection-audit.service
+install -m 0644 "$REPO_ROOT/ops/rhythmjoy-reflection-audit.timer" /etc/systemd/system/rhythmjoy-reflection-audit.timer
 install_apache_conf "$REPO_ROOT/ops/clown313python-root-redirect.conf"
 install_apache_conf "$REPO_ROOT/ops/rhythmjoy-calendar-modsecurity.conf"
 install_apache_conf "$REPO_ROOT/ops/rhythmjoy-calendar-static.conf"
@@ -157,6 +160,7 @@ install -m 0755 "$REPO_ROOT/ops/reload-httpd-after-certbot.sh" /etc/letsencrypt/
 
 systemctl daemon-reload
 systemctl enable --now "$CACHE_SERVICE"
+systemctl enable --now rhythmjoy-reflection-audit.timer
 systemctl reset-failed "$LEGACY_EMAIL_SERVICE" 2>/dev/null || true
 systemctl enable "$LEGACY_EMAIL_SERVICE"
 systemctl restart "$LEGACY_EMAIL_SERVICE"

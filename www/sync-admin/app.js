@@ -14,6 +14,8 @@
     roomFilter: "all",
     drafts: loadJson(storageKey, []),
     tasks: [],
+    reflectionAudits: [],
+    reflectionAuditSummary: null,
     sessions: loadJson(sessionKey, {}),
     revenueStats: null,
     revenueComparison: null,
@@ -64,6 +66,7 @@
     memoInput: document.getElementById("memoInput"),
     startInput: document.getElementById("startInput"),
     endInput: document.getElementById("endInput"),
+    reflectionAudit: document.getElementById("reflectionAudit"),
     taskRows: document.getElementById("taskRows"),
     todayCount: document.getElementById("todayCount"),
     dayRevenue: document.getElementById("dayRevenue"),
@@ -398,6 +401,7 @@
     updateDateControls();
     renderSchedule();
     renderPriceReference();
+    renderReflectionAudits();
     renderTasks();
     renderStatus();
     renderSessions();
@@ -697,6 +701,86 @@
       `;
       el.taskRows.appendChild(row);
     });
+  }
+
+  function renderReflectionAudits() {
+    if (!el.reflectionAudit) return;
+    const summary = state.reflectionAuditSummary || {};
+    const rows = state.reflectionAudits || [];
+    const issueCount = Number(summary.issueCount || 0);
+    const waitingCount = Number(summary.waitingCount || 0);
+    const okCount = Number(summary.okCount || 0);
+    const visibleRows = rows.filter((row) => row.auditStatus !== "ok").slice(0, 8);
+    const stateClass = issueCount > 0 ? "failed" : (waitingCount > 0 ? "pending" : "done");
+    const summaryText = issueCount > 0
+      ? `문제 ${issueCount}건`
+      : (waitingCount > 0 ? `대기 ${waitingCount}건` : "정상");
+    const checkedText = summary.lastCheckedAt ? formatDateTime(summary.lastCheckedAt) : "아직 없음";
+
+    if (!visibleRows.length) {
+      el.reflectionAudit.innerHTML = `
+        <div class="reflection-audit-head">
+          <div>
+            <strong>반영 정규검사</strong>
+            <span>이메일 원장 기준 · 마지막 ${escapeHtml(checkedText)}</span>
+          </div>
+          <span class="status-badge ${stateClass}">${escapeHtml(summaryText)}</span>
+        </div>
+        <p class="reflection-audit-empty">최근 검사 기준으로 반대 플랫폼 반영 누락은 없습니다. 정상 ${okCount.toLocaleString()}건이 확인됐습니다.</p>
+      `;
+      return;
+    }
+
+    el.reflectionAudit.innerHTML = `
+      <div class="reflection-audit-head">
+        <div>
+          <strong>반영 정규검사</strong>
+          <span>이메일 원장 기준 · 마지막 ${escapeHtml(checkedText)}</span>
+        </div>
+        <span class="status-badge ${stateClass}">${escapeHtml(summaryText)}</span>
+      </div>
+      <div class="reflection-audit-list">
+        ${visibleRows.map(reflectionAuditItemHtml).join("")}
+      </div>
+    `;
+  }
+
+  function reflectionAuditItemHtml(item) {
+    const badge = item.auditStatus === "issue" ? "failed" : (item.auditStatus === "waiting" ? "pending" : "done");
+    const taskLabel = reflectionTaskLabel(item.taskType, item.sourceLabel, item.targetLabel);
+    const task = item.taskId ? `작업 #${item.taskId}` : "작업 없음";
+    return `
+      <article class="reflection-audit-item ${escapeHtml(item.severity || "")}">
+        <span class="status-badge ${badge}">${escapeHtml(auditStatusText(item.auditStatus))}</span>
+        <div>
+          <strong>${escapeHtml(auditBookingLine(item))}</strong>
+          <p>${escapeHtml(taskLabel)} · ${escapeHtml(item.reason || "-")}</p>
+          <small>${escapeHtml(item.sourceLabel || "-")} → ${escapeHtml(item.targetLabel || "-")} · ${escapeHtml(task)} · 점검 ${escapeHtml(formatDateTime(item.checkedAt) || "-")}</small>
+        </div>
+      </article>
+    `;
+  }
+
+  function auditBookingLine(item) {
+    return `${item.date || "-"} ${item.room || "-"}홀 ${item.start || "-"}-${item.end || "-"} · ${item.name || "이름 없음"}${item.reservationNo ? ` · ${item.reservationNo}` : ""}`;
+  }
+
+  function auditStatusText(status) {
+    return {
+      issue: "확인필요",
+      waiting: "대기",
+      ok: "정상",
+    }[status] || "확인필요";
+  }
+
+  function reflectionTaskLabel(taskType, sourceLabel, targetLabel) {
+    return {
+      upload: `${sourceLabel || "네이버"} 예약을 ${targetLabel || "스페이스클라우드"}에 등록`,
+      naver_block: `${sourceLabel || "스페이스클라우드"} 예약으로 네이버 예약불가 반영`,
+      delete: `${sourceLabel || "네이버"} 취소로 스페이스클라우드 삭제`,
+      naver_restore: `${sourceLabel || "스페이스클라우드"} 취소로 네이버 예약가능 복구`,
+      dedupe: "원장 확정 예약 중복",
+    }[taskType] || "반대 플랫폼 반영";
   }
 
   function renderStatus() {
@@ -1993,6 +2077,8 @@
     }
 
     state.drafts = (data.reservations || []).map(reservationItemFromApi);
+    state.reflectionAudits = data.reflectionAudits || [];
+    state.reflectionAuditSummary = data.reflectionAuditSummary || null;
     state.tasks = annotateTaskRelations((data.tasks || []).map((item) => ({
       id: item.id,
       liveTaskId: item.liveTaskId || "",

@@ -191,6 +191,35 @@ function ensure_schema($pdo) {
     ensure_column($pdo, 'rhythmjoy_booking_ledger', 'amount_source', "VARCHAR(64) NOT NULL DEFAULT '' AFTER net_amount");
     ensure_column($pdo, 'rhythmjoy_booking_ledger', 'payment_method', "VARCHAR(64) NOT NULL DEFAULT '' AFTER amount_source");
     $pdo->exec("
+        CREATE TABLE IF NOT EXISTS rhythmjoy_reflection_audits (
+            audit_key VARCHAR(180) NOT NULL,
+            ledger_id BIGINT UNSIGNED NULL,
+            source_platform VARCHAR(32) NOT NULL DEFAULT '',
+            target_platform VARCHAR(32) NOT NULL DEFAULT '',
+            expected_task_type VARCHAR(32) NOT NULL DEFAULT '',
+            current_status VARCHAR(32) NOT NULL DEFAULT '',
+            audit_status VARCHAR(32) NOT NULL DEFAULT 'issue',
+            severity VARCHAR(16) NOT NULL DEFAULT 'warning',
+            reason VARCHAR(255) NOT NULL DEFAULT '',
+            task_id BIGINT UNSIGNED NULL,
+            task_status VARCHAR(32) NOT NULL DEFAULT '',
+            reservation_date DATE NULL,
+            room_key VARCHAR(8) NOT NULL DEFAULT '',
+            start_time TIME NULL,
+            end_time TIME NULL,
+            reserver_name VARCHAR(128) NOT NULL DEFAULT '',
+            reservation_number VARCHAR(64) NOT NULL DEFAULT '',
+            checked_at DATETIME NOT NULL,
+            first_seen_at DATETIME NOT NULL,
+            resolved_at DATETIME NULL,
+            detail_json TEXT NULL,
+            PRIMARY KEY (audit_key),
+            KEY idx_status (audit_status, severity),
+            KEY idx_checked (checked_at),
+            KEY idx_ledger (ledger_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
         CREATE TABLE IF NOT EXISTS rhythmjoy_industry_comparison_snapshots (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             snapshot_key VARCHAR(120) NOT NULL,
@@ -1589,6 +1618,84 @@ function recent_task_rows($pdo) {
     return array_slice($rows, 0, 80);
 }
 
+function reflection_audit_summary($pdo) {
+    $stmt = $pdo->query("
+        SELECT
+            SUM(audit_status='issue') AS issue_count,
+            SUM(audit_status='waiting') AS waiting_count,
+            SUM(audit_status='ok') AS ok_count,
+            MAX(checked_at) AS last_checked_at
+        FROM rhythmjoy_reflection_audits
+        WHERE checked_at >= DATE_SUB(NOW(), INTERVAL 2 DAY)
+    ");
+    $row = $stmt->fetch();
+    if (!$row) {
+        return array('issueCount' => 0, 'waitingCount' => 0, 'okCount' => 0, 'lastCheckedAt' => null);
+    }
+    return array(
+        'issueCount' => intval($row['issue_count']),
+        'waitingCount' => intval($row['waiting_count']),
+        'okCount' => intval($row['ok_count']),
+        'lastCheckedAt' => $row['last_checked_at'] ? date('c', strtotime($row['last_checked_at'])) : null,
+    );
+}
+
+function reflection_audit_rows($pdo) {
+    $stmt = $pdo->query("
+        SELECT audit_key, ledger_id, source_platform, target_platform, expected_task_type,
+               current_status, audit_status, severity, reason, task_id, task_status,
+               reservation_date, room_key,
+               TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
+               TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
+               reserver_name, reservation_number,
+               DATE_FORMAT(checked_at, '%Y-%m-%dT%H:%i:%s+09:00') AS checked_at,
+               DATE_FORMAT(first_seen_at, '%Y-%m-%dT%H:%i:%s+09:00') AS first_seen_at,
+               DATE_FORMAT(resolved_at, '%Y-%m-%dT%H:%i:%s+09:00') AS resolved_at
+        FROM rhythmjoy_reflection_audits
+        WHERE audit_status <> 'ok'
+           OR checked_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        ORDER BY
+            FIELD(audit_status, 'issue', 'waiting', 'ok') ASC,
+            FIELD(severity, 'critical', 'warning', 'info') ASC,
+            checked_at DESC
+        LIMIT 40
+    ");
+    $rows = array();
+    foreach ($stmt->fetchAll() as $row) {
+        $source = (string) $row['source_platform'];
+        $target = (string) $row['target_platform'];
+        $end = (string) $row['end_time_text'];
+        if ($end === '00:00' && $row['start_time_text'] !== '00:00') {
+            $end = '24:00';
+        }
+        $rows[] = array(
+            'key' => $row['audit_key'],
+            'ledgerId' => $row['ledger_id'] !== null ? intval($row['ledger_id']) : null,
+            'sourcePlatform' => $source,
+            'sourceLabel' => $source === 'naver' ? '네이버' : ($source === 'spacecloud' ? '스페이스클라우드' : '원장'),
+            'targetPlatform' => $target,
+            'targetLabel' => $target === 'naver' ? '네이버' : ($target === 'spacecloud' ? '스페이스클라우드' : '원장'),
+            'taskType' => $row['expected_task_type'],
+            'currentStatus' => $row['current_status'],
+            'auditStatus' => $row['audit_status'],
+            'severity' => $row['severity'],
+            'reason' => $row['reason'],
+            'taskId' => $row['task_id'] !== null ? intval($row['task_id']) : null,
+            'taskStatus' => $row['task_status'],
+            'date' => $row['reservation_date'],
+            'room' => strtoupper((string) $row['room_key']),
+            'start' => $row['start_time_text'],
+            'end' => $end,
+            'name' => $row['reserver_name'],
+            'reservationNo' => $row['reservation_number'],
+            'checkedAt' => $row['checked_at'],
+            'firstSeenAt' => $row['first_seen_at'],
+            'resolvedAt' => $row['resolved_at'],
+        );
+    }
+    return $rows;
+}
+
 function industry_snapshot_key() {
     return 'industry-size-segment-2026-07-16-v1';
 }
@@ -1851,6 +1958,8 @@ function bootstrap_payload($pdo, $date, $env) {
         'sessions' => session_rows($pdo),
         'reservations' => reservation_rows($pdo, $date),
         'tasks' => recent_task_rows($pdo),
+        'reflectionAudits' => reflection_audit_rows($pdo),
+        'reflectionAuditSummary' => reflection_audit_summary($pdo),
         'revenueStats' => revenue_stats($pdo, $date),
         'revenueComparison' => revenue_comparison_stats($pdo),
         'industryComparison' => industry_comparison_stats($pdo),

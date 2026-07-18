@@ -31,6 +31,8 @@ const DEFAULT_CAFE24_TARGET_ENV = 'ops/cafe24-production-target.env';
 const DEFAULT_NOTIFY_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'notify-state.json');
 const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
 const DEFAULT_DAILY_RECONCILE_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'daily-reconcile-state.json');
+const DEFAULT_REFLECTION_AUDIT_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'reflection-audit-state.json');
+const DEFAULT_REFLECTION_AUDIT_INTERVAL_MINUTES = 30;
 const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
 const CONFIRMATION_SMS_TITLE = '리듬앤조이 연습실 예약 확정 안내문자';
 const PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME = 'spacecloud-prior-booking-canceled-v1';
@@ -47,6 +49,7 @@ function usage() {
   node tools/spacecloud-watch.mjs notify-test [options]
   node tools/spacecloud-watch.mjs sms-test --to <phone> [options]
   node tools/spacecloud-watch.mjs now-mode-self-test
+  node tools/spacecloud-watch.mjs reflection-audit [options]
   node tools/spacecloud-watch.mjs once [options]
   node tools/spacecloud-watch.mjs watch [options]
 
@@ -66,6 +69,11 @@ Options:
   --daily-reconcile-state <path>
                             Defaults to ${DEFAULT_DAILY_RECONCILE_STATE_PATH}.
   --no-daily-reconcile      Disable daily DB health summary.
+  --reflection-audit-interval-minutes <n>
+                            Defaults to ${DEFAULT_REFLECTION_AUDIT_INTERVAL_MINUTES}. Checks email ledger reflection.
+  --reflection-audit-state <path>
+                            Defaults to ${DEFAULT_REFLECTION_AUDIT_STATE_PATH}.
+  --no-reflection-audit     Disable email-ledger reflection audit.
   --from <YYYY-MM-DD>       Defaults to today in KST.
   --days <n>                Defaults to 370.
   --rooms <keys>            Defaults to a,b,c,d,e.
@@ -130,6 +138,9 @@ function parseArgs(argv) {
     dailyReconcileHour: 5,
     dailyReconcileState: DEFAULT_DAILY_RECONCILE_STATE_PATH,
     dailyReconcile: true,
+    reflectionAudit: true,
+    reflectionAuditIntervalMinutes: DEFAULT_REFLECTION_AUDIT_INTERVAL_MINUTES,
+    reflectionAuditState: DEFAULT_REFLECTION_AUDIT_STATE_PATH,
     days: 370,
     rooms: 'a,b,c,d,e',
     intervalSeconds: 30,
@@ -178,6 +189,10 @@ function parseArgs(argv) {
       args.dailyReconcile = false;
       continue;
     }
+    if (arg === '--no-reflection-audit') {
+      args.reflectionAudit = false;
+      continue;
+    }
     if (arg === '--legacy-calendar-plan') {
       args.legacyCalendarPlan = true;
       continue;
@@ -207,6 +222,7 @@ function parseArgs(argv) {
       'urgent-cooldown-seconds',
       'restore-grace-seconds',
       'session-check-interval-seconds',
+      'reflection-audit-interval-minutes',
     ].includes(key)) {
       const parsed = Number.parseInt(next, 10);
       if (!Number.isFinite(parsed) || parsed < 1) throw new Error(`${arg} must be a positive integer`);
@@ -231,6 +247,8 @@ function parseArgs(argv) {
       args.notifyState = next;
     } else if (key === 'daily-reconcile-state') {
       args.dailyReconcileState = next;
+    } else if (key === 'reflection-audit-state') {
+      args.reflectionAuditState = next;
     } else if (key === 'to') {
       args.smsTestTo = next;
     } else if (key === 'sms-test-task-id') {
@@ -1917,7 +1935,7 @@ conn = pymysql.connect(
     autocommit=True,
     cursorclass=pymysql.cursors.DictCursor,
 )
-out = {'ok': True, 'sessions': [], 'taskSummary': [], 'attention': {}, 'amounts': {}}
+out = {'ok': True, 'sessions': [], 'taskSummary': [], 'attention': {}, 'amounts': {}, 'reflectionAudit': {}}
 with conn:
     with conn.cursor() as cur:
         if table_exists(cur, 'rhythmjoy_admin_sessions'):
@@ -1956,6 +1974,17 @@ with conn:
                 WHERE COALESCE(source_mode, '') <> 'admin-task-anchor'
             """)
             out['amounts'] = cur.fetchone() or {}
+        if table_exists(cur, 'rhythmjoy_reflection_audits'):
+            cur.execute("""
+                SELECT
+                  SUM(audit_status='issue') AS issues,
+                  SUM(audit_status='waiting') AS waiting,
+                  SUM(audit_status='ok') AS okCount,
+                  MAX(checked_at) AS lastCheckedAt
+                FROM rhythmjoy_reflection_audits
+                WHERE checked_at >= DATE_SUB(NOW(), INTERVAL 2 DAY)
+            """)
+            out['reflectionAudit'] = cur.fetchone() or {}
 print(json.dumps(out, ensure_ascii=False, default=str))
 PY
 `;
@@ -1971,6 +2000,7 @@ function dailyReconcileMessage(data) {
   });
   const attention = data.attention || {};
   const amounts = data.amounts || {};
+  const reflection = data.reflectionAudit || {};
   const taskLines = (data.taskSummary || [])
     .filter((row) => Number(row.cnt || 0) > 0)
     .slice(0, 8)
@@ -1984,6 +2014,7 @@ function dailyReconcileMessage(data) {
     `대기 ${Number(attention.pending || 0).toLocaleString()}건 / 실패 ${Number(attention.failed || 0).toLocaleString()}건 / 긴급대기 ${Number(attention.urgentPending || 0).toLocaleString()}건`,
     `오늘 예약 ${Number(amounts.todayReservations || 0).toLocaleString()}건 / 결제 ${Number(amounts.todayGross || 0).toLocaleString()}원 / 정산 ${Number(amounts.todayNet || 0).toLocaleString()}원`,
     `미래 금액 미수집 ${Number(amounts.futureMissingAmount || 0).toLocaleString()}건`,
+    `반영검사 문제 ${Number(reflection.issues || 0).toLocaleString()}건 / 대기 ${Number(reflection.waiting || 0).toLocaleString()}건${reflection.lastCheckedAt ? ` / ${String(reflection.lastCheckedAt).slice(5, 16)}` : ''}`,
     taskLines.length ? `\n최근 24시간 작업\n${taskLines.join('\n')}` : '',
     TELEGRAM_LOG_HINT,
   ].filter(Boolean).join('\n');
@@ -2006,6 +2037,507 @@ async function maybeSendDailyReconcile(args) {
     if (result.sent) logLine('telegram sent: daily-reconcile');
   } catch (error) {
     logLine(`daily reconcile failed: ${String(error?.message || error)}`);
+  }
+}
+
+async function fetchRemoteReflectionAudit(args) {
+  const target = await loadCafe24Target(args);
+  const graceMinutes = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_GRACE_MINUTES || '10', 10);
+  const pastDays = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_PAST_DAYS || '3', 10);
+  const futureDays = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_FUTURE_DAYS || '120', 10);
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export REFLECTION_AUDIT_GRACE_MINUTES=${shellQuote(Number.isFinite(graceMinutes) && graceMinutes > 0 ? graceMinutes : 10)}
+export REFLECTION_AUDIT_PAST_DAYS=${shellQuote(Number.isFinite(pastDays) && pastDays >= 0 ? pastDays : 3)}
+export REFLECTION_AUDIT_FUTURE_DAYS=${shellQuote(Number.isFinite(futureDays) && futureDays > 0 ? futureDays : 120)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+def table_exists(cur, name):
+    cur.execute("SHOW TABLES LIKE %s", (name,))
+    return cur.fetchone() is not None
+
+def short_time(value):
+    text = str(value or '')
+    if len(text) >= 5:
+        return text[:5]
+    return ''
+
+def display_end(start, end):
+    if end == '00:00' and start and start != '00:00':
+        return '24:00'
+    return end or '-'
+
+def mask_name(name):
+    text = str(name or '').strip()
+    if not text:
+        return ''
+    if len(text) <= 2:
+        return text[0] + '*'
+    return text[0] + ('*' * max(1, len(text) - 2)) + text[-1]
+
+def platform_label(value):
+    return {'naver': '네이버', 'spacecloud': '스페이스클라우드'}.get(value or '', value or '-')
+
+def ensure_schema(cur):
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS rhythmjoy_reflection_audits (
+            audit_key VARCHAR(180) NOT NULL,
+            ledger_id BIGINT UNSIGNED NULL,
+            source_platform VARCHAR(32) NOT NULL DEFAULT '',
+            target_platform VARCHAR(32) NOT NULL DEFAULT '',
+            expected_task_type VARCHAR(32) NOT NULL DEFAULT '',
+            current_status VARCHAR(32) NOT NULL DEFAULT '',
+            audit_status VARCHAR(32) NOT NULL DEFAULT 'issue',
+            severity VARCHAR(16) NOT NULL DEFAULT 'warning',
+            reason VARCHAR(255) NOT NULL DEFAULT '',
+            task_id BIGINT UNSIGNED NULL,
+            task_status VARCHAR(32) NOT NULL DEFAULT '',
+            reservation_date DATE NULL,
+            room_key VARCHAR(8) NOT NULL DEFAULT '',
+            start_time TIME NULL,
+            end_time TIME NULL,
+            reserver_name VARCHAR(128) NOT NULL DEFAULT '',
+            reservation_number VARCHAR(64) NOT NULL DEFAULT '',
+            checked_at DATETIME NOT NULL,
+            first_seen_at DATETIME NOT NULL,
+            resolved_at DATETIME NULL,
+            detail_json TEXT NULL,
+            PRIMARY KEY (audit_key),
+            KEY idx_status (audit_status, severity),
+            KEY idx_checked (checked_at),
+            KEY idx_ledger (ledger_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+
+def expected_task(row):
+    source = row.get('source_platform') or ''
+    status = row.get('current_status') or ''
+    if status == 'confirmed' and source == 'naver':
+        event_id = row.get('confirmed_email_event_id')
+        return {'task_type': 'upload', 'target_platform': 'spacecloud', 'event_id': event_id} if event_id else None
+    if status == 'confirmed' and source == 'spacecloud':
+        event_id = row.get('confirmed_email_event_id')
+        return {'task_type': 'naver_block', 'target_platform': 'naver', 'event_id': event_id} if event_id else None
+    if status == 'canceled' and source == 'naver':
+        event_id = row.get('canceled_email_event_id')
+        return {'task_type': 'delete', 'target_platform': 'spacecloud', 'event_id': event_id} if event_id else None
+    if status == 'canceled' and source == 'spacecloud':
+        event_id = row.get('canceled_email_event_id')
+        return {'task_type': 'naver_restore', 'target_platform': 'naver', 'event_id': event_id} if event_id else None
+    return None
+
+def latest_task(cur, event_id, task_type, row):
+    if event_id:
+        cur.execute("""
+            SELECT id, status, attempts,
+                   CAST(created_at AS CHAR) AS created_at,
+                   CAST(updated_at AS CHAR) AS updated_at,
+                   CAST(processed_at AS CHAR) AS processed_at,
+                   TIMESTAMPDIFF(MINUTE, COALESCE(created_at, updated_at, NOW()), NOW()) AS age_minutes,
+                   result_text
+            FROM rhythmjoy_spacecloud_tasks
+            WHERE email_event_id=%s AND task_type=%s
+            ORDER BY id DESC
+            LIMIT 1
+        """, (event_id, task_type))
+        found = cur.fetchone()
+        if found:
+            return found
+    cur.execute("""
+        SELECT id, status, attempts,
+               CAST(created_at AS CHAR) AS created_at,
+               CAST(updated_at AS CHAR) AS updated_at,
+               CAST(processed_at AS CHAR) AS processed_at,
+               TIMESTAMPDIFF(MINUTE, COALESCE(created_at, updated_at, NOW()), NOW()) AS age_minutes,
+               result_text
+        FROM rhythmjoy_spacecloud_tasks
+        WHERE task_type=%s
+          AND room_key=%s
+          AND reservation_date=%s
+          AND start_time=%s
+          AND end_time=%s
+          AND (
+              reservation_number=%s
+              OR reserver_name=%s
+          )
+        ORDER BY id DESC
+        LIMIT 1
+    """, (
+        task_type,
+        row.get('room_key') or '',
+        row.get('reservation_date'),
+        row.get('start_time'),
+        row.get('end_time'),
+        row.get('reservation_number') or '',
+        row.get('reserver_name') or '',
+    ))
+    return cur.fetchone()
+
+def classify_task(task, row, expected, grace_minutes):
+    task_type = expected['task_type']
+    if not task:
+        age = int(row.get('ledger_age_minutes') or 0)
+        if age <= grace_minutes:
+            return 'waiting', 'info', '원장 생성 직후라 반영 작업 생성 대기'
+        return 'issue', 'critical', '반대 플랫폼 반영 작업이 없음'
+    status = task.get('status') or ''
+    if status in ('done', 'google_pending'):
+        return 'ok', 'info', '반대 플랫폼 반영 완료'
+    if status == 'already_gone' and task_type == 'delete':
+        return 'ok', 'info', '삭제 대상이 이미 없음'
+    if status in ('pending', 'running', 'claimed'):
+        age = int(task.get('age_minutes') or 0)
+        if age <= grace_minutes:
+            return 'waiting', 'info', '반영 작업 진행 대기'
+        return 'issue', 'warning', f'반영 작업이 {age}분째 {status}'
+    if status in ('failed', 'needs_review', 'needs-review'):
+        return 'issue', 'critical', f'반영 작업 {status}'
+    return 'issue', 'warning', f'알 수 없는 작업 상태 {status}'
+
+def upsert_item(cur, item):
+    cur.execute("""
+        INSERT INTO rhythmjoy_reflection_audits (
+            audit_key, ledger_id, source_platform, target_platform, expected_task_type,
+            current_status, audit_status, severity, reason, task_id, task_status,
+            reservation_date, room_key, start_time, end_time, reserver_name, reservation_number,
+            checked_at, first_seen_at, resolved_at, detail_json
+        ) VALUES (
+            %(audit_key)s, %(ledger_id)s, %(source_platform)s, %(target_platform)s, %(expected_task_type)s,
+            %(current_status)s, %(audit_status)s, %(severity)s, %(reason)s, %(task_id)s, %(task_status)s,
+            %(reservation_date)s, %(room_key)s, %(start_time)s, %(end_time)s, %(reserver_name)s, %(reservation_number)s,
+            NOW(), NOW(), %(resolved_at)s, %(detail_json)s
+        )
+        ON DUPLICATE KEY UPDATE
+            ledger_id=VALUES(ledger_id),
+            source_platform=VALUES(source_platform),
+            target_platform=VALUES(target_platform),
+            expected_task_type=VALUES(expected_task_type),
+            current_status=VALUES(current_status),
+            first_seen_at=IF(VALUES(audit_status)='ok', first_seen_at, IF(audit_status=VALUES(audit_status), first_seen_at, NOW())),
+            audit_status=VALUES(audit_status),
+            severity=VALUES(severity),
+            reason=VALUES(reason),
+            task_id=VALUES(task_id),
+            task_status=VALUES(task_status),
+            reservation_date=VALUES(reservation_date),
+            room_key=VALUES(room_key),
+            start_time=VALUES(start_time),
+            end_time=VALUES(end_time),
+            reserver_name=VALUES(reserver_name),
+            reservation_number=VALUES(reservation_number),
+            checked_at=NOW(),
+            resolved_at=IF(VALUES(audit_status)='ok', NOW(), NULL),
+            detail_json=VALUES(detail_json)
+    """, item)
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+grace_minutes = int(os.environ.get('REFLECTION_AUDIT_GRACE_MINUTES', '10'))
+past_days = int(os.environ.get('REFLECTION_AUDIT_PAST_DAYS', '3'))
+future_days = int(os.environ.get('REFLECTION_AUDIT_FUTURE_DAYS', '120'))
+
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=False,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+
+out = {
+    'ok': True,
+    'checked': 0,
+    'okCount': 0,
+    'waitingCount': 0,
+    'issueCount': 0,
+    'duplicateCount': 0,
+    'latestIssues': [],
+    'latestWaiting': [],
+}
+seen_audit_keys = []
+
+try:
+    with conn.cursor() as cur:
+        ensure_schema(cur)
+        if not table_exists(cur, 'rhythmjoy_booking_ledger'):
+            print(json.dumps({'ok': False, 'error': 'booking ledger table missing'}, ensure_ascii=False))
+            raise SystemExit(0)
+
+        cur.execute("""
+            SELECT id, source_platform, source_mode, current_status, target_calendar, room_key,
+                   reservation_number, reserver_name, reserver_name_key, product,
+                   CAST(reservation_date AS CHAR) AS reservation_date,
+                   CAST(start_time AS CHAR) AS start_time,
+                   CAST(end_time AS CHAR) AS end_time,
+                   confirmed_email_event_id, canceled_email_event_id,
+                   CAST(last_event_at AS CHAR) AS last_event_at,
+                   TIMESTAMPDIFF(MINUTE, COALESCE(last_event_at, created_at, updated_at, NOW()), NOW()) AS ledger_age_minutes
+            FROM rhythmjoy_booking_ledger
+            WHERE source_platform IN ('naver', 'spacecloud')
+              AND (confirmed_email_event_id IS NOT NULL OR canceled_email_event_id IS NOT NULL)
+              AND (
+                    (current_status='confirmed' AND confirmed_email_event_id IS NOT NULL)
+                 OR (current_status='canceled' AND canceled_email_event_id IS NOT NULL)
+              )
+              AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+              AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                                      AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+            ORDER BY COALESCE(last_event_at, created_at, updated_at) DESC, id DESC
+        """, (past_days, future_days))
+        rows = cur.fetchall()
+
+        for row in rows:
+            expected = expected_task(row)
+            if not expected:
+                continue
+            task = latest_task(cur, expected.get('event_id'), expected['task_type'], row)
+            audit_status, severity, reason = classify_task(task, row, expected, grace_minutes)
+            out['checked'] += 1
+            if audit_status == 'ok':
+                out['okCount'] += 1
+            elif audit_status == 'waiting':
+                out['waitingCount'] += 1
+            else:
+                out['issueCount'] += 1
+
+            start = short_time(row.get('start_time'))
+            end = short_time(row.get('end_time'))
+            item = {
+                'audit_key': f"ledger:{row.get('id')}:{expected['task_type']}",
+                'ledger_id': row.get('id'),
+                'source_platform': row.get('source_platform') or '',
+                'target_platform': expected['target_platform'],
+                'expected_task_type': expected['task_type'],
+                'current_status': row.get('current_status') or '',
+                'audit_status': audit_status,
+                'severity': severity,
+                'reason': reason[:255],
+                'task_id': task.get('id') if task else None,
+                'task_status': task.get('status') if task else '',
+                'reservation_date': row.get('reservation_date'),
+                'room_key': row.get('room_key') or '',
+                'start_time': row.get('start_time'),
+                'end_time': row.get('end_time'),
+                'reserver_name': row.get('reserver_name') or '',
+                'reservation_number': row.get('reservation_number') or '',
+                'resolved_at': None,
+                'detail_json': json.dumps({
+                    'ledgerId': row.get('id'),
+                    'source': row.get('source_platform'),
+                    'target': expected['target_platform'],
+                    'expectedTaskType': expected['task_type'],
+                    'emailEventId': expected.get('event_id'),
+                    'task': task,
+                }, ensure_ascii=False, default=str),
+            }
+            seen_audit_keys.append(item['audit_key'])
+            upsert_item(cur, item)
+
+            view = {
+                'ledgerId': row.get('id'),
+                'sourcePlatform': row.get('source_platform') or '',
+                'sourceLabel': platform_label(row.get('source_platform')),
+                'targetPlatform': expected['target_platform'],
+                'targetLabel': platform_label(expected['target_platform']),
+                'taskType': expected['task_type'],
+                'status': audit_status,
+                'severity': severity,
+                'reason': reason,
+                'taskId': task.get('id') if task else None,
+                'taskStatus': task.get('status') if task else '',
+                'date': row.get('reservation_date'),
+                'roomKey': (row.get('room_key') or '').upper(),
+                'startTime': start,
+                'endTime': display_end(start, end),
+                'reserverNameMasked': mask_name(row.get('reserver_name')),
+                'reservationNumber': row.get('reservation_number') or '',
+            }
+            if audit_status == 'issue' and len(out['latestIssues']) < 8:
+                out['latestIssues'].append(view)
+            elif audit_status == 'waiting' and len(out['latestWaiting']) < 5:
+                out['latestWaiting'].append(view)
+
+        cur.execute("""
+            SELECT CAST(reservation_date AS CHAR) AS reservation_date, room_key,
+                   CAST(start_time AS CHAR) AS start_time, CAST(end_time AS CHAR) AS end_time,
+                   COUNT(*) AS cnt,
+                   GROUP_CONCAT(CONCAT(id, ':', source_platform, ':', COALESCE(reservation_number, ''), ':', COALESCE(reserver_name, '')) ORDER BY COALESCE(last_event_at, created_at, updated_at), id SEPARATOR ' | ') AS rows_text
+            FROM rhythmjoy_booking_ledger
+            WHERE current_status='confirmed'
+              AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+              AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                                      AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+            GROUP BY reservation_date, room_key, start_time, end_time
+            HAVING COUNT(*) > 1
+            ORDER BY reservation_date ASC, start_time ASC, room_key ASC
+            LIMIT 30
+        """, (past_days, future_days))
+        duplicates = cur.fetchall()
+        out['duplicateCount'] = len(duplicates)
+        for duplicate in duplicates:
+            start = short_time(duplicate.get('start_time'))
+            end = short_time(duplicate.get('end_time'))
+            item = {
+                'audit_key': f"duplicate:{duplicate.get('reservation_date')}:{duplicate.get('room_key')}:{start}:{end}",
+                'ledger_id': None,
+                'source_platform': 'ledger',
+                'target_platform': 'ledger',
+                'expected_task_type': 'dedupe',
+                'current_status': 'confirmed',
+                'audit_status': 'issue',
+                'severity': 'critical',
+                'reason': f"원장 확정 예약 중복 {duplicate.get('cnt')}건"[:255],
+                'task_id': None,
+                'task_status': '',
+                'reservation_date': duplicate.get('reservation_date'),
+                'room_key': duplicate.get('room_key') or '',
+                'start_time': duplicate.get('start_time'),
+                'end_time': duplicate.get('end_time'),
+                'reserver_name': '',
+                'reservation_number': '',
+                'resolved_at': None,
+                'detail_json': json.dumps(duplicate, ensure_ascii=False, default=str),
+            }
+            seen_audit_keys.append(item['audit_key'])
+            upsert_item(cur, item)
+            if len(out['latestIssues']) < 8:
+                out['latestIssues'].append({
+                    'sourceLabel': '원장',
+                    'targetLabel': '원장',
+                    'taskType': 'dedupe',
+                    'status': 'issue',
+                    'severity': 'critical',
+                    'reason': item['reason'],
+                    'date': duplicate.get('reservation_date'),
+                    'roomKey': (duplicate.get('room_key') or '').upper(),
+                    'startTime': start,
+                    'endTime': display_end(start, end),
+                    'reserverNameMasked': '',
+                    'reservationNumber': '',
+                })
+
+        if seen_audit_keys:
+            placeholders = ','.join(['%s'] * len(seen_audit_keys))
+            cur.execute(f"""
+                UPDATE rhythmjoy_reflection_audits
+                SET audit_status='ok',
+                    severity='info',
+                    reason='이번 검사 대상 아님',
+                    checked_at=NOW(),
+                    resolved_at=NOW()
+                WHERE audit_status <> 'ok'
+                  AND audit_key NOT IN ({placeholders})
+            """, seen_audit_keys)
+        else:
+            cur.execute("""
+                UPDATE rhythmjoy_reflection_audits
+                SET audit_status='ok',
+                    severity='info',
+                    reason='이번 검사 대상 아님',
+                    checked_at=NOW(),
+                    resolved_at=NOW()
+                WHERE audit_status <> 'ok'
+            """)
+
+    conn.commit()
+finally:
+    conn.close()
+
+print(json.dumps(out, ensure_ascii=False, default=str))
+PY
+`;
+  const stdout = runSshScript(target, script);
+  return JSON.parse(stdout.trim() || '{}');
+}
+
+function reflectionAuditLine(row, index) {
+  const source = row.sourceLabel || row.sourcePlatform || '-';
+  const target = row.targetLabel || row.targetPlatform || '-';
+  const room = row.roomKey ? `${row.roomKey}홀` : '-';
+  const name = row.reserverNameMasked ? ` / ${row.reserverNameMasked}` : '';
+  const reservationNo = row.reservationNumber ? ` / ${row.reservationNumber}` : '';
+  const task = row.taskId ? ` / 작업 #${row.taskId}` : '';
+  return `${index + 1}. ${source}→${target} ${row.date || '-'} ${room} ${row.startTime || '-'}-${row.endTime || '-'}${name}${reservationNo}${task}\n   ${cleanTelegramText(row.reason || '-', 120)}`;
+}
+
+function reflectionAuditMessage(data) {
+  const issues = data.latestIssues || [];
+  const waiting = data.latestWaiting || [];
+  return compactNotice('⚠️ 반영 정규검사 확인 필요', [
+    `원장 기준 점검 ${Number(data.checked || 0).toLocaleString()}건 / 문제 ${Number(data.issueCount || 0).toLocaleString()}건 / 대기 ${Number(data.waitingCount || 0).toLocaleString()}건`,
+    issues.length ? issues.map(reflectionAuditLine).join('\n') : '문제 상세 없음',
+    waiting.length ? `\n대기 중\n${waiting.map(reflectionAuditLine).join('\n')}` : '',
+    '기준: 이메일 원장 확정/취소 -> 반대 플랫폼 반영 작업',
+  ]);
+}
+
+async function maybeSendReflectionAudit(args) {
+  if (!args.reflectionAudit || !args.telegram) return;
+  const intervalMs = Math.max(1, args.reflectionAuditIntervalMinutes || DEFAULT_REFLECTION_AUDIT_INTERVAL_MINUTES) * 60 * 1000;
+  const state = await readJsonObject(args.reflectionAuditState);
+  const lastCheckedAt = state.checkedAt ? new Date(state.checkedAt).getTime() : 0;
+  if (lastCheckedAt && Date.now() - lastCheckedAt < intervalMs) return;
+
+  try {
+    const data = await fetchRemoteReflectionAudit(args);
+    const issueKey = [
+      data.issueCount || 0,
+      data.duplicateCount || 0,
+      ...(data.latestIssues || []).map((row) => [
+        row.sourcePlatform,
+        row.targetPlatform,
+        row.date,
+        row.roomKey,
+        row.startTime,
+        row.endTime,
+        row.taskType,
+        row.taskId,
+        row.reason,
+      ].join('|')),
+    ].join('||');
+    const nextState = {
+      checkedAt: new Date().toISOString(),
+      issueKey,
+      summary: {
+        checked: data.checked || 0,
+        okCount: data.okCount || 0,
+        waitingCount: data.waitingCount || 0,
+        issueCount: data.issueCount || 0,
+        duplicateCount: data.duplicateCount || 0,
+      },
+    };
+    if (Number(data.issueCount || 0) > 0 || Number(data.duplicateCount || 0) > 0) {
+      const cooldownSeconds = issueKey === state.issueKey ? Math.min(args.notifyCooldownSeconds, 60 * 60) : 0;
+      const result = await notifyWithCooldown(args, `reflection-audit:${issueKey.slice(0, 120)}`, reflectionAuditMessage(data), {
+        cooldownSeconds,
+      });
+      nextState.lastNotification = result;
+      if (result.sent) logLine(`telegram sent: reflection-audit issues=${data.issueCount || 0}`);
+    } else {
+      logLine(`reflection audit ok: checked=${data.checked || 0} waiting=${data.waitingCount || 0}`);
+    }
+    await writeJson(args.reflectionAuditState, nextState);
+  } catch (error) {
+    await writeJson(args.reflectionAuditState, {
+      checkedAt: new Date().toISOString(),
+      error: String(error?.message || error),
+    });
+    logLine(`reflection audit failed: ${String(error?.message || error)}`);
   }
 }
 
@@ -4499,6 +5031,7 @@ async function runWatch(args) {
         }
       }
 
+      await maybeSendReflectionAudit(args);
       await maybeSendDailyReconcile(args);
       const sleepSeconds = watchSleepSeconds(args, urgentUntil);
       if (args.nowMode && sleepSeconds !== args.intervalSeconds) {
@@ -4561,6 +5094,19 @@ ${kstNowText()}
     const result = runNowModeSelfTest();
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else console.log(`NOW mode self-test OK: ${result.checks.join(', ')}`);
+    return;
+  }
+
+  if (args.command === 'reflection-audit') {
+    const result = await fetchRemoteReflectionAudit(args);
+    if (args.telegram && (Number(result.issueCount || 0) > 0 || Number(result.duplicateCount || 0) > 0)) {
+      await sendTelegram(args, reflectionAuditMessage(result));
+    }
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`reflection audit checked=${result.checked || 0}; ok=${result.okCount || 0}; waiting=${result.waitingCount || 0}; issues=${result.issueCount || 0}; duplicates=${result.duplicateCount || 0}`);
+    }
     return;
   }
 
