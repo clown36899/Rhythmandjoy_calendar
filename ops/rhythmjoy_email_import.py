@@ -1149,6 +1149,35 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                         row['end_time'],
                         row['reserver_name_key'],
                     )
+            elif source_platform == 'naver' and row['reservation_number']:
+                cursor.execute(
+                    """
+                    UPDATE rhythmjoy_booking_ledger
+                    SET current_status='canceled',
+                        canceled_email_event_id=%s,
+                        canceled_email_received_at=%s,
+                        last_event_at=IF(%s >= COALESCE(last_event_at, '1000-01-01 00:00:00'), %s, last_event_at),
+                        cancel_payload_json=%s,
+                        updated_at=NOW()
+                    WHERE current_status='confirmed'
+                      AND source_platform='google-backfill'
+                      AND reservation_number=%s
+                    """,
+                    (
+                        email_event_id,
+                        row['event_at'],
+                        row['event_at'],
+                        row['event_at'],
+                        row['payload_json'],
+                        row['reservation_number'],
+                    ),
+                )
+                if cursor.rowcount:
+                    logger.info(
+                        'Naver cancellation marked Google backfill ledger rows canceled count=%s reservation=%s',
+                        cursor.rowcount,
+                        row['reservation_number'],
+                    )
         ledger = db_select_booking_ledger(config, row['ledger_key'])
         logger.info(
             'Booking ledger canceled ledger=%s id=%s platform=%s reservation=%s status=%s',

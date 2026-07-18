@@ -2085,6 +2085,7 @@ function create_reservation($pdo, $payload, $env) {
           AND room_key = ?
           AND current_status <> 'canceled'
           AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+          AND source_platform <> 'google-backfill'
           AND start_time < ?
           AND end_time > ?
         LIMIT 1

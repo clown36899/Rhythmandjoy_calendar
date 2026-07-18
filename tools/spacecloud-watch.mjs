@@ -1177,7 +1177,7 @@ async function createRemoteSpacecloudCancelTask(args, sourceTask, conflictRow) {
     sourceTaskType: sourceTask.taskType || sourceTask.task_type || 'naver_block',
     source: 'spacecloud-later-reservation-conflict',
     action: 'cancel-spacecloud-confirmed-reservation',
-    priorityRule: conflictRow.priorityRule || 'first-confirmed-email-wins',
+    priorityRule: conflictRow.priorityRule || 'first-real-platform-confirmed-email-wins',
     winningBooking: winning,
     losingBooking: losing,
     spacecloud_reservation_id: reservationId,
@@ -1289,7 +1289,7 @@ async function createRemoteNaverCancelTask(args, sourceTask, conflictRow) {
     sourceTaskType: sourceTask.taskType || sourceTask.task_type || 'upload',
     source: 'naver-later-reservation-conflict',
     action: 'cancel-naver-confirmed-reservation',
-    priorityRule: conflictRow.priorityRule || 'first-confirmed-email-wins',
+    priorityRule: conflictRow.priorityRule || 'first-real-platform-confirmed-email-wins',
     winningBooking: winning,
     losingBooking: losing,
     originalPayload: sourcePayload,
@@ -2799,6 +2799,9 @@ def time_value(value):
         return text + ':00'
     return text
 
+def is_real_booking(item):
+    return item.get('sourcePlatform') in {'naver', 'spacecloud'}
+
 load_env(os.environ['RHYTHMJOY_ENV_FILE'])
 payload = json.loads(base64.b64decode(os.environ['CONFLICT_PAYLOAD_B64']).decode('utf-8'))
 conn = pymysql.connect(
@@ -2848,26 +2851,30 @@ try:
             ),
         )
         overlaps = cur.fetchall()
+    actionable_overlaps = [item for item in overlaps if is_real_booking(item)]
+    ignored_record_only_overlaps = [item for item in overlaps if not is_real_booking(item)]
     current = None
     current_platform = payload.get('sourcePlatform') or ''
     current_reservation_no = str(payload.get('reservationNo') or '').strip()
-    for item in overlaps:
+    for item in actionable_overlaps:
         if payload.get('ledgerId') and int(item.get('id') or 0) == int(payload.get('ledgerId') or 0):
             current = item
             break
     if current is None and current_reservation_no:
-        for item in overlaps:
+        for item in actionable_overlaps:
             if item.get('sourcePlatform') == current_platform and str(item.get('reservationNumber') or '').strip() == current_reservation_no:
                 current = item
                 break
     if current is None:
-        for item in overlaps:
+        for item in actionable_overlaps:
             if item.get('sourcePlatform') == current_platform:
                 current = item
                 break
-    winner = overlaps[0] if overlaps else None
+    winner = actionable_overlaps[0] if actionable_overlaps else None
     print(json.dumps({
         'overlaps': overlaps,
+        'actionableOverlaps': actionable_overlaps,
+        'ignoredRecordOnlyOverlaps': ignored_record_only_overlaps,
         'current': current,
         'winner': winner,
         'isLaterReservation': bool(winner and current and winner.get('id') != current.get('id')),
@@ -2894,10 +2901,12 @@ PY
       ...row,
       status: 'later-reservation-conflict',
       originalStatus: row.status || '',
-      priorityRule: 'first-confirmed-email-wins',
+      priorityRule: 'first-real-platform-confirmed-email-wins',
       winningBooking: winner,
       losingBooking: current,
       overlapBookings: classification.overlaps || [],
+      actionableOverlapBookings: classification.actionableOverlaps || [],
+      ignoredRecordOnlyOverlapBookings: classification.ignoredRecordOnlyOverlaps || [],
       error: '후예약 충돌: 선예약이 이미 확정되어 후예약 취소 처리가 필요합니다.',
       nextAction: 'cancel-later-reservation-and-send-prior-booking-sms',
     };
@@ -2905,8 +2914,10 @@ PY
 
   return {
     ...row,
-    priorityRule: 'first-confirmed-email-wins',
+    priorityRule: 'first-real-platform-confirmed-email-wins',
     overlapBookings: classification.overlaps || [],
+    actionableOverlapBookings: classification.actionableOverlaps || [],
+    ignoredRecordOnlyOverlapBookings: classification.ignoredRecordOnlyOverlaps || [],
   };
 }
 
