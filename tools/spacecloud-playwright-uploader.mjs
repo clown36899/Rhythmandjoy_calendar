@@ -496,6 +496,44 @@ async function waitForDirectEventCandidates(page, row, {
   };
 }
 
+async function verifyDirectEventCreated(page, event, {
+  timeoutMs = 90000,
+  intervalMs = 1500,
+} = {}) {
+  const row = {
+    date: event.date,
+    startTime: event.startTime,
+    endTime: event.endTime,
+  };
+  const expectedName = normalizeName(event.reserverNameDisplay || event.reserverName || '');
+
+  await closeModalIfOpen(page).catch(() => {});
+  await page.goto(reservationCalendarUrl(event.roomKey), {
+    waitUntil: 'domcontentloaded',
+    timeout: 45000,
+  }).catch(async () => {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
+  });
+  await gotoCalendarMonth(page, event.date);
+
+  const latest = await waitForDirectEventCandidates(page, row, { timeoutMs, intervalMs });
+  const candidates = latest.candidates || [];
+  const nameMatched = expectedName
+    ? candidates.some((candidate) => compactText(candidate.text || candidate.visibleText || '').includes(expectedName))
+    : false;
+
+  return {
+    ok: candidates.length > 0,
+    reason: candidates.length > 0 ? 'calendar-candidate-found' : 'calendar-candidate-not-found',
+    waitedMs: latest.waitedMs,
+    candidateCount: candidates.length,
+    nameMatched,
+    candidates: candidates.slice(0, 5),
+    dayCellText: latest.dayCellText || '',
+    visibleLinks: (latest.visibleLinks || []).slice(0, 12),
+  };
+}
+
 function selectDeleteCandidate(candidates) {
   const rows = Array.isArray(candidates) ? candidates : [];
   const directRows = rows.filter((candidate) => candidate.directHint);
@@ -735,11 +773,19 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     await submit.click({ timeout: 10000 });
     await page.waitForTimeout(1200);
 
-    const hidden = await waitHidden(page, '#start_day', 12000);
+    const hidden = await waitHidden(page, '#start_day', 45000);
     row.finishedAt = new Date().toISOString();
     row.status = hidden ? 'submitted' : 'submitted-modal-still-visible';
     if (dialogTypes.length > 0) row.dialogTypes = dialogTypes;
-    if (!hidden) throw new Error('modal still visible after submit');
+    if (!hidden) {
+      row.postSubmitVerification = await verifyDirectEventCreated(page, event);
+      if (row.postSubmitVerification.ok) {
+        row.status = 'submitted';
+        row.verifiedAfterModalStillVisible = true;
+      } else {
+        throw new Error('modal still visible after submit');
+      }
+    }
   } catch (error) {
     row.finishedAt = new Date().toISOString();
     row.status = row.status || 'failed';
