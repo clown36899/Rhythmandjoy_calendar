@@ -122,6 +122,7 @@ require_exact_targets
 
 install -d "$APP_ROOT" "$OPS_ROOT"
 install -d -m 0700 "$OPS_ROOT/backups/db"
+install -d -o clown313python -g clown313python "$OPS_ROOT/logs" "$OPS_ROOT/runtime"
 install -m 0644 "$TARGET_ENV" "$OPS_ROOT/cafe24-production-target.env"
 rsync -a --delete \
     --exclude='.env' \
