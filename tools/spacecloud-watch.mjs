@@ -2593,7 +2593,10 @@ function telegramStatusText(status) {
     'already-available': '이미 예약가능',
     'restore-skipped-not-owned': '복구 생략',
     submitted: '등록 성공',
-    deleted: '삭제 성공',
+    created: '기록 완료',
+    existing: '기존 기록 확인',
+    deleted: '삭제 완료',
+    not_found: '삭제 대상 없음',
     'already-gone': '이미 없음',
     'google-recorded': '구글 기록 완료',
     'calendar-record-warning': '구글 기록 경고',
@@ -2761,6 +2764,182 @@ function formatSmsRows(rows, limit = 3) {
   });
   if (rows.length > visible.length) lines.push(`외 ${rows.length - visible.length}건`);
   return lines.join('\n') || '-';
+}
+
+function taskIdentityKey(row, fallbackTaskType = '') {
+  const taskType = row.taskType || row.task_type || fallbackTaskType || '';
+  const id = row.taskId || row.id || row.task_id || '';
+  if (id) return `${taskType}:${id}`;
+  return [
+    taskType,
+    row.roomKey || row.room_key || '',
+    row.date || row.reservation_date || '',
+    row.startTime || row.start_time || '',
+    row.endTime || row.end_time || '',
+    row.reservationNo || row.reservation_number || '',
+    row.reserverName || row.reserver_name || '',
+  ].join('|');
+}
+
+function taskDateShort(row) {
+  const date = String(row.date || row.reservation_date || '');
+  const match = /(\d{4})-(\d{2})-(\d{2})/.exec(date);
+  if (!match) return date || '-';
+  return `${Number(match[2])}/${Number(match[3])}`;
+}
+
+function maskTelegramName(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const clean = raw.replace(/\s*님\s*$/, '').trim();
+  if (!clean) return '';
+  if (clean.includes('*')) return `${clean}님`;
+  if (clean.length >= 3) return `${clean[0]}${'*'.repeat(clean.length - 2)}${clean[clean.length - 1]}님`;
+  if (clean.length === 2) return `${clean[0]}*님`;
+  return `${clean}님`;
+}
+
+function syncReservationLine(row) {
+  const roomKey = String(row.roomKey || row.room_key || '').toUpperCase();
+  const room = roomKey ? `${roomKey}홀` : '-';
+  const startTime = row.startTime || row.start_time || '-';
+  const endTime = displayEndTime(startTime, row.endTime || row.end_time || '');
+  const name = maskTelegramName(row.reserverName || row.reserver_name || '');
+  const reservationNo = row.reservationNo || row.reservation_number || '';
+  const taskId = row.taskId || row.id || row.task_id || '';
+  return [
+    `${room} ${taskDateShort(row)} ${startTime}-${endTime}`,
+    name,
+    reservationNo ? `예약번호 ${reservationNo}` : '',
+    taskId ? `작업 #${taskId}` : '',
+  ].filter(Boolean).join(' / ');
+}
+
+function syncActionResultText(row) {
+  const taskType = row.taskType || row.task_type || '';
+  const status = row.status || '';
+  if (taskType === 'upload') {
+    if (['google-recorded', 'submitted', 'calendar-record-warning'].includes(status)) return 'SC 등록 완료';
+    return `SC 등록 ${telegramStatusText(status)}`;
+  }
+  if (taskType === 'naver_block') {
+    if (['blocked', 'already-blocked', 'google-recorded', 'calendar-record-warning'].includes(status)) return '네이버 예약불가 완료';
+    return `네이버 예약불가 ${telegramStatusText(status)}`;
+  }
+  if (taskType === 'naver_restore') {
+    if (status === 'restore-skipped-not-owned') return '네이버 복구 생략';
+    if (['restored', 'already-available', 'calendar-record-warning'].includes(status)) return '네이버 예약가능 복구 완료';
+    return `네이버 예약가능 ${telegramStatusText(status)}`;
+  }
+  if (taskType === 'delete') {
+    if (['deleted', 'already-gone'].includes(status)) return 'SC 삭제 완료';
+    return `SC 삭제 ${telegramStatusText(status)}`;
+  }
+  if (taskType === 'spacecloud_cancel') {
+    if (['canceled', 'already-canceled'].includes(status)) return 'SC 후예약 취소 완료';
+    return `SC 후예약 취소 ${telegramStatusText(status)}`;
+  }
+  if (taskType === 'naver_cancel') {
+    if (['canceled', 'already-canceled'].includes(status)) return '네이버 후예약 취소 완료';
+    return `네이버 후예약 취소 ${telegramStatusText(status)}`;
+  }
+  return telegramStatusText(status);
+}
+
+function syncGoogleStatusText(row) {
+  if (row.calendarRecordWarning || row.status === 'calendar-record-warning') return '구글 기록 경고';
+  const googleStatus = row.googleCalendar?.status
+    || (row.status === 'google-recorded' ? 'created' : '')
+    || (row.status === 'google-deleted' ? 'deleted' : '');
+  if (!googleStatus) return '';
+  if (['created', 'existing', 'google-recorded'].includes(googleStatus)) return '구글 기록 완료';
+  if (['deleted', 'not_found', 'google-deleted'].includes(googleStatus)) return '구글 삭제 완료';
+  return `구글 ${telegramStatusText(googleStatus)}`;
+}
+
+function syncSmsStatusText(row) {
+  const sms = row.sms || null;
+  if (!sms) return '';
+  const phone = sms.maskedPhone ? ` ${sms.maskedPhone}` : '';
+  const reason = ['failed', 'skipped'].includes(sms.status)
+    ? (sms.reason || sms.error || sms.providerCode || '')
+    : '';
+  return `문자 ${smsStatusText(sms.status)}${phone}${reason ? `: ${cleanTelegramText(reason, 60)}` : ''}`;
+}
+
+function successRowsForResult(result, statuses, taskType) {
+  return (result?.rows || [])
+    .filter((row) => statuses.includes(row.status))
+    .map((row) => ({
+      ...row,
+      taskType: row.taskType || row.task_type || taskType,
+    }));
+}
+
+function syncSuccessRowsFromCycle(row) {
+  const rows = [
+    ...((row.uploadedRows || [])
+      .filter((taskRow) => ['submitted', 'google-recorded', 'calendar-record-warning'].includes(taskRow.status))
+      .map((taskRow) => ({ ...taskRow, taskType: taskRow.taskType || 'upload' }))),
+    ...successRowsForResult(row.uploadTasks, ['google-recorded', 'submitted', 'calendar-record-warning'], 'upload'),
+    ...successRowsForResult(row.naverBlockTasks, ['blocked', 'already-blocked', 'google-recorded', 'calendar-record-warning'], 'naver_block'),
+    ...successRowsForResult(row.naverRestoreTasks, ['restored', 'already-available', 'restore-skipped-not-owned', 'calendar-record-warning'], 'naver_restore'),
+    ...successRowsForResult(row.deleteTasks, ['deleted', 'already-gone'], 'delete'),
+    ...successRowsForResult(row.spacecloudCancelTasks, ['canceled', 'already-canceled'], 'spacecloud_cancel'),
+    ...successRowsForResult(row.naverCancelTasks, ['canceled', 'already-canceled'], 'naver_cancel'),
+  ];
+  const seen = new Set();
+  return rows.filter((taskRow) => {
+    const key = taskIdentityKey(taskRow);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatSyncSuccessRows(rows, limit = 5) {
+  const visible = rows.slice(0, limit);
+  const lines = visible.map((row, index) => {
+    const details = [
+      syncActionResultText(row),
+      syncGoogleStatusText(row),
+      syncSmsStatusText(row),
+    ].filter(Boolean).join(' · ');
+    return `${index + 1}. ${syncReservationLine(row)}\n   ${details || telegramStatusText(row.status)}`;
+  });
+  if (rows.length > visible.length) lines.push(`외 ${rows.length - visible.length}건`);
+  return lines.join('\n') || '-';
+}
+
+function syncSuccessNeedsAttention(row) {
+  return Boolean(row.calendarRecordWarning || row.status === 'calendar-record-warning' || smsNeedsAttention(row));
+}
+
+function syncSuccessTitle(rows) {
+  const taskTypes = [...new Set(rows.map((row) => row.taskType || row.task_type || '').filter(Boolean))];
+  if (taskTypes.length !== 1) return '✅ 처리 완료: 예약 반영';
+
+  const hasSms = rows.some((row) => ['sent', 'already_sent'].includes(row.sms?.status));
+  const smsSuffix = hasSms ? ' + 안내문자' : '';
+  const cancelSmsSuffix = hasSms ? ' + 취소문자' : '';
+  const map = {
+    upload: `✅ 완료: SC 등록${smsSuffix}`,
+    naver_block: `✅ 완료: 네이버 예약불가${smsSuffix}`,
+    naver_restore: '✅ 완료: 네이버 예약가능 복구',
+    delete: '✅ 완료: SC 삭제',
+    spacecloud_cancel: `✅ 완료: SC 후예약 취소${cancelSmsSuffix}`,
+    naver_cancel: `✅ 완료: 네이버 후예약 취소${cancelSmsSuffix}`,
+  };
+  return map[taskTypes[0]] || '✅ 처리 완료: 예약 반영';
+}
+
+function syncSuccessMessage(rows) {
+  const needsAttention = rows.some(syncSuccessNeedsAttention);
+  const title = needsAttention ? '⚠️ 처리 완료: 확인 필요' : syncSuccessTitle(rows);
+  return compactNotice(title, [
+    `처리: ${rows.length}건`,
+    formatSyncSuccessRows(rows),
+  ]);
 }
 
 function compactNotice(title, lines) {
@@ -4836,68 +5015,22 @@ async function runWatch(args) {
           urgentUntil = Math.max(urgentUntil, Date.now() + args.urgentCooldownSeconds * 1000);
         }
         logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; uploadTasks=${row.uploadTasks?.attempted || 0}; naverCancelTasks=${row.naverCancelTasks?.attempted || 0}; deleteTasks=${row.deleteTasks?.attempted || 0}; naverBlockTasks=${row.naverBlockTasks?.attempted || 0}; naverRestoreTasks=${row.naverRestoreTasks?.attempted || 0}; spacecloudCancelTasks=${row.spacecloudCancelTasks?.attempted || 0}`);
-        if (row.uploadedRows?.length || row.uploadTasks?.rows?.some((taskRow) => [
-          'google-recorded',
-          'submitted',
-          'calendar-record-warning',
-        ].includes(taskRow.status))) {
-          const result = await sendTelegram(args, uploadSuccessMessage(row));
-          const successCount = (row.uploadedRows?.length || 0)
-            + (row.uploadTasks?.rows || []).filter((taskRow) => [
-              'google-recorded',
-              'submitted',
-              'calendar-record-warning',
-            ].includes(taskRow.status)).length;
-          if (result.sent) logLine(`telegram sent: spacecloud-upload-success count=${successCount}`);
-          else logLine(`telegram upload success skipped: ${result.reason}`);
-        }
-        if (row.naverBlockTasks?.rows?.some((taskRow) => [
-          'blocked',
-          'already-blocked',
-          'google-recorded',
-          'calendar-record-warning',
-        ].includes(taskRow.status))) {
-          const result = await sendTelegram(args, naverBlockSuccessMessage(row));
-          if (result.sent) logLine(`telegram sent: naver-block-success count=${row.naverBlockTasks.rows.length}`);
-          else logLine(`telegram naver block success skipped: ${result.reason}`);
-        }
-        if (row.naverRestoreTasks?.rows?.some((taskRow) => [
-          'restored',
-          'already-available',
-          'restore-skipped-not-owned',
-          'calendar-record-warning',
-        ].includes(taskRow.status))) {
-          const result = await sendTelegram(args, naverRestoreSuccessMessage(row));
-          if (result.sent) logLine(`telegram sent: naver-restore-success count=${row.naverRestoreTasks.rows.length}`);
-          else logLine(`telegram naver restore success skipped: ${result.reason}`);
-        }
-        if (row.deleteTasks?.rows?.some((taskRow) => [
-          'deleted',
-          'already-gone',
-        ].includes(taskRow.status))) {
-          const result = await sendTelegram(args, deleteSuccessMessage(row));
-          if (result.sent) logLine(`telegram sent: spacecloud-delete-success count=${row.deleteTasks.rows.length}`);
-          else logLine(`telegram delete success skipped: ${result.reason}`);
-        }
-        if (row.spacecloudCancelTasks?.rows?.some((taskRow) => [
-          'canceled',
-          'already-canceled',
-        ].includes(taskRow.status))) {
-          const result = await sendTelegram(args, spacecloudCancelSuccessMessage(row));
-          if (result.sent) logLine(`telegram sent: spacecloud-cancel-success count=${row.spacecloudCancelTasks.rows.length}`);
-          else logLine(`telegram spacecloud cancel success skipped: ${result.reason}`);
-        }
-        if (row.naverCancelTasks?.rows?.some((taskRow) => [
-          'canceled',
-          'already-canceled',
-        ].includes(taskRow.status))) {
-          const result = await sendTelegram(args, naverCancelSuccessMessage(row));
-          if (result.sent) logLine(`telegram sent: naver-cancel-success count=${row.naverCancelTasks.rows.length}`);
-          else logLine(`telegram naver cancel success skipped: ${result.reason}`);
+        const successRows = syncSuccessRowsFromCycle(row);
+        const successKeys = new Set(successRows.map((taskRow) => taskIdentityKey(taskRow)));
+        if (successRows.length) {
+          const result = await sendTelegram(args, syncSuccessMessage(successRows));
+          if (result.sent) logLine(`telegram sent: sync-success count=${successRows.length}`);
+          else logLine(`telegram sync success skipped: ${result.reason}`);
         }
         const smsRows = smsRowsFromCycle(row);
-        const smsSuccessRows = smsRows.filter((taskRow) => ['sent', 'already_sent'].includes(taskRow.sms?.status));
-        const smsFailureRows = smsRows.filter((taskRow) => smsNeedsAttention(taskRow));
+        const smsSuccessRows = smsRows.filter((taskRow) => (
+          ['sent', 'already_sent'].includes(taskRow.sms?.status)
+          && !successKeys.has(taskIdentityKey(taskRow))
+        ));
+        const smsFailureRows = smsRows.filter((taskRow) => (
+          smsNeedsAttention(taskRow)
+          && !successKeys.has(taskIdentityKey(taskRow))
+        ));
         if (smsSuccessRows.length) {
           const result = await sendTelegram(args, smsSuccessMessage(smsSuccessRows));
           if (result.sent) logLine(`telegram sent: confirmation-sms-success count=${smsSuccessRows.length}`);
