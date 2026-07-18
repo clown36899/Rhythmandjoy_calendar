@@ -242,11 +242,13 @@ def parse_datetime(date_text, time_text):
 
 
 def mask_name(name):
-    clean = name.strip()
+    clean = str(name or '').strip()
     if clean.endswith('님'):
-        clean = clean[:-1]
-    if len(clean) > 1:
-        return clean[0] + '*' * (len(clean) - 1)
+        clean = clean[:-1].strip()
+    if len(clean) >= 3:
+        return clean[0] + '*' * (len(clean) - 2) + clean[-1]
+    if len(clean) == 2:
+        return clean[0] + '*'
     return clean
 
 
@@ -1975,6 +1977,7 @@ def calendar_event_detail_matches(item, event_data, target_start, target_end):
 
     summary = item.get('summary', '')
     description = item.get('description', '')
+    private = item.get('extendedProperties', {}).get('private', {})
     searchable = f'{summary}\n{description}'
     compact_searchable = compact_calendar_match_text(searchable)
 
@@ -1985,7 +1988,17 @@ def calendar_event_detail_matches(item, event_data, target_start, target_end):
     reserver_name = normalize_reserver_name_for_match(
         event_data.get('name') or event_data.get('reserver_name')
     )
-    if reserver_name and reserver_name not in normalize_reserver_name_for_match(searchable):
+    masked_name = normalize_reserver_name_for_match(
+        mask_name(event_data.get('name') or event_data.get('reserver_name'))
+    )
+    private_name_key = normalize_reserver_name_for_match(private.get('reserverNameKey'))
+    searchable_name_key = normalize_reserver_name_for_match(searchable)
+    if (
+        reserver_name
+        and private_name_key != reserver_name
+        and reserver_name not in searchable_name_key
+        and (not masked_name or masked_name not in searchable_name_key)
+    ):
         return False
 
     return True
@@ -2052,9 +2065,11 @@ def create_calendar_event(service, event_data, logger, dedupe_google_calendar=Fa
         end += timedelta(days=1)
 
     source_line = '예약경로: SC\n' if is_spacecloud_origin_event(event_data) else ''
+    display_name = mask_name(event_data['name'])
+    display_name_with_suffix = f'{display_name}님' if display_name else ''
     description = (
         f"{source_line}"
-        f"예약자명: {event_data['name']}\n"
+        f"예약자명: {display_name_with_suffix}\n"
         f"예약상품: {event_data['product']}\n"
         f"사용일자: {event_data['date']}\n"
         f"시작시간: {event_data['start_time']}\n"
@@ -2063,7 +2078,7 @@ def create_calendar_event(service, event_data, logger, dedupe_google_calendar=Fa
         f"예약번호: {event_data.get('reservation_number', 'N/A')}\n"
     )
     event_body = {
-        'summary': f"{event_data['product']} {mask_name(event_data['name'])}님",
+        'summary': f"{event_data['product']} {display_name_with_suffix}",
         'description': description,
         'start': {'dateTime': start.isoformat(), 'timeZone': TIME_ZONE},
         'end': {'dateTime': end.isoformat(), 'timeZone': TIME_ZONE},
@@ -2072,6 +2087,8 @@ def create_calendar_event(service, event_data, logger, dedupe_google_calendar=Fa
                 'source': 'rhythmjoy_email_import',
                 'reservationNumber': event_data.get('reservation_number', ''),
                 'targetCalendar': target_calendar,
+                'reserverNameKey': normalize_reserver_name_for_match(event_data.get('name')),
+                'reserverNameMasked': display_name,
             }
         },
     }

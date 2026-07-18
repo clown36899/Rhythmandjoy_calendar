@@ -2131,12 +2131,6 @@ def expected_task(row):
     if status == 'confirmed' and source == 'spacecloud':
         event_id = row.get('confirmed_email_event_id')
         return {'task_type': 'naver_block', 'target_platform': 'naver', 'event_id': event_id} if event_id else None
-    if status == 'canceled' and source == 'naver':
-        event_id = row.get('canceled_email_event_id')
-        return {'task_type': 'delete', 'target_platform': 'spacecloud', 'event_id': event_id} if event_id else None
-    if status == 'canceled' and source == 'spacecloud':
-        event_id = row.get('canceled_email_event_id')
-        return {'task_type': 'naver_restore', 'target_platform': 'naver', 'event_id': event_id} if event_id else None
     return None
 
 def latest_task(cur, event_id, task_type, row):
@@ -2150,7 +2144,7 @@ def latest_task(cur, event_id, task_type, row):
                    result_text
             FROM rhythmjoy_spacecloud_tasks
             WHERE email_event_id=%s AND task_type=%s
-            ORDER BY id DESC
+            ORDER BY CASE WHEN status IN ('done', 'google_pending') THEN 0 ELSE 1 END, id DESC
             LIMIT 1
         """, (event_id, task_type))
         found = cur.fetchone()
@@ -2173,7 +2167,7 @@ def latest_task(cur, event_id, task_type, row):
               reservation_number=%s
               OR reserver_name=%s
           )
-        ORDER BY id DESC
+        ORDER BY CASE WHEN status IN ('done', 'google_pending') THEN 0 ELSE 1 END, id DESC
         LIMIT 1
     """, (
         task_type,
@@ -2196,8 +2190,6 @@ def classify_task(task, row, expected, grace_minutes):
     status = task.get('status') or ''
     if status in ('done', 'google_pending'):
         return 'ok', 'info', '반대 플랫폼 반영 완료'
-    if status == 'already_gone' and task_type == 'delete':
-        return 'ok', 'info', '삭제 대상이 이미 없음'
     if status in ('pending', 'running', 'claimed'):
         age = int(task.get('age_minutes') or 0)
         if age <= grace_minutes:
@@ -2289,12 +2281,12 @@ try:
                    TIMESTAMPDIFF(MINUTE, COALESCE(last_event_at, created_at, updated_at, NOW()), NOW()) AS ledger_age_minutes
             FROM rhythmjoy_booking_ledger
             WHERE source_platform IN ('naver', 'spacecloud')
-              AND (confirmed_email_event_id IS NOT NULL OR canceled_email_event_id IS NOT NULL)
+              AND current_status='confirmed'
+              AND confirmed_email_event_id IS NOT NULL
               AND (
-                    (current_status='confirmed' AND confirmed_email_event_id IS NOT NULL)
-                 OR (current_status='canceled' AND canceled_email_event_id IS NOT NULL)
+                    (source_platform='naver' AND COALESCE(source_mode, '')='')
+                 OR (source_platform='spacecloud' AND COALESCE(source_mode, '')='spacecloud_email')
               )
-              AND COALESCE(source_mode, '') <> 'admin-task-anchor'
               AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
                                       AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
             ORDER BY COALESCE(last_event_at, created_at, updated_at) DESC, id DESC
@@ -2379,7 +2371,11 @@ try:
                    GROUP_CONCAT(CONCAT(id, ':', source_platform, ':', COALESCE(reservation_number, ''), ':', COALESCE(reserver_name, '')) ORDER BY COALESCE(last_event_at, created_at, updated_at), id SEPARATOR ' | ') AS rows_text
             FROM rhythmjoy_booking_ledger
             WHERE current_status='confirmed'
-              AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+              AND confirmed_email_event_id IS NOT NULL
+              AND (
+                    (source_platform='naver' AND COALESCE(source_mode, '')='')
+                 OR (source_platform='spacecloud' AND COALESCE(source_mode, '')='spacecloud_email')
+              )
               AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
                                       AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
             GROUP BY reservation_date, room_key, start_time, end_time
@@ -2482,7 +2478,7 @@ function reflectionAuditMessage(data) {
     `원장 기준 점검 ${Number(data.checked || 0).toLocaleString()}건 / 문제 ${Number(data.issueCount || 0).toLocaleString()}건 / 대기 ${Number(data.waitingCount || 0).toLocaleString()}건`,
     issues.length ? issues.map(reflectionAuditLine).join('\n') : '문제 상세 없음',
     waiting.length ? `\n대기 중\n${waiting.map(reflectionAuditLine).join('\n')}` : '',
-    '기준: 이메일 원장 확정/취소 -> 반대 플랫폼 반영 작업',
+    '기준: 이메일 원장 최종 확정 -> 반대 플랫폼 최종 반영',
   ]);
 }
 
