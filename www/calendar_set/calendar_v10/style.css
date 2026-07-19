@@ -133,7 +133,8 @@
     width: 100%;
     margin: 0;
     height: 100%;
-    overscroll-behavior: contain;
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: auto;
     background: #1f1f1f;
 
   }
@@ -1203,6 +1204,21 @@ body.view-timeGridWeek .fc tbody {
   display: block;
 }
 
+.top-booking-icon img {
+  display: block;
+  width: 19px;
+  height: 19px;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.top-booking-icon-spacecloud {
+  overflow: hidden;
+  background: #fff;
+}
+
 .top-booking-label {
   display: inline-block;
   font-size: 10px;
@@ -1560,7 +1576,8 @@ body.view-timeGridWeek .fc tbody {
     width: 100%;
     margin: 0;
     height: 100%;
-    overscroll-behavior: contain;
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: auto;
     background: #1f1f1f;
   }
 
