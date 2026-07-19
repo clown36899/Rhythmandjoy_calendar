@@ -1,40 +1,39 @@
-<div class="detail-page">
+<div class="detail-page detail-page-price">
   <button type="button" id="xxx_btn" class="detail-close" onclick="closePopup()" aria-label="닫기">닫기</button>
+  <div class="sheet-handle" aria-hidden="true"></div>
 
   <header class="detail-header">
-    <span class="detail-eyebrow">문자 예약</span>
-    <h1>새벽 통대관 문의</h1>
-    <p class="detail-lead">가격과 일정표 확인 후 문자로 문의해주세요.</p>
+    <span class="detail-eyebrow">가격표</span>
+    <h1>리듬앤조이 요금</h1>
+    <p class="detail-lead">방 크기와 시간대별 기준 요금입니다.</p>
   </header>
 
-  <div class="detail-summary">
-    <strong>문자 예약: <a href="sms:01048017180">010-4801-7180</a></strong>
-    <p>가능 여부 확인 후 승인, 입금, 이용정보 수신 순서로 진행됩니다.</p>
+  <div class="detail-summary price-contact">
+    <strong>문자 문의 <a href="sms:01048017180">010-4801-7180</a></strong>
+    <p>새벽 통대관은 일정표 확인 후 문자로 문의해주세요.</p>
   </div>
-
-  <div class="detail-example">예: "12~13일 새벽 A홀 통대관 가능한가요?"</div>
 
   <table class="detail-price-table" aria-label="새벽 통대관 가격표">
     <thead>
       <tr>
         <th>룸</th>
-        <th>평일 낮</th>
+        <th>평일<br />낮</th>
         <th>16시 후<br />주말/휴일</th>
         <th>새벽</th>
         <th>새벽통<br />00~06시</th>
       </tr>
     </thead>
     <tbody>
-      <tr><td><strong>A홀</strong><br /><span class="detail-muted">20평</span></td><td>13,000</td><td>20,000</td><td>7,000</td><td>30,000</td></tr>
-      <tr><td><strong>B홀</strong><br /><span class="detail-muted">16평</span></td><td>8,000</td><td>12,000</td><td>5,000</td><td>20,000</td></tr>
-      <tr><td><strong>C홀</strong><br /><span class="detail-muted">5평</span></td><td>4,000</td><td>6,000</td><td>4,000</td><td>15,000</td></tr>
-      <tr><td><strong>D홀</strong><br /><span class="detail-muted">4평</span></td><td>3,000</td><td>5,000</td><td>3,000</td><td>15,000</td></tr>
-      <tr><td><strong>E홀</strong><br /><span class="detail-muted">15평</span></td><td>8,000</td><td>12,000</td><td>5,000</td><td>20,000</td></tr>
+      <tr class="room-a"><td><strong>A홀</strong><br /><span class="detail-muted">20평</span></td><td>13,000</td><td>20,000</td><td>7,000</td><td>30,000</td></tr>
+      <tr class="room-b"><td><strong>B홀</strong><br /><span class="detail-muted">16평</span></td><td>8,000</td><td>12,000</td><td>5,000</td><td>20,000</td></tr>
+      <tr class="room-c"><td><strong>C홀</strong><br /><span class="detail-muted">5평</span></td><td>4,000</td><td>6,000</td><td>4,000</td><td>15,000</td></tr>
+      <tr class="room-d"><td><strong>D홀</strong><br /><span class="detail-muted">4평</span></td><td>3,000</td><td>5,000</td><td>3,000</td><td>15,000</td></tr>
+      <tr class="room-e"><td><strong>E홀</strong><br /><span class="detail-muted">15평</span></td><td>8,000</td><td>12,000</td><td>5,000</td><td>20,000</td></tr>
     </tbody>
   </table>
 
-  <ul class="detail-list detail-list-compact">
-    <li>네이버와 스페이스클라우드는 <strong>동일한 기준 가격</strong>으로 운영됩니다.</li>
-    <li>기준 인원 초과 시 인원 추가 비용은 없습니다.</li>
+  <ul class="detail-list detail-list-compact price-note-list">
+    <li><strong>네이버/스페이스클라우드 동일 가격</strong></li>
+    <li><strong>인원 추가금 없음</strong></li>
   </ul>
 </div>

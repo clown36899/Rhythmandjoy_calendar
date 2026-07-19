@@ -8,26 +8,118 @@ function resolveV10HomePath(url) {
   return url.startsWith("home_infopage/") ? `/calendar_set/calendar_v10/${url}` : url;
 }
 
-// 팝업 열기
-function openPopup(url) {
-  const popupUrl = resolveV10HomePath(url);
+function isMobileViewport() {
+  return window.matchMedia && window.matchMedia("(max-width: 760px)").matches;
+}
+
+function isPriceSheetUrl(url) {
+  return /popup_(night|price)\.html/.test(url);
+}
+
+function configurePopupMode(popupUrl) {
+  const popupBox = document.getElementById('popupBox');
+  const popupOverlay = document.getElementById('popupOverlay');
+  const useBottomSheet = isMobileViewport() && isPriceSheetUrl(popupUrl);
+
+  popupBox.classList.toggle('mobile-bottom-sheet', useBottomSheet);
+  popupBox.classList.toggle('price-sheet-popup', isPriceSheetUrl(popupUrl));
+  popupOverlay.classList.toggle('mobile-sheet-overlay', useBottomSheet);
+
+  if (useBottomSheet) {
+    popupBox.classList.remove('wide-popup');
+    popupBox.style.removeProperty('max-width');
+    popupBox.style.removeProperty('width');
+  } else {
+    popupBox.classList.add('wide-popup');
+    popupBox.style.removeProperty('max-width');
+    popupBox.style.width = '90%';
+  }
+
+  bindPopupSwipeDismiss(useBottomSheet);
+}
+
+let popupSwipeCleanup = null;
+
+function bindPopupSwipeDismiss(enabled) {
+  if (popupSwipeCleanup) {
+    popupSwipeCleanup();
+    popupSwipeCleanup = null;
+  }
+  if (!enabled) return;
+
+  const popupBox = document.getElementById('popupBox');
+  let startY = 0;
+  let lastY = 0;
+  let dragging = false;
+
+  const onTouchStart = (event) => {
+    if (!popupBox.classList.contains('active')) return;
+    const touch = event.touches && event.touches[0];
+    if (!touch) return;
+    startY = touch.clientY;
+    lastY = startY;
+    dragging = true;
+    popupBox.classList.add('dragging');
+  };
+
+  const onTouchMove = (event) => {
+    if (!dragging) return;
+    const touch = event.touches && event.touches[0];
+    if (!touch) return;
+    lastY = touch.clientY;
+    const deltaY = Math.max(0, lastY - startY);
+    if (deltaY <= 0) return;
+    event.preventDefault();
+    popupBox.style.transform = `translateY(${deltaY}px)`;
+  };
+
+  const onTouchEnd = () => {
+    if (!dragging) return;
+    dragging = false;
+    popupBox.classList.remove('dragging');
+    const deltaY = Math.max(0, lastY - startY);
+    if (deltaY > 80) {
+      popupBox.style.removeProperty('transform');
+      closePopup();
+      return;
+    }
+    popupBox.style.removeProperty('transform');
+  };
+
+  popupBox.addEventListener('touchstart', onTouchStart, { passive: true });
+  popupBox.addEventListener('touchmove', onTouchMove, { passive: false });
+  popupBox.addEventListener('touchend', onTouchEnd, { passive: true });
+  popupBox.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+  popupSwipeCleanup = () => {
+    popupBox.removeEventListener('touchstart', onTouchStart);
+    popupBox.removeEventListener('touchmove', onTouchMove);
+    popupBox.removeEventListener('touchend', onTouchEnd);
+    popupBox.removeEventListener('touchcancel', onTouchEnd);
+    popupBox.classList.remove('dragging');
+    popupBox.style.removeProperty('transform');
+  };
+}
+
+function showPopup() {
   const popupBox = document.getElementById('popupBox');
   const popupOverlay = document.getElementById('popupOverlay');
 
-  // 모든 팝업 와이드 적용 (CSS에서 950px로 설정됨)
-  popupBox.classList.add('wide-popup');
-  popupBox.style.removeProperty('max-width'); // 기존 인라인 스타일 제거
-  popupBox.style.width = '90%';
+  requestAnimationFrame(() => {
+    popupOverlay.classList.add('active');
+    popupBox.classList.add('active');
+  });
+}
+
+// 팝업 열기
+function openPopup(url) {
+  const popupUrl = resolveV10HomePath(url);
+  configurePopupMode(popupUrl);
 
   // 캐시에 있으면 즉시 표시
   if (htmlCache.has(popupUrl)) {
     document.getElementById('popupContent').innerHTML = htmlCache.get(popupUrl);
-
-    // 다음 프레임에 애니메이션 시작
-    requestAnimationFrame(() => {
-      popupOverlay.classList.add('active');
-      popupBox.classList.add('active');
-    });
+    showPopup();
     return;
   }
 
@@ -37,12 +129,7 @@ function openPopup(url) {
     .then(html => {
       htmlCache.set(popupUrl, html); // 캐시에 저장
       document.getElementById('popupContent').innerHTML = html;
-
-      // 다음 프레임에 애니메이션 시작
-      requestAnimationFrame(() => {
-        popupOverlay.classList.add('active');
-        popupBox.classList.add('active');
-      });
+      showPopup();
     })
     .catch(err => {
       alert("팝업 로딩 실패: " + err);
@@ -58,10 +145,17 @@ function closePopup() {
   // 닫는 애니메이션
   popupBox.classList.remove('active');
   popupOverlay.classList.remove('active');
+  popupBox.style.removeProperty('transform');
 
   // 애니메이션 끝난 후 내용 초기화
   setTimeout(() => {
     document.getElementById('popupContent').innerHTML = '';
+    popupBox.classList.remove('mobile-bottom-sheet', 'price-sheet-popup');
+    popupOverlay.classList.remove('mobile-sheet-overlay');
+    if (popupSwipeCleanup) {
+      popupSwipeCleanup();
+      popupSwipeCleanup = null;
+    }
   }, 400);
 }
 
