@@ -129,12 +129,14 @@
     /* 위코드는 마우스로 텍스트를 긁는걸 방지함*/
     font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
     font-size: 19px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     width: 100%;
     margin: 0;
     height: 100%;
     overscroll-behavior-x: contain;
     overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
     background: #1f1f1f;
 
   }
@@ -236,7 +238,8 @@
     height: 30px;
     font-size: medium;
     border-radius: 100px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     background: #616161;
     border: 1px solid rgb(0 0 0 / 71%);
   }
@@ -1204,6 +1207,14 @@ body.view-timeGridWeek .fc tbody {
   display: block;
 }
 
+.top-booking-icon text {
+  fill: currentColor;
+  font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
+  letter-spacing: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
 .top-booking-icon img {
   display: block;
   width: 19px;
@@ -1220,11 +1231,19 @@ body.view-timeGridWeek .fc tbody {
 }
 
 .top-booking-label {
-  display: inline-block;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0;
+  line-height: 1.02;
   pointer-events: none;
+}
+
+.top-booking-label-stack {
+  font-size: 8.5px;
 }
 
 .top-booking-link-spacecloud {
@@ -1238,13 +1257,26 @@ body.view-timeGridWeek .fc tbody {
 .top-booking-link-price {
   padding: 0;
   background: #ffffff;
-  color: #173329;
+  color: #0f6b52;
   border-color: rgba(255, 255, 255, 0.5);
 }
 
 .top-booking-link-price .top-booking-icon {
   background: transparent;
   color: inherit;
+}
+
+.top-booking-icon-price {
+  font-size: 16px;
+  line-height: 1;
+}
+
+#calendarAll .swiper-container,
+#calendarAll .swiper-wrapper,
+#calendarAll .swiper-slide,
+#calendarAll .fc-scroller {
+  overscroll-behavior-y: auto;
+  touch-action: pan-y;
 }
 
 @media (max-width: 430px) {
@@ -1572,12 +1604,14 @@ body.view-timeGridWeek .fc tbody {
 
     font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
     font-size: 19px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     width: 100%;
     margin: 0;
     height: 100%;
     overscroll-behavior-x: contain;
     overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
     background: #1f1f1f;
   }
 
