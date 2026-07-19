@@ -82,7 +82,7 @@
   <script src="./packages/core/locales/ko.js"></script>
   <script src="browser-guards.js?v=observer-guard-20260615"></script>
 
-  <link href="style.css?v=mobile-info-hidden-20260713" rel="stylesheet" />
+  <link href="style.css?v=booking-links-20260719" rel="stylesheet" />
   <link href="./packages/timegrid/main.css" rel="stylesheet" />
 
   <link href="./home_infopage/popup.css?v=detail-redesign-v2-20260612" rel="stylesheet" type="text/css" />
@@ -91,7 +91,7 @@
   <script src="./dist/swipeCalendar.js?v=observer-guard-20260615"></script>
 
   <script src="home_infopage/open_popup.js"></script>
-  <script src="tracking.js?v=site-events-20260615"></script>
+  <script src="tracking.js?v=booking-links-20260719"></script>
 
   <script>
     let vh = window.innerHeight * 0.01;
@@ -246,6 +246,31 @@
           <div style="display: flex">
             <span id="titleMonth"></span>
           </div>
+        </div>
+        <div class="top-booking-actions" aria-label="예약 바로가기">
+          <a class="top-booking-link top-booking-link-spacecloud" href="https://www.spacecloud.kr/space/66056"
+            target="_blank" rel="noopener" draggable="false" aria-label="스페이스클라우드 예약 바로가기">
+            <span class="top-booking-icon" aria-hidden="true">SC</span>
+            <span class="top-booking-label">스페이스</span>
+          </a>
+          <a class="top-booking-link top-booking-link-naver" href="https://booking.naver.com/booking/10/bizes/1257912"
+            target="_blank" rel="noopener" draggable="false" aria-label="네이버 예약 바로가기">
+            <span class="top-booking-icon top-booking-icon-naver" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M16.27 12.85 7.38 0H0v24h7.73V11.15L16.62 24H24V0h-7.73v12.85z" />
+              </svg>
+            </span>
+            <span class="top-booking-label">네이버</span>
+          </a>
+          <button type="button" class="top-booking-link top-booking-link-price"
+            onclick="openPopup('home_infopage/popup_night.html?v=detail-redesign-v2-20260612')" draggable="false"
+            aria-label="가격표 보기" title="가격표">
+            <span class="top-booking-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm1.5 5.5h13v-4h-13v4Zm0 1.5v4h4.25v-4H5.5Zm5.75 0v4h7.25v-4h-7.25ZM5.5 15.5v4h4.25v-4H5.5Zm5.75 0v4h7.25v-4h-7.25Z" />
+              </svg>
+            </span>
+          </button>
         </div>
 
       </div>

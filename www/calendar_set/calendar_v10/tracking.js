@@ -6,6 +6,11 @@
       label: "네이버 예약"
     },
     {
+      test: (href) => href.includes("spacecloud.kr/space/66056"),
+      event: "spacecloud_booking_click",
+      label: "스페이스클라우드 예약"
+    },
+    {
       test: (href) => href.includes("m.place.naver.com/my"),
       event: "naver_my_click",
       label: "네이버 MY 예약 확인"

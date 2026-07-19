@@ -1141,6 +1141,135 @@ body.view-timeGridWeek .fc tbody {
   align-items: flex-end;
 }
 
+.top-booking-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding-right: 4px;
+  white-space: nowrap;
+}
+
+.top-booking-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 34px;
+  min-height: 32px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  text-decoration: none;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  appearance: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-drag: none;
+  touch-action: manipulation;
+}
+
+.top-booking-link:hover,
+.top-booking-link:focus {
+  color: #fff;
+  text-decoration: none;
+  filter: brightness(1.08);
+}
+
+.top-booking-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+
+.top-booking-icon svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+  display: block;
+}
+
+.top-booking-label {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+
+.top-booking-link-spacecloud {
+  background: #6542d8;
+}
+
+.top-booking-link-naver {
+  background: #03b75a;
+}
+
+.top-booking-link-price {
+  padding: 0;
+  background: #ffffff;
+  color: #173329;
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.top-booking-link-price .top-booking-icon {
+  background: transparent;
+  color: inherit;
+}
+
+@media (max-width: 430px) {
+  .top-booking-actions {
+    gap: 3px;
+  }
+
+  .top-booking-link {
+    min-width: 30px;
+    min-height: 30px;
+    padding: 0 6px;
+    gap: 3px;
+  }
+
+  .top-booking-icon {
+    width: 17px;
+    height: 17px;
+    flex-basis: 17px;
+    font-size: 8px;
+  }
+
+  .top-booking-icon svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .top-booking-label {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 360px) {
+  .top-booking-link {
+    padding: 0 4px;
+  }
+
+  .top-booking-label {
+    font-size: 8px;
+  }
+}
+
 /* 해드툴바패딩영역*/
 .swc .swc-toolbar {
   padding: 0px !important;
@@ -1167,7 +1296,7 @@ body.view-timeGridWeek .fc tbody {
   padding-left: 0;
   flex-direction: row;
   align-content: space-around;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .navbar-toggler:focus {
