@@ -737,11 +737,13 @@ function price_policy_history_rows($pdo) {
         ORDER BY effective_date ASC, FIELD(room_key, 'a', 'b', 'c', 'd', 'e'), id ASC
     ");
     $rows = array();
+    $previous_by_room = array();
     foreach ($stmt->fetchAll() as $row) {
-        $rows[] = array(
+        $room = strtolower((string) $row['room_key']);
+        $current = array(
             'key' => $row['policy_key'],
             'effectiveDate' => $row['effective_date'],
-            'room' => $row['room_key'],
+            'room' => $room,
             'roomLabel' => $row['room_label'] ?: room_label($row['room_key']),
             'dawnHourly' => intval($row['dawn_hourly']),
             'weekdayDay' => intval($row['weekday_day']),
@@ -751,6 +753,35 @@ function price_policy_history_rows($pdo) {
             'spacecloudAmountSame' => intval($row['spacecloud_amount_same']) === 1,
             'note' => $row['note'],
         );
+        $previous = isset($previous_by_room[$room]) ? $previous_by_room[$room] : null;
+        $current['previous'] = $previous;
+        $current['changes'] = array();
+        foreach (array('dawnHourly', 'weekdayDay', 'afterHourly', 'overnight') as $field) {
+            $before = $previous ? intval($previous[$field]) : null;
+            $after = intval($current[$field]);
+            $current['changes'][$field] = array(
+                'before' => $before,
+                'after' => $after,
+                'diff' => $before === null ? 0 : $after - $before,
+                'changed' => $before !== null && $before !== $after,
+            );
+        }
+        $current['hasPrevious'] = $previous !== null;
+        $current['hasChangedPrice'] = false;
+        foreach ($current['changes'] as $change) {
+            if ($change['changed']) {
+                $current['hasChangedPrice'] = true;
+                break;
+            }
+        }
+        $previous_by_room[$room] = array(
+            'effectiveDate' => $current['effectiveDate'],
+            'dawnHourly' => $current['dawnHourly'],
+            'weekdayDay' => $current['weekdayDay'],
+            'afterHourly' => $current['afterHourly'],
+            'overnight' => $current['overnight'],
+        );
+        $rows[] = $current;
     }
     return $rows;
 }

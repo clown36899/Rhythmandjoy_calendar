@@ -1748,22 +1748,50 @@
             <article class="price-history-card">
               <header>
                 <strong>${escapeHtml(date)}</strong>
-                <span>${escapeHtml(items[0]?.note || "")}</span>
+                <span>${escapeHtml(priceHistoryNotes(items))}</span>
               </header>
               <div class="price-history-rooms">
-                ${items.map((row) => `
-                  <span>
-                    <b>${escapeHtml(row.roomLabel || "")}</b>
-                    낮 ${escapeHtml(formatRevenueStat(row.weekdayDay))}
-                    · 저녁 ${escapeHtml(formatRevenueStat(row.afterHourly))}
-                    · 통 ${escapeHtml(formatRevenueStat(row.overnight))}
-                  </span>
-                `).join("")}
+                ${items.map(priceHistoryRoomHtml).join("")}
               </div>
             </article>
           `).join("")}
         </div>
       </div>
+    `;
+  }
+
+  function priceHistoryNotes(items) {
+    return [...new Set((items || []).map((item) => item.note).filter(Boolean))].join(" / ");
+  }
+
+  function priceHistoryRoomHtml(row) {
+    const changed = Boolean(row.hasChangedPrice);
+    return `
+      <div class="price-history-room ${changed ? "changed" : "baseline"}">
+        <b>${escapeHtml(row.roomLabel || "")}</b>
+        <div class="price-history-bands">
+          ${priceHistoryBandHtml(row, "dawnHourly", "새벽")}
+          ${priceHistoryBandHtml(row, "weekdayDay", "낮")}
+          ${priceHistoryBandHtml(row, "afterHourly", "저녁")}
+          ${priceHistoryBandHtml(row, "overnight", "통")}
+        </div>
+      </div>
+    `;
+  }
+
+  function priceHistoryBandHtml(row, key, label) {
+    const change = row.changes?.[key] || {};
+    const before = Number(change.before || 0);
+    const after = Number(change.after ?? row[key] ?? 0);
+    const changed = Boolean(change.changed);
+    const value = changed
+      ? `${formatRevenueStat(before)}→${formatRevenueStat(after)}`
+      : formatRevenueStat(after);
+    return `
+      <span class="price-history-band ${changed ? "changed" : ""}">
+        <small>${escapeHtml(label)}</small>
+        <strong>${escapeHtml(value)}</strong>
+      </span>
     `;
   }
 
