@@ -238,8 +238,7 @@
     height: 30px;
     font-size: medium;
     border-radius: 100px;
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: hidden;
     background: #616161;
     border: 1px solid rgb(0 0 0 / 71%);
   }
