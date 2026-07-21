@@ -2545,6 +2545,10 @@ function isTransientRemoteProblem(message) {
   return /ssh failed|timed out|ETIMEDOUT|SIGKILL|Connection timed out|Connection reset|Connection closed by|Broken pipe/i.test(String(message || ''));
 }
 
+function isRetryablePlatformProblem(message) {
+  return /page\.goto|Timeout \d+ms exceeded|domcontentloaded|net::|ERR_|ECONNRESET|ETIMEDOUT|Connection reset|Connection closed|page load|navigation/i.test(String(message || ''));
+}
+
 function rowsFromResult(rowOrError, key = 'failed') {
   if (typeof rowOrError !== 'object' || !rowOrError) return [];
   if (Array.isArray(rowOrError)) return rowOrError;
@@ -3189,6 +3193,7 @@ function dbStatusForDeleteRow(row) {
   if (row.status === 'google-delete-failed') return 'google_pending';
   if (row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
+  if (isRetryablePlatformProblem(row.error)) return 'pending';
   return 'failed';
 }
 
@@ -3202,6 +3207,7 @@ function dbStatusForUploadRow(row) {
   if (row.status === 'google-create-failed') return 'google_pending';
   if (row.status === 'google-conflict' || row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
+  if (isRetryablePlatformProblem(row.error)) return 'pending';
   return 'failed';
 }
 
@@ -3216,6 +3222,7 @@ function dbStatusForNaverBlockRow(row) {
   if (row.status === 'google-conflict') return 'needs_review';
   if (row.status === 'naver-conflict' || row.status === 'later-reservation-conflict' || row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
+  if (isRetryablePlatformProblem(row.error)) return 'pending';
   return 'failed';
 }
 
@@ -3226,6 +3233,7 @@ function dbStatusForSpacecloudCancelRow(row) {
   if (row.status === 'canceled' || row.status === 'already-canceled') return 'done';
   if (row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
+  if (isRetryablePlatformProblem(row.error)) return 'pending';
   return 'failed';
 }
 
@@ -3236,6 +3244,7 @@ function dbStatusForNaverCancelRow(row) {
   if (row.status === 'canceled' || row.status === 'already-canceled') return 'done';
   if (row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
+  if (isRetryablePlatformProblem(row.error)) return 'pending';
   return 'failed';
 }
 
@@ -3249,6 +3258,7 @@ function dbStatusForNaverRestoreRow(row) {
   if (row.status === 'google-delete-failed') return 'google_pending';
   if (row.status === 'needs-review' || row.status === 'naver-conflict') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
+  if (isRetryablePlatformProblem(row.error)) return 'pending';
   return 'failed';
 }
 

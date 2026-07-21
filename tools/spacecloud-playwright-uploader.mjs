@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
+const SPACECLOUD_PAGE_LOAD_TIMEOUT_MS = 45000;
 
 export const SPACECLOUD_ROOMS = {
   a: { spaceId: '66056', productId: '108673', name: 'A홀' },
@@ -730,7 +731,10 @@ export async function uploadSpacecloudDirectReservation(context, event) {
   page.on('dialog', onDialog);
   try {
     if (page.url() !== ui.reservationCalendarUrl) {
-      await page.goto(ui.reservationCalendarUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.goto(ui.reservationCalendarUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: SPACECLOUD_PAGE_LOAD_TIMEOUT_MS,
+      });
     }
 
     await closeModalIfOpen(page);
@@ -815,7 +819,10 @@ export async function fetchSpacecloudReservationPhone(context, task) {
     };
   }
   if (roomKey && page.url() !== reservationCalendarUrl(roomKey)) {
-    await page.goto(reservationCalendarUrl(roomKey), { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+    await page.goto(reservationCalendarUrl(roomKey), {
+      waitUntil: 'domcontentloaded',
+      timeout: SPACECLOUD_PAGE_LOAD_TIMEOUT_MS,
+    }).catch(() => {});
   }
 
   const detail = await fetchSpacecloudReservationDetail(page, reservationId);
@@ -1091,7 +1098,10 @@ export async function deleteSpacecloudDirectReservation(context, task) {
   page.on('dialog', onDialog);
   try {
     if (page.url() !== row.reservationCalendarUrl) {
-      await page.goto(row.reservationCalendarUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.goto(row.reservationCalendarUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: SPACECLOUD_PAGE_LOAD_TIMEOUT_MS,
+      });
     }
     await closeModalIfOpen(page);
 
