@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const SPACECLOUD_PAGE_LOAD_TIMEOUT_MS = 45000;
+const SPACECLOUD_PAGE_LOAD_TIMEOUT_MS = 20000;
 
 export const SPACECLOUD_ROOMS = {
   a: { spaceId: '66056', productId: '108673', name: 'A홀' },

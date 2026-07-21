@@ -3262,6 +3262,20 @@ function dbStatusForNaverRestoreRow(row) {
   return 'failed';
 }
 
+function isRetryingPlatformRow(row) {
+  return row?.dbStatus === 'pending'
+    && !isLoginProblem(row.error)
+    && isRetryablePlatformProblem(row.error);
+}
+
+function taskRowsRetrying(rows) {
+  return rows.filter(isRetryingPlatformRow);
+}
+
+function taskRowsNeedingReview(rows, doneStatuses) {
+  return rows.filter((row) => !doneStatuses.includes(row.status) && !isRetryingPlatformRow(row));
+}
+
 function basicTaskSummary(task) {
   return {
     taskId: task.id || task.taskId || null,
@@ -3857,8 +3871,9 @@ async function runUploadTasks(args, context = null) {
 
       rows.push(row);
       const status = dbStatusForUploadRow(row);
+      row.dbStatus = status;
       await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
-      if (status === 'pending' && isLoginProblem(row.error)) {
+      if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
       if (status === 'failed' || status === 'needs_review') {
@@ -3870,19 +3885,21 @@ async function runUploadTasks(args, context = null) {
     if (ownedContext) await ownedContext.close();
   }
 
-  const failed = rows.filter((row) => ![
+  const retrying = taskRowsRetrying(rows);
+  const failed = taskRowsNeedingReview(rows, [
     'google-recorded',
     'submitted',
     'calendar-record-warning',
     'naver-cancel-queued',
     'stale-ledger-skip',
-  ].includes(row.status));
+  ]);
   return {
-    status: failed.length ? 'upload-task-needs-review' : 'upload-task-processed',
+    status: failed.length ? 'upload-task-needs-review' : (retrying.length ? 'upload-task-retry-pending' : 'upload-task-processed'),
     fetched: tasks.length,
     attempted: rows.length,
     rows,
     failed,
+    retrying,
   };
 }
 
@@ -3963,8 +3980,9 @@ async function runDeleteTasks(args, context = null) {
 
       rows.push(row);
       const status = dbStatusForDeleteRow(row);
+      row.dbStatus = status;
       await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
-      if (status === 'pending' && isLoginProblem(row.error)) {
+      if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
       if (status === 'failed' || status === 'needs_review') {
@@ -3976,17 +3994,19 @@ async function runDeleteTasks(args, context = null) {
     if (ownedContext) await ownedContext.close();
   }
 
-  const failed = rows.filter((row) => ![
+  const retrying = taskRowsRetrying(rows);
+  const failed = taskRowsNeedingReview(rows, [
     'deleted',
     'already-gone',
     'stale-ledger-skip',
-  ].includes(row.status));
+  ]);
   return {
-    status: failed.length ? 'delete-needs-review' : 'delete-processed',
+    status: failed.length ? 'delete-needs-review' : (retrying.length ? 'delete-retry-pending' : 'delete-processed'),
     fetched: tasks.length,
     attempted: rows.length,
     rows,
     failed,
+    retrying,
   };
 }
 
@@ -4066,8 +4086,9 @@ async function runNaverBlockTasks(args, context = null) {
       }
       rows.push(row);
       const status = dbStatusForNaverBlockRow(row);
+      row.dbStatus = status;
       await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
-      if (status === 'pending' && isLoginProblem(row.error)) {
+      if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
       if (status === 'failed' || status === 'needs_review') {
@@ -4079,19 +4100,21 @@ async function runNaverBlockTasks(args, context = null) {
     if (ownedContext) await ownedContext.close();
   }
 
-  const failed = rows.filter((row) => ![
+  const retrying = taskRowsRetrying(rows);
+  const failed = taskRowsNeedingReview(rows, [
     'blocked',
     'already-blocked',
     'google-recorded',
     'calendar-record-warning',
     'stale-ledger-skip',
-  ].includes(row.status));
+  ]);
   return {
-    status: failed.length ? 'naver-block-needs-review' : 'naver-block-processed',
+    status: failed.length ? 'naver-block-needs-review' : (retrying.length ? 'naver-block-retry-pending' : 'naver-block-processed'),
     fetched: tasks.length,
     attempted: rows.length,
     rows,
     failed,
+    retrying,
   };
 }
 
@@ -4158,8 +4181,9 @@ async function runSpacecloudCancelTasks(args, context = null) {
 
       rows.push(row);
       const status = dbStatusForSpacecloudCancelRow(row);
+      row.dbStatus = status;
       await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
-      if (status === 'pending' && isLoginProblem(row.error)) {
+      if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
       if (status === 'failed' || status === 'needs_review') {
@@ -4171,17 +4195,19 @@ async function runSpacecloudCancelTasks(args, context = null) {
     if (ownedContext) await ownedContext.close();
   }
 
-  const failed = rows.filter((row) => ![
+  const retrying = taskRowsRetrying(rows);
+  const failed = taskRowsNeedingReview(rows, [
     'canceled',
     'already-canceled',
     'stale-ledger-skip',
-  ].includes(row.status));
+  ]);
   return {
-    status: failed.length ? 'spacecloud-cancel-needs-review' : 'spacecloud-cancel-processed',
+    status: failed.length ? 'spacecloud-cancel-needs-review' : (retrying.length ? 'spacecloud-cancel-retry-pending' : 'spacecloud-cancel-processed'),
     fetched: tasks.length,
     attempted: rows.length,
     rows,
     failed,
+    retrying,
   };
 }
 
@@ -4253,8 +4279,9 @@ async function runNaverCancelTasks(args, context = null) {
 
       rows.push(row);
       const status = dbStatusForNaverCancelRow(row);
+      row.dbStatus = status;
       await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
-      if (status === 'pending' && isLoginProblem(row.error)) {
+      if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
       if (status === 'failed' || status === 'needs_review') {
@@ -4266,17 +4293,19 @@ async function runNaverCancelTasks(args, context = null) {
     if (ownedContext) await ownedContext.close();
   }
 
-  const failed = rows.filter((row) => ![
+  const retrying = taskRowsRetrying(rows);
+  const failed = taskRowsNeedingReview(rows, [
     'canceled',
     'already-canceled',
     'stale-ledger-skip',
-  ].includes(row.status));
+  ]);
   return {
-    status: failed.length ? 'naver-cancel-needs-review' : 'naver-cancel-processed',
+    status: failed.length ? 'naver-cancel-needs-review' : (retrying.length ? 'naver-cancel-retry-pending' : 'naver-cancel-processed'),
     fetched: tasks.length,
     attempted: rows.length,
     rows,
     failed,
+    retrying,
   };
 }
 
@@ -4285,20 +4314,24 @@ function splitNaverAvailabilityResult(result) {
   const restoreRows = (result.rows || []).filter((row) => row.taskType === 'naver_restore');
   const blockFailed = (result.failed || []).filter((row) => row.taskType !== 'naver_restore');
   const restoreFailed = (result.failed || []).filter((row) => row.taskType === 'naver_restore');
+  const blockRetrying = (result.retrying || []).filter((row) => row.taskType !== 'naver_restore');
+  const restoreRetrying = (result.retrying || []).filter((row) => row.taskType === 'naver_restore');
   return {
     naverBlockTasks: {
-      status: blockFailed.length ? 'naver-block-needs-review' : 'naver-block-processed',
+      status: blockFailed.length ? 'naver-block-needs-review' : (blockRetrying.length ? 'naver-block-retry-pending' : 'naver-block-processed'),
       fetched: blockRows.length,
       attempted: blockRows.length,
       rows: blockRows,
       failed: blockFailed,
+      retrying: blockRetrying,
     },
     naverRestoreTasks: {
-      status: restoreFailed.length ? 'naver-restore-needs-review' : 'naver-restore-processed',
+      status: restoreFailed.length ? 'naver-restore-needs-review' : (restoreRetrying.length ? 'naver-restore-retry-pending' : 'naver-restore-processed'),
       fetched: restoreRows.length,
       attempted: restoreRows.length,
       rows: restoreRows,
       failed: restoreFailed,
+      retrying: restoreRetrying,
     },
   };
 }
@@ -4307,12 +4340,14 @@ function mergeTaskResults(...results) {
   const valid = results.filter(Boolean);
   const rows = valid.flatMap((result) => result.rows || []);
   const failed = valid.flatMap((result) => result.failed || []);
+  const retrying = valid.flatMap((result) => result.retrying || []);
   return {
-    status: failed.length ? 'task-needs-review' : 'task-processed',
+    status: failed.length ? 'task-needs-review' : (retrying.length ? 'task-retry-pending' : 'task-processed'),
     fetched: valid.reduce((sum, result) => sum + (result.fetched || 0), 0),
     attempted: valid.reduce((sum, result) => sum + (result.attempted || 0), 0),
     rows,
     failed,
+    retrying,
   };
 }
 
@@ -4465,8 +4500,9 @@ async function runNaverAvailabilityTasks(args, context = null) {
       const status = taskType === 'naver_restore'
         ? dbStatusForNaverRestoreRow(row)
         : dbStatusForNaverBlockRow(row);
+      row.dbStatus = status;
       await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
-      if (status === 'pending' && isLoginProblem(row.error)) {
+      if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
       if (status === 'failed' || status === 'needs_review') {
@@ -4478,32 +4514,34 @@ async function runNaverAvailabilityTasks(args, context = null) {
     if (ownedContext) await ownedContext.close();
   }
 
+  const retrying = taskRowsRetrying(rows);
   const failed = rows.filter((row) => {
-    if (row.taskType === 'naver_restore') {
-      return ![
+    const doneStatuses = row.taskType === 'naver_restore'
+      ? [
         'restored',
         'already-available',
         'restore-skipped-not-owned',
         'restore-grace-wait',
         'calendar-record-warning',
         'stale-ledger-skip',
-      ].includes(row.status);
-    }
-      return ![
+      ]
+      : [
         'blocked',
         'already-blocked',
         'google-recorded',
         'calendar-record-warning',
         'spacecloud-cancel-queued',
         'stale-ledger-skip',
-      ].includes(row.status);
+      ];
+    return taskRowsNeedingReview([row], doneStatuses).length > 0;
   });
   return {
-    status: failed.length ? 'naver-availability-needs-review' : 'naver-availability-processed',
+    status: failed.length ? 'naver-availability-needs-review' : (retrying.length ? 'naver-availability-retry-pending' : 'naver-availability-processed'),
     fetched: tasks.length,
     attempted: rows.length,
     rows,
     failed,
+    retrying,
   };
 }
 
@@ -4704,8 +4742,25 @@ function runNowModeSelfTest() {
   assert.equal(merged.rows.length, 2);
   assert.equal(merged.failed.length, 0);
 
+  const retryRow = {
+    status: 'failed',
+    dbStatus: 'pending',
+    error: 'page.goto: Timeout 20000ms exceeded while waiting until domcontentloaded',
+  };
+  const loginRow = {
+    status: 'failed',
+    dbStatus: 'pending',
+    error: 'login required',
+  };
+  assert.equal(isRetryingPlatformRow(retryRow), true);
+  assert.equal(taskRowsNeedingReview([retryRow], []).length, 0);
+  assert.equal(taskRowsRetrying([retryRow]).length, 1);
+  assert.equal(isRetryingPlatformRow(loginRow), false);
+  assert.equal(taskRowsNeedingReview([loginRow], []).length, 1);
+
   assert.equal(hasBlockingFailures({ failed: [{ status: 'google-create-failed' }] }), false);
   assert.equal(hasBlockingFailures({ failed: [{ status: 'needs-review' }] }), true);
+  assert.equal(hasBlockingFailures({ failed: [], retrying: [retryRow] }), false);
 
   return {
     ok: true,
@@ -4713,6 +4768,7 @@ function runNowModeSelfTest() {
       'now-mode argument parsing',
       'restore grace keeps task pending',
       'same-cycle cancellation result merge',
+      'platform page timeout becomes next-cycle retry',
       'google-only retry does not block urgent flow',
     ],
   };
@@ -4787,9 +4843,11 @@ async function maybeCheckAutomationSessionStatuses(args, context, workDir) {
   return statuses;
 }
 
-function setCycleStatusFromResult(row, result, { processed, needsReview }) {
+function setCycleStatusFromResult(row, result, { processed, needsReview, retrying = 'task-retry-pending' }) {
   if (!result || result.attempted <= 0) return;
-  row.status = hasBlockingFailures(result) ? needsReview : processed;
+  if (hasBlockingFailures(result)) row.status = needsReview;
+  else if (result.retrying?.length) row.status = retrying;
+  else row.status = processed;
 }
 
 async function runNowModeCycleTasks(args, row, activeContext) {
@@ -4798,6 +4856,7 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   setCycleStatusFromResult(row, row.spacecloudCancelTasks, {
     processed: 'spacecloud-cancel-processed',
     needsReview: 'spacecloud-cancel-needs-review',
+    retrying: 'spacecloud-cancel-retry-pending',
   });
   if (hasBlockingFailures(row.spacecloudCancelTasks)) return;
 
@@ -4806,6 +4865,7 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   setCycleStatusFromResult(row, row.naverCancelTasks, {
     processed: 'naver-cancel-processed',
     needsReview: 'naver-cancel-needs-review',
+    retrying: 'naver-cancel-retry-pending',
   });
   if (hasBlockingFailures(row.naverCancelTasks)) return;
 
@@ -4816,6 +4876,7 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   setCycleStatusFromResult(row, row.naverAvailabilityTasks, {
     processed: row.naverAvailabilityTasks.failed?.length ? 'naver-availability-google-pending' : 'naver-availability-processed',
     needsReview: 'naver-availability-needs-review',
+    retrying: 'naver-availability-retry-pending',
   });
   if (hasBlockingFailures(row.naverAvailabilityTasks)) return;
 
@@ -4824,6 +4885,7 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   setCycleStatusFromResult(row, row.spacecloudCancelTasks, {
     processed: 'spacecloud-cancel-processed',
     needsReview: 'spacecloud-cancel-needs-review',
+    retrying: 'spacecloud-cancel-retry-pending',
   });
   if (hasBlockingFailures(row.spacecloudCancelTasks)) return;
 
@@ -4831,6 +4893,7 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   setCycleStatusFromResult(row, row.uploadTasks, {
     processed: row.uploadTasks.failed?.length ? 'upload-task-google-pending' : 'upload-task-processed',
     needsReview: 'upload-task-needs-review',
+    retrying: 'upload-task-retry-pending',
   });
   if (hasBlockingFailures(row.uploadTasks)) return;
 
@@ -4839,6 +4902,7 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   setCycleStatusFromResult(row, row.naverCancelTasks, {
     processed: 'naver-cancel-processed',
     needsReview: 'naver-cancel-needs-review',
+    retrying: 'naver-cancel-retry-pending',
   });
   if (hasBlockingFailures(row.naverCancelTasks)) return;
 
@@ -4846,6 +4910,7 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   setCycleStatusFromResult(row, row.deleteTasks, {
     processed: row.deleteTasks.failed?.length ? 'delete-google-pending' : 'delete-processed',
     needsReview: 'delete-needs-review',
+    retrying: 'delete-retry-pending',
   });
 }
 
@@ -4897,15 +4962,21 @@ async function runCycle(args, context = null) {
     } else {
       row.uploadTasks = await runUploadTasks(args, activeContext);
       if (['planned', 'dry-run'].includes(row.status) && row.uploadTasks.attempted > 0) {
-        row.status = hasBlockingFailures(row.uploadTasks)
-          ? 'upload-task-needs-review'
-          : (row.uploadTasks.failed.length ? 'upload-task-google-pending' : 'upload-task-processed');
+        setCycleStatusFromResult(row, row.uploadTasks, {
+          processed: row.uploadTasks.failed.length ? 'upload-task-google-pending' : 'upload-task-processed',
+          needsReview: 'upload-task-needs-review',
+          retrying: 'upload-task-retry-pending',
+        });
       }
 
       if (!hasBlockingFailures(row.uploadTasks)) {
         row.naverCancelTasks = await runNaverCancelTasks(args, activeContext);
         if (['planned', 'dry-run', 'idle', 'upload-task-processed'].includes(row.status) && row.naverCancelTasks.attempted > 0) {
-          row.status = row.naverCancelTasks.failed.length ? 'naver-cancel-needs-review' : 'naver-cancel-processed';
+          setCycleStatusFromResult(row, row.naverCancelTasks, {
+            processed: 'naver-cancel-processed',
+            needsReview: 'naver-cancel-needs-review',
+            retrying: 'naver-cancel-retry-pending',
+          });
         }
       }
 
@@ -4931,9 +5002,11 @@ async function runCycle(args, context = null) {
       if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks)) {
         row.deleteTasks = await runDeleteTasks(args, activeContext);
         if (['planned', 'dry-run'].includes(row.status) && row.deleteTasks.attempted > 0) {
-          row.status = hasBlockingFailures(row.deleteTasks)
-            ? 'delete-needs-review'
-            : (row.deleteTasks.failed.length ? 'delete-google-pending' : 'delete-processed');
+          setCycleStatusFromResult(row, row.deleteTasks, {
+            processed: row.deleteTasks.failed.length ? 'delete-google-pending' : 'delete-processed',
+            needsReview: 'delete-needs-review',
+            retrying: 'delete-retry-pending',
+          });
         }
       }
 
@@ -4943,16 +5016,22 @@ async function runCycle(args, context = null) {
         row.naverBlockTasks = split.naverBlockTasks;
         row.naverRestoreTasks = split.naverRestoreTasks;
         if (['planned', 'dry-run'].includes(row.status) && row.naverAvailabilityTasks.attempted > 0) {
-          row.status = hasBlockingFailures(row.naverAvailabilityTasks)
-            ? 'naver-availability-needs-review'
-            : (row.naverAvailabilityTasks.failed.length ? 'naver-availability-google-pending' : 'naver-availability-processed');
+          setCycleStatusFromResult(row, row.naverAvailabilityTasks, {
+            processed: row.naverAvailabilityTasks.failed.length ? 'naver-availability-google-pending' : 'naver-availability-processed',
+            needsReview: 'naver-availability-needs-review',
+            retrying: 'naver-availability-retry-pending',
+          });
         }
       }
 
       if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && !hasBlockingFailures(row.deleteTasks) && !hasBlockingFailures(row.naverAvailabilityTasks)) {
         row.spacecloudCancelTasks = await runSpacecloudCancelTasks(args, activeContext);
         if (['planned', 'dry-run', 'idle'].includes(row.status) && row.spacecloudCancelTasks.attempted > 0) {
-          row.status = row.spacecloudCancelTasks.failed.length ? 'spacecloud-cancel-needs-review' : 'spacecloud-cancel-processed';
+          setCycleStatusFromResult(row, row.spacecloudCancelTasks, {
+            processed: 'spacecloud-cancel-processed',
+            needsReview: 'spacecloud-cancel-needs-review',
+            retrying: 'spacecloud-cancel-retry-pending',
+          });
         }
       }
     }
@@ -4972,6 +5051,7 @@ function resultAttempted(result) {
   return Number(result?.attempted || 0) > 0
     || Number(result?.fetched || 0) > 0
     || (Array.isArray(result?.failed) && result.failed.length > 0)
+    || (Array.isArray(result?.retrying) && result.retrying.length > 0)
     || (Array.isArray(result?.rows) && result.rows.some((row) => [
       'pending',
       'restore-grace-wait',
