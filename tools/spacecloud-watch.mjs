@@ -1398,12 +1398,115 @@ PY
   return JSON.parse(runSshScript(target, script).trim() || '{}');
 }
 
+function shortenResultString(value, maxLength = 220) {
+  const text = String(value || '');
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function compactCandidate(candidate) {
+  if (!candidate || typeof candidate !== 'object') return candidate;
+  return {
+    index: candidate.index,
+    cellIndex: candidate.cellIndex,
+    dateScopeMethod: candidate.dateScopeMethod,
+    text: shortenResultString(candidate.text || candidate.visibleText || '', 120),
+    className: candidate.className,
+    directHint: Boolean(candidate.directHint),
+  };
+}
+
+function compactTaskResultObject(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const row = { ...value };
+
+  if (row.candidateSearch && typeof row.candidateSearch === 'object') {
+    row.candidateSearch = {
+      waitedMs: row.candidateSearch.waitedMs,
+      dayCellText: shortenResultString(row.candidateSearch.dayCellText, 180),
+      dateScope: row.candidateSearch.dateScope,
+      candidates: (row.candidateSearch.candidates || []).slice(0, 8).map(compactCandidate),
+    };
+  }
+  if (Array.isArray(row.candidates)) row.candidates = row.candidates.slice(0, 8).map(compactCandidate);
+  if (row.selectedCandidate) row.selectedCandidate = compactCandidate(row.selectedCandidate);
+  if (row.ignoredCandidates) row.ignoredCandidates = row.ignoredCandidates.slice(0, 8).map(compactCandidate);
+  if (row.remaining) row.remaining = row.remaining.slice(0, 8).map(compactCandidate);
+  if (row.remainingNonDirectCandidates) row.remainingNonDirectCandidates = row.remainingNonDirectCandidates.slice(0, 8).map(compactCandidate);
+  if (row.remainingSearch && typeof row.remainingSearch === 'object') {
+    row.remainingSearch = {
+      waitedMs: row.remainingSearch.waitedMs,
+      dayCellText: shortenResultString(row.remainingSearch.dayCellText, 180),
+      dateScope: row.remainingSearch.dateScope,
+      candidates: (row.remainingSearch.candidates || []).slice(0, 8).map(compactCandidate),
+    };
+  }
+  if (Array.isArray(row.deleteCandidateAttempts)) {
+    row.deleteCandidateAttempts = row.deleteCandidateAttempts.slice(0, 8).map((attempt) => ({
+      candidate: compactCandidate(attempt.candidate),
+      status: attempt.status,
+      error: shortenResultString(attempt.error, 180),
+      popupTextPreview: shortenResultString(attempt.popupTextPreview, 220),
+      verification: attempt.verification,
+    }));
+  }
+  if (row.popupTextPreview) row.popupTextPreview = shortenResultString(row.popupTextPreview, 260);
+  if (row.textPreview) row.textPreview = shortenResultString(row.textPreview, 260);
+  if (row.error) row.error = shortenResultString(row.error, 500);
+
+  return row;
+}
+
+function taskResultTextForDb(resultText, maxLength = 4000) {
+  const raw = String(resultText || '');
+  if (!raw) return '';
+  try {
+    const compacted = compactTaskResultObject(JSON.parse(raw));
+    const compactText = JSON.stringify(compacted, null, 2);
+    if (compactText.length <= maxLength) return compactText;
+    const summaryText = JSON.stringify({
+      status: compacted.status || '',
+      taskId: compacted.taskId || null,
+      taskType: compacted.taskType || '',
+      roomKey: compacted.roomKey || '',
+      date: compacted.date || '',
+      startTime: compacted.startTime || '',
+      endTime: compacted.endTime || '',
+      reserverName: compacted.reserverName || '',
+      reservationNo: compacted.reservationNo || compacted.reservationId || '',
+      error: shortenResultString(compacted.error, 500),
+      resultSummary: 'result compacted to keep valid JSON in DB',
+      deleteVerification: compacted.deleteVerification,
+      selectedCandidate: compacted.selectedCandidate,
+      candidateSearch: compacted.candidateSearch,
+    }, null, 2);
+    if (summaryText.length <= maxLength) return summaryText;
+    return JSON.stringify({
+      status: compacted.status || '',
+      taskId: compacted.taskId || null,
+      taskType: compacted.taskType || '',
+      roomKey: compacted.roomKey || '',
+      date: compacted.date || '',
+      startTime: compacted.startTime || '',
+      endTime: compacted.endTime || '',
+      reservationNo: compacted.reservationNo || compacted.reservationId || '',
+      error: shortenResultString(compacted.error, 500),
+      resultSummary: 'result compacted to keep valid JSON in DB',
+    }, null, 2);
+  } catch {
+    return JSON.stringify({
+      status: '',
+      resultSummary: 'non-json result compacted to keep valid JSON in DB',
+      rawPreview: shortenResultString(raw, 1000),
+    }, null, 2);
+  }
+}
+
 async function updateRemoteTask(args, taskId, status, resultText) {
   const target = await loadCafe24Target(args);
   const payload = Buffer.from(JSON.stringify({
     taskId,
     status,
-    resultText: String(resultText || '').slice(0, 4000),
+    resultText: taskResultTextForDb(resultText),
   }), 'utf8').toString('base64');
   const script = `
 set -e
