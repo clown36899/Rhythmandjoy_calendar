@@ -390,13 +390,27 @@ async function findDirectEventCandidates(page, {
   endTime,
 }) {
   const targetDate = normalizeDate(date);
+  const [targetYear, targetMonth, targetDay] = targetDate.split('-').map(Number);
   const day = Number(targetDate.slice(8, 10));
   const startHour = hourFromSlot(startTime);
   const endHour = hourFromSlot(endTime);
 
-  return page.evaluate(({ day, startHour, endHour }) => {
+  return page.evaluate(({ targetDate, targetYear, targetMonth, targetDay, day, startHour, endHour }) => {
     const normalize = (value) => String(value || '').replace(/\s+/g, '');
     const pad = (value) => String(value).padStart(2, '0');
+    const compactDate = targetDate.replace(/-/g, '');
+    const dottedDate = targetDate.replace(/-/g, '.');
+    const slashDate = targetDate.replace(/-/g, '/');
+    const firstWeekday = new Date(targetYear, targetMonth - 1, 1).getDay();
+    const expectedCellIndex = firstWeekday + targetDay - 1;
+    const dateNeedles = [
+      targetDate,
+      compactDate,
+      dottedDate,
+      slashDate,
+      `${targetYear}.${targetMonth}.${targetDay}`,
+      `${targetYear}/${targetMonth}/${targetDay}`,
+    ];
     const timePatterns = [
       `${startHour}~${endHour}`,
       `${pad(startHour)}~${pad(endHour)}`,
@@ -422,10 +436,67 @@ async function findDirectEventCandidates(page, {
     const rows = [];
     const visibleLinks = [];
     let dayCellText = '';
+    let dateScopeMethod = '';
+    let dateScopeError = '';
     const dayCells = [...document.querySelectorAll('.booking_wrap')];
-    for (const dayCell of dayCells) {
-      const firstLine = String(dayCell.innerText || '').split(/\n/)[0]?.trim();
-      if (Number(firstLine) !== day) continue;
+
+    const elementDateText = (element) => {
+      const values = [];
+      let cursor = element;
+      for (let depth = 0; cursor && depth < 4; depth += 1) {
+        values.push(
+          cursor.getAttribute('data-date'),
+          cursor.getAttribute('data-day'),
+          cursor.getAttribute('datetime'),
+          cursor.getAttribute('aria-label'),
+          cursor.getAttribute('title'),
+          cursor.id,
+          cursor.className,
+        );
+        cursor = cursor.parentElement;
+      }
+      return normalize(values.filter(Boolean).join(' '));
+    };
+
+    const cellsWithAttributeDate = dayCells
+      .map((cell, index) => ({ cell, index, dateText: elementDateText(cell) }))
+      .filter((entry) => dateNeedles.some((needle) => entry.dateText.includes(normalize(needle))));
+
+    let scopedDayCells = [];
+    if (cellsWithAttributeDate.length === 1) {
+      scopedDayCells = cellsWithAttributeDate;
+      dateScopeMethod = 'date-attribute';
+    } else if (dayCells.length > expectedCellIndex) {
+      const cell = dayCells[expectedCellIndex];
+      const firstLine = String(cell?.innerText || '').split(/\n/)[0]?.trim();
+      if (Number(firstLine) === day) {
+        scopedDayCells = [{ cell, index: expectedCellIndex, dateText: elementDateText(cell) }];
+        dateScopeMethod = 'calendar-grid-index';
+      } else {
+        dateScopeError = `calendar grid cell mismatch: expected index ${expectedCellIndex}, firstLine=${firstLine || ''}, targetDay=${day}`;
+      }
+    } else {
+      dateScopeError = `calendar grid too short: expected index ${expectedCellIndex}, cellCount=${dayCells.length}`;
+    }
+
+    if (scopedDayCells.length === 0) {
+      const sameDayCells = dayCells
+        .map((cell, index) => ({
+          cell,
+          index,
+          firstLine: String(cell?.innerText || '').split(/\n/)[0]?.trim(),
+          dateText: elementDateText(cell),
+        }))
+        .filter((entry) => Number(entry.firstLine) === day);
+      if (sameDayCells.length === 1) {
+        scopedDayCells = sameDayCells;
+        dateScopeMethod = 'unique-day-number';
+      } else if (sameDayCells.length > 1) {
+        dateScopeError = `ambiguous same-day cells for ${targetDate}: indexes=${sameDayCells.map((entry) => entry.index).join(',')}`;
+      }
+    }
+
+    for (const { cell: dayCell, index: cellIndex, dateText } of scopedDayCells) {
       dayCellText = String(dayCell.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 500);
       const seenElements = new Set();
       const seenTexts = new Set();
@@ -457,6 +528,9 @@ async function findDirectEventCandidates(page, {
           link.setAttribute('data-codex-delete-candidate', index);
           rows.push({
             index,
+            cellIndex,
+            dateScopeMethod,
+            dateText,
             text,
             visibleText,
             className,
@@ -471,8 +545,22 @@ async function findDirectEventCandidates(page, {
       candidates: rows,
       dayCellText,
       visibleLinks,
+      dateScope: {
+        targetDate,
+        targetYear,
+        targetMonth,
+        targetDay,
+        expectedCellIndex,
+        cellCount: dayCells.length,
+        method: dateScopeMethod,
+        error: dateScopeError,
+        attributeDateMatches: cellsWithAttributeDate.map((entry) => ({
+          index: entry.index,
+          dateText: entry.dateText.slice(0, 160),
+        })).slice(0, 6),
+      },
     };
-  }, { day, startHour, endHour });
+  }, { targetDate, targetYear, targetMonth, targetDay, day, startHour, endHour });
 }
 
 async function waitForDirectEventCandidates(page, row, {
@@ -559,6 +647,86 @@ function selectDeleteCandidate(candidates) {
   }
   return {
     error: 'no visible SpaceCloud event candidate matched room/date/time',
+  };
+}
+
+function rankDeleteCandidates(candidates, row) {
+  const rows = Array.isArray(candidates) ? candidates : [];
+  const nameKey = compactText(normalizeName(row.reserverName));
+  const maskedNameKey = compactText(normalizeName(displayReserverName(row.reserverName)));
+  return rows
+    .map((candidate, originalIndex) => {
+      const text = compactText(candidate.text || candidate.visibleText || '');
+      const nameMatched = Boolean(
+        (nameKey && text.includes(nameKey))
+        || (maskedNameKey && text.includes(maskedNameKey))
+      );
+      return {
+        candidate,
+        originalIndex,
+        rank: [
+          candidate.directHint ? 0 : 1,
+          nameMatched ? 0 : 1,
+          originalIndex,
+        ],
+      };
+    })
+    .sort((left, right) => {
+      for (let i = 0; i < left.rank.length; i += 1) {
+        if (left.rank[i] !== right.rank[i]) return left.rank[i] - right.rank[i];
+      }
+      return 0;
+    })
+    .map((entry) => entry.candidate);
+}
+
+async function findVerifiedDeleteCandidate(page, candidates, row) {
+  const attempts = [];
+  const orderedCandidates = rankDeleteCandidates(candidates, row);
+
+  for (const candidate of orderedCandidates) {
+    const selector = `[data-codex-delete-candidate="${candidate.index}"]`;
+    const attempt = {
+      candidate,
+      selector,
+    };
+    attempts.push(attempt);
+
+    try {
+      await closeReservationPopup(page).catch(() => {});
+      await page.locator(selector).first().click({ timeout: 8000 });
+      if (!(await waitVisible(page, '.layer_popup.reservation_state', 8000))) {
+        attempt.status = 'popup-not-opened';
+        continue;
+      }
+
+      const popupText = await page.locator('.layer_popup.reservation_state').filter({ visible: true }).first().innerText({ timeout: 5000 });
+      attempt.popupTextPreview = popupText.replace(/\s+/g, ' ').slice(0, 300);
+      attempt.verification = popupDeleteVerification(popupText, row);
+      if (attempt.verification.ok) {
+        attempt.status = 'verified';
+        return {
+          candidate,
+          popupText,
+          verification: attempt.verification,
+          attempts,
+        };
+      }
+
+      attempt.status = 'verification-failed';
+      await closeReservationPopup(page).catch(() => {});
+    } catch (error) {
+      attempt.status = 'error';
+      attempt.error = String(error?.message || error);
+      await closeReservationPopup(page).catch(() => {});
+    }
+  }
+
+  return {
+    error: attempts.length
+      ? `no delete candidate passed detail verification: ${attempts.map((attempt) => `${attempt.candidate.text}:${attempt.verification?.errors?.join('|') || attempt.status}`).join(' / ')}`
+      : 'no visible SpaceCloud event candidate matched room/date/time',
+    attempts,
   };
 }
 
@@ -1122,7 +1290,8 @@ export async function deleteSpacecloudDirectReservation(context, task) {
       return row;
     }
 
-    const selection = selectDeleteCandidate(candidates);
+    const selection = await findVerifiedDeleteCandidate(page, candidates, row);
+    row.deleteCandidateAttempts = selection.attempts || [];
     if (!selection.candidate) {
       row.status = 'needs-review';
       row.error = selection.error;
@@ -1131,16 +1300,9 @@ export async function deleteSpacecloudDirectReservation(context, task) {
     }
     row.selectedCandidate = selection.candidate;
     if (selection.ignoredCandidates?.length) row.ignoredCandidates = selection.ignoredCandidates;
-
-    const selector = `[data-codex-delete-candidate="${selection.candidate.index}"]`;
-    await page.locator(selector).first().click({ timeout: 8000 });
-    if (!(await waitVisible(page, '.layer_popup.reservation_state', 8000))) {
-      throw new Error('reservation popup did not open after clicking event');
-    }
-
-    const popupText = await page.locator('.layer_popup.reservation_state').filter({ visible: true }).first().innerText({ timeout: 5000 });
+    const popupText = selection.popupText || await page.locator('.layer_popup.reservation_state').filter({ visible: true }).first().innerText({ timeout: 5000 });
     row.popupTextPreview = popupText.replace(/\s+/g, ' ').slice(0, 300);
-    const verification = popupDeleteVerification(popupText, row);
+    const verification = selection.verification || popupDeleteVerification(popupText, row);
     row.deleteVerification = verification;
     if (!verification.ok) {
       row.status = 'needs-review';
