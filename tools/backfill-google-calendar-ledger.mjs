@@ -424,6 +424,7 @@ function buildGoogleLedgerEvent(rawEvent) {
     || (price ? '구글캘린더 계산' : '구글캘린더 수기');
   const googleEventId = event.id || '';
   const updated = rawEvent?.extendedProps?.updated || rawEvent?.updated || '';
+  const priceSource = describedPrice ? 'description' : (fallbackPrice ? calculation.source : 'missing');
 
   const built = {
     sourcePlatform: 'google-backfill',
@@ -441,12 +442,15 @@ function buildGoogleLedgerEvent(rawEvent) {
     paymentStatus,
     price,
     grossAmount: amountNumber(price),
+    amountSource: describedPrice
+      ? 'google-description-price'
+      : (fallbackPrice ? 'google-price-policy-estimate' : ''),
     eventAt: mysqlDateTimeFromIso(updated),
     googleEventId,
     googleTitle: event.title || '',
     description,
     normalizationNotes: normalized.notes,
-    priceSource: describedPrice ? 'description' : (fallbackPrice ? calculation.source : 'missing'),
+    priceSource,
   };
   built.ledgerKey = ledgerKey(built);
   built.slotKey = slotKey(built);
@@ -558,7 +562,14 @@ function buildPlan(existingRows, googleEvents) {
 
   for (const event of googleEvents) {
     const existingByNo = event.reservationNumber ? (indexes.byReservation.get(event.reservationNumber) || []) : [];
-    if (existingByNo.some((row) => row.current_status !== 'canceled')) {
+    const activeByNo = existingByNo.filter((row) => row.current_status !== 'canceled');
+    const exactByNo = activeByNo.filter((row) => (
+      row.reservation_date === event.date
+      && row.room_key === event.roomKey
+      && shortTime(row.start_time) === event.startTime
+      && (shortTime(row.end_time) === '00:00' ? '24:00' : shortTime(row.end_time)) === event.endTime
+    ));
+    if (exactByNo.length > 0) {
       covered.push({
         reason: 'reservation-number-covered',
         date: event.date,
@@ -566,7 +577,7 @@ function buildPlan(existingRows, googleEvents) {
         startTime: event.startTime,
         endTime: event.endTime,
         reservationNumber: event.reservationNumber,
-        existingIds: existingByNo.map((row) => row.id),
+        existingIds: exactByNo.map((row) => row.id),
       });
       continue;
     }
@@ -574,13 +585,22 @@ function buildPlan(existingRows, googleEvents) {
     const exact = indexes.exactActive.get(event.slotKey) || [];
     if (exact.length > 0) {
       covered.push({
-        reason: 'slot-covered',
+        reason: activeByNo.length > 0 ? 'slot-covered-reservation-number-mismatch' : 'slot-covered',
         date: event.date,
         roomKey: event.roomKey,
         startTime: event.startTime,
         endTime: event.endTime,
         title: event.googleTitle,
         existingIds: exact.map((row) => row.id),
+        reservationNumber: event.reservationNumber,
+        mismatchedReservationRows: activeByNo.map((row) => ({
+          id: row.id,
+          sourcePlatform: row.source_platform || '',
+          date: row.reservation_date,
+          roomKey: row.room_key,
+          startTime: shortTime(row.start_time),
+          endTime: shortTime(row.end_time) === '00:00' ? '24:00' : shortTime(row.end_time),
+        })),
       });
       continue;
     }
@@ -588,16 +608,48 @@ function buildPlan(existingRows, googleEvents) {
     const overlap = overlappingActiveRows(indexes, event);
     if (overlap.length > 0) {
       skipped.push({
-        reason: 'active-overlap-conflict',
+        reason: activeByNo.length > 0
+          ? 'reservation-number-slot-mismatch-with-overlap'
+          : 'active-overlap-conflict',
         date: event.date,
         roomKey: event.roomKey,
         startTime: event.startTime,
         endTime: event.endTime,
         title: event.googleTitle,
+        reservationNumber: event.reservationNumber,
+        mismatchedReservationRows: activeByNo.map((row) => ({
+          id: row.id,
+          sourcePlatform: row.source_platform || '',
+          date: row.reservation_date,
+          roomKey: row.room_key,
+          startTime: shortTime(row.start_time),
+          endTime: shortTime(row.end_time) === '00:00' ? '24:00' : shortTime(row.end_time),
+        })),
         overlap: overlap.map((row) => ({
           id: row.id,
           sourcePlatform: row.source_platform || '',
           reservationNumber: row.reservation_number || '',
+          startTime: shortTime(row.start_time),
+          endTime: shortTime(row.end_time) === '00:00' ? '24:00' : shortTime(row.end_time),
+        })),
+      });
+      continue;
+    }
+
+    if (activeByNo.length > 0) {
+      skipped.push({
+        reason: 'reservation-number-slot-mismatch',
+        date: event.date,
+        roomKey: event.roomKey,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        title: event.googleTitle,
+        reservationNumber: event.reservationNumber,
+        mismatchedReservationRows: activeByNo.map((row) => ({
+          id: row.id,
+          sourcePlatform: row.source_platform || '',
+          date: row.reservation_date,
+          roomKey: row.room_key,
           startTime: shortTime(row.start_time),
           endTime: shortTime(row.end_time) === '00:00' ? '24:00' : shortTime(row.end_time),
         })),
@@ -698,7 +750,7 @@ try:
                     %s, %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s,
-                    %s, NULL, NULL, 'google-calendar-backfill', '',
+                    %s, NULL, NULL, %s, '',
                     COALESCE(%s, NOW()), NULL, COALESCE(%s, NOW()),
                     %s, NULL, NOW(), NOW()
                 )
@@ -735,6 +787,7 @@ try:
                 item['paymentStatus'],
                 item['price'],
                 int(item.get('grossAmount') or 0) or None,
+                item.get('amountSource') or '',
                 event_at,
                 event_at,
                 payload_json,
