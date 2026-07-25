@@ -1740,7 +1740,7 @@ try:
     if existing_by_details:
         private = existing_by_details.get('extendedProperties', {}).get('private', {})
         description = existing_by_details.get('description', '')
-        match = re.search(r'예약번호\s*[:：]?\s*(\d{7,})', description)
+        match = re.search(r'예약번호\\s*[:：]?\\s*(\\d{7,})', description)
         existing_number = str(private.get('reservationNumber') or (match.group(1) if match else ''))
         replace_stale = False
         if reservation_number and existing_number and existing_number != reservation_number:
