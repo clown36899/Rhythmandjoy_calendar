@@ -993,8 +993,16 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                     net_amount=COALESCE(VALUES(net_amount), net_amount),
                     amount_source=VALUES(amount_source),
                     payment_method=VALUES(payment_method),
-                    confirmed_email_event_id=VALUES(confirmed_email_event_id),
-                    confirmed_email_received_at=VALUES(confirmed_email_received_at),
+                    confirmed_email_event_id=IF(
+                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'),
+                        VALUES(confirmed_email_event_id),
+                        confirmed_email_event_id
+                    ),
+                    confirmed_email_received_at=IF(
+                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'),
+                        VALUES(confirmed_email_received_at),
+                        confirmed_email_received_at
+                    ),
                     last_event_at=IF(VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(confirmed_email_received_at), last_event_at),
                     payload_json=VALUES(payload_json),
                     updated_at=NOW()
@@ -1067,8 +1075,16 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                     net_amount=COALESCE(VALUES(net_amount), net_amount),
                     amount_source=IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source),
                     payment_method=IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method),
-                    canceled_email_event_id=VALUES(canceled_email_event_id),
-                    canceled_email_received_at=VALUES(canceled_email_received_at),
+                    canceled_email_event_id=IF(
+                        VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'),
+                        VALUES(canceled_email_event_id),
+                        canceled_email_event_id
+                    ),
+                    canceled_email_received_at=IF(
+                        VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'),
+                        VALUES(canceled_email_received_at),
+                        canceled_email_received_at
+                    ),
                     last_event_at=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(canceled_email_received_at), last_event_at),
                     cancel_payload_json=VALUES(cancel_payload_json),
                     updated_at=NOW()
@@ -1088,17 +1104,21 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                     cursor.execute(
                         f"""
                         UPDATE rhythmjoy_booking_ledger
-                        SET current_status='canceled',
-                            canceled_email_event_id=%s,
-                            canceled_email_received_at=%s,
+                        SET current_status=IF(%s >= COALESCE(last_event_at, '1000-01-01 00:00:00'), 'canceled', current_status),
+                            canceled_email_event_id=IF(%s >= COALESCE(last_event_at, '1000-01-01 00:00:00'), %s, canceled_email_event_id),
+                            canceled_email_received_at=IF(%s >= COALESCE(last_event_at, '1000-01-01 00:00:00'), %s, canceled_email_received_at),
                             last_event_at=IF(%s >= COALESCE(last_event_at, '1000-01-01 00:00:00'), %s, last_event_at),
-                            cancel_payload_json=%s,
+                            cancel_payload_json=IF(%s >= COALESCE(last_event_at, '1000-01-01 00:00:00'), %s, cancel_payload_json),
                             updated_at=NOW()
                         WHERE id IN ({','.join(['%s'] * len(matched_ids))})
                           AND source_platform <> 'naver'
                         """,
                         [
+                            row['event_at'],
+                            row['event_at'],
                             email_event_id,
+                            row['event_at'],
+                            row['event_at'],
                             row['event_at'],
                             row['event_at'],
                             row['event_at'],
@@ -1114,7 +1134,7 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                     SET current_status='canceled',
                         canceled_email_event_id=%s,
                         canceled_email_received_at=%s,
-                        last_event_at=IF(%s >= COALESCE(last_event_at, '1000-01-01 00:00:00'), %s, last_event_at),
+                        last_event_at=%s,
                         cancel_payload_json=%s,
                         updated_at=NOW()
                     WHERE current_status='confirmed'
@@ -1126,10 +1146,10 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                       AND start_time=%s
                       AND end_time=%s
                       AND reserver_name_key=%s
+                      AND %s >= COALESCE(last_event_at, '1000-01-01 00:00:00')
                     """,
                     (
                         email_event_id,
-                        row['event_at'],
                         row['event_at'],
                         row['event_at'],
                         row['payload_json'],
@@ -1139,6 +1159,7 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                         row['start_time'],
                         row['end_time'],
                         row['reserver_name_key'],
+                        row['event_at'],
                     ),
                 )
                 if cursor.rowcount:
@@ -1158,20 +1179,21 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                     SET current_status='canceled',
                         canceled_email_event_id=%s,
                         canceled_email_received_at=%s,
-                        last_event_at=IF(%s >= COALESCE(last_event_at, '1000-01-01 00:00:00'), %s, last_event_at),
+                        last_event_at=%s,
                         cancel_payload_json=%s,
                         updated_at=NOW()
                     WHERE current_status='confirmed'
                       AND source_platform='google-backfill'
                       AND reservation_number=%s
+                      AND %s >= COALESCE(last_event_at, '1000-01-01 00:00:00')
                     """,
                     (
                         email_event_id,
                         row['event_at'],
                         row['event_at'],
-                        row['event_at'],
                         row['payload_json'],
                         row['reservation_number'],
+                        row['event_at'],
                     ),
                 )
                 if cursor.rowcount:

@@ -789,12 +789,16 @@ def enrich_task_row(cur, row):
     row['ledgerId'] = None
     row['ledgerKey'] = ''
     row['ledgerLastEventAt'] = ''
+    row['ledgerConfirmedEmailEventId'] = None
+    row['ledgerCanceledEmailEventId'] = None
     if source_platform and calendar_key:
         ledger_key = importer.booking_ledger_key(source_platform, payload, calendar_key)
         row['ledgerKey'] = ledger_key
         cur.execute(
             """
-            SELECT id, current_status, CAST(last_event_at AS CHAR) AS last_event_at
+            SELECT id, current_status,
+                   confirmed_email_event_id, canceled_email_event_id,
+                   CAST(last_event_at AS CHAR) AS last_event_at
             FROM rhythmjoy_booking_ledger
             WHERE ledger_key=%s
             LIMIT 1
@@ -806,6 +810,8 @@ def enrich_task_row(cur, row):
             row['ledgerId'] = ledger.get('id')
             row['ledgerStatus'] = ledger.get('current_status') or ''
             row['ledgerLastEventAt'] = ledger.get('last_event_at') or ''
+            row['ledgerConfirmedEmailEventId'] = ledger.get('confirmed_email_event_id')
+            row['ledgerCanceledEmailEventId'] = ledger.get('canceled_email_event_id')
 
     if task_type == 'naver_restore':
         row['priorNaverBlockChanged'] = False
@@ -3401,6 +3407,9 @@ function basicTaskSummary(task) {
     ledgerId: task.ledgerId || task.ledger_id || null,
     ledgerKey: task.ledgerKey || task.ledger_key || '',
     ledgerLastEventAt: task.ledgerLastEventAt || task.ledger_last_event_at || '',
+    ledgerConfirmedEmailEventId: task.ledgerConfirmedEmailEventId || task.ledger_confirmed_email_event_id || null,
+    ledgerCanceledEmailEventId: task.ledgerCanceledEmailEventId || task.ledger_canceled_email_event_id || null,
+    emailEventId: task.emailEventId || task.email_event_id || null,
     createdAt: task.createdAt || task.created_at || '',
     updatedAt: task.updatedAt || task.updated_at || '',
   };
@@ -3454,6 +3463,23 @@ function staleLedgerSkipRow(task, taskType) {
   };
 }
 
+function staleLedgerEventSkipRow(task, taskType) {
+  const expectedEventId = taskType === 'delete' || taskType === 'naver_restore'
+    ? (task.ledgerCanceledEmailEventId || task.ledger_canceled_email_event_id || null)
+    : (task.ledgerConfirmedEmailEventId || task.ledger_confirmed_email_event_id || null);
+  const taskEventId = task.emailEventId || task.email_event_id || null;
+  return {
+    ...basicTaskSummary(task),
+    taskType,
+    status: 'stale-ledger-skip',
+    expectedEmailEventId: expectedEventId,
+    actualEmailEventId: taskEventId,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    reason: `task email event ${taskEventId || 'missing'} is not latest ledger event ${expectedEventId || 'missing'}`,
+  };
+}
+
 function missingLedgerNeedsReviewRow(task, taskType) {
   const expected = expectedLedgerStatus(taskType);
   return {
@@ -3497,12 +3523,22 @@ function ledgerIssueForTask(task, taskType) {
   if (!task.ledgerStatus) return 'missing';
   if ((taskType === 'spacecloud_cancel' || taskType === 'naver_cancel') && task.ledgerStatus === 'canceled') return 'already-canceled';
   if (task.ledgerStatus !== expected) return 'stale';
+  const taskEventId = String(task.emailEventId || task.email_event_id || '');
+  const latestEventId = String(
+    taskType === 'delete' || taskType === 'naver_restore'
+      ? (task.ledgerCanceledEmailEventId || task.ledger_canceled_email_event_id || '')
+      : (task.ledgerConfirmedEmailEventId || task.ledger_confirmed_email_event_id || '')
+  );
+  if (!taskEventId || !latestEventId) return 'missing-event';
+  if (taskEventId !== latestEventId) return 'stale-event';
   return null;
 }
 
 function ledgerIssueRow(task, taskType, issue) {
   if (issue === 'missing') return missingLedgerNeedsReviewRow(task, taskType);
   if (issue === 'stale') return staleLedgerSkipRow(task, taskType);
+  if (issue === 'missing-event') return missingLedgerNeedsReviewRow(task, taskType);
+  if (issue === 'stale-event') return staleLedgerEventSkipRow(task, taskType);
   if (issue === 'already-canceled') {
     return {
       ...basicTaskSummary(task),
