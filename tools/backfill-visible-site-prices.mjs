@@ -496,7 +496,9 @@ function buildUpdates(candidates, naverRows, spacecloudRows) {
     const reservationNo = String(candidate.reservation_number || '').trim();
     const sourcePlatform = String(candidate.source_platform || '').toLowerCase();
     const sourceMode = String(candidate.source_mode || '').toLowerCase();
-    const isSpacecloud = sourcePlatform === 'spacecloud' || sourceMode.includes('spacecloud');
+    const isSpacecloud = sourcePlatform === 'spacecloud'
+      || sourceMode.includes('spacecloud')
+      || (sourceMode === 'visible-site-year-backfill' && /^\d{8}$/.test(reservationNo));
 
     if (reservationNo && !isSpacecloud) {
       const site = naverByNo.get(reservationNo);
