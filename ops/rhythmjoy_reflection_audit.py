@@ -513,6 +513,8 @@ def run_audit(grace_minutes, past_days, future_days, google_cache_url=DEFAULT_GO
                 FROM rhythmjoy_booking_ledger
                 WHERE current_status='confirmed'
                   AND confirmed_email_event_id IS NOT NULL
+                  AND source_platform IN ('naver', 'spacecloud')
+                  AND source_mode NOT LIKE '%%backfill%%'
                   AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
                                           AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
                 ORDER BY reservation_date, start_time, room_key, id
