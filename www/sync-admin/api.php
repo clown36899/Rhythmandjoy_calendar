@@ -397,6 +397,9 @@ function ledger_reservation_rows($pdo, $date) {
         $room = strtoupper($row['room_key']);
         $start_hour = hour_from_time_value($row['start_time_text'], false);
         $end_hour = hour_from_time_value($row['end_time_text'], true);
+        if ($end_hour <= $start_hour) {
+            $end_hour = 24;
+        }
         $rows[] = array(
             'id' => intval($row['id']),
             'key' => $row['ledger_key'],
@@ -625,6 +628,15 @@ function time_text_to_minutes($value, $is_end) {
         return 24 * 60;
     }
     return $hour * 60 + $minute;
+}
+
+function booking_time_range_minutes($start_value, $end_value) {
+    $start = time_text_to_minutes($start_value, false);
+    $end = time_text_to_minutes($end_value, true);
+    if ($end <= $start) {
+        $end += 24 * 60;
+    }
+    return array($start, $end);
 }
 
 function room_label($room_key) {
@@ -925,8 +937,7 @@ function collect_be_weekday_day_metrics($pdo, $start_date, $end_date) {
         if (!isset($bucket['rooms'][$room])) {
             continue;
         }
-        $start = time_text_to_minutes($row['start_time_text'], false);
-        $end = time_text_to_minutes($row['end_time_text'], true);
+        list($start, $end) = booking_time_range_minutes($row['start_time_text'], $row['end_time_text']);
         $total_minutes = max(1, $end - $start);
         $minutes = overlap_minutes($start, $end, 6 * 60, 16 * 60);
         if ($minutes <= 0) {
@@ -1038,8 +1049,7 @@ function collect_period_revenue($pdo, $start_date, $end_date) {
         $amount = ledger_gross_amount($row);
         $net_amount = ledger_net_amount($row);
         $fee_amount = ledger_fee_amount($row);
-        $start = time_text_to_minutes($row['start_time_text'], false);
-        $end = time_text_to_minutes($row['end_time_text'], true);
+        list($start, $end) = booking_time_range_minutes($row['start_time_text'], $row['end_time_text']);
         $hours = max(0, ($end - $start) / 60);
         foreach (array('all', $room) as $key) {
             $buckets[$key]['confirmedCount'] += 1;
@@ -1246,8 +1256,7 @@ function revenue_comparison_stats($pdo) {
         $amount = ledger_gross_amount($row);
         $net_amount = ledger_net_amount($row);
         $fee_amount = ledger_fee_amount($row);
-        $start = time_text_to_minutes($row['start_time_text'], false);
-        $end = time_text_to_minutes($row['end_time_text'], true);
+        list($start, $end) = booking_time_range_minutes($row['start_time_text'], $row['end_time_text']);
         $hours = max(0, ($end - $start) / 60);
 
         $by_year[$year]['confirmedCount'] += 1;
