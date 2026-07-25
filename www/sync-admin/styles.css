@@ -820,6 +820,115 @@ input[readonly] {
   display: none;
 }
 
+.year-wrap[hidden] {
+  display: none;
+}
+
+.year-summary {
+  display: grid;
+  gap: 14px;
+}
+
+.year-summary-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7fbf9;
+}
+
+.year-summary-head div {
+  display: grid;
+  gap: 4px;
+}
+
+.year-summary-head span,
+.year-summary-head p {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.year-summary-head strong {
+  color: #0b5f4e;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.year-summary-head p {
+  margin: 0;
+  text-align: right;
+}
+
+.year-month-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.year-month {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.year-month:hover,
+.year-month.selected {
+  border-color: #87cbb8;
+  background: #f1fbf7;
+}
+
+.year-month-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.year-month-value {
+  overflow: hidden;
+  color: #0b5f4e;
+  font-size: 18px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.year-month-meta {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.year-month-bar {
+  display: block;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #e6eeeb;
+}
+
+.year-month-bar b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #16856c;
+}
+
+.year-note {
+  padding: 28px;
+}
+
 .month-calendar {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -2733,7 +2842,28 @@ body.modal-open {
 
   .view-toggle {
     display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .year-summary-head {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .year-summary-head p {
+    text-align: left;
+  }
+
+  .year-month-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .year-month {
+    padding: 11px;
+  }
+
+  .year-month-value {
+    font-size: 15px;
   }
 
   .month-day {

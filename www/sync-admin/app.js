@@ -38,8 +38,11 @@
     scheduleGrid: document.getElementById("scheduleGrid"),
     monthWrap: document.getElementById("monthWrap"),
     monthCalendar: document.getElementById("monthCalendar"),
+    yearWrap: document.getElementById("yearWrap"),
+    yearSummary: document.getElementById("yearSummary"),
     dayViewButton: document.getElementById("dayViewButton"),
     monthViewButton: document.getElementById("monthViewButton"),
+    yearViewButton: document.getElementById("yearViewButton"),
     priceReference: document.getElementById("priceReference"),
     scheduleTimeNav: document.getElementById("scheduleTimeNav"),
     scheduleNowText: document.getElementById("scheduleNowText"),
@@ -221,7 +224,7 @@
   }
 
   function setScheduleView(view) {
-    const nextView = view === "month" ? "month" : "day";
+    const nextView = ["day", "month", "year"].includes(view) ? view : "day";
     if (state.scheduleView === nextView) return;
     state.scheduleView = nextView;
     renderSchedule();
@@ -411,9 +414,19 @@
 
   function renderSchedule() {
     updateScheduleViewControls();
+    if (state.scheduleView === "year") {
+      el.scheduleWrap.hidden = true;
+      el.monthWrap.hidden = true;
+      el.yearWrap.hidden = false;
+      el.priceReference.hidden = true;
+      el.scheduleTimeNav.hidden = true;
+      renderYearSummary();
+      return;
+    }
     if (state.scheduleView === "month") {
       el.scheduleWrap.hidden = true;
       el.monthWrap.hidden = false;
+      el.yearWrap.hidden = true;
       el.priceReference.hidden = true;
       el.scheduleTimeNav.hidden = true;
       renderMonthCalendar();
@@ -421,6 +434,7 @@
     }
     el.scheduleWrap.hidden = false;
     el.monthWrap.hidden = true;
+    el.yearWrap.hidden = true;
     el.priceReference.hidden = false;
     renderDaySchedule();
   }
@@ -547,6 +561,59 @@
 
     el.monthCalendar.innerHTML = "";
     el.monthCalendar.appendChild(fragment);
+  }
+
+  function renderYearSummary() {
+    if (!el.yearSummary || state.scheduleView !== "year") return;
+    const stats = state.revenueStats;
+    const selectedYear = Number(String(state.activeDate || today()).slice(0, 4));
+    if (!stats || Number(stats.year) !== selectedYear) {
+      el.yearSummary.innerHTML = '<p class="empty-note year-note">연간 매출을 불러오는 중입니다.</p>';
+      return;
+    }
+
+    const months = Array.isArray(stats.months) ? stats.months : [];
+    const maxTotal = Math.max(1, ...months.map((month) => Number(month.total || 0)));
+    el.yearSummary.innerHTML = `
+      <header class="year-summary-head">
+        <div>
+          <span>${escapeHtml(String(selectedYear))}년 총매출</span>
+          <strong>${escapeHtml(formatRevenueStat(stats.yearTotal))}</strong>
+        </div>
+        <p>확정 ${Number(stats.yearConfirmedCount || 0).toLocaleString()}건${Number(stats.yearMissingCount || 0) ? ` · 금액 미수집 ${Number(stats.yearMissingCount).toLocaleString()}건` : ""}</p>
+      </header>
+      <div class="year-month-list">
+        ${months.map((month) => yearMonthButtonHtml(month, maxTotal)).join("")}
+      </div>
+    `;
+    el.yearSummary.querySelectorAll("[data-year-month]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.activeDate = `${button.dataset.yearMonth}-01`;
+        el.activeDate.value = state.activeDate;
+        state.monthSummary = null;
+        state.scheduleView = "month";
+        renderAll();
+        refreshFromApi({ silent: true });
+      });
+    });
+  }
+
+  function yearMonthButtonHtml(month, maxTotal) {
+    const monthKey = String(month.month || "");
+    const monthNumber = Number(monthKey.slice(-2));
+    const total = Number(month.total || 0);
+    const count = Number(month.confirmedCount || 0);
+    const missing = Number(month.missingCount || 0);
+    const width = Math.max(total > 0 ? 4 : 0, Math.round((total / maxTotal) * 100));
+    const current = monthKey === selectedMonthKey();
+    return `
+      <button type="button" class="year-month${current ? " selected" : ""}" data-year-month="${escapeHtml(monthKey)}" draggable="false">
+        <span class="year-month-label">${monthNumber}월</span>
+        <span class="year-month-value">${escapeHtml(formatRevenueStat(total))}</span>
+        <span class="year-month-meta">${count.toLocaleString()}건${missing ? ` · 미수집 ${missing.toLocaleString()}` : ""}</span>
+        <i class="year-month-bar" aria-hidden="true"><b style="width:${width}%"></b></i>
+      </button>
+    `;
   }
 
   function monthDayButton(date, day) {
@@ -1413,7 +1480,10 @@
 
   function moveDay(delta) {
     const date = new Date(`${state.activeDate}T00:00:00`);
-    if (state.scheduleView === "month") {
+    if (state.scheduleView === "year") {
+      date.setFullYear(date.getFullYear() + delta);
+      date.setMonth(0, 1);
+    } else if (state.scheduleView === "month") {
       date.setMonth(date.getMonth() + delta);
       date.setDate(1);
     } else {
@@ -1457,6 +1527,10 @@
     if (el.monthViewButton) {
       el.monthViewButton.classList.toggle("active", state.scheduleView === "month");
       el.monthViewButton.setAttribute("aria-selected", state.scheduleView === "month" ? "true" : "false");
+    }
+    if (el.yearViewButton) {
+      el.yearViewButton.classList.toggle("active", state.scheduleView === "year");
+      el.yearViewButton.setAttribute("aria-selected", state.scheduleView === "year" ? "true" : "false");
     }
   }
 

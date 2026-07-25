@@ -100,6 +100,7 @@
             <div class="view-toggle" role="tablist" aria-label="일정 보기 방식">
               <button type="button" class="chip active" id="dayViewButton" data-schedule-view="day">일간</button>
               <button type="button" class="chip" id="monthViewButton" data-schedule-view="month">월간</button>
+              <button type="button" class="chip" id="yearViewButton" data-schedule-view="year">연간</button>
             </div>
             <div class="room-filter" role="tablist" aria-label="방 필터">
               <button type="button" class="chip active" data-room-filter="all">전체</button>
@@ -120,6 +121,9 @@
         </div>
         <div class="month-wrap" id="monthWrap" hidden>
           <div class="month-calendar" id="monthCalendar" aria-label="월간 일정표"></div>
+        </div>
+        <div class="year-wrap" id="yearWrap" hidden>
+          <div class="year-summary" id="yearSummary" aria-label="연간 월별 매출"></div>
         </div>
         <div class="price-reference" id="priceReference" aria-label="플랫폼별 가격 비교"></div>
       </section>
