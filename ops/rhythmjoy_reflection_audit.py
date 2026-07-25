@@ -512,7 +512,7 @@ def run_audit(grace_minutes, past_days, future_days, google_cache_url=DEFAULT_GO
                        TIME_FORMAT(end_time, '%%H:%%i:%%s') AS end_time
                 FROM rhythmjoy_booking_ledger
                 WHERE current_status='confirmed'
-                  AND COALESCE(reservation_number, '') <> ''
+                  AND confirmed_email_event_id IS NOT NULL
                   AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
                                           AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
                 ORDER BY reservation_date, start_time, room_key, id
