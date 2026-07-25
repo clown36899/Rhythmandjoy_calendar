@@ -198,7 +198,7 @@ def google_slot(event):
 
 
 def mask_name(name):
-    text = str(name or '').strip()
+    text = re.sub(r'(?:님)+$', '', str(name or '').strip()).strip()
     if not text:
         return ''
     if len(text) <= 2:

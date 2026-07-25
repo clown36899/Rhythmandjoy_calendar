@@ -242,9 +242,7 @@ def parse_datetime(date_text, time_text):
 
 
 def mask_name(name):
-    clean = str(name or '').strip()
-    if clean.endswith('님'):
-        clean = clean[:-1].strip()
+    clean = re.sub(r'(?:님)+$', '', str(name or '').strip()).strip()
     if len(clean) >= 3:
         return clean[0] + '*' * (len(clean) - 2) + clean[-1]
     if len(clean) == 2:
