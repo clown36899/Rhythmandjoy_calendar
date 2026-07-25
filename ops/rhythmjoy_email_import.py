@@ -1346,9 +1346,10 @@ def spacecloud_delete_dedupe_key(deletion, room_key):
     return f'delete|{digest}'
 
 
-def spacecloud_naver_block_dedupe_key(event_data, room_key):
+def spacecloud_naver_block_dedupe_key(event_data, room_key, email_event_id):
     raw_key = '|'.join([
         'naver_block',
+        str(email_event_id or ''),
         room_key or '',
         normalize_date(event_data.get('date', '')) if event_data.get('date') else '',
         event_data.get('start_time', ''),
@@ -1359,9 +1360,10 @@ def spacecloud_naver_block_dedupe_key(event_data, room_key):
     return f'naver_block|{digest}'
 
 
-def spacecloud_naver_restore_dedupe_key(event_data, room_key):
+def spacecloud_naver_restore_dedupe_key(event_data, room_key, email_event_id):
     raw_key = '|'.join([
         'naver_restore',
+        str(email_event_id or ''),
         room_key or '',
         normalize_date(event_data.get('date', '')) if event_data.get('date') else '',
         event_data.get('start_time', ''),
@@ -1570,7 +1572,7 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
             logger.info('Naver block task skipped: no room mapping for calendar=%s product=%s', calendar_key, event_data.get('product'))
         return None
 
-    dedupe_key = spacecloud_naver_block_dedupe_key(event_data, room_key)
+    dedupe_key = spacecloud_naver_block_dedupe_key(event_data, room_key, email_event_id)
     payload = {
         'source': 'spacecloud-email-reservation',
         'action': 'block-naver-availability',
@@ -1659,7 +1661,7 @@ def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_d
             logger.info('Naver restore task skipped: no room mapping for calendar=%s product=%s', calendar_key, event_data.get('product'))
         return None
 
-    dedupe_key = spacecloud_naver_restore_dedupe_key(event_data, room_key)
+    dedupe_key = spacecloud_naver_restore_dedupe_key(event_data, room_key, email_event_id)
     payload = {
         'source': 'spacecloud-email-cancellation',
         'action': 'restore-naver-availability',
