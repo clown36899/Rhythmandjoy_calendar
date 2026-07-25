@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -13,6 +14,10 @@ import pymysql
 
 DEFAULT_STATE_PATH = '/home/clown313python/rhythmjoy_ops/runtime/reflection-audit-state.json'
 DEFAULT_LOG_PATH = '/home/clown313python/rhythmjoy_ops/logs/reflection-audit.log'
+DEFAULT_GOOGLE_CACHE_URL = (
+    'https://xn--xy1b23ggrmm5bfb82ees967e.com/'
+    'calendar_set/calendar_v10/data/events.json'
+)
 
 
 def load_env_file(path):
@@ -97,9 +102,101 @@ def short_time(value):
 
 
 def display_end(start, end):
-    if end == '00:00' and start and start != '00:00':
+    if end in ('00:00', '23:59') and start and start != '00:00':
         return '24:00'
     return end or '-'
+
+
+def normalize_room(value):
+    text = str(value or '').strip().lower()
+    return text if text in ('a', 'b', 'c', 'd', 'e') else ''
+
+
+def reservation_number_from_event(event):
+    props = event.get('extendedProps') or {}
+    private = props.get('private') or {}
+    candidates = [
+        private.get('reservationNumber'),
+        event.get('description'),
+        props.get('description'),
+    ]
+    for candidate in candidates:
+        text = str(candidate or '')
+        match = re.search(r'예약번호\s*[:：]?\s*(\d{7,})', text)
+        if match:
+            return match.group(1)
+        if re.fullmatch(r'\d{7,}', text.strip()):
+            return text.strip()
+    return ''
+
+
+def event_room(event):
+    props = event.get('extendedProps') or {}
+    room = normalize_room(props.get('roomKey'))
+    if room:
+        return room
+    class_name = event.get('className')
+    if isinstance(class_name, list):
+        class_name = class_name[0] if class_name else ''
+    return normalize_room(class_name)
+
+
+def event_date_time(value):
+    text = str(value or '')
+    if 'T' not in text:
+        return text[:10], '00:00'
+    return text[:10], text.split('T', 1)[1][:5]
+
+
+def fetch_google_cache(url, timeout=20):
+    request = urllib.request.Request(
+        url,
+        headers={'Accept': 'application/json', 'User-Agent': 'RhythmjoyReflectionAudit/1.0'},
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        payload = json.loads(response.read().decode('utf-8'))
+    events = []
+    for event in payload.get('events') or []:
+        reservation_number = reservation_number_from_event(event)
+        if not reservation_number:
+            continue
+        date_text, start = event_date_time(event.get('start'))
+        end_date, end = event_date_time(event.get('end'))
+        if end in ('00:00', '23:59') and (
+            end == '23:59' or (end_date and end_date != date_text)
+        ):
+            end = '24:00'
+        props = event.get('extendedProps') or {}
+        events.append({
+            'id': props.get('googleEventId') or event.get('id') or '',
+            'reservation_number': reservation_number,
+            'reservation_date': date_text,
+            'room_key': event_room(event),
+            'start_time': start,
+            'end_time': end,
+            'title': event.get('title') or event.get('summary') or '',
+        })
+    return events
+
+
+def ledger_slot(row):
+    start = short_time(row.get('start_time'))
+    end = short_time(row.get('end_time'))
+    return (
+        str(row.get('reservation_date') or ''),
+        normalize_room(row.get('room_key')),
+        start,
+        display_end(start, end),
+    )
+
+
+def google_slot(event):
+    return (
+        str(event.get('reservation_date') or ''),
+        normalize_room(event.get('room_key')),
+        str(event.get('start_time') or ''),
+        str(event.get('end_time') or ''),
+    )
 
 
 def mask_name(name):
@@ -230,7 +327,7 @@ def upsert_item(cur, item):
     """, item)
 
 
-def run_audit(grace_minutes, past_days, future_days):
+def run_audit(grace_minutes, past_days, future_days, google_cache_url=DEFAULT_GOOGLE_CACHE_URL):
     conn = db_connect()
     seen_audit_keys = []
     out = {
@@ -240,9 +337,16 @@ def run_audit(grace_minutes, past_days, future_days):
         'waitingCount': 0,
         'issueCount': 0,
         'duplicateCount': 0,
+        'calendarMismatchCount': 0,
         'latestIssues': [],
         'latestWaiting': [],
     }
+    google_events = []
+    google_error = ''
+    try:
+        google_events = fetch_google_cache(google_cache_url)
+    except Exception as error:
+        google_error = str(error)
     try:
         with conn.cursor() as cur:
             ensure_schema(cur)
@@ -402,6 +506,109 @@ def run_audit(grace_minutes, past_days, future_days):
                         'reservationNumber': '',
                     })
 
+            cur.execute("""
+                SELECT id, source_platform, source_mode, current_status, room_key,
+                       reservation_number, reserver_name,
+                       DATE_FORMAT(reservation_date, '%%Y-%%m-%%d') AS reservation_date,
+                       TIME_FORMAT(start_time, '%%H:%%i:%%s') AS start_time,
+                       TIME_FORMAT(end_time, '%%H:%%i:%%s') AS end_time
+                FROM rhythmjoy_booking_ledger
+                WHERE current_status='confirmed'
+                  AND COALESCE(reservation_number, '') <> ''
+                  AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                                          AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+                ORDER BY reservation_date, start_time, room_key, id
+            """, (past_days, future_days))
+            final_rows = cur.fetchall()
+
+            google_by_number = {}
+            for event in google_events:
+                google_by_number.setdefault(event['reservation_number'], []).append(event)
+
+            if google_error:
+                item = {
+                    'audit_key': 'google-cache:unavailable',
+                    'ledger_id': None,
+                    'source_platform': 'ledger',
+                    'target_platform': 'google',
+                    'expected_task_type': 'calendar_verify',
+                    'current_status': '',
+                    'audit_status': 'issue',
+                    'severity': 'warning',
+                    'reason': ('구글 최종 일정 조회 실패: ' + google_error)[:255],
+                    'task_id': None,
+                    'task_status': '',
+                    'reservation_date': None,
+                    'room_key': '',
+                    'start_time': None,
+                    'end_time': None,
+                    'reserver_name': '',
+                    'reservation_number': '',
+                    'detail_json': json.dumps({'error': google_error}, ensure_ascii=False),
+                }
+                seen_audit_keys.append(item['audit_key'])
+                upsert_item(cur, item)
+                out['issueCount'] += 1
+                out['calendarMismatchCount'] += 1
+            else:
+                for row in final_rows:
+                    reservation_number = str(row.get('reservation_number') or '')
+                    candidates = google_by_number.get(reservation_number) or []
+                    if any(google_slot(event) == ledger_slot(row) for event in candidates):
+                        continue
+                    reason = (
+                        '구글 최종 일정에 예약번호가 없음'
+                        if not candidates
+                        else '예약번호는 같지만 구글 최종 일정의 날짜·방·시간이 다름'
+                    )
+                    item = {
+                        'audit_key': f"calendar:ledger:{row.get('id')}",
+                        'ledger_id': row.get('id'),
+                        'source_platform': row.get('source_platform') or '',
+                        'target_platform': 'google',
+                        'expected_task_type': 'calendar_verify',
+                        'current_status': row.get('current_status') or '',
+                        'audit_status': 'issue',
+                        'severity': 'warning',
+                        'reason': reason,
+                        'task_id': None,
+                        'task_status': '',
+                        'reservation_date': row.get('reservation_date'),
+                        'room_key': row.get('room_key') or '',
+                        'start_time': row.get('start_time'),
+                        'end_time': row.get('end_time'),
+                        'reserver_name': row.get('reserver_name') or '',
+                        'reservation_number': reservation_number,
+                        'detail_json': json.dumps({
+                            'ledgerSlot': ledger_slot(row),
+                            'googleCandidates': candidates,
+                        }, ensure_ascii=False, default=str),
+                    }
+                    seen_audit_keys.append(item['audit_key'])
+                    upsert_item(cur, item)
+                    out['issueCount'] += 1
+                    out['calendarMismatchCount'] += 1
+                    if len(out['latestIssues']) < 8:
+                        start = short_time(row.get('start_time'))
+                        end = short_time(row.get('end_time'))
+                        out['latestIssues'].append({
+                            'ledgerId': row.get('id'),
+                            'sourcePlatform': row.get('source_platform') or '',
+                            'sourceLabel': platform_label(row.get('source_platform')),
+                            'targetPlatform': 'google',
+                            'targetLabel': '구글',
+                            'taskType': 'calendar_verify',
+                            'status': 'issue',
+                            'severity': 'warning',
+                            'reason': reason,
+                            'date': row.get('reservation_date'),
+                            'roomKey': (row.get('room_key') or '').upper(),
+                            'startTime': start,
+                            'endTime': display_end(start, end),
+                            'reserverNameMasked': mask_name(row.get('reserver_name')),
+                            'reservationNumber': reservation_number,
+                        })
+
             if seen_audit_keys:
                 placeholders = ','.join(['%s'] * len(seen_audit_keys))
                 cur.execute(f"""
@@ -461,12 +668,13 @@ def audit_message(result):
     parts = [
         '⚠️ 반영 정규검사 확인 필요',
         time.strftime('%Y-%m-%d %H:%M:%S'),
-        f"원장 기준 점검 {int(result.get('checked') or 0)}건 / 문제 {int(result.get('issueCount') or 0)}건 / 대기 {int(result.get('waitingCount') or 0)}건 / 중복 {int(result.get('duplicateCount') or 0)}건",
+        f"최종 상태 점검 {int(result.get('checked') or 0)}건 / 문제 {int(result.get('issueCount') or 0)}건 / 대기 {int(result.get('waitingCount') or 0)}건",
+        f"구글 일정 불일치 {int(result.get('calendarMismatchCount') or 0)}건 / 확정 중복 {int(result.get('duplicateCount') or 0)}건",
         '\n'.join(audit_line(row, index) for index, row in enumerate(issues)) if issues else '문제 상세 없음',
     ]
     if waiting:
         parts.append('\n대기 중\n' + '\n'.join(audit_line(row, index) for index, row in enumerate(waiting)))
-    parts.append('기준: 이메일 원장 최종 확정 → 반대 플랫폼 최종 반영')
+    parts.append('기준: 이메일 최종 원장 → 반대 플랫폼 작업 완료 → 구글 최종 일정 일치')
     return compact_text('\n'.join(parts))
 
 
@@ -526,6 +734,7 @@ def notify_if_needed(result, state_path, logger):
             'waitingCount': int(result.get('waitingCount') or 0),
             'issueCount': issue_count,
             'duplicateCount': duplicate_count,
+            'calendarMismatchCount': int(result.get('calendarMismatchCount') or 0),
         },
     }
     if issue_count <= 0 and duplicate_count <= 0:
@@ -564,14 +773,20 @@ def main():
 
     load_env_file(args.env_file)
     logger = setup_logger(args.log_path)
-    result = run_audit(args.grace_minutes, args.past_days, args.future_days)
+    result = run_audit(
+        args.grace_minutes,
+        args.past_days,
+        args.future_days,
+        os.environ.get('RHYTHMJOY_GOOGLE_CACHE_URL', DEFAULT_GOOGLE_CACHE_URL),
+    )
     logger.info(
-        'reflection audit checked=%s ok=%s waiting=%s issue=%s duplicate=%s',
+        'reflection audit checked=%s ok=%s waiting=%s issue=%s duplicate=%s calendar_mismatch=%s',
         result.get('checked'),
         result.get('okCount'),
         result.get('waitingCount'),
         result.get('issueCount'),
         result.get('duplicateCount'),
+        result.get('calendarMismatchCount'),
     )
     if args.notify:
         notify = notify_if_needed(result, args.state_path, logger)

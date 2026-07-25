@@ -1868,8 +1868,6 @@ async function deleteRemoteGoogleEventForNaverRestoreTask(args, taskId) {
   return deleteRemoteGoogleEventForTask(args, taskId, 'naver_restore');
 }
 
-const TELEGRAM_LOG_HINT = '로그: state/spacecloud-watch/launchd.log';
-
 function cleanTelegramText(value, maxLength = 160) {
   const text = String(value || '')
     .replace(/\s+/g, ' ')
@@ -1892,7 +1890,7 @@ function compactTelegramText(text) {
     .join('\n')
     .trim();
   if (normalized.length <= limit) return normalized;
-  const suffix = `\n...\n${TELEGRAM_LOG_HINT}`;
+  const suffix = '\n...\n관리패널에서 확인';
   return `${normalized.slice(0, Math.max(0, limit - suffix.length))}${suffix}`;
 }
 
@@ -2695,14 +2693,10 @@ function taskTimeText(row) {
 }
 
 function taskTargetText(row) {
-  const parts = [
-    row.taskId ? `#${row.taskId}` : '',
-    row.roomKey || row.room_key || '-',
-    taskTimeText(row),
-    row.reserverName || row.reserver_name || '',
-    row.reservationNo || row.reservation_number || '',
-  ].filter(Boolean);
-  return cleanTelegramText(parts.join(' / '), 160);
+  const roomKey = String(row.roomKey || row.room_key || '').toUpperCase();
+  const room = roomKey ? `${roomKey}홀` : '-';
+  const name = maskTelegramName(row.reserverName || row.reserver_name || '');
+  return cleanTelegramText(`${taskTimeText(row)} · ${room}${name ? ` · ${name}` : ''}`, 160);
 }
 
 function telegramStatusText(status) {
@@ -2925,14 +2919,10 @@ function syncReservationLine(row) {
   const startTime = row.startTime || row.start_time || '-';
   const endTime = displayEndTime(startTime, row.endTime || row.end_time || '');
   const name = maskTelegramName(row.reserverName || row.reserver_name || '');
-  const reservationNo = row.reservationNo || row.reservation_number || '';
-  const taskId = row.taskId || row.id || row.task_id || '';
   return [
-    `${room} ${taskDateShort(row)} ${startTime}-${endTime}`,
+    `${taskDateShort(row)} ${room} ${startTime}-${endTime}`,
     name,
-    reservationNo ? `예약번호 ${reservationNo}` : '',
-    taskId ? `작업 #${taskId}` : '',
-  ].filter(Boolean).join(' / ');
+  ].filter(Boolean).join(' · ');
 }
 
 function syncActionResultText(row) {
@@ -3025,7 +3015,7 @@ function formatSyncSuccessRows(rows, limit = 5) {
       syncGoogleStatusText(row),
       syncSmsStatusText(row),
     ].filter(Boolean).join(' · ');
-    return `${index + 1}. ${syncReservationLine(row)}\n   ${details || telegramStatusText(row.status)}`;
+    return `${index + 1}. ${syncReservationLine(row)}\n흐름: ${details.replaceAll(' · ', ' → ') || telegramStatusText(row.status)}`;
   });
   if (rows.length > visible.length) lines.push(`외 ${rows.length - visible.length}건`);
   return lines.join('\n') || '-';
@@ -3057,7 +3047,6 @@ function syncSuccessMessage(rows) {
   const needsAttention = rows.some(syncSuccessNeedsAttention);
   const title = needsAttention ? '⚠️ 처리 완료: 확인 필요' : syncSuccessTitle(rows);
   return compactNotice(title, [
-    `처리: ${rows.length}건`,
     formatSyncSuccessRows(rows),
   ]);
 }
@@ -3065,10 +3054,7 @@ function syncSuccessMessage(rows) {
 function compactNotice(title, lines) {
   return [
     title,
-    kstNowText(),
-    '',
     ...lines.filter((line) => line !== ''),
-    TELEGRAM_LOG_HINT,
   ].join('\n');
 }
 
