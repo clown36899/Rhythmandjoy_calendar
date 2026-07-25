@@ -23,7 +23,7 @@ function usage() {
   node tools/backfill-visible-site-prices.mjs run [options]
 
 Reads Naver SmartPlace and SpaceCloud visible reservation screens, matches missing
-DB prices, and optionally writes matched prices back to the ledger.
+DB actual payment amounts, and optionally writes matched amounts back to the ledger.
 It does not read email and does not call hidden platform APIs.
 
 Options:
@@ -221,6 +221,7 @@ try:
             SELECT
                 id,
                 source_platform,
+                source_mode,
                 reservation_number,
                 room_key,
                 reserver_name,
@@ -233,7 +234,7 @@ try:
             FROM rhythmjoy_booking_ledger
             WHERE current_status <> 'canceled'
               AND reservation_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
-              AND (price IS NULL OR price='' OR price='N/A' OR price='0')
+              AND COALESCE(gross_amount, 0)=0
             ORDER BY reservation_date, start_time, room_key, id
         """, (int(os.environ.get('BACKFILL_DAYS_BACK', '7')),))
         rows = cur.fetchall()
@@ -312,7 +313,7 @@ try:
                     END,
                     updated_at=NOW()
                 WHERE id=%s
-                  AND (price IS NULL OR price='' OR price='N/A' OR price='0')
+                  AND COALESCE(gross_amount, 0)=0
             """, (
                 item['price'],
                 int(item.get('priceAmount') or 0) or None,
@@ -477,6 +478,7 @@ async function collectSpacecloudRows(page, args) {
 
 function buildUpdates(candidates, naverRows, spacecloudRows) {
   const naverByNo = new Map(naverRows.map((row) => [row.reservationNumber, row]));
+  const scByNo = new Map(spacecloudRows.map((row) => [row.reservationNumber, row]));
   const scByKey = new Map();
   for (const row of spacecloudRows) {
     const parsed = parseSpacecloudUseRange(row.useRange);
@@ -492,7 +494,11 @@ function buildUpdates(candidates, naverRows, spacecloudRows) {
 
   for (const candidate of candidates) {
     const reservationNo = String(candidate.reservation_number || '').trim();
-    if (reservationNo) {
+    const sourcePlatform = String(candidate.source_platform || '').toLowerCase();
+    const sourceMode = String(candidate.source_mode || '').toLowerCase();
+    const isSpacecloud = sourcePlatform === 'spacecloud' || sourceMode.includes('spacecloud');
+
+    if (reservationNo && !isSpacecloud) {
       const site = naverByNo.get(reservationNo);
       if (!site) {
         skipped.push({ id: candidate.id, reason: 'naver-not-found', reservationNo });
@@ -509,6 +515,32 @@ function buildUpdates(candidates, naverRows, spacecloudRows) {
         price: site.price,
         priceAmount: site.priceAmount || priceAmount(site.price),
         paymentStatus: '결제완료',
+        match: 'reservation-number',
+        date: candidate.reservation_date,
+        room: candidate.room_key,
+        startTime: candidate.start_time,
+        endTime: candidate.end_time,
+      });
+      continue;
+    }
+
+    if (reservationNo && isSpacecloud) {
+      const site = scByNo.get(reservationNo);
+      if (!site) {
+        skipped.push({ id: candidate.id, reason: 'spacecloud-reservation-not-found', reservationNo });
+        continue;
+      }
+      if (!['예약확정', '이용완료'].includes(site.status)) {
+        skipped.push({ id: candidate.id, reason: 'spacecloud-status-not-active', reservationNo, status: site.status });
+        continue;
+      }
+      matched.push({
+        id: candidate.id,
+        platform: 'spacecloud',
+        reservationNumber: reservationNo,
+        price: site.price,
+        priceAmount: site.priceAmount || priceAmount(site.price),
+        paymentStatus: site.status === '이용완료' ? '이용완료' : '예약완료',
         match: 'reservation-number',
         date: candidate.reservation_date,
         room: candidate.room_key,
