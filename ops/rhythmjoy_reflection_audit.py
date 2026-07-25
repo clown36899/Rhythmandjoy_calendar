@@ -158,8 +158,6 @@ def fetch_google_cache(url, timeout=20):
     events = []
     for event in payload.get('events') or []:
         reservation_number = reservation_number_from_event(event)
-        if not reservation_number:
-            continue
         date_text, start = event_date_time(event.get('start'))
         end_date, end = event_date_time(event.get('end'))
         if end in ('00:00', '23:59') and (
@@ -523,7 +521,8 @@ def run_audit(grace_minutes, past_days, future_days, google_cache_url=DEFAULT_GO
 
             google_by_number = {}
             for event in google_events:
-                google_by_number.setdefault(event['reservation_number'], []).append(event)
+                if event['reservation_number']:
+                    google_by_number.setdefault(event['reservation_number'], []).append(event)
 
             if google_error:
                 item = {
@@ -553,13 +552,22 @@ def run_audit(grace_minutes, past_days, future_days, google_cache_url=DEFAULT_GO
             else:
                 for row in final_rows:
                     reservation_number = str(row.get('reservation_number') or '')
-                    candidates = google_by_number.get(reservation_number) or []
+                    source_platform = str(row.get('source_platform') or '').lower()
+                    candidates = (
+                        google_by_number.get(reservation_number) or []
+                        if source_platform == 'naver'
+                        else google_events
+                    )
                     if any(google_slot(event) == ledger_slot(row) for event in candidates):
                         continue
                     reason = (
                         '구글 최종 일정에 예약번호가 없음'
+                        if source_platform == 'naver' and not candidates
+                        else '구글 최종 일정에 날짜·방·시간이 없음'
                         if not candidates
                         else '예약번호는 같지만 구글 최종 일정의 날짜·방·시간이 다름'
+                        if source_platform == 'naver'
+                        else '구글 최종 일정의 날짜·방·시간이 다름'
                     )
                     item = {
                         'audit_key': f"calendar:ledger:{row.get('id')}",

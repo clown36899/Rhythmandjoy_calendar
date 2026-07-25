@@ -1667,6 +1667,7 @@ import base64
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -1722,8 +1723,6 @@ try:
 
     reservation_number = event_data.get('reservation_number') or task.get('reservation_number') or ''
     existing = importer.find_calendar_event_by_reservation(service, calendar_key, reservation_number, logger)
-    if not existing:
-        existing = importer.find_calendar_event_by_details(service, calendar_key, event_data, logger)
     if existing:
         if task.get('email_event_id'):
             importer.update_email_processing(
@@ -1735,6 +1734,60 @@ try:
                 error_text='',
             )
         print(json.dumps({'status': 'existing', 'eventId': existing.get('id', '')}, ensure_ascii=False))
+        raise SystemExit(0)
+
+    existing_by_details = importer.find_calendar_event_by_details(service, calendar_key, event_data, logger)
+    if existing_by_details:
+        private = existing_by_details.get('extendedProperties', {}).get('private', {})
+        description = existing_by_details.get('description', '')
+        match = re.search(r'예약번호\s*[:：]?\s*(\d{7,})', description)
+        existing_number = str(private.get('reservationNumber') or (match.group(1) if match else ''))
+        replace_stale = False
+        if reservation_number and existing_number and existing_number != reservation_number:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS active_count
+                    FROM rhythmjoy_booking_ledger
+                    WHERE reservation_number=%s
+                      AND current_status='confirmed'
+                    """,
+                    (existing_number,),
+                )
+                replace_stale = int((cur.fetchone() or {}).get('active_count') or 0) == 0
+        if replace_stale:
+            service.events().delete(
+                calendarId=importer.CALENDAR_IDS[calendar_key],
+                eventId=existing_by_details.get('id'),
+            ).execute()
+            created = importer.create_calendar_event(
+                service,
+                event_data,
+                logger,
+                dedupe_google_calendar=False,
+            )
+            if task.get('email_event_id'):
+                importer.update_email_processing(
+                    config,
+                    task['email_event_id'],
+                    f'{status_prefix}_replaced',
+                    logger,
+                    google_calendar_event_id=created.get('id', ''),
+                    error_text='',
+                )
+            print(json.dumps({
+                'status': 'replaced',
+                'eventId': created.get('id', ''),
+                'replacedEventId': existing_by_details.get('id', ''),
+                'replacedReservationNumber': existing_number,
+            }, ensure_ascii=False))
+            raise SystemExit(0)
+        print(json.dumps({
+            'status': 'conflict',
+            'error': 'same slot belongs to another active or unidentifiable Google event',
+            'eventId': existing_by_details.get('id', ''),
+            'existingReservationNumber': existing_number,
+        }, ensure_ascii=False))
         raise SystemExit(0)
 
     conflicts = importer.find_calendar_conflicts(service, calendar_key, event_data, logger)
@@ -3566,7 +3619,7 @@ function setCalendarWarning(row, label, value) {
 
 function applyCalendarCreateResult(row, result, label) {
   row.googleCalendar = result;
-  if (['created', 'existing'].includes(result?.status)) return 'google-recorded';
+  if (['created', 'existing', 'replaced'].includes(result?.status)) return 'google-recorded';
   setCalendarWarning(row, label, result);
   if (result?.status === 'conflict') return 'google-conflict';
   row.error = row.error || row.calendarRecordWarning;
