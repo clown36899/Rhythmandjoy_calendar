@@ -2061,7 +2061,8 @@ with conn:
             cur.execute("""
                 SELECT
                   SUM(status IN ('pending','running','claimed')) AS pending,
-                  SUM(status IN ('failed','needs_review','needs-review')) AS failed,
+                  SUM(status IN ('failed','needs_review','needs-review') AND updated_at >= DATE_SUB(NOW(), INTERVAL 1 DAY)) AS recentFailed,
+                  SUM(status IN ('failed','needs_review','needs-review') AND updated_at < DATE_SUB(NOW(), INTERVAL 1 DAY)) AS archivedFailed,
                   SUM(task_type IN ('naver_block','naver_restore','spacecloud_cancel','naver_cancel') AND status IN ('pending','running','claimed')) AS urgentPending
                 FROM rhythmjoy_spacecloud_tasks
             """)
@@ -2104,20 +2105,26 @@ function dailyReconcileMessage(data) {
   const attention = data.attention || {};
   const amounts = data.amounts || {};
   const reflection = data.reflectionAudit || {};
+  const recentFailed = Number(attention.recentFailed ?? attention.failed ?? 0);
+  const archivedFailed = Number(attention.archivedFailed || 0);
   const taskLines = (data.taskSummary || [])
     .filter((row) => Number(row.cnt || 0) > 0)
     .slice(0, 8)
     .map((row) => `- ${row.taskType}/${row.status}: ${Number(row.cnt || 0).toLocaleString()}건`);
+  const archivedLine = archivedFailed
+    ? `과거 실패기록 ${archivedFailed.toLocaleString()}건은 현재 반영검사 정상 시 보관값`
+    : '';
   return [
     '✅ 자동화 일일 점검',
     new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
     '',
     sessions.length ? sessions.join('\n') : '세션: 기록 없음',
     '',
-    `대기 ${Number(attention.pending || 0).toLocaleString()}건 / 실패 ${Number(attention.failed || 0).toLocaleString()}건 / 긴급대기 ${Number(attention.urgentPending || 0).toLocaleString()}건`,
+    `대기 ${Number(attention.pending || 0).toLocaleString()}건 / 최근실패 ${recentFailed.toLocaleString()}건 / 긴급대기 ${Number(attention.urgentPending || 0).toLocaleString()}건`,
     `오늘 예약 ${Number(amounts.todayReservations || 0).toLocaleString()}건 / 결제 ${Number(amounts.todayGross || 0).toLocaleString()}원 / 정산 ${Number(amounts.todayNet || 0).toLocaleString()}원`,
     `미래 금액 미수집 ${Number(amounts.futureMissingAmount || 0).toLocaleString()}건`,
     `반영검사 문제 ${Number(reflection.issues || 0).toLocaleString()}건 / 대기 ${Number(reflection.waiting || 0).toLocaleString()}건${reflection.lastCheckedAt ? ` / ${String(reflection.lastCheckedAt).slice(5, 16)}` : ''}`,
+    archivedLine,
     taskLines.length ? `\n최근 24시간 작업\n${taskLines.join('\n')}` : '',
     TELEGRAM_LOG_HINT,
   ].filter(Boolean).join('\n');
