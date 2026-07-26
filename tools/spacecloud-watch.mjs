@@ -2904,11 +2904,11 @@ function smsStatusText(status) {
 
 function smsRowsFromCycle(row) {
   const rows = [
-    ...(row.uploadTasks?.rows || []),
-    ...(row.naverBlockTasks?.rows || []),
-    ...(row.naverAvailabilityTasks?.rows || []),
-    ...(row.naverCancelTasks?.rows || []),
-    ...(row.spacecloudCancelTasks?.rows || []),
+    ...(row.uploadTasks?.rows || []).map((taskRow) => ({ ...taskRow, taskType: taskRow.taskType || 'upload' })),
+    ...(row.naverBlockTasks?.rows || []).map((taskRow) => ({ ...taskRow, taskType: taskRow.taskType || 'naver_block' })),
+    ...(row.naverAvailabilityTasks?.rows || []).map((taskRow) => ({ ...taskRow, taskType: taskRow.taskType || 'naver_restore' })),
+    ...(row.naverCancelTasks?.rows || []).map((taskRow) => ({ ...taskRow, taskType: taskRow.taskType || 'naver_cancel' })),
+    ...(row.spacecloudCancelTasks?.rows || []).map((taskRow) => ({ ...taskRow, taskType: taskRow.taskType || 'spacecloud_cancel' })),
   ].filter((taskRow) => taskRow.sms);
   const seen = new Set();
   return rows.filter((taskRow) => {
@@ -3030,6 +3030,17 @@ function syncSmsStatusText(row) {
   return `문자 ${smsStatusText(sms.status)}${phone}${reason ? `: ${cleanTelegramText(reason, 60)}` : ''}`;
 }
 
+function syncOriginText(row) {
+  const taskType = row.taskType || row.task_type || '';
+  if (taskType === 'upload') return '네이버 예약 접수';
+  if (taskType === 'delete') return '네이버 취소 접수';
+  if (taskType === 'naver_block') return 'SC 예약 접수';
+  if (taskType === 'naver_restore') return 'SC 취소 접수';
+  if (taskType === 'naver_cancel') return '네이버 후예약 접수';
+  if (taskType === 'spacecloud_cancel') return 'SC 후예약 접수';
+  return '예약 접수';
+}
+
 function successRowsForResult(result, statuses, taskType) {
   return (result?.rows || [])
     .filter((row) => statuses.includes(row.status))
@@ -3064,6 +3075,7 @@ function formatSyncSuccessRows(rows, limit = 5) {
   const visible = rows.slice(0, limit);
   const lines = visible.map((row, index) => {
     const details = [
+      syncOriginText(row),
       syncActionResultText(row),
       syncGoogleStatusText(row),
       syncSmsStatusText(row),
@@ -3082,16 +3094,13 @@ function syncSuccessTitle(rows) {
   const taskTypes = [...new Set(rows.map((row) => row.taskType || row.task_type || '').filter(Boolean))];
   if (taskTypes.length !== 1) return '✅ 처리 완료: 예약 반영';
 
-  const hasSms = rows.some((row) => ['sent', 'already_sent'].includes(row.sms?.status));
-  const smsSuffix = hasSms ? ' + 안내문자' : '';
-  const cancelSmsSuffix = hasSms ? ' + 취소문자' : '';
   const map = {
-    upload: `✅ 완료: SC 등록${smsSuffix}`,
-    naver_block: `✅ 완료: 네이버 예약불가${smsSuffix}`,
+    upload: '✅ 완료: 네이버 예약 반영',
+    naver_block: '✅ 완료: SC 예약 반영',
     naver_restore: '✅ 완료: 네이버 예약가능 복구',
     delete: '✅ 완료: SC 삭제',
-    spacecloud_cancel: `✅ 완료: SC 후예약 취소${cancelSmsSuffix}`,
-    naver_cancel: `✅ 완료: 네이버 후예약 취소${cancelSmsSuffix}`,
+    spacecloud_cancel: '✅ 완료: SC 후예약 취소',
+    naver_cancel: '✅ 완료: 네이버 후예약 취소',
   };
   return map[taskTypes[0]] || '✅ 처리 완료: 예약 반영';
 }
@@ -5298,19 +5307,10 @@ async function runWatch(args) {
           else logLine(`telegram sync success skipped: ${result.reason}`);
         }
         const smsRows = smsRowsFromCycle(row);
-        const smsSuccessRows = smsRows.filter((taskRow) => (
-          ['sent', 'already_sent'].includes(taskRow.sms?.status)
-          && !successKeys.has(taskIdentityKey(taskRow))
-        ));
         const smsFailureRows = smsRows.filter((taskRow) => (
           smsNeedsAttention(taskRow)
           && !successKeys.has(taskIdentityKey(taskRow))
         ));
-        if (smsSuccessRows.length) {
-          const result = await sendTelegram(args, smsSuccessMessage(smsSuccessRows));
-          if (result.sent) logLine(`telegram sent: confirmation-sms-success count=${smsSuccessRows.length}`);
-          else logLine(`telegram confirmation sms success skipped: ${result.reason}`);
-        }
         if (smsFailureRows.length) {
           const result = await sendTelegram(args, smsFailureMessage(smsFailureRows));
           if (result.sent) logLine(`telegram sent: confirmation-sms-failed count=${smsFailureRows.length}`);
