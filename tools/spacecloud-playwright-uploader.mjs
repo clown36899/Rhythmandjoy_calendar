@@ -899,6 +899,15 @@ export async function uploadSpacecloudDirectReservation(context, event) {
 
   page.on('dialog', onDialog);
   try {
+    if (page.url() !== ui.reservationCalendarUrl) {
+      await page.goto(ui.reservationCalendarUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: SPACECLOUD_PAGE_LOAD_TIMEOUT_MS,
+      });
+    }
+
+    await closeModalIfOpen(page);
+
     if (Number(event.attempts || 0) > 0) {
       row.preflightVerification = await verifyDirectEventCreated(page, event, {
         timeoutMs: 12000,
@@ -915,15 +924,6 @@ export async function uploadSpacecloudDirectReservation(context, event) {
         throw new Error('existing SpaceCloud schedule overlaps retry slot; manual review required');
       }
     }
-
-    if (page.url() !== ui.reservationCalendarUrl) {
-      await page.goto(ui.reservationCalendarUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: SPACECLOUD_PAGE_LOAD_TIMEOUT_MS,
-      });
-    }
-
-    await closeModalIfOpen(page);
 
     if (!(await waitVisible(page, 'a._additionalReserveLayerOpen', 20000))) {
       throw new Error('add button not visible; login or page load may have failed');
