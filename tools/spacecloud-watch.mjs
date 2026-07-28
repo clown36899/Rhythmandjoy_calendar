@@ -2712,8 +2712,13 @@ function isTransientRemoteProblem(message) {
   return /ssh failed|timed out|ETIMEDOUT|SIGKILL|Connection timed out|Connection reset|Connection closed by|Broken pipe/i.test(String(message || ''));
 }
 
+function isBrowserContextClosedProblem(message) {
+  return /Target (?:page, context or browser|page|context|browser) has been closed/i.test(String(message || ''));
+}
+
 function isRetryablePlatformProblem(message) {
-  return /page\.goto|Timeout \d+ms exceeded|domcontentloaded|net::|ERR_|ECONNRESET|ETIMEDOUT|Connection reset|Connection closed|page load|navigation/i.test(String(message || ''));
+  return isBrowserContextClosedProblem(message)
+    || /page\.goto|Timeout \d+ms exceeded|domcontentloaded|net::|ERR_|ECONNRESET|ETIMEDOUT|Connection reset|Connection closed|page load|navigation/i.test(String(message || ''));
 }
 
 function rowsFromResult(rowOrError, key = 'failed') {
@@ -4949,6 +4954,17 @@ function runNowModeSelfTest() {
   assert.equal(isRetryingPlatformRow(retryRow), true);
   assert.equal(taskRowsNeedingReview([retryRow], []).length, 0);
   assert.equal(taskRowsRetrying([retryRow]).length, 1);
+  const closedContextRow = {
+    status: 'failed',
+    error: 'browserContext.newPage: Target page, context or browser has been closed',
+  };
+  assert.equal(isRetryablePlatformProblem(closedContextRow.error), true);
+  assert.equal(dbStatusForUploadRow(closedContextRow), 'pending');
+  assert.equal(dbStatusForDeleteRow(closedContextRow), 'pending');
+  assert.equal(dbStatusForNaverBlockRow(closedContextRow), 'pending');
+  assert.equal(dbStatusForNaverRestoreRow(closedContextRow), 'pending');
+  assert.equal(dbStatusForNaverCancelRow(closedContextRow), 'pending');
+  assert.equal(dbStatusForSpacecloudCancelRow(closedContextRow), 'pending');
   assert.equal(isRetryingPlatformRow(loginRow), false);
   assert.equal(taskRowsNeedingReview([loginRow], []).length, 1);
 
@@ -4963,6 +4979,7 @@ function runNowModeSelfTest() {
       'restore grace keeps task pending',
       'same-cycle cancellation result merge',
       'platform page timeout becomes next-cycle retry',
+      'closed browser context retries every task type',
       'google-only retry does not block urgent flow',
     ],
   };
@@ -5278,10 +5295,18 @@ function watchSleepSeconds(args, urgentUntil) {
 }
 
 async function runWatch(args) {
-  const context = await openSpacecloudContext({
+  let context = await openSpacecloudContext({
     profileDir: args.profileDir,
     headless: args.headless,
   });
+  const reopenBrowserContext = async () => {
+    await context.close().catch(() => {});
+    context = await openSpacecloudContext({
+      profileDir: args.profileDir,
+      headless: args.headless,
+    });
+    logLine('browser context reopened after unexpected close');
+  };
   let stopping = false;
   const stop = () => {
     stopping = true;
@@ -5299,6 +5324,9 @@ async function runWatch(args) {
           urgentUntil = Math.max(urgentUntil, Date.now() + args.urgentCooldownSeconds * 1000);
         }
         logLine(`cycle ${row.status}; candidates=${row.uploadCandidates}; attempted=${row.attempted || 0}; remaining=${row.remainingInPlan ?? 0}; uploadTasks=${row.uploadTasks?.attempted || 0}; naverCancelTasks=${row.naverCancelTasks?.attempted || 0}; deleteTasks=${row.deleteTasks?.attempted || 0}; naverBlockTasks=${row.naverBlockTasks?.attempted || 0}; naverRestoreTasks=${row.naverRestoreTasks?.attempted || 0}; spacecloudCancelTasks=${row.spacecloudCancelTasks?.attempted || 0}`);
+        if (isBrowserContextClosedProblem(JSON.stringify(row))) {
+          await reopenBrowserContext();
+        }
         const successRows = syncSuccessRowsFromCycle(row);
         const successKeys = new Set(successRows.map((taskRow) => taskIdentityKey(taskRow)));
         if (successRows.length) {
@@ -5421,7 +5449,10 @@ async function runWatch(args) {
         };
         await appendJsonl(path.join(args.workDir, 'runs.jsonl'), errorRow);
         logLine(`cycle error: ${errorRow.error}`);
-        if (isLoginProblem(errorRow.error)) {
+        if (isBrowserContextClosedProblem(errorRow.error)) {
+          await reopenBrowserContext();
+          logLine('closed browser context recovered; will retry next cycle');
+        } else if (isLoginProblem(errorRow.error)) {
           await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorRow.error));
           logLine('login needed; waiting for manual login');
         } else if (isTransientRemoteProblem(errorRow.error)) {
