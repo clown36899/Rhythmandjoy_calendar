@@ -38,6 +38,7 @@ const CONFIRMATION_SMS_TITLE = '리듬앤조이 연습실 예약 확정 안내�
 const PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME = 'spacecloud-prior-booking-canceled-v1';
 const PRIOR_BOOKING_CANCEL_SMS_TITLE = '리듬앤조이 연습실 예약취소 안내';
 const DEFAULT_CONFIRMATION_INFO_URL = 'https://리듬앤조이일정표.com/info';
+const TELEGRAM_LOG_HINT = '로그: 자동화 관리패널 또는 spacecloud-watch/launchd.log';
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -4971,6 +4972,7 @@ function runNowModeSelfTest() {
   assert.equal(hasBlockingFailures({ failed: [{ status: 'google-create-failed' }] }), false);
   assert.equal(hasBlockingFailures({ failed: [{ status: 'needs-review' }] }), true);
   assert.equal(hasBlockingFailures({ failed: [], retrying: [retryRow] }), false);
+  assert.match(dailyReconcileMessage({}), /spacecloud-watch\/launchd\.log/);
 
   return {
     ok: true,
@@ -4981,6 +4983,7 @@ function runNowModeSelfTest() {
       'platform page timeout becomes next-cycle retry',
       'closed browser context retries every task type',
       'google-only retry does not block urgent flow',
+      'daily reconcile message renders with log hint',
     ],
   };
 }
