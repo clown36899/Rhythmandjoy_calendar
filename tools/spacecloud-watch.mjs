@@ -39,6 +39,7 @@ const PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME = 'spacecloud-prior-booking-cancele
 const PRIOR_BOOKING_CANCEL_SMS_TITLE = '리듬앤조이 연습실 예약취소 안내';
 const DEFAULT_CONFIRMATION_INFO_URL = 'https://리듬앤조이일정표.com/info';
 const TELEGRAM_LOG_HINT = '로그: 자동화 관리패널 또는 spacecloud-watch/launchd.log';
+const CUSTOMER_RESERVATION_CANCELLATION_DISABLED = true;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -1186,6 +1187,9 @@ async function fetchRemoteNaverCancelTasks(args) {
 }
 
 async function createRemoteSpacecloudCancelTask(args, sourceTask, conflictRow) {
+  if (CUSTOMER_RESERVATION_CANCELLATION_DISABLED) {
+    throw new Error('customer reservation cancellation automation is disabled');
+  }
   const target = await loadCafe24Target(args);
   const sourcePayload = payloadForTask(sourceTask);
   const losing = conflictRow.losingBooking || {};
@@ -1295,6 +1299,9 @@ PY
 }
 
 async function createRemoteNaverCancelTask(args, sourceTask, conflictRow) {
+  if (CUSTOMER_RESERVATION_CANCELLATION_DISABLED) {
+    throw new Error('customer reservation cancellation automation is disabled');
+  }
   const target = await loadCafe24Target(args);
   const sourcePayload = payloadForTask(sourceTask);
   const losing = conflictRow.losingBooking || {};
@@ -4008,14 +4015,9 @@ async function runUploadTasks(args, context = null) {
             };
             row = await classifyUploadConflict(args, task, row);
             if (row.status === 'later-reservation-conflict') {
-              try {
-                row.naverCancelTask = await createRemoteNaverCancelTask(args, task, row);
-                row.status = 'naver-cancel-queued';
-                row.error = '';
-              } catch (error) {
-                row.status = 'needs-review';
-                row.error = `failed to queue Naver cancellation: ${String(error?.message || error)}`;
-              }
+              row.status = 'needs-review';
+              row.error = '예약 충돌 확인 필요: 고객 예약 자동 취소는 금지되어 있습니다.';
+              row.nextAction = 'manual-review-no-cancellation';
             } else {
               row = await uploadSpacecloudDirectReservation(activeContext, event);
               if (row.status === 'submitted') {
@@ -4338,6 +4340,28 @@ async function runSpacecloudCancelTasks(args, context = null) {
       failed: [],
     };
   }
+  if (CUSTOMER_RESERVATION_CANCELLATION_DISABLED) {
+    const rows = [];
+    for (const task of tasks) {
+      const row = {
+        ...basicTaskSummary(task),
+        status: 'needs-review',
+        error: '고객 예약 자동 취소는 영구 차단되어 있습니다.',
+        safetyPolicy: 'manual-review-no-cancellation',
+        dbStatus: 'needs_review',
+      };
+      rows.push(row);
+      await updateRemoteTask(args, task.id, 'needs_review', JSON.stringify(row, null, 2));
+    }
+    return {
+      status: 'spacecloud-cancel-needs-review',
+      fetched: tasks.length,
+      attempted: 0,
+      rows,
+      failed: rows,
+      retrying: [],
+    };
+  }
 
   let ownedContext = null;
   const activeContext = context || await openSpacecloudContext({
@@ -4429,6 +4453,28 @@ async function runNaverCancelTasks(args, context = null) {
       attempted: 0,
       rows: [],
       failed: [],
+    };
+  }
+  if (CUSTOMER_RESERVATION_CANCELLATION_DISABLED) {
+    const rows = [];
+    for (const task of tasks) {
+      const row = {
+        ...basicTaskSummary(task),
+        status: 'needs-review',
+        error: '고객 예약 자동 취소는 영구 차단되어 있습니다.',
+        safetyPolicy: 'manual-review-no-cancellation',
+        dbStatus: 'needs_review',
+      };
+      rows.push(row);
+      await updateRemoteTask(args, task.id, 'needs_review', JSON.stringify(row, null, 2));
+    }
+    return {
+      status: 'naver-cancel-needs-review',
+      fetched: tasks.length,
+      attempted: 0,
+      rows,
+      failed: rows,
+      retrying: [],
     };
   }
 
@@ -4660,14 +4706,9 @@ async function runNaverAvailabilityTasks(args, context = null) {
             row.taskType = taskType;
             row = await classifyNaverConflict(args, task, row);
             if (row.status === 'later-reservation-conflict') {
-              try {
-                row.spacecloudCancelTask = await createRemoteSpacecloudCancelTask(args, task, row);
-                row.status = 'spacecloud-cancel-queued';
-                row.error = '';
-              } catch (error) {
-                row.status = 'needs-review';
-                row.error = `failed to queue SpaceCloud cancellation: ${String(error?.message || error)}`;
-              }
+              row.status = 'needs-review';
+              row.error = '예약 충돌 확인 필요: 고객 예약 자동 취소는 금지되어 있습니다.';
+              row.nextAction = 'manual-review-no-cancellation';
             }
             if (['blocked', 'already-blocked'].includes(row.status)) {
               let calendarStatus = 'google-recorded';
@@ -4972,6 +5013,7 @@ function runNowModeSelfTest() {
   assert.equal(hasBlockingFailures({ failed: [{ status: 'google-create-failed' }] }), false);
   assert.equal(hasBlockingFailures({ failed: [{ status: 'needs-review' }] }), true);
   assert.equal(hasBlockingFailures({ failed: [], retrying: [retryRow] }), false);
+  assert.equal(CUSTOMER_RESERVATION_CANCELLATION_DISABLED, true);
   assert.match(dailyReconcileMessage({}), /spacecloud-watch\/launchd\.log/);
 
   return {
@@ -4983,6 +5025,7 @@ function runNowModeSelfTest() {
       'platform page timeout becomes next-cycle retry',
       'closed browser context retries every task type',
       'google-only retry does not block urgent flow',
+      'customer reservation cancellation is hard-disabled',
       'daily reconcile message renders with log hint',
     ],
   };
