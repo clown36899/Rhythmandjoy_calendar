@@ -2726,7 +2726,7 @@ function isBrowserContextClosedProblem(message) {
 
 function isRetryablePlatformProblem(message) {
   return isBrowserContextClosedProblem(message)
-    || /page\.goto|Timeout \d+ms exceeded|domcontentloaded|net::|ERR_|ECONNRESET|ETIMEDOUT|Connection reset|Connection closed|page load|navigation/i.test(String(message || ''));
+    || /page\.goto|Timeout \d+ms exceeded|domcontentloaded|net::|ERR_|ECONNRESET|ETIMEDOUT|Connection reset|Connection closed|page load|navigation|modal still visible after submit/i.test(String(message || ''));
 }
 
 function rowsFromResult(rowOrError, key = 'failed') {
@@ -3874,6 +3874,14 @@ function hasBlockingFailures(result) {
 
 async function sendNaverOriginConfirmationSms(args, context, task) {
   if (isAdminPanelTask(task)) return adminPanelSmsSkipped(task, 'admin-panel');
+  if (payloadForTask(task).suppress_confirmation_sms === true) {
+    return {
+      status: 'disabled',
+      reason: 'manual-recovery-no-sms',
+      source: 'naver',
+      maskedPhone: '',
+    };
+  }
   const lookup = await fetchNaverReservationPhone(context, task, {
     businessId: args.naverBusinessId,
   });
@@ -4016,7 +4024,7 @@ async function runUploadTasks(args, context = null) {
             row = await classifyUploadConflict(args, task, row);
             if (row.status === 'later-reservation-conflict') {
               row.status = 'needs-review';
-              row.error = '예약 충돌 확인 필요: 고객 예약 자동 취소는 금지되어 있습니다.';
+              row.error = '중복예약 충돌: 스페이스클라우드 선예약이 있어 네이버 예약을 반영하지 못했습니다. 자동 취소 없이 관리자 확인이 필요합니다.';
               row.nextAction = 'manual-review-no-cancellation';
             } else {
               row = await uploadSpacecloudDirectReservation(activeContext, event);
@@ -4707,7 +4715,7 @@ async function runNaverAvailabilityTasks(args, context = null) {
             row = await classifyNaverConflict(args, task, row);
             if (row.status === 'later-reservation-conflict') {
               row.status = 'needs-review';
-              row.error = '예약 충돌 확인 필요: 고객 예약 자동 취소는 금지되어 있습니다.';
+              row.error = '중복예약 충돌: 네이버 선예약의 스페이스클라우드 반영 누락 가능성이 있습니다. 자동 취소 없이 관리자 확인이 필요합니다.';
               row.nextAction = 'manual-review-no-cancellation';
             }
             if (['blocked', 'already-blocked'].includes(row.status)) {
@@ -5007,6 +5015,12 @@ function runNowModeSelfTest() {
   assert.equal(dbStatusForNaverRestoreRow(closedContextRow), 'pending');
   assert.equal(dbStatusForNaverCancelRow(closedContextRow), 'pending');
   assert.equal(dbStatusForSpacecloudCancelRow(closedContextRow), 'pending');
+  const ambiguousSubmitRow = {
+    status: 'submitted-modal-still-visible',
+    error: 'modal still visible after submit',
+  };
+  assert.equal(isRetryablePlatformProblem(ambiguousSubmitRow.error), true);
+  assert.equal(dbStatusForUploadRow(ambiguousSubmitRow), 'pending');
   assert.equal(isRetryingPlatformRow(loginRow), false);
   assert.equal(taskRowsNeedingReview([loginRow], []).length, 1);
 
@@ -5024,6 +5038,7 @@ function runNowModeSelfTest() {
       'same-cycle cancellation result merge',
       'platform page timeout becomes next-cycle retry',
       'closed browser context retries every task type',
+      'ambiguous SpaceCloud submit is verified on retry',
       'google-only retry does not block urgent flow',
       'customer reservation cancellation is hard-disabled',
       'daily reconcile message renders with log hint',

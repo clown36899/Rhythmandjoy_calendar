@@ -253,6 +253,11 @@ function timeFromIso(value) {
 }
 
 function naverStatus(row) {
+  const status = String(row.status || '').trim();
+  const cancelAt = String(row.cancel_at || '').trim();
+  const cancelReason = String(row.cancel_reason || '').trim();
+  if (cancelAt || cancelReason || /취소|환불/.test(status)) return 'canceled';
+  if (/확정|완료/.test(status)) return 'confirmed';
   return row.active ? 'confirmed' : 'canceled';
 }
 
@@ -638,10 +643,10 @@ try:
                 cur.execute("""
                     UPDATE rhythmjoy_booking_ledger
                     SET
-                        ledger_key=%s,
-                        source_platform=%s,
-                        source_mode=%s,
-                        current_status=%s,
+                        ledger_key=IF(confirmed_email_event_id IS NOT NULL, ledger_key, %s),
+                        source_platform=IF(confirmed_email_event_id IS NOT NULL, source_platform, %s),
+                        source_mode=IF(confirmed_email_event_id IS NOT NULL, source_mode, %s),
+                        current_status=IF(confirmed_email_event_id IS NOT NULL, current_status, %s),
                         target_calendar=%s,
                         room_key=%s,
                         reservation_number=%s,

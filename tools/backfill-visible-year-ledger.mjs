@@ -957,8 +957,8 @@ try:
                 cur.execute("""
                     UPDATE rhythmjoy_booking_ledger
                     SET
-                        source_mode=%s,
-                        current_status=%s,
+                        source_mode=IF(confirmed_email_event_id IS NOT NULL, source_mode, %s),
+                        current_status=IF(confirmed_email_event_id IS NOT NULL, current_status, %s),
                         target_calendar=IF(COALESCE(target_calendar, '')='', %s, target_calendar),
                         room_key=%s,
                         reservation_number=IF(%s <> '', %s, reservation_number),

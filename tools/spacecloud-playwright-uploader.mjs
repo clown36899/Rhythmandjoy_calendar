@@ -259,6 +259,7 @@ export function spacecloudUploadEventFromTask(task) {
     reservationNo,
     paymentStatus: payload.payment_status || task.payment_status || '',
     product: payload.product || task.product || '',
+    attempts: Number(task.attempts || 0),
   };
   event.memo = [
     'Rhythmjoy Naver email DB sync',
@@ -898,6 +899,23 @@ export async function uploadSpacecloudDirectReservation(context, event) {
 
   page.on('dialog', onDialog);
   try {
+    if (Number(event.attempts || 0) > 0) {
+      row.preflightVerification = await verifyDirectEventCreated(page, event, {
+        timeoutMs: 12000,
+        intervalMs: 750,
+      });
+      if (row.preflightVerification.ok && row.preflightVerification.nameMatched) {
+        row.status = 'submitted';
+        row.alreadyPresentOnRetry = true;
+        row.finishedAt = new Date().toISOString();
+        return row;
+      }
+      if (row.preflightVerification.candidateCount > 0) {
+        row.status = 'needs-review';
+        throw new Error('existing SpaceCloud schedule overlaps retry slot; manual review required');
+      }
+    }
+
     if (page.url() !== ui.reservationCalendarUrl) {
       await page.goto(ui.reservationCalendarUrl, {
         waitUntil: 'domcontentloaded',
