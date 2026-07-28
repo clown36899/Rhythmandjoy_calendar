@@ -2726,7 +2726,7 @@ function isBrowserContextClosedProblem(message) {
 
 function isRetryablePlatformProblem(message) {
   return isBrowserContextClosedProblem(message)
-    || /page\.goto|Timeout \d+ms exceeded|domcontentloaded|net::|ERR_|ECONNRESET|ETIMEDOUT|Connection reset|Connection closed|page load|navigation|modal still visible after submit/i.test(String(message || ''));
+    || /page\.goto|Timeout \d+ms exceeded|domcontentloaded|net::|ERR_|ECONNRESET|ETIMEDOUT|Connection reset|Connection closed|page load|navigation|modal still visible after submit|calendar title month not found/i.test(String(message || ''));
 }
 
 function rowsFromResult(rowOrError, key = 'failed') {

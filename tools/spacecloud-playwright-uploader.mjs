@@ -604,6 +604,14 @@ async function verifyDirectEventCreated(page, event, {
   }).catch(async () => {
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
   });
+  await page.waitForFunction(
+    () => /\d{4}\s*\.\s*\d{1,2}/.test(
+      document.querySelector('.calendar_tit.short strong')?.textContent
+      || document.querySelector('.calendar_tit.short')?.textContent
+      || '',
+    ),
+    { timeout: 20000 },
+  );
   await gotoCalendarMonth(page, event.date);
 
   const latest = await waitForDirectEventCandidates(page, row, { timeoutMs, intervalMs });
