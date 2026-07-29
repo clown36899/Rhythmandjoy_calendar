@@ -325,7 +325,13 @@ def upsert_item(cur, item):
     """, item)
 
 
-def run_audit(grace_minutes, past_days, future_days, google_cache_url=DEFAULT_GOOGLE_CACHE_URL):
+def run_audit(
+    grace_minutes,
+    past_days,
+    future_days,
+    google_cache_url=DEFAULT_GOOGLE_CACHE_URL,
+    calendar_grace_minutes=5,
+):
     conn = db_connect()
     seen_audit_keys = []
     out = {
@@ -515,10 +521,16 @@ def run_audit(grace_minutes, past_days, future_days, google_cache_url=DEFAULT_GO
                   AND confirmed_email_event_id IS NOT NULL
                   AND source_platform IN ('naver', 'spacecloud')
                   AND source_mode NOT LIKE '%%backfill%%'
+                  AND COALESCE(
+                        confirmed_email_received_at,
+                        last_event_at,
+                        created_at,
+                        updated_at
+                      ) <= DATE_SUB(NOW(), INTERVAL %s MINUTE)
                   AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
                                           AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
                 ORDER BY reservation_date, start_time, room_key, id
-            """, (past_days, future_days))
+            """, (max(0, int(calendar_grace_minutes)), past_days, future_days))
             final_rows = cur.fetchall()
 
             google_by_number = {}
@@ -775,6 +787,12 @@ def main():
     parser.add_argument('--state-path', default=os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_STATE', DEFAULT_STATE_PATH))
     parser.add_argument('--log-path', default=os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_LOG', DEFAULT_LOG_PATH))
     parser.add_argument('--grace-minutes', type=int, default=int(os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_GRACE_MINUTES', '10')))
+    parser.add_argument(
+        '--calendar-grace-minutes',
+        type=int,
+        default=int(os.environ.get('RHYTHMJOY_REFLECTION_CALENDAR_GRACE_MINUTES', '5')),
+        help='verify Google Calendar only after a confirmed ledger row is at least this old',
+    )
     parser.add_argument('--past-days', type=int, default=int(os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_PAST_DAYS', '3')))
     parser.add_argument('--future-days', type=int, default=int(os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_FUTURE_DAYS', '120')))
     parser.add_argument('--notify', action='store_true')
@@ -788,6 +806,7 @@ def main():
         args.past_days,
         args.future_days,
         os.environ.get('RHYTHMJOY_GOOGLE_CACHE_URL', DEFAULT_GOOGLE_CACHE_URL),
+        calendar_grace_minutes=args.calendar_grace_minutes,
     )
     logger.info(
         'reflection audit checked=%s ok=%s waiting=%s issue=%s duplicate=%s calendar_mismatch=%s',
