@@ -364,6 +364,42 @@
       line-height: 1.35;
     }
 
+    a.action-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 48px;
+      border: 1px solid #b9ddd4;
+      box-shadow: 0 2px 5px rgba(25, 98, 82, 0.12);
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-user-drag: none;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: rgba(21, 111, 92, 0.14);
+    }
+
+    a.action-link::after {
+      content: "\203A";
+      flex: 0 0 auto;
+      color: var(--accent);
+      font-size: 1.65rem;
+      font-weight: 900;
+      line-height: 1;
+      transform: translateY(-1px);
+    }
+
+    a.action-link:active {
+      background: #dcefe9;
+      box-shadow: 0 1px 2px rgba(25, 98, 82, 0.14);
+      transform: translateY(1px);
+    }
+
+    a.action-link:focus-visible {
+      outline: 3px solid rgba(21, 111, 92, 0.28);
+      outline-offset: 2px;
+    }
+
     .action-text {
       color: var(--ink);
       font-weight: 900;
@@ -521,7 +557,7 @@
       <div class="platform-grid">
         <div class="platform-card platform-card-naver">
           <h3>네이버 예약</h3>
-          <a class="action-link" href="https://m.place.naver.com/my" target="_blank" rel="noopener">네이버 MY 예약 확인/변경/취소</a>
+          <a class="action-link" href="https://m.place.naver.com/my" target="_blank" rel="noopener" draggable="false">네이버 MY 예약 확인/변경/취소</a>
           <p class="platform-hint">예약내역, 비밀번호, 변경/취소는 네이버 MY에서 확인할 수 있습니다.</p>
         </div>
 
