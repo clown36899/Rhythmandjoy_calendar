@@ -557,16 +557,18 @@ def run_audit(
                            SELECT c.id
                            FROM rhythmjoy_booking_ledger c
                            WHERE c.current_status='canceled'
+                             AND c.canceled_email_event_id IS NOT NULL
                              AND c.canceled_email_received_at IS NOT NULL
                              AND c.canceled_email_received_at <> '0000-00-00 00:00:00'
                              AND (
                                    (
                                        a.reservation_number <> ''
                                        AND c.reservation_number=a.reservation_number
+                                       AND COALESCE(a.confirmed_email_received_at, a.last_event_at)
+                                           <= c.canceled_email_received_at
                                    )
                                 OR (
                                        a.reservation_number=''
-                                       AND c.canceled_email_event_id IS NOT NULL
                                        AND c.reservation_date=a.reservation_date
                                        AND c.room_key=a.room_key
                                        AND c.start_time=a.start_time

@@ -562,10 +562,8 @@ function mysqlKstTimestampMs(value) {
 function reliableCancellation(row) {
   return Boolean(
     row?.current_status === 'canceled'
-    && (
-      row?.canceled_email_event_id
-      || validMysqlTimestamp(row?.canceled_email_received_at)
-    )
+    && row?.canceled_email_event_id
+    && validMysqlTimestamp(row?.canceled_email_received_at)
   );
 }
 
@@ -573,11 +571,12 @@ function cancellationBlocksEvent(row, event) {
   if (!reliableCancellation(row)) return false;
   const canceledReservation = String(row.reservation_number || '').trim();
   const eventReservation = String(event.reservationNumber || '').trim();
-  if (canceledReservation && eventReservation && canceledReservation === eventReservation) return true;
-  if (eventReservation) return false;
-  if (!row.canceled_email_event_id) return false;
   const canceledAtMs = mysqlKstTimestampMs(row.canceled_email_received_at || row.last_event_at);
   const eventUpdatedMs = Number.isFinite(event.eventUpdatedMs) ? event.eventUpdatedMs : null;
+  if (canceledReservation && eventReservation && canceledReservation === eventReservation) {
+    return eventUpdatedMs === null || (canceledAtMs !== null && eventUpdatedMs <= canceledAtMs);
+  }
+  if (eventReservation) return false;
   return canceledAtMs !== null && eventUpdatedMs !== null && eventUpdatedMs <= canceledAtMs;
 }
 
@@ -1011,6 +1010,12 @@ function runSelfTest() {
 
   plan = buildPlan([canceledByNumber], [{
     ...baseEvent,
+    eventUpdatedMs: new Date('2026-07-16T00:30:00Z').getTime(),
+  }]);
+  assert.equal(plan.actions.length, 1, 'a reservation updated after cancellation must remain eligible');
+
+  plan = buildPlan([canceledByNumber], [{
+    ...baseEvent,
     reservationNumber: '',
     eventUpdatedMs: new Date('2026-07-16T00:30:00Z').getTime(),
   }]);
@@ -1023,7 +1028,7 @@ function runSelfTest() {
   };
   plan = buildPlan([unreliableCanceled], [{ ...baseEvent, reservationNumber: '' }]);
   assert.equal(plan.actions.length, 1, 'an ambiguous historical row must not block a new booking');
-  return { ok: true, cases: 5 };
+  return { ok: true, cases: 6 };
 }
 
 async function collectGoogleEvents(args, startDate, endDate) {
