@@ -467,18 +467,13 @@ def run_audit(
                        COUNT(*) AS cnt,
                        GROUP_CONCAT(CONCAT(id, ':', source_platform, ':', COALESCE(reservation_number, ''), ':', COALESCE(reserver_name, '')) ORDER BY COALESCE(last_event_at, created_at, updated_at), id SEPARATOR ' | ') AS rows_text
                 FROM rhythmjoy_booking_ledger
-                WHERE current_status='confirmed'
-                  AND confirmed_email_event_id IS NOT NULL
-                  AND (
-                        (source_platform='naver' AND COALESCE(source_mode, '')='')
-                     OR (source_platform='spacecloud' AND COALESCE(source_mode, '')='spacecloud_email')
-                  )
+                WHERE current_status <> 'canceled'
+                  AND COALESCE(source_mode, '') <> 'admin-task-anchor'
                   AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
                                           AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
                 GROUP BY reservation_date, room_key, start_time, end_time
                 HAVING COUNT(*) > 1
                 ORDER BY reservation_date ASC, start_time ASC, room_key ASC
-                LIMIT 30
             """, (past_days, future_days))
             duplicates = cur.fetchall()
             out['duplicateCount'] = len(duplicates)
