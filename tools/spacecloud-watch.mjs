@@ -38,6 +38,10 @@ const CONFIRMATION_SMS_TITLE = '리듬앤조이 연습실 예약 확정 안내�
 const PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME = 'spacecloud-prior-booking-canceled-v1';
 const PRIOR_BOOKING_CANCEL_SMS_TITLE = '리듬앤조이 연습실 예약취소 안내';
 const DEFAULT_CONFIRMATION_INFO_URL = 'https://리듬앤조이일정표.com/info';
+const CONFIRMATION_INFO_URLS = {
+  n: 'https://리듬앤조이일정표.com/n',
+  s: 'https://리듬앤조이일정표.com/s',
+};
 const TELEGRAM_LOG_HINT = '로그: 자동화 관리패널 또는 spacecloud-watch/launchd.log';
 const CUSTOMER_RESERVATION_CANCELLATION_DISABLED = true;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -112,6 +116,10 @@ Options:
                             Optional source task type for sms-test records.
   --sms-test-source <source>
                             Optional source for sms-test links: naver or spacecloud.
+  --sms-test-date <YYYY-MM-DD>
+  --sms-test-room <key>     Reservation values rendered by sms-test.
+  --sms-test-start <HH:MM>
+  --sms-test-end <HH:MM>
 
 Examples:
   node tools/spacecloud-watch.mjs login
@@ -167,6 +175,10 @@ function parseArgs(argv) {
     smsTestTaskId: '',
     smsTestTaskType: 'manual_sms_test',
     smsTestSource: 'manual-test',
+    smsTestDate: '',
+    smsTestRoom: '',
+    smsTestStart: '',
+    smsTestEnd: '',
   };
 
   for (let i = 3; i < argv.length; i += 1) {
@@ -259,6 +271,14 @@ function parseArgs(argv) {
       args.smsTestTaskType = next;
     } else if (key === 'sms-test-source') {
       args.smsTestSource = next;
+    } else if (key === 'sms-test-date') {
+      args.smsTestDate = next;
+    } else if (key === 'sms-test-room') {
+      args.smsTestRoom = next;
+    } else if (key === 'sms-test-start') {
+      args.smsTestStart = next;
+    } else if (key === 'sms-test-end') {
+      args.smsTestEnd = next;
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -429,14 +449,88 @@ function confirmationPlatformCode(source) {
 
 function confirmationInfoUrl(source) {
   const platformCode = confirmationPlatformCode(source);
-  return platformCode
-    ? `${DEFAULT_CONFIRMATION_INFO_URL}?p=${platformCode}`
-    : DEFAULT_CONFIRMATION_INFO_URL;
+  return CONFIRMATION_INFO_URLS[platformCode] || DEFAULT_CONFIRMATION_INFO_URL;
 }
 
-function confirmationSmsMessage(source = '') {
-  return process.env.RHYTHMJOY_CONFIRMATION_SMS_MESSAGE || `${CONFIRMATION_SMS_TITLE}
-비번, 정보확인: ${confirmationInfoUrl(source)}`;
+function confirmationSmsDateText(task) {
+  const raw = String(task?.date || task?.reservation_date || '').trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!match) return raw || '-';
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const weekday = ['일', '월', '화', '수', '목', '금', '토'][new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  return `${month}/${day}(${weekday})`;
+}
+
+function confirmationSmsClock(value) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || '').trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 24 || minute < 0 || minute > 59 || (hour === 24 && minute !== 0)) return null;
+  return { hour, minute, total: hour * 60 + minute };
+}
+
+function confirmationSmsPeriod(totalMinutes) {
+  const minuteOfDay = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+  if (minuteOfDay < 6 * 60) return '새벽';
+  if (minuteOfDay < 12 * 60) return '오전';
+  return '오후';
+}
+
+function confirmationSmsClockText(clock, { midnightAs24 = false } = {}) {
+  if (!clock) return '-';
+  const hour = midnightAs24 && clock.total === 0 ? 24 : clock.hour;
+  const hourText = String(hour).padStart(2, '0');
+  return clock.minute === 0 ? hourText : `${hourText}:${String(clock.minute).padStart(2, '0')}`;
+}
+
+function confirmationSmsTimeText(task) {
+  const start = confirmationSmsClock(task?.startTime || task?.start_time);
+  const end = confirmationSmsClock(task?.endTime || task?.end_time);
+  if (!start || !end) {
+    const rawStart = String(task?.startTime || task?.start_time || '-');
+    const rawEnd = String(task?.endTime || task?.end_time || '-');
+    return `${rawStart}-${rawEnd}`;
+  }
+
+  const startTotal = start.total === 24 * 60 ? 0 : start.total;
+  const rawEndTotal = end.total === 24 * 60 ? 0 : end.total;
+  const crossesMidnight = rawEndTotal < startTotal || (rawEndTotal === 0 && startTotal > 0);
+  const absoluteEnd = rawEndTotal + (crossesMidnight ? 24 * 60 : 0);
+  const occupiedEndMinute = Math.max(startTotal, absoluteEnd - 1);
+  const startPeriod = confirmationSmsPeriod(startTotal);
+  const endPeriod = confirmationSmsPeriod(occupiedEndMinute);
+  const startText = confirmationSmsClockText(start);
+  const midnightEnd = crossesMidnight && rawEndTotal === 0;
+  const endText = confirmationSmsClockText(end, { midnightAs24: midnightEnd });
+
+  if (startPeriod === endPeriod && (!crossesMidnight || midnightEnd)) {
+    return `${startPeriod}${startText}-${endText}시`;
+  }
+  const nextDay = crossesMidnight ? '익일' : '';
+  return `${startPeriod}${startText}-${nextDay}${endPeriod}${endText}시`;
+}
+
+function legacySmsByteLength(value) {
+  return Array.from(String(value || '')).reduce(
+    (total, character) => total + (character.codePointAt(0) <= 0x7f ? 1 : 2),
+    0,
+  );
+}
+
+function confirmationSmsMessage(task = {}, source = '') {
+  if (process.env.RHYTHMJOY_CONFIRMATION_SMS_MESSAGE) {
+    return process.env.RHYTHMJOY_CONFIRMATION_SMS_MESSAGE;
+  }
+  const room = String(task.roomKey || task.room_key || '-').trim().toUpperCase();
+  const detail = `${confirmationSmsDateText(task)} ${room}홀 ${confirmationSmsTimeText(task)}`;
+  const message = `리듬앤조이 예약확정\n${detail}\n${confirmationInfoUrl(source)}`;
+  if (legacySmsByteLength(message) > 90) {
+    throw new Error(`confirmation SMS exceeds 90 bytes: ${legacySmsByteLength(message)}`);
+  }
+  return message;
 }
 
 function parseEventAt(value) {
@@ -733,7 +827,7 @@ async function sendRemoteConfirmationSms(args, {
     task,
     phone,
     source,
-    message: confirmationSmsMessage(source),
+    message: confirmationSmsMessage(task, source),
     subject: process.env.RHYTHMJOY_CONFIRMATION_SMS_SUBJECT || CONFIRMATION_SMS_TITLE,
     templateName: CONFIRMATION_SMS_TEMPLATE_NAME,
     enabled: confirmationSmsEnabled(),
@@ -3930,6 +4024,10 @@ async function runSmsTest(args) {
     task: {
       id: taskId,
       taskType: args.smsTestTaskType || 'manual_sms_test',
+      date: args.smsTestDate,
+      roomKey: args.smsTestRoom,
+      startTime: args.smsTestStart,
+      endTime: args.smsTestEnd,
     },
     phone: args.smsTestTo,
     source: args.smsTestSource || 'manual-test',
@@ -4965,6 +5063,34 @@ function runNowModeSelfTest() {
   assert.equal(parsed.urgentCooldownSeconds, 300);
   assert.equal(parsed.restoreGraceSeconds, 45);
   assert.equal(parsed.sessionCheckIntervalSeconds, 180);
+
+  const confirmationTask = {
+    date: '2026-08-01',
+    roomKey: 'a',
+    startTime: '17:00',
+    endTime: '21:00',
+  };
+  assert.equal(confirmationSmsDateText(confirmationTask), '8/1(토)');
+  assert.equal(confirmationSmsTimeText(confirmationTask), '오후17-21시');
+  assert.equal(confirmationSmsTimeText({ startTime: '00:00', endTime: '06:00' }), '새벽00-06시');
+  assert.equal(confirmationSmsTimeText({ startTime: '06:00', endTime: '12:00' }), '오전06-12시');
+  assert.equal(confirmationSmsTimeText({ startTime: '12:00', endTime: '17:00' }), '오후12-17시');
+  assert.equal(confirmationSmsTimeText({ startTime: '05:30', endTime: '06:30' }), '새벽05:30-오전06:30시');
+  assert.equal(confirmationSmsTimeText({ startTime: '11:30', endTime: '12:30' }), '오전11:30-오후12:30시');
+  assert.equal(confirmationSmsTimeText({ startTime: '23:00', endTime: '00:00' }), '오후23-24시');
+  assert.equal(confirmationSmsTimeText({ startTime: '23:30', endTime: '00:30' }), '오후23:30-익일새벽00:30시');
+  const confirmationMessage = confirmationSmsMessage(confirmationTask, 'naver');
+  assert.equal(
+    confirmationMessage,
+    '리듬앤조이 예약확정\n8/1(토) A홀 오후17-21시\nhttps://리듬앤조이일정표.com/n',
+  );
+  const longestConfirmationMessage = confirmationSmsMessage({
+    date: '2026-12-31',
+    roomKey: 'b',
+    startTime: '23:30',
+    endTime: '00:30',
+  }, 'spacecloud');
+  assert.ok(legacySmsByteLength(longestConfirmationMessage) <= 90);
 
   const freshTask = {
     id: 1,
