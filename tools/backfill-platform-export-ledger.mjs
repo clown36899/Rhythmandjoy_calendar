@@ -3,6 +3,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
@@ -33,6 +34,7 @@ const PRODUCT_BY_ROOM = {
 function usage() {
   return `Usage:
   node tools/backfill-platform-export-ledger.mjs run [options]
+  node tools/backfill-platform-export-ledger.mjs self-test
 
 Imports exact Naver export rows and SpaceCloud settlement rows into
 rhythmjoy_booking_ledger. This is a DB ledger backfill only; it does not change
@@ -102,7 +104,7 @@ function parseArgs(argv) {
     }
   }
 
-  if (!['run', 'help'].includes(args.command)) throw new Error(`Unknown command: ${args.command}`);
+  if (!['run', 'self-test', 'help'].includes(args.command)) throw new Error(`Unknown command: ${args.command}`);
   return args;
 }
 
@@ -259,6 +261,25 @@ function naverStatus(row) {
   if (cancelAt || cancelReason || /취소|환불/.test(status)) return 'canceled';
   if (/확정|완료/.test(status)) return 'confirmed';
   return row.active ? 'confirmed' : 'canceled';
+}
+
+function runSelfTest() {
+  assert.equal(
+    naverStatus({ status: '확정', active: false, cancel_at: '', cancel_reason: '' }),
+    'confirmed',
+    'an explicit confirmed status must win over the stale active flag',
+  );
+  assert.equal(
+    naverStatus({ status: '이용완료', active: false, cancel_at: '', cancel_reason: '' }),
+    'confirmed',
+  );
+  assert.equal(
+    naverStatus({ status: '확정', active: true, cancel_at: '2026-08-01 10:00:00', cancel_reason: '' }),
+    'canceled',
+    'an explicit cancellation timestamp must win over confirmed status',
+  );
+  assert.equal(naverStatus({ status: '취소', active: true }), 'canceled');
+  return { ok: true, cases: 4 };
 }
 
 function spacecloudStatus(row, exportRow = null) {
@@ -929,6 +950,10 @@ async function main() {
     const args = parseArgs(process.argv);
     if (args.command === 'help') {
       console.log(usage());
+      return;
+    }
+    if (args.command === 'self-test') {
+      console.log(JSON.stringify(runSelfTest()));
       return;
     }
     const report = await run(args);
