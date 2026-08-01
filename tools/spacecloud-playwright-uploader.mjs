@@ -739,6 +739,66 @@ async function findVerifiedDeleteCandidate(page, candidates, row) {
   };
 }
 
+export async function inspectSpacecloudReservationStatus(context, task, {
+  timeoutMs = 15000,
+} = {}) {
+  const page = await pageForContext(context);
+  const event = spacecloudUploadEventFromTask(task);
+  const row = {
+    roomKey: event.roomKey,
+    date: event.date,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    reserverName: event.reserverName,
+    reservationNo: event.reservationNo,
+  };
+
+  await page.goto(reservationCalendarUrl(row.roomKey), {
+    waitUntil: 'domcontentloaded',
+    timeout: 30000,
+  });
+  await page.waitForFunction(
+    () => /\d{4}\s*\.\s*\d{1,2}/.test(
+      document.querySelector('.calendar_tit.short strong')?.textContent
+      || document.querySelector('.calendar_tit.short')?.textContent
+      || '',
+    ),
+    { timeout: 20000 },
+  );
+  await gotoCalendarMonth(page, row.date);
+  const search = await waitForDirectEventCandidates(page, row, { timeoutMs });
+  const candidates = search.candidates || [];
+  if (candidates.length === 0) {
+    return {
+      status: 'not_found',
+      exists: false,
+      reservationNo: row.reservationNo,
+      candidateCount: 0,
+      source: 'spacecloud-calendar',
+    };
+  }
+
+  const selection = await findVerifiedDeleteCandidate(page, candidates, row);
+  await closeReservationPopup(page).catch(() => {});
+  if (!selection.candidate) {
+    return {
+      status: 'needs_review',
+      exists: null,
+      reservationNo: row.reservationNo,
+      candidateCount: candidates.length,
+      reason: selection.error || 'candidate-verification-failed',
+      source: 'spacecloud-calendar',
+    };
+  }
+  return {
+    status: 'found',
+    exists: true,
+    reservationNo: row.reservationNo,
+    candidateCount: candidates.length,
+    source: 'spacecloud-calendar',
+  };
+}
+
 function popupDeleteVerification(popupText, row) {
   const normalized = compactText(popupText);
   const errors = [];

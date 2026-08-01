@@ -207,7 +207,20 @@ def mask_name(name):
 
 
 def platform_label(value):
-    return {'naver': '네이버', 'spacecloud': '스페이스클라우드', 'ledger': '원장'}.get(value or '', value or '-')
+    return {
+        'naver': '네이버',
+        'spacecloud': '스페이스클라우드',
+        'google-backfill': '구글 백필',
+        'ledger': '원장',
+    }.get(value or '', value or '-')
+
+
+def google_event_id_from_ledger(row):
+    try:
+        payload = json.loads(row.get('payload_json') or '{}')
+    except (TypeError, ValueError):
+        return ''
+    return str(payload.get('google_event_id') or '')
 
 
 def expected_task(row):
@@ -533,10 +546,59 @@ def run_audit(
             """, (max(0, int(calendar_grace_minutes)), past_days, future_days))
             final_rows = cur.fetchall()
 
+            cur.execute("""
+                SELECT a.id, a.source_platform, a.source_mode, a.current_status, a.room_key,
+                       a.reservation_number, a.reserver_name,
+                       DATE_FORMAT(a.reservation_date, '%%Y-%%m-%%d') AS reservation_date,
+                       TIME_FORMAT(a.start_time, '%%H:%%i:%%s') AS start_time,
+                       TIME_FORMAT(a.end_time, '%%H:%%i:%%s') AS end_time,
+                       a.payload_json,
+                       (
+                           SELECT c.id
+                           FROM rhythmjoy_booking_ledger c
+                           WHERE c.current_status='canceled'
+                             AND c.canceled_email_received_at IS NOT NULL
+                             AND c.canceled_email_received_at <> '0000-00-00 00:00:00'
+                             AND (
+                                   (
+                                       a.reservation_number <> ''
+                                       AND c.reservation_number=a.reservation_number
+                                   )
+                                OR (
+                                       a.reservation_number=''
+                                       AND c.canceled_email_event_id IS NOT NULL
+                                       AND c.reservation_date=a.reservation_date
+                                       AND c.room_key=a.room_key
+                                       AND c.start_time=a.start_time
+                                       AND c.end_time=a.end_time
+                                       AND COALESCE(a.confirmed_email_received_at, a.last_event_at)
+                                           <= c.canceled_email_received_at
+                                   )
+                             )
+                           ORDER BY c.last_event_at DESC, c.id DESC
+                           LIMIT 1
+                       ) AS canceled_match_id
+                FROM rhythmjoy_booking_ledger a
+                WHERE a.current_status='confirmed'
+                  AND a.source_platform='google-backfill'
+                  AND a.source_mode='google-calendar-backfill'
+                  AND COALESCE(a.confirmed_email_received_at, a.last_event_at, a.created_at, a.updated_at)
+                      <= DATE_SUB(NOW(), INTERVAL %s MINUTE)
+                  AND a.reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                                             AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+                ORDER BY a.reservation_date, a.start_time, a.room_key, a.id
+            """, (max(0, int(calendar_grace_minutes)), past_days, future_days))
+            google_backfill_rows = cur.fetchall()
+
             google_by_number = {}
             for event in google_events:
                 if event['reservation_number']:
                     google_by_number.setdefault(event['reservation_number'], []).append(event)
+            google_event_ids = set(
+                str(event.get('id') or '')
+                for event in google_events
+                if event.get('id')
+            )
 
             if google_error:
                 item = {
@@ -630,6 +692,75 @@ def run_audit(
                             'reserverNameMasked': mask_name(row.get('reserver_name')),
                             'reservationNumber': reservation_number,
                         })
+
+            for row in google_backfill_rows:
+                google_event_id = google_event_id_from_ledger(row)
+                canceled_match_id = row.get('canceled_match_id')
+                if canceled_match_id:
+                    reason = f'취소 원장 #{canceled_match_id}과 충돌하는 구글 백필이 확정 상태'
+                    severity = 'critical'
+                elif google_error:
+                    continue
+                elif not google_event_id:
+                    reason = '확정 구글 백필 원장에 Google 이벤트 ID가 없음'
+                    severity = 'warning'
+                elif google_event_id not in google_event_ids:
+                    reason = '확정 구글 백필 원장의 Google 일정이 최종 캘린더에 없음'
+                    severity = 'critical'
+                else:
+                    out['checked'] += 1
+                    out['okCount'] += 1
+                    continue
+
+                out['checked'] += 1
+                out['issueCount'] += 1
+                out['calendarMismatchCount'] += 1
+                item = {
+                    'audit_key': f"calendar:ledger:{row.get('id')}",
+                    'ledger_id': row.get('id'),
+                    'source_platform': row.get('source_platform') or '',
+                    'target_platform': 'google',
+                    'expected_task_type': 'calendar_verify',
+                    'current_status': row.get('current_status') or '',
+                    'audit_status': 'issue',
+                    'severity': severity,
+                    'reason': reason[:255],
+                    'task_id': None,
+                    'task_status': '',
+                    'reservation_date': row.get('reservation_date'),
+                    'room_key': row.get('room_key') or '',
+                    'start_time': row.get('start_time'),
+                    'end_time': row.get('end_time'),
+                    'reserver_name': row.get('reserver_name') or '',
+                    'reservation_number': row.get('reservation_number') or '',
+                    'detail_json': json.dumps({
+                        'ledgerSlot': ledger_slot(row),
+                        'googleEventId': google_event_id,
+                        'canceledMatchId': canceled_match_id,
+                    }, ensure_ascii=False, default=str),
+                }
+                seen_audit_keys.append(item['audit_key'])
+                upsert_item(cur, item)
+                if len(out['latestIssues']) < 8:
+                    start = short_time(row.get('start_time'))
+                    end = short_time(row.get('end_time'))
+                    out['latestIssues'].append({
+                        'ledgerId': row.get('id'),
+                        'sourcePlatform': row.get('source_platform') or '',
+                        'sourceLabel': platform_label(row.get('source_platform')),
+                        'targetPlatform': 'google',
+                        'targetLabel': '구글',
+                        'taskType': 'calendar_verify',
+                        'status': 'issue',
+                        'severity': severity,
+                        'reason': reason,
+                        'date': row.get('reservation_date'),
+                        'roomKey': (row.get('room_key') or '').upper(),
+                        'startTime': start,
+                        'endTime': display_end(start, end),
+                        'reserverNameMasked': mask_name(row.get('reserver_name')),
+                        'reservationNumber': row.get('reservation_number') or '',
+                    })
 
             if seen_audit_keys:
                 placeholders = ','.join(['%s'] * len(seen_audit_keys))

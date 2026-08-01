@@ -518,6 +518,41 @@ async function readNaverReservationStatusFromList(page, reservationNo) {
   }, String(reservationNo || '').trim());
 }
 
+export async function inspectNaverReservationStatus(context, task, {
+  businessId = NAVER_BOOKING_BUSINESS_ID,
+  timeoutMs = 15000,
+} = {}) {
+  const page = await pageForContext(context);
+  const row = taskRow(task);
+  const reservationNo = row.reservationNo || task.reservation_number || '';
+  if (!reservationNo || !row.date) {
+    return {
+      status: 'not_found',
+      reason: !reservationNo ? 'reservation-number-missing' : 'reservation-date-missing',
+      reservationNo,
+    };
+  }
+
+  await page.goto(naverBookingListUrl(businessId, {
+    date: row.date,
+    reservationNo,
+  }), { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+
+  let result = { status: 'not_found', text: '' };
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    result = await readNaverReservationStatusFromList(page, reservationNo);
+    if (result.status !== 'not_found') break;
+    await page.waitForTimeout(400);
+  }
+  return {
+    status: result.status,
+    exists: !['not_found', '취소'].includes(result.status),
+    reservationNo,
+    source: 'naver-booking-list',
+  };
+}
+
 function successStatusesForTarget(targetStatus) {
   if (targetStatus === 'unavailable') return {
     desired: 'suspended',

@@ -3,6 +3,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -29,6 +30,7 @@ const TARGET_CALENDAR_BY_ROOM = {
 function usage() {
   return `Usage:
   node tools/backfill-google-calendar-ledger.mjs run [options]
+  node tools/backfill-google-calendar-ledger.mjs self-test
 
 Reads Rhythmjoy Google Calendar events for a year and inserts only missing
 ledger rows as google-backfill. Existing DB rows for the same or overlapping
@@ -99,7 +101,7 @@ function parseArgs(argv) {
     }
   }
 
-  if (!['run', 'help'].includes(args.command)) throw new Error(`Unknown command: ${args.command}`);
+  if (!['run', 'self-test', 'help'].includes(args.command)) throw new Error(`Unknown command: ${args.command}`);
   if (args.year < 2000 || args.year > 2100) throw new Error('--year must be a four digit year');
   return args;
 }
@@ -446,6 +448,7 @@ function buildGoogleLedgerEvent(rawEvent) {
       ? 'google-description-price'
       : (fallbackPrice ? 'google-price-policy-estimate' : ''),
     eventAt: mysqlDateTimeFromIso(updated),
+    eventUpdatedMs: updated && !Number.isNaN(new Date(updated).getTime()) ? new Date(updated).getTime() : null,
     googleEventId,
     googleTitle: event.title || '',
     description,
@@ -494,6 +497,8 @@ try:
                 CAST(start_time AS CHAR) AS start_time,
                 CAST(end_time AS CHAR) AS end_time,
                 payment_status, price,
+                canceled_email_event_id,
+                CAST(canceled_email_received_at AS CHAR) AS canceled_email_received_at,
                 CAST(last_event_at AS CHAR) AS last_event_at
             FROM rhythmjoy_booking_ledger
             WHERE reservation_date >= %s AND reservation_date < %s
@@ -513,6 +518,7 @@ finally:
 function indexLedgerRows(rows) {
   const exactActive = new Map();
   const byReservation = new Map();
+  const canceledExact = new Map();
   const activeRows = [];
   for (const row of rows) {
     const reservationNo = String(row.reservation_number || '').trim();
@@ -521,10 +527,15 @@ function indexLedgerRows(rows) {
       list.push(row);
       byReservation.set(reservationNo, list);
     }
-    if (row.current_status === 'canceled') continue;
     const start = shortTime(row.start_time);
     const end = shortTime(row.end_time) === '00:00' ? '24:00' : shortTime(row.end_time);
     const key = [row.reservation_date, row.room_key, start, end].join('|');
+    if (row.current_status === 'canceled') {
+      const canceled = canceledExact.get(key) || [];
+      canceled.push(row);
+      canceledExact.set(key, canceled);
+      continue;
+    }
     const exact = exactActive.get(key) || [];
     exact.push(row);
     exactActive.set(key, exact);
@@ -534,7 +545,40 @@ function indexLedgerRows(rows) {
       endMinute: timeToMinute(end),
     });
   }
-  return { exactActive, byReservation, activeRows };
+  return { exactActive, byReservation, canceledExact, activeRows };
+}
+
+function validMysqlTimestamp(value) {
+  const text = String(value || '').trim();
+  return Boolean(text && text !== '0000-00-00 00:00:00');
+}
+
+function mysqlKstTimestampMs(value) {
+  if (!validMysqlTimestamp(value)) return null;
+  const parsed = new Date(`${String(value).replace(' ', 'T')}+09:00`).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function reliableCancellation(row) {
+  return Boolean(
+    row?.current_status === 'canceled'
+    && (
+      row?.canceled_email_event_id
+      || validMysqlTimestamp(row?.canceled_email_received_at)
+    )
+  );
+}
+
+function cancellationBlocksEvent(row, event) {
+  if (!reliableCancellation(row)) return false;
+  const canceledReservation = String(row.reservation_number || '').trim();
+  const eventReservation = String(event.reservationNumber || '').trim();
+  if (canceledReservation && eventReservation && canceledReservation === eventReservation) return true;
+  if (eventReservation) return false;
+  if (!row.canceled_email_event_id) return false;
+  const canceledAtMs = mysqlKstTimestampMs(row.canceled_email_received_at || row.last_event_at);
+  const eventUpdatedMs = Number.isFinite(event.eventUpdatedMs) ? event.eventUpdatedMs : null;
+  return canceledAtMs !== null && eventUpdatedMs !== null && eventUpdatedMs <= canceledAtMs;
 }
 
 function timeToMinute(value) {
@@ -563,6 +607,20 @@ function buildPlan(existingRows, googleEvents) {
   for (const event of googleEvents) {
     const existingByNo = event.reservationNumber ? (indexes.byReservation.get(event.reservationNumber) || []) : [];
     const activeByNo = existingByNo.filter((row) => row.current_status !== 'canceled');
+    const canceledByNo = existingByNo.filter((row) => cancellationBlocksEvent(row, event));
+    if (canceledByNo.length > 0) {
+      skipped.push({
+        reason: 'authoritative-cancellation-reservation-number',
+        date: event.date,
+        roomKey: event.roomKey,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        title: event.googleTitle,
+        reservationNumber: event.reservationNumber,
+        canceledIds: canceledByNo.map((row) => row.id),
+      });
+      continue;
+    }
     const exactByNo = activeByNo.filter((row) => (
       row.reservation_date === event.date
       && row.room_key === event.roomKey
@@ -601,6 +659,24 @@ function buildPlan(existingRows, googleEvents) {
           startTime: shortTime(row.start_time),
           endTime: shortTime(row.end_time) === '00:00' ? '24:00' : shortTime(row.end_time),
         })),
+      });
+      continue;
+    }
+
+    const canceled = (indexes.canceledExact.get(event.slotKey) || [])
+      .filter((row) => cancellationBlocksEvent(row, event));
+    if (canceled.length > 0) {
+      skipped.push({
+        reason: event.reservationNumber
+          ? 'authoritative-cancellation-reservation-number'
+          : 'authoritative-cancellation-slot',
+        date: event.date,
+        roomKey: event.roomKey,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        title: event.googleTitle,
+        reservationNumber: event.reservationNumber,
+        canceledIds: canceled.map((row) => row.id),
       });
       continue;
     }
@@ -755,7 +831,7 @@ try:
                     %s, NULL, NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
-                    current_status='confirmed',
+                    current_status=IF(current_status='canceled', 'canceled', 'confirmed'),
                     target_calendar=VALUES(target_calendar),
                     room_key=VALUES(room_key),
                     reservation_number=VALUES(reservation_number),
@@ -891,6 +967,65 @@ function countReasons(rows) {
   }, {});
 }
 
+function runSelfTest() {
+  const baseEvent = {
+    ledgerKey: 'google-backfill|test',
+    slotKey: '2026-08-01|a|17:00|21:00',
+    sourcePlatform: 'google-backfill',
+    date: '2026-08-01',
+    roomKey: 'a',
+    startTime: '17:00',
+    endTime: '21:00',
+    reservationNumber: '10184045',
+    googleTitle: 'Sc',
+    eventUpdatedMs: new Date('2026-07-15T00:30:00Z').getTime(),
+  };
+  const canceledByNumber = {
+    id: 116,
+    current_status: 'canceled',
+    reservation_number: '10184045',
+    reservation_date: '2026-08-01',
+    room_key: 'a',
+    start_time: '17:00:00',
+    end_time: '21:00:00',
+    canceled_email_event_id: 108,
+    canceled_email_received_at: '2026-07-15 10:03:29',
+  };
+  let plan = buildPlan([canceledByNumber], [baseEvent]);
+  assert.equal(plan.actions.length, 0);
+  assert.equal(plan.skipped[0].reason, 'authoritative-cancellation-reservation-number');
+
+  plan = buildPlan([canceledByNumber], [{ ...baseEvent, reservationNumber: '' }]);
+  assert.equal(plan.actions.length, 0);
+  assert.equal(plan.skipped[0].reason, 'authoritative-cancellation-slot');
+
+  plan = buildPlan([canceledByNumber], [{
+    ...baseEvent,
+    slotKey: '2026-08-01|b|18:00|19:00',
+    roomKey: 'b',
+    startTime: '18:00',
+    endTime: '19:00',
+  }]);
+  assert.equal(plan.actions.length, 0);
+  assert.equal(plan.skipped[0].reason, 'authoritative-cancellation-reservation-number');
+
+  plan = buildPlan([canceledByNumber], [{
+    ...baseEvent,
+    reservationNumber: '',
+    eventUpdatedMs: new Date('2026-07-16T00:30:00Z').getTime(),
+  }]);
+  assert.equal(plan.actions.length, 1, 'a newer rebooking in the same slot must remain eligible');
+
+  const unreliableCanceled = {
+    ...canceledByNumber,
+    canceled_email_event_id: null,
+    canceled_email_received_at: '0000-00-00 00:00:00',
+  };
+  plan = buildPlan([unreliableCanceled], [{ ...baseEvent, reservationNumber: '' }]);
+  assert.equal(plan.actions.length, 1, 'an ambiguous historical row must not block a new booking');
+  return { ok: true, cases: 5 };
+}
+
 async function collectGoogleEvents(args, startDate, endDate) {
   const rawEvents = await policy.fetchGoogleCalendarEvents({ year: args.year });
   const events = [];
@@ -951,6 +1086,10 @@ async function main() {
   const args = parseArgs(process.argv);
   if (args.command === 'help') {
     console.log(usage());
+    return;
+  }
+  if (args.command === 'self-test') {
+    console.log(JSON.stringify(runSelfTest()));
     return;
   }
   const report = await run(args);
