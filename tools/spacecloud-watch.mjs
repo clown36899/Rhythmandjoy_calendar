@@ -526,7 +526,7 @@ function confirmationSmsMessage(task = {}, source = '') {
   }
   const room = String(task.roomKey || task.room_key || '-').trim().toUpperCase();
   const detail = `${confirmationSmsDateText(task)} ${room}홀 ${confirmationSmsTimeText(task)}`;
-  const message = `리듬앤조이 예약확정\n${detail}\n${confirmationInfoUrl(source)}`;
+  const message = `예약확정\n${detail}\n비번 정보확인.\n${confirmationInfoUrl(source)}`;
   if (legacySmsByteLength(message) > 90) {
     throw new Error(`confirmation SMS exceeds 90 bytes: ${legacySmsByteLength(message)}`);
   }
@@ -5082,15 +5082,16 @@ function runNowModeSelfTest() {
   const confirmationMessage = confirmationSmsMessage(confirmationTask, 'naver');
   assert.equal(
     confirmationMessage,
-    '리듬앤조이 예약확정\n8/1(토) A홀 오후17-21시\nhttps://리듬앤조이일정표.com/n',
+    '예약확정\n8/1(토) A홀 오후17-21시\n비번 정보확인.\nhttps://리듬앤조이일정표.com/n',
   );
   const longestConfirmationMessage = confirmationSmsMessage({
     date: '2026-12-31',
     roomKey: 'b',
-    startTime: '23:30',
-    endTime: '00:30',
+    startTime: '23:00',
+    endTime: '03:00',
   }, 'spacecloud');
-  assert.ok(legacySmsByteLength(longestConfirmationMessage) <= 90);
+  assert.equal(legacySmsByteLength(longestConfirmationMessage), 88);
+  assert.match(longestConfirmationMessage, /12\/31\(목\) B홀 오후23-익일새벽03시/);
 
   const freshTask = {
     id: 1,
