@@ -460,7 +460,7 @@ function confirmationSmsDateText(task) {
   const month = Number(match[2]);
   const day = Number(match[3]);
   const weekday = ['일', '월', '화', '수', '목', '금', '토'][new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
-  return `${month}/${day}(${weekday})`;
+  return `${month}/${day}${weekday}`;
 }
 
 function confirmationSmsClock(value) {
@@ -525,8 +525,9 @@ function confirmationSmsMessage(task = {}, source = '') {
     return process.env.RHYTHMJOY_CONFIRMATION_SMS_MESSAGE;
   }
   const room = String(task.roomKey || task.room_key || '-').trim().toUpperCase();
-  const detail = `${confirmationSmsDateText(task)} ${room}홀 ${confirmationSmsTimeText(task)}`;
-  const message = `예약확정\n${detail}\n비번 정보확인.\n${confirmationInfoUrl(source)}`;
+  const time = confirmationSmsTimeText(task).replace(/시$/, '');
+  const detail = `${confirmationSmsDateText(task)} ${room}홀 ${time}`;
+  const message = `리듬앤조이 확정문자\n${detail}\n비번 정보\n${confirmationInfoUrl(source)}`;
   if (legacySmsByteLength(message) > 90) {
     throw new Error(`confirmation SMS exceeds 90 bytes: ${legacySmsByteLength(message)}`);
   }
@@ -5070,7 +5071,7 @@ function runNowModeSelfTest() {
     startTime: '17:00',
     endTime: '21:00',
   };
-  assert.equal(confirmationSmsDateText(confirmationTask), '8/1(토)');
+  assert.equal(confirmationSmsDateText(confirmationTask), '8/1토');
   assert.equal(confirmationSmsTimeText(confirmationTask), '오후17-21시');
   assert.equal(confirmationSmsTimeText({ startTime: '00:00', endTime: '06:00' }), '새벽00-06시');
   assert.equal(confirmationSmsTimeText({ startTime: '06:00', endTime: '12:00' }), '오전06-12시');
@@ -5082,7 +5083,7 @@ function runNowModeSelfTest() {
   const confirmationMessage = confirmationSmsMessage(confirmationTask, 'naver');
   assert.equal(
     confirmationMessage,
-    '예약확정\n8/1(토) A홀 오후17-21시\n비번 정보확인.\nhttps://리듬앤조이일정표.com/n',
+    '리듬앤조이 확정문자\n8/1토 A홀 오후17-21\n비번 정보\nhttps://리듬앤조이일정표.com/n',
   );
   const longestConfirmationMessage = confirmationSmsMessage({
     date: '2026-12-31',
@@ -5090,8 +5091,24 @@ function runNowModeSelfTest() {
     startTime: '23:00',
     endTime: '03:00',
   }, 'spacecloud');
-  assert.equal(legacySmsByteLength(longestConfirmationMessage), 88);
-  assert.match(longestConfirmationMessage, /12\/31\(목\) B홀 오후23-익일새벽03시/);
+  assert.equal(legacySmsByteLength(longestConfirmationMessage), 90);
+  assert.match(longestConfirmationMessage, /12\/31목 B홀 오후23-익일새벽03/);
+  let maximumConfirmationBytes = 0;
+  for (let startHour = 0; startHour < 24; startHour += 1) {
+    for (let endHour = 0; endHour <= 24; endHour += 1) {
+      if (startHour === endHour) continue;
+      const message = confirmationSmsMessage({
+        date: '2026-12-31',
+        roomKey: 'b',
+        startTime: `${String(startHour).padStart(2, '0')}:00`,
+        endTime: `${String(endHour).padStart(2, '0')}:00`,
+      }, 'naver');
+      const byteLength = legacySmsByteLength(message);
+      maximumConfirmationBytes = Math.max(maximumConfirmationBytes, byteLength);
+      assert.ok(byteLength <= 90);
+    }
+  }
+  assert.equal(maximumConfirmationBytes, 90);
 
   const freshTask = {
     id: 1,
