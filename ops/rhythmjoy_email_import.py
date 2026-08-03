@@ -12,6 +12,7 @@ import smtplib
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from email.header import decode_header
 from email.mime.multipart import MIMEMultipart
@@ -33,6 +34,7 @@ RESTART_COUNT_FILE = LOG_DIR / 'restart_count.txt'
 DEFAULT_GOOGLE_SERVICE_ACCOUNT = APP_ROOT / 'static' / 'rhythmjoycalendar-ce0594fe594b.json'
 TIME_ZONE = 'Asia/Seoul'
 KST = timezone(timedelta(hours=9))
+IMAP_FETCH_QUERY = '(INTERNALDATE BODY.PEEK[])'
 
 ROOM_MAILBOXES = {
     'Aroom': 'Aroom',
@@ -588,7 +590,7 @@ def build_calendar_service(config):
     return build('calendar', 'v3', credentials=credentials, cache_discovery=False)
 
 
-def db_connect(config):
+def db_connect(config, autocommit=True):
     if not config['db_enabled']:
         return None
     try:
@@ -603,9 +605,48 @@ def db_connect(config):
         password=config['db_password'],
         database=config['db_name'],
         charset='utf8mb4',
-        autocommit=True,
+        autocommit=autocommit,
         cursorclass=pymysql.cursors.DictCursor,
     )
+
+
+@contextmanager
+def db_transaction(config, logger, label):
+    """Run related DB mutations as one unit; never hide a partial failure."""
+    if not config['db_enabled']:
+        raise ConfigError(f'DB transaction required but DB is disabled: {label}')
+
+    conn = db_connect(config, autocommit=False)
+    try:
+        conn.begin()
+        yield conn
+        conn.commit()
+        logger.info('DB transaction committed label=%s', label)
+    except Exception:
+        conn.rollback()
+        logger.exception('DB transaction rolled back label=%s', label)
+        raise
+    finally:
+        conn.close()
+
+
+def lock_inbox_event(config, logger, conn, email_event_id):
+    """Serialize processing of one durable inbox row inside its handoff transaction."""
+    if not email_event_id:
+        raise ConfigError('Inbox event is required before transactional handoff')
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                'SELECT * FROM rhythmjoy_naver_email_events WHERE id=%s FOR UPDATE',
+                (email_event_id,),
+            )
+            row = cursor.fetchone()
+        if not row:
+            raise ConfigError(f'Inbox event disappeared before handoff id={email_event_id}')
+        return row
+    except Exception:
+        logger.exception('Inbox event lock failed id=%s', email_event_id)
+        raise
 
 
 def disable_db_logging(config, logger, message, error=None):
@@ -791,12 +832,13 @@ def ensure_db_tables(config, logger):
             conn.close()
 
 
-def db_select_email_event(config, mail_key):
+def db_select_email_event(config, mail_key, conn=None):
     if not config['db_enabled']:
         return None
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 'SELECT * FROM rhythmjoy_naver_email_events WHERE mail_key=%s LIMIT 1',
@@ -804,20 +846,23 @@ def db_select_email_event(config, mail_key):
             )
             return cursor.fetchone()
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logging.getLogger('rhythmjoy_email_import'), 'Email DB select failed', error)
         return None
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
-def upsert_email_event(config, logger, record):
+def upsert_email_event(config, logger, record, conn=None):
     if not config['db_enabled']:
         return None
 
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -860,18 +905,20 @@ def upsert_email_event(config, logger, record):
                 """,
                 record,
             )
-        row = db_select_email_event(config, record['mail_key'])
+        row = db_select_email_event(config, record['mail_key'], conn=conn)
         logger.info('Email DB event saved id=%s type=%s status=%s', row.get('id') if row else '-', record['event_type'], record['processing_status'])
         return row
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logger, 'Email DB event save failed', error)
         return None
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
-def update_email_processing(config, email_event_id, status, logger, **fields):
+def update_email_processing(config, email_event_id, status, logger, conn=None, **fields):
     if not config['db_enabled'] or not email_event_id:
         return
 
@@ -888,9 +935,10 @@ def update_email_processing(config, email_event_id, status, logger, **fields):
             values.append(value)
     values.append(email_event_id)
 
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 f"UPDATE rhythmjoy_naver_email_events SET {', '.join(assignments)} WHERE id=%s",
@@ -898,9 +946,11 @@ def update_email_processing(config, email_event_id, status, logger, **fields):
             )
         logger.info('Email DB event updated id=%s status=%s', email_event_id, status)
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logger, 'Email DB event update failed', error)
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
@@ -955,12 +1005,13 @@ def booking_ledger_row(source_platform, event_data, calendar_key, email_event_id
     return row
 
 
-def db_select_booking_ledger(config, ledger_key):
+def db_select_booking_ledger(config, ledger_key, conn=None):
     if not config['db_enabled']:
         return None
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 'SELECT * FROM rhythmjoy_booking_ledger WHERE ledger_key=%s LIMIT 1',
@@ -968,21 +1019,24 @@ def db_select_booking_ledger(config, ledger_key):
             )
             return cursor.fetchone()
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logging.getLogger('rhythmjoy_email_import'), 'Booking ledger select failed', error)
         return None
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
-def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, calendar_key, email_received_at, source_platform):
+def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, calendar_key, email_received_at, source_platform, conn=None):
     if not config['db_enabled'] or not event_data:
         return None
 
     row = booking_ledger_row(source_platform, event_data, calendar_key, email_event_id, email_received_at)
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -1039,7 +1093,7 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                 """,
                 row,
             )
-        ledger = db_select_booking_ledger(config, row['ledger_key'])
+        ledger = db_select_booking_ledger(config, row['ledger_key'], conn=conn)
         logger.info(
             'Booking ledger confirmed ledger=%s id=%s platform=%s reservation=%s status=%s',
             row['ledger_key'],
@@ -1050,21 +1104,24 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
         )
         return ledger
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logger, 'Booking ledger confirmed upsert failed', error)
         return None
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
-def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, calendar_key, email_received_at, source_platform):
+def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, calendar_key, email_received_at, source_platform, conn=None):
     if not config['db_enabled'] or not event_data:
         return None
 
     row = booking_ledger_row(source_platform, event_data, calendar_key, email_event_id, email_received_at)
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -1232,7 +1289,7 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                         cursor.rowcount,
                         row['reservation_number'],
                     )
-        ledger = db_select_booking_ledger(config, row['ledger_key'])
+        ledger = db_select_booking_ledger(config, row['ledger_key'], conn=conn)
         logger.info(
             'Booking ledger canceled ledger=%s id=%s platform=%s reservation=%s status=%s',
             row['ledger_key'],
@@ -1243,10 +1300,12 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
         )
         return ledger
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logger, 'Booking ledger canceled upsert failed', error)
         return None
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
@@ -1438,7 +1497,7 @@ def upload_task_waiting_on_canceled_reservation(task, canceled_reservation_numbe
     )
 
 
-def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, calendar_key):
+def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, calendar_key, conn=None):
     room_key = calendar_to_spacecloud_room_key(calendar_key)
     if not config['db_enabled'] or not room_key:
         if not room_key:
@@ -1471,9 +1530,10 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
         row['end_time'],
     )
 
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -1555,14 +1615,16 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
         logger.info('SpaceCloud delete task saved id=%s room=%s reservation=%s status=%s', task.get('id') if task else '-', room_key, row['reservation_number'], task.get('status') if task else '-')
         return task
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logger, 'SpaceCloud delete task save failed', error)
         return None
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
-def upsert_spacecloud_upload_task(config, logger, email_event_id, event_data, calendar_key):
+def upsert_spacecloud_upload_task(config, logger, email_event_id, event_data, calendar_key, conn=None):
     if not config.get('naver_spacecloud_upload_enabled'):
         return None
 
@@ -1603,9 +1665,10 @@ def upsert_spacecloud_upload_task(config, logger, email_event_id, event_data, ca
         'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
     }
 
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -1650,14 +1713,16 @@ def upsert_spacecloud_upload_task(config, logger, email_event_id, event_data, ca
         )
         return task
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logger, 'SpaceCloud upload task save failed', error)
         return None
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
-def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_data, calendar_key, conflicts):
+def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_data, calendar_key, conflicts, conn=None):
     if not config.get('spacecloud_naver_block_enabled'):
         return None
 
@@ -1691,9 +1756,10 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
         'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
     }
 
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -1739,14 +1805,16 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
         )
         return task
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logger, 'Naver block task save failed', error)
         return None
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
-def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_data, calendar_key):
+def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_data, calendar_key, conn=None):
     if not config.get('spacecloud_naver_block_enabled'):
         return None
 
@@ -1778,9 +1846,10 @@ def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_d
         'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
     }
 
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -1825,10 +1894,12 @@ def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_d
         )
         return task
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logger, 'Naver restore task save failed', error)
         return None
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
@@ -2617,30 +2688,35 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if event_data:
-                ledger = upsert_booking_ledger_confirmed(
-                    config, logger, email_record_id, event_data,
-                    target_calendar, email_received_at, 'naver'
-                )
-                require_handoff(
-                    config.get('naver_spacecloud_upload_enabled'), ledger,
-                    'Required Naver booking ledger handoff was not created'
-                )
-                upload_task = upsert_spacecloud_upload_task(config, logger, email_record_id, event_data, target_calendar)
-                if upload_task:
-                    task_status = upload_task.get('status') or 'pending'
-                    processing_status = f"spacecloud_upload_{task_status}"
-                    if len(processing_status) > 32:
-                        processing_status = 'spacecloud_upload_saved'
-                    update_email_processing(
-                        config,
-                        email_record_id,
-                        processing_status,
-                        logger,
-                        error_text='',
-                    )
-                elif config.get('naver_spacecloud_upload_enabled'):
-                    require_handoff(True, upload_task, 'Required SpaceCloud upload task was not created')
+                if config.get('naver_spacecloud_upload_enabled'):
+                    with db_transaction(config, logger, f'naver-upload:{email_record_id}') as conn:
+                        lock_inbox_event(config, logger, conn, email_record_id)
+                        ledger = upsert_booking_ledger_confirmed(
+                            config, logger, email_record_id, event_data,
+                            target_calendar, email_received_at, 'naver', conn=conn
+                        )
+                        require_handoff(True, ledger, 'Required Naver booking ledger handoff was not created')
+                        upload_task = upsert_spacecloud_upload_task(
+                            config, logger, email_record_id, event_data, target_calendar, conn=conn
+                        )
+                        require_handoff(True, upload_task, 'Required SpaceCloud upload task was not created')
+                        task_status = upload_task.get('status') or 'pending'
+                        processing_status = f"spacecloud_upload_{task_status}"
+                        if len(processing_status) > 32:
+                            processing_status = 'spacecloud_upload_saved'
+                        update_email_processing(
+                            config,
+                            email_record_id,
+                            processing_status,
+                            logger,
+                            conn=conn,
+                            error_text='',
+                        )
                 else:
+                    upsert_booking_ledger_confirmed(
+                        config, logger, email_record_id, event_data,
+                        target_calendar, email_received_at, 'naver'
+                    )
                     created = create_calendar_event(
                         get_calendar_service(),
                         event_data,
@@ -2686,32 +2762,38 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if deletion:
-                ledger = upsert_booking_ledger_canceled(
-                    config, logger, email_record_id, deletion,
-                    calendar_key, email_received_at, 'naver'
-                )
-                require_handoff(
-                    config.get('naver_spacecloud_upload_enabled'), ledger,
-                    'Required Naver cancellation ledger handoff was not created'
-                )
-                spacecloud_task = upsert_spacecloud_delete_task(config, logger, email_record_id, deletion, calendar_key)
-                if config.get('naver_spacecloud_upload_enabled') and spacecloud_task:
+                if config.get('naver_spacecloud_upload_enabled'):
                     deleted = 0
-                    task_status = spacecloud_task.get('status') or 'pending'
-                    processing_status = f"spacecloud_delete_{task_status}"
-                    if len(processing_status) > 32:
-                        processing_status = 'spacecloud_delete_saved'
-                    update_email_processing(
-                        config,
-                        email_record_id,
-                        processing_status,
-                        logger,
-                        google_calendar_deleted_count=0,
-                        error_text='google_delete_after_spacecloud',
-                    )
-                elif config.get('naver_spacecloud_upload_enabled'):
-                    require_handoff(True, spacecloud_task, 'Required SpaceCloud delete task was not created')
+                    with db_transaction(config, logger, f'naver-delete:{email_record_id}') as conn:
+                        lock_inbox_event(config, logger, conn, email_record_id)
+                        ledger = upsert_booking_ledger_canceled(
+                            config, logger, email_record_id, deletion,
+                            calendar_key, email_received_at, 'naver', conn=conn
+                        )
+                        require_handoff(True, ledger, 'Required Naver cancellation ledger handoff was not created')
+                        spacecloud_task = upsert_spacecloud_delete_task(
+                            config, logger, email_record_id, deletion, calendar_key, conn=conn
+                        )
+                        require_handoff(True, spacecloud_task, 'Required SpaceCloud delete task was not created')
+                        task_status = spacecloud_task.get('status') or 'pending'
+                        processing_status = f"spacecloud_delete_{task_status}"
+                        if len(processing_status) > 32:
+                            processing_status = 'spacecloud_delete_saved'
+                        update_email_processing(
+                            config,
+                            email_record_id,
+                            processing_status,
+                            logger,
+                            conn=conn,
+                            google_calendar_deleted_count=0,
+                            error_text='google_delete_after_spacecloud',
+                        )
                 else:
+                    upsert_booking_ledger_canceled(
+                        config, logger, email_record_id, deletion,
+                        calendar_key, email_received_at, 'naver'
+                    )
+                    spacecloud_task = None
                     deleted = delete_events_by_reservation(get_calendar_service(), deletion, logger)
                     update_email_processing(
                         config,
@@ -2762,37 +2844,49 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                 if event_data and calendar_key:
                     event_data['calendar_key'] = calendar_key
                     event_data['target_calendar'] = calendar_key
-                    ledger = upsert_booking_ledger_canceled(
-                        config, logger, email_record_id, event_data,
-                        calendar_key, email_received_at, 'spacecloud'
-                    )
-                    require_handoff(
-                        config.get('spacecloud_naver_block_enabled'), ledger,
-                        'Required SpaceCloud cancellation ledger handoff was not created'
-                    )
-                    naver_restore_task = upsert_spacecloud_naver_restore_task(
-                        config,
-                        logger,
-                        email_record_id,
-                        event_data,
-                        calendar_key,
-                    )
-                    if naver_restore_task:
-                        task_status = naver_restore_task.get('status') or 'pending'
-                        processing_status = f"naver_restore_{task_status}"
-                        if len(processing_status) > 32:
-                            processing_status = 'naver_restore_saved'
-                    elif config.get('spacecloud_naver_block_enabled'):
-                        require_handoff(True, naver_restore_task, 'Required Naver restore task was not created')
+                    if config.get('spacecloud_naver_block_enabled'):
+                        with db_transaction(config, logger, f'spacecloud-restore:{email_record_id}') as conn:
+                            lock_inbox_event(config, logger, conn, email_record_id)
+                            ledger = upsert_booking_ledger_canceled(
+                                config, logger, email_record_id, event_data,
+                                calendar_key, email_received_at, 'spacecloud', conn=conn
+                            )
+                            require_handoff(True, ledger, 'Required SpaceCloud cancellation ledger handoff was not created')
+                            naver_restore_task = upsert_spacecloud_naver_restore_task(
+                                config,
+                                logger,
+                                email_record_id,
+                                event_data,
+                                calendar_key,
+                                conn=conn,
+                            )
+                            require_handoff(True, naver_restore_task, 'Required Naver restore task was not created')
+                            task_status = naver_restore_task.get('status') or 'pending'
+                            processing_status = f"naver_restore_{task_status}"
+                            if len(processing_status) > 32:
+                                processing_status = 'naver_restore_saved'
+                            update_email_processing(
+                                config,
+                                email_record_id,
+                                processing_status,
+                                logger,
+                                conn=conn,
+                                error_text='',
+                            )
                     else:
+                        upsert_booking_ledger_canceled(
+                            config, logger, email_record_id, event_data,
+                            calendar_key, email_received_at, 'spacecloud'
+                        )
+                        naver_restore_task = None
                         processing_status = 'report_only_cancel'
-                    update_email_processing(
-                        config,
-                        email_record_id,
-                        processing_status,
-                        logger,
-                        error_text='',
-                    )
+                        update_email_processing(
+                            config,
+                            email_record_id,
+                            processing_status,
+                            logger,
+                            error_text='',
+                        )
                     notify_spacecloud_cancellation_report(
                         config,
                         event_data,
@@ -2869,14 +2963,6 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
             if event_data and calendar_key:
                 event_data['calendar_key'] = calendar_key
                 event_data['target_calendar'] = calendar_key
-                ledger = upsert_booking_ledger_confirmed(
-                    config, logger, email_record_id, event_data,
-                    calendar_key, email_received_at, 'spacecloud'
-                )
-                require_handoff(
-                    config.get('spacecloud_naver_block_enabled'), ledger,
-                    'Required SpaceCloud booking ledger handoff was not created'
-                )
                 conflicts = []
                 try:
                     conflicts = find_calendar_conflicts(get_calendar_service(), calendar_key, event_data, logger)
@@ -2888,33 +2974,52 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                     )
                 event_data['conflict_count'] = len(conflicts)
                 google_event = None
-                naver_block_task = upsert_spacecloud_naver_block_task(
-                    config,
-                    logger,
-                    email_record_id,
-                    event_data,
-                    calendar_key,
-                    conflicts,
-                )
-                if naver_block_task:
-                    task_status = naver_block_task.get('status') or 'pending'
-                    processing_status = f"naver_block_{task_status}"
-                    if len(processing_status) > 32:
-                        processing_status = 'naver_block_saved'
-                elif conflicts:
-                    processing_status = 'spacecloud_conflict_reported'
-                elif config.get('spacecloud_naver_block_enabled'):
-                    require_handoff(True, naver_block_task, 'Required Naver block task was not created')
+                if config.get('spacecloud_naver_block_enabled'):
+                    with db_transaction(config, logger, f'spacecloud-block:{email_record_id}') as conn:
+                        lock_inbox_event(config, logger, conn, email_record_id)
+                        ledger = upsert_booking_ledger_confirmed(
+                            config, logger, email_record_id, event_data,
+                            calendar_key, email_received_at, 'spacecloud', conn=conn
+                        )
+                        require_handoff(True, ledger, 'Required SpaceCloud booking ledger handoff was not created')
+                        naver_block_task = upsert_spacecloud_naver_block_task(
+                            config,
+                            logger,
+                            email_record_id,
+                            event_data,
+                            calendar_key,
+                            conflicts,
+                            conn=conn,
+                        )
+                        require_handoff(True, naver_block_task, 'Required Naver block task was not created')
+                        task_status = naver_block_task.get('status') or 'pending'
+                        processing_status = f"naver_block_{task_status}"
+                        if len(processing_status) > 32:
+                            processing_status = 'naver_block_saved'
+                        update_email_processing(
+                            config,
+                            email_record_id,
+                            processing_status,
+                            logger,
+                            conn=conn,
+                            google_calendar_event_id='',
+                            error_text='',
+                        )
                 else:
-                    processing_status = 'report_only_ready'
-                update_email_processing(
-                    config,
-                    email_record_id,
-                    processing_status,
-                    logger,
-                    google_calendar_event_id=google_event.get('id', '') if google_event else '',
-                    error_text='',
-                )
+                    upsert_booking_ledger_confirmed(
+                        config, logger, email_record_id, event_data,
+                        calendar_key, email_received_at, 'spacecloud'
+                    )
+                    naver_block_task = None
+                    processing_status = 'spacecloud_conflict_reported' if conflicts else 'report_only_ready'
+                    update_email_processing(
+                        config,
+                        email_record_id,
+                        processing_status,
+                        logger,
+                        google_calendar_event_id='',
+                        error_text='',
+                    )
                 notify_spacecloud_reservation_report(
                     config,
                     event_data,
@@ -3039,6 +3144,148 @@ def backfill_booking_ledger(config, logger):
     return processed
 
 
+def verify_transactional_inbox_outbox(config, logger):
+    """Fault-inject against the configured InnoDB tables without creating runnable work."""
+    if not config['db_enabled']:
+        raise ConfigError('Transactional Inbox/Outbox verification requires DB configuration')
+
+    suffix = os.urandom(12).hex()
+    mail_key = f'tx-selftest:{suffix}'
+    ledger_key = f'tx-selftest:{suffix}'
+    dedupe_key = f'tx-selftest:{suffix}'
+    email_event_id = None
+
+    def select_counts():
+        conn = db_connect(config)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    'SELECT processing_status FROM rhythmjoy_naver_email_events WHERE mail_key=%s',
+                    (mail_key,),
+                )
+                inbox = cursor.fetchone()
+                cursor.execute(
+                    'SELECT COUNT(*) AS count FROM rhythmjoy_booking_ledger WHERE ledger_key=%s',
+                    (ledger_key,),
+                )
+                ledger_count = cursor.fetchone()['count']
+                cursor.execute(
+                    'SELECT COUNT(*) AS count FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=%s',
+                    (dedupe_key,),
+                )
+                outbox_count = cursor.fetchone()['count']
+            return inbox, ledger_count, outbox_count
+        finally:
+            conn.close()
+
+    try:
+        capture_conn = db_connect(config)
+        try:
+            with capture_conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO rhythmjoy_naver_email_events (
+                        mail_key, mailbox, imap_id, message_id, event_type,
+                        parse_status, processing_status, created_at, updated_at
+                    ) VALUES (%s, 'transaction_selftest', '', '', 'selftest',
+                              'parsed', 'received', NOW(), NOW())
+                    """,
+                    (mail_key,),
+                )
+                email_event_id = cursor.lastrowid
+        finally:
+            capture_conn.close()
+
+        try:
+            with db_transaction(config, logger, f'selftest-rollback:{email_event_id}') as conn:
+                lock_inbox_event(config, logger, conn, email_event_id)
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO rhythmjoy_booking_ledger (
+                            ledger_key, source_platform, current_status, created_at, updated_at
+                        ) VALUES (%s, 'transaction_selftest', 'confirmed', NOW(), NOW())
+                        """,
+                        (ledger_key,),
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO rhythmjoy_spacecloud_tasks (
+                            dedupe_key, email_event_id, task_type, status, created_at, updated_at
+                        ) VALUES (%s, %s, 'transaction_selftest', 'selftest', NOW(), NOW())
+                        """,
+                        (dedupe_key, email_event_id),
+                    )
+                update_email_processing(
+                    config, email_event_id, 'selftest_staged', logger, conn=conn
+                )
+                raise RuntimeError('intentional transactional rollback')
+        except RuntimeError as error:
+            if str(error) != 'intentional transactional rollback':
+                raise
+
+        inbox, ledger_count, outbox_count = select_counts()
+        if not inbox or inbox.get('processing_status') != 'received':
+            raise ConfigError('Inbox row did not survive fault injection unchanged')
+        if ledger_count or outbox_count:
+            raise ConfigError('Ledger or Outbox survived an intentionally rolled-back handoff')
+
+        with db_transaction(config, logger, f'selftest-commit:{email_event_id}') as conn:
+            lock_inbox_event(config, logger, conn, email_event_id)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO rhythmjoy_booking_ledger (
+                        ledger_key, source_platform, current_status, created_at, updated_at
+                    ) VALUES (%s, 'transaction_selftest', 'confirmed', NOW(), NOW())
+                    """,
+                    (ledger_key,),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO rhythmjoy_spacecloud_tasks (
+                        dedupe_key, email_event_id, task_type, status, created_at, updated_at
+                    ) VALUES (%s, %s, 'transaction_selftest', 'selftest', NOW(), NOW())
+                    """,
+                    (dedupe_key, email_event_id),
+                )
+            update_email_processing(
+                config, email_event_id, 'transaction_verified', logger, conn=conn
+            )
+
+        inbox, ledger_count, outbox_count = select_counts()
+        if not inbox or inbox.get('processing_status') != 'transaction_verified':
+            raise ConfigError('Inbox status did not commit with successful handoff')
+        if ledger_count != 1 or outbox_count != 1:
+            raise ConfigError('Ledger and Outbox did not commit together')
+        logger.info('Transactional Inbox/Outbox verification succeeded')
+        return True
+    finally:
+        cleanup_conn = db_connect(config, autocommit=False)
+        if cleanup_conn is not None:
+            try:
+                cleanup_conn.begin()
+                with cleanup_conn.cursor() as cursor:
+                    cursor.execute(
+                        'DELETE FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=%s',
+                        (dedupe_key,),
+                    )
+                    cursor.execute(
+                        'DELETE FROM rhythmjoy_booking_ledger WHERE ledger_key=%s',
+                        (ledger_key,),
+                    )
+                    cursor.execute(
+                        'DELETE FROM rhythmjoy_naver_email_events WHERE mail_key=%s',
+                        (mail_key,),
+                    )
+                cleanup_conn.commit()
+            except Exception:
+                cleanup_conn.rollback()
+                raise
+            finally:
+                cleanup_conn.close()
+
+
 def run_poll_once(config, logger):
     service = None
 
@@ -3068,7 +3315,8 @@ def run_poll_once(config, logger):
 
             unseen_messages = []
             for email_id in email_data[0].split():
-                result, message_data = imap_connection.fetch(email_id, '(INTERNALDATE RFC822)')
+                # BODY.PEEK[] keeps the source email unread until the DB handoff commits.
+                result, message_data = imap_connection.fetch(email_id, IMAP_FETCH_QUERY)
                 fetch_metadata, raw_message = extract_fetch_payload(message_data or [])
                 if result != 'OK' or not raw_message:
                     logger.error('Failed to fetch mailbox=%s email_id=%s result=%s', mailbox, email_id, result)
@@ -3164,6 +3412,7 @@ def main():
     parser.add_argument('--once', action='store_true', help='run one polling cycle and exit')
     parser.add_argument('--check-config', action='store_true', help='validate config and exit')
     parser.add_argument('--backfill-ledger', action='store_true', help='non-destructively upsert booking ledger rows from stored parsed email events and exit')
+    parser.add_argument('--transaction-selftest', action='store_true', help='fault-inject and verify Inbox/Outbox transaction rollback and commit')
     args = parser.parse_args()
 
     logger = setup_logging()
@@ -3180,6 +3429,10 @@ def main():
     if args.backfill_ledger:
         processed = backfill_booking_ledger(config, logger)
         logger.info('Booking ledger backfill command finished processed=%s', processed)
+        return
+
+    if args.transaction_selftest:
+        verify_transactional_inbox_outbox(config, logger)
         return
 
     while True:
