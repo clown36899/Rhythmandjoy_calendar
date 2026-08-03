@@ -116,7 +116,9 @@ The restore script refuses any Apache config outside that allowlist.
 
 ## Naver email DB ledger
 
-`ops/rhythmjoy_email_import.py` writes a DB record before creating or deleting Google Calendar events when `DB_SERVERNAME`, `DB_USERNAME`, `DB_PASSWORD`, and `DB_NAME` are set in `/home/clown313python/myapp/.env`. The DB ledger is the audit/recovery layer; it should not block the existing Google Calendar importer in normal operation.
+The reservation email pipeline uses the Transactional Inbox + Outbox rules documented in [`docs/transactional-inbox-outbox-runbook.md`](../docs/transactional-inbox-outbox-runbook.md). Read that runbook before changing IMAP fetch behavior, transaction boundaries, ledger identity, Outbox deduplication, or reflection audits.
+
+`ops/rhythmjoy_email_import.py` first stores the source email as a durable Inbox record. It then locks that Inbox row and atomically writes the booking ledger, required cross-platform Outbox task, and final Inbox processing status. Only after that transaction commits may the source email be marked read. With `RHYTHMJOY_EMAIL_DB_REQUIRED=1`, a DB handoff failure intentionally stops processing and leaves the email unread for retry.
 
 - `rhythmjoy_naver_email_events`: durable record of each Naver/SpaceCloud reservation or cancellation email and its processing status. Cancellation rows are retained instead of deleted, so a later audit can distinguish "cancellation email arrived" from "platform action completed".
 - `rhythmjoy_booking_ledger`: current-state booking ledger. Each parsed confirmation/cancellation email upserts a booking identity as `confirmed` or `canceled`, while linking back to the original confirmed/canceled email event ids. This is the booking-state layer; email events remain the source audit trail.

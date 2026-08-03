@@ -34,6 +34,7 @@ RESTART_COUNT_FILE = LOG_DIR / 'restart_count.txt'
 DEFAULT_GOOGLE_SERVICE_ACCOUNT = APP_ROOT / 'static' / 'rhythmjoycalendar-ce0594fe594b.json'
 TIME_ZONE = 'Asia/Seoul'
 KST = timezone(timedelta(hours=9))
+# Architecture invariant: never replace PEEK with RFC822/BODY[]; see the runbook.
 IMAP_FETCH_QUERY = '(INTERNALDATE BODY.PEEK[])'
 
 ROOM_MAILBOXES = {
@@ -612,7 +613,7 @@ def db_connect(config, autocommit=True):
 
 @contextmanager
 def db_transaction(config, logger, label):
-    """Run related DB mutations as one unit; never hide a partial failure."""
+    """Run related DB mutations as one unit; see docs/transactional-inbox-outbox-runbook.md."""
     if not config['db_enabled']:
         raise ConfigError(f'DB transaction required but DB is disabled: {label}')
 
