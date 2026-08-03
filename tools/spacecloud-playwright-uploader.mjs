@@ -958,9 +958,9 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     startedAt: new Date().toISOString(),
   };
 
-  const dialogTypes = [];
+  const dialogs = [];
   const onDialog = async (dialog) => {
-    dialogTypes.push(dialog.type());
+    dialogs.push({ type: dialog.type(), message: dialog.message() });
     if (dialog.type() === 'confirm') await dialog.accept();
     else await dialog.dismiss();
   };
@@ -1032,17 +1032,23 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     await page.waitForTimeout(1200);
 
     const hidden = await waitHidden(page, '#start_day', 45000);
+    row.postSubmitVerification = await verifyDirectEventCreated(page, event, {
+      timeoutMs: 90000,
+      intervalMs: 1500,
+    });
     row.finishedAt = new Date().toISOString();
-    row.status = hidden ? 'submitted' : 'submitted-modal-still-visible';
-    if (dialogTypes.length > 0) row.dialogTypes = dialogTypes;
-    if (!hidden) {
-      row.postSubmitVerification = await verifyDirectEventCreated(page, event);
-      if (row.postSubmitVerification.ok) {
-        row.status = 'submitted';
-        row.verifiedAfterModalStillVisible = true;
-      } else {
-        throw new Error('modal still visible after submit');
-      }
+    if (dialogs.length > 0) row.dialogs = dialogs;
+    if (row.postSubmitVerification.ok && row.postSubmitVerification.nameMatched) {
+      row.status = 'submitted';
+      row.verifiedAfterSubmit = true;
+    } else if (row.postSubmitVerification.candidateCount > 0) {
+      row.status = 'needs-review';
+      row.error = 'SpaceCloud post-submit candidate did not match the expected reserver name';
+    } else {
+      row.status = 'needs-review';
+      row.error = hidden
+        ? 'SpaceCloud schedule was not visible after submit verification'
+        : 'SpaceCloud modal remained visible and the schedule was not created';
     }
   } catch (error) {
     row.finishedAt = new Date().toISOString();
