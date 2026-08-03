@@ -416,7 +416,7 @@ function taskRow(task) {
   };
 }
 
-function buildHourlySlotRows(row) {
+export function buildHourlySlotRows(row) {
   const startHour = parseHour(row.startTime);
   const endHour = parseHour(row.endTime);
   const rows = [];
@@ -930,11 +930,14 @@ export async function checkNaverSmartplaceLogin(context, {
 } = {}) {
   const page = await pageForContext(context);
   await page.goto(naverCalendarUrl(businessId), { waitUntil: 'domcontentloaded', timeout: timeoutMs }).catch(() => {});
-  const ok = await waitVisible(page, 'button[class*="Select__btn-selected"]', timeoutMs);
+  const currentUrl = page.url();
+  const expectedUrl = /^https:\/\/partner\.booking\.naver\.com\/bizes\/[^/]+\/booking-calendar-view(?:[/?#]|$)/.test(currentUrl);
+  const calendarVisible = await waitVisible(page, 'button[class*="Select__btn-selected"]', timeoutMs);
+  const ok = expectedUrl && calendarVisible;
   return {
     ok,
-    url: page.url(),
+    url: currentUrl,
     title: await page.title().catch(() => ''),
-    reason: ok ? '' : 'Naver SmartPlace calendar not visible; login may be required',
+    reason: ok ? '' : 'Naver SmartPlace calendar URL or controls not visible; login may be required',
   };
 }

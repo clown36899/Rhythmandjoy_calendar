@@ -619,6 +619,16 @@ async function verifyDirectEventCreated(page, event, {
   const nameMatched = expectedName
     ? candidates.some((candidate) => compactText(candidate.text || candidate.visibleText || '').includes(expectedName))
     : false;
+  let identityMatched = false;
+  let identityVerification = null;
+  if (candidates.length > 0) {
+    const selection = await findVerifiedDeleteCandidate(page, candidates, row);
+    identityMatched = Boolean(selection.candidate);
+    identityVerification = identityMatched
+      ? selection.verification
+      : { ok: false, error: selection.error || 'candidate-identity-verification-failed' };
+    await closeReservationPopup(page).catch(() => {});
+  }
 
   return {
     ok: candidates.length > 0,
@@ -626,9 +636,36 @@ async function verifyDirectEventCreated(page, event, {
     waitedMs: latest.waitedMs,
     candidateCount: candidates.length,
     nameMatched,
+    identityMatched,
+    identityVerification,
+    reservationNo: row.reservationNo || '',
     candidates: candidates.slice(0, 5),
     dayCellText: latest.dayCellText || '',
     visibleLinks: (latest.visibleLinks || []).slice(0, 12),
+  };
+}
+
+export function classifyDirectUploadVerification(hidden, verification) {
+  const result = verification || {};
+  const expectedIdentityMatched = result.reservationNo
+    ? result.identityMatched === true
+    : result.nameMatched === true;
+  if (result.ok && expectedIdentityMatched) {
+    return { status: 'submitted', error: '', verified: true };
+  }
+  if (Number(result.candidateCount || 0) > 0) {
+    return {
+      status: 'needs-review',
+      error: 'SpaceCloud post-submit candidate did not match the expected reservation identity',
+      verified: false,
+    };
+  }
+  return {
+    status: 'needs-review',
+    error: hidden
+      ? 'SpaceCloud schedule was not visible after submit verification'
+      : 'SpaceCloud modal remained visible and the schedule was not created',
+    verified: false,
   };
 }
 
@@ -799,7 +836,7 @@ export async function inspectSpacecloudReservationStatus(context, task, {
   };
 }
 
-function popupDeleteVerification(popupText, row) {
+export function popupDeleteVerification(popupText, row) {
   const normalized = compactText(popupText);
   const errors = [];
   const room = SPACECLOUD_ROOMS[row.roomKey];
@@ -827,7 +864,11 @@ function popupDeleteVerification(popupText, row) {
     (nameKey && normalized.includes(nameKey))
     || (maskedNameKey && normalized.includes(maskedNameKey))
   );
-  const reservationNoMatched = Boolean(reservationNo && normalized.includes(reservationNo));
+  const escapedReservationNo = reservationNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const reservationNoMatched = Boolean(
+    reservationNo
+    && new RegExp(`(?:naverreservationno=|예약번호[:：]?)(?:\\s*)${escapedReservationNo}(?!\\d)`, 'i').test(normalized)
+  );
   const identityMode = reservationNo ? 'reservation-number' : 'reserver-name-fallback';
   if (reservationNo) {
     if (!reservationNoMatched) errors.push(`reservation-number-mismatch:${reservationNo}`);
@@ -981,7 +1022,8 @@ export async function uploadSpacecloudDirectReservation(context, event) {
         timeoutMs: 12000,
         intervalMs: 750,
       });
-      if (row.preflightVerification.ok && row.preflightVerification.nameMatched) {
+      const preflightOutcome = classifyDirectUploadVerification(true, row.preflightVerification);
+      if (preflightOutcome.status === 'submitted') {
         row.status = 'submitted';
         row.alreadyPresentOnRetry = true;
         row.finishedAt = new Date().toISOString();
@@ -1038,17 +1080,12 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     });
     row.finishedAt = new Date().toISOString();
     if (dialogs.length > 0) row.dialogs = dialogs;
-    if (row.postSubmitVerification.ok && row.postSubmitVerification.nameMatched) {
-      row.status = 'submitted';
+    const outcome = classifyDirectUploadVerification(hidden, row.postSubmitVerification);
+    row.status = outcome.status;
+    if (outcome.verified) {
       row.verifiedAfterSubmit = true;
-    } else if (row.postSubmitVerification.candidateCount > 0) {
-      row.status = 'needs-review';
-      row.error = 'SpaceCloud post-submit candidate did not match the expected reserver name';
     } else {
-      row.status = 'needs-review';
-      row.error = hidden
-        ? 'SpaceCloud schedule was not visible after submit verification'
-        : 'SpaceCloud modal remained visible and the schedule was not created';
+      row.error = outcome.error;
     }
   } catch (error) {
     row.finishedAt = new Date().toISOString();
@@ -1341,9 +1378,9 @@ export async function deleteSpacecloudDirectReservation(context, task) {
     startedAt: new Date().toISOString(),
   };
   row.reservationCalendarUrl = task.reservationCalendarUrl || reservationCalendarUrl(row.roomKey);
-  if (!row.reservationNo && !normalizeName(row.reserverName)) {
+  if (!row.reservationNo) {
     row.status = 'needs-review';
-    row.error = 'identity missing; automatic SpaceCloud delete requires reserver name or reservation number';
+    row.error = 'reservation number missing; automatic SpaceCloud delete is blocked';
     row.finishedAt = new Date().toISOString();
     return row;
   }
@@ -1453,11 +1490,12 @@ export async function checkSpacecloudLogin(context, {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs }).catch(() => {});
   const addVisible = await waitVisible(page, 'a._additionalReserveLayerOpen', timeoutMs);
   const currentUrl = page.url();
+  const expectedUrl = /^https:\/\/partner\.spacecloud\.kr\/reservation-calendar(?:[/?#]|$)/.test(currentUrl);
   const title = await page.title().catch(() => '');
   return {
-    ok: addVisible,
+    ok: expectedUrl && addVisible,
     url: currentUrl,
     title,
-    reason: addVisible ? '' : 'reservation add button not visible; login may be required',
+    reason: expectedUrl && addVisible ? '' : 'reservation calendar URL or add button not visible; login may be required',
   };
 }

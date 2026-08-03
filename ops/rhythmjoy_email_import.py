@@ -241,6 +241,16 @@ def parse_datetime(date_text, time_text):
     return date_value.replace(hour=hour, minute=minute)
 
 
+def booking_interval_datetimes(date_text, start_time, end_time):
+    if not date_text or not start_time or not end_time:
+        return None, None
+    start_at = parse_datetime(date_text, start_time)
+    end_at = parse_datetime(date_text, end_time)
+    if end_at <= start_at:
+        end_at += timedelta(days=1)
+    return start_at, end_at
+
+
 def mask_name(name):
     clean = re.sub(r'(?:님)+$', '', str(name or '').strip()).strip()
     if len(clean) >= 3:
@@ -359,7 +369,10 @@ def truncate_text(value, limit):
 def parse_amount_value(value):
     if value is None:
         return 0
-    digits = re.sub(r'\D+', '', str(value))
+    match = re.search(r'\d[\d,]*', str(value))
+    if not match:
+        return 0
+    digits = match.group(0).replace(',', '')
     return int(digits) if digits else 0
 
 
@@ -973,7 +986,7 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                     %(payload_json)s, NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
-                    source_mode=VALUES(source_mode),
+                    source_mode=IF(VALUES(source_mode) <> '', VALUES(source_mode), source_mode),
                     current_status=IF(VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), 'confirmed', current_status),
                     target_calendar=VALUES(target_calendar),
                     room_key=VALUES(room_key),
@@ -984,13 +997,13 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                     reservation_date=VALUES(reservation_date),
                     start_time=VALUES(start_time),
                     end_time=VALUES(end_time),
-                    payment_status=VALUES(payment_status),
-                    price=VALUES(price),
-                    gross_amount=VALUES(gross_amount),
-                    fee_amount=COALESCE(VALUES(fee_amount), fee_amount),
-                    net_amount=COALESCE(VALUES(net_amount), net_amount),
-                    amount_source=VALUES(amount_source),
-                    payment_method=VALUES(payment_method),
+                    payment_status=IF(VALUES(payment_status) <> '', VALUES(payment_status), payment_status),
+                    price=IF(amount_source LIKE '%platform-export', price, IF(VALUES(price) <> '', VALUES(price), price)),
+                    gross_amount=IF(amount_source LIKE '%platform-export', gross_amount, COALESCE(VALUES(gross_amount), gross_amount)),
+                    fee_amount=IF(amount_source LIKE '%platform-export', fee_amount, COALESCE(VALUES(fee_amount), fee_amount)),
+                    net_amount=IF(amount_source LIKE '%platform-export', net_amount, COALESCE(VALUES(net_amount), net_amount)),
+                    amount_source=IF(amount_source LIKE '%platform-export', amount_source, IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source)),
+                    payment_method=IF(amount_source LIKE '%platform-export', payment_method, IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method)),
                     confirmed_email_event_id=IF(
                         VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'),
                         VALUES(confirmed_email_event_id),
@@ -1002,7 +1015,7 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                         confirmed_email_received_at
                     ),
                     last_event_at=IF(VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(confirmed_email_received_at), last_event_at),
-                    payload_json=VALUES(payload_json),
+                    payload_json=IF(amount_source LIKE '%platform-export', payload_json, VALUES(payload_json)),
                     updated_at=NOW()
                 """,
                 row,
@@ -1055,7 +1068,7 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                     %(payload_json)s, NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
-                    source_mode=VALUES(source_mode),
+                    source_mode=IF(VALUES(source_mode) <> '', VALUES(source_mode), source_mode),
                     current_status=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), 'canceled', current_status),
                     target_calendar=VALUES(target_calendar),
                     room_key=VALUES(room_key),
@@ -1066,13 +1079,13 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                     reservation_date=VALUES(reservation_date),
                     start_time=VALUES(start_time),
                     end_time=VALUES(end_time),
-                    payment_status=VALUES(payment_status),
-                    price=IF(VALUES(price) <> '', VALUES(price), price),
-                    gross_amount=COALESCE(VALUES(gross_amount), gross_amount),
-                    fee_amount=COALESCE(VALUES(fee_amount), fee_amount),
-                    net_amount=COALESCE(VALUES(net_amount), net_amount),
-                    amount_source=IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source),
-                    payment_method=IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method),
+                    payment_status=IF(VALUES(payment_status) <> '', VALUES(payment_status), payment_status),
+                    price=IF(amount_source LIKE '%platform-export', price, IF(VALUES(price) <> '', VALUES(price), price)),
+                    gross_amount=IF(amount_source LIKE '%platform-export', gross_amount, COALESCE(VALUES(gross_amount), gross_amount)),
+                    fee_amount=IF(amount_source LIKE '%platform-export', fee_amount, COALESCE(VALUES(fee_amount), fee_amount)),
+                    net_amount=IF(amount_source LIKE '%platform-export', net_amount, COALESCE(VALUES(net_amount), net_amount)),
+                    amount_source=IF(amount_source LIKE '%platform-export', amount_source, IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source)),
+                    payment_method=IF(amount_source LIKE '%platform-export', payment_method, IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method)),
                     canceled_email_event_id=IF(
                         VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'),
                         VALUES(canceled_email_event_id),
@@ -1389,6 +1402,23 @@ def spacecloud_upload_dedupe_key(event_data, room_key):
     return f'upload|{digest}'
 
 
+def upload_task_waiting_on_canceled_reservation(task, canceled_reservation_number):
+    if not task or task.get('status') != 'needs_review' or not canceled_reservation_number:
+        return False
+    try:
+        result = json.loads(task.get('result_text') or '{}')
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(result, dict):
+        return False
+    winning = result.get('winningBooking') or {}
+    return (
+        result.get('status') == 'needs-review'
+        and result.get('nextAction') == 'manual-review-no-cancellation'
+        and str(winning.get('reservationNumber') or '').strip() == str(canceled_reservation_number).strip()
+    )
+
+
 def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, calendar_key):
     room_key = calendar_to_spacecloud_room_key(calendar_key)
     if not config['db_enabled'] or not room_key:
@@ -1416,6 +1446,11 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
         'end_time': clean_time_or_none(deletion.get('end_time')),
         'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
     }
+    target_start_at, target_end_at = booking_interval_datetimes(
+        row['reservation_date'],
+        row['start_time'],
+        row['end_time'],
+    )
 
     conn = None
     try:
@@ -1445,7 +1480,7 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
                     start_time=VALUES(start_time),
                     end_time=VALUES(end_time),
                     payload_json=VALUES(payload_json),
-                    status=IF(status IN ('done', 'already_gone', 'needs_review', 'google_pending'), status, 'pending'),
+                    status=IF(status IN ('running', 'done', 'already_gone', 'needs_review', 'google_pending'), status, 'pending'),
                     updated_at=NOW()
                 """,
                 row,
@@ -1455,6 +1490,49 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
                 (dedupe_key,),
             )
             task = cursor.fetchone()
+            cursor.execute(
+                """
+                SELECT id, status, result_text
+                FROM rhythmjoy_spacecloud_tasks
+                WHERE task_type='upload'
+                  AND status='needs_review'
+                  AND room_key=%s
+                  AND DATE_ADD(TIMESTAMP(reservation_date, '00:00:00'), INTERVAL TIME_TO_SEC(start_time) SECOND) < %s
+                  AND DATE_ADD(
+                        TIMESTAMP(reservation_date, '00:00:00'),
+                        INTERVAL (TIME_TO_SEC(end_time) + IF(end_time <= start_time, 86400, 0)) SECOND
+                      ) > %s
+                ORDER BY id
+                """,
+                (
+                    room_key,
+                    target_end_at,
+                    target_start_at,
+                ),
+            )
+            retry_ids = [
+                candidate['id']
+                for candidate in cursor.fetchall()
+                if upload_task_waiting_on_canceled_reservation(
+                    candidate,
+                    row['reservation_number'],
+                )
+            ]
+            if retry_ids:
+                cursor.execute(
+                    f"""
+                    UPDATE rhythmjoy_spacecloud_tasks
+                    SET status='pending', locked_at=NULL, claim_token='',
+                        processed_at=NULL, updated_at=NOW()
+                    WHERE id IN ({','.join(['%s'] * len(retry_ids))})
+                    """,
+                    retry_ids,
+                )
+                logger.info(
+                    'Requeued uploads after matching Naver cancellation reservation=%s task_ids=%s',
+                    row['reservation_number'],
+                    retry_ids,
+                )
         logger.info('SpaceCloud delete task saved id=%s room=%s reservation=%s status=%s', task.get('id') if task else '-', room_key, row['reservation_number'], task.get('status') if task else '-')
         return task
     except Exception as error:
@@ -1534,7 +1612,7 @@ def upsert_spacecloud_upload_task(config, logger, email_event_id, event_data, ca
                     start_time=VALUES(start_time),
                     end_time=VALUES(end_time),
                     payload_json=VALUES(payload_json),
-                    status=IF(status IN ('done', 'needs_review', 'google_pending'), status, 'pending'),
+                    status=IF(status IN ('running', 'done', 'needs_review', 'google_pending'), status, 'pending'),
                     updated_at=NOW()
                 """,
                 row,
@@ -1622,7 +1700,7 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
                     start_time=VALUES(start_time),
                     end_time=VALUES(end_time),
                     payload_json=VALUES(payload_json),
-                    status=IF(status IN ('done', 'needs_review', 'google_pending'), status, 'pending'),
+                    status=IF(status IN ('running', 'done', 'needs_review', 'google_pending'), status, 'pending'),
                     updated_at=NOW()
                 """,
                 row,
@@ -1709,7 +1787,7 @@ def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_d
                     start_time=VALUES(start_time),
                     end_time=VALUES(end_time),
                     payload_json=VALUES(payload_json),
-                    status=IF(status IN ('done', 'needs_review', 'google_pending'), status, 'pending'),
+                    status=IF(status IN ('running', 'done', 'needs_review', 'google_pending'), status, 'pending'),
                     updated_at=NOW()
                 """,
                 row,
@@ -1958,6 +2036,17 @@ def notify_spacecloud_cancellation_parse_failure(config, mailbox, email_id, subj
     send_telegram_message(config, text, logger)
 
 
+def calendar_event_reservation_matches(item, reservation_number):
+    wanted = str(reservation_number or '').strip()
+    if not wanted:
+        return False
+    private = item.get('extendedProperties', {}).get('private', {})
+    if str(private.get('reservationNumber') or '').strip() == wanted:
+        return True
+    description = str(item.get('description') or '')
+    return re.search(rf'예약번호\s*[:：]?\s*{re.escape(wanted)}(?!\d)', description) is not None
+
+
 def find_calendar_event_by_reservation(service, target_calendar, reservation_number, logger):
     if not reservation_number:
         return None
@@ -1970,9 +2059,7 @@ def find_calendar_event_by_reservation(service, target_calendar, reservation_num
         maxResults=10,
     ).execute()
     for item in result.get('items', []):
-        private = item.get('extendedProperties', {}).get('private', {})
-        description = item.get('description', '')
-        if private.get('reservationNumber') == reservation_number or reservation_number in description:
+        if calendar_event_reservation_matches(item, reservation_number):
             logger.info('Existing Google Calendar event found calendar=%s reservation=%s event_id=%s', target_calendar, reservation_number, item.get('id'))
             return item
     return None
@@ -2347,8 +2434,8 @@ def delete_events_by_reservation(service, deletion, logger):
 
     reservation_number = deletion.get('reservation_number')
     if not reservation_number:
-        logger.warning('Cancellation has no reservation number: %s', deletion)
-        return delete_events_by_details(service, calendar_key, deletion, logger)
+        logger.warning('Cancellation has no reservation number; automatic Google delete blocked: %s', deletion)
+        return 0
 
     calendar_id = CALENDAR_IDS[calendar_key]
     result = service.events().list(
@@ -2358,6 +2445,8 @@ def delete_events_by_reservation(service, deletion, logger):
     ).execute()
     deleted = 0
     for item in result.get('items', []):
+        if not calendar_event_reservation_matches(item, reservation_number):
+            continue
         service.events().delete(calendarId=calendar_id, eventId=item['id']).execute()
         deleted += 1
         logger.info(
@@ -2547,6 +2636,7 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                     logger,
                     error_text='reservation_parser_no_match',
                 )
+                return
             mark_seen(imap_connection, email_id, logger)
             return
 
@@ -2605,6 +2695,7 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                     error_text='cancellation_parser_no_match',
                 )
                 notify_cancellation_parse_failure(config, mailbox, decoded_id, subject, email_received_at, logger)
+                return
             mark_seen(imap_connection, email_id, logger)
             return
 
@@ -2677,6 +2768,7 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                         error_text='spacecloud_cancellation_parser_no_match',
                     )
                     notify_spacecloud_cancellation_parse_failure(config, mailbox, decoded_id, subject, email_received_at, logger)
+                    return
                 mark_seen(imap_connection, email_id, logger)
                 return
 
@@ -2793,6 +2885,7 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                     error_text='spacecloud_reservation_parser_no_match',
                 )
                 notify_spacecloud_parse_failure(config, mailbox, decoded_id, subject, email_received_at, logger)
+                return
             mark_seen(imap_connection, email_id, logger)
             return
 
@@ -2845,7 +2938,6 @@ def backfill_booking_ledger(config, logger):
                 """
             )
             rows = cursor.fetchall()
-            cursor.execute('DELETE FROM rhythmjoy_booking_ledger')
     except Exception as error:
         disable_db_logging(config, logger, 'Booking ledger backfill select failed', error)
         return 0
@@ -2892,7 +2984,7 @@ def backfill_booking_ledger(config, logger):
                 source_platform,
             )
             processed += 1
-    logger.info('Booking ledger backfill finished processed=%s scanned=%s', processed, len(rows))
+    logger.info('Booking ledger non-destructive backfill finished processed=%s scanned=%s', processed, len(rows))
     return processed
 
 
@@ -3013,7 +3105,7 @@ def main():
     parser = argparse.ArgumentParser(description='Import Rhythmjoy Naver booking email into Google Calendar.')
     parser.add_argument('--once', action='store_true', help='run one polling cycle and exit')
     parser.add_argument('--check-config', action='store_true', help='validate config and exit')
-    parser.add_argument('--backfill-ledger', action='store_true', help='rebuild booking ledger rows from stored parsed email events and exit')
+    parser.add_argument('--backfill-ledger', action='store_true', help='non-destructively upsert booking ledger rows from stored parsed email events and exit')
     args = parser.parse_args()
 
     logger = setup_logging()

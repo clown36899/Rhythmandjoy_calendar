@@ -300,6 +300,65 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+async function acquireAutomationProcessLock(workDir) {
+  const lockPath = path.join(workDir, 'automation-process.lock');
+  const token = `${process.pid}-${Date.now()}`;
+  const create = async () => {
+    const handle = await fs.open(lockPath, 'wx');
+    await handle.writeFile(JSON.stringify({ pid: process.pid, token, startedAt: new Date().toISOString() }));
+    return handle;
+  };
+
+  let handle;
+  try {
+    handle = await create();
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    let existing = {};
+    try {
+      existing = JSON.parse(await fs.readFile(lockPath, 'utf8'));
+    } catch {
+      existing = {};
+    }
+    if (processIsAlive(Number(existing.pid))) {
+      throw new Error(`automation process already running: pid=${existing.pid}`);
+    }
+    await fs.unlink(lockPath).catch((unlinkError) => {
+      if (unlinkError?.code !== 'ENOENT') throw unlinkError;
+    });
+    handle = await create();
+  }
+
+  return async () => {
+    await handle.close().catch(() => {});
+    try {
+      const current = JSON.parse(await fs.readFile(lockPath, 'utf8'));
+      if (current.token === token) await fs.unlink(lockPath);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  };
+}
+
+async function withAutomationProcessLock(args, callback) {
+  const release = await acquireAutomationProcessLock(args.workDir);
+  try {
+    return await callback();
+  } finally {
+    await release();
+  }
+}
+
 function kstNowText() {
   return new Date().toLocaleString('ko-KR', {
     timeZone: 'Asia/Seoul',
@@ -434,6 +493,10 @@ function maskPhone(value) {
   const digits = normalizePhone(value);
   if (digits.length < 7) return '';
   return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
+}
+
+function redactPhoneText(value) {
+  return String(value || '').replace(/01[016789][\s-]?\d{3,4}[\s-]?\d{4}/g, (phone) => maskPhone(phone));
 }
 
 function confirmationSmsEnabled() {
@@ -610,8 +673,8 @@ function safeSmsResult(result) {
     providerCode: result?.providerCode || result?.code || '',
     remaining: Number.isFinite(result?.remaining) ? result.remaining : result?.remaining ?? null,
   };
-  if (result?.reason) safe.reason = result.reason;
-  if (result?.error) safe.error = cleanTelegramText(result.error, 180);
+  if (result?.reason) safe.reason = redactPhoneText(result.reason);
+  if (result?.error) safe.error = cleanTelegramText(redactPhoneText(result.error), 180);
   if (result?.deliveryId) safe.deliveryId = result.deliveryId;
   return safe;
 }
@@ -726,18 +789,51 @@ conn = pymysql.connect(
 try:
     with conn.cursor() as cur:
         ensure_table(cur)
-        cur.execute('SELECT * FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
-        existing = cur.fetchone()
-        if existing and existing.get('status') == 'sent':
-            print(json.dumps({
-                'status': 'already_sent',
-                'deliveryId': existing.get('id'),
-                'maskedPhone': masked,
-                'templateName': template_name,
-                'providerCode': existing.get('provider_code') or '',
-                'remaining': existing.get('provider_remaining'),
-            }, ensure_ascii=False))
-            raise SystemExit(0)
+        cur.execute(
+            """
+            INSERT IGNORE INTO rhythmjoy_sms_deliveries (
+                idempotency_key, source_task_type, source_task_id, template_name,
+                recipient_phone_hash, recipient_phone_last4, status,
+                created_at, updated_at
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,'sending',NOW(),NOW())
+            """,
+            (idempotency_key, task_type, task_id or None, template_name, phone_hash, phone[-4:]),
+        )
+        claimed = cur.rowcount == 1
+        if not claimed:
+            cur.execute('SELECT * FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
+            existing = cur.fetchone() or {}
+            existing_status = existing.get('status') or ''
+            if existing_status == 'sent':
+                print(json.dumps({
+                    'status': 'already_sent',
+                    'deliveryId': existing.get('id'),
+                    'maskedPhone': masked,
+                    'templateName': template_name,
+                    'providerCode': existing.get('provider_code') or '',
+                    'remaining': existing.get('provider_remaining'),
+                }, ensure_ascii=False))
+                raise SystemExit(0)
+            if existing_status == 'failed':
+                cur.execute(
+                    """
+                    UPDATE rhythmjoy_sms_deliveries
+                    SET status='sending', error_text=NULL, updated_at=NOW()
+                    WHERE idempotency_key=%s AND status='failed'
+                    """,
+                    (idempotency_key,),
+                )
+                claimed = cur.rowcount == 1
+            if not claimed:
+                print(json.dumps({
+                    'status': 'needs_review' if existing_status == 'uncertain' else 'delivery_in_progress',
+                    'deliveryId': existing.get('id'),
+                    'maskedPhone': masked,
+                    'templateName': template_name,
+                    'reason': 'provider-result-uncertain-no-auto-resend' if existing_status == 'uncertain' else 'same-message-send-already-claimed',
+                }, ensure_ascii=False))
+                raise SystemExit(0)
 
         try:
             result = aligo_sms.send_sms(
@@ -751,27 +847,19 @@ try:
             error_text = '' if result.get('ok') else json.dumps(result, ensure_ascii=False)[:1000]
             cur.execute(
                 """
-                INSERT INTO rhythmjoy_sms_deliveries (
-                    idempotency_key, source_task_type, source_task_id, template_name,
-                    recipient_phone_hash, recipient_phone_last4, status,
-                    provider_code, provider_remaining, provider_raw, error_text,
-                    sent_at, created_at, updated_at
-                )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,IF(%s='sent', NOW(), NULL),NOW(),NOW())
-                ON DUPLICATE KEY UPDATE
-                    status=VALUES(status),
-                    provider_code=VALUES(provider_code),
-                    provider_remaining=VALUES(provider_remaining),
-                    provider_raw=VALUES(provider_raw),
-                    error_text=VALUES(error_text),
-                    sent_at=IF(VALUES(status)='sent', NOW(), sent_at),
+                UPDATE rhythmjoy_sms_deliveries
+                SET status=%s,
+                    provider_code=%s,
+                    provider_remaining=%s,
+                    provider_raw=%s,
+                    error_text=%s,
+                    sent_at=IF(%s='sent', NOW(), sent_at),
                     updated_at=NOW()
+                WHERE idempotency_key=%s AND status='sending'
                 """,
                 (
-                    idempotency_key, task_type, task_id or None, template_name,
-                    phone_hash, phone[-4:], status,
-                    result.get('code') or '', result.get('remaining'), str(result.get('raw') or '')[:255],
-                    error_text, status,
+                    status, result.get('code') or '', result.get('remaining'),
+                    str(result.get('raw') or '')[:255], error_text, status, idempotency_key,
                 ),
             )
             cur.execute('SELECT id FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
@@ -789,26 +877,20 @@ try:
         except Exception as error:
             cur.execute(
                 """
-                INSERT INTO rhythmjoy_sms_deliveries (
-                    idempotency_key, source_task_type, source_task_id, template_name,
-                    recipient_phone_hash, recipient_phone_last4, status, error_text,
-                    created_at, updated_at
-                )
-                VALUES (%s,%s,%s,%s,%s,%s,'failed',%s,NOW(),NOW())
-                ON DUPLICATE KEY UPDATE
-                    status='failed',
-                    error_text=VALUES(error_text),
-                    updated_at=NOW()
+                UPDATE rhythmjoy_sms_deliveries
+                SET status='uncertain', error_text=%s, updated_at=NOW()
+                WHERE idempotency_key=%s AND status='sending'
                 """,
-                (idempotency_key, task_type, task_id or None, template_name, phone_hash, phone[-4:], str(error)[:1000]),
+                (str(error)[:1000], idempotency_key),
             )
             cur.execute('SELECT id FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
             saved = cur.fetchone() or {}
             print(json.dumps({
-                'status': 'failed',
+                'status': 'needs_review',
                 'deliveryId': saved.get('id'),
                 'maskedPhone': masked,
                 'templateName': template_name,
+                'reason': 'provider-result-uncertain-no-auto-resend',
                 'error': str(error),
             }, ensure_ascii=False))
 finally:
@@ -854,7 +936,14 @@ async function sendPriorBookingCancellationSms(args, {
   });
 }
 
+function shouldSendPriorBookingCancellationSms(task, row) {
+  return row?.status === 'canceled'
+    || (task?.recoveredFromStaleRunning === true && row?.status === 'already-canceled');
+}
+
 const REMOTE_TASK_ENRICHMENT_PY = String.raw`
+from datetime import datetime, timedelta
+
 def parse_payload(row):
     try:
         value = json.loads(row.get('payloadJson') or '{}')
@@ -876,6 +965,21 @@ def task_time_value(value):
     if len(text) == 5:
         return text + ':00'
     return text
+
+def task_slot_datetimes(date_text, start_text, end_text):
+    try:
+        day = datetime.strptime(str(date_text or ''), '%Y-%m-%d')
+        start_hour, start_minute = [int(part) for part in str(start_text or '').split(':')[:2]]
+        end_hour, end_minute = [int(part) for part in str(end_text or '').split(':')[:2]]
+    except (TypeError, ValueError):
+        return None, None
+    start_total = start_hour * 60 + start_minute
+    end_total = end_hour * 60 + end_minute
+    if end_total <= start_total:
+        end_total += 24 * 60
+    start_at = day + timedelta(minutes=start_total)
+    end_at = day + timedelta(minutes=end_total)
+    return start_at.strftime('%Y-%m-%d %H:%M:%S'), end_at.strftime('%Y-%m-%d %H:%M:%S')
 
 def enrich_task_row(cur, row):
     payload = parse_payload(row)
@@ -918,6 +1022,7 @@ def enrich_task_row(cur, row):
         row['restoreActiveOverlapCount'] = 0
         row['restoreBlockingBookings'] = []
         wanted_name = importer.normalize_reserver_name_for_match(row.get('reserverName'))
+        target_start_at, target_end_at = task_slot_datetimes(row.get('date'), row.get('startTime'), row.get('endTime'))
         cur.execute(
             """
             SELECT id, status, reserver_name, result_text
@@ -962,18 +1067,19 @@ def enrich_task_row(cur, row):
             FROM rhythmjoy_booking_ledger
             WHERE current_status='confirmed'
               AND room_key=%s
-              AND reservation_date=%s
               AND COALESCE(source_mode, '') <> 'admin-task-anchor'
-              AND start_time < %s
-              AND end_time > %s
+              AND DATE_ADD(TIMESTAMP(reservation_date, '00:00:00'), INTERVAL TIME_TO_SEC(start_time) SECOND) < %s
+              AND DATE_ADD(
+                    TIMESTAMP(reservation_date, '00:00:00'),
+                    INTERVAL (TIME_TO_SEC(end_time) + IF(end_time <= start_time, 86400, 0)) SECOND
+                  ) > %s
             ORDER BY COALESCE(last_event_at, created_at, '9999-12-31 23:59:59') ASC, id ASC
             LIMIT 10
             """,
             (
                 row.get('roomKey'),
-                row.get('date'),
-                task_time_value(row.get('endTime')),
-                task_time_value(row.get('startTime')),
+                target_end_at,
+                target_start_at,
             ),
         )
         active_overlaps = cur.fetchall()
@@ -981,6 +1087,35 @@ def enrich_task_row(cur, row):
         row['restoreBlockingBookings'] = active_overlaps[:5]
         row['restoreSafeWithoutPriorBlock'] = len(active_overlaps) == 0
 `;
+
+function normalizeClaimedTaskForRecovery(task) {
+  if (task?.status !== 'running') return task;
+  let previousResultStatus = '';
+  try {
+    previousResultStatus = JSON.parse(task.resultText || '{}')?.status || '';
+  } catch {
+    previousResultStatus = '';
+  }
+  return {
+    ...task,
+    status: 'pending',
+    recoveredFromStaleRunning: true,
+    stalePreviousStatus: 'running',
+    stalePreviousResultStatus: previousResultStatus,
+    staleLockedAt: task.lockedAt || '',
+    staleAttempts: task.attempts ?? null,
+  };
+}
+
+function normalizeClaimedTasksForRecovery(tasks) {
+  return (tasks || []).map(normalizeClaimedTaskForRecovery);
+}
+
+function safeTaskClaimLimit() {
+  // One claim per transaction prevents untouched rows from remaining `running`
+  // when a preceding platform operation stops the current cycle.
+  return 1;
+}
 
 async function fetchRemoteTasks(args, { taskType, limit }) {
   const target = await loadCafe24Target(args);
@@ -990,7 +1125,7 @@ set -e
 export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
 export RHYTHMJOY_OPS_ROOT=${shellQuote(opsRoot)}
 export RHYTHMJOY_TASK_TYPE=${shellQuote(taskType)}
-export TASK_LIMIT=${shellQuote(limit)}
+export TASK_LIMIT=${shellQuote(safeTaskClaimLimit(limit))}
 export RHYTHMJOY_NOW_MODE=${shellQuote(args.nowMode ? '1' : '0')}
 export RHYTHMJOY_URGENT_WINDOW_MINUTES=${shellQuote(args.urgentWindowMinutes)}
 ${shellQuote(target.PYTHON_BIN)} <<'PY'
@@ -1063,7 +1198,9 @@ try:
             ORDER BY
               CASE
                 WHEN status='running' THEN 0
-                ELSE 1
+                WHEN status='pending' THEN 1
+                WHEN status='google_pending' THEN 2
+                ELSE 3
               END,
               CASE
                 WHEN %s = '1'
@@ -1102,13 +1239,15 @@ try:
                 """,
                 [claim_token, *ids]
             )
+            for row in rows:
+                row['claimToken'] = claim_token
     conn.commit()
     print(json.dumps(rows, ensure_ascii=False))
 finally:
     conn.close()
 PY
 `;
-  return JSON.parse(runSshScript(target, script).trim() || '[]');
+  return normalizeClaimedTasksForRecovery(JSON.parse(runSshScript(target, script).trim() || '[]'));
 }
 
 async function fetchRemoteTaskTypes(args, { taskTypes, limit }) {
@@ -1119,7 +1258,7 @@ set -e
 export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
 export RHYTHMJOY_OPS_ROOT=${shellQuote(opsRoot)}
 export RHYTHMJOY_TASK_TYPES=${shellQuote(JSON.stringify(taskTypes))}
-export TASK_LIMIT=${shellQuote(limit)}
+export TASK_LIMIT=${shellQuote(safeTaskClaimLimit(limit))}
 export RHYTHMJOY_NOW_MODE=${shellQuote(args.nowMode ? '1' : '0')}
 export RHYTHMJOY_URGENT_WINDOW_MINUTES=${shellQuote(args.urgentWindowMinutes)}
 ${shellQuote(target.PYTHON_BIN)} <<'PY'
@@ -1197,7 +1336,9 @@ try:
             ORDER BY
               CASE
                 WHEN status='running' THEN 0
-                ELSE 1
+                WHEN status='pending' THEN 1
+                WHEN status='google_pending' THEN 2
+                ELSE 3
               END,
               CASE
                 WHEN %s = '1' AND task_type='naver_block' THEN 0
@@ -1242,13 +1383,15 @@ try:
                 """,
                 [claim_token, *ids]
             )
+            for row in rows:
+                row['claimToken'] = claim_token
     conn.commit()
     print(json.dumps(rows, ensure_ascii=False))
 finally:
     conn.close()
 PY
 `;
-  return JSON.parse(runSshScript(target, script).trim() || '[]');
+  return normalizeClaimedTasksForRecovery(JSON.parse(runSshScript(target, script).trim() || '[]'));
 }
 
 async function fetchRemoteDeleteTasks(args) {
@@ -1378,7 +1521,7 @@ try:
             )
             VALUES (%s,%s,'spacecloud_cancel','pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
             ON DUPLICATE KEY UPDATE
-                status=IF(status IN ('done', 'needs_review', 'failed'), status, 'pending'),
+                status=IF(status IN ('running', 'done', 'needs_review', 'failed'), status, 'pending'),
                 payload_json=VALUES(payload_json),
                 updated_at=NOW()
             """,
@@ -1492,7 +1635,7 @@ try:
             )
             VALUES (%s,%s,'naver_cancel','pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
             ON DUPLICATE KEY UPDATE
-                status=IF(status IN ('done', 'needs_review', 'failed'), status, 'pending'),
+                status=IF(status IN ('running', 'done', 'needs_review', 'failed'), status, 'pending'),
                 payload_json=VALUES(payload_json),
                 updated_at=NOW()
             """,
@@ -1622,12 +1765,14 @@ function taskResultTextForDb(resultText, maxLength = 4000) {
   }
 }
 
-async function updateRemoteTask(args, taskId, status, resultText) {
+async function updateRemoteTask(args, task, status, resultText, { releaseClaim = true } = {}) {
   const target = await loadCafe24Target(args);
   const payload = Buffer.from(JSON.stringify({
-    taskId,
+    taskId: task.id || task.taskId,
+    claimToken: task.claimToken || task.claim_token || '',
     status,
     resultText: taskResultTextForDb(resultText),
+    releaseClaim,
   }), 'utf8').toString('base64');
   const script = `
 set -e
@@ -1662,25 +1807,32 @@ conn = pymysql.connect(
 )
 try:
     with conn.cursor() as cur:
-        processed_expr = 'NOW()' if payload['status'] in ('done', 'already_gone', 'needs_review', 'failed') else 'processed_at'
+        release_claim = bool(payload.get('releaseClaim', True))
+        processed_expr = 'NOW()' if release_claim and payload['status'] in ('done', 'already_gone', 'needs_review', 'failed') else 'processed_at'
+        next_status = payload['status'] if release_claim else 'running'
+        next_claim_token = '' if release_claim else payload['claimToken']
         cur.execute(
             f"""
             UPDATE rhythmjoy_spacecloud_tasks
             SET status=%s,
                 processed_at={processed_expr},
-                claim_token='',
+                claim_token=%s,
                 result_text=%s,
                 updated_at=NOW()
-            WHERE id=%s
+            WHERE id=%s AND status='running' AND claim_token=%s
             """,
-            (payload['status'], payload['resultText'], payload['taskId'])
+            (next_status, next_claim_token, payload['resultText'], payload['taskId'], payload['claimToken'])
         )
         print(json.dumps({'updated': cur.rowcount}, ensure_ascii=False))
 finally:
     conn.close()
 PY
 `;
-  return JSON.parse(runSshScript(target, script).trim() || '{}');
+  const result = JSON.parse(runSshScript(target, script).trim() || '{}');
+  if (result.updated !== 1) {
+    throw new Error(`task claim lost before status update: task=${task.id || task.taskId || ''}`);
+  }
+  return result;
 }
 
 async function updateRemoteAdminSessions(args, sessions) {
@@ -2133,13 +2285,22 @@ async function sendTelegram(args, text) {
   }
 }
 
+function notificationSuppressedByCooldown(entry, textPreview, now, cooldownSeconds) {
+  const lastSentAt = entry?.lastSentAt ? Date.parse(entry.lastSentAt) : 0;
+  return Boolean(
+    entry?.textPreview === textPreview
+    && lastSentAt
+    && now - lastSentAt < cooldownSeconds * 1000
+  );
+}
+
 async function notifyWithCooldown(args, key, text, {
   cooldownSeconds = args.notifyCooldownSeconds,
 } = {}) {
   const state = await readJsonObject(args.notifyState);
   const now = Date.now();
-  const lastSentAt = state[key]?.lastSentAt ? Date.parse(state[key].lastSentAt) : 0;
-  if (lastSentAt && now - lastSentAt < cooldownSeconds * 1000) {
+  const textPreview = compactTelegramText(text).replace(/\s+/g, ' ').slice(0, 240);
+  if (notificationSuppressedByCooldown(state[key], textPreview, now, cooldownSeconds)) {
     logLine(`telegram suppressed by cooldown: ${key}`);
     return { sent: false, reason: 'cooldown' };
   }
@@ -2150,7 +2311,7 @@ async function notifyWithCooldown(args, key, text, {
       lastAttemptAt: new Date().toISOString(),
       lastSentAt: result.sent || result.reason === 'dry-run' ? new Date().toISOString() : state[key]?.lastSentAt || null,
       result,
-      textPreview: compactTelegramText(text).replace(/\s+/g, ' ').slice(0, 240),
+      textPreview,
     };
     await writeJson(args.notifyState, state);
     if (result.sent) logLine(`telegram sent: ${key} ${telegramDeliverySummary(result)}`);
@@ -2160,7 +2321,7 @@ async function notifyWithCooldown(args, key, text, {
       lastAttemptAt: new Date().toISOString(),
       lastSentAt: state[key]?.lastSentAt || null,
       result: { sent: false, reason: String(error?.message || error) },
-      textPreview: compactTelegramText(text).replace(/\s+/g, ' ').slice(0, 240),
+      textPreview,
     };
     await writeJson(args.notifyState, state);
     logLine(`telegram failed: ${String(error?.message || error)}`);
@@ -2325,14 +2486,14 @@ async function maybeSendDailyReconcile(args) {
 async function fetchRemoteReflectionAudit(args) {
   const target = await loadCafe24Target(args);
   const graceMinutes = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_GRACE_MINUTES || '10', 10);
-  const pastDays = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_PAST_DAYS || '3', 10);
-  const futureDays = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_FUTURE_DAYS || '120', 10);
+  const pastDays = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_PAST_DAYS || '3650', 10);
+  const futureDays = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_FUTURE_DAYS || '730', 10);
   const script = `
 set -e
 export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
 export REFLECTION_AUDIT_GRACE_MINUTES=${shellQuote(Number.isFinite(graceMinutes) && graceMinutes > 0 ? graceMinutes : 10)}
-export REFLECTION_AUDIT_PAST_DAYS=${shellQuote(Number.isFinite(pastDays) && pastDays >= 0 ? pastDays : 3)}
-export REFLECTION_AUDIT_FUTURE_DAYS=${shellQuote(Number.isFinite(futureDays) && futureDays > 0 ? futureDays : 120)}
+export REFLECTION_AUDIT_PAST_DAYS=${shellQuote(Number.isFinite(pastDays) && pastDays >= 0 ? pastDays : 3650)}
+export REFLECTION_AUDIT_FUTURE_DAYS=${shellQuote(Number.isFinite(futureDays) && futureDays > 0 ? futureDays : 730)}
 ${shellQuote(target.PYTHON_BIN)} <<'PY'
 import json
 import os
@@ -2850,6 +3011,27 @@ function minutesFromTimeText(value) {
   return Number.parseInt(match[1], 10) * 60 + Number.parseInt(match[2], 10);
 }
 
+function reservationSlotInterval(slot) {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(slot?.date || slot?.reservation_date || ''));
+  const start = minutesFromTimeText(slot?.startTime || slot?.start_time);
+  let end = minutesFromTimeText(slot?.endTime || slot?.end_time);
+  if (!dateMatch || start === null || end === null) return null;
+  if (end <= start) end += 24 * 60;
+  const dayStart = Date.UTC(
+    Number.parseInt(dateMatch[1], 10),
+    Number.parseInt(dateMatch[2], 10) - 1,
+    Number.parseInt(dateMatch[3], 10),
+  ) / 60000;
+  return { start: dayStart + start, end: dayStart + end };
+}
+
+function reservationSlotsOverlap(left, right) {
+  const leftInterval = reservationSlotInterval(left);
+  const rightInterval = reservationSlotInterval(right);
+  if (!leftInterval || !rightInterval) return false;
+  return leftInterval.start < rightInterval.end && leftInterval.end > rightInterval.start;
+}
+
 function displayEndTime(startTime, endTime) {
   if (!endTime) return '-';
   const startMinutes = minutesFromTimeText(startTime);
@@ -3015,6 +3197,8 @@ function smsStatusText(status) {
   const map = {
     sent: '발송 성공',
     already_sent: '이미 발송됨',
+    delivery_in_progress: '동일 문자 발송 진행 중',
+    needs_review: '발송 결과 확인 필요',
     skipped: '발송 생략',
     failed: '발송 실패',
     disabled: '문자 비활성',
@@ -3044,7 +3228,7 @@ function formatSmsRows(rows, limit = 3) {
   const lines = visible.map((row, index) => {
     const sms = row.sms || {};
     const provider = sms.provider ? `${sms.provider} ` : '';
-    const reason = ['failed', 'skipped'].includes(sms.status)
+    const reason = ['failed', 'skipped', 'delivery_in_progress', 'needs_review'].includes(sms.status)
       ? (sms.reason || sms.error || sms.providerCode || '')
       : '';
     return `${index + 1}. ${taskTargetText(row)} / ${sms.maskedPhone || '-'} (${provider}${smsStatusText(sms.status)}${reason ? `: ${cleanTelegramText(reason, 80)}` : ''})`;
@@ -3144,7 +3328,7 @@ function syncSmsStatusText(row) {
   const sms = row.sms || null;
   if (!sms) return '';
   const phone = sms.maskedPhone ? ` ${sms.maskedPhone}` : '';
-  const reason = ['failed', 'skipped'].includes(sms.status)
+  const reason = ['failed', 'skipped', 'delivery_in_progress', 'needs_review'].includes(sms.status)
     ? (sms.reason || sms.error || sms.providerCode || '')
     : '';
   return `문자 ${smsStatusText(sms.status)}${phone}${reason ? `: ${cleanTelegramText(reason, 60)}` : ''}`;
@@ -3484,6 +3668,7 @@ function dbStatusForDeleteRow(row) {
 function dbStatusForUploadRow(row) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
+  if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'naver-cancel-queued') return 'done';
   if (row.status === 'google-recorded') return 'done';
@@ -3498,6 +3683,7 @@ function dbStatusForUploadRow(row) {
 function dbStatusForNaverBlockRow(row) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
+  if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'blocked' || row.status === 'already-blocked' || row.status === 'google-recorded') return 'done';
   if (row.status === 'spacecloud-cancel-queued') return 'done';
@@ -3513,6 +3699,7 @@ function dbStatusForNaverBlockRow(row) {
 function dbStatusForSpacecloudCancelRow(row) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
+  if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'canceled' || row.status === 'already-canceled') return 'done';
   if (row.status === 'needs-review') return 'needs_review';
@@ -3524,6 +3711,7 @@ function dbStatusForSpacecloudCancelRow(row) {
 function dbStatusForNaverCancelRow(row) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
+  if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'canceled' || row.status === 'already-canceled') return 'done';
   if (row.status === 'needs-review') return 'needs_review';
@@ -3561,7 +3749,7 @@ function taskRowsNeedingReview(rows, doneStatuses) {
 }
 
 function basicTaskSummary(task) {
-  return {
+  const summary = {
     taskId: task.id || task.taskId || null,
     taskType: task.taskType || task.task_type || '',
     roomKey: task.roomKey || task.room_key || '',
@@ -3581,6 +3769,14 @@ function basicTaskSummary(task) {
     createdAt: task.createdAt || task.created_at || '',
     updatedAt: task.updatedAt || task.updated_at || '',
   };
+  if (task.recoveredFromStaleRunning) {
+    summary.recoveredFromStaleRunning = true;
+    summary.stalePreviousStatus = task.stalePreviousStatus || 'running';
+    summary.stalePreviousResultStatus = task.stalePreviousResultStatus || '';
+    summary.staleLockedAt = task.staleLockedAt || task.lockedAt || '';
+    summary.staleAttempts = task.staleAttempts ?? task.attempts ?? null;
+  }
+  return summary;
 }
 
 function parseKstMysqlTimestamp(value) {
@@ -3827,6 +4023,7 @@ ${shellQuote(target.PYTHON_BIN)} <<'PY'
 import base64
 import json
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 import pymysql
 
@@ -3844,11 +4041,27 @@ def time_value(value):
         return text + ':00'
     return text
 
+def slot_datetimes(date_text, start_text, end_text):
+    try:
+        day = datetime.strptime(str(date_text or ''), '%Y-%m-%d')
+        start_hour, start_minute = [int(part) for part in str(start_text or '').split(':')[:2]]
+        end_hour, end_minute = [int(part) for part in str(end_text or '').split(':')[:2]]
+    except (TypeError, ValueError):
+        return None, None
+    start_total = start_hour * 60 + start_minute
+    end_total = end_hour * 60 + end_minute
+    if end_total <= start_total:
+        end_total += 24 * 60
+    start_at = day + timedelta(minutes=start_total)
+    end_at = day + timedelta(minutes=end_total)
+    return start_at.strftime('%Y-%m-%d %H:%M:%S'), end_at.strftime('%Y-%m-%d %H:%M:%S')
+
 def is_real_booking(item):
     return item.get('sourcePlatform') in {'naver', 'spacecloud'}
 
 load_env(os.environ['RHYTHMJOY_ENV_FILE'])
 payload = json.loads(base64.b64decode(os.environ['CONFLICT_PAYLOAD_B64']).decode('utf-8'))
+target_start_at, target_end_at = slot_datetimes(payload.get('date'), payload.get('startTime'), payload.get('endTime'))
 conn = pymysql.connect(
     host=os.environ['DB_SERVERNAME'],
     port=int(os.environ.get('DB_PORT', '3306')),
@@ -3880,19 +4093,20 @@ try:
             FROM rhythmjoy_booking_ledger
             WHERE current_status='confirmed'
               AND room_key=%s
-              AND reservation_date=%s
               AND COALESCE(source_mode, '') <> 'admin-task-anchor'
-              AND start_time < %s
-              AND end_time > %s
+              AND DATE_ADD(TIMESTAMP(reservation_date, '00:00:00'), INTERVAL TIME_TO_SEC(start_time) SECOND) < %s
+              AND DATE_ADD(
+                    TIMESTAMP(reservation_date, '00:00:00'),
+                    INTERVAL (TIME_TO_SEC(end_time) + IF(end_time <= start_time, 86400, 0)) SECOND
+                  ) > %s
             ORDER BY
               COALESCE(last_event_at, created_at, '9999-12-31 23:59:59') ASC,
               id ASC
             """,
             (
                 payload.get('roomKey') or '',
-                payload.get('date') or None,
-                time_value(payload.get('endTime')),
-                time_value(payload.get('startTime')),
+                target_end_at,
+                target_start_at,
             ),
         )
         overlaps = cur.fetchall()
@@ -4092,7 +4306,8 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
 
   const rows = [];
   try {
-    for (const task of tasks) {
+    for (const claimedTask of tasks) {
+      const task = normalizeClaimedTaskForRecovery(claimedTask);
       let row = null;
       try {
         if (task.status === 'running') {
@@ -4142,7 +4357,7 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
               if (row.status === 'submitted') {
                 const marked = markSubmittedRows(args, [row]);
                 row.marked = marked;
-                await updateRemoteTask(args, task.id, 'google_pending', JSON.stringify(row, null, 2));
+                await updateRemoteTask(args, task, 'google_pending', JSON.stringify(row, null, 2), { releaseClaim: false });
               }
             }
           }
@@ -4193,7 +4408,7 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
       rows.push(row);
       const status = dbStatusForUploadRow(row);
       row.dbStatus = status;
-      await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
@@ -4256,7 +4471,8 @@ async function runDeleteTasks(args, context = null, claimedTasks = null) {
 
   const rows = [];
   try {
-    for (const task of tasks) {
+    for (const claimedTask of tasks) {
+      const task = normalizeClaimedTaskForRecovery(claimedTask);
       let row;
       if (task.status === 'running') {
         row = staleRunningNeedsReviewRow(task, 'delete');
@@ -4280,7 +4496,7 @@ async function runDeleteTasks(args, context = null, claimedTasks = null) {
         } else {
           row = await deleteSpacecloudDirectReservation(activeContext, task);
           if (['deleted', 'already-gone'].includes(row.status)) {
-            await updateRemoteTask(args, task.id, 'google_pending', JSON.stringify(row, null, 2));
+            await updateRemoteTask(args, task, 'google_pending', JSON.stringify(row, null, 2), { releaseClaim: false });
           }
         }
       }
@@ -4302,7 +4518,7 @@ async function runDeleteTasks(args, context = null, claimedTasks = null) {
       rows.push(row);
       const status = dbStatusForDeleteRow(row);
       row.dbStatus = status;
-      await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
@@ -4363,7 +4579,8 @@ async function runNaverBlockTasks(args, context = null) {
 
   const rows = [];
   try {
-    for (const task of tasks) {
+    for (const claimedTask of tasks) {
+      const task = normalizeClaimedTaskForRecovery(claimedTask);
       let row;
       if (task.status === 'running') {
         row = staleRunningNeedsReviewRow(task, 'naver_block');
@@ -4408,7 +4625,7 @@ async function runNaverBlockTasks(args, context = null) {
       rows.push(row);
       const status = dbStatusForNaverBlockRow(row);
       row.dbStatus = status;
-      await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
@@ -4461,7 +4678,8 @@ async function runSpacecloudCancelTasks(args, context = null) {
   }
   if (CUSTOMER_RESERVATION_CANCELLATION_DISABLED) {
     const rows = [];
-    for (const task of tasks) {
+    for (const claimedTask of tasks) {
+      const task = normalizeClaimedTaskForRecovery(claimedTask);
       const row = {
         ...basicTaskSummary(task),
         status: 'needs-review',
@@ -4470,7 +4688,7 @@ async function runSpacecloudCancelTasks(args, context = null) {
         dbStatus: 'needs_review',
       };
       rows.push(row);
-      await updateRemoteTask(args, task.id, 'needs_review', JSON.stringify(row, null, 2));
+      await updateRemoteTask(args, task, 'needs_review', JSON.stringify(row, null, 2));
     }
     return {
       status: 'spacecloud-cancel-needs-review',
@@ -4493,7 +4711,8 @@ async function runSpacecloudCancelTasks(args, context = null) {
 
   const rows = [];
   try {
-    for (const task of tasks) {
+    for (const claimedTask of tasks) {
+      const task = normalizeClaimedTaskForRecovery(claimedTask);
       let row;
       if (task.status === 'running') {
         row = staleRunningNeedsReviewRow(task, 'spacecloud_cancel');
@@ -4504,7 +4723,7 @@ async function runSpacecloudCancelTasks(args, context = null) {
         } else {
           row = await cancelSpacecloudConfirmedReservation(activeContext, task);
           row.smsPreview = priorBookingCancelSmsMessage(task);
-          if (row.status === 'canceled') {
+          if (shouldSendPriorBookingCancellationSms(task, row)) {
             try {
               row.sms = await sendPriorBookingCancellationSms(args, {
                 task,
@@ -4525,7 +4744,7 @@ async function runSpacecloudCancelTasks(args, context = null) {
       rows.push(row);
       const status = dbStatusForSpacecloudCancelRow(row);
       row.dbStatus = status;
-      await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
@@ -4576,7 +4795,8 @@ async function runNaverCancelTasks(args, context = null) {
   }
   if (CUSTOMER_RESERVATION_CANCELLATION_DISABLED) {
     const rows = [];
-    for (const task of tasks) {
+    for (const claimedTask of tasks) {
+      const task = normalizeClaimedTaskForRecovery(claimedTask);
       const row = {
         ...basicTaskSummary(task),
         status: 'needs-review',
@@ -4585,7 +4805,7 @@ async function runNaverCancelTasks(args, context = null) {
         dbStatus: 'needs_review',
       };
       rows.push(row);
-      await updateRemoteTask(args, task.id, 'needs_review', JSON.stringify(row, null, 2));
+      await updateRemoteTask(args, task, 'needs_review', JSON.stringify(row, null, 2));
     }
     return {
       status: 'naver-cancel-needs-review',
@@ -4608,7 +4828,8 @@ async function runNaverCancelTasks(args, context = null) {
 
   const rows = [];
   try {
-    for (const task of tasks) {
+    for (const claimedTask of tasks) {
+      const task = normalizeClaimedTaskForRecovery(claimedTask);
       let row;
       if (task.status === 'running') {
         row = staleRunningNeedsReviewRow(task, 'naver_cancel');
@@ -4621,7 +4842,7 @@ async function runNaverCancelTasks(args, context = null) {
             businessId: args.naverBusinessId,
           });
           row.smsPreview = priorBookingCancelSmsMessage(task);
-          if (row.status === 'canceled') {
+          if (shouldSendPriorBookingCancellationSms(task, row)) {
             try {
               row.sms = await sendPriorBookingCancellationSms(args, {
                 task: {
@@ -4645,7 +4866,7 @@ async function runNaverCancelTasks(args, context = null) {
       rows.push(row);
       const status = dbStatusForNaverCancelRow(row);
       row.dbStatus = status;
-      await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
@@ -4728,6 +4949,13 @@ function taskResultWithStatus(result, kind) {
   };
 }
 
+function bookingSyncFetchArgs(args) {
+  // Upload/delete must follow the source email timestamp. NOW-mode urgency is
+  // useful for availability work, but reordering these two task types can make
+  // a rebooking run before its earlier cancellation.
+  return { ...args, nowMode: false };
+}
+
 async function runOrderedBookingSyncTasks(args, context = null) {
   if (args.dryRun) {
     return {
@@ -4741,9 +4969,10 @@ async function runOrderedBookingSyncTasks(args, context = null) {
   const deleteRuns = [];
   const order = [];
   const limit = Math.max(1, Number(args.limitPerCycle || 0) + Number(args.deleteLimitPerCycle || 0));
+  const orderedFetchArgs = bookingSyncFetchArgs(args);
 
   for (let index = 0; index < limit; index += 1) {
-    const tasks = await fetchRemoteTaskTypes(args, {
+    const tasks = await fetchRemoteTaskTypes(orderedFetchArgs, {
       taskTypes: ['upload', 'delete'],
       limit: 1,
     });
@@ -4769,6 +4998,10 @@ async function runOrderedBookingSyncTasks(args, context = null) {
     // instead of immediately claiming the same task again. Terminal review rows
     // are excluded from the next fetch, allowing the following received task to run.
     if ((result.retrying || []).length > 0) break;
+    if (
+      task.status === 'google_pending'
+      && (result.failed || []).some((failedRow) => isGoogleRetryableStatus(failedRow.status))
+    ) break;
   }
 
   return {
@@ -4810,7 +5043,8 @@ async function runNaverAvailabilityTasks(args, context = null) {
 
   const rows = [];
   try {
-    for (const task of tasks) {
+    for (const claimedTask of tasks) {
+      const task = normalizeClaimedTaskForRecovery(claimedTask);
       const taskType = task.taskType || 'naver_block';
       let row;
       if (task.status === 'running') {
@@ -4844,7 +5078,7 @@ async function runNaverAvailabilityTasks(args, context = null) {
             });
             row.taskType = taskType;
             if (['restored', 'already-available'].includes(row.status)) {
-              await updateRemoteTask(args, task.id, 'google_pending', JSON.stringify(row, null, 2));
+              await updateRemoteTask(args, task, 'google_pending', JSON.stringify(row, null, 2), { releaseClaim: false });
             }
           }
 
@@ -4923,7 +5157,7 @@ async function runNaverAvailabilityTasks(args, context = null) {
         ? dbStatusForNaverRestoreRow(row)
         : dbStatusForNaverBlockRow(row);
       row.dbStatus = status;
-      await updateRemoteTask(args, task.id, status, JSON.stringify(row, null, 2));
+      await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
@@ -5138,6 +5372,9 @@ function runNowModeSelfTest() {
   assert.equal(parsed.urgentCooldownSeconds, 300);
   assert.equal(parsed.restoreGraceSeconds, 45);
   assert.equal(parsed.sessionCheckIntervalSeconds, 180);
+  const bookingFetchArgs = bookingSyncFetchArgs(parsed);
+  assert.equal(bookingFetchArgs.nowMode, false);
+  assert.equal(parsed.nowMode, true, 'disabling booking-task urgency must not mutate the watcher args');
 
   const confirmationTask = {
     date: '2026-08-01',
@@ -5183,6 +5420,50 @@ function runNowModeSelfTest() {
     }
   }
   assert.equal(maximumConfirmationBytes, 90);
+
+  assert.equal(reservationSlotsOverlap(
+    { date: '2026-08-03', startTime: '19:00', endTime: '20:00' },
+    { date: '2026-08-03', startTime: '20:00', endTime: '21:00' },
+  ), false);
+  assert.equal(reservationSlotsOverlap(
+    { date: '2026-08-03', startTime: '19:00', endTime: '21:00' },
+    { date: '2026-08-03', startTime: '20:00', endTime: '22:00' },
+  ), true);
+  assert.equal(reservationSlotsOverlap(
+    { date: '2026-08-03', startTime: '23:00', endTime: '00:00' },
+    { date: '2026-08-04', startTime: '00:00', endTime: '01:00' },
+  ), false);
+  assert.equal(reservationSlotsOverlap(
+    { date: '2026-08-03', startTime: '23:00', endTime: '01:00' },
+    { date: '2026-08-04', startTime: '00:00', endTime: '01:00' },
+  ), true);
+  assert.equal(reservationSlotsOverlap(
+    { date: '2026-08-03', startTime: '23:00', endTime: '24:00' },
+    { date: '2026-08-04', startTime: '00:00', endTime: '01:00' },
+  ), false);
+
+  const staleClaim = {
+    id: 99,
+    taskType: 'upload',
+    status: 'running',
+    roomKey: 'a',
+    date: '2026-08-03',
+    startTime: '20:00',
+    endTime: '21:00',
+    attempts: 2,
+    lockedAt: '2026-08-03 10:00:00',
+    resultText: JSON.stringify({ status: 'submitted' }),
+  };
+  const recoveredClaim = normalizeClaimedTaskForRecovery(staleClaim);
+  assert.equal(recoveredClaim.status, 'pending');
+  assert.equal(recoveredClaim.recoveredFromStaleRunning, true);
+  assert.equal(recoveredClaim.stalePreviousResultStatus, 'submitted');
+  assert.equal(spacecloudUploadEventFromTask(recoveredClaim).attempts, 2);
+  assert.equal(basicTaskSummary(recoveredClaim).recoveredFromStaleRunning, true);
+  assert.equal(normalizeClaimedTaskForRecovery({ status: 'google_pending' }).status, 'google_pending');
+  assert.equal(shouldSendPriorBookingCancellationSms({}, { status: 'canceled' }), true);
+  assert.equal(shouldSendPriorBookingCancellationSms(recoveredClaim, { status: 'already-canceled' }), true);
+  assert.equal(shouldSendPriorBookingCancellationSms({}, { status: 'already-canceled' }), false);
 
   const freshTask = {
     id: 1,
@@ -5245,20 +5526,84 @@ function runNowModeSelfTest() {
   assert.equal(hasBlockingFailures({ failed: [{ status: 'google-create-failed' }] }), false);
   assert.equal(hasBlockingFailures({ failed: [{ status: 'needs-review' }] }), true);
   assert.equal(hasBlockingFailures({ failed: [], retrying: [retryRow] }), false);
+  for (const status of ['created', 'existing', 'replaced']) {
+    const row = {};
+    assert.equal(applyCalendarCreateResult(row, { status }, 'test'), 'google-recorded');
+    assert.equal(row.googleCalendar.status, status);
+  }
+  const googleFailureRow = {};
+  googleFailureRow.status = applyCalendarCreateResult(googleFailureRow, { status: 'failed' }, 'test');
+  assert.equal(googleFailureRow.status, 'google-create-failed');
+  assert.equal(dbStatusForUploadRow(googleFailureRow), 'google_pending');
+  const googleConflictRow = {};
+  googleConflictRow.status = applyCalendarCreateResult(googleConflictRow, { status: 'conflict' }, 'test');
+  assert.equal(dbStatusForUploadRow(googleConflictRow), 'needs_review');
+  const smsFailedRow = { status: 'google-recorded', sms: { status: 'failed' } };
+  const smsUncertainRow = { status: 'google-recorded', sms: { status: 'needs_review' } };
+  const smsSentRow = { status: 'google-recorded', sms: { status: 'sent' } };
+  assert.equal(dbStatusForUploadRow(smsFailedRow), 'needs_review');
+  assert.equal(dbStatusForNaverBlockRow(smsFailedRow), 'needs_review');
+  assert.equal(dbStatusForNaverCancelRow({ status: 'canceled', sms: { status: 'failed' } }), 'needs_review');
+  assert.equal(dbStatusForSpacecloudCancelRow({ status: 'canceled', sms: { status: 'needs_review' } }), 'needs_review');
+  assert.equal(dbStatusForUploadRow(smsUncertainRow), 'needs_review');
+  assert.equal(dbStatusForUploadRow(smsSentRow), 'done');
+  assert.equal(smsSendOk('already_sent'), true);
+  assert.equal(smsSendOk('delivery_in_progress'), false);
+  assert.equal(redactPhoneText('recipient 010-4801-7180 failed'), 'recipient 010-****-7180 failed');
+  assert.equal(redactPhoneText('01048017180'), '010-****-7180');
+  const compactedLongResult = taskResultTextForDb(JSON.stringify({
+    status: 'needs-review',
+    taskId: 777,
+    reservationNo: '1311471051',
+    error: 'x'.repeat(20_000),
+    candidates: Array.from({ length: 100 }, (_, index) => ({ index, text: '후보'.repeat(1000) })),
+  }));
+  const parsedLongResult = JSON.parse(compactedLongResult);
+  assert.ok(compactedLongResult.length <= 4000);
+  assert.equal(parsedLongResult.status, 'needs-review');
+  assert.equal(parsedLongResult.reservationNo, '1311471051');
+  const alertNow = Date.parse('2026-08-03T12:00:00Z');
+  const priorAlert = { lastSentAt: '2026-08-03T11:59:00Z', textPreview: 'same issue' };
+  assert.equal(notificationSuppressedByCooldown(priorAlert, 'same issue', alertNow, 3600), true);
+  assert.equal(notificationSuppressedByCooldown(priorAlert, 'different issue', alertNow, 3600), false);
   assert.equal(CUSTOMER_RESERVATION_CANCELLATION_DISABLED, true);
+  assert.match(createRemoteSpacecloudCancelTask.toString(), /CUSTOMER_RESERVATION_CANCELLATION_DISABLED/);
+  assert.match(createRemoteNaverCancelTask.toString(), /CUSTOMER_RESERVATION_CANCELLATION_DISABLED/);
+  assert.match(fetchRemoteTasks.toString(), /FOR UPDATE/);
+  assert.match(fetchRemoteTasks.toString(), /claim_token/);
+  assert.match(fetchRemoteTaskTypes.toString(), /FOR UPDATE/);
+  assert.match(fetchRemoteTaskTypes.toString(), /claim_token/);
+  assert.match(fetchRemoteTaskTypes.toString(), /WHEN status='pending' THEN 1/);
+  assert.match(fetchRemoteTaskTypes.toString(), /WHEN status='google_pending' THEN 2/);
+  assert.match(updateRemoteTask.toString(), /WHERE id=%s AND status='running' AND claim_token=%s/);
+  assert.match(updateRemoteTask.toString(), /releaseClaim/);
+  assert.equal(safeTaskClaimLimit(1), 1);
+  assert.equal(safeTaskClaimLimit(50), 1);
   assert.match(dailyReconcileMessage({}), /spacecloud-watch\/launchd\.log/);
 
   return {
     ok: true,
     checks: [
       'now-mode argument parsing',
+      'booking upload/delete preserve source-received order even in now-mode',
+      'stale running tasks resume through idempotent platform verification and cancellation SMS ledger',
+      'adjacent and midnight-crossing booking intervals use full datetimes',
       'restore grace keeps task pending',
       'same-cycle cancellation result merge',
       'platform page timeout becomes next-cycle retry',
       'closed browser context retries every task type',
       'ambiguous SpaceCloud submit is verified on retry',
       'google-only retry does not block urgent flow',
+      'google created/existing/replaced are idempotent and partial failure stays google-pending',
+      'sms send is task-visible on failure/uncertainty and duplicate states are not treated as success',
+      'SMS errors redact full recipient phone numbers',
+      'oversized task results remain valid JSON with status and reservation identity',
+      'notification cooldown suppresses only identical issue text',
       'customer reservation cancellation is hard-disabled',
+      'task claims use transactional row locks and unique claim tokens',
+      'only the current claim owner can checkpoint or finish a task',
+      'task rows are claimed one at a time so untouched rows never remain running',
+      'new platform sync work outranks Google-only retries and each failed Google retry runs once per cycle',
       'daily reconcile message renders with log hint',
     ],
   };
@@ -5833,14 +6178,14 @@ ${kstNowText()}
   }
 
   if (args.command === 'once') {
-    const result = await runCycle(args);
+    const result = await withAutomationProcessLock(args, () => runCycle(args));
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else console.log(`cycle ${result.status}; candidates=${result.uploadCandidates}; attempted=${result.attempted || 0}; remaining=${result.remainingInPlan ?? 0}; uploadTasks=${result.uploadTasks?.attempted || 0}; naverCancelTasks=${result.naverCancelTasks?.attempted || 0}; deleteTasks=${result.deleteTasks?.attempted || 0}; naverBlockTasks=${result.naverBlockTasks?.attempted || 0}; naverRestoreTasks=${result.naverRestoreTasks?.attempted || 0}; spacecloudCancelTasks=${result.spacecloudCancelTasks?.attempted || 0}`);
     return;
   }
 
   if (args.command === 'watch') {
-    await runWatch(args);
+    await withAutomationProcessLock(args, () => runWatch(args));
     return;
   }
 

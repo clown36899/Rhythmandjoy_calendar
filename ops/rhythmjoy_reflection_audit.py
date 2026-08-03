@@ -921,8 +921,8 @@ def main():
         default=int(os.environ.get('RHYTHMJOY_REFLECTION_CALENDAR_GRACE_MINUTES', '5')),
         help='verify Google Calendar only after a confirmed ledger row is at least this old',
     )
-    parser.add_argument('--past-days', type=int, default=int(os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_PAST_DAYS', '3')))
-    parser.add_argument('--future-days', type=int, default=int(os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_FUTURE_DAYS', '120')))
+    parser.add_argument('--past-days', type=int, default=int(os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_PAST_DAYS', '3650')))
+    parser.add_argument('--future-days', type=int, default=int(os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_FUTURE_DAYS', '730')))
     parser.add_argument('--notify', action='store_true')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
