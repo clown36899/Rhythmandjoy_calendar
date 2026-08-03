@@ -59,6 +59,14 @@ def google_time(value):
     return value.isoformat().replace('+00:00', 'Z')
 
 
+def guaranteed_coverage_start(now=None):
+    """Return the first full Korea calendar day guaranteed by a full sync."""
+    current = now or utc_now()
+    time_min = current - timedelta(days=FULL_SYNC_PAST_DAYS)
+    korea_date = (time_min + timedelta(hours=9)).date()
+    return (korea_date + timedelta(days=1)).isoformat()
+
+
 def read_json(path, default):
     try:
         with path.open('r', encoding='utf-8') as f:
@@ -163,10 +171,10 @@ def full_sync_room(service, room_key):
         if event:
             events[item['id']] = event
 
-    return events, next_sync_token, len(items), 'full'
+    return events, next_sync_token, len(items), 'full', guaranteed_coverage_start()
 
 
-def incremental_sync_room(service, room_key, previous_events, sync_token):
+def incremental_sync_room(service, room_key, previous_events, sync_token, coverage_start=None):
     room = ROOMS[room_key]
     items, next_sync_token = list_all_pages(service, room['calendarId'], {
         'maxResults': 2500,
@@ -188,7 +196,13 @@ def incremental_sync_room(service, room_key, previous_events, sync_token):
         if event:
             events[event_id] = event
 
-    return events, next_sync_token or sync_token, len(items), 'incremental'
+    return (
+        events,
+        next_sync_token or sync_token,
+        len(items),
+        'incremental',
+        coverage_start or guaranteed_coverage_start(),
+    )
 
 
 def load_state():
@@ -212,22 +226,24 @@ def sync_once():
         previous_events = events_by_room.get(room_key, {})
         previous_state = room_states.get(room_key, {})
         sync_token = previous_state.get('syncToken')
+        coverage_start = previous_state.get('coverageStart') or guaranteed_coverage_start()
 
         try:
             if sync_token:
-                events, next_sync_token, touched, mode = incremental_sync_room(
+                events, next_sync_token, touched, mode, coverage_start = incremental_sync_room(
                     service,
                     room_key,
                     previous_events,
                     sync_token,
+                    coverage_start,
                 )
             else:
-                events, next_sync_token, touched, mode = full_sync_room(service, room_key)
+                events, next_sync_token, touched, mode, coverage_start = full_sync_room(service, room_key)
         except HttpError as error:
             status = getattr(error.resp, 'status', None)
             if status == 410:
                 logging.warning('%s sync token expired; running full sync', room['name'])
-                events, next_sync_token, touched, mode = full_sync_room(service, room_key)
+                events, next_sync_token, touched, mode, coverage_start = full_sync_room(service, room_key)
             else:
                 failures[room_key] = f'HTTP {status or "unknown"}'
                 logging.exception('%s sync failed', room['name'])
@@ -249,6 +265,7 @@ def sync_once():
             'lastMode': mode,
             'lastTouched': touched,
             'lastSyncAt': google_time(utc_now()),
+            'coverageStart': coverage_start,
         }
         room_meta[room_key] = {
             'name': room['name'],
@@ -257,6 +274,7 @@ def sync_once():
             'mode': mode,
             'touched': touched,
             'ok': mode != 'failed',
+            'coverageStart': coverage_start,
         }
 
         logging.info('%s %s sync: touched=%s cached=%s', room['name'], mode, touched, len(events))
@@ -277,6 +295,10 @@ def sync_once():
         'generatedAtMs': int(time.time() * 1000),
         'contentHash': content_hash,
         'timeZone': TIME_ZONE,
+        'coverageStart': max(
+            (meta.get('coverageStart') or guaranteed_coverage_start())
+            for meta in room_meta.values()
+        ),
         'rooms': room_meta,
         'failures': failures,
         'events': all_events,

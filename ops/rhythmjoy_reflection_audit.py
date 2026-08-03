@@ -8,6 +8,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pymysql
@@ -155,6 +156,20 @@ def fetch_google_cache(url, timeout=20):
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode('utf-8'))
+    failures = payload.get('failures') or {}
+    if failures:
+        raise ValueError('Google cache has room failures: ' + ','.join(sorted(failures)))
+    coverage_start = str(payload.get('coverageStart') or '')[:10]
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', coverage_start):
+        generated_at = str(payload.get('generatedAt') or '')[:10]
+        try:
+            generated_date = datetime.strptime(generated_at, '%Y-%m-%d').date()
+        except ValueError as error:
+            raise ValueError('Google cache coverage is unknown') from error
+        # The cache full sync starts 120 days before generation time.  The
+        # following day is the first complete Korea calendar day guaranteed
+        # to be represented, even when the cache predates coverage metadata.
+        coverage_start = (generated_date - timedelta(days=119)).isoformat()
     events = []
     for event in payload.get('events') or []:
         reservation_number = reservation_number_from_event(event)
@@ -174,7 +189,16 @@ def fetch_google_cache(url, timeout=20):
             'end_time': end,
             'title': event.get('title') or event.get('summary') or '',
         })
-    return events
+    return events, coverage_start
+
+
+def is_within_google_cache_coverage(reservation_date, coverage_start):
+    date_text = str(reservation_date or '')[:10]
+    return bool(
+        re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_text)
+        and re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(coverage_start or ''))
+        and date_text >= coverage_start
+    )
 
 
 def ledger_slot(row):
@@ -355,13 +379,15 @@ def run_audit(
         'issueCount': 0,
         'duplicateCount': 0,
         'calendarMismatchCount': 0,
+        'historyOnlyCount': 0,
         'latestIssues': [],
         'latestWaiting': [],
     }
     google_events = []
+    google_coverage_start = ''
     google_error = ''
     try:
-        google_events = fetch_google_cache(google_cache_url)
+        google_events, google_coverage_start = fetch_google_cache(google_cache_url)
     except Exception as error:
         google_error = str(error)
     try:
@@ -624,6 +650,11 @@ def run_audit(
                 out['calendarMismatchCount'] += 1
             else:
                 for row in final_rows:
+                    if not is_within_google_cache_coverage(
+                        row.get('reservation_date'), google_coverage_start
+                    ):
+                        out['historyOnlyCount'] += 1
+                        continue
                     reservation_number = str(row.get('reservation_number') or '')
                     source_platform = str(row.get('source_platform') or '').lower()
                     candidates = (
@@ -696,11 +727,18 @@ def run_audit(
                 if canceled_match_id:
                     reason = f'취소 원장 #{canceled_match_id}과 충돌하는 구글 백필이 확정 상태'
                     severity = 'critical'
-                elif google_error:
-                    continue
                 elif not google_event_id:
                     reason = '확정 구글 백필 원장에 Google 이벤트 ID가 없음'
                     severity = 'warning'
+                elif google_error:
+                    continue
+                elif not is_within_google_cache_coverage(
+                    row.get('reservation_date'), google_coverage_start
+                ):
+                    out['checked'] += 1
+                    out['okCount'] += 1
+                    out['historyOnlyCount'] += 1
+                    continue
                 elif google_event_id not in google_event_ids:
                     reason = '확정 구글 백필 원장의 Google 일정이 최종 캘린더에 없음'
                     severity = 'critical'
