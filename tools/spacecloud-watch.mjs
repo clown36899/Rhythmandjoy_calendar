@@ -1047,6 +1047,10 @@ try:
                 attempts,
                 CAST(locked_at AS CHAR) AS lockedAt,
                 CAST(created_at AS CHAR) AS createdAt,
+                CAST(COALESCE(
+                  (SELECT email_received_at FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1),
+                  created_at
+                ) AS CHAR) AS sourceReceivedAt,
                 CAST(updated_at AS CHAR) AS updatedAt,
                 result_text AS resultText
             FROM rhythmjoy_spacecloud_tasks
@@ -1059,8 +1063,7 @@ try:
             ORDER BY
               CASE
                 WHEN status='running' THEN 0
-                WHEN status='pending' THEN 1
-                ELSE 2
+                ELSE 1
               END,
               CASE
                 WHEN %s = '1'
@@ -1070,7 +1073,10 @@ try:
                 THEN 0
                 ELSE 1
               END,
-              created_at ASC,
+              COALESCE(
+                (SELECT email_received_at FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1),
+                created_at
+              ) ASC,
               id ASC
             LIMIT %s
             FOR UPDATE
@@ -1175,6 +1181,10 @@ try:
                 attempts,
                 CAST(locked_at AS CHAR) AS lockedAt,
                 CAST(created_at AS CHAR) AS createdAt,
+                CAST(COALESCE(
+                  (SELECT email_received_at FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1),
+                  created_at
+                ) AS CHAR) AS sourceReceivedAt,
                 CAST(updated_at AS CHAR) AS updatedAt,
                 result_text AS resultText
             FROM rhythmjoy_spacecloud_tasks
@@ -1187,8 +1197,7 @@ try:
             ORDER BY
               CASE
                 WHEN status='running' THEN 0
-                WHEN status='pending' THEN 1
-                ELSE 2
+                ELSE 1
               END,
               CASE
                 WHEN %s = '1' AND task_type='naver_block' THEN 0
@@ -1203,7 +1212,10 @@ try:
                 THEN 0
                 ELSE 1
               END,
-              created_at ASC,
+              COALESCE(
+                (SELECT email_received_at FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1),
+                created_at
+              ) ASC,
               id ASC
             LIMIT %s
             FOR UPDATE
@@ -4048,7 +4060,7 @@ function smsNeedsAttention(row) {
   return row?.sms && !smsSendOk(row.sms.status);
 }
 
-async function runUploadTasks(args, context = null) {
+async function runUploadTasks(args, context = null, claimedTasks = null) {
   if (args.dryRun) {
     return {
       status: 'upload-task-dry-run',
@@ -4058,7 +4070,7 @@ async function runUploadTasks(args, context = null) {
       failed: [],
     };
   }
-  const tasks = await fetchRemoteUploadTasks(args);
+  const tasks = claimedTasks || await fetchRemoteUploadTasks(args);
   if (tasks.length === 0) {
     return {
       status: 'no-upload-tasks',
@@ -4212,7 +4224,7 @@ async function runUploadTasks(args, context = null) {
   };
 }
 
-async function runDeleteTasks(args, context = null) {
+async function runDeleteTasks(args, context = null, claimedTasks = null) {
   if (args.dryRun) {
     return {
       status: 'delete-dry-run',
@@ -4222,7 +4234,7 @@ async function runDeleteTasks(args, context = null) {
       failed: [],
     };
   }
-  const tasks = await fetchRemoteDeleteTasks(args);
+  const tasks = claimedTasks || await fetchRemoteDeleteTasks(args);
   if (tasks.length === 0) {
     return {
       status: 'no-delete-tasks',
@@ -4701,6 +4713,68 @@ function mergeTaskResults(...results) {
     rows,
     failed,
     retrying,
+  };
+}
+
+function taskResultWithStatus(result, kind) {
+  const failed = result.failed || [];
+  const retrying = result.retrying || [];
+  const prefix = kind === 'upload' ? 'upload-task' : 'delete';
+  return {
+    ...result,
+    status: failed.length
+      ? `${prefix}-needs-review`
+      : (retrying.length ? `${prefix}-retry-pending` : `${prefix}-processed`),
+  };
+}
+
+async function runOrderedBookingSyncTasks(args, context = null) {
+  if (args.dryRun) {
+    return {
+      order: [],
+      uploadTasks: taskResultWithStatus(mergeTaskResults(), 'upload'),
+      deleteTasks: taskResultWithStatus(mergeTaskResults(), 'delete'),
+    };
+  }
+
+  const uploadRuns = [];
+  const deleteRuns = [];
+  const order = [];
+  const limit = Math.max(1, Number(args.limitPerCycle || 0) + Number(args.deleteLimitPerCycle || 0));
+
+  for (let index = 0; index < limit; index += 1) {
+    const tasks = await fetchRemoteTaskTypes(args, {
+      taskTypes: ['upload', 'delete'],
+      limit: 1,
+    });
+    if (tasks.length === 0) break;
+
+    const task = tasks[0];
+    const taskType = task.taskType || task.task_type || '';
+    let result;
+    if (taskType === 'delete') {
+      result = await runDeleteTasks(args, context, [task]);
+      deleteRuns.push(result);
+    } else {
+      result = await runUploadTasks(args, context, [task]);
+      uploadRuns.push(result);
+    }
+    order.push({
+      id: task.id,
+      taskType,
+      sourceReceivedAt: task.sourceReceivedAt || task.createdAt || task.created_at || '',
+    });
+
+    // A transient retry remains the oldest task, so leave it for the next cycle
+    // instead of immediately claiming the same task again. Terminal review rows
+    // are excluded from the next fetch, allowing the following received task to run.
+    if ((result.retrying || []).length > 0) break;
+  }
+
+  return {
+    order,
+    uploadTasks: taskResultWithStatus(mergeTaskResults(...uploadRuns), 'upload'),
+    deleteTasks: taskResultWithStatus(mergeTaskResults(...deleteRuns), 'delete'),
   };
 }
 
@@ -5305,13 +5379,22 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   });
   if (hasBlockingFailures(row.spacecloudCancelTasks)) return;
 
-  row.uploadTasks = await runUploadTasks(args, activeContext);
+  row.bookingSyncTasks = await runOrderedBookingSyncTasks(args, activeContext);
+  row.uploadTasks = row.bookingSyncTasks.uploadTasks;
+  row.deleteTasks = row.bookingSyncTasks.deleteTasks;
   setCycleStatusFromResult(row, row.uploadTasks, {
     processed: row.uploadTasks.failed?.length ? 'upload-task-google-pending' : 'upload-task-processed',
     needsReview: 'upload-task-needs-review',
     retrying: 'upload-task-retry-pending',
   });
-  if (hasBlockingFailures(row.uploadTasks)) return;
+  if (!hasBlockingFailures(row.uploadTasks)) {
+    setCycleStatusFromResult(row, row.deleteTasks, {
+      processed: row.deleteTasks.failed?.length ? 'delete-google-pending' : 'delete-processed',
+      needsReview: 'delete-needs-review',
+      retrying: 'delete-retry-pending',
+    });
+  }
+  if (hasBlockingFailures(row.uploadTasks) || hasBlockingFailures(row.deleteTasks)) return;
 
   const secondNaverCancel = await runNaverCancelTasks(args, activeContext);
   row.naverCancelTasks = mergeTaskResults(row.naverCancelTasks, secondNaverCancel);
@@ -5322,12 +5405,6 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   });
   if (hasBlockingFailures(row.naverCancelTasks)) return;
 
-  row.deleteTasks = await runDeleteTasks(args, activeContext);
-  setCycleStatusFromResult(row, row.deleteTasks, {
-    processed: row.deleteTasks.failed?.length ? 'delete-google-pending' : 'delete-processed',
-    needsReview: 'delete-needs-review',
-    retrying: 'delete-retry-pending',
-  });
 }
 
 async function runCycle(args, context = null) {
@@ -5376,7 +5453,9 @@ async function runCycle(args, context = null) {
     if (args.nowMode) {
       await runNowModeCycleTasks(args, row, activeContext);
     } else {
-      row.uploadTasks = await runUploadTasks(args, activeContext);
+      row.bookingSyncTasks = await runOrderedBookingSyncTasks(args, activeContext);
+      row.uploadTasks = row.bookingSyncTasks.uploadTasks;
+      row.deleteTasks = row.bookingSyncTasks.deleteTasks;
       if (['planned', 'dry-run'].includes(row.status) && row.uploadTasks.attempted > 0) {
         setCycleStatusFromResult(row, row.uploadTasks, {
           processed: row.uploadTasks.failed.length ? 'upload-task-google-pending' : 'upload-task-processed',
@@ -5384,8 +5463,15 @@ async function runCycle(args, context = null) {
           retrying: 'upload-task-retry-pending',
         });
       }
+      if (['planned', 'dry-run', 'upload-task-processed'].includes(row.status) && row.deleteTasks.attempted > 0) {
+        setCycleStatusFromResult(row, row.deleteTasks, {
+          processed: row.deleteTasks.failed.length ? 'delete-google-pending' : 'delete-processed',
+          needsReview: 'delete-needs-review',
+          retrying: 'delete-retry-pending',
+        });
+      }
 
-      if (!hasBlockingFailures(row.uploadTasks)) {
+      if (!hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.deleteTasks)) {
         row.naverCancelTasks = await runNaverCancelTasks(args, activeContext);
         if (['planned', 'dry-run', 'idle', 'upload-task-processed'].includes(row.status) && row.naverCancelTasks.attempted > 0) {
           setCycleStatusFromResult(row, row.naverCancelTasks, {
@@ -5396,7 +5482,7 @@ async function runCycle(args, context = null) {
         }
       }
 
-      if (args.legacyCalendarPlan && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && plan.upload.length > 0 && !args.dryRun) {
+      if (args.legacyCalendarPlan && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.deleteTasks) && !hasBlockingFailures(row.naverCancelTasks) && plan.upload.length > 0 && !args.dryRun) {
         const uploader = await createSpacecloudPlaywrightUploader({
           context: await getContext(),
           planPath,
@@ -5413,17 +5499,6 @@ async function runCycle(args, context = null) {
         row.marked = marked;
         row.failed = result.failed;
         row.uploadedRows = uploadedRows;
-      }
-
-      if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks)) {
-        row.deleteTasks = await runDeleteTasks(args, activeContext);
-        if (['planned', 'dry-run'].includes(row.status) && row.deleteTasks.attempted > 0) {
-          setCycleStatusFromResult(row, row.deleteTasks, {
-            processed: row.deleteTasks.failed.length ? 'delete-google-pending' : 'delete-processed',
-            needsReview: 'delete-needs-review',
-            retrying: 'delete-retry-pending',
-          });
-        }
       }
 
       if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && !hasBlockingFailures(row.deleteTasks)) {

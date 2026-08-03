@@ -279,7 +279,44 @@ function runSelfTest() {
     'an explicit cancellation timestamp must win over confirmed status',
   );
   assert.equal(naverStatus({ status: '취소', active: true }), 'canceled');
-  return { ok: true, cases: 4 };
+
+  const legacyGoogleRow = {
+    id: 10,
+    ledger_key: 'google-backfill|legacy-slot-key',
+    source_platform: 'google-backfill',
+  };
+  const importedNaverEvent = {
+    platform: 'naver',
+    ledgerKey: ledgerKey('naver', { reservationNumber: '1101014756' }),
+    sourceMode: 'platform-export',
+    currentStatus: 'confirmed',
+    targetCalendar: 'Bhall',
+    roomKey: 'b',
+    reservationNumber: '1101014756',
+    reserverName: '윤하영',
+    reserverNameKey: '윤하영',
+    product: 'B홀',
+    reservationDate: '2026-08-11',
+    startTime: '20:00',
+    endTime: '22:00',
+    paymentStatus: '예약확정',
+    price: '',
+    grossAmount: 0,
+    feeAmount: 0,
+    netAmount: 0,
+    amountSource: 'naver-platform-export',
+    paymentMethod: '',
+    eventAt: '2026-08-01 19:02:08',
+    payload: {},
+  };
+  const migrated = buildAction(legacyGoogleRow, importedNaverEvent, 'slot-name');
+  assert.equal(
+    migrated.ledgerKey,
+    importedNaverEvent.ledgerKey,
+    'a Google backfill row promoted to Naver must receive the canonical Naver reservation key',
+  );
+
+  return { ok: true, cases: 5 };
 }
 
 function spacecloudStatus(row, exportRow = null) {
@@ -538,7 +575,7 @@ function buildAction(existing, event, match) {
     operation: existing ? 'update' : 'insert',
     match,
     id: existing?.id || null,
-    ledgerKey: existing?.ledger_key || event.ledgerKey,
+    ledgerKey: event.ledgerKey,
     sourcePlatform: event.platform,
     sourceMode: event.sourceMode,
     currentStatus: event.currentStatus,

@@ -1181,7 +1181,7 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                         cancel_payload_json=%s,
                         updated_at=NOW()
                     WHERE current_status='confirmed'
-                      AND source_platform='google-backfill'
+                      AND source_platform IN ('naver', 'google-backfill')
                       AND reservation_number=%s
                       AND %s >= COALESCE(last_event_at, '1000-01-01 00:00:00')
                     """,
@@ -1196,7 +1196,7 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                 )
                 if cursor.rowcount:
                     logger.info(
-                        'Naver cancellation marked Google backfill ledger rows canceled count=%s reservation=%s',
+                        'Naver cancellation marked every matching legacy ledger row canceled count=%s reservation=%s',
                         cursor.rowcount,
                         row['reservation_number'],
                     )
