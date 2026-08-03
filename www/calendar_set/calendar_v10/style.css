@@ -926,7 +926,9 @@ body.view-timeGridWeek .fc tbody {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  max-width: 100%;
+  gap: 3px;
+  box-sizing: border-box;
   font-size: 0.95rem;
   font-weight: 800;
   line-height: 1;
@@ -944,11 +946,11 @@ body.view-timeGridWeek .fc tbody {
   align-items: center;
   justify-content: center;
   height: 16px;
-  padding: 0 6px;
+  padding: 0 4px;
   border-radius: 999px;
   background: #ff3b30;
   color: #fff;
-  font-size: 0.58rem;
+  font-size: 0.54rem;
   font-weight: 800;
   line-height: 1;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28);

@@ -155,7 +155,7 @@ function getWeekColumnHeaderHtml(date) {
   const days = ["일", "월", "화", "수", "목", "금", "토"];
   const isToday = isSameCalendarDate(date, new Date());
   const dayText = isToday
-    ? `<span class='today-date'>${date.getDate()}일</span><span class='today-badge'>오늘</span>`
+    ? `<span class='today-date'>${date.getDate()}</span><span class='today-badge'>오늘</span>`
     : date.getDate();
   return `
     <span class='column-header-week'>${days[date.getDay()]}</span>
