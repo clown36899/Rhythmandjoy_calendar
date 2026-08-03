@@ -160,7 +160,8 @@ install -d /etc/letsencrypt/renewal-hooks/deploy
 install -m 0755 "$REPO_ROOT/ops/reload-httpd-after-certbot.sh" /etc/letsencrypt/renewal-hooks/deploy/reload-httpd-after-certbot.sh
 
 systemctl daemon-reload
-systemctl enable --now "$CACHE_SERVICE"
+systemctl enable "$CACHE_SERVICE"
+systemctl restart "$CACHE_SERVICE"
 systemctl enable --now rhythmjoy-reflection-audit.timer
 systemctl reset-failed "$LEGACY_EMAIL_SERVICE" 2>/dev/null || true
 systemctl enable "$LEGACY_EMAIL_SERVICE"
