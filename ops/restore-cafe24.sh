@@ -120,6 +120,8 @@ fi
 require_hostname
 require_exact_targets
 
+RHYTHMJOY_ENV_FILE="$SERVER_ENV_FILE" "$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_email_import_selftest.py"
+
 install -d "$APP_ROOT" "$OPS_ROOT"
 install -d -m 0700 "$OPS_ROOT/backups/db"
 install -d -o clown313python -g clown313python "$OPS_ROOT/logs" "$OPS_ROOT/runtime"
@@ -162,7 +164,8 @@ install -m 0755 "$REPO_ROOT/ops/reload-httpd-after-certbot.sh" /etc/letsencrypt/
 systemctl daemon-reload
 systemctl enable "$CACHE_SERVICE"
 systemctl restart "$CACHE_SERVICE"
-systemctl enable --now rhythmjoy-reflection-audit.timer
+systemctl enable rhythmjoy-reflection-audit.timer
+systemctl restart rhythmjoy-reflection-audit.timer
 systemctl reset-failed "$LEGACY_EMAIL_SERVICE" 2>/dev/null || true
 systemctl enable "$LEGACY_EMAIL_SERVICE"
 systemctl restart "$LEGACY_EMAIL_SERVICE"

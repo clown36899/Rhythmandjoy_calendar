@@ -77,6 +77,12 @@ class ConfigError(RuntimeError):
     pass
 
 
+def require_handoff(enabled, value, message):
+    if enabled and not value:
+        raise ConfigError(message)
+    return value
+
+
 def load_env_file(path):
     try:
         lines = path.read_text(encoding='utf-8').splitlines()
@@ -350,6 +356,19 @@ def extract_fetch_payload(message_data):
         if payload and raw_message is None:
             raw_message = payload
     return fetch_metadata, raw_message
+
+
+def unseen_message_sort_key(email_id, fetch_metadata, raw_message):
+    try:
+        message = email.message_from_bytes(raw_message)
+        received_at = get_email_received_at(message, fetch_metadata) or '9999-12-31 23:59:59'
+    except Exception:
+        received_at = '9999-12-31 23:59:59'
+    try:
+        sequence = int(email_id)
+    except (TypeError, ValueError):
+        sequence = 0
+    return received_at, sequence
 
 
 def message_identity(mailbox, decoded_id, message, raw_message):
@@ -2598,7 +2617,14 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if event_data:
-                upsert_booking_ledger_confirmed(config, logger, email_record_id, event_data, target_calendar, email_received_at, 'naver')
+                ledger = upsert_booking_ledger_confirmed(
+                    config, logger, email_record_id, event_data,
+                    target_calendar, email_received_at, 'naver'
+                )
+                require_handoff(
+                    config.get('naver_spacecloud_upload_enabled'), ledger,
+                    'Required Naver booking ledger handoff was not created'
+                )
                 upload_task = upsert_spacecloud_upload_task(config, logger, email_record_id, event_data, target_calendar)
                 if upload_task:
                     task_status = upload_task.get('status') or 'pending'
@@ -2612,6 +2638,8 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                         logger,
                         error_text='',
                     )
+                elif config.get('naver_spacecloud_upload_enabled'):
+                    require_handoff(True, upload_task, 'Required SpaceCloud upload task was not created')
                 else:
                     created = create_calendar_event(
                         get_calendar_service(),
@@ -2658,7 +2686,14 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if deletion:
-                upsert_booking_ledger_canceled(config, logger, email_record_id, deletion, calendar_key, email_received_at, 'naver')
+                ledger = upsert_booking_ledger_canceled(
+                    config, logger, email_record_id, deletion,
+                    calendar_key, email_received_at, 'naver'
+                )
+                require_handoff(
+                    config.get('naver_spacecloud_upload_enabled'), ledger,
+                    'Required Naver cancellation ledger handoff was not created'
+                )
                 spacecloud_task = upsert_spacecloud_delete_task(config, logger, email_record_id, deletion, calendar_key)
                 if config.get('naver_spacecloud_upload_enabled') and spacecloud_task:
                     deleted = 0
@@ -2674,6 +2709,8 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                         google_calendar_deleted_count=0,
                         error_text='google_delete_after_spacecloud',
                     )
+                elif config.get('naver_spacecloud_upload_enabled'):
+                    require_handoff(True, spacecloud_task, 'Required SpaceCloud delete task was not created')
                 else:
                     deleted = delete_events_by_reservation(get_calendar_service(), deletion, logger)
                     update_email_processing(
@@ -2725,7 +2762,14 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                 if event_data and calendar_key:
                     event_data['calendar_key'] = calendar_key
                     event_data['target_calendar'] = calendar_key
-                    upsert_booking_ledger_canceled(config, logger, email_record_id, event_data, calendar_key, email_received_at, 'spacecloud')
+                    ledger = upsert_booking_ledger_canceled(
+                        config, logger, email_record_id, event_data,
+                        calendar_key, email_received_at, 'spacecloud'
+                    )
+                    require_handoff(
+                        config.get('spacecloud_naver_block_enabled'), ledger,
+                        'Required SpaceCloud cancellation ledger handoff was not created'
+                    )
                     naver_restore_task = upsert_spacecloud_naver_restore_task(
                         config,
                         logger,
@@ -2739,7 +2783,7 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                         if len(processing_status) > 32:
                             processing_status = 'naver_restore_saved'
                     elif config.get('spacecloud_naver_block_enabled'):
-                        processing_status = 'naver_restore_skipped'
+                        require_handoff(True, naver_restore_task, 'Required Naver restore task was not created')
                     else:
                         processing_status = 'report_only_cancel'
                     update_email_processing(
@@ -2825,7 +2869,14 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
             if event_data and calendar_key:
                 event_data['calendar_key'] = calendar_key
                 event_data['target_calendar'] = calendar_key
-                upsert_booking_ledger_confirmed(config, logger, email_record_id, event_data, calendar_key, email_received_at, 'spacecloud')
+                ledger = upsert_booking_ledger_confirmed(
+                    config, logger, email_record_id, event_data,
+                    calendar_key, email_received_at, 'spacecloud'
+                )
+                require_handoff(
+                    config.get('spacecloud_naver_block_enabled'), ledger,
+                    'Required SpaceCloud booking ledger handoff was not created'
+                )
                 conflicts = []
                 try:
                     conflicts = find_calendar_conflicts(get_calendar_service(), calendar_key, event_data, logger)
@@ -2853,7 +2904,7 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                 elif conflicts:
                     processing_status = 'spacecloud_conflict_reported'
                 elif config.get('spacecloud_naver_block_enabled'):
-                    processing_status = 'naver_block_skipped'
+                    require_handoff(True, naver_block_task, 'Required Naver block task was not created')
                 else:
                     processing_status = 'report_only_ready'
                 update_email_processing(
@@ -3015,12 +3066,19 @@ def run_poll_once(config, logger):
                 logger.info("Mailbox '%s' has no unseen email", mailbox)
                 continue
 
-            for email_id in email_data[0].split()[::-1]:
+            unseen_messages = []
+            for email_id in email_data[0].split():
                 result, message_data = imap_connection.fetch(email_id, '(INTERNALDATE RFC822)')
                 fetch_metadata, raw_message = extract_fetch_payload(message_data or [])
                 if result != 'OK' or not raw_message:
                     logger.error('Failed to fetch mailbox=%s email_id=%s result=%s', mailbox, email_id, result)
                     continue
+                unseen_messages.append((email_id, fetch_metadata, raw_message))
+
+            unseen_messages.sort(
+                key=lambda item: unseen_message_sort_key(item[0], item[1], item[2])
+            )
+            for email_id, fetch_metadata, raw_message in unseen_messages:
                 process_message(config, get_calendar_service, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger)
                 processed += 1
     finally:
@@ -3130,6 +3188,13 @@ def main():
             logger.info('Email polling cycle finished processed=%s', processed)
         except Exception as error:
             logger.exception('Email polling cycle failed')
+            send_telegram_message(
+                config,
+                '⚠️ 이메일 예약 수집 실패\n'
+                f'{type(error).__name__}: {str(error)[:300]}\n'
+                '원본 메일은 읽음 처리하지 않고 다음 주기에 재시도합니다.',
+                logger,
+            )
             send_alert(config, 'Rhythmjoy email import error', str(error), logger)
 
         if args.once:

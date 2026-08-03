@@ -257,6 +257,129 @@ def expected_task(row):
     return None
 
 
+def recent_ingestion_rows(cur, lookback_days):
+    cur.execute("""
+        SELECT e.id, e.event_type, e.parse_status, e.processing_status,
+               e.reservation_number, e.reserver_name, e.spacecloud_room_key AS room_key,
+               CAST(e.reservation_date AS CHAR) AS reservation_date,
+               TIME_FORMAT(e.start_time, '%%H:%%i:%%s') AS start_time,
+               TIME_FORMAT(e.end_time, '%%H:%%i:%%s') AS end_time,
+               CAST(e.email_received_at AS CHAR) AS email_received_at,
+               TIMESTAMPDIFF(MINUTE, e.email_received_at, NOW()) AS age_minutes,
+               LEFT(COALESCE(e.error_text, ''), 255) AS error_text,
+               (
+                   SELECT l.current_status
+                   FROM rhythmjoy_booking_ledger l
+                   WHERE (
+                       e.event_type IN ('reservation', 'cancellation')
+                       AND e.reservation_number <> ''
+                       AND l.source_platform='naver'
+                       AND l.reservation_number=e.reservation_number
+                   ) OR (
+                       e.event_type IN ('spacecloud_reservation', 'spacecloud_cancellation')
+                       AND l.source_platform='spacecloud'
+                       AND l.room_key=e.spacecloud_room_key
+                       AND l.reservation_date=e.reservation_date
+                       AND l.start_time=e.start_time
+                       AND l.end_time=e.end_time
+                   )
+                   ORDER BY l.last_event_at DESC, l.id DESC
+                   LIMIT 1
+               ) AS ledger_status,
+               (
+                   SELECT t.status
+                   FROM rhythmjoy_spacecloud_tasks t
+                   WHERE t.task_type=CASE
+                       WHEN e.event_type='reservation' THEN 'upload'
+                       WHEN e.event_type='cancellation' THEN 'delete'
+                       WHEN e.event_type='spacecloud_reservation' THEN 'naver_block'
+                       WHEN e.event_type='spacecloud_cancellation' THEN 'naver_restore'
+                       ELSE ''
+                   END
+                     AND (
+                         (
+                             e.event_type IN ('reservation', 'cancellation')
+                             AND e.reservation_number <> ''
+                             AND t.reservation_number=e.reservation_number
+                         ) OR (
+                             e.event_type IN ('spacecloud_reservation', 'spacecloud_cancellation')
+                             AND t.room_key=e.spacecloud_room_key
+                             AND t.reservation_date=e.reservation_date
+                             AND t.start_time=e.start_time
+                             AND t.end_time=e.end_time
+                         )
+                     )
+                   ORDER BY t.id DESC
+                   LIMIT 1
+               ) AS task_status
+        FROM rhythmjoy_naver_email_events e
+        WHERE e.email_received_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
+          AND e.event_type IN (
+              'reservation', 'cancellation',
+              'spacecloud_reservation', 'spacecloud_cancellation'
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM rhythmjoy_naver_email_events newer
+              WHERE (
+                    newer.email_received_at > e.email_received_at
+                 OR (newer.email_received_at=e.email_received_at AND newer.id > e.id)
+              )
+                AND (
+                    (
+                        e.event_type IN ('reservation', 'cancellation')
+                        AND newer.event_type IN ('reservation', 'cancellation')
+                        AND e.reservation_number <> ''
+                        AND newer.reservation_number=e.reservation_number
+                    ) OR (
+                        e.event_type IN ('spacecloud_reservation', 'spacecloud_cancellation')
+                        AND newer.event_type IN ('spacecloud_reservation', 'spacecloud_cancellation')
+                        AND newer.spacecloud_room_key=e.spacecloud_room_key
+                        AND newer.reservation_date=e.reservation_date
+                        AND newer.start_time=e.start_time
+                        AND newer.end_time=e.end_time
+                    )
+                )
+          )
+        ORDER BY e.email_received_at, e.id
+    """, (max(1, int(lookback_days)),))
+    return cur.fetchall()
+
+
+def ingestion_gap_reason(row, upload_enabled, block_enabled, grace_minutes):
+    event_type = row.get('event_type') or ''
+    expected_status = (
+        'confirmed'
+        if event_type in ('reservation', 'spacecloud_reservation')
+        else 'canceled'
+    )
+    task_required = (
+        upload_enabled
+        if event_type in ('reservation', 'cancellation')
+        else block_enabled
+    )
+    processing_status = row.get('processing_status') or ''
+    if row.get('parse_status') != 'parsed' or processing_status == 'parse_failed':
+        return '예약 메일 파싱 실패'
+    if processing_status in ('failed', 'received'):
+        detail = row.get('error_text') or processing_status
+        return f'예약 메일 수집 단계 실패: {detail}'[:255]
+    if row.get('ledger_status') != expected_status:
+        actual = row.get('ledger_status') or '없음'
+        return f'최신 예약 메일 상태({expected_status})와 DB 원장({actual}) 불일치'
+    task_status = row.get('task_status') or ''
+    if task_required and not task_status:
+        return '최신 예약 메일의 필수 상대 플랫폼 작업이 없음'
+    if task_status == 'failed':
+        return '최신 예약 메일의 상대 플랫폼 작업 실패'
+    if (
+        task_status in ('pending', 'running', 'google_pending')
+        and int(row.get('age_minutes') or 0) > max(1, int(grace_minutes))
+    ):
+        return f'최신 예약 메일 작업이 {task_status} 상태로 지연됨'
+    return ''
+
+
 def latest_task(cur, event_id, task_type, row):
     if event_id:
         cur.execute("""
@@ -380,6 +503,8 @@ def run_audit(
         'duplicateCount': 0,
         'calendarMismatchCount': 0,
         'historyOnlyCount': 0,
+        'ingestionCheckedCount': 0,
+        'ingestionGapCount': 0,
         'latestIssues': [],
         'latestWaiting': [],
     }
@@ -393,6 +518,64 @@ def run_audit(
     try:
         with conn.cursor() as cur:
             ensure_schema(cur)
+            ingestion_rows = recent_ingestion_rows(
+                cur,
+                int(os.environ.get('RHYTHMJOY_REFLECTION_INGESTION_LOOKBACK_DAYS', '7')),
+            )
+            out['ingestionCheckedCount'] = len(ingestion_rows)
+            upload_enabled = str(
+                os.environ.get('RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED', '0')
+            ).lower() in ('1', 'true', 'yes', 'on')
+            block_enabled = str(
+                os.environ.get('RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED', '0')
+            ).lower() in ('1', 'true', 'yes', 'on')
+            for row in ingestion_rows:
+                reason = ingestion_gap_reason(
+                    row, upload_enabled, block_enabled, grace_minutes
+                )
+                if not reason:
+                    continue
+                out['issueCount'] += 1
+                out['ingestionGapCount'] += 1
+                item = {
+                    'audit_key': f"ingestion:email:{row.get('id')}",
+                    'ledger_id': None,
+                    'source_platform': 'email',
+                    'target_platform': 'ledger',
+                    'expected_task_type': row.get('event_type') or '',
+                    'current_status': row.get('processing_status') or '',
+                    'audit_status': 'issue',
+                    'severity': 'critical',
+                    'reason': reason[:255],
+                    'task_id': None,
+                    'task_status': row.get('task_status') or '',
+                    'reservation_date': row.get('reservation_date'),
+                    'room_key': row.get('room_key') or '',
+                    'start_time': row.get('start_time'),
+                    'end_time': row.get('end_time'),
+                    'reserver_name': row.get('reserver_name') or '',
+                    'reservation_number': row.get('reservation_number') or '',
+                    'detail_json': json.dumps(row, ensure_ascii=False, default=str),
+                }
+                seen_audit_keys.append(item['audit_key'])
+                upsert_item(cur, item)
+                if len(out['latestIssues']) < 8:
+                    start = short_time(row.get('start_time'))
+                    end = short_time(row.get('end_time'))
+                    out['latestIssues'].append({
+                        'sourceLabel': '예약메일',
+                        'targetLabel': '원장/작업',
+                        'taskType': row.get('event_type') or '',
+                        'status': 'issue',
+                        'severity': 'critical',
+                        'reason': reason,
+                        'date': row.get('reservation_date'),
+                        'roomKey': (row.get('room_key') or '').upper(),
+                        'startTime': start,
+                        'endTime': display_end(start, end),
+                        'reserverNameMasked': mask_name(row.get('reserver_name')),
+                        'reservationNumber': row.get('reservation_number') or '',
+                    })
             cur.execute("""
                 SELECT id, source_platform, source_mode, current_status, target_calendar, room_key,
                        reservation_number, reserver_name, product,
@@ -857,6 +1040,7 @@ def audit_message(result):
         '⚠️ 반영 정규검사 확인 필요',
         time.strftime('%Y-%m-%d %H:%M:%S'),
         f"최종 상태 점검 {int(result.get('checked') or 0)}건 / 문제 {int(result.get('issueCount') or 0)}건 / 대기 {int(result.get('waitingCount') or 0)}건",
+        f"메일 앞단 점검 {int(result.get('ingestionCheckedCount') or 0)}건 / 누락 {int(result.get('ingestionGapCount') or 0)}건",
         f"구글 일정 불일치 {int(result.get('calendarMismatchCount') or 0)}건 / 확정 중복 {int(result.get('duplicateCount') or 0)}건",
         '\n'.join(audit_line(row, index) for index, row in enumerate(issues)) if issues else '문제 상세 없음',
     ]
@@ -975,13 +1159,15 @@ def main():
         calendar_grace_minutes=args.calendar_grace_minutes,
     )
     logger.info(
-        'reflection audit checked=%s ok=%s waiting=%s issue=%s duplicate=%s calendar_mismatch=%s',
+        'reflection audit checked=%s ok=%s waiting=%s issue=%s duplicate=%s calendar_mismatch=%s ingestion_checked=%s ingestion_gap=%s',
         result.get('checked'),
         result.get('okCount'),
         result.get('waitingCount'),
         result.get('issueCount'),
         result.get('duplicateCount'),
         result.get('calendarMismatchCount'),
+        result.get('ingestionCheckedCount'),
+        result.get('ingestionGapCount'),
     )
     if args.notify:
         notify = notify_if_needed(result, args.state_path, logger)
