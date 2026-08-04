@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const SPACECLOUD_PAGE_LOAD_TIMEOUT_MS = 20000;
+const DIRECT_UPLOAD_VERIFICATION_REFRESH_AT_MS = Object.freeze([3000, 10000, 30000, 60000]);
 
 export const SPACECLOUD_ROOMS = {
   a: { spaceId: '66056', productId: '108673', name: 'A홀' },
@@ -564,25 +565,55 @@ async function findDirectEventCandidates(page, {
   }, { targetDate, targetYear, targetMonth, targetDay, day, startHour, endHour });
 }
 
-async function waitForDirectEventCandidates(page, row, {
+export async function waitForDirectEventCandidates(page, row, {
   timeoutMs = 12000,
   intervalMs = 500,
+  refreshAtMs = [],
+  refresh = null,
 } = {}) {
   const started = Date.now();
   let latest = null;
+  const refreshSchedule = (Array.isArray(refreshAtMs) ? refreshAtMs : [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 0 && value < timeoutMs)
+    .sort((left, right) => left - right);
+  let refreshIndex = 0;
+  let refreshCount = 0;
   while (Date.now() - started <= timeoutMs) {
     latest = await findDirectEventCandidates(page, row);
     if ((latest.candidates || []).length > 0) {
       return {
         ...latest,
         waitedMs: Date.now() - started,
+        refreshCount,
       };
+    }
+
+    const elapsedMs = Date.now() - started;
+    if (
+      typeof refresh === 'function'
+      && refreshIndex < refreshSchedule.length
+      && elapsedMs >= refreshSchedule[refreshIndex]
+    ) {
+      await refresh({ elapsedMs, refreshCount });
+      refreshIndex += 1;
+      refreshCount += 1;
+      latest = await findDirectEventCandidates(page, row);
+      if ((latest.candidates || []).length > 0) {
+        return {
+          ...latest,
+          waitedMs: Date.now() - started,
+          refreshCount,
+        };
+      }
+      continue;
     }
     await page.waitForTimeout(intervalMs);
   }
   return {
     ...(latest || { candidates: [], dayCellText: '', visibleLinks: [] }),
     waitedMs: Date.now() - started,
+    refreshCount,
   };
 }
 
@@ -590,11 +621,7 @@ async function verifyDirectEventCreated(page, event, {
   timeoutMs = 90000,
   intervalMs = 1500,
 } = {}) {
-  const row = {
-    date: event.date,
-    startTime: event.startTime,
-    endTime: event.endTime,
-  };
+  const row = directUploadVerificationTarget(event);
   const expectedName = normalizeName(event.reserverNameDisplay || event.reserverName || '');
 
   await closeModalIfOpen(page).catch(() => {});
@@ -614,7 +641,24 @@ async function verifyDirectEventCreated(page, event, {
   );
   await gotoCalendarMonth(page, event.date);
 
-  const latest = await waitForDirectEventCandidates(page, row, { timeoutMs, intervalMs });
+  const refreshCalendar = async () => {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.waitForFunction(
+      () => /\d{4}\s*\.\s*\d{1,2}/.test(
+        document.querySelector('.calendar_tit.short strong')?.textContent
+        || document.querySelector('.calendar_tit.short')?.textContent
+        || '',
+      ),
+      { timeout: 20000 },
+    );
+    await gotoCalendarMonth(page, event.date);
+  };
+  const latest = await waitForDirectEventCandidates(page, row, {
+    timeoutMs,
+    intervalMs,
+    refreshAtMs: DIRECT_UPLOAD_VERIFICATION_REFRESH_AT_MS,
+    refresh: refreshCalendar,
+  });
   const candidates = latest.candidates || [];
   const nameMatched = expectedName
     ? candidates.some((candidate) => compactText(candidate.text || candidate.visibleText || '').includes(expectedName))
@@ -634,6 +678,7 @@ async function verifyDirectEventCreated(page, event, {
     ok: candidates.length > 0,
     reason: candidates.length > 0 ? 'calendar-candidate-found' : 'calendar-candidate-not-found',
     waitedMs: latest.waitedMs,
+    refreshCount: latest.refreshCount || 0,
     candidateCount: candidates.length,
     nameMatched,
     identityMatched,
@@ -981,6 +1026,17 @@ async function readJsonArray(filePath) {
   } catch {
     return [];
   }
+}
+
+export function directUploadVerificationTarget(event) {
+  return {
+    roomKey: event.roomKey,
+    date: event.date,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    reserverName: event.reserverNameDisplay || event.reserverName || '',
+    reservationNo: event.reservationNo || '',
+  };
 }
 
 export async function uploadSpacecloudDirectReservation(context, event) {
