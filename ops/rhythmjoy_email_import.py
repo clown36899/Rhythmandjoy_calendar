@@ -86,6 +86,11 @@ def require_handoff(enabled, value, message):
     return value
 
 
+def reservation_waits_for_payment(event_data):
+    payment_status = str((event_data or {}).get('payment_status') or '').strip()
+    return bool(payment_status and payment_status != '결제완료')
+
+
 def load_env_file(path):
     try:
         lines = path.read_text(encoding='utf-8').splitlines()
@@ -2686,9 +2691,22 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                 target_calendar,
                 event_data,
             )
+            payment_waiting = bool(event_data and reservation_waits_for_payment(event_data))
+            if payment_waiting:
+                record['event_type'] = 'reservation_pending'
+                record['processing_status'] = 'payment_pending'
             email_row = upsert_email_event(config, logger, record)
             email_record_id = email_row.get('id') if email_row else None
             if event_data:
+                if payment_waiting:
+                    logger.info(
+                        'Reservation email retained without ledger handoff until payment completes '
+                        'reservation=%s status=%s',
+                        event_data.get('reservation_number'),
+                        event_data.get('payment_status'),
+                    )
+                    mark_seen(imap_connection, email_id, logger)
+                    return
                 if config.get('naver_spacecloud_upload_enabled'):
                     with db_transaction(config, logger, f'naver-upload:{email_record_id}') as conn:
                         lock_inbox_event(config, logger, conn, email_record_id)
@@ -3118,6 +3136,14 @@ def backfill_booking_ledger(config, logger):
         event_type = row.get('event_type')
         source_platform = 'spacecloud' if event_type.startswith('spacecloud_') else 'naver'
         if event_type in ('reservation', 'spacecloud_reservation'):
+            if event_type == 'reservation' and reservation_waits_for_payment(event_data):
+                logger.info(
+                    'Booking ledger backfill skipped pending Naver payment row_id=%s reservation=%s status=%s',
+                    row.get('id'),
+                    event_data.get('reservation_number'),
+                    event_data.get('payment_status'),
+                )
+                continue
             upsert_booking_ledger_confirmed(
                 config,
                 logger,

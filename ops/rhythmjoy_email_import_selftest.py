@@ -257,6 +257,54 @@ class EmailPipelineSelfTest(unittest.TestCase):
         self.assertEqual(events, ['begin', 'commit', 'close', 'seen'])
         self.assertEqual(shared_connections, [connection] * 4)
 
+    def test_payment_pending_message_is_retained_and_seen_without_handoff(self):
+        events = []
+        imap = FakeImap(events)
+        event_data = {
+            'reservation_number': 'tx-payment-pending',
+            'name': '테*트님',
+            'product': 'C홀',
+            'date': '2026-08-05',
+            'start_time': '12:00',
+            'end_time': '16:00',
+            'payment_status': '입금대기',
+        }
+        saved_records = []
+
+        def save_record(_config, _logger, record):
+            saved_records.append(dict(record))
+            return {'id': 7}
+
+        message = EmailMessage()
+        message['Subject'] = '입금대기 예약 테스트'
+        message.set_content('body')
+        config = {'db_enabled': True, 'naver_spacecloud_upload_enabled': True}
+        with mock.patch.object(email_import, 'parse_reservation', return_value=event_data), \
+                mock.patch.object(email_import, 'build_reservation_email_record', return_value={
+                    'event_type': 'reservation',
+                    'processing_status': 'received',
+                }), \
+                mock.patch.object(email_import, 'upsert_email_event', side_effect=save_record), \
+                mock.patch.object(email_import, 'upsert_booking_ledger_confirmed') as ledger_handoff, \
+                mock.patch.object(email_import, 'upsert_spacecloud_upload_task') as outbox_handoff:
+            email_import.process_message(
+                config,
+                lambda: None,
+                imap,
+                'Chall',
+                'Chall',
+                b'79',
+                message.as_bytes(),
+                '',
+                logging.getLogger(__name__),
+            )
+
+        self.assertEqual(events, ['seen'])
+        self.assertEqual(saved_records[0]['event_type'], 'reservation_pending')
+        self.assertEqual(saved_records[0]['processing_status'], 'payment_pending')
+        ledger_handoff.assert_not_called()
+        outbox_handoff.assert_not_called()
+
     def test_outbox_failure_rolls_back_and_leaves_message_unseen(self):
         events = []
         connection = OrderedConnection(events)
