@@ -1019,35 +1019,90 @@ def compact_text(text, limit=1200):
     return text[: max(0, limit - 20)].rstrip() + '\n...\n관리패널에서 확인'
 
 
-def audit_line(row, index):
-    source = row.get('sourceLabel') or row.get('sourcePlatform') or '-'
-    target = row.get('targetLabel') or row.get('targetPlatform') or '-'
+def issue_group_key(row):
+    if row.get('ledgerId'):
+        return f"ledger:{row.get('ledgerId')}"
+    if row.get('reservationNumber'):
+        return f"reservation:{row.get('reservationNumber')}"
+    return '|'.join(str(row.get(key) or '') for key in (
+        'sourcePlatform', 'date', 'roomKey', 'startTime', 'endTime'
+    ))
+
+
+def unique_issue_groups(rows):
+    grouped = {}
+    for row in rows or []:
+        key = issue_group_key(row)
+        group = grouped.setdefault(key, {
+            'key': key,
+            'row': row,
+            'targets': set(),
+            'reasons': set(),
+            'taskIds': set(),
+        })
+        if row.get('targetPlatform'):
+            group['targets'].add(row.get('targetPlatform'))
+        if row.get('reason'):
+            group['reasons'].add(str(row.get('reason')))
+        if row.get('taskId'):
+            group['taskIds'].add(str(row.get('taskId')))
+    return [grouped[key] for key in sorted(grouped)]
+
+
+def actionable_issue_groups(rows):
+    """Exclude Google-only copy drift from core booking-sync Telegram alerts."""
+    return [
+        group for group in unique_issue_groups(rows)
+        if group['targets'] != {'google'}
+    ]
+
+
+def audit_group_line(group, index):
+    row = group['row']
     room = f"{row.get('roomKey')}홀" if row.get('roomKey') else '-'
-    name = f" / {row.get('reserverNameMasked')}" if row.get('reserverNameMasked') else ''
-    reservation_no = f" / {row.get('reservationNumber')}" if row.get('reservationNumber') else ''
-    task = f" / 작업 #{row.get('taskId')}" if row.get('taskId') else ''
+    source = row.get('sourceLabel') or platform_label(row.get('sourcePlatform'))
+    task = f" / 작업 #{','.join(sorted(group['taskIds']))}" if group['taskIds'] else ''
+    states = []
+    if group['targets'] & {'spacecloud', 'naver'}:
+        states.append('자동 반영 기록: 확인 필요')
+    if 'google' in group['targets']:
+        states.append('Google 복제본: 불일치')
+    if not states:
+        states.append('자동화 상태: 확인 필요')
     return (
-        f"{index + 1}. {source}→{target} {row.get('date') or '-'} "
-        f"{room} {row.get('startTime') or '-'}-{row.get('endTime') or '-'}"
-        f"{name}{reservation_no}{task}\n   {str(row.get('reason') or '-')[:120]}"
+        f"{index + 1}. {row.get('date') or '-'} {room} "
+        f"{row.get('startTime') or '-'}-{row.get('endTime') or '-'} / 원천 {source}{task}\n"
+        f"   DB 원장: 정상 / {' / '.join(states)}\n"
+        "   판정: 실제 플랫폼 누락 확정 아님"
     )
 
 
 def audit_message(result):
-    issues = result.get('latestIssues') or []
+    issue_groups = actionable_issue_groups(result.get('latestIssues') or [])
     waiting = result.get('latestWaiting') or []
+    ingestion_gaps = int(result.get('ingestionGapCount') or 0)
+    duplicate_count = int(result.get('duplicateCount') or 0)
+    alert_count = len(issue_groups) + ingestion_gaps + duplicate_count
     parts = [
-        '⚠️ 반영 정규검사 확인 필요',
-        time.strftime('%Y-%m-%d %H:%M:%S'),
-        f"최종 상태 점검 {int(result.get('checked') or 0)}건 / 문제 {int(result.get('issueCount') or 0)}건 / 대기 {int(result.get('waitingCount') or 0)}건",
-        f"메일 앞단 점검 {int(result.get('ingestionCheckedCount') or 0)}건 / 누락 {int(result.get('ingestionGapCount') or 0)}건",
-        f"구글 일정 불일치 {int(result.get('calendarMismatchCount') or 0)}건 / 확정 중복 {int(result.get('duplicateCount') or 0)}건",
-        '\n'.join(audit_line(row, index) for index, row in enumerate(issues)) if issues else '문제 상세 없음',
+        f"🟡 자동검사 확인 필요: {alert_count}건",
+        f"DB 원장 검사: {int(result.get('ingestionCheckedCount') or 0)}건 / 수집 누락 {ingestion_gaps}건",
+        '\n'.join(audit_group_line(group, index) for index, group in enumerate(issue_groups)) if issue_groups else '문제 상세 없음',
     ]
+    if duplicate_count:
+        parts.append(f"DB 확정 중복: {duplicate_count}건")
     if waiting:
-        parts.append('\n대기 중\n' + '\n'.join(audit_line(row, index) for index, row in enumerate(waiting)))
-    parts.append('기준: 이메일 최종 원장 → 반대 플랫폼 작업 완료 → 구글 최종 일정 일치')
+        parts.append(f"처리 대기: {len(waiting)}건")
+    parts.append('실제 누락으로 단정하지 않습니다. 같은 상태는 다시 알리지 않습니다.')
     return compact_text('\n'.join(parts))
+
+
+def audit_resolved_message(previous_state):
+    previous_count = int((previous_state.get('summary') or {}).get('uniqueIssueCount') or 0)
+    return compact_text(
+        '✅ 자동검사 경고 해제\n'
+        f'이전 확인 대상 {previous_count}건이 현재 검사에서 사라졌습니다.\n'
+        '새 문제가 생길 때까지 추가 알림은 없습니다.'
+    )
 
 
 def read_json(path):
@@ -1087,16 +1142,20 @@ def notify_if_needed(result, state_path, logger):
     issue_count = int(result.get('issueCount') or 0)
     duplicate_count = int(result.get('duplicateCount') or 0)
     state = read_json(state_path)
+    issue_groups = actionable_issue_groups(result.get('latestIssues') or [])
+    ingestion_gap_count = int(result.get('ingestionGapCount') or 0)
     issue_key = '||'.join([
-        str(issue_count),
         str(duplicate_count),
+        str(ingestion_gap_count),
         *[
-            '|'.join(str(row.get(key) or '') for key in (
-                'sourcePlatform', 'targetPlatform', 'date', 'roomKey', 'startTime', 'endTime', 'taskType', 'taskId', 'reason'
-            ))
-            for row in (result.get('latestIssues') or [])
+            '|'.join([
+                group['key'],
+                ','.join(sorted(group['targets'])),
+            ])
+            for group in issue_groups
         ],
     ])
+    has_issues = bool(issue_groups or duplicate_count or ingestion_gap_count)
     next_state = {
         'checkedAt': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
         'issueKey': issue_key,
@@ -1105,19 +1164,41 @@ def notify_if_needed(result, state_path, logger):
             'okCount': int(result.get('okCount') or 0),
             'waitingCount': int(result.get('waitingCount') or 0),
             'issueCount': issue_count,
+            'uniqueIssueCount': len(issue_groups),
             'duplicateCount': duplicate_count,
             'calendarMismatchCount': int(result.get('calendarMismatchCount') or 0),
         },
+        'hasIssues': has_issues,
     }
-    if issue_count <= 0 and duplicate_count <= 0:
+    same_issue = state.get('issueKey') == issue_key
+    if same_issue:
+        # Preserve delivery metadata while the same state remains. The state
+        # signature, not elapsed time, determines whether another alert sends.
+        if state.get('lastSentAtEpoch') is not None:
+            next_state['lastSentAtEpoch'] = state['lastSentAtEpoch']
+        if state.get('lastNotification') is not None:
+            next_state['lastNotification'] = state['lastNotification']
+    if not has_issues:
+        resolved = None
+        if state.get('hasIssues'):
+            try:
+                resolved = send_telegram(
+                    audit_resolved_message(state),
+                    timeout=int(os.environ.get('TELEGRAM_SEND_TIMEOUT', '12')),
+                )
+            except (urllib.error.URLError, TimeoutError, ValueError) as error:
+                logger.exception('telegram resolved send failed')
+                resolved = {'sent': False, 'reason': str(error)}
+            if not resolved.get('sent'):
+                # Keep the prior issue state so the resolution can be retried.
+                return resolved
+            next_state['lastNotification'] = resolved
         write_json(state_path, next_state)
-        return {'sent': False, 'reason': 'no_issues'}
+        return resolved or {'sent': False, 'reason': 'no_issues'}
 
-    cooldown = int(os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_NOTIFY_COOLDOWN_SECONDS', '3600'))
-    last_sent = float(state.get('lastSentAtEpoch') or 0)
-    if state.get('issueKey') == issue_key and time.time() - last_sent < cooldown:
+    if same_issue and state.get('lastSentAtEpoch'):
         write_json(state_path, next_state)
-        return {'sent': False, 'reason': 'cooldown'}
+        return {'sent': False, 'reason': 'state_unchanged'}
 
     try:
         result = send_telegram(audit_message(result), timeout=int(os.environ.get('TELEGRAM_SEND_TIMEOUT', '12')))

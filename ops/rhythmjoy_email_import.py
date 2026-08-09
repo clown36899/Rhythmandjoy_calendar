@@ -2028,8 +2028,11 @@ def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spac
 
 
 def notify_cancellation(config, deletion, calendar_key, google_deleted_count, spacecloud_task, subject, email_received_at, logger):
+    if spacecloud_task and not config.get('telegram_notify_intake_success'):
+        logger.info('Telegram intake alert skipped: final watcher result will be sent task=%s', spacecloud_task.get('id'))
+        return False
     text = format_cancellation_alert(deletion, calendar_key, google_deleted_count, spacecloud_task, subject, email_received_at)
-    send_telegram_message(config, text, logger)
+    return send_telegram_message(config, text, logger)
 
 
 def notify_cancellation_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
@@ -2064,6 +2067,9 @@ def format_spacecloud_google_status(config, google_event, conflicts):
 
 
 def notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, google_event, naver_block_task, subject, email_received_at, logger):
+    if naver_block_task and not config.get('telegram_notify_intake_success'):
+        logger.info('Telegram intake alert skipped: final watcher result will be sent task=%s', naver_block_task.get('id'))
+        return False
     status = '구글 기록 겹침 참고' if conflicts else '네이버 반영 대기'
     current_step = format_naver_block_task_status(config, naver_block_task, conflicts)
     google_status = format_spacecloud_google_status(config, google_event, conflicts)
@@ -2080,7 +2086,7 @@ def notify_spacecloud_reservation_report(config, event_data, calendar_key, confl
         f"메일수신: {email_received_at or '-'}\n"
         f'{alert_mail_line(subject)}'
     )
-    send_telegram_message(config, text, logger)
+    return send_telegram_message(config, text, logger)
 
 
 def notify_spacecloud_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
@@ -2104,6 +2110,9 @@ def format_naver_restore_task_status(config, task):
 
 
 def notify_spacecloud_cancellation_report(config, event_data, calendar_key, naver_restore_task, subject, email_received_at, logger):
+    if naver_restore_task and not config.get('telegram_notify_intake_success'):
+        logger.info('Telegram intake alert skipped: final watcher result will be sent task=%s', naver_restore_task.get('id'))
+        return False
     current_step = format_naver_restore_task_status(config, naver_restore_task)
     title = success_alert_title('스페이스클라우드 취소 메일 수집')
     if config.get('spacecloud_naver_block_enabled') and not naver_restore_task:
@@ -2117,7 +2126,7 @@ def notify_spacecloud_cancellation_report(config, event_data, calendar_key, nave
         f"메일수신: {email_received_at or '-'}\n"
         f'{alert_mail_line(subject)}'
     )
-    send_telegram_message(config, text, logger)
+    return send_telegram_message(config, text, logger)
 
 
 def notify_spacecloud_cancellation_parse_failure(config, mailbox, email_id, subject, email_received_at, logger):
@@ -3410,6 +3419,7 @@ def build_config():
         'telegram_bot_token': os.environ.get('TELEGRAM_BOT_TOKEN', ''),
         'telegram_chat_id': os.environ.get('TELEGRAM_CHAT_ID', ''),
         'telegram_timeout': int(os.environ.get('TELEGRAM_SEND_TIMEOUT', '12')),
+        'telegram_notify_intake_success': os.environ.get('TELEGRAM_NOTIFY_INTAKE_SUCCESS', '0') == '1',
         'db_enabled': db_enabled,
         'db_required': env_flag('RHYTHMJOY_EMAIL_DB_REQUIRED', '1'),
         'db_server': db_server,

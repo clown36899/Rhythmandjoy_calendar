@@ -2294,6 +2294,10 @@ function notificationSuppressedByCooldown(entry, textPreview, now, cooldownSecon
   );
 }
 
+function notificationSuppressedByState(entry, stateSignature) {
+  return Boolean(entry?.stateSignature === stateSignature && entry?.lastSentAt);
+}
+
 async function notifyWithCooldown(args, key, text, {
   cooldownSeconds = args.notifyCooldownSeconds,
 } = {}) {
@@ -2320,6 +2324,43 @@ async function notifyWithCooldown(args, key, text, {
     state[key] = {
       lastAttemptAt: new Date().toISOString(),
       lastSentAt: state[key]?.lastSentAt || null,
+      result: { sent: false, reason: String(error?.message || error) },
+      textPreview,
+    };
+    await writeJson(args.notifyState, state);
+    logLine(`telegram failed: ${String(error?.message || error)}`);
+    return { sent: false, reason: String(error?.message || error) };
+  }
+}
+
+async function notifyOnStateChange(args, key, stateSignature, text) {
+  const state = await readJsonObject(args.notifyState);
+  const previous = state[key] || {};
+  if (notificationSuppressedByState(previous, stateSignature)) {
+    logLine(`telegram suppressed; state unchanged: ${key} ${stateSignature}`);
+    return { sent: false, reason: 'state-unchanged' };
+  }
+
+  const now = new Date().toISOString();
+  const textPreview = compactTelegramText(text).replace(/\s+/g, ' ').slice(0, 240);
+  try {
+    const result = await sendTelegram(args, text);
+    state[key] = {
+      lastAttemptAt: now,
+      lastSentAt: result.sent || result.reason === 'dry-run' ? now : previous.lastSentAt || null,
+      stateSignature: result.sent || result.reason === 'dry-run'
+        ? stateSignature
+        : previous.stateSignature || null,
+      result,
+      textPreview,
+    };
+    await writeJson(args.notifyState, state);
+    if (result.sent) logLine(`telegram sent on state change: ${key} ${stateSignature} ${telegramDeliverySummary(result)}`);
+    return result;
+  } catch (error) {
+    state[key] = {
+      ...previous,
+      lastAttemptAt: now,
       result: { sent: false, reason: String(error?.message || error) },
       textPreview,
     };
@@ -3313,6 +3354,18 @@ function syncActionResultText(row) {
   return telegramStatusText(status);
 }
 
+function syncPlatformResultLine(row) {
+  const taskType = row.taskType || row.task_type || '';
+  const action = syncActionResultText(row);
+  if (taskType === 'upload' || taskType === 'delete' || taskType === 'spacecloud_cancel') {
+    return `스페이스클라우드: ${action.replace(/^SC\s*/, '')}`;
+  }
+  if (taskType === 'naver_block' || taskType === 'naver_restore' || taskType === 'naver_cancel') {
+    return `네이버: ${action.replace(/^네이버\s*/, '')}`;
+  }
+  return `상대 플랫폼: ${action}`;
+}
+
 function syncGoogleStatusText(row) {
   if (row.calendarRecordWarning || row.status === 'calendar-record-warning') return '구글 기록 경고';
   const googleStatus = row.googleCalendar?.status
@@ -3375,46 +3428,57 @@ function syncSuccessRowsFromCycle(row) {
   });
 }
 
-function formatSyncSuccessRows(rows, limit = 5) {
-  const visible = rows.slice(0, limit);
-  const lines = visible.map((row, index) => {
-    const details = [
-      syncOriginText(row),
-      syncActionResultText(row),
-      syncGoogleStatusText(row),
-      syncSmsStatusText(row),
-    ].filter(Boolean).join(' · ');
-    return `${index + 1}. ${syncReservationLine(row)}\n흐름: ${details.replaceAll(' · ', ' → ') || telegramStatusText(row.status)}`;
-  });
-  if (rows.length > visible.length) lines.push(`외 ${rows.length - visible.length}건`);
-  return lines.join('\n') || '-';
-}
-
 function syncSuccessNeedsAttention(row) {
   return Boolean(row.calendarRecordWarning || row.status === 'calendar-record-warning' || smsNeedsAttention(row));
 }
 
-function syncSuccessTitle(rows) {
-  const taskTypes = [...new Set(rows.map((row) => row.taskType || row.task_type || '').filter(Boolean))];
-  if (taskTypes.length !== 1) return '✅ 처리 완료: 예약 반영';
-
-  const map = {
-    upload: '✅ 완료: 네이버 예약 반영',
-    naver_block: '✅ 완료: SC 예약 반영',
-    naver_restore: '✅ 완료: 네이버 예약가능 복구',
-    delete: '✅ 완료: SC 삭제',
-    spacecloud_cancel: '✅ 완료: SC 후예약 취소',
-    naver_cancel: '✅ 완료: 네이버 후예약 취소',
-  };
-  return map[taskTypes[0]] || '✅ 처리 완료: 예약 반영';
+function syncSuccessMessage(row) {
+  const needsAttention = syncSuccessNeedsAttention(row);
+  const taskType = row.taskType || row.task_type || '';
+  const isCancellation = ['delete', 'naver_restore', 'spacecloud_cancel', 'naver_cancel'].includes(taskType);
+  const googleWarning = syncGoogleStatusText(row);
+  const smsStatus = syncSmsStatusText(row);
+  return compactNotice(
+    needsAttention
+      ? '🟡 예약 반영 후 확인 필요'
+      : (isCancellation ? '✅ 예약 취소 반영 완료' : '✅ 예약 반영 완료'),
+    [
+      syncReservationLine(row),
+      'DB 원장: 정상',
+      syncPlatformResultLine(row),
+      smsStatus || '',
+      googleWarning.includes('경고') ? 'Google 복제본: 기록 확인 필요 (핵심 반영과 별도)' : '',
+      needsAttention ? '판정: 실제 예약 누락 확정 아님' : '',
+    ],
+  );
 }
 
-function syncSuccessMessage(rows) {
-  const needsAttention = rows.some(syncSuccessNeedsAttention);
-  const title = needsAttention ? '⚠️ 처리 완료: 확인 필요' : syncSuccessTitle(rows);
-  return compactNotice(title, [
-    formatSyncSuccessRows(rows),
-  ]);
+function reservationNotificationKey(row, fallbackTaskType = '') {
+  return `reservation:${taskIdentityKey(row, fallbackTaskType)}`;
+}
+
+function reservationCompletionSignature(row) {
+  return [
+    'complete',
+    row.status || '',
+    row.sms?.status || '',
+    row.calendarRecordWarning ? 'google-warning' : '',
+  ].join(':');
+}
+
+function reservationAttentionSignature(rowOrError, category) {
+  const row = firstProblemRow(rowOrError);
+  return `attention:${category}:${row.status || 'failed'}`;
+}
+
+async function notifyReservationAttention(args, rowOrError, category, taskType, text) {
+  const row = firstProblemRow(rowOrError);
+  return notifyOnStateChange(
+    args,
+    reservationNotificationKey(row, taskType),
+    reservationAttentionSignature(rowOrError, category),
+    text,
+  );
 }
 
 function compactNotice(title, lines) {
@@ -3468,23 +3532,22 @@ function uploadSuccessMessage(row) {
 function uploadTaskFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
   const allGoogle = rows.length && rows.every((row) => row.status === 'google-create-failed');
-  return compactNotice(allGoogle ? '⚠️ 실패: 구글 달력 기록' : '⚠️ 실패: 스페이스클라우드 등록', [
-    `상태: ${allGoogle ? '구글 기록 재시도 예정' : '자동 처리 중지'}`,
-    `대상: ${rows.length || '-'}건`,
+  return compactNotice(allGoogle ? '🟡 Google 복제본 확인 필요' : '🟡 스페이스클라우드 자동확인 필요', [
     formatBriefRows(rows),
-    `원인: ${firstFailureReason(rowOrError)}`,
+    allGoogle ? '핵심 예약 반영: 완료' : 'DB 원장: 정상',
+    allGoogle ? 'Google 복제본: 기록 재시도 중' : '판정: 실제 플랫폼 누락 확정 아님',
+    `자동화 기록: ${firstFailureReason(rowOrError)}`,
   ]);
 }
 
 function deleteFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
   const allGoogle = rows.length && rows.every((row) => row.status === 'google-delete-failed');
-  return compactNotice(allGoogle ? '⚠️ 실패: 구글 달력 삭제' : '⚠️ 실패: 스페이스클라우드 삭제', [
-    `상태: ${allGoogle ? '구글 달력만 재시도' : '스페이스클라우드 삭제 미완료'}`,
-    `대상: ${rows.length || '-'}건`,
+  return compactNotice(allGoogle ? '🟡 Google 복제본 확인 필요' : '🟡 스페이스클라우드 자동확인 필요', [
     formatBriefRows(rows),
-    `이유: ${deleteFailureReasonText(rowOrError)}`,
-    '조치: 스페이스클라우드 달력에서 대상 예약 확인',
+    allGoogle ? '핵심 예약 취소 반영: 완료' : 'DB 원장: 정상',
+    allGoogle ? 'Google 복제본: 삭제 재시도 중' : '판정: 실제 플랫폼 잔존 확정 아님',
+    `자동화 기록: ${deleteFailureReasonText(rowOrError)}`,
   ]);
 }
 
@@ -3542,12 +3605,11 @@ function naverBlockFailureMessage(rowOrError) {
       '다음: 후예약 플랫폼 취소 후 선대관 안내 문자 발송',
     ]);
   }
-  return compactNotice(allGoogle ? '⚠️ 실패: 구글 달력 기록' : '⚠️ 실패: 네이버 예약불가 반영', [
-    `상태: ${allGoogle ? '구글 기록 재시도 예정' : '자동 처리 중지'}`,
-    `대상: ${rows.length || '-'}건`,
+  return compactNotice(allGoogle ? '🟡 Google 복제본 확인 필요' : '🟡 네이버 자동확인 필요', [
     formatBriefRows(rows),
-    `원인: ${firstFailureReason(rowOrError)}`,
-    '기준: 네이버 예약 우선',
+    allGoogle ? '핵심 예약 반영: 완료' : 'DB 원장: 정상',
+    allGoogle ? 'Google 복제본: 기록 재시도 중' : '판정: 실제 네이버 누락 확정 아님',
+    `자동화 기록: ${firstFailureReason(rowOrError)}`,
   ]);
 }
 
@@ -3568,11 +3630,11 @@ function naverRestoreSuccessMessage(row) {
 function naverRestoreFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
   const allGoogle = rows.length && rows.every((row) => row.status === 'google-delete-failed');
-  return compactNotice(allGoogle ? '⚠️ 실패: 구글 달력 삭제' : '⚠️ 실패: 네이버 예약가능 복구', [
-    `상태: ${allGoogle ? '구글 삭제 재시도 예정' : '자동 처리 중지'}`,
-    `대상: ${rows.length || '-'}건`,
+  return compactNotice(allGoogle ? '🟡 Google 복제본 확인 필요' : '🟡 네이버 자동확인 필요', [
     formatBriefRows(rows),
-    `원인: ${firstFailureReason(rowOrError)}`,
+    allGoogle ? '핵심 예약 취소 반영: 완료' : 'DB 원장: 정상',
+    allGoogle ? 'Google 복제본: 삭제 재시도 중' : '판정: 실제 네이버 상태 오류 확정 아님',
+    `자동화 기록: ${firstFailureReason(rowOrError)}`,
   ]);
 }
 
@@ -5566,6 +5628,24 @@ function runNowModeSelfTest() {
   const priorAlert = { lastSentAt: '2026-08-03T11:59:00Z', textPreview: 'same issue' };
   assert.equal(notificationSuppressedByCooldown(priorAlert, 'same issue', alertNow, 3600), true);
   assert.equal(notificationSuppressedByCooldown(priorAlert, 'different issue', alertNow, 3600), false);
+  assert.equal(notificationSuppressedByState({ stateSignature: 'complete:done', lastSentAt: '2026-08-03T12:00:00Z' }, 'complete:done'), true);
+  assert.equal(notificationSuppressedByState({ stateSignature: 'attention:failed', lastSentAt: '2026-08-03T12:00:00Z' }, 'complete:done'), false);
+  const telegramSuccess = syncSuccessMessage({
+    id: 513,
+    taskType: 'naver_block',
+    status: 'blocked',
+    date: '2026-08-12',
+    roomKey: 'c',
+    startTime: '19:00',
+    endTime: '20:00',
+    reserverName: '서연',
+    sms: { status: 'sent', maskedPhone: '010-****-7180' },
+    googleCalendar: { status: 'created' },
+  });
+  assert.match(telegramSuccess, /^✅ 예약 반영 완료/m);
+  assert.match(telegramSuccess, /DB 원장: 정상/);
+  assert.match(telegramSuccess, /네이버: 예약불가 완료/);
+  assert.doesNotMatch(telegramSuccess, /흐름:|구글 기록 완료/);
   assert.equal(CUSTOMER_RESERVATION_CANCELLATION_DISABLED, true);
   assert.match(createRemoteSpacecloudCancelTask.toString(), /CUSTOMER_RESERVATION_CANCELLATION_DISABLED/);
   assert.match(createRemoteNaverCancelTask.toString(), /CUSTOMER_RESERVATION_CANCELLATION_DISABLED/);
@@ -5955,9 +6035,15 @@ async function runWatch(args) {
         const successRows = syncSuccessRowsFromCycle(row);
         const successKeys = new Set(successRows.map((taskRow) => taskIdentityKey(taskRow)));
         if (successRows.length) {
-          const result = await sendTelegram(args, syncSuccessMessage(successRows));
-          if (result.sent) logLine(`telegram sent: sync-success count=${successRows.length}`);
-          else logLine(`telegram sync success skipped: ${result.reason}`);
+          for (const successRow of successRows) {
+            const result = await notifyOnStateChange(
+              args,
+              reservationNotificationKey(successRow),
+              reservationCompletionSignature(successRow),
+              syncSuccessMessage(successRow),
+            );
+            if (!result.sent) logLine(`telegram sync success skipped: ${result.reason}`);
+          }
         }
         const smsRows = smsRowsFromCycle(row);
         const smsFailureRows = smsRows.filter((taskRow) => (
@@ -5965,9 +6051,16 @@ async function runWatch(args) {
           && !successKeys.has(taskIdentityKey(taskRow))
         ));
         if (smsFailureRows.length) {
-          const result = await sendTelegram(args, smsFailureMessage(smsFailureRows));
-          if (result.sent) logLine(`telegram sent: confirmation-sms-failed count=${smsFailureRows.length}`);
-          else logLine(`telegram confirmation sms failure skipped: ${result.reason}`);
+          for (const smsFailureRow of smsFailureRows) {
+            const result = await notifyReservationAttention(
+              args,
+              smsFailureRow,
+              'sms',
+              smsFailureRow.taskType || '',
+              smsFailureMessage([smsFailureRow]),
+            );
+            if (!result.sent) logLine(`telegram confirmation sms failure skipped: ${result.reason}`);
+          }
         }
         if (row.failed?.length) {
           const errorText = row.failed.map((failedRow) => failedRow.error).join('\n');
@@ -5986,12 +6079,10 @@ async function runWatch(args) {
             await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.uploadTasks));
             logLine(`login needed during db upload; waiting for manual login: ${JSON.stringify(row.uploadTasks.failed)}`);
           } else if (row.uploadTasks.failed.every((failedRow) => failedRow.status === 'google-create-failed')) {
-            await notifyWithCooldown(args, 'spacecloud-upload-google-pending', uploadTaskFailureMessage(row.uploadTasks), {
-              cooldownSeconds: Math.min(args.notifyCooldownSeconds, 60 * 60),
-            });
+            await notifyReservationAttention(args, row.uploadTasks, 'google-copy', 'upload', uploadTaskFailureMessage(row.uploadTasks));
             logLine(`google calendar record pending after db upload; will retry: ${JSON.stringify(row.uploadTasks.failed)}`);
           } else {
-            await notifyWithCooldown(args, notificationKeyForRows('spacecloud-upload-task-failed', row.uploadTasks), uploadTaskFailureMessage(row.uploadTasks));
+            await notifyReservationAttention(args, row.uploadTasks, 'platform', 'upload', uploadTaskFailureMessage(row.uploadTasks));
             logLine(`stopping after db upload failure: ${JSON.stringify(row.uploadTasks.failed)}`);
             break;
           }
@@ -6002,12 +6093,10 @@ async function runWatch(args) {
             await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.deleteTasks));
             logLine(`login needed during delete; waiting for manual login: ${JSON.stringify(row.deleteTasks.failed)}`);
           } else if (row.deleteTasks.failed.every((failedRow) => failedRow.status === 'google-delete-failed')) {
-            await notifyWithCooldown(args, 'spacecloud-delete-google-pending', deleteFailureMessage(row.deleteTasks), {
-              cooldownSeconds: Math.min(args.notifyCooldownSeconds, 60 * 60),
-            });
+            await notifyReservationAttention(args, row.deleteTasks, 'google-copy', 'delete', deleteFailureMessage(row.deleteTasks));
             logLine(`google calendar delete pending after spacecloud delete; will retry: ${JSON.stringify(row.deleteTasks.failed)}`);
           } else {
-            await notifyWithCooldown(args, notificationKeyForRows('spacecloud-delete-failed', row.deleteTasks), deleteFailureMessage(row.deleteTasks));
+            await notifyReservationAttention(args, row.deleteTasks, 'platform', 'delete', deleteFailureMessage(row.deleteTasks));
             logLine(`stopping after delete failure: ${JSON.stringify(row.deleteTasks.failed)}`);
             break;
           }
@@ -6018,12 +6107,10 @@ async function runWatch(args) {
             await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.naverBlockTasks));
             logLine(`login needed during naver block; waiting for manual login: ${JSON.stringify(row.naverBlockTasks.failed)}`);
           } else if (row.naverBlockTasks.failed.every((failedRow) => failedRow.status === 'google-create-failed')) {
-            await notifyWithCooldown(args, 'naver-block-google-pending', naverBlockFailureMessage(row.naverBlockTasks), {
-              cooldownSeconds: Math.min(args.notifyCooldownSeconds, 60 * 60),
-            });
+            await notifyReservationAttention(args, row.naverBlockTasks, 'google-copy', 'naver_block', naverBlockFailureMessage(row.naverBlockTasks));
             logLine(`google calendar record pending after naver block; will retry: ${JSON.stringify(row.naverBlockTasks.failed)}`);
           } else {
-            await notifyWithCooldown(args, notificationKeyForRows('naver-block-failed', row.naverBlockTasks), naverBlockFailureMessage(row.naverBlockTasks));
+            await notifyReservationAttention(args, row.naverBlockTasks, 'platform', 'naver_block', naverBlockFailureMessage(row.naverBlockTasks));
             logLine(`stopping after naver block failure: ${JSON.stringify(row.naverBlockTasks.failed)}`);
             break;
           }
@@ -6034,12 +6121,10 @@ async function runWatch(args) {
             await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.naverRestoreTasks));
             logLine(`login needed during naver restore; waiting for manual login: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
           } else if (row.naverRestoreTasks.failed.every((failedRow) => failedRow.status === 'google-delete-failed')) {
-            await notifyWithCooldown(args, 'naver-restore-google-pending', naverRestoreFailureMessage(row.naverRestoreTasks), {
-              cooldownSeconds: Math.min(args.notifyCooldownSeconds, 60 * 60),
-            });
+            await notifyReservationAttention(args, row.naverRestoreTasks, 'google-copy', 'naver_restore', naverRestoreFailureMessage(row.naverRestoreTasks));
             logLine(`google calendar delete pending after naver restore; will retry: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
           } else {
-            await notifyWithCooldown(args, notificationKeyForRows('naver-restore-failed', row.naverRestoreTasks), naverRestoreFailureMessage(row.naverRestoreTasks));
+            await notifyReservationAttention(args, row.naverRestoreTasks, 'platform', 'naver_restore', naverRestoreFailureMessage(row.naverRestoreTasks));
             logLine(`stopping after naver restore failure: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
             break;
           }
@@ -6050,7 +6135,7 @@ async function runWatch(args) {
             await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.naverCancelTasks));
             logLine(`login needed during naver cancel; waiting for manual login: ${JSON.stringify(row.naverCancelTasks.failed)}`);
           } else {
-            await notifyWithCooldown(args, notificationKeyForRows('naver-cancel-failed', row.naverCancelTasks), naverCancelFailureMessage(row.naverCancelTasks));
+            await notifyReservationAttention(args, row.naverCancelTasks, 'platform', 'naver_cancel', naverCancelFailureMessage(row.naverCancelTasks));
             logLine(`stopping after naver cancel failure: ${JSON.stringify(row.naverCancelTasks.failed)}`);
             break;
           }
@@ -6061,7 +6146,7 @@ async function runWatch(args) {
             await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.spacecloudCancelTasks));
             logLine(`login needed during spacecloud cancel; waiting for manual login: ${JSON.stringify(row.spacecloudCancelTasks.failed)}`);
           } else {
-            await notifyWithCooldown(args, notificationKeyForRows('spacecloud-cancel-failed', row.spacecloudCancelTasks), spacecloudCancelFailureMessage(row.spacecloudCancelTasks));
+            await notifyReservationAttention(args, row.spacecloudCancelTasks, 'platform', 'spacecloud_cancel', spacecloudCancelFailureMessage(row.spacecloudCancelTasks));
             logLine(`stopping after spacecloud cancel failure: ${JSON.stringify(row.spacecloudCancelTasks.failed)}`);
             break;
           }
