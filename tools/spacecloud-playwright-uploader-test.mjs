@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   classifyDirectUploadVerification,
   directUploadVerificationTarget,
+  spacecloudUploadEventFromTask,
   waitForDirectEventCandidates,
 } from './spacecloud-playwright-uploader.mjs';
 
@@ -67,6 +68,34 @@ test('verification target keeps the exact reservation identity', () => {
     nameMatched: true,
     identityMatched: false,
     candidateCount: 1,
+    candidates: [{ directHint: true }],
+  }).status, 'needs-review');
+
+  assert.deepEqual(classifyDirectUploadVerification(true, {
+    ok: true,
+    reservationNo: '1312465263',
+    nameMatched: true,
+    identityMatched: false,
+    candidateCount: 1,
+    candidates: [{ directHint: true }],
+  }, {
+    allowUniquePostSubmitNameFallback: true,
+  }), {
+    status: 'submitted',
+    error: '',
+    verified: true,
+    verificationMode: 'unique-direct-candidate-name-fallback',
+  });
+
+  assert.equal(classifyDirectUploadVerification(false, {
+    ok: true,
+    reservationNo: '1312465263',
+    nameMatched: true,
+    identityMatched: false,
+    candidateCount: 1,
+    candidates: [{ directHint: true }],
+  }, {
+    allowUniquePostSubmitNameFallback: true,
   }).status, 'needs-review');
 
   assert.equal(classifyDirectUploadVerification(true, {
@@ -76,4 +105,19 @@ test('verification target keeps the exact reservation identity', () => {
     identityMatched: true,
     candidateCount: 1,
   }).status, 'submitted');
+});
+
+test('DB timedelta midnight is normalized to 24:00', () => {
+  const event = spacecloudUploadEventFromTask({
+    id: 476,
+    task_type: 'upload',
+    room_key: 'd',
+    reservation_date: '2026-08-05',
+    start_time: '22:00:00',
+    end_time: '1 day, 0:00:00',
+    reservation_number: '1310000000',
+    reserver_name: '홍*동님',
+  });
+  assert.equal(event.startTime, '22:00');
+  assert.equal(event.endTime, '24:00');
 });

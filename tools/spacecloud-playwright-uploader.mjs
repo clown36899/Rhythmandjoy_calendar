@@ -35,8 +35,16 @@ function reservationCalendarUrl(roomKey) {
 }
 
 function hourFromSlot(value) {
-  if (String(value) === '24:00') return 24;
-  const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+  const text = String(value || '').trim();
+  if (text === '24:00') return 24;
+  const durationMatch = text.match(/^(\d+)\s+days?,\s*(\d{1,2}):(\d{2})(?::\d{2})?$/i);
+  if (durationMatch) {
+    const totalHours = Number(durationMatch[1]) * 24 + Number(durationMatch[2]);
+    const minute = Number(durationMatch[3]);
+    if (totalHours === 24 && minute === 0) return 24;
+    throw new Error(`invalid slot duration: ${value}`);
+  }
+  const match = text.match(/^(\d{1,2}):(\d{2})/);
   if (!match) throw new Error(`invalid slot time: ${value}`);
   const hour = Number(match[1]);
   const minute = Number(match[2]);
@@ -317,6 +325,47 @@ async function pageForContext(context) {
   return pages[0] || context.newPage();
 }
 
+async function loadSpacecloudCalendar(page, roomKey, {
+  timeoutMs = 45000,
+  forceFreshDocument = true,
+} = {}) {
+  const room = SPACECLOUD_ROOMS[roomKey];
+  if (!room) throw new Error(`unknown SpaceCloud room key: ${roomKey}`);
+  const targetUrl = reservationCalendarUrl(roomKey);
+
+  // SpaceCloud is an SPA. Changing only the product query can leave the prior
+  // room's 42 calendar cells in the DOM long enough to look fully loaded.
+  // Start from a blank document so stale room data can never be classified as
+  // the requested room's calendar.
+  if (forceFreshDocument) {
+    await page.goto('about:blank', { waitUntil: 'load', timeout: 10000 });
+  }
+  if (forceFreshDocument || page.url() !== targetUrl) {
+    await page.goto(targetUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: timeoutMs,
+    });
+  }
+  await page.waitForFunction(
+    ({ productId, spaceId }) => {
+      const url = new URL(window.location.href);
+      const title = document.querySelector('.calendar_tit.short strong')?.textContent
+        || document.querySelector('.calendar_tit.short')?.textContent
+        || '';
+      const addButtons = [...document.querySelectorAll('a._additionalReserveLayerOpen')]
+        .filter((element) => !!(element.offsetWidth || element.offsetHeight || element.getClientRects().length));
+      return url.searchParams.get('product') === productId
+        && url.searchParams.get('space') === spaceId
+        && /\d{4}\s*\.\s*\d{1,2}/.test(title)
+        && document.querySelectorAll('.booking_wrap').length === 42
+        && addButtons.length === 1;
+    },
+    { productId: room.productId, spaceId: room.spaceId },
+    { timeout: timeoutMs },
+  );
+  return targetUrl;
+}
+
 async function visible(page, selector) {
   return page.evaluate((sel) => {
     const elements = [...document.querySelectorAll(sel)];
@@ -440,6 +489,9 @@ async function findDirectEventCandidates(page, {
     let dayCellText = '';
     let dateScopeMethod = '';
     let dateScopeError = '';
+    document.querySelectorAll('[data-codex-delete-candidate]').forEach((element) => {
+      element.removeAttribute('data-codex-delete-candidate');
+    });
     const dayCells = [...document.querySelectorAll('.booking_wrap')];
 
     const elementDateText = (element) => {
@@ -620,25 +672,13 @@ export async function waitForDirectEventCandidates(page, row, {
 async function verifyDirectEventCreated(page, event, {
   timeoutMs = 90000,
   intervalMs = 1500,
+  forceFreshDocument = true,
 } = {}) {
   const row = directUploadVerificationTarget(event);
   const expectedName = normalizeName(event.reserverNameDisplay || event.reserverName || '');
 
   await closeModalIfOpen(page).catch(() => {});
-  await page.goto(reservationCalendarUrl(event.roomKey), {
-    waitUntil: 'domcontentloaded',
-    timeout: 45000,
-  }).catch(async () => {
-    await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
-  });
-  await page.waitForFunction(
-    () => /\d{4}\s*\.\s*\d{1,2}/.test(
-      document.querySelector('.calendar_tit.short strong')?.textContent
-      || document.querySelector('.calendar_tit.short')?.textContent
-      || '',
-    ),
-    { timeout: 20000 },
-  );
+  await loadSpacecloudCalendar(page, event.roomKey, { forceFreshDocument });
   await gotoCalendarMonth(page, event.date);
 
   const refreshCalendar = async () => {
@@ -665,9 +705,17 @@ async function verifyDirectEventCreated(page, event, {
     : false;
   let identityMatched = false;
   let identityVerification = null;
+  let identityAttempts = [];
   if (candidates.length > 0) {
     const selection = await findVerifiedDeleteCandidate(page, candidates, row);
     identityMatched = Boolean(selection.candidate);
+    identityAttempts = (selection.attempts || []).map((attempt) => ({
+      candidate: attempt.candidate,
+      status: attempt.status,
+      error: attempt.error || '',
+      popupTextPreview: redactPhone(attempt.popupTextPreview || ''),
+      verification: attempt.verification || null,
+    }));
     identityVerification = identityMatched
       ? selection.verification
       : { ok: false, error: selection.error || 'candidate-identity-verification-failed' };
@@ -683,6 +731,7 @@ async function verifyDirectEventCreated(page, event, {
     nameMatched,
     identityMatched,
     identityVerification,
+    identityAttempts,
     reservationNo: row.reservationNo || '',
     candidates: candidates.slice(0, 5),
     dayCellText: latest.dayCellText || '',
@@ -690,13 +739,26 @@ async function verifyDirectEventCreated(page, event, {
   };
 }
 
-export function classifyDirectUploadVerification(hidden, verification) {
+export function classifyDirectUploadVerification(hidden, verification, {
+  allowUniquePostSubmitNameFallback = false,
+} = {}) {
   const result = verification || {};
   const expectedIdentityMatched = result.reservationNo
     ? result.identityMatched === true
     : result.nameMatched === true;
   if (result.ok && expectedIdentityMatched) {
     return { status: 'submitted', error: '', verified: true };
+  }
+  const uniqueDirectCandidate = Number(result.candidateCount || 0) === 1
+    && result.nameMatched === true
+    && result.candidates?.[0]?.directHint === true;
+  if (hidden && allowUniquePostSubmitNameFallback && uniqueDirectCandidate) {
+    return {
+      status: 'submitted',
+      error: '',
+      verified: true,
+      verificationMode: 'unique-direct-candidate-name-fallback',
+    };
   }
   if (Number(result.candidateCount || 0) > 0) {
     return {
@@ -785,7 +847,7 @@ async function findVerifiedDeleteCandidate(page, candidates, row) {
 
     try {
       await closeReservationPopup(page).catch(() => {});
-      await page.locator(selector).first().click({ timeout: 8000 });
+      await page.locator(selector).filter({ visible: true }).first().click({ timeout: 8000 });
       if (!(await waitVisible(page, '.layer_popup.reservation_state', 8000))) {
         attempt.status = 'popup-not-opened';
         continue;
@@ -835,18 +897,7 @@ export async function inspectSpacecloudReservationStatus(context, task, {
     reservationNo: event.reservationNo,
   };
 
-  await page.goto(reservationCalendarUrl(row.roomKey), {
-    waitUntil: 'domcontentloaded',
-    timeout: 30000,
-  });
-  await page.waitForFunction(
-    () => /\d{4}\s*\.\s*\d{1,2}/.test(
-      document.querySelector('.calendar_tit.short strong')?.textContent
-      || document.querySelector('.calendar_tit.short')?.textContent
-      || '',
-    ),
-    { timeout: 20000 },
-  );
+  await loadSpacecloudCalendar(page, row.roomKey);
   await gotoCalendarMonth(page, row.date);
   const search = await waitForDirectEventCandidates(page, row, { timeoutMs });
   const candidates = search.candidates || [];
@@ -1064,12 +1115,7 @@ export async function uploadSpacecloudDirectReservation(context, event) {
 
   page.on('dialog', onDialog);
   try {
-    if (page.url() !== ui.reservationCalendarUrl) {
-      await page.goto(ui.reservationCalendarUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: SPACECLOUD_PAGE_LOAD_TIMEOUT_MS,
-      });
-    }
+    await loadSpacecloudCalendar(page, event.roomKey);
 
     await closeModalIfOpen(page);
 
@@ -1136,10 +1182,13 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     });
     row.finishedAt = new Date().toISOString();
     if (dialogs.length > 0) row.dialogs = dialogs;
-    const outcome = classifyDirectUploadVerification(hidden, row.postSubmitVerification);
+    const outcome = classifyDirectUploadVerification(hidden, row.postSubmitVerification, {
+      allowUniquePostSubmitNameFallback: true,
+    });
     row.status = outcome.status;
     if (outcome.verified) {
       row.verifiedAfterSubmit = true;
+      row.verificationMode = outcome.verificationMode || 'reservation-identity';
     } else {
       row.error = outcome.error;
     }
@@ -1155,6 +1204,57 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     page.off('dialog', onDialog);
   }
 
+  return row;
+}
+
+export async function inspectSpacecloudDirectReservation(context, task, {
+  timeoutMs = 8000,
+  intervalMs = 500,
+  fastTimeoutMs = 1500,
+} = {}) {
+  const page = await pageForContext(context);
+  const event = spacecloudUploadEventFromTask(task);
+  const row = {
+    taskId: event.taskId,
+    taskType: task.taskType || task.task_type || 'upload',
+    roomKey: event.roomKey,
+    date: event.date,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    reservationNo: event.reservationNo,
+    startedAt: new Date().toISOString(),
+  };
+
+  try {
+    row.fastVerification = await verifyDirectEventCreated(page, event, {
+      timeoutMs: fastTimeoutMs,
+      intervalMs: Math.min(intervalMs, 250),
+      forceFreshDocument: false,
+    });
+    if (row.fastVerification.identityMatched) {
+      row.verification = row.fastVerification;
+      row.verificationMode = 'fast-identity-match';
+    } else {
+      row.confirmationVerification = await verifyDirectEventCreated(page, event, {
+        timeoutMs,
+        intervalMs,
+        forceFreshDocument: true,
+      });
+      row.verification = row.confirmationVerification;
+      row.verificationMode = 'fresh-document-confirmation';
+    }
+    row.status = row.verification.identityMatched
+      ? 'identity-matched'
+      : row.verification.candidateCount > 0
+        ? 'candidate-only'
+        : 'absent';
+  } catch (error) {
+    row.status = 'failed';
+    row.error = String(error?.message || error);
+  } finally {
+    await closeReservationPopup(page).catch(() => {});
+  }
+  row.finishedAt = new Date().toISOString();
   return row;
 }
 
@@ -1450,12 +1550,7 @@ export async function deleteSpacecloudDirectReservation(context, task) {
 
   page.on('dialog', onDialog);
   try {
-    if (page.url() !== row.reservationCalendarUrl) {
-      await page.goto(row.reservationCalendarUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: SPACECLOUD_PAGE_LOAD_TIMEOUT_MS,
-      });
-    }
+    await loadSpacecloudCalendar(page, row.roomKey);
     await closeModalIfOpen(page);
 
     if (!(await waitVisible(page, 'a._additionalReserveLayerOpen', 20000))) {

@@ -321,24 +321,84 @@ async function findWeeklySlot(page, row) {
   }, { dayIndex, startHour, marker });
 }
 
+export function selectNaverScheduleEditorPanel(candidates) {
+  const rows = Array.isArray(candidates) ? candidates : [];
+  return rows
+    .filter((candidate) => candidate?.visible)
+    .filter((candidate) => Number(candidate.formGroupCount || 0) >= 2)
+    .filter((candidate) => Number(candidate.saveButtonCount || 0) === 1)
+    .sort((left, right) => String(right.text || '').length - String(left.text || '').length)[0] || null;
+}
+
 async function verifySchedulePanel(page, row, expectedStatus) {
   const room = NAVER_ROOMS[row.roomKey];
   const date = normalizeDate(row.date);
   const dateText = `${dateParts(date).year}.${dateParts(date).month}.${dateParts(date).day}`;
   const startTexts = timeLabelVariants(row.startTime);
   const endTexts = timeLabelVariants(row.endTime);
-  const panel = await page.evaluate(() => {
-    const side = document.querySelector('[class*="SideLayer__visible"]');
-    return (side?.innerText || side?.textContent || '').replace(/\s+/g, ' ').trim();
-  });
+  const panelCandidates = await page.evaluate(() => [...document.querySelectorAll('[class*="SideLayer__visible"]')]
+    .map((side) => {
+      const rect = side.getBoundingClientRect();
+      const buttons = [...side.querySelectorAll('button')];
+      return {
+        visible: rect.width > 0 && rect.height > 0,
+        text: (side.innerText || side.textContent || '').replace(/\s+/g, ' ').trim(),
+        formGroupCount: side.querySelectorAll('.form-group').length,
+        saveButtonCount: buttons.filter((button) => (
+          (button.innerText || button.textContent || '').replace(/\s+/g, ' ').trim() === '설정변경'
+        )).length,
+      };
+    }));
+  const selectedPanel = selectNaverScheduleEditorPanel(panelCandidates);
+  const panel = selectedPanel?.text || '';
   const compact = compactText(panel);
   const errors = [];
+  if (!selectedPanel) errors.push('editor-panel');
   if (!compact.includes(compactText(room.name))) errors.push(`room:${room.name}`);
   if (!compact.includes(compactText(dateText))) errors.push(`date:${dateText}`);
   if (!compactIncludesAny(compact, startTexts)) errors.push(`start:${startTexts[0]}`);
   if (!compactIncludesAny(compact, endTexts)) errors.push(`end:${endTexts[0]}`);
   if (expectedStatus && !compact.includes(compactText(expectedStatus))) errors.push(`status:${expectedStatus}`);
-  return { ok: errors.length === 0, errors, textPreview: panel.slice(0, 500) };
+  return {
+    ok: errors.length === 0,
+    errors,
+    textPreview: panel.slice(0, 500),
+    panelCandidateCount: panelCandidates.length,
+    selectedFormGroupCount: selectedPanel?.formGroupCount || 0,
+    selectedSaveButtonCount: selectedPanel?.saveButtonCount || 0,
+  };
+}
+
+async function inspectScheduleEditorContext(page) {
+  return page.evaluate(() => {
+    const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const groups = [...document.querySelectorAll('.form-group')]
+      .filter(visible)
+      .map((group, index) => ({
+        index,
+        text: norm(group.innerText || group.textContent || '').slice(0, 300),
+        buttons: [...group.querySelectorAll('button')].filter(visible).map((button) => ({
+          text: norm(button.innerText || button.textContent || ''),
+          className: String(button.className || ''),
+          title: button.getAttribute('title') || '',
+        })),
+      }));
+    const sideLayers = [...document.querySelectorAll('[class*="SideLayer__visible"]')]
+      .filter(visible)
+      .map((side) => norm(side.innerText || side.textContent || '').slice(0, 500));
+    const saveButtons = [...document.querySelectorAll('button')]
+      .filter((button) => visible(button) && norm(button.innerText || button.textContent || '') === '설정변경')
+      .map((button) => ({
+        text: norm(button.innerText || button.textContent || ''),
+        className: String(button.className || ''),
+      }));
+    return { groups, sideLayers, saveButtons };
+  });
 }
 
 async function selectScheduleFormButton(page, groupLabel, buttonIndex, targetText) {
@@ -746,6 +806,66 @@ export async function setNaverAvailability(context, task, {
     row.finishedAt = new Date().toISOString();
     return row;
   }
+}
+
+export async function inspectNaverAvailability(context, task, {
+  businessId = NAVER_BOOKING_BUSINESS_ID,
+} = {}) {
+  const page = await pageForContext(context);
+  const row = {
+    ...taskRow(task),
+    taskType: task.taskType || task.task_type || 'naver_block',
+    startedAt: new Date().toISOString(),
+    slots: [],
+  };
+
+  try {
+    for (const slotRow of buildHourlySlotRows(row)) {
+      await prepareCalendar(page, slotRow, { businessId });
+      const slot = await findWeeklySlot(page, slotRow);
+      row.slots.push({
+        date: slotRow.date,
+        startTime: slotRow.startTime,
+        endTime: slotRow.endTime,
+        status: slot.status,
+        slot: compactSlot(slot),
+      });
+    }
+    row.status = 'inspected';
+  } catch (error) {
+    row.status = 'failed';
+    row.error = String(error?.message || error);
+  }
+  row.finishedAt = new Date().toISOString();
+  return row;
+}
+
+export async function inspectNaverAvailabilityEditor(context, task, {
+  businessId = NAVER_BOOKING_BUSINESS_ID,
+} = {}) {
+  const page = await pageForContext(context);
+  const row = taskRow(task);
+  const slots = buildHourlySlotRows(row);
+  if (slots.length !== 1) throw new Error(`editor inspection requires one hourly slot, got ${slots.length}`);
+  const slotRow = slots[0];
+  await prepareCalendar(page, slotRow, { businessId });
+  const slot = await findWeeklySlot(page, slotRow);
+  const target = page.locator(`button[data-rhythmjoy-target="${slot.marker}"]`);
+  const targetCount = await target.count();
+  if (targetCount !== 1) throw new Error(`Naver target button count ${targetCount}`);
+  await target.click({ timeout: 10000 });
+  await page.waitForTimeout(900);
+  const expectedStatus = slot.status === 'suspended' ? '예약불가' : '예약가능';
+  return {
+    taskId: row.taskId,
+    roomKey: row.roomKey,
+    date: slotRow.date,
+    startTime: slotRow.startTime,
+    endTime: slotRow.endTime,
+    slot: compactSlot(slot),
+    panelVerification: await verifySchedulePanel(page, slotRow, expectedStatus),
+    editor: await inspectScheduleEditorContext(page),
+  };
 }
 
 export async function fetchNaverReservationPhone(context, task, {
