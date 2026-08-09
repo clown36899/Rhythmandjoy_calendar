@@ -6032,11 +6032,13 @@ async function runWatch(args) {
     logLine('browser context reopened after unexpected close');
   };
   let stopping = false;
+  const watcherParentPid = process.ppid;
   const stop = () => {
     stopping = true;
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
+  process.once('SIGHUP', stop);
   let urgentUntil = 0;
 
   logLine(`watch started; interval=${args.intervalSeconds}s urgent=${args.nowMode ? `${args.urgentIntervalSeconds}s/${args.urgentCooldownSeconds}s` : 'off'} profile=${args.profileDir} mode=${args.legacyCalendarPlan ? 'db+legacy-calendar-plan' : 'db-queue'}`);
@@ -6176,14 +6178,16 @@ async function runWatch(args) {
           }
         }
       } catch (error) {
-        if (stopping) {
+        const errorText = String(error?.message || error);
+        if (/ssh exited (?:null|255)/i.test(errorText)) await sleep(250);
+        if (stopping || process.ppid !== watcherParentPid) {
           logLine('cycle interrupted by service shutdown; notification skipped');
           break;
         }
         const errorRow = {
           at: new Date().toISOString(),
           status: 'error',
-          error: String(error?.message || error),
+          error: errorText,
         };
         await appendJsonl(path.join(args.workDir, 'runs.jsonl'), errorRow);
         logLine(`cycle error: ${errorRow.error}`);
