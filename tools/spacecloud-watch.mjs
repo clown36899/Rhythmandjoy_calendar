@@ -6176,6 +6176,10 @@ async function runWatch(args) {
           }
         }
       } catch (error) {
+        if (stopping) {
+          logLine('cycle interrupted by service shutdown; notification skipped');
+          break;
+        }
         const errorRow = {
           at: new Date().toISOString(),
           status: 'error',
