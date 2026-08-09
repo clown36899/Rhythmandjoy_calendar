@@ -3481,6 +3481,25 @@ async function notifyReservationAttention(args, rowOrError, category, taskType, 
   );
 }
 
+async function notifyWatcherProblem(args, stateSignature, text) {
+  return notifyOnStateChange(args, 'system:watcher', stateSignature, text);
+}
+
+async function notifyWatcherRecoveredIfNeeded(args) {
+  const state = await readJsonObject(args.notifyState);
+  const previous = state['system:watcher'] || {};
+  if (!previous.lastSentAt || !String(previous.stateSignature || '').startsWith('problem:')) return;
+  await notifyOnStateChange(
+    args,
+    'system:watcher',
+    'healthy',
+    compactNotice('✅ 자동화 정상 복구', [
+      'DB 연결 및 예약 감시: 정상',
+      '이전 시스템 경고가 해제됐습니다.',
+    ]),
+  );
+}
+
 function compactNotice(title, lines) {
   return [
     title,
@@ -3494,8 +3513,8 @@ function loginNeededMessage(rowOrError) {
     ? rowOrError
     : rows.map((row) => row.error || row.status).filter(Boolean).join('\n');
   const candidates = typeof rowOrError === 'object' ? rowOrError?.uploadCandidates : null;
-  return compactNotice('⚠️ 실패: 로그인 필요', [
-    '상태: 세션 확인 대기',
+  return compactNotice('🟡 자동화 로그인 필요', [
+    '예약 감시: 로그인 확인 대기',
     `후보: ${candidates ?? '-'}건`,
     rows.length ? `대상:\n${formatBriefRows(rows, 1)}` : '',
     `원인: ${cleanTelegramText(errorText || '-', 120)}`,
@@ -3707,10 +3726,10 @@ function smsFailureMessage(rows) {
 }
 
 function cycleErrorMessage(errorText, { transient = false } = {}) {
-  return compactNotice(transient ? '⚠️ 주의: 서버 연결 재시도' : '⚠️ 실패: 자동화 감시 중지', [
-    `상태: ${transient ? '일시 연결 오류, 다음 주기 자동 재시도' : '감시 주기 오류로 중지'}`,
-    `원인: ${cleanTelegramText(errorText || '-', 180)}`,
-    `조치: ${transient ? '자동 재시도 중, 반복되면 네트워크/서버 연결 확인' : '로그 확인 후 재시작'}`,
+  return compactNotice(transient ? '🟡 서버 연결 확인 중' : '🔴 자동화 감시 중지', [
+    `상태: ${transient ? '다음 주기 자동 재시도' : '자동 재시작 필요'}`,
+    `자동화 기록: ${cleanTelegramText(errorText || '-', 180)}`,
+    '같은 상태는 다시 알리지 않습니다.',
   ]);
 }
 
@@ -6023,6 +6042,11 @@ async function runWatch(args) {
   logLine(`watch started; interval=${args.intervalSeconds}s urgent=${args.nowMode ? `${args.urgentIntervalSeconds}s/${args.urgentCooldownSeconds}s` : 'off'} profile=${args.profileDir} mode=${args.legacyCalendarPlan ? 'db+legacy-calendar-plan' : 'db-queue'}`);
   try {
     while (!stopping) {
+      let watcherProblemThisCycle = false;
+      const reportWatcherProblem = async (stateSignature, text) => {
+        watcherProblemThisCycle = true;
+        return notifyWatcherProblem(args, stateSignature, text);
+      };
       try {
         const row = await runCycle(args, context);
         if (args.nowMode && cycleNeedsUrgentFollowUp(row)) {
@@ -6065,7 +6089,7 @@ async function runWatch(args) {
         if (row.failed?.length) {
           const errorText = row.failed.map((failedRow) => failedRow.error).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row));
+            await reportWatcherProblem('problem:login-needed', loginNeededMessage(row));
             logLine(`login needed; waiting for manual login: ${JSON.stringify(row.failed)}`);
           } else {
             await notifyWithCooldown(args, 'spacecloud-upload-failed', uploadFailureMessage(row));
@@ -6076,7 +6100,7 @@ async function runWatch(args) {
         if (row.uploadTasks?.failed?.length) {
           const errorText = row.uploadTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.uploadTasks));
+            await reportWatcherProblem('problem:login-needed', loginNeededMessage(row.uploadTasks));
             logLine(`login needed during db upload; waiting for manual login: ${JSON.stringify(row.uploadTasks.failed)}`);
           } else if (row.uploadTasks.failed.every((failedRow) => failedRow.status === 'google-create-failed')) {
             await notifyReservationAttention(args, row.uploadTasks, 'google-copy', 'upload', uploadTaskFailureMessage(row.uploadTasks));
@@ -6090,7 +6114,7 @@ async function runWatch(args) {
         if (row.deleteTasks?.failed?.length) {
           const errorText = row.deleteTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.deleteTasks));
+            await reportWatcherProblem('problem:login-needed', loginNeededMessage(row.deleteTasks));
             logLine(`login needed during delete; waiting for manual login: ${JSON.stringify(row.deleteTasks.failed)}`);
           } else if (row.deleteTasks.failed.every((failedRow) => failedRow.status === 'google-delete-failed')) {
             await notifyReservationAttention(args, row.deleteTasks, 'google-copy', 'delete', deleteFailureMessage(row.deleteTasks));
@@ -6104,7 +6128,7 @@ async function runWatch(args) {
         if (row.naverBlockTasks?.failed?.length) {
           const errorText = row.naverBlockTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.naverBlockTasks));
+            await reportWatcherProblem('problem:login-needed', loginNeededMessage(row.naverBlockTasks));
             logLine(`login needed during naver block; waiting for manual login: ${JSON.stringify(row.naverBlockTasks.failed)}`);
           } else if (row.naverBlockTasks.failed.every((failedRow) => failedRow.status === 'google-create-failed')) {
             await notifyReservationAttention(args, row.naverBlockTasks, 'google-copy', 'naver_block', naverBlockFailureMessage(row.naverBlockTasks));
@@ -6118,7 +6142,7 @@ async function runWatch(args) {
         if (row.naverRestoreTasks?.failed?.length) {
           const errorText = row.naverRestoreTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.naverRestoreTasks));
+            await reportWatcherProblem('problem:login-needed', loginNeededMessage(row.naverRestoreTasks));
             logLine(`login needed during naver restore; waiting for manual login: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
           } else if (row.naverRestoreTasks.failed.every((failedRow) => failedRow.status === 'google-delete-failed')) {
             await notifyReservationAttention(args, row.naverRestoreTasks, 'google-copy', 'naver_restore', naverRestoreFailureMessage(row.naverRestoreTasks));
@@ -6132,7 +6156,7 @@ async function runWatch(args) {
         if (row.naverCancelTasks?.failed?.length) {
           const errorText = row.naverCancelTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.naverCancelTasks));
+            await reportWatcherProblem('problem:login-needed', loginNeededMessage(row.naverCancelTasks));
             logLine(`login needed during naver cancel; waiting for manual login: ${JSON.stringify(row.naverCancelTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.naverCancelTasks, 'platform', 'naver_cancel', naverCancelFailureMessage(row.naverCancelTasks));
@@ -6143,7 +6167,7 @@ async function runWatch(args) {
         if (row.spacecloudCancelTasks?.failed?.length) {
           const errorText = row.spacecloudCancelTasks.failed.map((failedRow) => failedRow.error || failedRow.status).join('\n');
           if (isLoginProblem(errorText)) {
-            await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(row.spacecloudCancelTasks));
+            await reportWatcherProblem('problem:login-needed', loginNeededMessage(row.spacecloudCancelTasks));
             logLine(`login needed during spacecloud cancel; waiting for manual login: ${JSON.stringify(row.spacecloudCancelTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.spacecloudCancelTasks, 'platform', 'spacecloud_cancel', spacecloudCancelFailureMessage(row.spacecloudCancelTasks));
@@ -6163,19 +6187,18 @@ async function runWatch(args) {
           await reopenBrowserContext();
           logLine('closed browser context recovered; will retry next cycle');
         } else if (isLoginProblem(errorRow.error)) {
-          await notifyWithCooldown(args, 'spacecloud-login-needed', loginNeededMessage(errorRow.error));
+          await reportWatcherProblem('problem:login-needed', loginNeededMessage(errorRow.error));
           logLine('login needed; waiting for manual login');
         } else if (isTransientRemoteProblem(errorRow.error)) {
-          await notifyWithCooldown(args, 'spacecloud-cycle-error', cycleErrorMessage(errorRow.error, { transient: true }), {
-            cooldownSeconds: Math.min(args.notifyCooldownSeconds, 60 * 60),
-          });
+          await reportWatcherProblem('problem:connection', cycleErrorMessage(errorRow.error, { transient: true }));
           logLine('transient remote problem; will retry next cycle');
         } else {
-          await notifyWithCooldown(args, 'spacecloud-cycle-error', cycleErrorMessage(errorRow.error));
+          await reportWatcherProblem('problem:stopped', cycleErrorMessage(errorRow.error));
           break;
         }
       }
 
+      if (!watcherProblemThisCycle) await notifyWatcherRecoveredIfNeeded(args);
       await maybeSendReflectionAudit(args);
       await maybeSendDailyReconcile(args);
       const sleepSeconds = watchSleepSeconds(args, urgentUntil);
