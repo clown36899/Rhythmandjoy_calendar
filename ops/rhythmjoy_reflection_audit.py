@@ -1050,11 +1050,22 @@ def unique_issue_groups(rows):
 
 
 def actionable_issue_groups(rows):
-    """Exclude Google-only copy drift from core booking-sync Telegram alerts."""
-    return [
-        group for group in unique_issue_groups(rows)
-        if group['targets'] != {'google'}
-    ]
+    """Return only core platform state; Google is a non-blocking replica."""
+    groups = []
+    for group in unique_issue_groups(rows):
+        platform_targets = group['targets'] & {'naver', 'spacecloud'}
+        non_google_targets = group['targets'] - {'google'}
+        if not platform_targets and not non_google_targets:
+            continue
+        groups.append({
+            **group,
+            'targets': platform_targets or non_google_targets,
+            'reasons': {
+                reason for reason in group['reasons']
+                if '구글' not in reason.lower() and 'google' not in reason.lower()
+            },
+        })
+    return groups
 
 
 def audit_group_line(group, index):

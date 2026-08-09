@@ -49,6 +49,7 @@ def main():
     }
     groups = audit.actionable_issue_groups([platform_issue, google_copy_issue])
     assert len(groups) == 1
+    assert groups[0]['targets'] == {'naver'}
     message = audit.audit_message(sample_result([platform_issue, google_copy_issue]))
     assert '실제 플랫폼 누락 확정 아님' in message
     assert '같은 상태는 다시 알리지 않습니다' in message
