@@ -2912,7 +2912,7 @@ for row in raw:
             'taskId': row['taskId'],
             'taskType': task_type,
             'status': row['taskStatus'],
-            'roomKey': row['roomKey'],
+            'roomKey': (row.get('roomKey') or '').lower(),
             'date': row['date'],
             'startTime': row['startTime'],
             'endTime': row['endTime'],
