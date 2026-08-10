@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+import json
 import logging
 import sys
 import tempfile
 import types
+import urllib.parse
 from pathlib import Path
 from unittest import mock
 
@@ -30,6 +32,30 @@ def sample_result(issues):
 
 
 def main():
+    cache_payload = {
+        'source': 'db-booking-ledger',
+        'coverageStart': '2026-04-12',
+        'failures': {},
+        'events': [{
+            'id': 'ledger:513',
+            'start': '2026-08-12T19:00:00+09:00',
+            'end': '2026-08-12T20:00:00+09:00',
+            'className': 'c',
+            'extendedProps': {
+                'roomKey': 'c',
+                'ledgerId': 513,
+                'reservationNumber': '1310000000',
+            },
+        }],
+    }
+    data_url = 'data:application/json,' + urllib.parse.quote(
+        json.dumps(cache_payload)
+    )
+    cache_events, coverage_start, cache_source = audit.fetch_google_cache(data_url)
+    assert cache_source == 'db-booking-ledger'
+    assert coverage_start == '2026-04-12'
+    assert cache_events[0]['ledger_id'] == 513
+
     platform_issue = {
         'ledgerId': 513,
         'sourcePlatform': 'spacecloud',

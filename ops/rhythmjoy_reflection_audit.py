@@ -182,6 +182,7 @@ def fetch_google_cache(url, timeout=20):
         props = event.get('extendedProps') or {}
         events.append({
             'id': props.get('googleEventId') or event.get('id') or '',
+            'ledger_id': props.get('ledgerId'),
             'reservation_number': reservation_number,
             'reservation_date': date_text,
             'room_key': event_room(event),
@@ -189,7 +190,7 @@ def fetch_google_cache(url, timeout=20):
             'end_time': end,
             'title': event.get('title') or event.get('summary') or '',
         })
-    return events, coverage_start
+    return events, coverage_start, str(payload.get('source') or '')
 
 
 def is_within_google_cache_coverage(reservation_date, coverage_start):
@@ -510,11 +511,14 @@ def run_audit(
     }
     google_events = []
     google_coverage_start = ''
+    calendar_cache_source = ''
     google_error = ''
     try:
-        google_events, google_coverage_start = fetch_google_cache(google_cache_url)
+        google_events, google_coverage_start, calendar_cache_source = fetch_google_cache(google_cache_url)
     except Exception as error:
         google_error = str(error)
+    public_cache_is_db = calendar_cache_source == 'db-booking-ledger'
+    out['calendarCacheSource'] = calendar_cache_source or 'unavailable'
     try:
         with conn.cursor() as cur:
             ensure_schema(cur)
@@ -805,18 +809,23 @@ def run_audit(
                 for event in google_events
                 if event.get('id')
             )
+            public_by_ledger_id = {
+                str(event.get('ledger_id')): event
+                for event in google_events
+                if event.get('ledger_id') is not None
+            }
 
             if google_error:
                 item = {
                     'audit_key': 'google-cache:unavailable',
                     'ledger_id': None,
                     'source_platform': 'ledger',
-                    'target_platform': 'google',
+                    'target_platform': 'public-calendar' if public_cache_is_db else 'google',
                     'expected_task_type': 'calendar_verify',
                     'current_status': '',
                     'audit_status': 'issue',
                     'severity': 'warning',
-                    'reason': ('구글 최종 일정 조회 실패: ' + google_error)[:255],
+                    'reason': ('공개 일정 캐시 조회 실패: ' + google_error)[:255],
                     'task_id': None,
                     'task_status': '',
                     'reservation_date': None,
@@ -840,14 +849,19 @@ def run_audit(
                         continue
                     reservation_number = str(row.get('reservation_number') or '')
                     source_platform = str(row.get('source_platform') or '').lower()
-                    candidates = (
-                        google_by_number.get(reservation_number) or []
-                        if source_platform == 'naver'
-                        else google_events
-                    )
+                    if public_cache_is_db:
+                        public_event = public_by_ledger_id.get(str(row.get('id')))
+                        candidates = [public_event] if public_event else []
+                    else:
+                        candidates = (
+                            google_by_number.get(reservation_number) or []
+                            if source_platform == 'naver'
+                            else google_events
+                        )
                     if any(google_slot(event) == ledger_slot(row) for event in candidates):
                         continue
-                    reason = (
+                    reason = ('공개 DB 일정에 원장 ID가 없음' if public_cache_is_db and not candidates else
+                        '공개 DB 일정의 날짜·방·시간이 원장과 다름' if public_cache_is_db else
                         '구글 최종 일정에 예약번호가 없음'
                         if source_platform == 'naver' and not candidates
                         else '구글 최종 일정에 날짜·방·시간이 없음'
@@ -860,7 +874,7 @@ def run_audit(
                         'audit_key': f"calendar:ledger:{row.get('id')}",
                         'ledger_id': row.get('id'),
                         'source_platform': row.get('source_platform') or '',
-                        'target_platform': 'google',
+                        'target_platform': 'public-calendar' if public_cache_is_db else 'google',
                         'expected_task_type': 'calendar_verify',
                         'current_status': row.get('current_status') or '',
                         'audit_status': 'issue',
@@ -890,8 +904,8 @@ def run_audit(
                             'ledgerId': row.get('id'),
                             'sourcePlatform': row.get('source_platform') or '',
                             'sourceLabel': platform_label(row.get('source_platform')),
-                            'targetPlatform': 'google',
-                            'targetLabel': '구글',
+                            'targetPlatform': 'public-calendar' if public_cache_is_db else 'google',
+                            'targetLabel': '공개 일정표' if public_cache_is_db else '구글',
                             'taskType': 'calendar_verify',
                             'status': 'issue',
                             'severity': 'warning',
@@ -904,7 +918,7 @@ def run_audit(
                             'reservationNumber': reservation_number,
                         })
 
-            for row in google_backfill_rows:
+            for row in ([] if public_cache_is_db else google_backfill_rows):
                 google_event_id = google_event_id_from_ledger(row)
                 canceled_match_id = row.get('canceled_match_id')
                 if canceled_match_id:
@@ -1076,6 +1090,8 @@ def audit_group_line(group, index):
     states = []
     if group['targets'] & {'spacecloud', 'naver'}:
         states.append('자동 반영 기록: 확인 필요')
+    if 'public-calendar' in group['targets']:
+        states.append('공개 일정표: DB 원장과 불일치')
     if 'google' in group['targets']:
         states.append('Google 복제본: 불일치')
     if not states:
