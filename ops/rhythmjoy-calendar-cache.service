@@ -1,5 +1,5 @@
 [Unit]
-Description=Rhythmjoy Google Calendar cache
+Description=Rhythmjoy DB ledger public calendar cache
 After=network-online.target
 Wants=network-online.target
 

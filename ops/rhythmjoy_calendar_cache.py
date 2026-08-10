@@ -340,7 +340,8 @@ def sync_once():
         'ledger': ledger_meta,
         'adminSource': 'rhythmjoy_admin_reservations',
         'googleCalendar': {
-            'role': 'optional-replica',
+            'role': 'disabled',
+            'writesEnabled': False,
             'usedForPublicSchedule': False,
         },
         'failures': {},

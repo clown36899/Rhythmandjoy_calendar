@@ -21,17 +21,12 @@ from email.utils import parsedate_to_datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-
-
 APP_ROOT = Path(os.environ.get('RHYTHMJOY_APP_ROOT', '/home/clown313python/myapp'))
 OPS_ROOT = Path(os.environ.get('RHYTHMJOY_OPS_ROOT', '/home/clown313python/rhythmjoy_ops'))
 ENV_FILE = Path(os.environ.get('RHYTHMJOY_ENV_FILE', APP_ROOT / '.env'))
 LOG_DIR = Path(os.environ.get('RHYTHMJOY_EMAIL_LOG_DIR', APP_ROOT / 'static' / 'email_log'))
 LOG_FILE = LOG_DIR / 'email_service.log'
 RESTART_COUNT_FILE = LOG_DIR / 'restart_count.txt'
-DEFAULT_GOOGLE_SERVICE_ACCOUNT = APP_ROOT / 'static' / 'rhythmjoycalendar-ce0594fe594b.json'
 TIME_ZONE = 'Asia/Seoul'
 KST = timezone(timedelta(hours=9))
 # Architecture invariant: never replace PEEK with RFC822/BODY[]; see the runbook.
@@ -589,11 +584,7 @@ def build_ignored_email_record(config, mail_key, mailbox, decoded_id, message_id
 
 
 def build_calendar_service(config):
-    credentials = service_account.Credentials.from_service_account_file(
-        config['google_service_account_file'],
-        scopes=['https://www.googleapis.com/auth/calendar'],
-    )
-    return build('calendar', 'v3', credentials=credentials, cache_discovery=False)
+    raise ConfigError('Google Calendar integration is disabled; DB ledger is the schedule source of truth')
 
 
 def db_connect(config, autocommit=True):
@@ -1993,7 +1984,7 @@ def format_spacecloud_delete_status(task, calendar_key):
             'done': '스페이스클라우드 삭제 완료',
             'already_gone': '스페이스클라우드 이미 없음',
             'needs_review': '스페이스클라우드 삭제 확인 필요',
-            'google_pending': '스페이스클라우드 삭제 후 구글 정리 대기',
+            'google_pending': '이전 구글 연동 대기 기록(신규 사용 안 함)',
             'failed': '스페이스클라우드 삭제 실패',
         }.get(status, f'상태 {status}')
         return f'{status_text} (작업 #{task_id})'
@@ -2006,12 +1997,6 @@ def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spac
     title = success_alert_title('네이버 취소 메일 수집')
     if calendar_to_spacecloud_room_key(calendar_key) and not spacecloud_task:
         title = failure_alert_title('네이버 취소 삭제작업 생성')
-    if google_deleted_count:
-        google_delete_status = '자동삭제 완료'
-    elif spacecloud_task:
-        google_delete_status = '스페이스클라우드 삭제 후 처리대기'
-    else:
-        google_delete_status = '매칭없음'
     spacecloud_delete_status = format_spacecloud_delete_status(spacecloud_task, calendar_key)
 
     return (
@@ -2021,7 +2006,7 @@ def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spac
         f"예약번호: {deletion.get('reservation_number') or '-'}\n"
         f'다음작업: 스페이스클라우드에서 같은 예약 삭제\n'
         f'스페이스클라우드: {short_alert_text(spacecloud_delete_status, 100)}\n'
-        f'구글달력: {calendar_key or "-"} / {google_delete_status} {google_deleted_count}건\n'
+        f'DB 원장: 취소 반영 완료\n'
         f'메일수신: {email_received_at or "-"}\n'
         f'{alert_mail_line(subject)}'
     )
@@ -2051,28 +2036,20 @@ def format_naver_block_task_status(config, task, conflicts):
     if not config.get('spacecloud_naver_block_enabled'):
         return '네이버 예약불가 반영 안 함(report-only)'
     if task:
-        suffix = f" / 구글 겹침 참고 {len(conflicts)}건" if conflicts else ''
-        return f"네이버 예약불가 반영 대기: 작업 #{task.get('id') or '-'} / {task.get('status') or '-'}{suffix}"
+        return f"네이버 예약불가 반영 대기: 작업 #{task.get('id') or '-'} / {task.get('status') or '-'}"
     return '네이버 예약불가 작업 생성 실패: DB/방 매핑/파싱 확인'
 
 
 def format_spacecloud_google_status(config, google_event, conflicts):
-    if google_event:
-        return f"구글 기록 완료: event_id={google_event.get('id') or '-'}"
-    if config.get('spacecloud_naver_block_enabled'):
-        if conflicts:
-            return f'후순위 대기: 네이버 반영 후 기록, 기존 구글 겹침 {len(conflicts)}건은 검증 참고'
-        return '후순위 대기: 네이버 반영 후 기록'
-    return 'report-only: 자동생성 안 함'
+    return '사용 안 함(DB 원장 기준)'
 
 
 def notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, google_event, naver_block_task, subject, email_received_at, logger):
     if naver_block_task and not config.get('telegram_notify_intake_success'):
         logger.info('Telegram intake alert skipped: final watcher result will be sent task=%s', naver_block_task.get('id'))
         return False
-    status = '구글 기록 겹침 참고' if conflicts else '네이버 반영 대기'
+    status = '네이버 반영 대기'
     current_step = format_naver_block_task_status(config, naver_block_task, conflicts)
-    google_status = format_spacecloud_google_status(config, google_event, conflicts)
     title = success_alert_title('스페이스클라우드 예약 메일 수집')
     if config.get('spacecloud_naver_block_enabled') and not naver_block_task:
         title = failure_alert_title('스페이스클라우드 예약 작업 생성')
@@ -2082,7 +2059,7 @@ def notify_spacecloud_reservation_report(config, event_data, calendar_key, confl
         f'상태: {status}\n'
         f'대상: {alert_event_line(event_data)}\n'
         f"네이버: {short_alert_text(current_step, 120)}\n"
-        f"구글: {short_alert_text(google_status, 100)}\n"
+        f"DB 원장: 예약 반영 완료\n"
         f"메일수신: {email_received_at or '-'}\n"
         f'{alert_mail_line(subject)}'
     )
@@ -2745,19 +2722,13 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                         config, logger, email_record_id, event_data,
                         target_calendar, email_received_at, 'naver'
                     )
-                    created = create_calendar_event(
-                        get_calendar_service(),
-                        event_data,
-                        logger,
-                        dedupe_google_calendar=config['dedupe_google_calendar'],
-                    )
                     update_email_processing(
                         config,
                         email_record_id,
-                        'calendar_created',
+                        'ledger_only',
                         logger,
-                        google_calendar_event_id=created.get('id', ''),
-                        error_text='legacy_or_upload_task_unavailable',
+                        google_calendar_event_id='',
+                        error_text='platform_sync_disabled',
                     )
             else:
                 logger.warning('Reservation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
@@ -2822,14 +2793,14 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                         calendar_key, email_received_at, 'naver'
                     )
                     spacecloud_task = None
-                    deleted = delete_events_by_reservation(get_calendar_service(), deletion, logger)
+                    deleted = 0
                     update_email_processing(
                         config,
                         email_record_id,
-                        'calendar_deleted' if deleted else 'calendar_not_found',
+                        'ledger_only_canceled',
                         logger,
-                        google_calendar_deleted_count=deleted,
-                        error_text='',
+                        google_calendar_deleted_count=0,
+                        error_text='platform_sync_disabled',
                     )
                 notify_cancellation(config, deletion, calendar_key, deleted, spacecloud_task, subject, email_received_at, logger)
             else:
@@ -2992,14 +2963,6 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                 event_data['calendar_key'] = calendar_key
                 event_data['target_calendar'] = calendar_key
                 conflicts = []
-                try:
-                    conflicts = find_calendar_conflicts(get_calendar_service(), calendar_key, event_data, logger)
-                except Exception:
-                    logger.exception(
-                        'Google Calendar conflict check skipped for SpaceCloud reservation mailbox=%s email_id=%s',
-                        mailbox,
-                        decoded_id,
-                    )
                 event_data['conflict_count'] = len(conflicts)
                 google_event = None
                 if config.get('spacecloud_naver_block_enabled'):
@@ -3323,13 +3286,8 @@ def verify_transactional_inbox_outbox(config, logger):
 
 
 def run_poll_once(config, logger):
-    service = None
-
     def get_calendar_service():
-        nonlocal service
-        if service is None:
-            service = build_calendar_service(config)
-        return service
+        return build_calendar_service(config)
 
     processed = 0
     imap_connection = None
@@ -3395,7 +3353,6 @@ def build_config():
     load_env_file(ENV_FILE)
     naver_mail_username = get_required_env('NAVER_MAIL_USERNAME')
     naver_mail_password = get_required_env('NAVER_MAIL_PASSWORD')
-    google_service_account_file = os.environ.get('GOOGLE_SERVICE_ACCOUNT_FILE', str(DEFAULT_GOOGLE_SERVICE_ACCOUNT))
     db_server = os.environ.get('DB_SERVERNAME', '')
     db_username = os.environ.get('DB_USERNAME', '')
     db_password = os.environ.get('DB_PASSWORD', '')
@@ -3405,7 +3362,6 @@ def build_config():
     return {
         'naver_mail_username': naver_mail_username,
         'naver_mail_password': naver_mail_password,
-        'google_service_account_file': google_service_account_file,
         'imap_server': os.environ.get('NAVER_IMAP_SERVER', 'imap.naver.com'),
         'imap_port': int(os.environ.get('NAVER_IMAP_PORT', '993')),
         'poll_interval': int(os.environ.get('RHYTHMJOY_EMAIL_POLL_INTERVAL_SECONDS', '30')),
@@ -3428,7 +3384,6 @@ def build_config():
         'db_password': db_password,
         'db_name': db_name,
         'store_raw_email_body': env_flag('RHYTHMJOY_EMAIL_STORE_RAW_BODY', '1'),
-        'dedupe_google_calendar': env_flag('RHYTHMJOY_EMAIL_DEDUPE_GOOGLE', '0'),
         'naver_spacecloud_upload_enabled': env_flag('RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED', '0'),
         'spacecloud_email_enabled': env_flag('RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED', '0'),
         'spacecloud_naver_block_enabled': env_flag('RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED', '0'),
@@ -3436,8 +3391,6 @@ def build_config():
 
 
 def check_config(config, logger):
-    if not Path(config['google_service_account_file']).is_file():
-        logger.warning('Missing Google service account file; downstream Google Calendar writes will fail: %s', config['google_service_account_file'])
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     if not os.access(str(LOG_DIR), os.W_OK):
         raise ConfigError(f'Email log directory is not writable: {LOG_DIR}')
@@ -3445,7 +3398,7 @@ def check_config(config, logger):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Import Rhythmjoy Naver booking email into Google Calendar.')
+    parser = argparse.ArgumentParser(description='Import Rhythmjoy booking email into the DB ledger and platform sync queue.')
     parser.add_argument('--once', action='store_true', help='run one polling cycle and exit')
     parser.add_argument('--check-config', action='store_true', help='validate config and exit')
     parser.add_argument('--backfill-ledger', action='store_true', help='non-destructively upsert booking ledger rows from stored parsed email events and exit')
