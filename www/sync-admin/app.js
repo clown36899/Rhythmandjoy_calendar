@@ -14,6 +14,13 @@
     roomFilter: "all",
     drafts: loadJson(storageKey, []),
     tasks: [],
+    adminSeries: [],
+    recurringPreview: null,
+    recurringRequestId: "",
+    selectedOccurrenceKey: "",
+    selectedSeries: null,
+    seriesOccurrences: [],
+    eventDetailEvents: [],
     reflectionAudits: [],
     reflectionAuditSummary: null,
     sessions: loadJson(sessionKey, {}),
@@ -58,6 +65,7 @@
     eventDetailList: document.getElementById("eventDetailList"),
     closeEventDetailModal: document.getElementById("closeEventDetailModal"),
     doneEventDetailModal: document.getElementById("doneEventDetailModal"),
+    cancelAdminReservation: document.getElementById("cancelAdminReservation"),
     reservationModal: document.getElementById("reservationModal"),
     modalSlotSummary: document.getElementById("modalSlotSummary"),
     closeReservationModal: document.getElementById("closeReservationModal"),
@@ -98,6 +106,38 @@
     adminTokenStatus: document.getElementById("adminTokenStatus"),
     naverStatus: document.getElementById("naverStatus"),
     spacecloudStatus: document.getElementById("spacecloudStatus"),
+    seriesList: document.getElementById("seriesList"),
+    recurringModal: document.getElementById("recurringModal"),
+    recurringForm: document.getElementById("recurringForm"),
+    closeRecurringModal: document.getElementById("closeRecurringModal"),
+    recurringTitle: document.getElementById("recurringTitle"),
+    recurringName: document.getElementById("recurringName"),
+    recurringStartDate: document.getElementById("recurringStartDate"),
+    recurringEndDate: document.getElementById("recurringEndDate"),
+    recurringFifthPolicy: document.getElementById("recurringFifthPolicy"),
+    recurringPhone: document.getElementById("recurringPhone"),
+    recurringMemo: document.getElementById("recurringMemo"),
+    recurringRules: document.getElementById("recurringRules"),
+    addRecurringRule: document.getElementById("addRecurringRule"),
+    previewRecurring: document.getElementById("previewRecurring"),
+    resetRecurringPreview: document.getElementById("resetRecurringPreview"),
+    recurringPreview: document.getElementById("recurringPreview"),
+    recurringPreviewSummary: document.getElementById("recurringPreviewSummary"),
+    recurringYear: document.getElementById("recurringYear"),
+    recurringIssueList: document.getElementById("recurringIssueList"),
+    occurrenceEditor: document.getElementById("occurrenceEditor"),
+    closeRecurringPreview: document.getElementById("closeRecurringPreview"),
+    createRecurring: document.getElementById("createRecurring"),
+    seriesModal: document.getElementById("seriesModal"),
+    seriesModalTitle: document.getElementById("seriesModalTitle"),
+    seriesModalSummary: document.getElementById("seriesModalSummary"),
+    closeSeriesModal: document.getElementById("closeSeriesModal"),
+    selectAllSeriesOccurrences: document.getElementById("selectAllSeriesOccurrences"),
+    selectedSeriesOccurrenceCount: document.getElementById("selectedSeriesOccurrenceCount"),
+    seriesOccurrenceList: document.getElementById("seriesOccurrenceList"),
+    cancelSeriesFuture: document.getElementById("cancelSeriesFuture"),
+    cancelSeriesSelected: document.getElementById("cancelSeriesSelected"),
+    cancelSeriesAll: document.getElementById("cancelSeriesAll"),
   };
 
   init();
@@ -108,6 +148,7 @@
     if (el.adminToken) el.adminToken.value = localStorage.getItem(tokenKey) || "";
     el.profilePath.value = localStorage.getItem(profileKey) || el.profilePath.value;
     fillTimeSelects();
+    initializeRecurringForm();
     bindEvents();
     renderAll();
     updateActiveNav();
@@ -163,6 +204,36 @@
     el.eventDetailModal.addEventListener("click", (event) => {
       if (event.target === el.eventDetailModal) closeEventDetailModal();
     });
+    el.cancelAdminReservation.addEventListener("click", cancelDetailedAdminReservation);
+    document.querySelectorAll("[data-open-recurring-modal]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        openRecurringModal();
+      });
+    });
+    el.closeRecurringModal.addEventListener("click", closeRecurringModal);
+    el.closeRecurringPreview.addEventListener("click", closeRecurringModal);
+    el.recurringModal.addEventListener("click", (event) => {
+      if (event.target === el.recurringModal) closeRecurringModal();
+    });
+    el.addRecurringRule.addEventListener("click", () => addRecurringRule());
+    el.previewRecurring.addEventListener("click", () => previewRecurringSchedule());
+    el.resetRecurringPreview.addEventListener("click", resetRecurringPreview);
+    el.recurringForm.addEventListener("submit", createRecurringSchedule);
+    document.querySelectorAll("[data-recurring-months]").forEach((button) => {
+      button.addEventListener("click", () => setRecurringPeriodMonths(Number(button.dataset.recurringMonths)));
+    });
+    [el.recurringStartDate, el.recurringEndDate, el.recurringFifthPolicy].forEach((input) => {
+      input.addEventListener("change", resetRecurringPreview);
+    });
+    el.closeSeriesModal.addEventListener("click", closeSeriesModal);
+    el.seriesModal.addEventListener("click", (event) => {
+      if (event.target === el.seriesModal) closeSeriesModal();
+    });
+    el.selectAllSeriesOccurrences.addEventListener("change", toggleAllSeriesOccurrences);
+    el.cancelSeriesSelected.addEventListener("click", () => cancelSeriesOccurrences("selected"));
+    el.cancelSeriesFuture.addEventListener("click", () => cancelSeriesOccurrences("future"));
+    el.cancelSeriesAll.addEventListener("click", () => cancelSeriesOccurrences("all"));
     el.monthRevenueButton.addEventListener("click", openRevenueModal);
     el.closeRevenueModal.addEventListener("click", closeRevenueModal);
     el.doneRevenueModal.addEventListener("click", closeRevenueModal);
@@ -171,6 +242,14 @@
     });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      if (!el.seriesModal.hidden) {
+        closeSeriesModal();
+        return;
+      }
+      if (!el.recurringModal.hidden) {
+        closeRecurringModal();
+        return;
+      }
       if (!el.revenueModal.hidden) {
         closeRevenueModal();
         return;
@@ -409,6 +488,7 @@
     renderStatus();
     renderSessions();
     renderIndustryComparison();
+    renderSeriesList();
     if (!el.revenueModal.hidden) renderRevenueModal();
   }
 
@@ -2058,8 +2138,13 @@
 
   function openEventDetailModal(events, summary) {
     const detailDate = events?.[0]?.date || state.dayModalDate || state.activeDate;
+    state.eventDetailEvents = Array.isArray(events) ? events : [];
     el.eventDetailSummary.textContent = `${detailDate} ${summary}`;
     el.eventDetailList.innerHTML = events.map(eventDetailCardHtml).join("");
+    const cancelable = state.eventDetailEvents.length === 1
+      && state.eventDetailEvents[0].source === "admin"
+      && !["canceled", "canceling"].includes(state.eventDetailEvents[0].status);
+    el.cancelAdminReservation.hidden = !cancelable;
     el.eventDetailModal.hidden = false;
     document.body.classList.add("modal-open");
     window.setTimeout(() => {
@@ -2069,6 +2154,8 @@
 
   function closeEventDetailModal() {
     el.eventDetailModal.hidden = true;
+    state.eventDetailEvents = [];
+    el.cancelAdminReservation.hidden = true;
     updateModalOpenState();
   }
 
@@ -2092,7 +2179,8 @@
   function updateModalOpenState() {
     document.body.classList.toggle(
       "modal-open",
-      !el.reservationModal.hidden || !el.dayScheduleModal.hidden || !el.eventDetailModal.hidden || !el.revenueModal.hidden,
+      !el.reservationModal.hidden || !el.dayScheduleModal.hidden || !el.eventDetailModal.hidden || !el.revenueModal.hidden
+        || !el.recurringModal.hidden || !el.seriesModal.hidden,
     );
   }
 
@@ -2107,6 +2195,7 @@
     return {
       id: `db-${item.id}`,
       dbId: item.id,
+      seriesId: item.seriesId || null,
       createdAt: item.createdAt,
       date: item.date,
       room: item.room,
@@ -2130,6 +2219,497 @@
       naver: item.naverStatus || "pending",
       spacecloud: item.spacecloudStatus || "pending",
     };
+  }
+
+  function initializeRecurringForm() {
+    el.recurringStartDate.value = today();
+    setRecurringPeriodMonths(1);
+    el.recurringRules.innerHTML = "";
+    addRecurringRule({ weekday: 1, room: "A", start: 13, end: 15 });
+  }
+
+  function inclusivePeriodEnd(startText, months) {
+    const parts = String(startText || today()).split("-").map(Number);
+    const targetYear = parts[0];
+    const targetMonth = parts[1] - 1 + months;
+    const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+    const clippedAtMonthEnd = parts[2] > lastDay;
+    const target = new Date(targetYear, targetMonth, Math.min(parts[2], lastDay));
+    if (!clippedAtMonthEnd) target.setDate(target.getDate() - 1);
+    return toDateInputValue(target);
+  }
+
+  function setRecurringPeriodMonths(months) {
+    const start = el.recurringStartDate.value || today();
+    el.recurringStartDate.value = start;
+    el.recurringEndDate.value = inclusivePeriodEnd(start, Math.max(1, Math.min(12, months || 1)));
+    resetRecurringPreview();
+  }
+
+  function recurringHourOptions(selected, endMode = false) {
+    const first = endMode ? 1 : 0;
+    const last = endMode ? 24 : 23;
+    return Array.from({ length: last - first + 1 }, (_, index) => index + first)
+      .map((hour) => `<option value="${hour}"${Number(selected) === hour ? " selected" : ""}>${escapeHtml(formatHour(hour))}</option>`)
+      .join("");
+  }
+
+  function addRecurringRule(initial = {}) {
+    const row = document.createElement("div");
+    const ruleCount = el.recurringRules.querySelectorAll(".recurring-rule").length;
+    const weekday = Number(initial.weekday || Math.min(7, ruleCount + 1));
+    const room = initial.room || "A";
+    const start = Number(initial.start ?? 13);
+    const end = Number(initial.end ?? Math.min(24, start + 2));
+    row.className = "recurring-rule";
+    row.draggable = false;
+    row.innerHTML = `
+      <label><span>요일</span><select data-rule-weekday>
+        ${[[1, "월"], [2, "화"], [3, "수"], [4, "목"], [5, "금"], [6, "토"], [7, "일"]]
+          .map(([value, label]) => `<option value="${value}"${weekday === value ? " selected" : ""}>${label}요일</option>`).join("")}
+      </select></label>
+      <label><span>홀</span><select data-rule-room>
+        ${rooms.map((value) => `<option value="${value}"${room === value ? " selected" : ""}>${value}홀</option>`).join("")}
+      </select></label>
+      <label><span>시작</span><select data-rule-start>${recurringHourOptions(start)}</select></label>
+      <label><span>종료</span><select data-rule-end>${recurringHourOptions(end, true)}</select></label>
+      <button type="button" class="danger-button" data-remove-rule>삭제</button>
+    `;
+    row.querySelector("[data-remove-rule]").addEventListener("click", () => {
+      if (el.recurringRules.querySelectorAll(".recurring-rule").length <= 1) {
+        showToast("요일 규칙은 하나 이상 필요합니다.");
+        return;
+      }
+      row.remove();
+      resetRecurringPreview();
+    });
+    row.querySelectorAll("select").forEach((select) => select.addEventListener("change", resetRecurringPreview));
+    el.recurringRules.appendChild(row);
+    resetRecurringPreview();
+  }
+
+  function recurringRulesPayload() {
+    return Array.from(el.recurringRules.querySelectorAll(".recurring-rule")).map((row) => ({
+      weekday: Number(row.querySelector("[data-rule-weekday]").value),
+      room: row.querySelector("[data-rule-room]").value,
+      start: Number(row.querySelector("[data-rule-start]").value),
+      end: Number(row.querySelector("[data-rule-end]").value),
+    }));
+  }
+
+  function recurringBasePayload() {
+    return {
+      title: el.recurringTitle.value.trim(),
+      name: el.recurringName.value.trim(),
+      phone: el.recurringPhone.value.trim(),
+      memo: el.recurringMemo.value.trim(),
+      startDate: el.recurringStartDate.value,
+      endDate: el.recurringEndDate.value,
+      fifthWeekPolicy: el.recurringFifthPolicy.value,
+      rules: recurringRulesPayload(),
+    };
+  }
+
+  function openRecurringModal() {
+    if (!el.recurringStartDate.value) initializeRecurringForm();
+    el.recurringModal.hidden = false;
+    document.body.classList.add("modal-open");
+    window.setTimeout(() => el.recurringTitle.focus(), 0);
+  }
+
+  function closeRecurringModal() {
+    el.recurringModal.hidden = true;
+    updateModalOpenState();
+  }
+
+  function resetRecurringPreview() {
+    state.recurringPreview = null;
+    state.selectedOccurrenceKey = "";
+    state.recurringRequestId = "";
+    el.recurringPreview.hidden = true;
+    el.occurrenceEditor.hidden = true;
+    el.createRecurring.disabled = true;
+  }
+
+  async function previewRecurringSchedule(options = {}) {
+    if (!adminToken()) {
+      showToast("DB 관리자 연결이 필요합니다.");
+      return;
+    }
+    const payload = recurringBasePayload();
+    if (!payload.startDate || !payload.endDate || !payload.rules.length) {
+      showToast("기간과 요일 규칙을 입력해주세요.");
+      return;
+    }
+    if (options.useCurrent && state.recurringPreview?.occurrences) {
+      payload.occurrences = state.recurringPreview.occurrences.map((row) => ({
+        key: row.key,
+        originalDate: row.originalDate,
+        date: row.date,
+        ruleIndex: row.ruleIndex,
+        room: row.room,
+        start: row.start,
+        end: row.end,
+        included: row.included,
+        excludedReason: row.excludedReason,
+        modified: row.modified,
+      }));
+    }
+    el.previewRecurring.disabled = true;
+    el.previewRecurring.textContent = "충돌 검사 중…";
+    try {
+      const previous = new Map((state.recurringPreview?.occurrences || []).map((row) => [row.key, row]));
+      const data = await apiRequest("preview_recurring", payload);
+      data.occurrences = (data.occurrences || []).map((row) => {
+        const old = previous.get(row.key);
+        return {
+          ...row,
+          baseDate: old?.baseDate || row.originalDate || row.date,
+          baseRoom: old?.baseRoom || row.room,
+          baseStart: old?.baseStart ?? row.start,
+          baseEnd: old?.baseEnd ?? row.end,
+          baseIncluded: old?.baseIncluded ?? row.included,
+        };
+      });
+      state.recurringPreview = data;
+      state.selectedOccurrenceKey = options.selectKey || state.selectedOccurrenceKey || "";
+      if (!state.recurringRequestId) {
+        state.recurringRequestId = window.crypto?.randomUUID?.() || `series-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      }
+      renderRecurringPreview();
+      el.recurringPreview.hidden = false;
+      el.recurringPreview.scrollIntoView({ block: "start", behavior: "smooth" });
+    } catch (error) {
+      showToast(error.message || "정기대관 미리보기 실패");
+    } finally {
+      el.previewRecurring.disabled = false;
+      el.previewRecurring.textContent = "12개월 미리보기·충돌 검사";
+    }
+  }
+
+  function renderRecurringPreview() {
+    const preview = state.recurringPreview;
+    if (!preview) return;
+    const summary = preview.summary || {};
+    el.recurringPreviewSummary.innerHTML = [
+      ["전체", summary.total],
+      ["등록 예정", summary.included],
+      ["충돌", summary.conflicts],
+      ["제외", summary.excluded],
+      ["부분 변경", summary.modified],
+    ].map(([label, value]) => `<div class="recurring-summary-item"><span>${label}</span><strong>${Number(value || 0).toLocaleString()}건</strong></div>`).join("");
+    renderRecurringYear();
+    renderRecurringIssues();
+    renderOccurrenceEditor();
+    el.createRecurring.disabled = Number(summary.included || 0) < 1 || Number(summary.conflicts || 0) > 0;
+    el.createRecurring.textContent = Number(summary.conflicts || 0) > 0
+      ? `충돌 ${Number(summary.conflicts)}건 해결 필요`
+      : `${Number(summary.included || 0)}건 등록`;
+  }
+
+  function occurrenceVisualStatus(rows) {
+    if (rows.some((row) => row.status === "conflict")) return "conflict";
+    if (rows.every((row) => !row.included)) return "excluded";
+    if (rows.some((row) => row.modified)) return "modified";
+    return "ready";
+  }
+
+  function recurringMonths() {
+    const preview = state.recurringPreview;
+    if (!preview) return [];
+    const start = new Date(`${preview.startDate.slice(0, 7)}-01T00:00:00`);
+    const end = new Date(`${preview.endDate.slice(0, 7)}-01T00:00:00`);
+    const months = [];
+    const cursor = new Date(start);
+    while (cursor <= end && months.length < 13) {
+      months.push(`${cursor.getFullYear()}-${pad2(cursor.getMonth() + 1)}`);
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return months;
+  }
+
+  function renderRecurringYear() {
+    const occurrenceMap = new Map();
+    (state.recurringPreview?.occurrences || []).forEach((row) => {
+      const list = occurrenceMap.get(row.date) || [];
+      list.push(row);
+      occurrenceMap.set(row.date, list);
+    });
+    el.recurringYear.innerHTML = "";
+    recurringMonths().forEach((monthKey) => {
+      const first = new Date(`${monthKey}-01T00:00:00`);
+      const days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+      const card = document.createElement("section");
+      card.className = "recurring-mini-month";
+      const weekdays = ["일", "월", "화", "수", "목", "금", "토"]
+        .map((label) => `<span class="recurring-mini-weekday">${label}</span>`).join("");
+      card.innerHTML = `<h4>${first.getFullYear()}년 ${first.getMonth() + 1}월</h4><div class="recurring-mini-grid">${weekdays}</div>`;
+      const grid = card.querySelector(".recurring-mini-grid");
+      for (let empty = 0; empty < first.getDay(); empty += 1) {
+        grid.insertAdjacentHTML("beforeend", '<span class="recurring-mini-day"></span>');
+      }
+      for (let day = 1; day <= days; day += 1) {
+        const date = `${monthKey}-${pad2(day)}`;
+        const rows = occurrenceMap.get(date) || [];
+        const button = document.createElement(rows.length ? "button" : "span");
+        button.className = "recurring-mini-day";
+        button.textContent = String(day);
+        if (rows.length) {
+          const status = occurrenceVisualStatus(rows);
+          button.type = "button";
+          button.draggable = false;
+          button.classList.add("has-occurrence", status);
+          if (rows.some((row) => row.key === state.selectedOccurrenceKey)) button.classList.add("selected");
+          button.title = rows.map((row) => `${row.room}홀 ${formatHour(row.start)}-${formatHour(row.end)} ${occurrenceStatusText(row)}`).join("\n");
+          button.addEventListener("click", () => selectRecurringOccurrence(rows[0].key));
+        }
+        grid.appendChild(button);
+      }
+      el.recurringYear.appendChild(card);
+    });
+  }
+
+  function occurrenceStatusText(row) {
+    if (!row.included) return row.excludedReason === "fifth_week" ? "5주차 제외" : "수동 제외";
+    if (row.status === "conflict") return `충돌 ${row.conflicts?.length || 1}건`;
+    if (row.modified) return "부분 변경";
+    return "등록 예정";
+  }
+
+  function renderRecurringIssues() {
+    const rows = (state.recurringPreview?.occurrences || []).filter((row) => (
+      row.status === "conflict" || !row.included || row.modified
+    ));
+    if (!rows.length) {
+      el.recurringIssueList.innerHTML = '<p class="empty-note">처리할 충돌·예외가 없습니다.</p>';
+      return;
+    }
+    el.recurringIssueList.innerHTML = "";
+    rows.forEach((row) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.draggable = false;
+      button.className = `recurring-issue-button ${row.status}`;
+      const conflict = row.conflicts?.[0];
+      button.innerHTML = `
+        <strong>${escapeHtml(row.date)} · ${escapeHtml(row.room)}홀 ${escapeHtml(formatHour(row.start))}-${escapeHtml(formatHour(row.end))}</strong>
+        <span>${escapeHtml(conflict ? `${conflict.sourceLabel} ${conflict.start}:00-${conflict.end}:00와 충돌` : occurrenceStatusText(row))}</span>
+      `;
+      button.addEventListener("click", () => selectRecurringOccurrence(row.key));
+      el.recurringIssueList.appendChild(button);
+    });
+  }
+
+  function selectRecurringOccurrence(key) {
+    state.selectedOccurrenceKey = key;
+    renderRecurringPreview();
+    el.occurrenceEditor.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  function renderOccurrenceEditor() {
+    const row = (state.recurringPreview?.occurrences || []).find((item) => item.key === state.selectedOccurrenceKey);
+    if (!row) {
+      el.occurrenceEditor.hidden = true;
+      return;
+    }
+    el.occurrenceEditor.hidden = false;
+    el.occurrenceEditor.innerHTML = `
+      <div class="occurrence-editor-grid">
+        <label><span>날짜</span><input type="date" data-occurrence-date value="${escapeHtml(row.date)}"></label>
+        <label><span>홀</span><select data-occurrence-room>${rooms.map((room) => `<option value="${room}"${row.room === room ? " selected" : ""}>${room}홀</option>`).join("")}</select></label>
+        <label><span>시작</span><select data-occurrence-start>${recurringHourOptions(row.start)}</select></label>
+        <label><span>종료</span><select data-occurrence-end>${recurringHourOptions(row.end, true)}</select></label>
+        <button type="button" class="primary-button" data-save-occurrence>변경 후 재검사</button>
+      </div>
+      <label class="occurrence-include"><input type="checkbox" data-occurrence-included${row.included ? " checked" : ""}> 이 날짜를 정기대관에 포함</label>
+      ${row.conflicts?.length ? `<p class="occurrence-conflict-note">${row.conflicts.map((item) => `${escapeHtml(item.sourceLabel)} ${escapeHtml(item.room)}홀 ${escapeHtml(formatHour(item.start))}-${escapeHtml(formatHour(item.end))} ${escapeHtml(item.name || "")}`).join("<br>")}</p>` : ""}
+    `;
+    el.occurrenceEditor.querySelector("[data-save-occurrence]").addEventListener("click", saveOccurrenceOverride);
+  }
+
+  async function saveOccurrenceOverride() {
+    const row = (state.recurringPreview?.occurrences || []).find((item) => item.key === state.selectedOccurrenceKey);
+    if (!row) return;
+    row.date = el.occurrenceEditor.querySelector("[data-occurrence-date]").value;
+    row.room = el.occurrenceEditor.querySelector("[data-occurrence-room]").value;
+    row.start = Number(el.occurrenceEditor.querySelector("[data-occurrence-start]").value);
+    row.end = Number(el.occurrenceEditor.querySelector("[data-occurrence-end]").value);
+    row.included = el.occurrenceEditor.querySelector("[data-occurrence-included]").checked;
+    row.excludedReason = row.included ? "" : "manual";
+    row.modified = row.date !== row.baseDate || row.room !== row.baseRoom || row.start !== row.baseStart
+      || row.end !== row.baseEnd || row.included !== row.baseIncluded;
+    await previewRecurringSchedule({ useCurrent: true, selectKey: row.key });
+  }
+
+  async function createRecurringSchedule(event) {
+    event.preventDefault();
+    const preview = state.recurringPreview;
+    if (!preview || Number(preview.summary?.conflicts || 0) > 0) {
+      showToast("충돌을 모두 해결한 뒤 등록해주세요.");
+      return;
+    }
+    const count = Number(preview.summary?.included || 0);
+    if (!window.confirm(`${count}건을 DB 원장에 등록하고 두 플랫폼 반영 작업을 만들까요?`)) return;
+    el.createRecurring.disabled = true;
+    try {
+      const data = await apiRequest("create_recurring", {
+        ...recurringBasePayload(),
+        requestId: state.recurringRequestId,
+        occurrences: preview.occurrences,
+        previewHash: preview.previewHash,
+      });
+      applyApiData(data);
+      renderAll();
+      closeRecurringModal();
+      const created = Number(data.recurringResult?.createdCount || 0);
+      showToast(created ? `정기대관 ${created}건을 등록했습니다.` : "이미 처리된 정기대관 요청입니다.");
+      el.recurringForm.reset();
+      initializeRecurringForm();
+    } catch (error) {
+      showToast(error.message || "정기대관 등록 실패");
+      el.createRecurring.disabled = false;
+    }
+  }
+
+  function renderSeriesList() {
+    if (!el.seriesList) return;
+    if (!state.adminSeries.length) {
+      el.seriesList.innerHTML = '<p class="empty-note">등록된 정기대관이 없습니다.</p>';
+      return;
+    }
+    el.seriesList.innerHTML = "";
+    state.adminSeries.forEach((series) => {
+      const card = document.createElement("article");
+      card.className = "series-card";
+      card.innerHTML = `
+        <div class="series-card-head"><h3>${escapeHtml(series.title || series.name || "정기대관")}</h3><span class="series-card-status ${escapeHtml(series.status)}">${escapeHtml(seriesStatusText(series.status))}</span></div>
+        <p>${escapeHtml(series.startDate)} ~ ${escapeHtml(series.endDate)} · 5주차 ${series.fifthWeekPolicy === "exclude" ? "제외" : "포함"}</p>
+        <div class="series-card-meta"><span>현재 ${Number(series.visibleCount || 0)}건</span><span>취소 ${Number(series.canceledCount || 0)}건</span></div>
+        <div class="series-card-actions"><span>${escapeHtml(series.name || "")}</span><button type="button" class="secondary-button compact-button">일정 관리</button></div>
+      `;
+      const button = card.querySelector("button");
+      button.draggable = false;
+      button.addEventListener("click", () => openSeriesModal(series.id));
+      el.seriesList.appendChild(card);
+    });
+  }
+
+  function seriesStatusText(status) {
+    if (status === "canceling") return "취소 처리 중";
+    if (status === "canceled") return "취소 완료";
+    return "운영 중";
+  }
+
+  async function openSeriesModal(seriesId) {
+    const series = state.adminSeries.find((item) => Number(item.id) === Number(seriesId));
+    if (!series) return;
+    try {
+      const data = await apiRequest("series_occurrences", { seriesId });
+      state.selectedSeries = series;
+      state.seriesOccurrences = data.occurrences || [];
+      el.seriesModalTitle.textContent = series.title || "정기대관 관리";
+      el.seriesModalSummary.textContent = `${series.startDate} ~ ${series.endDate} · 총 ${series.occurrenceCount}건`;
+      el.selectAllSeriesOccurrences.checked = false;
+      renderSeriesOccurrences();
+      el.seriesModal.hidden = false;
+      document.body.classList.add("modal-open");
+    } catch (error) {
+      showToast(error.message || "정기대관 일정 조회 실패");
+    }
+  }
+
+  function closeSeriesModal() {
+    el.seriesModal.hidden = true;
+    state.selectedSeries = null;
+    state.seriesOccurrences = [];
+    updateModalOpenState();
+  }
+
+  function renderSeriesOccurrences() {
+    el.seriesOccurrenceList.innerHTML = "";
+    state.seriesOccurrences.forEach((row) => {
+      const label = document.createElement("label");
+      label.className = `series-occurrence-row ${row.status || ""}`;
+      const disabled = ["canceled", "canceling"].includes(row.status);
+      label.innerHTML = `
+        <input type="checkbox" data-series-occurrence-id="${Number(row.id)}"${disabled ? " disabled" : ""}>
+        <strong>${escapeHtml(row.date)} ${escapeHtml(weekdayShortText(row.date))}</strong>
+        <span>${escapeHtml(row.room)}홀</span>
+        <span>${escapeHtml(formatHour(row.start))}-${escapeHtml(formatHour(row.end))}</span>
+        <span>${escapeHtml(adminReservationStatusText(row.status))}</span>
+      `;
+      label.querySelector("input").addEventListener("change", updateSelectedSeriesOccurrenceCount);
+      el.seriesOccurrenceList.appendChild(label);
+    });
+    updateSelectedSeriesOccurrenceCount();
+  }
+
+  function adminReservationStatusText(status) {
+    if (status === "confirmed") return "반영 완료";
+    if (status === "canceling") return "취소 중";
+    if (status === "canceled") return "취소 완료";
+    return "반영 중";
+  }
+
+  function toggleAllSeriesOccurrences() {
+    el.seriesOccurrenceList.querySelectorAll("input[type='checkbox']:not(:disabled)").forEach((input) => {
+      input.checked = el.selectAllSeriesOccurrences.checked;
+    });
+    updateSelectedSeriesOccurrenceCount();
+  }
+
+  function selectedSeriesOccurrenceIds() {
+    return Array.from(el.seriesOccurrenceList.querySelectorAll("input[data-series-occurrence-id]:checked"))
+      .map((input) => Number(input.dataset.seriesOccurrenceId));
+  }
+
+  function updateSelectedSeriesOccurrenceCount() {
+    const count = selectedSeriesOccurrenceIds().length;
+    el.selectedSeriesOccurrenceCount.textContent = `${count}건 선택`;
+    el.cancelSeriesSelected.disabled = count < 1;
+  }
+
+  async function cancelSeriesOccurrences(scope) {
+    if (!state.selectedSeries) return;
+    const ids = scope === "selected" ? selectedSeriesOccurrenceIds() : [];
+    const label = scope === "selected" ? `선택한 ${ids.length}건` : (scope === "future" ? "오늘 이후 일정 전부" : "정기대관 전체");
+    if (scope === "selected" && !ids.length) return;
+    if (!window.confirm(`${label}를 취소할까요? 플랫폼 복구 확인 전까지 공개 일정에는 유지됩니다.`)) return;
+    try {
+      const data = await apiRequest("cancel_admin_reservations", {
+        reservationIds: ids,
+        seriesId: state.selectedSeries.id,
+        scope,
+        fromDate: today(),
+        date: state.activeDate,
+      });
+      applyApiData(data);
+      renderAll();
+      const requested = Number(data.cancelResult?.requestedCount || 0);
+      showToast(`${requested}건의 취소·복구 작업을 만들었습니다.`);
+      await openSeriesModal(state.selectedSeries.id);
+    } catch (error) {
+      showToast(error.message || "정기대관 취소 실패");
+    }
+  }
+
+  async function cancelDetailedAdminReservation() {
+    const event = state.eventDetailEvents[0];
+    if (!event?.dbId || event.source !== "admin") return;
+    if (!window.confirm(`${event.date} ${event.room}홀 ${formatHour(event.start)}-${formatHour(event.end)} 일정을 취소할까요?`)) return;
+    try {
+      const data = await apiRequest("cancel_admin_reservations", {
+        reservationIds: [event.dbId],
+        scope: "selected",
+        date: state.activeDate,
+      });
+      applyApiData(data);
+      closeEventDetailModal();
+      renderAll();
+      showToast("취소·복구 작업을 만들었습니다.");
+    } catch (error) {
+      showToast(error.message || "일정 취소 실패");
+    }
   }
 
   function persistDrafts() {
@@ -2179,6 +2759,7 @@
     }
 
     state.drafts = (data.reservations || []).map(reservationItemFromApi);
+    state.adminSeries = data.adminSeries || [];
     state.reflectionAudits = data.reflectionAudits || [];
     state.reflectionAuditSummary = data.reflectionAuditSummary || null;
     state.tasks = annotateTaskRelations((data.tasks || []).map((item) => ({

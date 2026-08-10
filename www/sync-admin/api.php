@@ -146,6 +146,29 @@ function ensure_schema($pdo) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
     $pdo->exec("
+        CREATE TABLE IF NOT EXISTS rhythmjoy_admin_series (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            series_key VARCHAR(128) NOT NULL,
+            title VARCHAR(128) NOT NULL DEFAULT '',
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            fifth_week_policy VARCHAR(16) NOT NULL DEFAULT 'include',
+            definition_json MEDIUMTEXT NULL,
+            reserver_name VARCHAR(128) NOT NULL DEFAULT '',
+            phone_hash CHAR(64) NOT NULL DEFAULT '',
+            phone_last4 VARCHAR(4) NOT NULL DEFAULT '',
+            memo VARCHAR(255) NOT NULL DEFAULT '',
+            status VARCHAR(32) NOT NULL DEFAULT 'active',
+            occurrence_count INT UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_series_key (series_key),
+            KEY idx_series_dates (start_date, end_date),
+            KEY idx_series_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
         CREATE TABLE IF NOT EXISTS rhythmjoy_admin_reservations (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             reservation_key VARCHAR(128) NOT NULL,
@@ -167,6 +190,9 @@ function ensure_schema($pdo) {
             KEY idx_status (status)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+    ensure_column($pdo, 'rhythmjoy_admin_reservations', 'series_id', 'BIGINT UNSIGNED NULL AFTER id');
+    ensure_column($pdo, 'rhythmjoy_admin_reservations', 'occurrence_order', 'INT UNSIGNED NULL AFTER series_id');
+    ensure_column($pdo, 'rhythmjoy_admin_reservations', 'rule_index', 'SMALLINT UNSIGNED NULL AFTER occurrence_order');
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS rhythmjoy_admin_sync_tasks (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -287,6 +313,10 @@ function clean_date_value($value) {
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
         return '';
     }
+    $parts = array_map('intval', explode('-', $value));
+    if (count($parts) !== 3 || !checkdate($parts[1], $parts[2], $parts[0])) {
+        return '';
+    }
     return $value;
 }
 
@@ -307,6 +337,142 @@ function clean_hour_value($value, $allow24) {
 
 function clean_phone($value) {
     return preg_replace('/\D+/', '', (string) $value);
+}
+
+function normalize_recurring_rules($raw_rules) {
+    if (!is_array($raw_rules) || count($raw_rules) < 1 || count($raw_rules) > 14) {
+        throw new InvalidArgumentException('정기대관 요일 규칙은 1~14개까지 설정할 수 있습니다.');
+    }
+    $rules = array();
+    $seen = array();
+    foreach ($raw_rules as $index => $raw) {
+        if (!is_array($raw)) {
+            throw new InvalidArgumentException('정기대관 요일 규칙 형식이 올바르지 않습니다.');
+        }
+        $weekday = isset($raw['weekday']) ? intval($raw['weekday']) : 0;
+        $room = clean_room_value(isset($raw['room']) ? $raw['room'] : '');
+        $start = clean_hour_value(isset($raw['start']) ? $raw['start'] : '', false);
+        $end = clean_hour_value(isset($raw['end']) ? $raw['end'] : '', true);
+        if ($weekday < 1 || $weekday > 7 || $room === '' || $start < 0 || $end < 0 || $start >= $end) {
+            throw new InvalidArgumentException('요일, 홀, 시작·종료 시간을 다시 확인해주세요.');
+        }
+        $signature = implode('|', array($weekday, $room, $start, $end));
+        if (isset($seen[$signature])) {
+            continue;
+        }
+        $seen[$signature] = true;
+        $rules[] = array(
+            'index' => count($rules),
+            'weekday' => $weekday,
+            'room' => $room,
+            'start' => $start,
+            'end' => $end,
+        );
+    }
+    if (!$rules) {
+        throw new InvalidArgumentException('사용할 수 있는 정기대관 규칙이 없습니다.');
+    }
+    return $rules;
+}
+
+function recurring_date_range($start_value, $end_value) {
+    $start = clean_date_value($start_value);
+    $end = clean_date_value($end_value);
+    if ($start === '' || $end === '' || $start > $end) {
+        throw new InvalidArgumentException('정기대관 시작일과 종료일을 확인해주세요.');
+    }
+    $start_date = new DateTime($start . ' 00:00:00');
+    $end_date = new DateTime($end . ' 00:00:00');
+    $days = intval($start_date->diff($end_date)->format('%a')) + 1;
+    if ($days > 366) {
+        throw new InvalidArgumentException('정기대관은 최대 1년(366일)까지 한 번에 등록할 수 있습니다.');
+    }
+    return array($start, $end, $start_date, $end_date);
+}
+
+function date_is_fifth_weekday($date_text) {
+    return intval(substr((string) $date_text, 8, 2)) >= 29;
+}
+
+function generate_recurring_occurrences($start_value, $end_value, $raw_rules, $fifth_week_policy) {
+    list($start, $end, $cursor, $end_date) = recurring_date_range($start_value, $end_value);
+    $rules = normalize_recurring_rules($raw_rules);
+    $policy = $fifth_week_policy === 'exclude' ? 'exclude' : 'include';
+    $occurrences = array();
+    while ($cursor <= $end_date) {
+        $date_text = $cursor->format('Y-m-d');
+        $weekday = intval($cursor->format('N'));
+        foreach ($rules as $rule) {
+            if ($rule['weekday'] !== $weekday) {
+                continue;
+            }
+            $fifth = date_is_fifth_weekday($date_text);
+            $included = !($policy === 'exclude' && $fifth);
+            $occurrences[] = array(
+                'key' => 'r' . $rule['index'] . ':' . $date_text,
+                'originalDate' => $date_text,
+                'date' => $date_text,
+                'weekday' => $weekday,
+                'ruleIndex' => $rule['index'],
+                'room' => $rule['room'],
+                'start' => $rule['start'],
+                'end' => $rule['end'],
+                'included' => $included,
+                'fifthWeek' => $fifth,
+                'excludedReason' => $included ? '' : 'fifth_week',
+                'modified' => false,
+            );
+            if (count($occurrences) > 500) {
+                throw new InvalidArgumentException('생성 일정이 500건을 넘습니다. 기간 또는 규칙을 나눠주세요.');
+            }
+        }
+        $cursor->modify('+1 day');
+    }
+    return array($rules, $occurrences, $start, $end, $policy);
+}
+
+function normalize_recurring_occurrences($raw_occurrences) {
+    if (!is_array($raw_occurrences) || count($raw_occurrences) < 1 || count($raw_occurrences) > 500) {
+        throw new InvalidArgumentException('정기대관 일정은 1~500건까지 처리할 수 있습니다.');
+    }
+    $rows = array();
+    $seen = array();
+    foreach ($raw_occurrences as $index => $raw) {
+        if (!is_array($raw)) {
+            throw new InvalidArgumentException('정기대관 일정 형식이 올바르지 않습니다.');
+        }
+        $date = clean_date_value(isset($raw['date']) ? $raw['date'] : '');
+        $original_date = clean_date_value(isset($raw['originalDate']) ? $raw['originalDate'] : $date);
+        $room = clean_room_value(isset($raw['room']) ? $raw['room'] : '');
+        $start = clean_hour_value(isset($raw['start']) ? $raw['start'] : '', false);
+        $end = clean_hour_value(isset($raw['end']) ? $raw['end'] : '', true);
+        if ($date === '' || $original_date === '' || $room === '' || $start < 0 || $end < 0 || $start >= $end) {
+            throw new InvalidArgumentException('날짜별 홀과 시간을 다시 확인해주세요.');
+        }
+        $key = isset($raw['key']) && trim((string) $raw['key']) !== ''
+            ? substr(trim((string) $raw['key']), 0, 80)
+            : 'o' . $index . ':' . $original_date;
+        if (isset($seen[$key])) {
+            throw new InvalidArgumentException('중복된 정기대관 일정 키가 있습니다.');
+        }
+        $seen[$key] = true;
+        $included = !isset($raw['included']) || filter_var($raw['included'], FILTER_VALIDATE_BOOLEAN);
+        $rows[] = array(
+            'key' => $key,
+            'originalDate' => $original_date,
+            'date' => $date,
+            'weekday' => intval(date('N', strtotime($date))),
+            'ruleIndex' => isset($raw['ruleIndex']) ? max(0, intval($raw['ruleIndex'])) : 0,
+            'room' => $room,
+            'start' => $start,
+            'end' => $end,
+            'included' => $included,
+            'fifthWeek' => date_is_fifth_weekday($date),
+            'excludedReason' => $included ? '' : (isset($raw['excludedReason']) ? substr((string) $raw['excludedReason'], 0, 32) : 'manual'),
+            'modified' => !empty($raw['modified']) || $date !== $original_date,
+        );
+    }
+    return $rows;
 }
 
 function mask_phone($last4) {
@@ -434,7 +600,7 @@ function ledger_reservation_rows($pdo, $date) {
 function admin_reservation_rows($pdo, $date) {
     $task_summary = task_summary_rows($pdo);
     $stmt = $pdo->prepare("
-        SELECT id, reservation_key, reservation_date, room_key, start_hour, end_hour,
+        SELECT id, series_id, reservation_key, reservation_date, room_key, start_hour, end_hour,
                reserver_name, phone_last4, memo, source, status,
                DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
                DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
@@ -449,6 +615,7 @@ function admin_reservation_rows($pdo, $date) {
         $summary = isset($task_summary[$reservation_id]) ? $task_summary[$reservation_id] : array();
         $rows[] = array(
             'id' => intval($row['id']),
+            'seriesId' => $row['series_id'] !== null ? intval($row['series_id']) : null,
             'key' => $row['reservation_key'],
             'date' => $row['reservation_date'],
             'room' => strtoupper($row['room_key']),
@@ -492,6 +659,206 @@ function reservation_rows($pdo, $date) {
         }
         return strcmp($a['room'], $b['room']);
     });
+    return $rows;
+}
+
+function recurring_conflict_row($source, $row) {
+    $is_admin = $source === 'admin';
+    return array(
+        'source' => $source,
+        'sourceLabel' => $is_admin ? '관리자 일정' : ($row['source_platform'] === 'naver' ? '네이버' : '스페이스클라우드'),
+        'id' => intval($row['id']),
+        'name' => (string) $row['reserver_name'],
+        'date' => (string) $row['reservation_date'],
+        'room' => strtoupper((string) $row['room_key']),
+        'start' => $is_admin ? intval($row['start_hour']) : hour_from_time_value($row['start_time_text'], false),
+        'end' => $is_admin ? intval($row['end_hour']) : hour_from_time_value($row['end_time_text'], true),
+    );
+}
+
+function recurring_preview_payload($pdo, $payload) {
+    if (isset($payload['occurrences'])) {
+        $occurrences = normalize_recurring_occurrences($payload['occurrences']);
+        $rules = isset($payload['rules']) ? normalize_recurring_rules($payload['rules']) : array();
+        $dates = array_map(function($row) { return $row['date']; }, $occurrences);
+        $start = min($dates);
+        $end = max($dates);
+        recurring_date_range($start, $end);
+        $policy = isset($payload['fifthWeekPolicy']) && $payload['fifthWeekPolicy'] === 'exclude' ? 'exclude' : 'include';
+    } else {
+        list($rules, $occurrences, $start, $end, $policy) = generate_recurring_occurrences(
+            isset($payload['startDate']) ? $payload['startDate'] : '',
+            isset($payload['endDate']) ? $payload['endDate'] : '',
+            isset($payload['rules']) ? $payload['rules'] : array(),
+            isset($payload['fifthWeekPolicy']) ? $payload['fifthWeekPolicy'] : 'include'
+        );
+    }
+
+    $ledger_rows = array();
+    $admin_rows = array();
+    $included_dates = array_values(array_map(function($row) { return $row['date']; }, array_filter($occurrences, function($row) {
+        return $row['included'];
+    })));
+    if ($included_dates) {
+        $range_start = min($included_dates);
+        $range_end = max($included_dates);
+        $stmt = $pdo->prepare("
+            SELECT id, source_platform, reservation_date, room_key, reserver_name,
+                   TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
+                   TIME_FORMAT(end_time, '%H:%i') AS end_time_text
+            FROM rhythmjoy_booking_ledger
+            WHERE reservation_date BETWEEN ? AND ?
+              AND current_status <> 'canceled'
+              AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+              AND source_platform <> 'google-backfill'
+        ");
+        $stmt->execute(array($range_start, $range_end));
+        $ledger_rows = $stmt->fetchAll();
+
+        $stmt = $pdo->prepare("
+            SELECT id, reservation_date, room_key, start_hour, end_hour, reserver_name
+            FROM rhythmjoy_admin_reservations
+            WHERE reservation_date BETWEEN ? AND ?
+              AND status <> 'canceled'
+        ");
+        $stmt->execute(array($range_start, $range_end));
+        $admin_rows = $stmt->fetchAll();
+    }
+
+    foreach ($occurrences as $index => &$occurrence) {
+        $occurrence['conflicts'] = array();
+        if (!$occurrence['included']) {
+            $occurrence['status'] = 'excluded';
+            continue;
+        }
+        foreach ($ledger_rows as $row) {
+            if ($row['reservation_date'] !== $occurrence['date'] || strtoupper($row['room_key']) !== $occurrence['room']) {
+                continue;
+            }
+            $existing_start = hour_from_time_value($row['start_time_text'], false);
+            $existing_end = hour_from_time_value($row['end_time_text'], true);
+            if ($occurrence['start'] < $existing_end && $occurrence['end'] > $existing_start) {
+                $occurrence['conflicts'][] = recurring_conflict_row('ledger', $row);
+            }
+        }
+        foreach ($admin_rows as $row) {
+            if ($row['reservation_date'] !== $occurrence['date'] || strtoupper($row['room_key']) !== $occurrence['room']) {
+                continue;
+            }
+            if ($occurrence['start'] < intval($row['end_hour']) && $occurrence['end'] > intval($row['start_hour'])) {
+                $occurrence['conflicts'][] = recurring_conflict_row('admin', $row);
+            }
+        }
+        foreach ($occurrences as $other_index => $other) {
+            if ($other_index === $index || !$other['included']) {
+                continue;
+            }
+            if ($other['date'] === $occurrence['date'] && $other['room'] === $occurrence['room']
+                && $occurrence['start'] < $other['end'] && $occurrence['end'] > $other['start']) {
+                $occurrence['conflicts'][] = array(
+                    'source' => 'preview',
+                    'sourceLabel' => '이번 정기대관',
+                    'id' => $other['key'],
+                    'name' => '',
+                    'date' => $other['date'],
+                    'room' => $other['room'],
+                    'start' => $other['start'],
+                    'end' => $other['end'],
+                );
+            }
+        }
+        $occurrence['status'] = $occurrence['conflicts'] ? 'conflict' : ($occurrence['modified'] ? 'modified' : 'ready');
+    }
+    unset($occurrence);
+
+    $summary = array('total' => count($occurrences), 'included' => 0, 'excluded' => 0, 'conflicts' => 0, 'modified' => 0);
+    foreach ($occurrences as $row) {
+        if (!$row['included']) {
+            $summary['excluded'] += 1;
+        } else {
+            $summary['included'] += 1;
+        }
+        if ($row['status'] === 'conflict') $summary['conflicts'] += 1;
+        if ($row['modified']) $summary['modified'] += 1;
+    }
+    $preview_hash = hash('sha256', json_encode($occurrences, JSON_UNESCAPED_UNICODE));
+    return array(
+        'ok' => true,
+        'startDate' => $start,
+        'endDate' => $end,
+        'fifthWeekPolicy' => $policy,
+        'rules' => $rules,
+        'occurrences' => $occurrences,
+        'summary' => $summary,
+        'previewHash' => $preview_hash,
+    );
+}
+
+function admin_series_rows($pdo) {
+    $stmt = $pdo->query("
+        SELECT s.id, s.series_key, s.title, s.start_date, s.end_date,
+               s.fifth_week_policy, s.reserver_name, s.memo, s.status, s.occurrence_count,
+               SUM(CASE WHEN r.status <> 'canceled' THEN 1 ELSE 0 END) AS visible_count,
+               SUM(CASE WHEN r.status = 'canceling' THEN 1 ELSE 0 END) AS canceling_count,
+               SUM(CASE WHEN r.status = 'canceled' THEN 1 ELSE 0 END) AS canceled_count,
+               DATE_FORMAT(s.created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
+               DATE_FORMAT(s.updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+        FROM rhythmjoy_admin_series s
+        LEFT JOIN rhythmjoy_admin_reservations r ON r.series_id = s.id
+        GROUP BY s.id
+        ORDER BY s.updated_at DESC, s.id DESC
+        LIMIT 30
+    ");
+    $rows = array();
+    foreach ($stmt->fetchAll() as $row) {
+        $rows[] = array(
+            'id' => intval($row['id']),
+            'key' => $row['series_key'],
+            'title' => $row['title'],
+            'startDate' => $row['start_date'],
+            'endDate' => $row['end_date'],
+            'fifthWeekPolicy' => $row['fifth_week_policy'],
+            'name' => $row['reserver_name'],
+            'memo' => $row['memo'],
+            'status' => $row['status'],
+            'occurrenceCount' => intval($row['occurrence_count']),
+            'visibleCount' => intval($row['visible_count']),
+            'cancelingCount' => intval($row['canceling_count']),
+            'canceledCount' => intval($row['canceled_count']),
+            'createdAt' => $row['created_at'],
+            'updatedAt' => $row['updated_at'],
+        );
+    }
+    return $rows;
+}
+
+function admin_series_occurrence_rows($pdo, $series_id) {
+    $stmt = $pdo->prepare("
+        SELECT id, series_id, occurrence_order, rule_index, reservation_date, room_key,
+               start_hour, end_hour, reserver_name, memo, status,
+               DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+        FROM rhythmjoy_admin_reservations
+        WHERE series_id = ?
+        ORDER BY reservation_date ASC, start_hour ASC, id ASC
+    ");
+    $stmt->execute(array($series_id));
+    $rows = array();
+    foreach ($stmt->fetchAll() as $row) {
+        $rows[] = array(
+            'id' => intval($row['id']),
+            'seriesId' => intval($row['series_id']),
+            'order' => intval($row['occurrence_order']),
+            'ruleIndex' => intval($row['rule_index']),
+            'date' => $row['reservation_date'],
+            'room' => strtoupper($row['room_key']),
+            'start' => intval($row['start_hour']),
+            'end' => intval($row['end_hour']),
+            'name' => $row['reserver_name'],
+            'memo' => $row['memo'],
+            'status' => $row['status'],
+            'updatedAt' => $row['updated_at'],
+        );
+    }
     return $rows;
 }
 
@@ -1996,6 +2363,7 @@ function bootstrap_payload($pdo, $date, $env) {
         'settings' => $settings,
         'sessions' => session_rows($pdo),
         'reservations' => reservation_rows($pdo, $date),
+        'adminSeries' => admin_series_rows($pdo),
         'tasks' => recent_task_rows($pdo),
         'reflectionAudits' => reflection_audit_rows($pdo),
         'reflectionAuditSummary' => reflection_audit_summary($pdo),
@@ -2100,6 +2468,25 @@ function naver_block_dedupe_key_for_admin($event, $room_key) {
     return 'naver_block|' . hash('sha256', $raw_key);
 }
 
+function live_task_dedupe_key_for_admin($task_type, $event, $room_key) {
+    if ($task_type === 'upload') {
+        return upload_dedupe_key_for_admin($event, $room_key);
+    }
+    if ($task_type === 'naver_block') {
+        return naver_block_dedupe_key_for_admin($event, $room_key);
+    }
+    $raw_key = implode('|', array(
+        $task_type,
+        $event['reservation_number'],
+        $room_key,
+        $event['date'],
+        $event['start_time'],
+        $event['end_time'],
+        normalize_reserver_name_key($event['name']),
+    ));
+    return $task_type . '|' . hash('sha256', $raw_key);
+}
+
 function insert_admin_ledger_anchor($pdo, $source_platform, $event, $calendar_key, $room_key) {
     $stmt = $pdo->prepare("
         INSERT INTO rhythmjoy_booking_ledger (
@@ -2156,9 +2543,10 @@ function insert_admin_ledger_anchor($pdo, $source_platform, $event, $calendar_ke
 }
 
 function insert_live_spacecloud_task($pdo, $task_type, $event, $room_key) {
-    $dedupe_key = $task_type === 'upload'
-        ? upload_dedupe_key_for_admin($event, $room_key)
-        : naver_block_dedupe_key_for_admin($event, $room_key);
+    if (!in_array($task_type, array('upload', 'delete', 'naver_block', 'naver_restore'), true)) {
+        throw new InvalidArgumentException('지원하지 않는 관리자 동기화 작업입니다.');
+    }
+    $dedupe_key = live_task_dedupe_key_for_admin($task_type, $event, $room_key);
     $payload_json = json_encode($event, JSON_UNESCAPED_UNICODE);
     $stmt = $pdo->prepare("
         INSERT INTO rhythmjoy_spacecloud_tasks (
@@ -2200,6 +2588,93 @@ function insert_live_spacecloud_task($pdo, $task_type, $event, $room_key) {
     $select = $pdo->prepare("SELECT id, status FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=? LIMIT 1");
     $select->execute(array($dedupe_key));
     return $select->fetch();
+}
+
+function admin_event_payload($reservation_id, $date, $room, $start, $end, $name, $memo, $phone_last4, $extra = array()) {
+    $room_key = strtolower($room);
+    $calendar_key = room_calendar_key($room);
+    $event = array(
+        'source' => 'admin-panel',
+        'source_mode' => 'admin-panel',
+        'action' => 'admin-manual-reservation',
+        'calendarKey' => $calendar_key,
+        'calendar_key' => $calendar_key,
+        'target_calendar' => $calendar_key,
+        'roomKey' => $room_key,
+        'room_key' => $room_key,
+        'date' => $date,
+        'start_time' => hour_time_text($start),
+        'end_time' => hour_time_text($end),
+        'name' => $name,
+        'product' => room_product_name($room),
+        'reservation_number' => 'ADMIN-' . intval($reservation_id),
+        'payment_status' => '관리자입력',
+        'memo' => $memo,
+        'phone_last4' => $phone_last4,
+        'admin_reservation_id' => intval($reservation_id),
+    );
+    foreach ($extra as $key => $value) {
+        $event[$key] = $value;
+    }
+    return $event;
+}
+
+function insert_admin_sync_task($pdo, $reservation_id, $live_task, $action_type, $platform, $env) {
+    $status = $live_task && isset($live_task['status']) ? $live_task['status'] : 'pending';
+    $stmt = $pdo->prepare("
+        INSERT INTO rhythmjoy_admin_sync_tasks (
+            reservation_id, live_task_id, action_type, platform, status, result_text, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+    ");
+    $stmt->execute(array(
+        $reservation_id,
+        $live_task ? intval($live_task['id']) : null,
+        $action_type,
+        $platform,
+        $status,
+        sync_admin_live_enabled($env) ? '실행 큐 생성됨' : '관리자 패널에서 생성됨',
+    ));
+}
+
+function queue_admin_registration($pdo, $event, $env) {
+    $room_key = $event['room_key'];
+    $calendar_key = $event['calendar_key'];
+    $naver_task = null;
+    $spacecloud_task = null;
+    if (sync_admin_live_enabled($env)) {
+        insert_admin_ledger_anchor($pdo, 'naver', $event, $calendar_key, $room_key);
+        insert_admin_ledger_anchor($pdo, 'spacecloud', $event, $calendar_key, $room_key);
+        $naver_task = insert_live_spacecloud_task($pdo, 'naver_block', $event, $room_key);
+        $spacecloud_task = insert_live_spacecloud_task($pdo, 'upload', $event, $room_key);
+    }
+    insert_admin_sync_task($pdo, $event['admin_reservation_id'], $naver_task, 'block_naver_availability', 'naver', $env);
+    insert_admin_sync_task($pdo, $event['admin_reservation_id'], $spacecloud_task, 'add_spacecloud_reservation', 'spacecloud', $env);
+}
+
+function update_admin_ledger_status($pdo, $event, $status) {
+    $stmt = $pdo->prepare("
+        UPDATE rhythmjoy_booking_ledger
+        SET current_status=?, last_event_at=NOW(), updated_at=NOW()
+        WHERE ledger_key IN (?, ?)
+          AND source_mode='admin-task-anchor'
+    ");
+    $stmt->execute(array(
+        $status,
+        booking_ledger_key_for_admin('naver', $event, $event['calendar_key']),
+        booking_ledger_key_for_admin('spacecloud', $event, $event['calendar_key']),
+    ));
+}
+
+function queue_admin_cancellation($pdo, $event, $env) {
+    update_admin_ledger_status($pdo, $event, 'canceled');
+    $delete_task = null;
+    $restore_task = null;
+    if (sync_admin_live_enabled($env)) {
+        $delete_task = insert_live_spacecloud_task($pdo, 'delete', $event, $event['room_key']);
+        $restore_task = insert_live_spacecloud_task($pdo, 'naver_restore', $event, $event['room_key']);
+    }
+    insert_admin_sync_task($pdo, $event['admin_reservation_id'], $delete_task, 'delete_spacecloud_reservation', 'spacecloud', $env);
+    insert_admin_sync_task($pdo, $event['admin_reservation_id'], $restore_task, 'restore_naver_availability', 'naver', $env);
 }
 
 function create_reservation($pdo, $payload, $env) {
@@ -2284,68 +2759,257 @@ function create_reservation($pdo, $payload, $env) {
         ");
         $stmt->execute(array($reservation_key, $date, $room, $start, $end, $name, $phone_hash, $phone_last4, $memo));
         $reservation_id = intval($pdo->lastInsertId());
-        $reservation_number = 'ADMIN-' . $reservation_id;
-        $event = array(
-            'source' => 'admin-panel',
-            'source_mode' => 'admin-panel',
-            'action' => 'admin-manual-reservation',
-            'calendarKey' => $calendar_key,
-            'calendar_key' => $calendar_key,
-            'target_calendar' => $calendar_key,
-            'roomKey' => $room_key,
-            'room_key' => $room_key,
-            'date' => $date,
-            'start_time' => $start_time,
-            'end_time' => $end_time,
-            'name' => $name,
-            'product' => $product,
-            'reservation_number' => $reservation_number,
-            'payment_status' => '관리자입력',
-            'memo' => $memo,
-            'phone_last4' => $phone_last4,
-            'admin_reservation_id' => $reservation_id,
-        );
-
-        $naver_live_task = null;
-        $spacecloud_live_task = null;
-        $naver_status = 'pending';
-        $spacecloud_status = 'pending';
-        if (sync_admin_live_enabled($env)) {
-            insert_admin_ledger_anchor($pdo, 'naver', $event, $calendar_key, $room_key);
-            insert_admin_ledger_anchor($pdo, 'spacecloud', $event, $calendar_key, $room_key);
-            $naver_live_task = insert_live_spacecloud_task($pdo, 'naver_block', $event, $room_key);
-            $spacecloud_live_task = insert_live_spacecloud_task($pdo, 'upload', $event, $room_key);
-            $naver_status = isset($naver_live_task['status']) ? $naver_live_task['status'] : 'pending';
-            $spacecloud_status = isset($spacecloud_live_task['status']) ? $spacecloud_live_task['status'] : 'pending';
-        }
-
-        $task = $pdo->prepare("
-            INSERT INTO rhythmjoy_admin_sync_tasks (
-                reservation_id, live_task_id, action_type, platform, status, result_text, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
-        ");
-        $task->execute(array(
-            $reservation_id,
-            $naver_live_task ? intval($naver_live_task['id']) : null,
-            'block_naver_availability',
-            'naver',
-            $naver_status,
-            sync_admin_live_enabled($env) ? '실행 큐 생성됨' : '관리자 패널에서 생성됨',
-        ));
-        $task->execute(array(
-            $reservation_id,
-            $spacecloud_live_task ? intval($spacecloud_live_task['id']) : null,
-            'add_spacecloud_reservation',
-            'spacecloud',
-            $spacecloud_status,
-            sync_admin_live_enabled($env) ? '실행 큐 생성됨' : '관리자 패널에서 생성됨',
-        ));
+        $event = admin_event_payload($reservation_id, $date, $room, $start, $end, $name, $memo, $phone_last4);
+        queue_admin_registration($pdo, $event, $env);
         $pdo->commit();
     } catch (Exception $error) {
         $pdo->rollBack();
         throw $error;
     }
+}
+
+function create_recurring_reservations($pdo, $payload, $env) {
+    $title = trim((string) (isset($payload['title']) ? $payload['title'] : ''));
+    $name = trim((string) (isset($payload['name']) ? $payload['name'] : ''));
+    $memo = trim((string) (isset($payload['memo']) ? $payload['memo'] : ''));
+    $phone = clean_phone(isset($payload['phone']) ? $payload['phone'] : '');
+    $request_id = trim((string) (isset($payload['requestId']) ? $payload['requestId'] : ''));
+    if ($title === '' || $name === '') {
+        throw new InvalidArgumentException('정기대관명과 예약자명이 필요합니다.');
+    }
+    if ($request_id === '' || strlen($request_id) > 128) {
+        throw new InvalidArgumentException('정기대관 요청 식별값이 올바르지 않습니다.');
+    }
+
+    $preview = recurring_preview_payload($pdo, $payload);
+    if (intval($preview['summary']['included']) < 1) {
+        throw new InvalidArgumentException('등록할 날짜가 없습니다.');
+    }
+    if (intval($preview['summary']['conflicts']) > 0) {
+        throw new InvalidArgumentException('충돌 날짜를 제외하거나 홀·시간을 변경한 뒤 다시 검사해주세요.');
+    }
+
+    $series_key = 'series:' . hash('sha256', $request_id);
+    $existing = $pdo->prepare("SELECT id FROM rhythmjoy_admin_series WHERE series_key=? LIMIT 1");
+    $existing->execute(array($series_key));
+    $existing_row = $existing->fetch();
+    if ($existing_row) {
+        return array('seriesId' => intval($existing_row['id']), 'createdCount' => 0, 'duplicateRequest' => true);
+    }
+
+    $phone_last4 = $phone !== '' ? substr($phone, -4) : '';
+    $phone_hash = $phone !== '' ? hash('sha256', $phone) : '';
+    $definition = array(
+        'rules' => $preview['rules'],
+        'fifthWeekPolicy' => $preview['fifthWeekPolicy'],
+        'occurrences' => $preview['occurrences'],
+        'previewHash' => $preview['previewHash'],
+    );
+    $included = array_values(array_filter($preview['occurrences'], function($row) { return $row['included']; }));
+
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO rhythmjoy_admin_series (
+                series_key, title, start_date, end_date, fifth_week_policy, definition_json,
+                reserver_name, phone_hash, phone_last4, memo, status, occurrence_count,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NOW(), NOW())
+        ");
+        $stmt->execute(array(
+            $series_key,
+            substr($title, 0, 128),
+            $preview['startDate'],
+            $preview['endDate'],
+            $preview['fifthWeekPolicy'],
+            json_encode($definition, JSON_UNESCAPED_UNICODE),
+            substr($name, 0, 128),
+            $phone_hash,
+            $phone_last4,
+            substr($memo, 0, 255),
+            count($included),
+        ));
+        $series_id = intval($pdo->lastInsertId());
+        $insert = $pdo->prepare("
+            INSERT INTO rhythmjoy_admin_reservations (
+                series_id, occurrence_order, rule_index, reservation_key,
+                reservation_date, room_key, start_hour, end_hour,
+                reserver_name, phone_hash, phone_last4, memo, source, status,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', 'pending', NOW(), NOW())
+        ");
+        foreach ($included as $order => $occurrence) {
+            $reservation_key = 'admin-series:' . hash('sha256', $series_key . '|' . $occurrence['key']);
+            $insert->execute(array(
+                $series_id,
+                $order + 1,
+                intval($occurrence['ruleIndex']),
+                $reservation_key,
+                $occurrence['date'],
+                $occurrence['room'],
+                intval($occurrence['start']),
+                intval($occurrence['end']),
+                substr($name, 0, 128),
+                $phone_hash,
+                $phone_last4,
+                substr($memo, 0, 255),
+            ));
+            $reservation_id = intval($pdo->lastInsertId());
+            $event = admin_event_payload(
+                $reservation_id,
+                $occurrence['date'],
+                $occurrence['room'],
+                $occurrence['start'],
+                $occurrence['end'],
+                $name,
+                $memo,
+                $phone_last4,
+                array(
+                    'action' => 'admin-recurring-reservation',
+                    'admin_series_id' => $series_id,
+                    'occurrence_key' => $occurrence['key'],
+                    'suppress_confirmation_sms' => true,
+                )
+            );
+            queue_admin_registration($pdo, $event, $env);
+        }
+        $pdo->commit();
+        return array('seriesId' => $series_id, 'createdCount' => count($included), 'duplicateRequest' => false);
+    } catch (Exception $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    }
+}
+
+function cancel_admin_reservations($pdo, $payload, $env) {
+    $ids = array();
+    if (isset($payload['reservationIds']) && is_array($payload['reservationIds'])) {
+        foreach ($payload['reservationIds'] as $value) {
+            $id = intval($value);
+            if ($id > 0) $ids[$id] = true;
+        }
+    }
+    $series_id = isset($payload['seriesId']) ? intval($payload['seriesId']) : 0;
+    $scope = isset($payload['scope']) ? (string) $payload['scope'] : 'selected';
+    $from_date = clean_date_value(isset($payload['fromDate']) ? $payload['fromDate'] : date('Y-m-d'));
+    if ($series_id > 0 && in_array($scope, array('all', 'future'), true)) {
+        $sql = "SELECT id FROM rhythmjoy_admin_reservations WHERE series_id=? AND status NOT IN ('canceled','canceling')";
+        $params = array($series_id);
+        if ($scope === 'future') {
+            $sql .= ' AND reservation_date>=?';
+            $params[] = $from_date;
+        }
+        $stmt = $pdo->prepare($sql . ' ORDER BY reservation_date, id LIMIT 500');
+        $stmt->execute($params);
+        foreach ($stmt->fetchAll() as $row) $ids[intval($row['id'])] = true;
+    }
+    $ids = array_keys($ids);
+    if (!$ids || count($ids) > 500) {
+        throw new InvalidArgumentException('취소할 관리자 일정을 1~500건 선택해주세요.');
+    }
+
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("
+            SELECT id, series_id, reservation_date, room_key, start_hour, end_hour,
+                   reserver_name, phone_last4, memo, status
+            FROM rhythmjoy_admin_reservations
+            WHERE id IN ($placeholders)
+              AND status NOT IN ('canceled','canceling')
+            FOR UPDATE
+        ");
+        $stmt->execute($ids);
+        $rows = $stmt->fetchAll();
+        $updated = $pdo->prepare("UPDATE rhythmjoy_admin_reservations SET status=?, updated_at=NOW() WHERE id=?");
+        $series_ids = array();
+        foreach ($rows as $row) {
+            $next_status = sync_admin_live_enabled($env) ? 'canceling' : 'canceled';
+            $updated->execute(array($next_status, intval($row['id'])));
+            $event = admin_event_payload(
+                intval($row['id']),
+                $row['reservation_date'],
+                strtoupper($row['room_key']),
+                intval($row['start_hour']),
+                intval($row['end_hour']),
+                $row['reserver_name'],
+                $row['memo'],
+                $row['phone_last4'],
+                array('action' => 'admin-reservation-cancellation', 'suppress_confirmation_sms' => true)
+            );
+            queue_admin_cancellation($pdo, $event, $env);
+            if ($row['series_id']) $series_ids[intval($row['series_id'])] = true;
+        }
+        foreach (array_keys($series_ids) as $affected_series_id) {
+            $stmt = $pdo->prepare("UPDATE rhythmjoy_admin_series SET status='canceling', updated_at=NOW() WHERE id=? AND status<>'canceled'");
+            $stmt->execute(array($affected_series_id));
+        }
+        $pdo->commit();
+        return array('requestedCount' => count($rows));
+    } catch (Exception $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    }
+}
+
+function sync_admin_selftest_assert($condition, $message) {
+    if (!$condition) {
+        throw new RuntimeException('self-test failed: ' . $message);
+    }
+}
+
+function run_sync_admin_selftest() {
+    sync_admin_selftest_assert(clean_date_value('2026-02-29') === '', 'invalid calendar dates are rejected');
+    sync_admin_selftest_assert(clean_date_value('2028-02-29') === '2028-02-29', 'valid leap dates are accepted');
+    list($rules, $included_rows) = generate_recurring_occurrences(
+        '2026-08-01',
+        '2026-08-31',
+        array(
+            array('weekday' => 1, 'room' => 'C', 'start' => 13, 'end' => 15),
+            array('weekday' => 5, 'room' => 'C', 'start' => 16, 'end' => 17),
+        ),
+        'include'
+    );
+    sync_admin_selftest_assert(count($rules) === 2, 'two weekday rules remain distinct');
+    sync_admin_selftest_assert(count($included_rows) === 9, 'August 2026 has five Mondays and four Fridays');
+    $fifth = array_values(array_filter($included_rows, function($row) { return $row['fifthWeek']; }));
+    sync_admin_selftest_assert(count($fifth) === 1 && $fifth[0]['date'] === '2026-08-31', 'fifth weekday is detected by its exact date');
+
+    list($ignored_rules, $excluded_rows) = generate_recurring_occurrences(
+        '2026-08-01',
+        '2026-08-31',
+        array(array('weekday' => 1, 'room' => 'C', 'start' => 13, 'end' => 15)),
+        'exclude'
+    );
+    $excluded = array_values(array_filter($excluded_rows, function($row) { return !$row['included']; }));
+    sync_admin_selftest_assert(count($excluded) === 1 && $excluded[0]['date'] === '2026-08-31', 'only the fifth Monday is excluded');
+
+    $overrides = normalize_recurring_occurrences(array(array(
+        'key' => 'r0:2026-08-31',
+        'originalDate' => '2026-08-31',
+        'date' => '2026-09-01',
+        'ruleIndex' => 0,
+        'room' => 'D',
+        'start' => 14,
+        'end' => 16,
+        'included' => true,
+        'modified' => true,
+    )));
+    sync_admin_selftest_assert($overrides[0]['date'] === '2026-09-01' && $overrides[0]['room'] === 'D' && $overrides[0]['modified'], 'one occurrence can move without changing the series rule');
+
+    $too_long_rejected = false;
+    try {
+        recurring_date_range('2026-01-01', '2027-01-02');
+    } catch (InvalidArgumentException $error) {
+        $too_long_rejected = true;
+    }
+    sync_admin_selftest_assert($too_long_rejected, 'periods longer than one year are rejected');
+    echo "sync-admin self-test OK: recurring weekdays, fifth-week exclusion, per-date override, one-year limit\n";
+}
+
+if (PHP_SAPI === 'cli' && isset($argv[1]) && $argv[1] === 'self-test') {
+    run_sync_admin_selftest();
+    exit(0);
 }
 
 $env_path = isset($_SERVER['RHYTHMJOY_ENV_FILE']) ? $_SERVER['RHYTHMJOY_ENV_FILE'] : dirname(dirname(__FILE__)) . '/.env';
@@ -2393,14 +3057,48 @@ try {
         ));
     }
 
+    if ($action === 'preview_recurring') {
+        json_response(recurring_preview_payload($pdo, $payload));
+    }
+
+    if ($action === 'series_occurrences') {
+        $series_id = isset($payload['seriesId']) ? intval($payload['seriesId']) : 0;
+        if ($series_id < 1) {
+            throw new InvalidArgumentException('정기대관을 선택해주세요.');
+        }
+        json_response(array(
+            'ok' => true,
+            'seriesId' => $series_id,
+            'occurrences' => admin_series_occurrence_rows($pdo, $series_id),
+        ));
+    }
+
     if ($action === 'create_reservation') {
         create_reservation($pdo, $payload, $env);
         json_response(bootstrap_payload($pdo, $date, $env));
     }
 
+    if ($action === 'create_recurring') {
+        $result = create_recurring_reservations($pdo, $payload, $env);
+        json_response(array_merge(bootstrap_payload($pdo, $date, $env), array('recurringResult' => $result)));
+    }
+
+    if ($action === 'cancel_admin_reservations') {
+        $result = cancel_admin_reservations($pdo, $payload, $env);
+        json_response(array_merge(bootstrap_payload($pdo, $date, $env), array('cancelResult' => $result)));
+    }
+
     if ($action === 'clear_drafts') {
-        $pdo->exec("UPDATE rhythmjoy_admin_sync_tasks SET status='canceled', updated_at=NOW() WHERE status='pending'");
-        $pdo->exec("UPDATE rhythmjoy_admin_reservations SET status='canceled', updated_at=NOW() WHERE source='admin' AND status='pending'");
+        $pdo->exec("UPDATE rhythmjoy_admin_sync_tasks SET status='canceled', updated_at=NOW() WHERE status='pending' AND live_task_id IS NULL");
+        $pdo->exec("
+            UPDATE rhythmjoy_admin_reservations r
+            SET r.status='canceled', r.updated_at=NOW()
+            WHERE r.source='admin' AND r.status='pending' AND r.series_id IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM rhythmjoy_admin_sync_tasks t
+                  WHERE t.reservation_id=r.id AND t.live_task_id IS NOT NULL
+              )
+        ");
         json_response(bootstrap_payload($pdo, $date, $env));
     }
 
@@ -2424,6 +3122,12 @@ try {
     }
 
     json_response(array('ok' => false, 'error' => 'unknown_action', 'message' => 'Unknown action: ' . $action), 404);
+} catch (InvalidArgumentException $error) {
+    json_response(array(
+        'ok' => false,
+        'error' => 'invalid_input',
+        'message' => $error->getMessage(),
+    ), 400);
 } catch (Exception $error) {
     json_response(array(
         'ok' => false,

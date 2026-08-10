@@ -1754,9 +1754,12 @@ function taskResultTextForDb(resultText, maxLength = 4000) {
 
 async function updateRemoteTask(args, task, status, resultText, { releaseClaim = true } = {}) {
   const target = await loadCafe24Target(args);
+  const sourcePayload = payloadForTask(task);
   const payload = Buffer.from(JSON.stringify({
     taskId: task.id || task.taskId,
     claimToken: task.claimToken || task.claim_token || '',
+    taskType: task.taskType || task.task_type || '',
+    adminReservationId: sourcePayload.admin_reservation_id || sourcePayload.adminReservationId || null,
     status,
     resultText: taskResultTextForDb(resultText),
     releaseClaim,
@@ -1810,7 +1813,69 @@ try:
             """,
             (next_status, next_claim_token, payload['resultText'], payload['taskId'], payload['claimToken'])
         )
-        print(json.dumps({'updated': cur.rowcount}, ensure_ascii=False))
+        updated = cur.rowcount
+        if updated == 1:
+            cur.execute(
+                """
+                UPDATE rhythmjoy_admin_sync_tasks
+                SET status=%s, result_text=%s, updated_at=NOW()
+                WHERE live_task_id=%s
+                """,
+                (next_status, payload['resultText'], payload['taskId']),
+            )
+            admin_reservation_id = payload.get('adminReservationId')
+            if admin_reservation_id:
+                cur.execute(
+                    """
+                    SELECT id, series_id, status
+                    FROM rhythmjoy_admin_reservations
+                    WHERE id=%s
+                    LIMIT 1
+                    """,
+                    (admin_reservation_id,),
+                )
+                reservation = cur.fetchone() or {}
+                if reservation:
+                    cur.execute(
+                        """
+                        SELECT
+                            SUM(action_type IN ('block_naver_availability','add_spacecloud_reservation')) AS create_total,
+                            SUM(action_type IN ('block_naver_availability','add_spacecloud_reservation')
+                                AND status IN ('done','already_gone')) AS create_done,
+                            SUM(action_type IN ('delete_spacecloud_reservation','restore_naver_availability')) AS cancel_total,
+                            SUM(action_type IN ('delete_spacecloud_reservation','restore_naver_availability')
+                                AND status IN ('done','already_gone')) AS cancel_done
+                        FROM rhythmjoy_admin_sync_tasks
+                        WHERE reservation_id=%s
+                        """,
+                        (admin_reservation_id,),
+                    )
+                    totals = cur.fetchone() or {}
+                    if reservation.get('status') == 'pending' and int(totals.get('create_total') or 0) >= 2 and int(totals.get('create_done') or 0) >= 2:
+                        cur.execute("UPDATE rhythmjoy_admin_reservations SET status='confirmed', updated_at=NOW() WHERE id=%s", (admin_reservation_id,))
+                    if reservation.get('status') == 'canceling' and int(totals.get('cancel_total') or 0) >= 2 and int(totals.get('cancel_done') or 0) >= 2:
+                        cur.execute("UPDATE rhythmjoy_admin_reservations SET status='canceled', updated_at=NOW() WHERE id=%s", (admin_reservation_id,))
+                    series_id = reservation.get('series_id')
+                    if series_id:
+                        cur.execute(
+                            """
+                            SELECT
+                                SUM(status <> 'canceled') AS remaining_count,
+                                SUM(status = 'canceling') AS canceling_count
+                            FROM rhythmjoy_admin_reservations
+                            WHERE series_id=%s
+                            """,
+                            (series_id,),
+                        )
+                        series_totals = cur.fetchone() or {}
+                        if int(series_totals.get('remaining_count') or 0) == 0:
+                            series_status = 'canceled'
+                        elif int(series_totals.get('canceling_count') or 0) > 0:
+                            series_status = 'canceling'
+                        else:
+                            series_status = 'active'
+                        cur.execute("UPDATE rhythmjoy_admin_series SET status=%s, updated_at=NOW() WHERE id=%s", (series_status, series_id))
+        print(json.dumps({'updated': updated}, ensure_ascii=False))
 finally:
     conn.close()
 PY
@@ -3103,6 +3168,7 @@ function syncSuccessRowsFromCycle(row) {
   ];
   const seen = new Set();
   return rows.filter((taskRow) => {
+    if (taskRow.adminPanelTask === true) return false;
     const key = taskIdentityKey(taskRow);
     if (seen.has(key)) return false;
     seen.add(key);
@@ -3152,9 +3218,12 @@ function reservationAttentionSignature(rowOrError, category) {
 
 async function notifyReservationAttention(args, rowOrError, category, taskType, text) {
   const row = firstProblemRow(rowOrError);
+  const notificationKey = row.adminPanelTask && row.adminSeriesId
+    ? `admin-series:${row.adminSeriesId}`
+    : reservationNotificationKey(row, taskType);
   return notifyOnStateChange(
     args,
-    reservationNotificationKey(row, taskType),
+    notificationKey,
     reservationAttentionSignature(rowOrError, category),
     text,
   );
@@ -3486,6 +3555,7 @@ function taskRowsNeedingReview(rows, doneStatuses) {
 
 function basicTaskSummary(task) {
   const summary = {
+    ...adminTaskFields(task),
     taskId: task.id || task.taskId || null,
     taskType: task.taskType || task.task_type || '',
     roomKey: task.roomKey || task.room_key || '',
@@ -3623,6 +3693,9 @@ function ledgerIssueForTask(task, taskType) {
   if (!task.ledgerStatus) return 'missing';
   if ((taskType === 'spacecloud_cancel' || taskType === 'naver_cancel') && task.ledgerStatus === 'canceled') return 'already-canceled';
   if (task.ledgerStatus !== expected) return 'stale';
+  // 관리자 입력은 이메일 이벤트가 아니라 DB 트랜잭션에서 원장 앵커와 작업을
+  // 함께 만든다. 원장 상태는 검증하되 존재할 수 없는 이메일 ID를 요구하지 않는다.
+  if (isAdminPanelTask(task)) return null;
   const taskEventId = String(task.emailEventId || task.email_event_id || '');
   const latestEventId = String(
     taskType === 'delete' || taskType === 'naver_restore'
@@ -3684,6 +3757,16 @@ function payloadForTask(task) {
 function isAdminPanelTask(task) {
   const payload = payloadForTask(task);
   return payload.source === 'admin-panel' || payload.source_mode === 'admin-panel';
+}
+
+function adminTaskFields(task) {
+  const payload = payloadForTask(task);
+  const adminPanelTask = payload.source === 'admin-panel' || payload.source_mode === 'admin-panel';
+  return {
+    adminPanelTask,
+    adminReservationId: payload.admin_reservation_id || payload.adminReservationId || null,
+    adminSeriesId: payload.admin_series_id || payload.adminSeriesId || null,
+  };
 }
 
 function adminPanelSmsSkipped(task, source) {
@@ -4066,6 +4149,7 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
         row.finishedAt = new Date().toISOString();
       }
 
+      Object.assign(row, adminTaskFields(task));
       rows.push(row);
       const status = dbStatusForUploadRow(row);
       row.dbStatus = status;
@@ -4148,6 +4232,7 @@ async function runDeleteTasks(args, context = null, claimedTasks = null) {
         row.finishedAt = new Date().toISOString();
       }
 
+      Object.assign(row, adminTaskFields(task));
       rows.push(row);
       const status = dbStatusForDeleteRow(row);
       row.dbStatus = status;
@@ -4228,6 +4313,7 @@ async function runNaverBlockTasks(args, context = null) {
           });
         }
       }
+      Object.assign(row, adminTaskFields(task));
       rows.push(row);
       const status = dbStatusForNaverBlockRow(row);
       row.dbStatus = status;
@@ -4701,6 +4787,7 @@ async function runNaverAvailabilityTasks(args, context = null) {
         }
       }
 
+      Object.assign(row, adminTaskFields(task));
       rows.push(row);
       const status = taskType === 'naver_restore'
         ? dbStatusForNaverRestoreRow(row)
@@ -4879,6 +4966,37 @@ function runNowModeSelfTest() {
   const bookingFetchArgs = bookingSyncFetchArgs(parsed);
   assert.equal(bookingFetchArgs.nowMode, false);
   assert.equal(parsed.nowMode, true, 'disabling booking-task urgency must not mutate the watcher args');
+  const adminConfirmedTask = {
+    ledgerStatus: 'confirmed',
+    emailEventId: null,
+    payloadJson: JSON.stringify({ source: 'admin-panel', admin_reservation_id: 41 }),
+  };
+  const adminCanceledTask = {
+    ledgerStatus: 'canceled',
+    emailEventId: null,
+    payloadJson: JSON.stringify({ source: 'admin-panel', admin_reservation_id: 41 }),
+  };
+  assert.equal(ledgerIssueForTask(adminConfirmedTask, 'upload'), null);
+  assert.equal(ledgerIssueForTask(adminConfirmedTask, 'naver_block'), null);
+  assert.equal(ledgerIssueForTask(adminCanceledTask, 'delete'), null);
+  assert.equal(ledgerIssueForTask(adminCanceledTask, 'naver_restore'), null);
+  assert.equal(ledgerIssueForTask({ ...adminConfirmedTask, payloadJson: '{}' }, 'upload'), 'missing-event');
+  assert.deepEqual(adminTaskFields({
+    payloadJson: JSON.stringify({ source: 'admin-panel', admin_reservation_id: 41, admin_series_id: 9 }),
+  }), {
+    adminPanelTask: true,
+    adminReservationId: 41,
+    adminSeriesId: 9,
+  });
+  assert.equal(syncSuccessRowsFromCycle({
+    uploadTasks: { rows: [{
+      taskId: 501,
+      taskType: 'upload',
+      status: 'submitted',
+      adminPanelTask: true,
+      adminSeriesId: 9,
+    }] },
+  }).length, 0, 'bulk admin success rows must not create one Telegram message per occurrence');
 
   const confirmationTask = {
     date: '2026-08-01',

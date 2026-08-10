@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>리듬앤조이 동기화 관리자</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=recurring-v1-20260810">
 </head>
 <body>
   <div class="app-shell">
@@ -18,6 +18,7 @@
       </div>
       <nav>
         <a href="#schedule" class="nav-link active">일정</a>
+        <a href="#recurring" class="nav-link">정기대관</a>
         <a href="#industry" class="nav-link">업계비교</a>
         <a href="#sessions" class="nav-link">로그인 세션</a>
         <a href="#tasks" class="nav-link">작업 상태</a>
@@ -28,6 +29,13 @@
           <span>
             <strong>예약 입력</strong>
             <small>빈 시간에 새 예약 동기화 작업 추가</small>
+          </span>
+        </button>
+        <button type="button" class="reservation-cta recurring-cta" data-open-recurring-modal>
+          <span class="reservation-plus" aria-hidden="true">↻</span>
+          <span>
+            <strong>정기대관 입력</strong>
+            <small>최대 1년 미리보기·충돌 확인</small>
           </span>
         </button>
         <div class="runner-state">
@@ -126,6 +134,17 @@
           <div class="year-summary" id="yearSummary" aria-label="연간 월별 매출"></div>
         </div>
         <div class="price-reference" id="priceReference" aria-label="플랫폼별 가격 비교"></div>
+      </section>
+
+      <section class="panel" id="recurring">
+        <div class="panel-heading">
+          <div>
+            <h2>정기대관 중앙제어</h2>
+            <p>요일별 반복 일정을 한 번에 등록하고, 선택 날짜·오늘 이후·전체를 취소합니다.</p>
+          </div>
+          <button type="button" class="primary-button" data-open-recurring-modal>정기대관 등록</button>
+        </div>
+        <div class="series-list" id="seriesList" aria-live="polite"></div>
       </section>
 
       <section class="panel" id="industry">
@@ -237,6 +256,7 @@
       <div class="modal-body">
         <div class="detail-list" id="eventDetailList"></div>
         <div class="form-actions">
+          <button type="button" class="danger-button" id="cancelAdminReservation" hidden>이 일정 취소</button>
           <button type="button" class="primary-button" id="doneEventDetailModal">확인</button>
         </div>
       </div>
@@ -311,8 +331,119 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="recurringModal" hidden>
+    <div class="modal-panel recurring-modal-panel" role="dialog" aria-modal="true" aria-labelledby="recurringModalTitle" tabindex="-1">
+      <div class="modal-heading">
+        <div>
+          <h2 id="recurringModalTitle">정기대관 등록</h2>
+          <p>규칙을 만든 뒤 12개월 미리보기에서 충돌·5주차·예외 날짜를 확인합니다.</p>
+        </div>
+        <button type="button" class="icon-button modal-close" id="closeRecurringModal" aria-label="정기대관 닫기">×</button>
+      </div>
+      <form class="modal-form recurring-form" id="recurringForm">
+        <div class="form-grid recurring-base-grid">
+          <label>
+            <span>정기대관명</span>
+            <input id="recurringTitle" type="text" placeholder="예: 월·금 댄스 정기대관" required>
+          </label>
+          <label>
+            <span>예약자</span>
+            <input id="recurringName" type="text" autocomplete="name" placeholder="예약자명" required>
+          </label>
+          <label>
+            <span>시작일</span>
+            <input id="recurringStartDate" type="date" required>
+          </label>
+          <label>
+            <span>종료일</span>
+            <input id="recurringEndDate" type="date" required>
+          </label>
+          <label>
+            <span>5주차 기본 처리</span>
+            <select id="recurringFifthPolicy">
+              <option value="include">포함</option>
+              <option value="exclude">제외</option>
+            </select>
+          </label>
+          <label>
+            <span>연락처</span>
+            <input id="recurringPhone" type="tel" inputmode="tel" placeholder="010-0000-0000">
+          </label>
+          <label class="wide">
+            <span>메모</span>
+            <input id="recurringMemo" type="text" placeholder="관리자 메모">
+          </label>
+        </div>
+        <div class="period-presets" aria-label="기간 빠른 선택">
+          <span>기간</span>
+          <button type="button" class="chip" data-recurring-months="1">1개월</button>
+          <button type="button" class="chip" data-recurring-months="3">3개월</button>
+          <button type="button" class="chip" data-recurring-months="6">6개월</button>
+          <button type="button" class="chip" data-recurring-months="12">1년</button>
+        </div>
+        <div class="recurring-rules-head">
+          <div>
+            <strong>요일별 홀·시간</strong>
+            <span>월 13~15시, 금 16~17시처럼 여러 규칙을 추가할 수 있습니다.</span>
+          </div>
+          <button type="button" class="secondary-button compact-button" id="addRecurringRule">요일 추가</button>
+        </div>
+        <div class="recurring-rules" id="recurringRules"></div>
+        <div class="form-actions recurring-preview-actions">
+          <button type="button" class="secondary-button" id="resetRecurringPreview">초기화</button>
+          <button type="button" class="primary-button" id="previewRecurring">12개월 미리보기·충돌 검사</button>
+        </div>
+        <section class="recurring-preview" id="recurringPreview" hidden>
+          <div class="recurring-preview-summary" id="recurringPreviewSummary"></div>
+          <div class="recurring-legend" aria-label="미리보기 상태">
+            <span class="ready">등록 예정</span>
+            <span class="conflict">충돌</span>
+            <span class="excluded">5주차·수동 제외</span>
+            <span class="modified">부분 변경</span>
+          </div>
+          <div class="recurring-preview-layout">
+            <div class="recurring-year" id="recurringYear" aria-label="정기대관 12개월 미리보기"></div>
+            <aside class="recurring-issues">
+              <h3>처리 필요한 날짜</h3>
+              <div id="recurringIssueList"></div>
+            </aside>
+          </div>
+          <div class="occurrence-editor" id="occurrenceEditor" hidden></div>
+          <div class="form-actions">
+            <button type="button" class="secondary-button" id="closeRecurringPreview">닫기</button>
+            <button type="submit" class="primary-button" id="createRecurring" disabled>충돌 없는 일정 등록</button>
+          </div>
+        </section>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="seriesModal" hidden>
+    <div class="modal-panel series-modal-panel" role="dialog" aria-modal="true" aria-labelledby="seriesModalTitle" tabindex="-1">
+      <div class="modal-heading">
+        <div>
+          <h2 id="seriesModalTitle">정기대관 관리</h2>
+          <p id="seriesModalSummary">날짜를 선택해 부분 취소하거나 이후 일정을 일괄 취소합니다.</p>
+        </div>
+        <button type="button" class="icon-button modal-close" id="closeSeriesModal" aria-label="정기대관 관리 닫기">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="series-bulk-bar">
+          <label><input type="checkbox" id="selectAllSeriesOccurrences"> 현재 일정 전체 선택</label>
+          <span id="selectedSeriesOccurrenceCount">0건 선택</span>
+        </div>
+        <div class="series-occurrence-list" id="seriesOccurrenceList"></div>
+        <div class="form-actions series-cancel-actions">
+          <button type="button" class="secondary-button" id="cancelSeriesFuture">오늘 이후 전부 취소</button>
+          <button type="button" class="danger-button" id="cancelSeriesSelected">선택 일정 취소</button>
+          <button type="button" class="danger-button" id="cancelSeriesAll">정기대관 전체 취소</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="../calendar_set/calendar_v10/revenue-policy.js?v=db-only-v1-20260810"></script>
-  <script src="./app.js?v=db-only-v1-20260810"></script>
+  <script src="./app.js?v=recurring-v1-20260810"></script>
 </body>
 </html>
