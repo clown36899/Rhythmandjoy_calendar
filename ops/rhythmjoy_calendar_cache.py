@@ -338,7 +338,11 @@ def sync_once():
         'coverageStart': coverage_start,
         'rooms': room_meta,
         'ledger': ledger_meta,
-        'googleReplica': {'enabled': False, 'usedForPublicSchedule': False},
+        'adminSource': 'rhythmjoy_admin_reservations',
+        'googleCalendar': {
+            'role': 'optional-replica',
+            'usedForPublicSchedule': False,
+        },
         'failures': {},
         'events': all_events,
     }
