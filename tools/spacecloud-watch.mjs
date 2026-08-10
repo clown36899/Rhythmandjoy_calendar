@@ -10,6 +10,7 @@ import {
   checkSpacecloudLogin,
   deleteSpacecloudDirectReservation,
   fetchSpacecloudReservationPhone,
+  inspectSpacecloudDirectReservation,
   openSpacecloudContext,
   spacecloudUploadEventFromTask,
   uploadSpacecloudDirectReservation,
@@ -18,6 +19,7 @@ import {
   cancelNaverConfirmedReservation,
   checkNaverSmartplaceLogin,
   fetchNaverReservationPhone,
+  inspectNaverAvailability,
   setNaverAvailability,
 } from './naver-playwright-availability.mjs';
 
@@ -32,6 +34,9 @@ const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
 const DEFAULT_DAILY_RECONCILE_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'daily-reconcile-state.json');
 const DEFAULT_REFLECTION_AUDIT_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'reflection-audit-state.json');
 const DEFAULT_REFLECTION_AUDIT_INTERVAL_MINUTES = 30;
+const DEFAULT_ADMIN_PLATFORM_AUDIT_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'admin-platform-audit-state.json');
+const DEFAULT_ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES = 30;
+const DEFAULT_ADMIN_PLATFORM_AUDIT_LIMIT = 2;
 const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
 const CONFIRMATION_SMS_TITLE = '리듬앤조이 연습실 예약 확정 안내문자';
 const PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME = 'spacecloud-prior-booking-canceled-v1';
@@ -55,6 +60,7 @@ function usage() {
   node tools/spacecloud-watch.mjs sms-test --to <phone> [options]
   node tools/spacecloud-watch.mjs now-mode-self-test
   node tools/spacecloud-watch.mjs reflection-audit [options]
+  node tools/spacecloud-watch.mjs admin-platform-audit [options]
   node tools/spacecloud-watch.mjs once [options]
   node tools/spacecloud-watch.mjs watch [options]
 
@@ -79,6 +85,13 @@ Options:
   --reflection-audit-state <path>
                             Defaults to ${DEFAULT_REFLECTION_AUDIT_STATE_PATH}.
   --no-reflection-audit     Disable email-ledger reflection audit.
+  --admin-platform-audit-interval-minutes <n>
+                            Defaults to ${DEFAULT_ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES}. Re-reads actual platforms for DB admin reservations.
+  --admin-platform-audit-limit <n>
+                            Defaults to ${DEFAULT_ADMIN_PLATFORM_AUDIT_LIMIT} reservations per run (two platform checks each).
+  --admin-platform-audit-state <path>
+                            Defaults to ${DEFAULT_ADMIN_PLATFORM_AUDIT_STATE_PATH}.
+  --no-admin-platform-audit Disable actual-platform audit for admin reservations.
   --from <YYYY-MM-DD>       Defaults to today in KST.
   --days <n>                Defaults to 370.
   --rooms <keys>            Defaults to a,b,c,d,e.
@@ -148,6 +161,10 @@ function parseArgs(argv) {
     reflectionAudit: true,
     reflectionAuditIntervalMinutes: DEFAULT_REFLECTION_AUDIT_INTERVAL_MINUTES,
     reflectionAuditState: DEFAULT_REFLECTION_AUDIT_STATE_PATH,
+    adminPlatformAudit: true,
+    adminPlatformAuditIntervalMinutes: DEFAULT_ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES,
+    adminPlatformAuditLimit: DEFAULT_ADMIN_PLATFORM_AUDIT_LIMIT,
+    adminPlatformAuditState: DEFAULT_ADMIN_PLATFORM_AUDIT_STATE_PATH,
     days: 370,
     rooms: 'a,b,c,d,e',
     intervalSeconds: 30,
@@ -203,6 +220,10 @@ function parseArgs(argv) {
       args.reflectionAudit = false;
       continue;
     }
+    if (arg === '--no-admin-platform-audit') {
+      args.adminPlatformAudit = false;
+      continue;
+    }
     if (arg === '--now-mode') {
       args.nowMode = true;
       continue;
@@ -229,6 +250,8 @@ function parseArgs(argv) {
       'restore-grace-seconds',
       'session-check-interval-seconds',
       'reflection-audit-interval-minutes',
+      'admin-platform-audit-interval-minutes',
+      'admin-platform-audit-limit',
     ].includes(key)) {
       const parsed = Number.parseInt(next, 10);
       if (!Number.isFinite(parsed) || parsed < 1) throw new Error(`${arg} must be a positive integer`);
@@ -255,6 +278,8 @@ function parseArgs(argv) {
       args.dailyReconcileState = next;
     } else if (key === 'reflection-audit-state') {
       args.reflectionAuditState = next;
+    } else if (key === 'admin-platform-audit-state') {
+      args.adminPlatformAuditState = next;
     } else if (key === 'to') {
       args.smsTestTo = next;
     } else if (key === 'sms-test-task-id') {
@@ -2805,6 +2830,282 @@ async function maybeSendReflectionAudit(args) {
   }
 }
 
+async function fetchRemoteAdminPlatformAuditCandidates(args) {
+  const target = await loadCafe24Target(args);
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT
+              r.id AS adminReservationId,
+              r.series_id AS adminSeriesId,
+              r.status AS reservationStatus,
+              CAST(r.reservation_date AS CHAR) AS date,
+              r.room_key AS roomKey,
+              CONCAT(LPAD(r.start_hour, 2, '0'), ':00') AS startTime,
+              CONCAT(LPAD(r.end_hour, 2, '0'), ':00') AS endTime,
+              r.reserver_name AS reserverName,
+              t.id AS taskId,
+              t.task_type AS taskType,
+              t.status AS taskStatus,
+              t.reservation_number AS reservationNo,
+              t.product,
+              t.payload_json AS payloadJson,
+              t.result_text AS resultText,
+              CAST(t.updated_at AS CHAR) AS taskUpdatedAt
+            FROM rhythmjoy_admin_reservations r
+            LEFT JOIN rhythmjoy_admin_sync_tasks a ON a.reservation_id=r.id
+            LEFT JOIN rhythmjoy_spacecloud_tasks t ON t.id=a.live_task_id
+            WHERE r.reservation_date >= CURDATE()
+              AND r.status IN ('confirmed', 'canceled')
+              AND (t.id IS NULL OR t.task_type IN ('upload','naver_block','delete','naver_restore'))
+            ORDER BY r.reservation_date ASC, r.id ASC, t.id DESC
+        """)
+        raw = cur.fetchall()
+finally:
+    conn.close()
+
+reservations = {}
+for row in raw:
+    rid = str(row['adminReservationId'])
+    item = reservations.setdefault(rid, {
+        'adminReservationId': row['adminReservationId'],
+        'adminSeriesId': row.get('adminSeriesId'),
+        'reservationStatus': row['reservationStatus'],
+        'date': row['date'],
+        'roomKey': row['roomKey'],
+        'startTime': row['startTime'],
+        'endTime': row['endTime'],
+        'reserverName': row['reserverName'],
+        'tasks': {},
+    })
+    task_type = row.get('taskType')
+    if task_type and task_type not in item['tasks']:
+        item['tasks'][task_type] = {
+            'id': row['taskId'],
+            'taskId': row['taskId'],
+            'taskType': task_type,
+            'status': row['taskStatus'],
+            'roomKey': row['roomKey'],
+            'date': row['date'],
+            'startTime': row['startTime'],
+            'endTime': row['endTime'],
+            'reserverName': row['reserverName'],
+            'reservationNo': row.get('reservationNo') or '',
+            'product': row.get('product') or '',
+            'payloadJson': row.get('payloadJson') or '{}',
+            'resultText': row.get('resultText') or '',
+            'adminReservationId': row['adminReservationId'],
+            'adminSeriesId': row.get('adminSeriesId'),
+            'taskUpdatedAt': row.get('taskUpdatedAt'),
+        }
+print(json.dumps(list(reservations.values()), ensure_ascii=False, default=str))
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '[]');
+}
+
+function classifyAdminPlatformInspection(task, inspection) {
+  const taskType = task.taskType || task.task_type || '';
+  if (!taskType) return { ok: false, status: 'check_failed', reason: 'DB 동기화 작업 기록 없음' };
+  if (inspection?.status === 'failed') {
+    return { ok: false, status: 'check_failed', reason: inspection.error || '플랫폼 조회 실패' };
+  }
+  if (taskType === 'upload') {
+    if (inspection?.status === 'identity-matched') return { ok: true, status: 'ok', reason: '스페이스클라우드 예약 일치' };
+    if (inspection?.status === 'candidate-only') return { ok: false, status: 'check_failed', reason: '스페이스클라우드 후보는 있으나 예약자 식별 불충분' };
+    return { ok: false, status: 'mismatch', reason: '스페이스클라우드 예약이 실제 화면에 없음' };
+  }
+  if (taskType === 'delete') {
+    return inspection?.status === 'absent'
+      ? { ok: true, status: 'ok', reason: '스페이스클라우드 삭제 확인' }
+      : { ok: false, status: 'mismatch', reason: '취소한 스페이스클라우드 예약이 아직 보임' };
+  }
+  if (taskType === 'naver_block' || taskType === 'naver_restore') {
+    const statuses = (inspection?.slots || []).map((slot) => slot.status);
+    if (!statuses.length) return { ok: false, status: 'check_failed', reason: '네이버 시간칸을 읽지 못함' };
+    const expected = taskType === 'naver_block' ? 'suspended' : 'available';
+    if (statuses.every((status) => status === expected)) {
+      return {
+        ok: true,
+        status: 'ok',
+        reason: taskType === 'naver_block' ? '네이버 예약 차단 확인' : '네이버 예약 가능 복원 확인',
+      };
+    }
+    return {
+      ok: false,
+      status: 'mismatch',
+      reason: taskType === 'naver_block' ? '네이버 예약 차단이 실제 화면과 다름' : '네이버 예약 가능 복원이 실제 화면과 다름',
+    };
+  }
+  return { ok: false, status: 'check_failed', reason: `지원하지 않는 작업: ${taskType}` };
+}
+
+function expectedAdminAuditTaskTypes(reservationStatus) {
+  return reservationStatus === 'canceled'
+    ? ['delete', 'naver_restore']
+    : ['upload', 'naver_block'];
+}
+
+function adminAuditTargetLine(reservation) {
+  const room = `${String(reservation.roomKey || '').toUpperCase()}홀`;
+  return `${reservation.date || '-'} ${reservation.startTime || '-'}-${displayEndTime(reservation.startTime || '', reservation.endTime || '')} · ${room}`;
+}
+
+function adminPlatformAuditIssueMessage(reservation, rows) {
+  const mismatches = rows.filter((row) => row.classification.status === 'mismatch');
+  const title = mismatches.length ? '⚠️ 관리자 일정 실제 반영 불일치' : '🟡 관리자 일정 재검사 필요';
+  return compactNotice(title, [
+    `대상: ${adminAuditTargetLine(reservation)}`,
+    `DB 원장: ${reservation.reservationStatus === 'canceled' ? '취소' : '예약 확정'}`,
+    ...rows.filter((row) => !row.classification.ok).map((row) => `${row.platformLabel}: ${row.classification.reason}`),
+    mismatches.length ? '판정: DB와 실제 플랫폼 상태가 다름' : '판정: 누락 확정 아님 · 다음 순환에서 다시 검사',
+  ]);
+}
+
+function adminPlatformAuditRecoveryMessage(reservation) {
+  return compactNotice('✅ 관리자 일정 실제 반영 정상 복구', [
+    `대상: ${adminAuditTargetLine(reservation)}`,
+    `DB 원장: ${reservation.reservationStatus === 'canceled' ? '취소' : '예약 확정'}`,
+    '네이버: 실제 화면 일치',
+    '스페이스클라우드: 실제 화면 일치',
+  ]);
+}
+
+function selectAdminPlatformAuditReservations(candidates, state, limit) {
+  const checked = state.reservations || {};
+  return [...candidates]
+    .sort((left, right) => {
+      const leftAt = Date.parse(checked[String(left.adminReservationId)]?.checkedAt || '') || 0;
+      const rightAt = Date.parse(checked[String(right.adminReservationId)]?.checkedAt || '') || 0;
+      return leftAt - rightAt
+        || String(left.date || '').localeCompare(String(right.date || ''))
+        || Number(left.adminReservationId) - Number(right.adminReservationId);
+    })
+    .slice(0, Math.max(1, limit || DEFAULT_ADMIN_PLATFORM_AUDIT_LIMIT));
+}
+
+async function runAdminPlatformAudit(args, context, { force = false } = {}) {
+  if (!args.adminPlatformAudit && !force) return { skipped: true, reason: 'disabled' };
+  const state = await readJsonObject(args.adminPlatformAuditState);
+  const intervalMs = Math.max(1, args.adminPlatformAuditIntervalMinutes || DEFAULT_ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES) * 60 * 1000;
+  const lastRunAt = Date.parse(state.checkedAt || '') || 0;
+  if (!force && lastRunAt && Date.now() - lastRunAt < intervalMs) return { skipped: true, reason: 'interval' };
+
+  const candidates = await fetchRemoteAdminPlatformAuditCandidates(args);
+  const selected = selectAdminPlatformAuditReservations(candidates, state, args.adminPlatformAuditLimit);
+  const rows = [];
+  const nextReservations = { ...(state.reservations || {}) };
+  for (const reservation of selected) {
+    const reservationRows = [];
+    for (const taskType of expectedAdminAuditTaskTypes(reservation.reservationStatus)) {
+      const task = reservation.tasks?.[taskType];
+      let inspection = { status: 'failed', error: 'DB 동기화 작업 기록 없음' };
+      if (task) {
+        try {
+          inspection = taskType === 'upload' || taskType === 'delete'
+            ? await inspectSpacecloudDirectReservation(context, task)
+            : await inspectNaverAvailability(context, task);
+        } catch (error) {
+          inspection = { status: 'failed', error: String(error?.message || error) };
+        }
+      }
+      const classification = classifyAdminPlatformInspection(task || { taskType }, inspection);
+      reservationRows.push({
+        taskId: task?.taskId || null,
+        taskType,
+        platformLabel: taskType === 'upload' || taskType === 'delete' ? '스페이스클라우드' : '네이버',
+        classification,
+        inspection,
+      });
+    }
+    const issueRows = reservationRows.filter((row) => !row.classification.ok);
+    const auditStatus = issueRows.some((row) => row.classification.status === 'mismatch')
+      ? 'mismatch'
+      : issueRows.length ? 'check_failed' : 'ok';
+    const reservationId = String(reservation.adminReservationId);
+    const previous = nextReservations[reservationId] || {};
+    if (args.telegram && auditStatus !== 'ok') {
+      const signature = `${auditStatus}:${issueRows.map((row) => `${row.taskType}:${row.classification.reason}`).join('|')}`;
+      await notifyOnStateChange(args, `admin-platform-audit:${reservationId}`, signature, adminPlatformAuditIssueMessage(reservation, reservationRows));
+    } else if (args.telegram && auditStatus === 'ok' && previous.auditStatus && previous.auditStatus !== 'ok') {
+      await notifyOnStateChange(args, `admin-platform-audit:${reservationId}`, 'ok', adminPlatformAuditRecoveryMessage(reservation));
+    }
+    nextReservations[reservationId] = {
+      checkedAt: new Date().toISOString(),
+      auditStatus,
+      reservationStatus: reservation.reservationStatus,
+      date: reservation.date,
+      roomKey: reservation.roomKey,
+      rows: reservationRows.map((row) => ({
+        taskId: row.taskId,
+        taskType: row.taskType,
+        status: row.classification.status,
+        reason: row.classification.reason,
+      })),
+    };
+    rows.push({ reservationId: Number(reservationId), auditStatus, reservation, rows: reservationRows });
+  }
+  const candidateIds = new Set(candidates.map((row) => String(row.adminReservationId)));
+  for (const reservationId of Object.keys(nextReservations)) {
+    if (!candidateIds.has(reservationId)) delete nextReservations[reservationId];
+  }
+  const result = {
+    checkedAt: new Date().toISOString(),
+    candidates: candidates.length,
+    checked: selected.length,
+    ok: rows.filter((row) => row.auditStatus === 'ok').length,
+    mismatches: rows.filter((row) => row.auditStatus === 'mismatch').length,
+    checkFailed: rows.filter((row) => row.auditStatus === 'check_failed').length,
+    rows,
+  };
+  await writeJson(args.adminPlatformAuditState, { ...result, reservations: nextReservations });
+  logLine(`admin platform audit: candidates=${result.candidates} checked=${result.checked} ok=${result.ok} mismatches=${result.mismatches} checkFailed=${result.checkFailed}`);
+  return result;
+}
+
+async function maybeRunAdminPlatformAudit(args, context) {
+  try {
+    return await runAdminPlatformAudit(args, context);
+  } catch (error) {
+    logLine(`admin platform audit failed: ${String(error?.message || error)}`);
+    if (args.telegram) {
+      await notifyOnStateChange(args, 'system:admin-platform-audit', 'check-failed', compactNotice('🟡 관리자 일정 정기검사 실패', [
+        '판정: 예약 누락 확정 아님',
+        `원인: ${cleanTelegramText(String(error?.message || error), 140)}`,
+        '조치: 다음 순환에서 자동 재검사',
+      ]));
+    }
+    return { error: String(error?.message || error) };
+  }
+}
+
 function isLoginProblem(message) {
   return /login|logged out|add button not visible|로그인|세션|인증/i.test(String(message || ''));
 }
@@ -4963,6 +5264,9 @@ function runNowModeSelfTest() {
   assert.equal(parsed.urgentCooldownSeconds, 300);
   assert.equal(parsed.restoreGraceSeconds, 45);
   assert.equal(parsed.sessionCheckIntervalSeconds, 180);
+  assert.equal(parsed.adminPlatformAudit, true);
+  assert.equal(parsed.adminPlatformAuditIntervalMinutes, 30);
+  assert.equal(parsed.adminPlatformAuditLimit, 2);
   const bookingFetchArgs = bookingSyncFetchArgs(parsed);
   assert.equal(bookingFetchArgs.nowMode, false);
   assert.equal(parsed.nowMode, true, 'disabling booking-task urgency must not mutate the watcher args');
@@ -4997,6 +5301,33 @@ function runNowModeSelfTest() {
       adminSeriesId: 9,
     }] },
   }).length, 0, 'bulk admin success rows must not create one Telegram message per occurrence');
+  assert.deepEqual(
+    classifyAdminPlatformInspection({ taskType: 'upload' }, { status: 'identity-matched' }),
+    { ok: true, status: 'ok', reason: '스페이스클라우드 예약 일치' },
+  );
+  assert.equal(
+    classifyAdminPlatformInspection({ taskType: 'upload' }, { status: 'absent' }).status,
+    'mismatch',
+  );
+  assert.equal(
+    classifyAdminPlatformInspection({ taskType: 'naver_restore' }, { status: 'ok', slots: [] }).status,
+    'check_failed',
+  );
+  assert.equal(
+    classifyAdminPlatformInspection({ taskType: 'naver_restore' }, { status: 'ok', slots: [{ status: 'available' }] }).ok,
+    true,
+  );
+  const selectedAdminAudits = selectAdminPlatformAuditReservations([
+    { adminReservationId: 1, date: '2026-08-12' },
+    { adminReservationId: 2, date: '2026-08-13' },
+    { adminReservationId: 3, date: '2026-08-14' },
+  ], {
+    reservations: {
+      1: { checkedAt: '2026-08-10T01:00:00Z' },
+      2: { checkedAt: '2026-08-10T02:00:00Z' },
+    },
+  }, 2);
+  assert.deepEqual(selectedAdminAudits.map((row) => row.adminReservationId), [3, 1]);
 
   const confirmationTask = {
     date: '2026-08-01',
@@ -5229,6 +5560,8 @@ function runNowModeSelfTest() {
       'task rows are claimed one at a time so untouched rows never remain running',
       'new platform work is processed in source-received order',
       'daily reconcile message renders with log hint',
+      'admin DB reservations rotate through actual Naver and SpaceCloud state inspection',
+      'platform read failures stay distinct from confirmed mismatches',
     ],
   };
 }
@@ -5688,6 +6021,7 @@ async function runWatch(args) {
       }
 
       if (!watcherProblemThisCycle) await notifyWatcherRecoveredIfNeeded(args);
+      await maybeRunAdminPlatformAudit(args, context);
       await maybeSendReflectionAudit(args);
       await maybeSendDailyReconcile(args);
       const sleepSeconds = watchSleepSeconds(args, urgentUntil);
@@ -5764,6 +6098,23 @@ ${kstNowText()}
     } else {
       console.log(`reflection audit checked=${result.checked || 0}; ok=${result.okCount || 0}; waiting=${result.waitingCount || 0}; issues=${result.issueCount || 0}; duplicates=${result.duplicateCount || 0}`);
     }
+    return;
+  }
+
+  if (args.command === 'admin-platform-audit') {
+    const result = await withAutomationProcessLock(args, async () => {
+      const context = await openSpacecloudContext({
+        profileDir: args.profileDir,
+        headless: args.headless,
+      });
+      try {
+        return await runAdminPlatformAudit(args, context, { force: true });
+      } finally {
+        await context.close();
+      }
+    });
+    if (args.json) console.log(JSON.stringify(result, null, 2));
+    else console.log(`admin platform audit checked=${result.checked || 0}; ok=${result.ok || 0}; mismatches=${result.mismatches || 0}; checkFailed=${result.checkFailed || 0}`);
     return;
   }
 

@@ -18,6 +18,8 @@ URGENT_COOLDOWN_SECONDS="${SPACE_CLOUD_WATCH_URGENT_COOLDOWN_SECONDS:-300}"
 RESTORE_GRACE_SECONDS="${SPACE_CLOUD_WATCH_RESTORE_GRACE_SECONDS:-45}"
 SESSION_CHECK_INTERVAL_SECONDS="${SPACE_CLOUD_WATCH_SESSION_CHECK_INTERVAL_SECONDS:-180}"
 DAILY_RECONCILE_HOUR="${SPACE_CLOUD_WATCH_DAILY_RECONCILE_HOUR:-5}"
+ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES="${SPACE_CLOUD_WATCH_ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES:-30}"
+ADMIN_PLATFORM_AUDIT_LIMIT="${SPACE_CLOUD_WATCH_ADMIN_PLATFORM_AUDIT_LIMIT:-2}"
 
 EXTRA_ARGS=""
 if [[ "$NOW_MODE" == "1" ]]; then
@@ -37,7 +39,7 @@ cat > "$PLIST_PATH" <<PLIST
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>cd "$REPO_ROOT" &amp;&amp; NODE_BIN="\$(command -v node)" &amp;&amp; exec "\$NODE_BIN" tools/spacecloud-watch.mjs watch --interval-seconds $INTERVAL_SECONDS --limit-per-cycle $LIMIT_PER_CYCLE --delete-limit-per-cycle $DELETE_LIMIT_PER_CYCLE --naver-block-limit-per-cycle $NAVER_BLOCK_LIMIT_PER_CYCLE --naver-cancel-limit-per-cycle $NAVER_CANCEL_LIMIT_PER_CYCLE --spacecloud-cancel-limit-per-cycle $SPACECLOUD_CANCEL_LIMIT_PER_CYCLE $EXTRA_ARGS --daily-reconcile-hour $DAILY_RECONCILE_HOUR --daily-reconcile-state "$LOG_DIR/daily-reconcile-state.json"</string>
+        <string>cd "$REPO_ROOT" &amp;&amp; NODE_BIN="\$(command -v node)" &amp;&amp; exec "\$NODE_BIN" tools/spacecloud-watch.mjs watch --interval-seconds $INTERVAL_SECONDS --limit-per-cycle $LIMIT_PER_CYCLE --delete-limit-per-cycle $DELETE_LIMIT_PER_CYCLE --naver-block-limit-per-cycle $NAVER_BLOCK_LIMIT_PER_CYCLE --naver-cancel-limit-per-cycle $NAVER_CANCEL_LIMIT_PER_CYCLE --spacecloud-cancel-limit-per-cycle $SPACECLOUD_CANCEL_LIMIT_PER_CYCLE $EXTRA_ARGS --daily-reconcile-hour $DAILY_RECONCILE_HOUR --daily-reconcile-state "$LOG_DIR/daily-reconcile-state.json" --admin-platform-audit-interval-minutes $ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES --admin-platform-audit-limit $ADMIN_PLATFORM_AUDIT_LIMIT --admin-platform-audit-state "$LOG_DIR/admin-platform-audit-state.json"</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
