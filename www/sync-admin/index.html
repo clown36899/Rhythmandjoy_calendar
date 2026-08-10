@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>리듬앤조이 동기화 관리자</title>
-  <link rel="stylesheet" href="./styles.css?v=recurring-v1-20260810">
+  <link rel="stylesheet" href="./styles.css?v=recurring-v2-20260810">
 </head>
 <body>
   <div class="app-shell">
@@ -140,7 +140,7 @@
         <div class="panel-heading">
           <div>
             <h2>정기대관 중앙제어</h2>
-            <p>요일별 반복 일정을 한 번에 등록하고, 선택 날짜·오늘 이후·전체를 취소합니다.</p>
+            <p>요일별 반복 일정을 한 번에 등록하고, 선택한 미래 날짜나 남은 일정 전체를 취소합니다.</p>
           </div>
           <button type="button" class="primary-button" data-open-recurring-modal>정기대관 등록</button>
         </div>
@@ -423,20 +423,19 @@
       <div class="modal-heading">
         <div>
           <h2 id="seriesModalTitle">정기대관 관리</h2>
-          <p id="seriesModalSummary">날짜를 선택해 부분 취소하거나 이후 일정을 일괄 취소합니다.</p>
+          <p id="seriesModalSummary">지난 일정은 이력으로 보존하고, 오늘 이후 일정만 취소합니다.</p>
         </div>
         <button type="button" class="icon-button modal-close" id="closeSeriesModal" aria-label="정기대관 관리 닫기">×</button>
       </div>
       <div class="modal-body">
         <div class="series-bulk-bar">
-          <label><input type="checkbox" id="selectAllSeriesOccurrences"> 현재 일정 전체 선택</label>
+          <label><input type="checkbox" id="selectAllSeriesOccurrences"> 취소 가능한 일정 전체 선택</label>
           <span id="selectedSeriesOccurrenceCount">0건 선택</span>
         </div>
         <div class="series-occurrence-list" id="seriesOccurrenceList"></div>
         <div class="form-actions series-cancel-actions">
-          <button type="button" class="secondary-button" id="cancelSeriesFuture">오늘 이후 전부 취소</button>
           <button type="button" class="danger-button" id="cancelSeriesSelected">선택 일정 취소</button>
-          <button type="button" class="danger-button" id="cancelSeriesAll">정기대관 전체 취소</button>
+          <button type="button" class="danger-button" id="cancelSeriesFuture">남은 일정 전체 취소</button>
         </div>
       </div>
     </div>
@@ -444,6 +443,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="../calendar_set/calendar_v10/revenue-policy.js?v=db-only-v1-20260810"></script>
-  <script src="./app.js?v=recurring-v1-20260810"></script>
+  <script src="./app.js?v=recurring-v2-20260810"></script>
 </body>
 </html>

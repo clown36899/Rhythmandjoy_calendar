@@ -2891,21 +2891,19 @@ function cancel_admin_reservations($pdo, $payload, $env) {
     }
     $series_id = isset($payload['seriesId']) ? intval($payload['seriesId']) : 0;
     $scope = isset($payload['scope']) ? (string) $payload['scope'] : 'selected';
-    $from_date = clean_date_value(isset($payload['fromDate']) ? $payload['fromDate'] : date('Y-m-d'));
+    $from_date = date('Y-m-d');
     if ($series_id > 0 && in_array($scope, array('all', 'future'), true)) {
-        $sql = "SELECT id FROM rhythmjoy_admin_reservations WHERE series_id=? AND status NOT IN ('canceled','canceling')";
-        $params = array($series_id);
-        if ($scope === 'future') {
-            $sql .= ' AND reservation_date>=?';
-            $params[] = $from_date;
-        }
+        $sql = "SELECT id FROM rhythmjoy_admin_reservations
+                WHERE series_id=? AND reservation_date>=?
+                  AND status NOT IN ('canceled','canceling')";
+        $params = array($series_id, $from_date);
         $stmt = $pdo->prepare($sql . ' ORDER BY reservation_date, id LIMIT 500');
         $stmt->execute($params);
         foreach ($stmt->fetchAll() as $row) $ids[intval($row['id'])] = true;
     }
     $ids = array_keys($ids);
     if (!$ids || count($ids) > 500) {
-        throw new InvalidArgumentException('취소할 관리자 일정을 1~500건 선택해주세요.');
+        throw new InvalidArgumentException('취소할 오늘 이후 관리자 일정이 없습니다.');
     }
 
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
@@ -2916,11 +2914,15 @@ function cancel_admin_reservations($pdo, $payload, $env) {
                    reserver_name, phone_last4, memo, status
             FROM rhythmjoy_admin_reservations
             WHERE id IN ($placeholders)
+              AND reservation_date >= ?
               AND status NOT IN ('canceled','canceling')
             FOR UPDATE
         ");
-        $stmt->execute($ids);
+        $stmt->execute(array_merge($ids, array($from_date)));
         $rows = $stmt->fetchAll();
+        if (!$rows) {
+            throw new InvalidArgumentException('지난 일정은 취소할 수 없습니다. 오늘 이후 일정을 선택해주세요.');
+        }
         $updated = $pdo->prepare("UPDATE rhythmjoy_admin_reservations SET status=?, updated_at=NOW() WHERE id=?");
         $series_ids = array();
         foreach ($rows as $row) {

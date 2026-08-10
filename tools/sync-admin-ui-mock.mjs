@@ -129,8 +129,9 @@ const server = http.createServer(async (req, res) => {
         seriesId: 1,
         occurrences: [
           { id: 11, seriesId: 1, date: '2026-08-03', room: 'C', start: 13, end: 15, status: 'confirmed' },
-          { id: 12, seriesId: 1, date: '2026-08-07', room: 'C', start: 16, end: 17, status: 'confirmed' },
-          { id: 13, seriesId: 1, date: '2026-08-10', room: 'C', start: 13, end: 15, status: 'canceling' },
+          { id: 12, seriesId: 1, date: '2026-08-10', room: 'C', start: 16, end: 17, status: 'confirmed' },
+          { id: 13, seriesId: 1, date: '2026-08-14', room: 'C', start: 13, end: 15, status: 'confirmed' },
+          { id: 14, seriesId: 1, date: '2026-08-17', room: 'C', start: 13, end: 15, status: 'canceling' },
         ],
       });
     }

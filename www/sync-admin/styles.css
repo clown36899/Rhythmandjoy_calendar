@@ -2020,6 +2020,15 @@ body.modal-open {
   background: #f4f6f5;
 }
 
+.series-occurrence-row.past {
+  color: var(--muted);
+  background: #f6f7f7;
+}
+
+.series-occurrence-row.past input {
+  cursor: not-allowed;
+}
+
 .series-occurrence-row.canceling {
   background: #fffaf0;
 }

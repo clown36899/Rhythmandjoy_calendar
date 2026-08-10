@@ -1860,8 +1860,8 @@ try:
                         cur.execute(
                             """
                             SELECT
-                                SUM(status <> 'canceled') AS remaining_count,
-                                SUM(status = 'canceling') AS canceling_count
+                                SUM(reservation_date >= CURDATE() AND status <> 'canceled') AS remaining_count,
+                                SUM(reservation_date >= CURDATE() AND status = 'canceling') AS canceling_count
                             FROM rhythmjoy_admin_reservations
                             WHERE series_id=%s
                             """,

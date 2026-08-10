@@ -137,7 +137,6 @@
     seriesOccurrenceList: document.getElementById("seriesOccurrenceList"),
     cancelSeriesFuture: document.getElementById("cancelSeriesFuture"),
     cancelSeriesSelected: document.getElementById("cancelSeriesSelected"),
-    cancelSeriesAll: document.getElementById("cancelSeriesAll"),
   };
 
   init();
@@ -233,7 +232,6 @@
     el.selectAllSeriesOccurrences.addEventListener("change", toggleAllSeriesOccurrences);
     el.cancelSeriesSelected.addEventListener("click", () => cancelSeriesOccurrences("selected"));
     el.cancelSeriesFuture.addEventListener("click", () => cancelSeriesOccurrences("future"));
-    el.cancelSeriesAll.addEventListener("click", () => cancelSeriesOccurrences("all"));
     el.monthRevenueButton.addEventListener("click", openRevenueModal);
     el.closeRevenueModal.addEventListener("click", closeRevenueModal);
     el.doneRevenueModal.addEventListener("click", closeRevenueModal);
@@ -2143,6 +2141,7 @@
     el.eventDetailList.innerHTML = events.map(eventDetailCardHtml).join("");
     const cancelable = state.eventDetailEvents.length === 1
       && state.eventDetailEvents[0].source === "admin"
+      && state.eventDetailEvents[0].date >= today()
       && !["canceled", "canceling"].includes(state.eventDetailEvents[0].status);
     el.cancelAdminReservation.hidden = !cancelable;
     el.eventDetailModal.hidden = false;
@@ -2608,7 +2607,7 @@
       state.selectedSeries = series;
       state.seriesOccurrences = data.occurrences || [];
       el.seriesModalTitle.textContent = series.title || "정기대관 관리";
-      el.seriesModalSummary.textContent = `${series.startDate} ~ ${series.endDate} · 총 ${series.occurrenceCount}건`;
+      el.seriesModalSummary.textContent = `${series.startDate} ~ ${series.endDate} · 총 ${series.occurrenceCount}건 · 지난 일정은 이력 보존`;
       el.selectAllSeriesOccurrences.checked = false;
       renderSeriesOccurrences();
       el.seriesModal.hidden = false;
@@ -2629,14 +2628,15 @@
     el.seriesOccurrenceList.innerHTML = "";
     state.seriesOccurrences.forEach((row) => {
       const label = document.createElement("label");
-      label.className = `series-occurrence-row ${row.status || ""}`;
-      const disabled = ["canceled", "canceling"].includes(row.status);
+      const isPast = row.date < today();
+      label.className = `series-occurrence-row ${row.status || ""}${isPast ? " past" : ""}`;
+      const disabled = isPast || ["canceled", "canceling"].includes(row.status);
       label.innerHTML = `
         <input type="checkbox" data-series-occurrence-id="${Number(row.id)}"${disabled ? " disabled" : ""}>
         <strong>${escapeHtml(row.date)} ${escapeHtml(weekdayShortText(row.date))}</strong>
         <span>${escapeHtml(row.room)}홀</span>
         <span>${escapeHtml(formatHour(row.start))}-${escapeHtml(formatHour(row.end))}</span>
-        <span>${escapeHtml(adminReservationStatusText(row.status))}</span>
+        <span>${escapeHtml(isPast ? "지난 일정 · 이력 보존" : adminReservationStatusText(row.status))}</span>
       `;
       label.querySelector("input").addEventListener("change", updateSelectedSeriesOccurrenceCount);
       el.seriesOccurrenceList.appendChild(label);
@@ -2672,7 +2672,7 @@
   async function cancelSeriesOccurrences(scope) {
     if (!state.selectedSeries) return;
     const ids = scope === "selected" ? selectedSeriesOccurrenceIds() : [];
-    const label = scope === "selected" ? `선택한 ${ids.length}건` : (scope === "future" ? "오늘 이후 일정 전부" : "정기대관 전체");
+    const label = scope === "selected" ? `선택한 미래 일정 ${ids.length}건` : "오늘을 포함한 남은 일정 전부";
     if (scope === "selected" && !ids.length) return;
     if (!window.confirm(`${label}를 취소할까요? 플랫폼 복구 확인 전까지 공개 일정에는 유지됩니다.`)) return;
     try {
