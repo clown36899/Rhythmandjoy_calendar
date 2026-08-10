@@ -8,44 +8,36 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+import pymysql
 
 
 APP_ROOT = Path('/home/clown313python/myapp')
-SERVICE_ACCOUNT_FILE = APP_ROOT / 'static' / 'rhythmjoycalendar-ce0594fe594b.json'
 DATA_DIR = APP_ROOT / 'calendar_set' / 'calendar_v10' / 'data'
 EVENTS_FILE = DATA_DIR / 'events.json'
 STATE_FILE = DATA_DIR / 'calendar_cache_state.json'
 TIME_ZONE = 'Asia/Seoul'
 FULL_SYNC_PAST_DAYS = 120
-SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+ENV_FILE = APP_ROOT / '.env'
 
 ROOMS = {
     'a': {
         'name': 'A홀',
-        'calendarId': '752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com',
         'color': '#F6BF26',
     },
     'b': {
         'name': 'B홀',
-        'calendarId': '22dd1532ca7404714f0c24348825f131f3c559acf6361031fe71e80977e4a817@group.calendar.google.com',
         'color': 'rgb(87, 150, 200)',
     },
     'c': {
         'name': 'C홀',
-        'calendarId': 'b0cfe52771ffe5f8b8bb55b8f7855b6ea640fcb09060fd6708e9b8830428e0c8@group.calendar.google.com',
         'color': 'rgb(129, 180, 186)',
     },
     'd': {
         'name': 'D홀',
-        'calendarId': '60da4147f8d838daa72ecea4f59c69106faedd48e8d4aea61a9d299d96b3f90e@group.calendar.google.com',
         'color': 'rgb(125, 157, 106)',
     },
     'e': {
         'name': 'E홀',
-        'calendarId': 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com',
         'color': '#4c4c4c',
     },
 }
@@ -55,27 +47,247 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
-def google_time(value):
+def iso_utc_timestamp(value):
     return value.isoformat().replace('+00:00', 'Z')
 
 
-def guaranteed_coverage_start(now=None):
-    """Return the first full Korea calendar day guaranteed by a full sync."""
-    current = now or utc_now()
-    time_min = current - timedelta(days=FULL_SYNC_PAST_DAYS)
-    korea_date = (time_min + timedelta(hours=9)).date()
-    return (korea_date + timedelta(days=1)).isoformat()
+def load_env_file(path=ENV_FILE):
+    source = Path(path)
+    if not source.is_file():
+        return
+    for raw in source.read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
-def read_json(path, default):
+def db_connect():
+    load_env_file()
+    return pymysql.connect(
+        host=os.environ['DB_SERVERNAME'],
+        port=int(os.environ.get('DB_PORT', '3306')),
+        user=os.environ['DB_USERNAME'],
+        password=os.environ['DB_PASSWORD'],
+        database=os.environ['DB_NAME'],
+        charset='utf8mb4',
+        autocommit=True,
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
+def fetch_booking_ledger_rows():
+    conn = db_connect()
     try:
-        with path.open('r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return default
-    except Exception:
-        logging.exception('Failed to read %s', path)
-        return default
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, source_platform, source_mode, current_status,
+                       reservation_number, reserver_name, product, room_key,
+                       CAST(reservation_date AS CHAR) AS reservation_date,
+                       TIME_FORMAT(start_time, '%%H:%%i:%%s') AS start_time,
+                       TIME_FORMAT(end_time, '%%H:%%i:%%s') AS end_time,
+                       CAST(updated_at AS CHAR) AS updated_at
+                FROM rhythmjoy_booking_ledger
+                WHERE source_platform IN ('naver', 'spacecloud')
+                  AND current_status = 'confirmed'
+                  AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+                  AND reservation_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                ORDER BY reservation_date, start_time, room_key, id
+            """, (FULL_SYNC_PAST_DAYS,))
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def fetch_admin_reservation_rows():
+    conn = db_connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, reservation_key, reservation_date, room_key,
+                       start_hour, end_hour, reserver_name, memo, source, status,
+                       CAST(updated_at AS CHAR) AS updated_at
+                FROM rhythmjoy_admin_reservations
+                WHERE status <> 'canceled'
+                  AND reservation_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                ORDER BY reservation_date, start_hour, room_key, id
+            """, (FULL_SYNC_PAST_DAYS,))
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def short_clock(value):
+    text = str(value or '')
+    return text[:5] if len(text) >= 5 else ''
+
+
+def ledger_slot(row):
+    start = short_clock(row.get('start_time'))
+    end = short_clock(row.get('end_time'))
+    if end == '23:59':
+        end = '24:00'
+    return (
+        str(row.get('reservation_date') or '')[:10],
+        str(row.get('room_key') or '').lower(),
+        start,
+        end,
+    )
+
+
+def iso_korea_datetime(date_text, clock_text, start_clock=''):
+    date_value = datetime.strptime(str(date_text)[:10], '%Y-%m-%d')
+    clock = short_clock(clock_text)
+    if clock in ('24:00', '23:59'):
+        date_value += timedelta(days=1)
+        clock = '00:00'
+    elif start_clock and clock <= short_clock(start_clock):
+        date_value += timedelta(days=1)
+    return f"{date_value.strftime('%Y-%m-%d')}T{clock}:00+09:00"
+
+
+def ledger_to_calendar_event(row):
+    room_key = str(row.get('room_key') or '').lower()
+    room = ROOMS.get(room_key)
+    if not room:
+        return None
+    date_text, _, start, end = ledger_slot(row)
+    if not date_text or not start or not end:
+        return None
+    reservation_number = str(row.get('reservation_number') or '').strip()
+    reserver_name = str(row.get('reserver_name') or '').strip()
+    description = f'예약번호: {reservation_number}' if reservation_number else '스페이스클라우드 예약'
+    return {
+        'id': f"ledger:{row.get('id')}",
+        'title': reserver_name or str(row.get('product') or '').strip() or '예약',
+        'start': iso_korea_datetime(date_text, start),
+        'end': iso_korea_datetime(date_text, end, start_clock=start),
+        'className': room_key,
+        'color': room['color'],
+        'textColor': '#000',
+        'description': description,
+        'location': '',
+        'extendedProps': {
+            'description': description,
+            'location': '',
+            'roomKey': room_key,
+            'roomName': room['name'],
+            'googleEventId': '',
+            'ledgerId': row.get('id'),
+            'sourcePlatform': row.get('source_platform') or '',
+            'reservationNumber': reservation_number,
+            'updated': row.get('updated_at'),
+            'recordSource': 'db-ledger',
+        },
+    }
+
+
+def admin_to_calendar_event(row):
+    room_key = str(row.get('room_key') or '').lower()
+    room = ROOMS.get(room_key)
+    if not room:
+        return None
+    date_text = str(row.get('reservation_date') or '')[:10]
+    try:
+        start_hour = int(row.get('start_hour'))
+        end_hour = int(row.get('end_hour'))
+    except (TypeError, ValueError):
+        return None
+    if not date_text or not 0 <= start_hour <= 23 or not 1 <= end_hour <= 24 or end_hour <= start_hour:
+        return None
+    start = f'{start_hour:02d}:00'
+    end = '24:00' if end_hour == 24 else f'{end_hour:02d}:00'
+    description = '관리자 일정'
+    return {
+        'id': f"admin:{row.get('id')}",
+        'title': str(row.get('reserver_name') or '').strip() or '관리자 일정',
+        'start': iso_korea_datetime(date_text, start),
+        'end': iso_korea_datetime(date_text, end, start_clock=start),
+        'className': room_key,
+        'color': room['color'],
+        'textColor': '#000',
+        'description': description,
+        'location': '',
+        'extendedProps': {
+            'description': description,
+            'location': '',
+            'roomKey': room_key,
+            'roomName': room['name'],
+            'googleEventId': '',
+            'adminReservationId': row.get('id'),
+            'sourcePlatform': 'admin',
+            'reservationNumber': '',
+            'updated': row.get('updated_at'),
+            'recordSource': 'db-admin',
+        },
+    }
+
+
+def build_db_calendar_events(ledger_rows, admin_rows=None):
+    events = []
+    seen_slots = set()
+    duplicate_slots = 0
+    invalid_rows = 0
+
+    source_order = {'naver': 0, 'spacecloud': 1}
+    confirmed_rows = sorted(
+        (row for row in ledger_rows if row.get('current_status') == 'confirmed'),
+        key=lambda row: (
+            source_order.get(str(row.get('source_platform') or ''), 9),
+            int(row.get('id') or 0),
+        ),
+    )
+    for row in confirmed_rows:
+        slot = ledger_slot(row)
+        if slot in seen_slots:
+            duplicate_slots += 1
+            continue
+        event = ledger_to_calendar_event(row)
+        if not event:
+            invalid_rows += 1
+            continue
+        seen_slots.add(slot)
+        events.append(event)
+
+    admin_count = 0
+    for row in admin_rows or []:
+        if row.get('status') == 'canceled':
+            continue
+        event = admin_to_calendar_event(row)
+        if not event:
+            invalid_rows += 1
+            continue
+        slot = event_slot(event)
+        if slot in seen_slots:
+            duplicate_slots += 1
+            continue
+        seen_slots.add(slot)
+        events.append(event)
+        admin_count += 1
+
+    events.sort(key=lambda event: (event.get('start') or '', event.get('className') or '', event.get('id') or ''))
+    return events, {
+        'confirmedCount': len(confirmed_rows),
+        'adminCount': admin_count,
+        'publishedCount': len(events),
+        'duplicateSlotCount': duplicate_slots,
+        'invalidRowCount': invalid_rows,
+    }
+
+
+def event_slot(event):
+    start = str(event.get('start') or '')
+    end = str(event.get('end') or '')
+    date_text = start[:10]
+    start_clock = start.split('T', 1)[1][:5] if 'T' in start else '00:00'
+    end_date = end[:10]
+    end_clock = end.split('T', 1)[1][:5] if 'T' in end else '00:00'
+    if end_clock == '00:00' and end_date and end_date != date_text:
+        end_clock = '24:00'
+    props = event.get('extendedProps') or {}
+    room_key = str(props.get('roomKey') or event.get('className') or '').lower()
+    return date_text, room_key, start_clock, end_clock
 
 
 def atomic_write_json(path, data):
@@ -86,230 +298,58 @@ def atomic_write_json(path, data):
     os.replace(str(tmp_path), str(path))
 
 
-def build_service():
-    credentials = service_account.Credentials.from_service_account_file(
-        str(SERVICE_ACCOUNT_FILE),
-        scopes=SCOPES,
-    )
-    return build('calendar', 'v3', credentials=credentials, cache_discovery=False)
-
-
-def event_start_value(item):
-    return item.get('start', {}).get('dateTime') or item.get('start', {}).get('date')
-
-
-def event_end_value(item):
-    return item.get('end', {}).get('dateTime') or item.get('end', {}).get('date') or event_start_value(item)
-
-
-def to_calendar_event(room_key, item):
-    room = ROOMS[room_key]
-    start = event_start_value(item)
-    end = event_end_value(item)
-    event_id = item.get('id')
-    if not event_id or not start:
-        return None
-
-    description = item.get('description') or ''
-    location = item.get('location') or ''
-    return {
-        'id': f'{room_key}:{event_id}',
-        'title': item.get('summary') or '',
-        'start': start,
-        'end': end,
-        'className': room_key,
-        'color': room['color'],
-        'textColor': '#000',
-        'description': description,
-        'location': location,
-        'extendedProps': {
-            'description': description,
-            'location': location,
-            'roomKey': room_key,
-            'roomName': room['name'],
-            'googleEventId': event_id,
-            'updated': item.get('updated'),
-        },
-    }
-
-
-def list_all_pages(service, calendar_id, params):
-    items = []
-    next_sync_token = None
-    page_token = None
-
-    while True:
-        request_params = dict(params)
-        if page_token:
-            request_params['pageToken'] = page_token
-        result = service.events().list(calendarId=calendar_id, **request_params).execute()
-        items.extend(result.get('items', []))
-        page_token = result.get('nextPageToken')
-        next_sync_token = result.get('nextSyncToken') or next_sync_token
-        if not page_token:
-            break
-
-    return items, next_sync_token
-
-
-def full_sync_room(service, room_key):
-    room = ROOMS[room_key]
-    time_min = google_time(utc_now() - timedelta(days=FULL_SYNC_PAST_DAYS))
-    items, next_sync_token = list_all_pages(service, room['calendarId'], {
-        'maxResults': 2500,
-        'singleEvents': True,
-        'showDeleted': True,
-        'timeMin': time_min,
-        'timeZone': TIME_ZONE,
-    })
-
-    events = {}
-    for item in items:
-        if item.get('status') == 'cancelled':
-            continue
-        event = to_calendar_event(room_key, item)
-        if event:
-            events[item['id']] = event
-
-    return events, next_sync_token, len(items), 'full', guaranteed_coverage_start()
-
-
-def incremental_sync_room(service, room_key, previous_events, sync_token, coverage_start=None):
-    room = ROOMS[room_key]
-    items, next_sync_token = list_all_pages(service, room['calendarId'], {
-        'maxResults': 2500,
-        'singleEvents': True,
-        'showDeleted': True,
-        'syncToken': sync_token,
-        'timeZone': TIME_ZONE,
-    })
-
-    events = dict(previous_events or {})
-    for item in items:
-        event_id = item.get('id')
-        if not event_id:
-            continue
-        if item.get('status') == 'cancelled':
-            events.pop(event_id, None)
-            continue
-        event = to_calendar_event(room_key, item)
-        if event:
-            events[event_id] = event
-
-    return (
-        events,
-        next_sync_token or sync_token,
-        len(items),
-        'incremental',
-        coverage_start or guaranteed_coverage_start(),
-    )
-
-
-def load_state():
-    state = read_json(STATE_FILE, {})
-    return {
-        'rooms': state.get('rooms', {}),
-        'eventsByRoom': state.get('eventsByRoom', {}),
-    }
-
-
 def sync_once():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    service = build_service()
-    state = load_state()
-    room_states = state['rooms']
-    events_by_room = state['eventsByRoom']
+    ledger_rows = fetch_booking_ledger_rows()
+    admin_rows = fetch_admin_reservation_rows()
+    all_events, ledger_meta = build_db_calendar_events(ledger_rows, admin_rows)
+    ledger_meta = {'ok': True, **ledger_meta}
+    coverage_start = (
+        (utc_now() + timedelta(hours=9)).date() - timedelta(days=FULL_SYNC_PAST_DAYS)
+    ).isoformat()
     room_meta = {}
-    failures = {}
-
     for room_key, room in ROOMS.items():
-        previous_events = events_by_room.get(room_key, {})
-        previous_state = room_states.get(room_key, {})
-        sync_token = previous_state.get('syncToken')
-        coverage_start = previous_state.get('coverageStart') or guaranteed_coverage_start()
-
-        try:
-            if sync_token:
-                events, next_sync_token, touched, mode, coverage_start = incremental_sync_room(
-                    service,
-                    room_key,
-                    previous_events,
-                    sync_token,
-                    coverage_start,
-                )
-            else:
-                events, next_sync_token, touched, mode, coverage_start = full_sync_room(service, room_key)
-        except HttpError as error:
-            status = getattr(error.resp, 'status', None)
-            if status == 410:
-                logging.warning('%s sync token expired; running full sync', room['name'])
-                events, next_sync_token, touched, mode, coverage_start = full_sync_room(service, room_key)
-            else:
-                failures[room_key] = f'HTTP {status or "unknown"}'
-                logging.exception('%s sync failed', room['name'])
-                events = previous_events
-                next_sync_token = sync_token
-                touched = 0
-                mode = 'failed'
-        except Exception as error:
-            failures[room_key] = str(error)
-            logging.exception('%s sync failed', room['name'])
-            events = previous_events
-            next_sync_token = sync_token
-            touched = 0
-            mode = 'failed'
-
-        events_by_room[room_key] = events
-        room_states[room_key] = {
-            'syncToken': next_sync_token,
-            'lastMode': mode,
-            'lastTouched': touched,
-            'lastSyncAt': google_time(utc_now()),
-            'coverageStart': coverage_start,
-        }
+        room_count = sum(1 for event in all_events if event.get('className') == room_key)
         room_meta[room_key] = {
             'name': room['name'],
             'color': room['color'],
-            'count': len(events),
-            'mode': mode,
-            'touched': touched,
-            'ok': mode != 'failed',
+            'count': room_count,
+            'mode': 'db-ledger',
+            'touched': room_count,
+            'ok': True,
             'coverageStart': coverage_start,
         }
+        logging.info('%s DB ledger cache: events=%s', room['name'], room_count)
 
-        logging.info('%s %s sync: touched=%s cached=%s', room['name'], mode, touched, len(events))
-
-    all_events = []
-    for room_key in ROOMS.keys():
-        all_events.extend(events_by_room.get(room_key, {}).values())
     all_events.sort(key=lambda event: (event.get('start') or '', event.get('id') or ''))
     content_hash = hashlib.sha256(
         json.dumps(all_events, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
     ).hexdigest()
 
-    generated_at = google_time(utc_now())
+    generated_at = iso_utc_timestamp(utc_now())
     payload = {
-        'version': 1,
-        'source': 'google-calendar-server-cache',
+        'version': 2,
+        'source': 'db-booking-ledger',
+        'sourceOfTruth': 'rhythmjoy_booking_ledger',
         'generatedAt': generated_at,
         'generatedAtMs': int(time.time() * 1000),
         'contentHash': content_hash,
         'timeZone': TIME_ZONE,
-        'coverageStart': max(
-            (meta.get('coverageStart') or guaranteed_coverage_start())
-            for meta in room_meta.values()
-        ),
+        'coverageStart': coverage_start,
         'rooms': room_meta,
-        'failures': failures,
+        'ledger': ledger_meta,
+        'googleReplica': {'enabled': False, 'usedForPublicSchedule': False},
+        'failures': {},
         'events': all_events,
     }
 
     atomic_write_json(EVENTS_FILE, payload)
     atomic_write_json(STATE_FILE, {
-        'version': 1,
+        'version': 2,
+        'source': 'db-booking-ledger',
         'generatedAt': generated_at,
-        'rooms': room_states,
-        'eventsByRoom': events_by_room,
+        'contentHash': content_hash,
+        'ledger': ledger_meta,
     })
 
     return payload
@@ -332,6 +372,8 @@ def main():
             logging.info('calendar cache generated: events=%s failures=%s', len(payload['events']), len(payload['failures']))
         except Exception:
             logging.exception('calendar cache pass failed')
+            if args.once:
+                raise
 
         if args.once:
             break
