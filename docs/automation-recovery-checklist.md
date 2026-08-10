@@ -35,7 +35,7 @@ cd Rhythmandjoy_calendar
 
 ## Current Production Roles
 
-- Cafe24 is the server/source-of-truth layer: email ingestion, DB ledger, public website, Google Calendar record updates, and Aligo SMS environment.
+- Cafe24 is the server/source-of-truth layer: email ingestion, DB ledger, DB-backed public website, and Aligo SMS environment.
 - Ubuntu mini PC is the browser automation runner: it reads the Cafe24 DB queue and applies changes through Naver SmartPlace and SpaceCloud browser sessions.
 - MacBook watcher is disabled during normal operation, but remains a usable rollback/manual execution path. Running Mac and Ubuntu watchers together can race on the same DB queue.
 

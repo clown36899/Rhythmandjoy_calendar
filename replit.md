@@ -1,6 +1,6 @@
 # Overview
 
-This is a room booking calendar application for "Rhythmjoy" (리듬앤조이), a Korean music practice room facility. The application displays real-time availability of multiple practice rooms (A, B, C, D, E halls) using Google Calendar integration. Users can view room schedules, check availability, and access booking information through a mobile-friendly web interface.
+This is a room booking calendar application for "Rhythmjoy" (리듬앤조이), a Korean music practice room facility. The application displays availability for multiple practice rooms (A, B, C, D, E halls) from the DB-backed public schedule cache. Users can view room schedules, check availability, and access booking information through a mobile-friendly web interface.
 
 # User Preferences
 
@@ -24,7 +24,7 @@ Preferred communication style: Simple, everyday language.
 
 **Room Management System**
 - Five separate practice rooms (A, B, C, D, E halls) each with distinct:
-  - Google Calendar ID for event synchronization
+  - DB-ledger event identity and room mapping
   - Color coding for visual distinction
   - Pricing structure (before/after 4 PM, early morning rates)
 - Dynamic room filtering via checkboxes allowing users to show/hide specific rooms
@@ -32,11 +32,9 @@ Preferred communication style: Simple, everyday language.
 
 ## External Dependencies
 
-**Google Calendar API**
-- API keys are production secrets/configuration and must not be documented as literal values.
-- Five separate Google Calendar IDs for each practice room
-- Read-only access to display events and availability
-- No write operations - calendars managed externally
+**Public Schedule Cache**
+- Cafe24 builds one JSON cache from the DB booking ledger and administrator reservations.
+- The public site reads this cache and does not call an external calendar API.
 
 **Third-Party JavaScript Libraries**
 - jQuery 2.1.3 for DOM manipulation and event handling
@@ -65,7 +63,7 @@ Preferred communication style: Simple, everyday language.
 - The shared VPS also hosts a separate `swingenjoy.com` project. This repo must not touch `/opt/swingenjoy`, `swingenjoy.service`, `127.0.0.1:3001`, or `swingenjoy-*.conf`.
 
 **Revenue Calculation Module**
-- Standalone feature in google_month_settlement_amount/
-- Fetches events from all calendars for a given month
+- Integrated into `/sync-admin/` and backed by DB ledger events
+- Aggregates DB events for the selected month
 - Calculates revenue based on time-based pricing rules
 - Different rates for each room type and time slots

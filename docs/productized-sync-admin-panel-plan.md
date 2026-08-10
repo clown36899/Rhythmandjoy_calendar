@@ -26,8 +26,8 @@ Rollback rule:
 
 ## Current Working System To Preserve
 
-- Cafe24 remains the server layer: DB, email importer, public calendar site,
-  Google Calendar record writes, Telegram alerts, and Aligo SMS.
+- Cafe24 remains the server layer: DB, email importer, DB-backed public calendar,
+  Telegram alerts, and Aligo SMS.
 - Ubuntu mini PC remains the current browser automation runner.
 - Current watcher queue mode stays available until the replacement is proven.
 - The current Naver/SpaceCloud login sessions are browser profile state, not
@@ -57,7 +57,7 @@ Important decisions:
 - No platform password storage.
 - No hidden API/token extraction as a production method.
 - Use visible logged-in platform screens and low-frequency sequential execution.
-- Google Calendar is optional output/record only, not the source of truth.
+- The DB ledger is the public schedule source of truth; no calendar replica is written.
 
 The final packaged flow should feel like a product:
 
@@ -118,7 +118,7 @@ Increase only after real timing and memory data prove it.
 
 ## Admin Panel Target
 
-Build a management panel backed by the DB ledger instead of Google Calendar.
+Build a management panel backed by the DB ledger.
 
 Do not make this look like a document archive or back-office file folder. The
 first screen must be an operational schedule tool:
@@ -160,7 +160,7 @@ admin creates reservation
   -> create Naver block task
   -> create SpaceCloud direct-add task
   -> after both platform actions succeed, mark manual reservation active
-  -> optional Google Calendar record/write only after platform success
+  -> DB task result and audit record after platform success
 ```
 
 Manual cancellation behavior:
@@ -358,8 +358,7 @@ Load test:
 - Whether each customer gets a local mini PC option, a shared VPS option, or
   both.
 - Whether SMS is included in the sync product or sold as an add-on.
-- Whether Google Calendar output remains enabled for Rhythmjoy only or becomes
-  optional per tenant.
+- Whether any future external calendar export is needed; current production keeps it disabled.
 
 ## Do Not Do Yet
 

@@ -1,13 +1,10 @@
 (() => {
   const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
-  const GOOGLE_CALENDAR_API_KEY = "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8";
-
   const ROOM_PRICING = {
     a: {
       name: "A홀",
       size: "20평",
-      calendarId: "752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com",
       color: "#f6bf26",
       before16: 13000,
       after16: 20000,
@@ -17,7 +14,6 @@
     b: {
       name: "B홀",
       size: "16평",
-      calendarId: "22dd1532ca7404714f0c24348825f131f3c559acf6361031fe71e80977e4a817@group.calendar.google.com",
       color: "#5796c8",
       before16: 8000,
       after16: 12000,
@@ -27,7 +23,6 @@
     c: {
       name: "C홀",
       size: "5평",
-      calendarId: "b0cfe52771ffe5f8b8bb55b8f7855b6ea640fcb09060fd6708e9b8830428e0c8@group.calendar.google.com",
       color: "#81b4ba",
       before16: 4000,
       after16: 6000,
@@ -37,7 +32,6 @@
     d: {
       name: "D홀",
       size: "4평",
-      calendarId: "60da4147f8d838daa72ecea4f59c69106faedd48e8d4aea61a9d299d96b3f90e@group.calendar.google.com",
       color: "#7d9d6a",
       before16: 3000,
       after16: 5000,
@@ -47,7 +41,6 @@
     e: {
       name: "E홀",
       size: "15평",
-      calendarId: "aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com",
       color: "#4c4c4c",
       before16: 8000,
       after16: 12000,
@@ -409,54 +402,6 @@
     };
   }
 
-  async function fetchGoogleCalendarEvents({ year, month = 0, apiKey = GOOGLE_CALENDAR_API_KEY } = {}) {
-    const rangeStart = month
-      ? `${year}-${String(month).padStart(2, "0")}-01T00:00:00+09:00`
-      : `${year}-01-01T00:00:00+09:00`;
-    const rangeEnd = month
-      ? `${month === 12 ? year + 1 : year}-${String(month === 12 ? 1 : month + 1).padStart(2, "0")}-01T00:00:00+09:00`
-      : `${year + 1}-01-01T00:00:00+09:00`;
-
-    const allEvents = [];
-
-    await Promise.all(ROOM_KEYS.map(async (roomKey) => {
-      const room = ROOM_PRICING[roomKey];
-      let pageToken = "";
-
-      do {
-        const params = new URLSearchParams({
-          key: apiKey,
-          timeMin: rangeStart,
-          timeMax: rangeEnd,
-          singleEvents: "true",
-          orderBy: "startTime",
-          maxResults: "2500",
-          timeZone: "Asia/Seoul"
-        });
-
-        if (pageToken) params.set("pageToken", pageToken);
-
-        const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(room.calendarId)}/events?${params.toString()}`;
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (!response.ok) {
-          const message = data?.error?.message || `Google Calendar API ${response.status}`;
-          throw new Error(`${room.name} 조회 실패: ${message}`);
-        }
-
-        (data.items || [])
-          .filter((item) => item.status !== "cancelled")
-          .forEach((item) => allEvents.push(normalizeCalendarEvent(item, roomKey)));
-
-        pageToken = data.nextPageToken || "";
-      } while (pageToken);
-    }));
-
-    allEvents.sort((a, b) => toMs(a.start) - toMs(b.start));
-    return allEvents;
-  }
-
   async function fetchServerCacheEvents() {
     const response = await fetch("./data/events.json", {
       cache: "no-store",
@@ -475,7 +420,6 @@
   }
 
   const api = {
-    GOOGLE_CALENDAR_API_KEY,
     ROOM_KEYS,
     ROOM_PRICING,
     HOLIDAYS_BY_YEAR,
@@ -487,7 +431,6 @@
     isNaverBooking,
     calculateEventPrice,
     calculateStats,
-    fetchGoogleCalendarEvents,
     fetchServerCacheEvents,
     normalizeCalendarEvent
   };

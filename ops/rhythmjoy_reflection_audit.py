@@ -1249,7 +1249,7 @@ def main():
         '--calendar-grace-minutes',
         type=int,
         default=int(os.environ.get('RHYTHMJOY_REFLECTION_CALENDAR_GRACE_MINUTES', '5')),
-        help='verify Google Calendar only after a confirmed ledger row is at least this old',
+        help='verify the DB-backed public schedule only after a confirmed ledger row is at least this old',
     )
     parser.add_argument('--past-days', type=int, default=int(os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_PAST_DAYS', '3650')))
     parser.add_argument('--future-days', type=int, default=int(os.environ.get('RHYTHMJOY_REFLECTION_AUDIT_FUTURE_DAYS', '730')))

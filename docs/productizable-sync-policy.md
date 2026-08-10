@@ -120,7 +120,7 @@ email forwarding or a dedicated notification mailbox:
 3. Update the booking ledger without deleting historical rows.
 4. Create a cross-platform work task.
 5. Use browser RPA to apply the opposite-side block/add/delete/restore.
-6. Write Google Calendar only after the platform-side action succeeds.
+6. Write the verified platform result back to the DB task and audit log.
 7. Send SMS only for confirmed reservations, never for cancellations.
 
 If the customer refuses email forwarding and no official API is available, the

@@ -52,16 +52,6 @@ SPACECLOUD_MAILBOXES = {
     '&wqTTmMd0wqTQdLd8xrC03A-': 'SpaceCloud',
 }
 
-CALENDAR_IDS = {
-    'Aroom': 'lj8j85q4020jm556rmaa181r00@group.calendar.google.com',
-    'Broom': 'amp3i5i4vcv4hbrqu937lufuss@group.calendar.google.com',
-    'Ahall': '752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com',
-    'Bhall': '22dd1532ca7404714f0c24348825f131f3c559acf6361031fe71e80977e4a817@group.calendar.google.com',
-    'Chall': 'b0cfe52771ffe5f8b8bb55b8f7855b6ea640fcb09060fd6708e9b8830428e0c8@group.calendar.google.com',
-    'Dhall': '60da4147f8d838daa72ecea4f59c69106faedd48e8d4aea61a9d299d96b3f90e@group.calendar.google.com',
-    'Ehall': 'aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com',
-}
-
 SPACECLOUD_ROOM_KEYS = {
     'Ahall': 'a',
     'Bhall': 'b',
@@ -581,10 +571,6 @@ def build_ignored_email_record(config, mail_key, mailbox, decoded_id, message_id
     )
     record['processing_status'] = 'ignored'
     return record
-
-
-def build_calendar_service(config):
-    raise ConfigError('Google Calendar integration is disabled; DB ledger is the schedule source of truth')
 
 
 def db_connect(config, autocommit=True):
@@ -1719,7 +1705,7 @@ def upsert_spacecloud_upload_task(config, logger, email_event_id, event_data, ca
             conn.close()
 
 
-def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_data, calendar_key, conflicts, conn=None):
+def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_data, calendar_key, conn=None):
     if not config.get('spacecloud_naver_block_enabled'):
         return None
 
@@ -1735,8 +1721,6 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
         'action': 'block-naver-availability',
         'calendarKey': calendar_key,
         'roomKey': room_key,
-        'conflictCount': len(conflicts),
-        'googleConflicts': conflicts[:5],
         **event_data,
     }
     row = {
@@ -1793,12 +1777,11 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
             )
             task = cursor.fetchone()
         logger.info(
-            'Naver block task saved id=%s room=%s reservation=%s status=%s google_conflicts=%s',
+            'Naver block task saved id=%s room=%s reservation=%s status=%s',
             task.get('id') if task else '-',
             room_key,
             row['reservation_number'],
             task.get('status') if task else '-',
-            len(conflicts),
         )
         return task
     except Exception as error:
@@ -1984,7 +1967,7 @@ def format_spacecloud_delete_status(task, calendar_key):
             'done': '스페이스클라우드 삭제 완료',
             'already_gone': '스페이스클라우드 이미 없음',
             'needs_review': '스페이스클라우드 삭제 확인 필요',
-            'google_pending': '이전 구글 연동 대기 기록(신규 사용 안 함)',
+            'google_pending': '이전 연동 대기 기록',
             'failed': '스페이스클라우드 삭제 실패',
         }.get(status, f'상태 {status}')
         return f'{status_text} (작업 #{task_id})'
@@ -1993,7 +1976,7 @@ def format_spacecloud_delete_status(task, calendar_key):
     return '대상 아님(스페이스클라우드 방 매핑 없음)'
 
 
-def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spacecloud_task, subject, email_received_at):
+def format_cancellation_alert(deletion, calendar_key, spacecloud_task, subject, email_received_at):
     title = success_alert_title('네이버 취소 메일 수집')
     if calendar_to_spacecloud_room_key(calendar_key) and not spacecloud_task:
         title = failure_alert_title('네이버 취소 삭제작업 생성')
@@ -2012,11 +1995,11 @@ def format_cancellation_alert(deletion, calendar_key, google_deleted_count, spac
     )
 
 
-def notify_cancellation(config, deletion, calendar_key, google_deleted_count, spacecloud_task, subject, email_received_at, logger):
+def notify_cancellation(config, deletion, calendar_key, spacecloud_task, subject, email_received_at, logger):
     if spacecloud_task and not config.get('telegram_notify_intake_success'):
         logger.info('Telegram intake alert skipped: final watcher result will be sent task=%s', spacecloud_task.get('id'))
         return False
-    text = format_cancellation_alert(deletion, calendar_key, google_deleted_count, spacecloud_task, subject, email_received_at)
+    text = format_cancellation_alert(deletion, calendar_key, spacecloud_task, subject, email_received_at)
     return send_telegram_message(config, text, logger)
 
 
@@ -2032,7 +2015,7 @@ def notify_cancellation_parse_failure(config, mailbox, email_id, subject, email_
     send_telegram_message(config, text, logger)
 
 
-def format_naver_block_task_status(config, task, conflicts):
+def format_naver_block_task_status(config, task):
     if not config.get('spacecloud_naver_block_enabled'):
         return '네이버 예약불가 반영 안 함(report-only)'
     if task:
@@ -2040,16 +2023,12 @@ def format_naver_block_task_status(config, task, conflicts):
     return '네이버 예약불가 작업 생성 실패: DB/방 매핑/파싱 확인'
 
 
-def format_spacecloud_google_status(config, google_event, conflicts):
-    return '사용 안 함(DB 원장 기준)'
-
-
-def notify_spacecloud_reservation_report(config, event_data, calendar_key, conflicts, google_event, naver_block_task, subject, email_received_at, logger):
+def notify_spacecloud_reservation_report(config, event_data, calendar_key, naver_block_task, subject, email_received_at, logger):
     if naver_block_task and not config.get('telegram_notify_intake_success'):
         logger.info('Telegram intake alert skipped: final watcher result will be sent task=%s', naver_block_task.get('id'))
         return False
     status = '네이버 반영 대기'
-    current_step = format_naver_block_task_status(config, naver_block_task, conflicts)
+    current_step = format_naver_block_task_status(config, naver_block_task)
     title = success_alert_title('스페이스클라우드 예약 메일 수집')
     if config.get('spacecloud_naver_block_enabled') and not naver_block_task:
         title = failure_alert_title('스페이스클라우드 예약 작업 생성')
@@ -2099,7 +2078,7 @@ def notify_spacecloud_cancellation_report(config, event_data, calendar_key, nave
         f'{alert_time_text()}\n\n'
         f'대상: {alert_event_line(event_data)}\n'
         f"네이버: {short_alert_text(current_step, 120)}\n"
-        f"구글: 복구 후 삭제 대기\n"
+        f"DB 원장: 취소 반영 완료\n"
         f"메일수신: {email_received_at or '-'}\n"
         f'{alert_mail_line(subject)}'
     )
@@ -2116,183 +2095,6 @@ def notify_spacecloud_cancellation_parse_failure(config, mailbox, email_id, subj
         '조치: 취소 메일 양식 확인'
     )
     send_telegram_message(config, text, logger)
-
-
-def calendar_event_reservation_matches(item, reservation_number):
-    wanted = str(reservation_number or '').strip()
-    if not wanted:
-        return False
-    private = item.get('extendedProperties', {}).get('private', {})
-    if str(private.get('reservationNumber') or '').strip() == wanted:
-        return True
-    description = str(item.get('description') or '')
-    return re.search(rf'예약번호\s*[:：]?\s*{re.escape(wanted)}(?!\d)', description) is not None
-
-
-def find_calendar_event_by_reservation(service, target_calendar, reservation_number, logger):
-    if not reservation_number:
-        return None
-
-    calendar_id = CALENDAR_IDS[target_calendar]
-    result = service.events().list(
-        calendarId=calendar_id,
-        q=reservation_number,
-        singleEvents=True,
-        maxResults=10,
-    ).execute()
-    for item in result.get('items', []):
-        if calendar_event_reservation_matches(item, reservation_number):
-            logger.info('Existing Google Calendar event found calendar=%s reservation=%s event_id=%s', target_calendar, reservation_number, item.get('id'))
-            return item
-    return None
-
-
-def compact_calendar_match_text(value):
-    return re.sub(r'\s+', '', str(value or '')).lower()
-
-
-def calendar_event_time_matches(item, target_start, target_end):
-    start = parse_google_event_datetime(item.get('start', {}).get('dateTime'))
-    end = parse_google_event_datetime(item.get('end', {}).get('dateTime'))
-    if not start or not end:
-        return False
-    return (
-        start.replace(second=0, microsecond=0) == target_start.replace(second=0, microsecond=0)
-        and end.replace(second=0, microsecond=0) == target_end.replace(second=0, microsecond=0)
-    )
-
-
-def calendar_event_detail_matches(item, event_data, target_start, target_end):
-    if not calendar_event_time_matches(item, target_start, target_end):
-        return False
-
-    summary = item.get('summary', '')
-    description = item.get('description', '')
-    private = item.get('extendedProperties', {}).get('private', {})
-    searchable = f'{summary}\n{description}'
-    compact_searchable = compact_calendar_match_text(searchable)
-
-    product = event_data.get('product') or ''
-    if product and compact_calendar_match_text(product) not in compact_searchable:
-        return False
-
-    reserver_name = normalize_reserver_name_for_match(
-        event_data.get('name') or event_data.get('reserver_name')
-    )
-    masked_name = normalize_reserver_name_for_match(
-        mask_name(event_data.get('name') or event_data.get('reserver_name'))
-    )
-    private_name_key = normalize_reserver_name_for_match(private.get('reserverNameKey'))
-    searchable_name_key = normalize_reserver_name_for_match(searchable)
-    if (
-        reserver_name
-        and private_name_key != reserver_name
-        and reserver_name not in searchable_name_key
-        and (not masked_name or masked_name not in searchable_name_key)
-    ):
-        return False
-
-    return True
-
-
-def find_calendar_event_by_details(service, target_calendar, event_data, logger):
-    if not target_calendar or target_calendar not in CALENDAR_IDS:
-        return None
-
-    event_data = normalize_event_datetime_fields(event_data)
-    if not event_data.get('date') or not event_data.get('start_time') or not event_data.get('end_time'):
-        return None
-
-    target_start = parse_datetime(event_data['date'], event_data['start_time']).replace(tzinfo=KST)
-    target_end = parse_datetime(event_data['date'], event_data['end_time']).replace(tzinfo=KST)
-    if target_end <= target_start:
-        target_end += timedelta(days=1)
-
-    result = service.events().list(
-        calendarId=CALENDAR_IDS[target_calendar],
-        timeMin=f"{event_data['date']}T00:00:00+09:00",
-        timeMax=f"{event_data['date']}T23:59:59+09:00",
-        singleEvents=True,
-        orderBy='startTime',
-    ).execute()
-    for item in result.get('items', []):
-        if calendar_event_detail_matches(item, event_data, target_start, target_end):
-            logger.info(
-                'Existing Google Calendar event found by details calendar=%s reserver_name=%s reservation_time=%s event_id=%s',
-                target_calendar,
-                event_data.get('name') or event_data.get('reserver_name') or '',
-                reservation_time_text(event_data),
-                item.get('id'),
-            )
-            return item
-    return None
-
-
-def create_calendar_event(service, event_data, logger, dedupe_google_calendar=False):
-    event_data = normalize_event_datetime_fields(event_data)
-    target_calendar = event_data['target_calendar']
-    calendar_id = CALENDAR_IDS[target_calendar]
-    if dedupe_google_calendar:
-        existing = find_calendar_event_by_reservation(
-            service,
-            target_calendar,
-            event_data.get('reservation_number', ''),
-            logger,
-        )
-        if existing:
-            return existing
-        existing = find_calendar_event_by_details(
-            service,
-            target_calendar,
-            event_data,
-            logger,
-        )
-        if existing:
-            return existing
-
-    start = parse_datetime(event_data['date'], event_data['start_time'])
-    end = parse_datetime(event_data['date'], event_data['end_time'])
-    if end <= start:
-        end += timedelta(days=1)
-
-    source_line = '예약경로: SC\n' if is_spacecloud_origin_event(event_data) else ''
-    display_name = mask_name(event_data['name'])
-    display_name_with_suffix = f'{display_name}님' if display_name else ''
-    description = (
-        f"{source_line}"
-        f"예약자명: {display_name_with_suffix}\n"
-        f"예약상품: {event_data['product']}\n"
-        f"사용일자: {event_data['date']}\n"
-        f"시작시간: {event_data['start_time']}\n"
-        f"종료시간: {event_data['end_time']}\n"
-        f"결제상태: {event_data.get('payment_status', 'N/A')}\n"
-        f"예약번호: {event_data.get('reservation_number', 'N/A')}\n"
-    )
-    event_body = {
-        'summary': f"{event_data['product']} {display_name_with_suffix}",
-        'description': description,
-        'start': {'dateTime': start.isoformat(), 'timeZone': TIME_ZONE},
-        'end': {'dateTime': end.isoformat(), 'timeZone': TIME_ZONE},
-        'extendedProperties': {
-            'private': {
-                'source': 'rhythmjoy_email_import',
-                'reservationNumber': event_data.get('reservation_number', ''),
-                'targetCalendar': target_calendar,
-                'reserverNameKey': normalize_reserver_name_for_match(event_data.get('name')),
-                'reserverNameMasked': display_name,
-            }
-        },
-    }
-    created = service.events().insert(calendarId=calendar_id, body=event_body).execute()
-    logger.info(
-        'Event created calendar=%s reservation=%s reserver_name=%s reservation_time=%s link=%s',
-        target_calendar,
-        event_data.get('reservation_number'),
-        event_data.get('name'),
-        reservation_time_text(event_data),
-        created.get('htmlLink'),
-    )
-    return created
 
 
 def product_to_calendar_key(product):
@@ -2444,151 +2246,10 @@ def parse_spacecloud_cancellation(body, raw_message, subject):
     return event_data
 
 
-def parse_google_event_datetime(value):
-    if not value:
-        return None
-    if value.endswith('Z'):
-        value = value[:-1] + '+00:00'
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=KST)
-    return parsed.astimezone(KST)
-
-
-def find_calendar_conflicts(service, calendar_key, event_data, logger):
-    if not calendar_key or calendar_key not in CALENDAR_IDS:
-        return []
-    event_data = normalize_event_datetime_fields(event_data)
-    if not event_data.get('date') or not event_data.get('start_time') or not event_data.get('end_time'):
-        return []
-
-    target_start = parse_datetime(event_data['date'], event_data['start_time']).replace(tzinfo=KST)
-    target_end = parse_datetime(event_data['date'], event_data['end_time']).replace(tzinfo=KST)
-    if target_end <= target_start:
-        target_end += timedelta(days=1)
-
-    day_start = f"{event_data['date']}T00:00:00+09:00"
-    day_end = f"{event_data['date']}T23:59:59+09:00"
-    events = service.events().list(
-        calendarId=CALENDAR_IDS[calendar_key],
-        timeMin=day_start,
-        timeMax=day_end,
-        singleEvents=True,
-        orderBy='startTime',
-    ).execute().get('items', [])
-
-    conflicts = []
-    for item in events:
-        start = parse_google_event_datetime(item.get('start', {}).get('dateTime'))
-        end = parse_google_event_datetime(item.get('end', {}).get('dateTime'))
-        if not start or not end:
-            continue
-        if target_start < end and target_end > start:
-            private = item.get('extendedProperties', {}).get('private', {})
-            conflicts.append({
-                'calendar_key': calendar_key,
-                'summary': item.get('summary', ''),
-                'start': start.strftime('%Y-%m-%d %H:%M'),
-                'end': end.strftime('%Y-%m-%d %H:%M'),
-                'source': private.get('source', ''),
-                'reservation_number': private.get('reservationNumber', ''),
-                'event_id': item.get('id', ''),
-            })
-    if conflicts:
-        logger.info('SpaceCloud reservation has calendar conflict calendar=%s reservation=%s conflicts=%s', calendar_key, event_data.get('reservation_number'), len(conflicts))
-    return conflicts
-
-
 def reservation_time_text(payload):
     if payload.get('date') and payload.get('start_time') and payload.get('end_time'):
         return f"{payload['date']} {payload['start_time']}-{payload['end_time']}"
     return '-'
-
-
-def delete_events_by_reservation(service, deletion, logger):
-    calendar_key = product_to_calendar_key(deletion.get('product', ''))
-    if not calendar_key:
-        logger.warning('Cancellation product did not map to a calendar: %s', deletion.get('product'))
-        return 0
-
-    reservation_number = deletion.get('reservation_number')
-    if not reservation_number:
-        logger.warning('Cancellation has no reservation number; automatic Google delete blocked: %s', deletion)
-        return 0
-
-    calendar_id = CALENDAR_IDS[calendar_key]
-    result = service.events().list(
-        calendarId=calendar_id,
-        q=reservation_number,
-        singleEvents=True,
-    ).execute()
-    deleted = 0
-    for item in result.get('items', []):
-        if not calendar_event_reservation_matches(item, reservation_number):
-            continue
-        service.events().delete(calendarId=calendar_id, eventId=item['id']).execute()
-        deleted += 1
-        logger.info(
-            'Google Calendar event deleted calendar=%s reservation=%s reserver_name=%s reservation_time=%s summary=%s',
-            calendar_key,
-            reservation_number,
-            deletion.get('name', ''),
-            reservation_time_text(deletion),
-            item.get('summary', ''),
-        )
-    if not deleted:
-        logger.warning(
-            'No matching Google Calendar event for cancellation calendar=%s reservation=%s reserver_name=%s reservation_time=%s',
-            calendar_key,
-            reservation_number,
-            deletion.get('name', ''),
-            reservation_time_text(deletion),
-        )
-    return deleted
-
-
-def delete_events_by_details(service, calendar_key, deletion, logger):
-    deletion = normalize_event_datetime_fields(deletion)
-    date_text = deletion.get('date')
-    start_time = deletion.get('start_time')
-    end_time = deletion.get('end_time')
-    if not date_text or not start_time or not end_time:
-        return 0
-
-    calendar_id = CALENDAR_IDS[calendar_key]
-    date_value = deletion['date']
-    time_min = f'{date_value}T00:00:00+09:00'
-    time_max = f'{date_value}T23:59:59+09:00'
-    result = service.events().list(
-        calendarId=calendar_id,
-        timeMin=time_min,
-        timeMax=time_max,
-        singleEvents=True,
-    ).execute()
-
-    start_dt = parse_datetime(date_text, start_time).replace(tzinfo=KST)
-    end_dt = parse_datetime(date_text, end_time).replace(tzinfo=KST)
-    if end_dt <= start_dt:
-        end_dt += timedelta(days=1)
-
-    deleted = 0
-    for item in result.get('items', []):
-        summary = item.get('summary', '')
-        if not calendar_event_detail_matches(item, deletion, start_dt, end_dt):
-            continue
-        service.events().delete(calendarId=calendar_id, eventId=item['id']).execute()
-        deleted += 1
-        logger.info(
-            'Google Calendar event deleted by details calendar=%s reserver_name=%s reservation_time=%s summary=%s',
-            calendar_key,
-            deletion.get('name', ''),
-            reservation_time_text(deletion),
-            summary,
-        )
-    return deleted
 
 
 def parse_reservation(body, target_calendar):
@@ -2652,7 +2313,7 @@ def mark_seen(imap_connection, email_id, logger):
         logger.exception('Failed to mark email seen id=%s', email_id.decode('utf-8', errors='replace'))
 
 
-def process_message(config, get_calendar_service, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger):
+def process_message(config, _unused_service_factory, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger):
     message = email.message_from_bytes(raw_message)
     subject = decode_header_value(message.get('Subject', ''))
     body = get_text_body(message)
@@ -2727,7 +2388,6 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                         email_record_id,
                         'ledger_only',
                         logger,
-                        google_calendar_event_id='',
                         error_text='platform_sync_disabled',
                     )
             else:
@@ -2762,7 +2422,6 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
             email_record_id = email_row.get('id') if email_row else None
             if deletion:
                 if config.get('naver_spacecloud_upload_enabled'):
-                    deleted = 0
                     with db_transaction(config, logger, f'naver-delete:{email_record_id}') as conn:
                         lock_inbox_event(config, logger, conn, email_record_id)
                         ledger = upsert_booking_ledger_canceled(
@@ -2784,8 +2443,7 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                             processing_status,
                             logger,
                             conn=conn,
-                            google_calendar_deleted_count=0,
-                            error_text='google_delete_after_spacecloud',
+                            error_text='platform_delete_after_spacecloud',
                         )
                 else:
                     upsert_booking_ledger_canceled(
@@ -2793,16 +2451,14 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                         calendar_key, email_received_at, 'naver'
                     )
                     spacecloud_task = None
-                    deleted = 0
                     update_email_processing(
                         config,
                         email_record_id,
                         'ledger_only_canceled',
                         logger,
-                        google_calendar_deleted_count=0,
                         error_text='platform_sync_disabled',
                     )
-                notify_cancellation(config, deletion, calendar_key, deleted, spacecloud_task, subject, email_received_at, logger)
+                notify_cancellation(config, deletion, calendar_key, spacecloud_task, subject, email_received_at, logger)
             else:
                 logger.warning('Cancellation email did not match parser mailbox=%s email_id=%s', mailbox, decoded_id)
                 update_email_processing(
@@ -2962,9 +2618,7 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
             if event_data and calendar_key:
                 event_data['calendar_key'] = calendar_key
                 event_data['target_calendar'] = calendar_key
-                conflicts = []
-                event_data['conflict_count'] = len(conflicts)
-                google_event = None
+                event_data['conflict_count'] = 0
                 if config.get('spacecloud_naver_block_enabled'):
                     with db_transaction(config, logger, f'spacecloud-block:{email_record_id}') as conn:
                         lock_inbox_event(config, logger, conn, email_record_id)
@@ -2979,7 +2633,6 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                             email_record_id,
                             event_data,
                             calendar_key,
-                            conflicts,
                             conn=conn,
                         )
                         require_handoff(True, naver_block_task, 'Required Naver block task was not created')
@@ -2993,7 +2646,6 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                             processing_status,
                             logger,
                             conn=conn,
-                            google_calendar_event_id='',
                             error_text='',
                         )
                 else:
@@ -3002,21 +2654,18 @@ def process_message(config, get_calendar_service, imap_connection, mailbox, targ
                         calendar_key, email_received_at, 'spacecloud'
                     )
                     naver_block_task = None
-                    processing_status = 'spacecloud_conflict_reported' if conflicts else 'report_only_ready'
+                    processing_status = 'report_only_ready'
                     update_email_processing(
                         config,
                         email_record_id,
                         processing_status,
                         logger,
-                        google_calendar_event_id='',
                         error_text='',
                     )
                 notify_spacecloud_reservation_report(
                     config,
                     event_data,
                     calendar_key,
-                    conflicts,
-                    google_event,
                     naver_block_task,
                     subject,
                     email_received_at,
@@ -3286,9 +2935,6 @@ def verify_transactional_inbox_outbox(config, logger):
 
 
 def run_poll_once(config, logger):
-    def get_calendar_service():
-        return build_calendar_service(config)
-
     processed = 0
     imap_connection = None
     try:
@@ -3321,7 +2967,7 @@ def run_poll_once(config, logger):
                 key=lambda item: unseen_message_sort_key(item[0], item[1], item[2])
             )
             for email_id, fetch_metadata, raw_message in unseen_messages:
-                process_message(config, get_calendar_service, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger)
+                process_message(config, None, imap_connection, mailbox, target_calendar, email_id, raw_message, fetch_metadata, logger)
                 processed += 1
     finally:
         if imap_connection is not None:

@@ -1448,7 +1448,7 @@
       spacecloud_email: "스페이스클라우드 이메일",
       spacecloud_settlement: "스페이스클라우드 정산",
       "spacecloud-settlement-api": "스페이스클라우드 정산",
-      "google-calendar-backfill": "구글 캘린더 백필",
+      "google-calendar-backfill": "과거 일정 백필",
       "visible-site-price": "사이트 화면 수집",
       admin_anchor: "관리자 입력",
     }[String(value || "")] || value || "";
@@ -2846,7 +2846,7 @@
     if (status === "failed") return "실패";
     if (status === "needs_review") return "확인필요";
     if (status === "already-canceled") return "이미취소";
-    if (status === "google_pending") return "구글대기";
+    if (status === "google_pending") return "이전연동대기";
     if (status === "canceled") return "취소";
     if (status === "pending") return "대기";
     return status || "대기";

@@ -173,7 +173,6 @@ def ledger_to_calendar_event(row):
             'location': '',
             'roomKey': room_key,
             'roomName': room['name'],
-            'googleEventId': '',
             'ledgerId': row.get('id'),
             'sourcePlatform': row.get('source_platform') or '',
             'reservationNumber': reservation_number,
@@ -214,7 +213,6 @@ def admin_to_calendar_event(row):
             'location': '',
             'roomKey': room_key,
             'roomName': room['name'],
-            'googleEventId': '',
             'adminReservationId': row.get('id'),
             'sourcePlatform': 'admin',
             'reservationNumber': '',
@@ -339,11 +337,6 @@ def sync_once():
         'rooms': room_meta,
         'ledger': ledger_meta,
         'adminSource': 'rhythmjoy_admin_reservations',
-        'googleCalendar': {
-            'role': 'disabled',
-            'writesEnabled': False,
-            'usedForPublicSchedule': False,
-        },
         'failures': {},
         'events': all_events,
     }

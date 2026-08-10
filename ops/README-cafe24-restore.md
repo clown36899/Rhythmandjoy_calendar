@@ -17,16 +17,16 @@ Non-secret production target settings live in `ops/cafe24-production-target.env`
 - Legacy email service name: `my_email_service.service`
 - Server env file: `/home/clown313python/myapp/.env`
 
-Do not put DB passwords, API keys, tokens, Google service account JSON, or TLS private keys in the canonical target file or anywhere else in Git.
+Do not put DB passwords, API keys, tokens, or TLS private keys in the canonical target file or anywhere else in Git.
 
 ## What is backed up in Git
 
 - Static calendar site: `www/`
-- Google Calendar cache loop: `ops/rhythmjoy_calendar_cache.py`
+- DB ledger public calendar cache loop: `ops/rhythmjoy_calendar_cache.py`
 - systemd service: `ops/rhythmjoy-calendar-cache.service`
 - Apache vhosts/static cache/modsecurity config: `ops/*.conf`
 - certbot cron and reload hook: `ops/rhythmjoy-certbot.cron`, `ops/reload-httpd-after-certbot.sh`
-- Active Naver email to Google Calendar import service: `ops/rhythmjoy_email_import.py`
+- Active reservation email to DB ledger/Outbox import service: `ops/rhythmjoy_email_import.py`
 - Legacy Naver email import code, sanitized for reference: `ops/naver_booking_googleimport/import_email.py`
 - Python package snapshot from Cafe24: `ops/cafe24-requirements.txt`
 - Canonical non-secret production target: `ops/cafe24-production-target.env`
@@ -39,7 +39,6 @@ Do not put DB passwords, API keys, tokens, Google service account JSON, or TLS p
 
 - Server login passwords and SFTP configs
 - `/home/clown313python/myapp/.env`
-- Google service account JSON such as `static/rhythmjoycalendar-*.json`
 - Let's Encrypt private keys and live certificates
 - Runtime cache files such as `calendar_set/calendar_v10/data/events.json`
 - Database dump files, because they contain reservation/customer data
@@ -109,7 +108,7 @@ The restore script refuses any Apache config outside that allowlist.
 ## Current production notes
 
 - Domain root internally serves `/calendar_set/calendar_v10/calendar_10.html`.
-- Google Calendar cache interval is 60 seconds.
+- DB ledger public cache interval is 60 seconds.
 - Browser-side polling reads the server cache every 60 seconds while the page is visible.
 - `rhythmandjoy.cafe24.com` currently resolves to `210.114.6.137`; do not use it as the deployment target for this VPS.
 - Git push is backup/history only. Production is updated through the guarded Cafe24 deploy/restore scripts.
@@ -122,19 +121,19 @@ The reservation email pipeline uses the Transactional Inbox + Outbox rules docum
 
 - `rhythmjoy_naver_email_events`: durable record of each Naver/SpaceCloud reservation or cancellation email and its processing status. Cancellation rows are retained instead of deleted, so a later audit can distinguish "cancellation email arrived" from "platform action completed".
 - `rhythmjoy_booking_ledger`: current-state booking ledger. Each parsed confirmation/cancellation email upserts a booking identity as `confirmed` or `canceled`, while linking back to the original confirmed/canceled email event ids. This is the booking-state layer; email events remain the source audit trail.
-- `rhythmjoy_spacecloud_tasks`: durable queue for cross-platform follow-up work. Naver-origin cancellation delete tasks for mapped hall rooms are consumed by the Ubuntu mini PC SpaceCloud watcher and marked `done`, `already_gone`, `needs_review`, `google_pending`, or `failed`. SpaceCloud-origin cancellation emails create `naver_restore` tasks that restore Naver SmartPlace availability before Google Calendar is deleted.
+- `rhythmjoy_spacecloud_tasks`: durable queue for cross-platform follow-up work. Naver-origin reservation/cancellation tasks update SpaceCloud, and SpaceCloud-origin reservation/cancellation tasks update Naver. Final states are `done`, `already_gone`, `needs_review`, or `failed`; old `google_pending` values are historical only.
 
-Keep `RHYTHMJOY_EMAIL_DB_REQUIRED=1` for normal operation so DB errors stop the importer before platform or Google Calendar side effects. This leaves unread mail available for retry after DB recovery. Keep `RHYTHMJOY_EMAIL_DEDUPE_GOOGLE=0` unless you intentionally want the importer to search Google Calendar by reservation number before creating a new event.
+Keep `RHYTHMJOY_EMAIL_DB_REQUIRED=1` for normal operation so DB errors stop the importer before any platform side effect. This leaves unread mail available for retry after DB recovery.
 
-`RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1` makes mapped hall Naver reservation emails create `upload` tasks instead of writing Google Calendar immediately. The Ubuntu mini PC watcher uploads the SpaceCloud direct-added reservation first, then writes Google Calendar from the DB payload.
+`RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED=1` makes mapped hall Naver reservation emails create `upload` tasks. The Ubuntu mini PC watcher uploads the SpaceCloud direct-added reservation and records the result in the DB task.
 
-The Ubuntu mini PC watcher defaults to DB queue mode. It does not scan the Google Calendar cache for new SpaceCloud uploads unless `tools/spacecloud-watch.mjs` is run with `--legacy-calendar-plan` for a one-off backfill.
+The Ubuntu mini PC watcher runs only in DB queue mode. It does not scan a calendar cache for work.
 
-`RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` enables SpaceCloud reservation-complete and cancellation-complete email intake from the Naver mail folder displayed as `스페이스클라우드`. The Naver email plus DB row is the source of truth; Google Calendar checks are only downstream verification. With `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1`, parsed SpaceCloud confirmations create `naver_block` tasks that the Ubuntu mini PC watcher applies to Naver SmartPlace before writing Google Calendar, and parsed SpaceCloud cancellations create `naver_restore` tasks that restore Naver availability before deleting Google Calendar. Set the relevant flag back to `0` and restart `my_email_service.service` to disable the new intake or queue without affecting the rest of the importer.
+`RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED=1` enables SpaceCloud reservation-complete and cancellation-complete email intake from the Naver mail folder displayed as `스페이스클라우드`. With `RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED=1`, confirmations create `naver_block` tasks and cancellations create `naver_restore` tasks for the Ubuntu watcher. Set the relevant flag back to `0` and restart `my_email_service.service` to disable that intake or queue.
 
 SpaceCloud emails are matched without reservation numbers. The importer uses calendar/room, date, start/end time, and normalized reserver name; whitespace is removed and trailing `님` suffixes are stripped before matching. SpaceCloud cancellation emails are matched from an earlier `rhythmjoy_booking_ledger` or `spacecloud_reservation` DB row with the same normalized identity. If no matching identity is available, the task is retained for review instead of changing Naver availability automatically.
 
-The Cafe24 timer `rhythmjoy-reflection-audit.timer` and the watcher both support an email-ledger reflection audit. `rhythmjoy_booking_ledger` remains the trusted booking source, and `rhythmjoy_reflection_audits` compares only final confirmed live email-ledger rows against the opposite-platform reflection result: Naver confirmation -> SpaceCloud upload, SpaceCloud confirmation -> Naver block. Canceled or superseded rows are not audited directly because they can be intermediate states; the final ledger state and completed follow-up tasks are the source of truth. `done` and `google_pending` count as reflected because Google Calendar is downstream only. The server timer runs every 30 minutes and sends Telegram only when issues are present. Use `/home/clown313python/.pyenv/versions/3.8.12/envs/enve/bin/python3.8 /home/clown313python/rhythmjoy_ops/rhythmjoy_reflection_audit.py --json --notify` on Cafe24, or `node tools/spacecloud-watch.mjs reflection-audit --json --no-telegram` from this repo, for a one-off audit.
+The Cafe24 timer `rhythmjoy-reflection-audit.timer` supports an email-ledger reflection audit. `rhythmjoy_booking_ledger` is the trusted booking source, and `rhythmjoy_reflection_audits` compares final confirmed rows with the opposite-platform task result and DB-backed public cache. The server timer runs every 30 minutes and sends Telegram only when issues are present. Use `/home/clown313python/.pyenv/versions/3.8.12/envs/enve/bin/python3.8 /home/clown313python/rhythmjoy_ops/rhythmjoy_reflection_audit.py --json --notify` on Cafe24, or `node tools/spacecloud-watch.mjs reflection-audit --json --no-telegram` from this repo, for a one-off audit.
 
 Confirmation SMS is sent by the active browser watcher after a booking has been successfully applied to the opposite platform. Current production uses the Ubuntu mini PC watcher. SMS uses Aligo only. `ALIGO_SMS_USER_ID`, `ALIGO_SMS_API_KEY`, and `ALIGO_SMS_SENDER` must be present in `/home/clown313python/myapp/.env`; otherwise SMS sending fails without using another provider. Register the Cafe24 server IP `1.234.23.64` in Aligo before enabling Aligo.
 

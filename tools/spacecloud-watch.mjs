@@ -8,7 +8,6 @@ import { spawnSync } from 'node:child_process';
 import {
   cancelSpacecloudConfirmedReservation,
   checkSpacecloudLogin,
-  createSpacecloudPlaywrightUploader,
   deleteSpacecloudDirectReservation,
   fetchSpacecloudReservationPhone,
   openSpacecloudContext,
@@ -44,7 +43,6 @@ const CONFIRMATION_INFO_URLS = {
 };
 const TELEGRAM_LOG_HINT = '로그: 자동화 관리패널 또는 spacecloud-watch/launchd.log';
 const CUSTOMER_RESERVATION_CANCELLATION_DISABLED = true;
-const GOOGLE_CALENDAR_INTEGRATION_DISABLED = true;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -204,9 +202,6 @@ function parseArgs(argv) {
     if (arg === '--no-reflection-audit') {
       args.reflectionAudit = false;
       continue;
-    }
-    if (arg === '--legacy-calendar-plan') {
-      throw new Error('--legacy-calendar-plan was removed because Google Calendar integration is disabled');
     }
     if (arg === '--now-mode') {
       args.nowMode = true;
@@ -638,7 +633,7 @@ function platformLabel(value) {
     naver: '네이버',
     spacecloud: '스페이스클라우드',
     admin: '관리자',
-    'google-backfill': '구글기록',
+    'google-backfill': '과거백필',
   }[value] || value || '선예약';
 }
 
@@ -1912,280 +1907,6 @@ PY
   return JSON.parse(runSshScript(target, script).trim() || '{}');
 }
 
-async function createRemoteGoogleEventForTask(args, taskId, taskType) {
-  if (GOOGLE_CALENDAR_INTEGRATION_DISABLED) {
-    throw new Error('Google Calendar integration is disabled');
-  }
-  const target = await loadCafe24Target(args);
-  const payload = Buffer.from(JSON.stringify({ taskId, taskType }), 'utf8').toString('base64');
-  const opsRoot = target.OPS_ROOT || '/home/clown313python/rhythmjoy_ops';
-  const script = `
-set -e
-export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
-export RHYTHMJOY_OPS_ROOT=${shellQuote(opsRoot)}
-export GOOGLE_TASK_B64=${shellQuote(payload)}
-${shellQuote(target.PYTHON_BIN)} <<'PY'
-import base64
-import json
-import logging
-import os
-import re
-import sys
-from pathlib import Path
-
-import pymysql
-
-ops_root = Path(os.environ['RHYTHMJOY_OPS_ROOT'])
-sys.path.insert(0, str(ops_root))
-import rhythmjoy_email_import as importer
-
-payload = json.loads(base64.b64decode(os.environ['GOOGLE_TASK_B64']).decode('utf-8'))
-task_id = int(payload['taskId'])
-task_type = payload.get('taskType') or 'naver_block'
-logger = logging.getLogger('spacecloud_watch_google_after_apply')
-logger.setLevel(logging.INFO)
-
-config = importer.build_config()
-service = importer.build_calendar_service(config)
-
-conn = pymysql.connect(
-    host=config['db_server'],
-    port=int(config.get('db_port', 3306)),
-    user=config['db_username'],
-    password=config['db_password'],
-    database=config['db_name'],
-    charset='utf8mb4',
-    autocommit=True,
-    cursorclass=pymysql.cursors.DictCursor,
-)
-try:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, email_event_id, task_type, reservation_number, payload_json
-            FROM rhythmjoy_spacecloud_tasks
-            WHERE id=%s AND task_type=%s
-            LIMIT 1
-            """,
-            (task_id, task_type),
-        )
-        task = cur.fetchone()
-    if not task:
-        print(json.dumps({'status': 'failed', 'error': f'task not found: {task_type}:{task_id}'}, ensure_ascii=False))
-        raise SystemExit(0)
-
-    event_data = json.loads(task.get('payload_json') or '{}')
-    calendar_key = event_data.get('calendarKey') or event_data.get('calendar_key')
-    if not calendar_key:
-        print(json.dumps({'status': 'failed', 'error': 'calendar key missing'}, ensure_ascii=False))
-        raise SystemExit(0)
-    event_data['target_calendar'] = calendar_key
-    event_data['calendar_key'] = calendar_key
-    status_prefix = 'calendar_after_upload' if task_type == 'upload' else 'calendar_after_apply'
-
-    reservation_number = event_data.get('reservation_number') or task.get('reservation_number') or ''
-    existing = importer.find_calendar_event_by_reservation(service, calendar_key, reservation_number, logger)
-    if existing:
-        if task.get('email_event_id'):
-            importer.update_email_processing(
-                config,
-                task['email_event_id'],
-                f'{status_prefix}_existing',
-                logger,
-                google_calendar_event_id=existing.get('id', ''),
-                error_text='',
-            )
-        print(json.dumps({'status': 'existing', 'eventId': existing.get('id', '')}, ensure_ascii=False))
-        raise SystemExit(0)
-
-    existing_by_details = importer.find_calendar_event_by_details(service, calendar_key, event_data, logger)
-    if existing_by_details:
-        private = existing_by_details.get('extendedProperties', {}).get('private', {})
-        description = existing_by_details.get('description', '')
-        match = re.search(r'예약번호\\s*[:：]?\\s*(\\d{7,})', description)
-        existing_number = str(private.get('reservationNumber') or (match.group(1) if match else ''))
-        replace_stale = False
-        if reservation_number and existing_number and existing_number != reservation_number:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT COUNT(*) AS active_count
-                    FROM rhythmjoy_booking_ledger
-                    WHERE reservation_number=%s
-                      AND current_status='confirmed'
-                    """,
-                    (existing_number,),
-                )
-                replace_stale = int((cur.fetchone() or {}).get('active_count') or 0) == 0
-        if replace_stale:
-            service.events().delete(
-                calendarId=importer.CALENDAR_IDS[calendar_key],
-                eventId=existing_by_details.get('id'),
-            ).execute()
-            created = importer.create_calendar_event(
-                service,
-                event_data,
-                logger,
-                dedupe_google_calendar=False,
-            )
-            if task.get('email_event_id'):
-                importer.update_email_processing(
-                    config,
-                    task['email_event_id'],
-                    f'{status_prefix}_replaced',
-                    logger,
-                    google_calendar_event_id=created.get('id', ''),
-                    error_text='',
-                )
-            print(json.dumps({
-                'status': 'replaced',
-                'eventId': created.get('id', ''),
-                'replacedEventId': existing_by_details.get('id', ''),
-                'replacedReservationNumber': existing_number,
-            }, ensure_ascii=False))
-            raise SystemExit(0)
-        print(json.dumps({
-            'status': 'conflict',
-            'error': 'same slot belongs to another active or unidentifiable Google event',
-            'eventId': existing_by_details.get('id', ''),
-            'existingReservationNumber': existing_number,
-        }, ensure_ascii=False))
-        raise SystemExit(0)
-
-    conflicts = importer.find_calendar_conflicts(service, calendar_key, event_data, logger)
-    if conflicts:
-        if task.get('email_event_id'):
-            importer.update_email_processing(
-                config,
-                task['email_event_id'],
-                f'{status_prefix}_conflict',
-                logger,
-                error_text=json.dumps(conflicts[:5], ensure_ascii=False),
-            )
-        print(json.dumps({'status': 'conflict', 'conflicts': conflicts[:5]}, ensure_ascii=False))
-        raise SystemExit(0)
-
-    created = importer.create_calendar_event(
-        service,
-        event_data,
-        logger,
-        dedupe_google_calendar=True,
-    )
-    if task.get('email_event_id'):
-        importer.update_email_processing(
-            config,
-            task['email_event_id'],
-            f'{status_prefix}_created',
-            logger,
-            google_calendar_event_id=created.get('id', ''),
-            error_text='',
-        )
-    print(json.dumps({'status': 'created', 'eventId': created.get('id', '')}, ensure_ascii=False))
-finally:
-    conn.close()
-PY
-`;
-  return JSON.parse(runSshScript(target, script).trim() || '{}');
-}
-
-async function createRemoteGoogleEventForNaverBlockTask(args, taskId) {
-  return createRemoteGoogleEventForTask(args, taskId, 'naver_block');
-}
-
-async function createRemoteGoogleEventForUploadTask(args, taskId) {
-  return createRemoteGoogleEventForTask(args, taskId, 'upload');
-}
-
-async function deleteRemoteGoogleEventForTask(args, taskId, taskType) {
-  if (GOOGLE_CALENDAR_INTEGRATION_DISABLED) {
-    throw new Error('Google Calendar integration is disabled');
-  }
-  const target = await loadCafe24Target(args);
-  const payload = Buffer.from(JSON.stringify({ taskId, taskType }), 'utf8').toString('base64');
-  const opsRoot = target.OPS_ROOT || '/home/clown313python/rhythmjoy_ops';
-  const script = `
-set -e
-export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
-export RHYTHMJOY_OPS_ROOT=${shellQuote(opsRoot)}
-export GOOGLE_DELETE_TASK_B64=${shellQuote(payload)}
-${shellQuote(target.PYTHON_BIN)} <<'PY'
-import base64
-import json
-import logging
-import os
-import sys
-from pathlib import Path
-
-import pymysql
-
-ops_root = Path(os.environ['RHYTHMJOY_OPS_ROOT'])
-sys.path.insert(0, str(ops_root))
-import rhythmjoy_email_import as importer
-
-payload = json.loads(base64.b64decode(os.environ['GOOGLE_DELETE_TASK_B64']).decode('utf-8'))
-task_id = int(payload['taskId'])
-task_type = payload.get('taskType') or 'delete'
-logger = logging.getLogger('spacecloud_watch_google_after_delete')
-logger.setLevel(logging.INFO)
-
-config = importer.build_config()
-service = importer.build_calendar_service(config)
-
-conn = pymysql.connect(
-    host=config['db_server'],
-    port=int(config.get('db_port', 3306)),
-    user=config['db_username'],
-    password=config['db_password'],
-    database=config['db_name'],
-    charset='utf8mb4',
-    autocommit=True,
-    cursorclass=pymysql.cursors.DictCursor,
-)
-try:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, email_event_id, task_type, reservation_number, payload_json
-            FROM rhythmjoy_spacecloud_tasks
-            WHERE id=%s AND task_type=%s
-            LIMIT 1
-            """,
-            (task_id, task_type),
-        )
-        task = cur.fetchone()
-    if not task:
-        print(json.dumps({'status': 'failed', 'error': f'{task_type} task not found: {task_id}'}, ensure_ascii=False))
-        raise SystemExit(0)
-
-    deletion = json.loads(task.get('payload_json') or '{}')
-    deleted_count = importer.delete_events_by_reservation(service, deletion, logger)
-    status = 'deleted' if deleted_count else 'not_found'
-    status_prefix = 'calendar_restore' if task_type == 'naver_restore' else 'calendar_after_delete'
-    if task.get('email_event_id'):
-        importer.update_email_processing(
-            config,
-            task['email_event_id'],
-            f'{status_prefix}_done' if deleted_count else f'{status_prefix}_not_found',
-            logger,
-            google_calendar_deleted_count=deleted_count,
-            error_text='',
-        )
-    print(json.dumps({'status': status, 'deletedCount': deleted_count}, ensure_ascii=False))
-finally:
-    conn.close()
-PY
-`;
-  return JSON.parse(runSshScript(target, script).trim() || '{}');
-}
-
-async function deleteRemoteGoogleEventForDeleteTask(args, taskId) {
-  return deleteRemoteGoogleEventForTask(args, taskId, 'delete');
-}
-
-async function deleteRemoteGoogleEventForNaverRestoreTask(args, taskId) {
-  return deleteRemoteGoogleEventForTask(args, taskId, 'naver_restore');
-}
-
 function cleanTelegramText(value, maxLength = 160) {
   const text = String(value || '')
     .replace(/\s+/g, ' ')
@@ -3106,10 +2827,6 @@ function telegramStatusText(status) {
     deleted: '삭제 완료',
     not_found: '삭제 대상 없음',
     'already-gone': '이미 없음',
-    'google-recorded': '구글 기록 완료',
-    'calendar-record-warning': '구글 기록 경고',
-    'google-create-failed': '구글 기록 재시도',
-    'google-delete-failed': '구글 삭제 재시도',
     'naver-conflict': '네이버 충돌',
     'later-reservation-conflict': '후예약 취소 필요',
     'spacecloud-cancel-queued': '후예약 취소 대기',
@@ -3130,15 +2847,14 @@ function formatBriefRows(rows, limit = 3) {
 
 function firstFailureReason(rowOrError) {
   if (typeof rowOrError === 'string') return cleanTelegramText(rowOrError, 180);
-  const row = rowsFromResult(rowOrError).find((item) => item.error || item.reason || item.calendarRecordWarning || item.status) || {};
-  return cleanTelegramText(row.error || row.reason || row.calendarRecordWarning || row.status || '-', 180);
+  const row = rowsFromResult(rowOrError).find((item) => item.error || item.reason || item.status) || {};
+  return cleanTelegramText(row.error || row.reason || row.status || '-', 180);
 }
 
 function firstProblemRow(rowOrError) {
   return rowsFromResult(rowOrError).find((item) => (
     item.error
     || item.reason
-    || item.calendarRecordWarning
     || item.status
   )) || {};
 }
@@ -3165,7 +2881,7 @@ function formatConflictBookingLine(label, booking) {
     naver: '네이버',
     spacecloud: '스페이스클라우드',
     admin: '관리자',
-    'google-backfill': '구글기록',
+    'google-backfill': '과거백필',
   }[booking.sourcePlatform || booking.source_platform] || booking.sourcePlatform || booking.source_platform || '-';
   const reservationNo = booking.reservationNumber || booking.reservation_number || '';
   const name = booking.reserverName || booking.reserver_name || '-';
@@ -3177,12 +2893,8 @@ function formatConflictBookingLine(label, booking) {
 
 function deleteFailureReasonText(rowOrError) {
   const rows = rowsFromResult(rowOrError);
-  if (rows.length && rows.every((row) => row.status === 'google-delete-failed')) {
-    return '스페이스클라우드 삭제는 완료됐고, 구글 달력 삭제만 재시도 예정';
-  }
-
   const row = firstProblemRow(rowOrError);
-  const raw = String(row.error || row.reason || row.calendarRecordWarning || row.status || '');
+  const raw = String(row.error || row.reason || row.status || '');
 
   if (/no visible SpaceCloud event candidate matched/i.test(raw)) {
     return '네이버 예약은 취소됐지만, 스페이스클라우드 달력에서 같은 방/날짜/시간의 직접추가(추) 예약을 못 찾음';
@@ -3216,20 +2928,6 @@ function deleteFailureReasonText(rowOrError) {
   }
 
   return cleanTelegramText(raw || '-', 180);
-}
-
-function googleSummary(rows) {
-  if (!rows.length) return '구글=-';
-  const counts = new Map();
-  let warnings = 0;
-  for (const row of rows) {
-    const status = row.googleCalendar?.status || (row.status?.startsWith('google-') ? row.status : '');
-    if (status) counts.set(status, (counts.get(status) || 0) + 1);
-    if (row.calendarRecordWarning) warnings += 1;
-  }
-  if (!counts.size && !warnings) return '구글=-';
-  const statusText = [...counts.entries()].map(([status, count]) => `${status} ${count}`).join(', ');
-  return `구글=${statusText || '-'}${warnings ? ` / 경고 ${warnings}` : ''}`;
 }
 
 function smsStatusText(status) {
@@ -3325,16 +3023,16 @@ function syncActionResultText(row) {
   const taskType = row.taskType || row.task_type || '';
   const status = row.status || '';
   if (taskType === 'upload') {
-    if (['google-recorded', 'submitted', 'calendar-record-warning'].includes(status)) return 'SC 등록 완료';
+    if (status === 'submitted') return 'SC 등록 완료';
     return `SC 등록 ${telegramStatusText(status)}`;
   }
   if (taskType === 'naver_block') {
-    if (['blocked', 'already-blocked', 'google-recorded', 'calendar-record-warning'].includes(status)) return '네이버 예약불가 완료';
+    if (['blocked', 'already-blocked'].includes(status)) return '네이버 예약불가 완료';
     return `네이버 예약불가 ${telegramStatusText(status)}`;
   }
   if (taskType === 'naver_restore') {
     if (status === 'restore-skipped-not-owned') return '네이버 복구 생략';
-    if (['restored', 'already-available', 'calendar-record-warning'].includes(status)) return '네이버 예약가능 복구 완료';
+    if (['restored', 'already-available'].includes(status)) return '네이버 예약가능 복구 완료';
     return `네이버 예약가능 ${telegramStatusText(status)}`;
   }
   if (taskType === 'delete') {
@@ -3362,17 +3060,6 @@ function syncPlatformResultLine(row) {
     return `네이버: ${action.replace(/^네이버\s*/, '')}`;
   }
   return `상대 플랫폼: ${action}`;
-}
-
-function syncGoogleStatusText(row) {
-  if (row.calendarRecordWarning || row.status === 'calendar-record-warning') return '구글 기록 경고';
-  const googleStatus = row.googleCalendar?.status
-    || (row.status === 'google-recorded' ? 'created' : '')
-    || (row.status === 'google-deleted' ? 'deleted' : '');
-  if (!googleStatus) return '';
-  if (['created', 'existing', 'google-recorded'].includes(googleStatus)) return '구글 기록 완료';
-  if (['deleted', 'not_found', 'google-deleted'].includes(googleStatus)) return '구글 삭제 완료';
-  return `구글 ${telegramStatusText(googleStatus)}`;
 }
 
 function syncSmsStatusText(row) {
@@ -3407,12 +3094,9 @@ function successRowsForResult(result, statuses, taskType) {
 
 function syncSuccessRowsFromCycle(row) {
   const rows = [
-    ...((row.uploadedRows || [])
-      .filter((taskRow) => ['submitted', 'google-recorded', 'calendar-record-warning'].includes(taskRow.status))
-      .map((taskRow) => ({ ...taskRow, taskType: taskRow.taskType || 'upload' }))),
-    ...successRowsForResult(row.uploadTasks, ['google-recorded', 'submitted', 'calendar-record-warning'], 'upload'),
-    ...successRowsForResult(row.naverBlockTasks, ['blocked', 'already-blocked', 'google-recorded', 'calendar-record-warning'], 'naver_block'),
-    ...successRowsForResult(row.naverRestoreTasks, ['restored', 'already-available', 'restore-skipped-not-owned', 'calendar-record-warning'], 'naver_restore'),
+    ...successRowsForResult(row.uploadTasks, ['submitted'], 'upload'),
+    ...successRowsForResult(row.naverBlockTasks, ['blocked', 'already-blocked'], 'naver_block'),
+    ...successRowsForResult(row.naverRestoreTasks, ['restored', 'already-available', 'restore-skipped-not-owned'], 'naver_restore'),
     ...successRowsForResult(row.deleteTasks, ['deleted', 'already-gone'], 'delete'),
     ...successRowsForResult(row.spacecloudCancelTasks, ['canceled', 'already-canceled'], 'spacecloud_cancel'),
     ...successRowsForResult(row.naverCancelTasks, ['canceled', 'already-canceled'], 'naver_cancel'),
@@ -3427,14 +3111,13 @@ function syncSuccessRowsFromCycle(row) {
 }
 
 function syncSuccessNeedsAttention(row) {
-  return Boolean(row.calendarRecordWarning || row.status === 'calendar-record-warning' || smsNeedsAttention(row));
+  return smsNeedsAttention(row);
 }
 
 function syncSuccessMessage(row) {
   const needsAttention = syncSuccessNeedsAttention(row);
   const taskType = row.taskType || row.task_type || '';
   const isCancellation = ['delete', 'naver_restore', 'spacecloud_cancel', 'naver_cancel'].includes(taskType);
-  const googleWarning = syncGoogleStatusText(row);
   const smsStatus = syncSmsStatusText(row);
   return compactNotice(
     needsAttention
@@ -3445,7 +3128,6 @@ function syncSuccessMessage(row) {
       'DB 원장: 정상',
       syncPlatformResultLine(row),
       smsStatus || '',
-      googleWarning.includes('경고') ? 'Google 복제본: 기록 확인 필요 (핵심 반영과 별도)' : '',
       needsAttention ? '판정: 실제 예약 누락 확정 아님' : '',
     ],
   );
@@ -3460,7 +3142,6 @@ function reservationCompletionSignature(row) {
     'complete',
     row.status || '',
     row.sms?.status || '',
-    row.calendarRecordWarning ? 'google-warning' : '',
   ].join(':');
 }
 
@@ -3532,38 +3213,30 @@ function uploadFailureMessage(rowOrError) {
 
 function uploadSuccessMessage(row) {
   const uploadedRows = [
-    ...(row.uploadedRows || []),
-    ...((row.uploadTasks?.rows || []).filter((taskRow) => [
-      'google-recorded',
-      'submitted',
-      'calendar-record-warning',
-    ].includes(taskRow.status))),
+    ...((row.uploadTasks?.rows || []).filter((taskRow) => taskRow.status === 'submitted')),
   ];
   return compactNotice('✅ 성공: 스페이스클라우드 등록', [
-    `처리: ${uploadedRows.length}건 / 남은 후보 ${row.remainingInPlan ?? '-'}건`,
+    `처리: ${uploadedRows.length}건`,
     formatBriefRows(uploadedRows),
-    googleSummary(uploadedRows),
   ]);
 }
 
 function uploadTaskFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
-  const allGoogle = rows.length && rows.every((row) => row.status === 'google-create-failed');
-  return compactNotice(allGoogle ? '🟡 Google 복제본 확인 필요' : '🟡 스페이스클라우드 자동확인 필요', [
+  return compactNotice('🟡 스페이스클라우드 자동확인 필요', [
     formatBriefRows(rows),
-    allGoogle ? '핵심 예약 반영: 완료' : 'DB 원장: 정상',
-    allGoogle ? 'Google 복제본: 기록 재시도 중' : '판정: 실제 플랫폼 누락 확정 아님',
+    'DB 원장: 정상',
+    '판정: 실제 플랫폼 누락 확정 아님',
     `자동화 기록: ${firstFailureReason(rowOrError)}`,
   ]);
 }
 
 function deleteFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
-  const allGoogle = rows.length && rows.every((row) => row.status === 'google-delete-failed');
-  return compactNotice(allGoogle ? '🟡 Google 복제본 확인 필요' : '🟡 스페이스클라우드 자동확인 필요', [
+  return compactNotice('🟡 스페이스클라우드 자동확인 필요', [
     formatBriefRows(rows),
-    allGoogle ? '핵심 예약 취소 반영: 완료' : 'DB 원장: 정상',
-    allGoogle ? 'Google 복제본: 삭제 재시도 중' : '판정: 실제 플랫폼 잔존 확정 아님',
+    'DB 원장: 정상',
+    '판정: 실제 플랫폼 잔존 확정 아님',
     `자동화 기록: ${deleteFailureReasonText(rowOrError)}`,
   ]);
 }
@@ -3576,7 +3249,6 @@ function deleteSuccessMessage(row) {
   return compactNotice('✅ 성공: 스페이스클라우드 삭제', [
     `처리: ${deletedRows.length}건`,
     formatBriefRows(deletedRows),
-    googleSummary(deletedRows),
   ]);
 }
 
@@ -3598,19 +3270,15 @@ function naverBlockSuccessMessage(row) {
   const processed = (row.naverBlockTasks?.rows || []).filter((taskRow) => [
     'blocked',
     'already-blocked',
-    'google-recorded',
-    'calendar-record-warning',
   ].includes(taskRow.status));
   return compactNotice('✅ 성공: 네이버 예약불가 반영', [
     `처리: ${processed.length}건`,
     formatBriefRows(processed),
-    googleSummary(processed),
   ]);
 }
 
 function naverBlockFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
-  const allGoogle = rows.length && rows.every((row) => row.status === 'google-create-failed');
   const allLaterConflicts = rows.length && rows.every(isLaterReservationConflictRow);
   if (allLaterConflicts) {
     const row = rows[0] || {};
@@ -3622,10 +3290,10 @@ function naverBlockFailureMessage(rowOrError) {
       '다음: 후예약 플랫폼 취소 후 선대관 안내 문자 발송',
     ]);
   }
-  return compactNotice(allGoogle ? '🟡 Google 복제본 확인 필요' : '🟡 네이버 자동확인 필요', [
+  return compactNotice('🟡 네이버 자동확인 필요', [
     formatBriefRows(rows),
-    allGoogle ? '핵심 예약 반영: 완료' : 'DB 원장: 정상',
-    allGoogle ? 'Google 복제본: 기록 재시도 중' : '판정: 실제 네이버 누락 확정 아님',
+    'DB 원장: 정상',
+    '판정: 실제 네이버 누락 확정 아님',
     `자동화 기록: ${firstFailureReason(rowOrError)}`,
   ]);
 }
@@ -3635,22 +3303,19 @@ function naverRestoreSuccessMessage(row) {
     'restored',
     'already-available',
     'restore-skipped-not-owned',
-    'calendar-record-warning',
   ].includes(taskRow.status));
   return compactNotice('✅ 성공: 네이버 예약가능 복구', [
     `처리: ${processed.length}건`,
     formatBriefRows(processed),
-    googleSummary(processed),
   ]);
 }
 
 function naverRestoreFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
-  const allGoogle = rows.length && rows.every((row) => row.status === 'google-delete-failed');
-  return compactNotice(allGoogle ? '🟡 Google 복제본 확인 필요' : '🟡 네이버 자동확인 필요', [
+  return compactNotice('🟡 네이버 자동확인 필요', [
     formatBriefRows(rows),
-    allGoogle ? '핵심 예약 취소 반영: 완료' : 'DB 원장: 정상',
-    allGoogle ? 'Google 복제본: 삭제 재시도 중' : '판정: 실제 네이버 상태 오류 확정 아님',
+    'DB 원장: 정상',
+    '판정: 실제 네이버 상태 오류 확정 아님',
     `자동화 기록: ${firstFailureReason(rowOrError)}`,
   ]);
 }
@@ -3737,7 +3402,6 @@ function dbStatusForDeleteRow(row) {
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'deleted') return 'done';
   if (row.status === 'already-gone') return 'already_gone';
-  if (row.status === 'google-delete-failed') return 'google_pending';
   if (row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   if (isRetryablePlatformProblem(row.error)) return 'pending';
@@ -3750,10 +3414,8 @@ function dbStatusForUploadRow(row) {
   if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'naver-cancel-queued') return 'done';
-  if (row.status === 'google-recorded') return 'done';
-  if (row.status === 'submitted' || row.status === 'calendar-record-warning') return 'done';
-  if (row.status === 'google-create-failed') return 'google_pending';
-  if (row.status === 'google-conflict' || row.status === 'needs-review') return 'needs_review';
+  if (row.status === 'submitted') return 'done';
+  if (row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   if (isRetryablePlatformProblem(row.error)) return 'pending';
   return 'failed';
@@ -3764,11 +3426,8 @@ function dbStatusForNaverBlockRow(row) {
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
-  if (row.status === 'blocked' || row.status === 'already-blocked' || row.status === 'google-recorded') return 'done';
+  if (row.status === 'blocked' || row.status === 'already-blocked') return 'done';
   if (row.status === 'spacecloud-cancel-queued') return 'done';
-  if (row.status === 'calendar-record-warning') return 'done';
-  if (row.status === 'google-create-failed') return 'google_pending';
-  if (row.status === 'google-conflict') return 'needs_review';
   if (row.status === 'naver-conflict' || row.status === 'later-reservation-conflict' || row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   if (isRetryablePlatformProblem(row.error)) return 'pending';
@@ -3805,8 +3464,6 @@ function dbStatusForNaverRestoreRow(row) {
   if (row.status === 'stale-ledger-skip' || row.status === 'restore-skipped-not-owned') return 'done';
   if (row.status === 'restore-grace-wait') return 'pending';
   if (row.status === 'restored' || row.status === 'already-available') return 'done';
-  if (row.status === 'calendar-record-warning') return 'done';
-  if (row.status === 'google-delete-failed') return 'google_pending';
   if (row.status === 'needs-review' || row.status === 'naver-conflict') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   if (isRetryablePlatformProblem(row.error)) return 'pending';
@@ -4012,50 +3669,6 @@ function restoreSkippedNotOwnedRow(task) {
       ? 'automatic restore skipped because another active booking overlaps this canceled SpaceCloud slot'
       : 'automatic restore skipped because no prior automation-owned Naver block was found',
   };
-}
-
-function setCalendarWarning(row, label, value) {
-  const text = typeof value === 'string'
-    ? value
-    : JSON.stringify(value || {});
-  row.calendarRecordWarning = `${label}: ${text}`.slice(0, 900);
-}
-
-function applyCalendarCreateResult(row, result, label) {
-  row.googleCalendar = result;
-  if (['created', 'existing', 'replaced'].includes(result?.status)) return 'google-recorded';
-  setCalendarWarning(row, label, result);
-  if (result?.status === 'conflict') return 'google-conflict';
-  row.error = row.error || row.calendarRecordWarning;
-  return 'google-create-failed';
-}
-
-function applyCalendarDeleteResult(row, result, label) {
-  row.googleCalendar = result;
-  if (result?.status === 'deleted') return 'google-deleted';
-  if (result?.status === 'not_found') {
-    setCalendarWarning(row, label, result);
-    return 'google-deleted';
-  }
-  setCalendarWarning(row, label, result);
-  row.error = row.error || row.calendarRecordWarning;
-  return 'google-delete-failed';
-}
-
-function applyCalendarCreateError(row, label, error) {
-  row.error = String(error?.message || error);
-  setCalendarWarning(row, label, row.error);
-  return 'google-create-failed';
-}
-
-function applyCalendarDeleteError(row, label, error) {
-  row.error = String(error?.message || error);
-  setCalendarWarning(row, label, row.error);
-  return 'google-delete-failed';
-}
-
-function isGoogleRetryableStatus(status) {
-  return status === 'google-create-failed' || status === 'google-delete-failed';
 }
 
 function payloadForTask(task) {
@@ -4269,7 +3882,7 @@ async function classifyUploadConflict(args, task, row) {
 }
 
 function hasBlockingFailures(result) {
-  return (result?.failed || []).some((row) => !isGoogleRetryableStatus(row.status));
+  return (result?.failed || []).length > 0;
 }
 
 async function sendNaverOriginConfirmationSms(args, context, task) {
@@ -4472,7 +4085,6 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
   const retrying = taskRowsRetrying(rows);
   const failed = taskRowsNeedingReview(rows, [
     'submitted',
-    'calendar-record-warning',
     'naver-cancel-queued',
     'stale-ledger-skip',
   ]);
@@ -4636,7 +4248,6 @@ async function runNaverBlockTasks(args, context = null) {
   const failed = taskRowsNeedingReview(rows, [
     'blocked',
     'already-blocked',
-    'calendar-record-warning',
     'stale-ledger-skip',
   ]);
   return {
@@ -5116,14 +4727,11 @@ async function runNaverAvailabilityTasks(args, context = null) {
         'already-available',
         'restore-skipped-not-owned',
         'restore-grace-wait',
-        'calendar-record-warning',
         'stale-ledger-skip',
       ]
       : [
         'blocked',
         'already-blocked',
-        'google-recorded',
-        'calendar-record-warning',
         'spacecloud-cancel-queued',
         'stale-ledger-skip',
       ];
@@ -5137,39 +4745,6 @@ async function runNaverAvailabilityTasks(args, context = null) {
     failed,
     retrying,
   };
-}
-
-function runNodeJson(args) {
-  const cp = spawnSync(process.execPath, args, {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-    maxBuffer: 20 * 1024 * 1024,
-  });
-  if (cp.status !== 0) {
-    throw new Error((cp.stderr || cp.stdout || `node exited ${cp.status}`).trim());
-  }
-  return JSON.parse(cp.stdout);
-}
-
-async function buildPlan(args, planPath) {
-  const from = args.from || kstToday();
-  const plan = runNodeJson([
-    'tools/spacecloud-sync.mjs',
-    'plan',
-    '--config',
-    args.config,
-    '--state',
-    args.state,
-    '--from',
-    from,
-    '--days',
-    String(args.days),
-    '--rooms',
-    args.rooms,
-    '--json',
-  ]);
-  await writeJson(planPath, plan);
-  return plan;
 }
 
 function markSubmittedRows(args, rows) {
@@ -5202,15 +4777,6 @@ function markSubmittedRows(args, rows) {
     marked += 1;
   }
   return marked;
-}
-
-async function readResults(resultsPath) {
-  try {
-    const value = JSON.parse(await fs.readFile(resultsPath, 'utf8'));
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
 }
 
 async function runLogin(args) {
@@ -5398,7 +4964,6 @@ function runNowModeSelfTest() {
   assert.equal(recoveredClaim.stalePreviousResultStatus, 'submitted');
   assert.equal(spacecloudUploadEventFromTask(recoveredClaim).attempts, 2);
   assert.equal(basicTaskSummary(recoveredClaim).recoveredFromStaleRunning, true);
-  assert.equal(normalizeClaimedTaskForRecovery({ status: 'google_pending' }).status, 'google_pending');
   assert.equal(shouldSendPriorBookingCancellationSms({}, { status: 'canceled' }), true);
   assert.equal(shouldSendPriorBookingCancellationSms(recoveredClaim, { status: 'already-canceled' }), true);
   assert.equal(shouldSendPriorBookingCancellationSms({}, { status: 'already-canceled' }), false);
@@ -5507,7 +5072,7 @@ function runNowModeSelfTest() {
   assert.match(telegramSuccess, /^✅ 예약 반영 완료/m);
   assert.match(telegramSuccess, /DB 원장: 정상/);
   assert.match(telegramSuccess, /네이버: 예약불가 완료/);
-  assert.doesNotMatch(telegramSuccess, /흐름:|구글 기록 완료/);
+  assert.doesNotMatch(telegramSuccess, /흐름:/);
   assert.equal(CUSTOMER_RESERVATION_CANCELLATION_DISABLED, true);
   assert.match(createRemoteSpacecloudCancelTask.toString(), /CUSTOMER_RESERVATION_CANCELLATION_DISABLED/);
   assert.match(createRemoteNaverCancelTask.toString(), /CUSTOMER_RESERVATION_CANCELLATION_DISABLED/);
@@ -5517,12 +5082,6 @@ function runNowModeSelfTest() {
   assert.match(fetchRemoteTaskTypes.toString(), /claim_token/);
   assert.match(fetchRemoteTaskTypes.toString(), /WHEN status='pending' THEN 1/);
   assert.doesNotMatch(fetchRemoteTaskTypes.toString(), /google_pending/);
-  assert.equal(GOOGLE_CALENDAR_INTEGRATION_DISABLED, true);
-  assert.match(createRemoteGoogleEventForTask.toString(), /GOOGLE_CALENDAR_INTEGRATION_DISABLED/);
-  assert.match(deleteRemoteGoogleEventForTask.toString(), /GOOGLE_CALENDAR_INTEGRATION_DISABLED/);
-  assert.doesNotMatch(runUploadTasks.toString(), /createRemoteGoogleEvent/);
-  assert.doesNotMatch(runDeleteTasks.toString(), /deleteRemoteGoogleEvent/);
-  assert.doesNotMatch(runNaverAvailabilityTasks.toString(), /RemoteGoogleEvent/);
   assert.match(updateRemoteTask.toString(), /WHERE id=%s AND status='running' AND claim_token=%s/);
   assert.match(updateRemoteTask.toString(), /releaseClaim/);
   assert.equal(safeTaskClaimLimit(1), 1);
@@ -5541,7 +5100,7 @@ function runNowModeSelfTest() {
       'platform page timeout becomes next-cycle retry',
       'closed browser context retries every task type',
       'ambiguous SpaceCloud submit is verified on retry',
-      'Google Calendar mutations are hard-disabled and absent from active task runners',
+      'task runners depend only on the DB queue and opposite booking platform',
       'sms send is task-visible on failure/uncertainty and duplicate states are not treated as success',
       'SMS errors redact full recipient phone numbers',
       'oversized task results remain valid JSON with status and reservation identity',
@@ -5656,7 +5215,7 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   row.naverBlockTasks = split.naverBlockTasks;
   row.naverRestoreTasks = split.naverRestoreTasks;
   setCycleStatusFromResult(row, row.naverAvailabilityTasks, {
-    processed: row.naverAvailabilityTasks.failed?.length ? 'naver-availability-google-pending' : 'naver-availability-processed',
+    processed: 'naver-availability-processed',
     needsReview: 'naver-availability-needs-review',
     retrying: 'naver-availability-retry-pending',
   });
@@ -5675,13 +5234,13 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   row.uploadTasks = row.bookingSyncTasks.uploadTasks;
   row.deleteTasks = row.bookingSyncTasks.deleteTasks;
   setCycleStatusFromResult(row, row.uploadTasks, {
-    processed: row.uploadTasks.failed?.length ? 'upload-task-google-pending' : 'upload-task-processed',
+    processed: 'upload-task-processed',
     needsReview: 'upload-task-needs-review',
     retrying: 'upload-task-retry-pending',
   });
   if (!hasBlockingFailures(row.uploadTasks)) {
     setCycleStatusFromResult(row, row.deleteTasks, {
-      processed: row.deleteTasks.failed?.length ? 'delete-google-pending' : 'delete-processed',
+      processed: 'delete-processed',
       needsReview: 'delete-needs-review',
       retrying: 'delete-retry-pending',
     });
@@ -5701,19 +5260,10 @@ async function runNowModeCycleTasks(args, row, activeContext) {
 
 async function runCycle(args, context = null) {
   const workDir = args.workDir;
-  const planPath = path.join(workDir, 'latest-plan.json');
-  const resultsPath = path.join(workDir, 'results.json');
   const runLogPath = path.join(workDir, 'runs.jsonl');
-  const plan = args.legacyCalendarPlan ? await buildPlan(args, planPath) : null;
   const cycle = {
     at: new Date().toISOString(),
-    mode: args.legacyCalendarPlan ? 'db-queue-plus-legacy-calendar-plan' : 'db-queue',
-    planPath: args.legacyCalendarPlan ? planPath : '',
-    resultsPath: args.legacyCalendarPlan ? resultsPath : '',
-    sourceGeneratedAt: plan?.source?.generatedAt || null,
-    sourceEventsInRange: plan?.source?.eventCountInRange || 0,
-    uploadCandidates: plan?.upload?.length || 0,
-    skipped: plan?.skipped?.length || 0,
+    mode: 'db-queue',
     dryRun: args.dryRun,
   };
 
@@ -5734,8 +5284,6 @@ async function runCycle(args, context = null) {
       ...cycle,
       status: args.dryRun ? 'dry-run' : 'planned',
       attempted: 0,
-      submittedInPlan: 0,
-      remainingInPlan: plan?.upload?.length || 0,
       marked: 0,
       failed: [],
     };
@@ -5750,14 +5298,14 @@ async function runCycle(args, context = null) {
       row.deleteTasks = row.bookingSyncTasks.deleteTasks;
       if (['planned', 'dry-run'].includes(row.status) && row.uploadTasks.attempted > 0) {
         setCycleStatusFromResult(row, row.uploadTasks, {
-          processed: row.uploadTasks.failed.length ? 'upload-task-google-pending' : 'upload-task-processed',
+          processed: 'upload-task-processed',
           needsReview: 'upload-task-needs-review',
           retrying: 'upload-task-retry-pending',
         });
       }
       if (['planned', 'dry-run', 'upload-task-processed'].includes(row.status) && row.deleteTasks.attempted > 0) {
         setCycleStatusFromResult(row, row.deleteTasks, {
-          processed: row.deleteTasks.failed.length ? 'delete-google-pending' : 'delete-processed',
+          processed: 'delete-processed',
           needsReview: 'delete-needs-review',
           retrying: 'delete-retry-pending',
         });
@@ -5774,25 +5322,6 @@ async function runCycle(args, context = null) {
         }
       }
 
-      if (args.legacyCalendarPlan && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.deleteTasks) && !hasBlockingFailures(row.naverCancelTasks) && plan.upload.length > 0 && !args.dryRun) {
-        const uploader = await createSpacecloudPlaywrightUploader({
-          context: await getContext(),
-          planPath,
-          resultsPath,
-        });
-        const result = await uploader.runBatch(args.limitPerCycle);
-        const allResults = await readResults(resultsPath);
-        const marked = markSubmittedRows(args, allResults);
-        const uploadedRows = (result.rows || []).filter((uploadRow) => uploadRow.status === 'submitted');
-        row.status = result.failed?.length ? 'failed' : 'uploaded';
-        row.attempted = result.attempted;
-        row.submittedInPlan = result.submitted;
-        row.remainingInPlan = result.remaining;
-        row.marked = marked;
-        row.failed = result.failed;
-        row.uploadedRows = uploadedRows;
-      }
-
       if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && !hasBlockingFailures(row.deleteTasks)) {
         row.naverAvailabilityTasks = await runNaverAvailabilityTasks(args, activeContext);
         const split = splitNaverAvailabilityResult(row.naverAvailabilityTasks);
@@ -5800,7 +5329,7 @@ async function runCycle(args, context = null) {
         row.naverRestoreTasks = split.naverRestoreTasks;
         if (['planned', 'dry-run'].includes(row.status) && row.naverAvailabilityTasks.attempted > 0) {
           setCycleStatusFromResult(row, row.naverAvailabilityTasks, {
-            processed: row.naverAvailabilityTasks.failed.length ? 'naver-availability-google-pending' : 'naver-availability-processed',
+            processed: 'naver-availability-processed',
             needsReview: 'naver-availability-needs-review',
             retrying: 'naver-availability-retry-pending',
           });
@@ -5819,7 +5348,7 @@ async function runCycle(args, context = null) {
       }
     }
 
-    if (!args.legacyCalendarPlan && row.status === 'planned') {
+    if (row.status === 'planned') {
       row.status = 'idle';
     }
 
@@ -5839,8 +5368,6 @@ function resultAttempted(result) {
       'pending',
       'restore-grace-wait',
       'needs-review',
-      'google-create-failed',
-      'google-delete-failed',
     ].includes(String(row.status || ''))));
 }
 
@@ -5889,7 +5416,7 @@ async function runWatch(args) {
   process.once('SIGHUP', stop);
   let urgentUntil = 0;
 
-  logLine(`watch started; interval=${args.intervalSeconds}s urgent=${args.nowMode ? `${args.urgentIntervalSeconds}s/${args.urgentCooldownSeconds}s` : 'off'} profile=${args.profileDir} mode=${args.legacyCalendarPlan ? 'db+legacy-calendar-plan' : 'db-queue'}`);
+  logLine(`watch started; interval=${args.intervalSeconds}s urgent=${args.nowMode ? `${args.urgentIntervalSeconds}s/${args.urgentCooldownSeconds}s` : 'off'} profile=${args.profileDir} mode=db-queue`);
   try {
     while (!stopping) {
       let watcherProblemThisCycle = false;
@@ -5952,9 +5479,6 @@ async function runWatch(args) {
           if (isLoginProblem(errorText)) {
             await reportWatcherProblem('problem:login-needed', loginNeededMessage(row.uploadTasks));
             logLine(`login needed during db upload; waiting for manual login: ${JSON.stringify(row.uploadTasks.failed)}`);
-          } else if (row.uploadTasks.failed.every((failedRow) => failedRow.status === 'google-create-failed')) {
-            await notifyReservationAttention(args, row.uploadTasks, 'google-copy', 'upload', uploadTaskFailureMessage(row.uploadTasks));
-            logLine(`google calendar record pending after db upload; will retry: ${JSON.stringify(row.uploadTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.uploadTasks, 'platform', 'upload', uploadTaskFailureMessage(row.uploadTasks));
             logLine(`stopping after db upload failure: ${JSON.stringify(row.uploadTasks.failed)}`);
@@ -5966,9 +5490,6 @@ async function runWatch(args) {
           if (isLoginProblem(errorText)) {
             await reportWatcherProblem('problem:login-needed', loginNeededMessage(row.deleteTasks));
             logLine(`login needed during delete; waiting for manual login: ${JSON.stringify(row.deleteTasks.failed)}`);
-          } else if (row.deleteTasks.failed.every((failedRow) => failedRow.status === 'google-delete-failed')) {
-            await notifyReservationAttention(args, row.deleteTasks, 'google-copy', 'delete', deleteFailureMessage(row.deleteTasks));
-            logLine(`google calendar delete pending after spacecloud delete; will retry: ${JSON.stringify(row.deleteTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.deleteTasks, 'platform', 'delete', deleteFailureMessage(row.deleteTasks));
             logLine(`stopping after delete failure: ${JSON.stringify(row.deleteTasks.failed)}`);
@@ -5980,9 +5501,6 @@ async function runWatch(args) {
           if (isLoginProblem(errorText)) {
             await reportWatcherProblem('problem:login-needed', loginNeededMessage(row.naverBlockTasks));
             logLine(`login needed during naver block; waiting for manual login: ${JSON.stringify(row.naverBlockTasks.failed)}`);
-          } else if (row.naverBlockTasks.failed.every((failedRow) => failedRow.status === 'google-create-failed')) {
-            await notifyReservationAttention(args, row.naverBlockTasks, 'google-copy', 'naver_block', naverBlockFailureMessage(row.naverBlockTasks));
-            logLine(`google calendar record pending after naver block; will retry: ${JSON.stringify(row.naverBlockTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.naverBlockTasks, 'platform', 'naver_block', naverBlockFailureMessage(row.naverBlockTasks));
             logLine(`stopping after naver block failure: ${JSON.stringify(row.naverBlockTasks.failed)}`);
@@ -5994,9 +5512,6 @@ async function runWatch(args) {
           if (isLoginProblem(errorText)) {
             await reportWatcherProblem('problem:login-needed', loginNeededMessage(row.naverRestoreTasks));
             logLine(`login needed during naver restore; waiting for manual login: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
-          } else if (row.naverRestoreTasks.failed.every((failedRow) => failedRow.status === 'google-delete-failed')) {
-            await notifyReservationAttention(args, row.naverRestoreTasks, 'google-copy', 'naver_restore', naverRestoreFailureMessage(row.naverRestoreTasks));
-            logLine(`google calendar delete pending after naver restore; will retry: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.naverRestoreTasks, 'platform', 'naver_restore', naverRestoreFailureMessage(row.naverRestoreTasks));
             logLine(`stopping after naver restore failure: ${JSON.stringify(row.naverRestoreTasks.failed)}`);

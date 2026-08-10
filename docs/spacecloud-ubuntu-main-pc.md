@@ -16,7 +16,7 @@ current single-business Rhythmjoy automation needs to be restored.
 
 ## Roles
 
-- Cafe24 remains the server/source-of-truth layer: email ingestion, DB ledger, website, Google Calendar record updates, and Aligo SMS env.
+- Cafe24 remains the server/source-of-truth layer: email ingestion, DB ledger, DB-backed public schedule, and Aligo SMS env.
 - The Ubuntu mini PC is the browser automation terminal: it reads the DB queue and applies Naver/SpaceCloud UI changes through Chrome/Playwright.
 - The Mac setup remains the rollback path. Do not delete the Mac launch agent unless the user explicitly asks.
 

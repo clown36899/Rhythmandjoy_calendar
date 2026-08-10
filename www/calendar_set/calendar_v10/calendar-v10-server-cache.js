@@ -1,4 +1,4 @@
-// v10: SwipeCalendar renders IndexedDB data; Google Calendar is synced separately via syncToken.
+// v10: SwipeCalendar renders the Cafe24 DB-ledger public cache.
 
 let lastInteraction = Date.now();
 let _lastIdleRefresh = lastInteraction;
@@ -11,21 +11,19 @@ const singleRoomCalendarEl = document.getElementById("singleRoomCalendar");
 const singleRoomCalendarPanel = document.getElementById("singleRoomCalendarPanel");
 const singleRoomCalendarTitle = document.getElementById("singleRoomCalendarTitle");
 const roomKeys = ['a', 'b', 'c', 'd', 'e'];
-const GOOGLE_CALENDAR_API_KEY = "AIzaSyCLqM39X5vTjrNt1Vl5miRryXWkLYPqky8";
 const DESKTOP_ROOM_DETAIL_MIN_WIDTH = 1000;
 
 const roomConfigs = {
-  a: { name: "A홀", calendarId: "752f7ab834fd5978e9fc356c0b436e01bd530868ab5e46534c82820086c5a3d3@group.calendar.google.com", color: "#F6BF26" },
-  b: { name: "B홀", calendarId: "22dd1532ca7404714f0c24348825f131f3c559acf6361031fe71e80977e4a817@group.calendar.google.com", color: "rgb(87, 150, 200)" },
-  c: { name: "C홀", calendarId: "b0cfe52771ffe5f8b8bb55b8f7855b6ea640fcb09060fd6708e9b8830428e0c8@group.calendar.google.com", color: "rgb(129, 180, 186)" },
-  d: { name: "D홀", calendarId: "60da4147f8d838daa72ecea4f59c69106faedd48e8d4aea61a9d299d96b3f90e@group.calendar.google.com", color: "rgb(125, 157, 106)" },
-  e: { name: "E홀", calendarId: "aaf61e2a8c25b5dc6cdebfee3a4b2ba3def3dd1b964a9e5dc71dc91afc2e14d6@group.calendar.google.com", color: "#4c4c4c" }
+  a: { name: "A홀", color: "#F6BF26" },
+  b: { name: "B홀", color: "rgb(87, 150, 200)" },
+  c: { name: "C홀", color: "rgb(129, 180, 186)" },
+  d: { name: "D홀", color: "rgb(125, 157, 106)" },
+  e: { name: "E홀", color: "#4c4c4c" }
 };
 
-const calendarSyncFactory = window.RhythmjoyServerCalendarSync || window.RhythmjoyIndexedCalendarSync;
+const calendarSyncFactory = window.RhythmjoyServerCalendarSync;
 const calendarSync = calendarSyncFactory
   ? calendarSyncFactory.create({
-    apiKey: GOOGLE_CALENDAR_API_KEY,
     roomConfigs,
     roomKeys,
     onSyncComplete: ({ reason }) => refreshCurrentViewFromIndex(reason || '변경분 반영 후')
@@ -43,7 +41,7 @@ let activeDailyPopup = null;
 const REGEX_RESERVATION_NUM = /예약번호:\s*([^\n]+)/;
 const REGEX_RESERVER_NAME = /예약자명:\s*([^\n]+)/;
 
-function fetchSyncedGoogleEvents(fetchInfo, successCallback, failureCallback) {
+function fetchSyncedEvents(fetchInfo, successCallback, failureCallback) {
   if (!calendarSync) {
     const error = new Error('v10 calendar sync loader is missing');
     console.error(error);
@@ -199,7 +197,7 @@ function fetchSingleRoomEvents(fetchInfo, successCallback, failureCallback) {
     return;
   }
 
-  fetchSyncedGoogleEvents(fetchInfo, (events) => {
+  fetchSyncedEvents(fetchInfo, (events) => {
     successCallback(events.filter(event => event.extendedProps?.roomKey === roomKey));
   }, failureCallback);
 }
@@ -475,7 +473,7 @@ function initCalendar() {
 
     plugins: ["interaction", "dayGrid", "timeGrid"],
     height: 'parent',
-    events: fetchSyncedGoogleEvents,
+    events: fetchSyncedEvents,
     customButtons: {
       weekview: {
         text: '주간',

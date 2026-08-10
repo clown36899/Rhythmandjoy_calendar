@@ -433,8 +433,7 @@ function toCandidate(event, roomConfig) {
   const normalizedTime = normalizeReservationTimeRange(start, end);
 
   const candidate = {
-    source: 'rhythmjoy-google-calendar',
-    googleEventId: event.extendedProps?.googleEventId || String(event.id || '').replace(/^[a-e]:/, ''),
+    source: 'rhythmjoy-db-ledger',
     sourceEventId: event.id || '',
     roomKey,
     rhythmjoyRoomName: event.extendedProps?.roomName || roomConfig.rhythmjoyName,
@@ -456,10 +455,9 @@ function toCandidate(event, roomConfig) {
     paymentStatus,
     product,
     memo: [
-      'Rhythmjoy Google Calendar sync',
+      'Rhythmjoy DB ledger sync',
       `room=${event.extendedProps?.roomName || roomConfig.rhythmjoyName}`,
       `sourceEventId=${event.id || ''}`,
-      event.extendedProps?.googleEventId ? `googleEventId=${event.extendedProps.googleEventId}` : '',
       reservationNo ? `naverReservationNo=${reservationNo}` : '',
     ].filter(Boolean).join(' / '),
   };

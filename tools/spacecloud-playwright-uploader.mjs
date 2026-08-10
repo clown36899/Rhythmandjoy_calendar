@@ -246,13 +246,12 @@ export function spacecloudUploadEventFromTask(task) {
   const endTime = slotTimeText(task.endTime || task.end_time || payload.end_time || payload.endTime);
   const reserverName = task.reserverName || task.reserver_name || payload.name || '';
   const reservationNo = task.reservationNo || task.reservation_number || payload.reservation_number || '';
-  const sourceEventId = payload.googleEventId || payload.google_event_id || (payload.emailEventId ? `email:${payload.emailEventId}` : `task:${task.id || task.taskId || ''}`);
+  const sourceEventId = payload.sourceEventId || payload.source_event_id || (payload.emailEventId ? `email:${payload.emailEventId}` : `task:${task.id || task.taskId || ''}`);
   const event = {
     source: 'rhythmjoy-naver-email-db',
     taskId: task.id || task.taskId || null,
     emailEventId: payload.emailEventId || task.emailEventId || task.email_event_id || null,
     sourceEventId,
-    googleEventId: payload.googleEventId || '',
     roomKey,
     rhythmjoyRoomName: payload.calendarKey || payload.target_calendar || room.name,
     spacecloudSpaceId: room.spaceId,
