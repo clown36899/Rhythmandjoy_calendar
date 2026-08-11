@@ -551,6 +551,18 @@ function verifySpacecloudReservationText(text, row, reservationId) {
   return { ok: errors.length === 0, errors };
 }
 
+export function spacecloudReservationIdentityAccepted(statusCode, verification) {
+  if (verification?.ok === true) return true;
+  const errors = Array.isArray(verification?.errors) ? verification.errors : [];
+  // SpaceCloud removes or masks the reserver name after a customer booking is
+  // canceled.  The reservation detail API is still addressed by its immutable
+  // reservation id, and the detail page retains the room/date/time identity.
+  // Accept only that single known omission for an authoritative canceled code.
+  return statusCode === 'RCCMP'
+    && errors.length > 0
+    && errors.every((error) => error === 'reserver-name');
+}
+
 export function spacecloudUploadEventFromTask(task) {
   const payload = parseTaskPayload(task);
   const previousResult = parseTaskResult(task);
@@ -1710,7 +1722,8 @@ export async function inspectSpacecloudConfirmedReservation(context, task) {
     const statusCode = spacecloudReservationStatus(detail);
     const bodyText = await page.locator('body').innerText({ timeout: 10000 });
     const verification = verifySpacecloudReservationText(bodyText, row, reservationId);
-    if (!verification.ok) {
+    const identityAccepted = spacecloudReservationIdentityAccepted(statusCode, verification);
+    if (!identityAccepted) {
       return {
         ...row,
         status: 'needs-review',
@@ -1725,7 +1738,10 @@ export async function inspectSpacecloudConfirmedReservation(context, task) {
       status: statusCode === 'RSCMP' ? 'confirmed' : statusCode === 'RCCMP' ? 'canceled' : 'needs-review',
       confirmed: statusCode === 'RSCMP',
       statusCode,
-      verification,
+      verification: {
+        ...verification,
+        acceptedForCanceledStatus: verification.ok !== true,
+      },
       reason: statusCode === 'RSCMP' ? '' : `spacecloud-winner-status-${statusCode || 'unknown'}`,
     };
   } catch (error) {

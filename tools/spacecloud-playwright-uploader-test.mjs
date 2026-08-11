@@ -7,10 +7,19 @@ import {
   directUploadVerificationTarget,
   pollForSpacecloudCalendarIdentity,
   popupDeleteVerification,
+  spacecloudReservationIdentityAccepted,
   spacecloudUploadEventFromTask,
   verifySpacecloudCalendarIdentity,
   waitForDirectEventCandidates,
 } from './spacecloud-playwright-uploader.mjs';
+
+test('canceled detail accepts only the known post-cancel name omission', () => {
+  assert.equal(spacecloudReservationIdentityAccepted('RSCMP', { ok: true, errors: [] }), true);
+  assert.equal(spacecloudReservationIdentityAccepted('RCCMP', { ok: false, errors: ['reserver-name'] }), true);
+  assert.equal(spacecloudReservationIdentityAccepted('RSCMP', { ok: false, errors: ['reserver-name'] }), false);
+  assert.equal(spacecloudReservationIdentityAccepted('RCCMP', { ok: false, errors: ['date'] }), false);
+  assert.equal(spacecloudReservationIdentityAccepted('RCCMP', { ok: false, errors: ['reserver-name', 'time'] }), false);
+});
 
 test('UI candidate search can refresh before a delete inspection gives up', async () => {
   let reads = 0;
