@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>리듬앤조이 동기화 관리자</title>
-  <link rel="stylesheet" href="./styles.css?v=recurring-v2-20260810">
+  <link rel="stylesheet" href="./styles.css?v=admin-alerts-v1-20260811">
 </head>
 <body>
   <div class="app-shell">
@@ -55,6 +55,12 @@
           <h1>예약 동기화 콘솔</h1>
         </div>
         <div class="topbar-actions">
+          <button type="button" class="notification-button" id="adminAlertButton" aria-label="관리자 알림 열기" aria-haspopup="dialog" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" draggable="false">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="notification-badge" id="adminAlertBadge" hidden>0</span>
+          </button>
           <button type="button" class="icon-button" id="prevDay" aria-label="이전 날짜">‹</button>
           <input type="date" id="activeDate" aria-label="조회 날짜">
           <span class="weekday-label" id="weekdayLabel">수요일</span>
@@ -62,6 +68,15 @@
           <button type="button" class="icon-button" id="nextDay" aria-label="다음 날짜">›</button>
         </div>
       </header>
+
+      <button type="button" class="admin-alert-banner" id="adminAlertBanner" hidden>
+        <span class="admin-alert-banner-icon" aria-hidden="true">!</span>
+        <span>
+          <strong id="adminAlertBannerTitle">확인할 자동화 오류가 있습니다.</strong>
+          <small id="adminAlertBannerText">알림을 열어 원인과 발생 시각을 확인하세요.</small>
+        </span>
+        <span class="admin-alert-banner-action">알림 보기</span>
+      </button>
 
       <section class="status-strip" aria-label="동기화 요약">
         <div class="api-state" id="apiState">
@@ -222,6 +237,29 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div class="alert-drawer-backdrop" id="adminAlertDrawer" hidden>
+    <aside class="alert-drawer" role="dialog" aria-modal="true" aria-labelledby="adminAlertDrawerTitle" tabindex="-1">
+      <header class="alert-drawer-head">
+        <div>
+          <p class="eyebrow">운영 알림</p>
+          <h2 id="adminAlertDrawerTitle">오류·주의 알림</h2>
+          <span id="adminAlertDrawerSubtitle">현재 자동화 상태를 확인합니다.</span>
+        </div>
+        <button type="button" class="icon-button" id="closeAdminAlertDrawer" aria-label="알림 닫기">×</button>
+      </header>
+      <div class="alert-drawer-summary" id="adminAlertDrawerSummary" aria-live="polite"></div>
+      <div class="alert-drawer-actions">
+        <span>읽음 처리는 오류를 해결하거나 숨기지 않습니다.</span>
+        <button type="button" class="secondary-button compact-button" id="acknowledgeAllAlerts">모두 읽음</button>
+      </div>
+      <div class="admin-alert-list" id="adminAlertList" aria-live="polite"></div>
+      <footer class="alert-drawer-foot">
+        <span>30초마다 자동 갱신</span>
+        <button type="button" class="secondary-button compact-button" id="refreshAdminAlerts">지금 새로고침</button>
+      </footer>
+    </aside>
   </div>
 
   <div class="modal-backdrop" id="dayScheduleModal" hidden>
@@ -443,6 +481,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="../calendar_set/calendar_v10/revenue-policy.js?v=db-only-v1-20260810"></script>
-  <script src="./app.js?v=recurring-v2-20260810"></script>
+  <script src="./app.js?v=admin-alerts-v1-20260811"></script>
 </body>
 </html>

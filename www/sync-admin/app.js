@@ -7,6 +7,7 @@
   const profileKey = "rhythmjoy.syncAdmin.profile.v1";
   const sessionKey = "rhythmjoy.syncAdmin.sessions.v1";
   const tokenKey = "rhythmjoy.syncAdmin.adminToken.v1";
+  const baseTitle = document.title;
 
   const state = {
     activeDate: today(),
@@ -23,6 +24,9 @@
     eventDetailEvents: [],
     reflectionAudits: [],
     reflectionAuditSummary: null,
+    adminAlerts: [],
+    adminAlertSummary: null,
+    adminAlertsLoading: false,
     sessions: loadJson(sessionKey, {}),
     revenueStats: null,
     revenueComparison: null,
@@ -78,6 +82,18 @@
     startInput: document.getElementById("startInput"),
     endInput: document.getElementById("endInput"),
     reflectionAudit: document.getElementById("reflectionAudit"),
+    adminAlertButton: document.getElementById("adminAlertButton"),
+    adminAlertBadge: document.getElementById("adminAlertBadge"),
+    adminAlertBanner: document.getElementById("adminAlertBanner"),
+    adminAlertBannerTitle: document.getElementById("adminAlertBannerTitle"),
+    adminAlertBannerText: document.getElementById("adminAlertBannerText"),
+    adminAlertDrawer: document.getElementById("adminAlertDrawer"),
+    adminAlertDrawerSubtitle: document.getElementById("adminAlertDrawerSubtitle"),
+    adminAlertDrawerSummary: document.getElementById("adminAlertDrawerSummary"),
+    adminAlertList: document.getElementById("adminAlertList"),
+    closeAdminAlertDrawer: document.getElementById("closeAdminAlertDrawer"),
+    acknowledgeAllAlerts: document.getElementById("acknowledgeAllAlerts"),
+    refreshAdminAlerts: document.getElementById("refreshAdminAlerts"),
     taskRows: document.getElementById("taskRows"),
     todayCount: document.getElementById("todayCount"),
     dayRevenue: document.getElementById("dayRevenue"),
@@ -152,6 +168,7 @@
     renderAll();
     updateActiveNav();
     refreshFromApi({ silent: true });
+    window.setInterval(() => refreshAdminAlerts({ silent: true }), 30000);
     window.setInterval(() => refreshFromApi({ silent: true }), 60000);
     window.setInterval(updateCurrentTimeNavigator, 60000);
   }
@@ -160,6 +177,26 @@
     el.prevDay.addEventListener("click", () => moveDay(-1));
     el.nextDay.addEventListener("click", () => moveDay(1));
     el.todayButton.addEventListener("click", goToday);
+    el.adminAlertButton.addEventListener("click", openAdminAlertDrawer);
+    el.adminAlertBanner.addEventListener("click", openAdminAlertDrawer);
+    el.closeAdminAlertDrawer.addEventListener("click", closeAdminAlertDrawer);
+    el.adminAlertDrawer.addEventListener("click", (event) => {
+      if (event.target === el.adminAlertDrawer) closeAdminAlertDrawer();
+    });
+    el.acknowledgeAllAlerts.addEventListener("click", () => acknowledgeAdminAlerts([], true));
+    el.refreshAdminAlerts.addEventListener("click", () => refreshAdminAlerts());
+    el.adminAlertList.addEventListener("click", async (event) => {
+      const acknowledgeButton = event.target.closest("[data-ack-alert]");
+      if (acknowledgeButton) {
+        await acknowledgeAdminAlerts([acknowledgeButton.dataset.ackAlert]);
+        return;
+      }
+      const targetButton = event.target.closest("[data-alert-target]");
+      if (!targetButton) return;
+      const alert = state.adminAlerts.find((item) => item.key === targetButton.dataset.alertKey);
+      if (alert?.unread) await acknowledgeAdminAlerts([alert.key], false, { silent: true });
+      navigateToAdminAlertTarget(targetButton.dataset.alertTarget);
+    });
     el.activeDate.addEventListener("change", () => {
       state.activeDate = el.activeDate.value || today();
       if (state.scheduleView === "month") {
@@ -240,6 +277,10 @@
     });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      if (!el.adminAlertDrawer.hidden) {
+        closeAdminAlertDrawer();
+        return;
+      }
       if (!el.seriesModal.hidden) {
         closeSeriesModal();
         return;
@@ -268,6 +309,10 @@
     window.addEventListener("resize", updateCurrentTimeNavigator);
     window.addEventListener("resize", scheduleActiveNavUpdate);
     window.addEventListener("scroll", scheduleActiveNavUpdate, { passive: true });
+    window.addEventListener("focus", () => refreshAdminAlerts({ silent: true }));
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) refreshAdminAlerts({ silent: true });
+    });
 
     document.querySelectorAll(".nav-link[href^='#']").forEach((link) => {
       link.addEventListener("click", () => {
@@ -396,6 +441,7 @@
       return true;
     } catch (error) {
       setApiState("warn", "로컬 초안", error.message || "DB API 연결 실패");
+      setLocalAdminApiAlert(error);
       if (!options.silent) showToast(error.message || "DB API 연결 실패");
       renderAll();
       return false;
@@ -479,6 +525,7 @@
 
   function renderAll() {
     updateDateControls();
+    renderAdminAlerts();
     renderSchedule();
     renderPriceReference();
     renderReflectionAudits();
@@ -926,6 +973,180 @@
       naver_restore: `${sourceLabel || "스페이스클라우드"} 취소로 네이버 예약가능 복구`,
       dedupe: "원장 확정 예약 중복",
     }[taskType] || "반대 플랫폼 반영";
+  }
+
+  function applyAdminAlertData(data) {
+    if (Array.isArray(data.adminAlerts)) state.adminAlerts = data.adminAlerts;
+    if (data.adminAlertSummary) state.adminAlertSummary = data.adminAlertSummary;
+  }
+
+  function setLocalAdminApiAlert(error) {
+    const key = "system:admin-api";
+    const now = new Date().toISOString();
+    const message = String(error?.message || "DB API 연결 실패").replace(/\s+/g, " ").trim();
+    const previous = (state.adminAlerts || []).filter((item) => item.key !== key);
+    state.adminAlerts = [{
+      key,
+      source: "system",
+      sourceLabel: "관리자 API",
+      severity: "critical",
+      title: "관리자 패널 DB 연결 오류",
+      message: message || "운영 DB 상태를 불러오지 못했습니다.",
+      occurredAt: now,
+      updatedAt: now,
+      targetSection: "sessions",
+      contextLabel: "관리자 패널",
+      status: "active",
+      unread: true,
+    }, ...previous];
+    state.adminAlertSummary = {
+      activeCount: state.adminAlerts.length,
+      criticalCount: state.adminAlerts.filter((item) => item.severity === "critical").length,
+      unreadCount: state.adminAlerts.filter((item) => item.unread).length,
+      checkedAt: now,
+    };
+  }
+
+  function renderAdminAlerts() {
+    const alerts = state.adminAlerts || [];
+    const summary = state.adminAlertSummary || {};
+    const activeCount = Number(summary.activeCount ?? alerts.length);
+    const unreadCount = Number(summary.unreadCount ?? alerts.filter((item) => item.unread).length);
+    const criticalCount = Number(summary.criticalCount ?? alerts.filter((item) => item.severity === "critical").length);
+    const checkedAt = summary.checkedAt ? formatDateTime(summary.checkedAt) : "아직 없음";
+
+    el.adminAlertButton.classList.toggle("has-alerts", activeCount > 0);
+    el.adminAlertButton.classList.toggle("has-unread", unreadCount > 0);
+    el.adminAlertButton.setAttribute("aria-label", activeCount > 0
+      ? `관리자 알림 열기, 현재 오류·주의 ${activeCount}건, 미확인 ${unreadCount}건`
+      : "관리자 알림 열기, 현재 오류 없음");
+    el.adminAlertBadge.hidden = activeCount < 1;
+    el.adminAlertBadge.textContent = activeCount > 99 ? "99+" : String(activeCount);
+    document.title = activeCount > 0 ? `(${activeCount}) ${baseTitle}` : baseTitle;
+
+    el.adminAlertBanner.hidden = activeCount < 1;
+    if (activeCount > 0) {
+      el.adminAlertBannerTitle.textContent = criticalCount > 0
+        ? `중요 오류 ${criticalCount}건을 포함해 확인할 알림이 있습니다.`
+        : `확인할 자동화 주의 알림이 ${activeCount}건 있습니다.`;
+      el.adminAlertBannerText.textContent = unreadCount > 0
+        ? `미확인 ${unreadCount}건 · 텔레그램과 별도로 관리자 패널에 유지됩니다.`
+        : "모두 읽었지만 해결 전까지 이 경고는 계속 표시됩니다.";
+    }
+
+    el.adminAlertDrawerSubtitle.textContent = `마지막 확인 ${checkedAt}`;
+    el.adminAlertDrawerSummary.innerHTML = `
+      <div class="alert-summary-item critical"><span>중요 오류</span><strong>${criticalCount.toLocaleString()}</strong></div>
+      <div class="alert-summary-item"><span>활성 알림</span><strong>${activeCount.toLocaleString()}</strong></div>
+      <div class="alert-summary-item"><span>미확인</span><strong>${unreadCount.toLocaleString()}</strong></div>
+    `;
+    el.acknowledgeAllAlerts.disabled = unreadCount < 1 || state.adminAlertsLoading;
+    el.refreshAdminAlerts.disabled = state.adminAlertsLoading;
+    el.refreshAdminAlerts.textContent = state.adminAlertsLoading ? "갱신 중" : "지금 새로고침";
+
+    if (!alerts.length) {
+      el.adminAlertList.innerHTML = `
+        <div class="admin-alert-empty">
+          <div>
+            <span class="admin-alert-empty-icon" aria-hidden="true">✓</span>
+            <strong>현재 확인할 오류가 없습니다.</strong>
+            <span>작업 오류, 정규검사, 로그인 세션, 문자 발송 상태를 함께 감시합니다.</span>
+          </div>
+        </div>
+      `;
+      return;
+    }
+    el.adminAlertList.innerHTML = alerts.map(adminAlertItemHtml).join("");
+  }
+
+  function adminAlertItemHtml(alert) {
+    const unread = alert.unread === true;
+    const severity = alert.severity === "critical" ? "critical" : "warning";
+    const time = formatDateTime(alert.updatedAt || alert.occurredAt) || "시각 확인 필요";
+    const target = alert.targetSection === "sessions" ? "sessions" : "tasks";
+    return `
+      <article class="admin-alert-item ${severity} ${unread ? "unread" : "read"}">
+        <span class="admin-alert-severity" aria-hidden="true">${severity === "critical" ? "!" : "i"}</span>
+        <div>
+          <div class="admin-alert-item-head">
+            <strong>${escapeHtml(alert.title || "자동화 확인 필요")}</strong>
+            ${unread ? '<span class="admin-alert-unread" title="미확인" aria-label="미확인"></span>' : ""}
+          </div>
+          <p>${escapeHtml(alert.message || "상세 상태를 확인해주세요.")}</p>
+          <div class="admin-alert-meta">
+            <span>${escapeHtml(alert.sourceLabel || "관리자 알림")}</span>
+            ${alert.contextLabel ? `<span>${escapeHtml(alert.contextLabel)}</span>` : ""}
+            ${alert.taskId ? `<span>작업 #${escapeHtml(alert.taskId)}</span>` : ""}
+            <span>${escapeHtml(time)}</span>
+          </div>
+          <div class="admin-alert-item-actions">
+            <button type="button" class="secondary-button compact-button" data-alert-target="${escapeHtml(target)}" data-alert-key="${escapeHtml(alert.key)}">관련 화면</button>
+            ${unread
+              ? `<button type="button" class="secondary-button compact-button" data-ack-alert="${escapeHtml(alert.key)}">읽음 처리</button>`
+              : '<span class="alert-read-label">읽음</span>'}
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
+  async function refreshAdminAlerts(options = {}) {
+    if (!adminToken() || state.adminAlertsLoading) return false;
+    state.adminAlertsLoading = true;
+    renderAdminAlerts();
+    try {
+      const data = await apiRequest("alerts", {});
+      applyAdminAlertData(data);
+      return true;
+    } catch (error) {
+      setLocalAdminApiAlert(error);
+      if (!options.silent) showToast(error.message || "관리자 알림 조회 실패");
+      return false;
+    } finally {
+      state.adminAlertsLoading = false;
+      renderAdminAlerts();
+    }
+  }
+
+  async function acknowledgeAdminAlerts(alertKeys, all = false, options = {}) {
+    if (!adminToken()) {
+      if (!options.silent) showToast("관리자 DB 연결이 필요합니다.");
+      return false;
+    }
+    try {
+      const data = await apiRequest("acknowledge_alerts", { alertKeys, all });
+      applyAdminAlertData(data);
+      renderAdminAlerts();
+      if (!options.silent) showToast(all ? "현재 알림을 모두 읽음 처리했습니다." : "알림을 읽음 처리했습니다.");
+      return true;
+    } catch (error) {
+      if (!options.silent) showToast(error.message || "알림 읽음 처리 실패");
+      return false;
+    }
+  }
+
+  function openAdminAlertDrawer() {
+    openAdminAlertDrawer.lastFocus = document.activeElement;
+    el.adminAlertDrawer.hidden = false;
+    document.body.classList.add("alert-drawer-open");
+    el.adminAlertButton.setAttribute("aria-expanded", "true");
+    el.adminAlertDrawer.querySelector(".alert-drawer").focus();
+    refreshAdminAlerts({ silent: true });
+  }
+
+  function closeAdminAlertDrawer() {
+    el.adminAlertDrawer.hidden = true;
+    document.body.classList.remove("alert-drawer-open");
+    el.adminAlertButton.setAttribute("aria-expanded", "false");
+    if (openAdminAlertDrawer.lastFocus?.focus) openAdminAlertDrawer.lastFocus.focus();
+  }
+
+  function navigateToAdminAlertTarget(targetSection) {
+    const target = document.getElementById(targetSection === "sessions" ? "sessions" : "tasks");
+    closeAdminAlertDrawer();
+    if (!target) return;
+    setActiveNav(target.id);
+    target.scrollIntoView({ block: "start", behavior: "smooth" });
   }
 
   function renderStatus() {
@@ -2762,6 +2983,7 @@
     state.adminSeries = data.adminSeries || [];
     state.reflectionAudits = data.reflectionAudits || [];
     state.reflectionAuditSummary = data.reflectionAuditSummary || null;
+    applyAdminAlertData(data);
     state.tasks = annotateTaskRelations((data.tasks || []).map((item) => ({
       id: item.id,
       liveTaskId: item.liveTaskId || "",

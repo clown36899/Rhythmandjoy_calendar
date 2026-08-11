@@ -3590,6 +3590,212 @@ PY
   return JSON.parse(runSshScript(target, script).trim() || '[]');
 }
 
+async function persistRemoteAdminPlatformAudits(args, reservations) {
+  const target = await loadCafe24Target(args);
+  const rows = Object.entries(reservations || {}).map(([reservationId, row]) => ({
+    reservationId: Number(reservationId),
+    auditStatus: String(row?.auditStatus || 'check_failed'),
+    reservationStatus: String(row?.reservationStatus || ''),
+    date: String(row?.date || ''),
+    roomKey: String(row?.roomKey || '').toLowerCase(),
+    checkedAt: String(row?.checkedAt || ''),
+    reason: (row?.rows || [])
+      .filter((item) => item?.status !== 'ok')
+      .map((item) => `${item?.taskType || 'platform'}: ${item?.reason || item?.status || '확인 필요'}`)
+      .join(' | ')
+      .slice(0, 500),
+    detail: row?.rows || [],
+  })).filter((row) => Number.isInteger(row.reservationId) && row.reservationId > 0);
+  const encoded = Buffer.from(JSON.stringify(rows), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+rows = json.loads(base64.b64decode(${JSON.stringify(encoded)}).decode('utf-8'))
+
+def mysql_datetime(value):
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(timezone(timedelta(hours=9))).replace(tzinfo=None)
+        return parsed
+    except ValueError:
+        return None
+
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    cursorclass=pymysql.cursors.DictCursor,
+    autocommit=False,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS rhythmjoy_admin_platform_audits (
+                reservation_id BIGINT UNSIGNED NOT NULL,
+                audit_status VARCHAR(32) NOT NULL DEFAULT 'check_failed',
+                reservation_status VARCHAR(32) NOT NULL DEFAULT '',
+                reservation_date DATE NULL,
+                room_key VARCHAR(8) NOT NULL DEFAULT '',
+                reason VARCHAR(500) NOT NULL DEFAULT '',
+                detail_json TEXT NULL,
+                checked_at DATETIME NOT NULL,
+                resolved_at DATETIME NULL,
+                updated_at DATETIME NOT NULL,
+                PRIMARY KEY (reservation_id),
+                KEY idx_platform_audit_status (audit_status, checked_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        ids = []
+        for row in rows:
+            reservation_id = int(row['reservationId'])
+            ids.append(reservation_id)
+            cur.execute("""
+                INSERT INTO rhythmjoy_admin_platform_audits (
+                    reservation_id, audit_status, reservation_status, reservation_date,
+                    room_key, reason, detail_json, checked_at, resolved_at, updated_at
+                ) VALUES (%s,%s,%s,NULLIF(%s,''),%s,%s,%s,COALESCE(%s,NOW()),IF(%s='ok',COALESCE(%s,NOW()),NULL),NOW())
+                ON DUPLICATE KEY UPDATE
+                    audit_status=VALUES(audit_status),
+                    reservation_status=VALUES(reservation_status),
+                    reservation_date=VALUES(reservation_date),
+                    room_key=VALUES(room_key),
+                    reason=VALUES(reason),
+                    detail_json=VALUES(detail_json),
+                    checked_at=NOW(),
+                    resolved_at=IF(VALUES(audit_status)='ok',NOW(),NULL),
+                    updated_at=NOW()
+            """, (
+                reservation_id,
+                row.get('auditStatus') or 'check_failed',
+                row.get('reservationStatus') or '',
+                row.get('date') or '',
+                row.get('roomKey') or '',
+                (row.get('reason') or '')[:500],
+                json.dumps(row.get('detail') or [], ensure_ascii=False, separators=(',', ':')),
+                mysql_datetime(row.get('checkedAt')),
+                row.get('auditStatus') or 'check_failed',
+                mysql_datetime(row.get('checkedAt')),
+            ))
+        if ids:
+            placeholders = ','.join(['%s'] * len(ids))
+            cur.execute(f"""
+                UPDATE rhythmjoy_admin_platform_audits
+                SET audit_status='resolved', resolved_at=NOW(), updated_at=NOW()
+                WHERE audit_status IN ('mismatch','check_failed')
+                  AND reservation_id NOT IN ({placeholders})
+            """, ids)
+        else:
+            cur.execute("""
+                UPDATE rhythmjoy_admin_platform_audits
+                SET audit_status='resolved', resolved_at=NOW(), updated_at=NOW()
+                WHERE audit_status IN ('mismatch','check_failed')
+            """)
+    conn.commit()
+except Exception:
+    conn.rollback()
+    raise
+finally:
+    conn.close()
+PY
+`;
+  runSshScript(target, script);
+}
+
+async function persistRemoteAdminPlatformAuditFailure(args, error) {
+  const target = await loadCafe24Target(args);
+  const reason = cleanTelegramText(redactPhoneText(String(error?.message || error)), 500);
+  const encodedReason = Buffer.from(reason, 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+reason = base64.b64decode(${JSON.stringify(encodedReason)}).decode('utf-8')
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    cursorclass=pymysql.cursors.DictCursor,
+    autocommit=True,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS rhythmjoy_admin_platform_audits (
+                reservation_id BIGINT UNSIGNED NOT NULL,
+                audit_status VARCHAR(32) NOT NULL DEFAULT 'check_failed',
+                reservation_status VARCHAR(32) NOT NULL DEFAULT '',
+                reservation_date DATE NULL,
+                room_key VARCHAR(8) NOT NULL DEFAULT '',
+                reason VARCHAR(500) NOT NULL DEFAULT '',
+                detail_json TEXT NULL,
+                checked_at DATETIME NOT NULL,
+                resolved_at DATETIME NULL,
+                updated_at DATETIME NOT NULL,
+                PRIMARY KEY (reservation_id),
+                KEY idx_platform_audit_status (audit_status, checked_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        cur.execute("""
+            INSERT INTO rhythmjoy_admin_platform_audits (
+                reservation_id, audit_status, reservation_status, reservation_date,
+                room_key, reason, detail_json, checked_at, resolved_at, updated_at
+            ) VALUES (0, 'check_failed', 'system', NULL, '', %s, NULL, NOW(), NULL, NOW())
+            ON DUPLICATE KEY UPDATE
+                audit_status='check_failed',
+                reservation_status='system',
+                reason=VALUES(reason),
+                checked_at=NOW(),
+                resolved_at=NULL,
+                updated_at=NOW()
+        """, (reason,))
+finally:
+    conn.close()
+PY
+`;
+  runSshScript(target, script);
+}
+
 function classifyAdminPlatformInspection(task, inspection) {
   const taskType = task.taskType || task.task_type || '';
   if (!taskType) return { ok: false, status: 'check_failed', reason: 'DB 동기화 작업 기록 없음' };
@@ -3744,6 +3950,7 @@ async function runAdminPlatformAudit(args, context, { force = false } = {}) {
     checkFailed: rows.filter((row) => row.auditStatus === 'check_failed').length,
     rows,
   };
+  await persistRemoteAdminPlatformAudits(args, nextReservations);
   await writeJson(args.adminPlatformAuditState, { ...result, reservations: nextReservations });
   logLine(`admin platform audit: candidates=${result.candidates} checked=${result.checked} ok=${result.ok} mismatches=${result.mismatches} checkFailed=${result.checkFailed}`);
   return result;
@@ -3754,6 +3961,11 @@ async function maybeRunAdminPlatformAudit(args, context) {
     return await runAdminPlatformAudit(args, context);
   } catch (error) {
     logLine(`admin platform audit failed: ${String(error?.message || error)}`);
+    try {
+      await persistRemoteAdminPlatformAuditFailure(args, error);
+    } catch (persistError) {
+      logLine(`admin platform audit failure persistence failed: ${String(persistError?.message || persistError)}`);
+    }
     if (args.telegram) {
       await notifyOnStateChange(args, 'system:admin-platform-audit', 'check-failed', compactNotice('🟡 관리자 일정 정기검사 실패', [
         '판정: 예약 누락 확정 아님',
@@ -6699,6 +6911,13 @@ function runNowModeSelfTest() {
   assert.equal(safeTaskClaimLimit(1), 1);
   assert.equal(safeTaskClaimLimit(50), 1);
   assert.match(dailyReconcileMessage({}), /spacecloud-watch\/launchd\.log/);
+  assert.match(runAdminPlatformAudit.toString(), /persistRemoteAdminPlatformAudits/);
+  assert.ok(
+    runAdminPlatformAudit.toString().indexOf('persistRemoteAdminPlatformAudits')
+      < runAdminPlatformAudit.toString().indexOf('writeJson'),
+    'admin platform audit persistence must finish before the local interval checkpoint',
+  );
+  assert.match(maybeRunAdminPlatformAudit.toString(), /persistRemoteAdminPlatformAuditFailure/);
 
   return {
     ok: true,
@@ -6726,6 +6945,7 @@ function runNowModeSelfTest() {
       'new platform work is processed in source-received order',
       'daily reconcile message renders with log hint',
       'admin DB reservations rotate through actual Naver and SpaceCloud state inspection',
+      'admin platform audit results and audit failures persist to the DB-backed alert center before checkpointing independently of Telegram',
       'platform read failures stay distinct from confirmed mismatches',
     ],
   };

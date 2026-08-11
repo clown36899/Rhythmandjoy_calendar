@@ -146,6 +146,31 @@ function ensure_schema($pdo) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
     $pdo->exec("
+        CREATE TABLE IF NOT EXISTS rhythmjoy_admin_alert_acknowledgements (
+            alert_key VARCHAR(190) NOT NULL,
+            alert_signature CHAR(64) NOT NULL DEFAULT '',
+            acknowledged_at DATETIME NOT NULL,
+            PRIMARY KEY (alert_key),
+            KEY idx_acknowledged_at (acknowledged_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS rhythmjoy_admin_platform_audits (
+            reservation_id BIGINT UNSIGNED NOT NULL,
+            audit_status VARCHAR(32) NOT NULL DEFAULT 'check_failed',
+            reservation_status VARCHAR(32) NOT NULL DEFAULT '',
+            reservation_date DATE NULL,
+            room_key VARCHAR(8) NOT NULL DEFAULT '',
+            reason VARCHAR(500) NOT NULL DEFAULT '',
+            detail_json TEXT NULL,
+            checked_at DATETIME NOT NULL,
+            resolved_at DATETIME NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (reservation_id),
+            KEY idx_platform_audit_status (audit_status, checked_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
         CREATE TABLE IF NOT EXISTS rhythmjoy_admin_series (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             series_key VARCHAR(128) NOT NULL,
@@ -2102,6 +2127,389 @@ function reflection_audit_rows($pdo) {
     return $rows;
 }
 
+function admin_table_exists($pdo, $table) {
+    $stmt = $pdo->prepare("SHOW TABLES LIKE ?");
+    $stmt->execute(array($table));
+    return !!$stmt->fetch();
+}
+
+function admin_alert_clean_text($value, $fallback = '') {
+    $text = trim(preg_replace('/\s+/u', ' ', (string) $value));
+    $text = preg_replace('/\b(01[016789])[- ]?\d{3,4}[- ]?(\d{4})\b/u', '$1-****-$2', $text);
+    if ($text === '') {
+        $text = $fallback;
+    }
+    return function_exists('mb_substr') ? mb_substr($text, 0, 500, 'UTF-8') : substr($text, 0, 500);
+}
+
+function admin_alert_signature($parts) {
+    return hash('sha256', implode('|', array_map(function($value) {
+        return trim((string) $value);
+    }, $parts)));
+}
+
+function admin_alert_add(&$alerts, $row, $signature_parts) {
+    $key = isset($row['key']) ? trim((string) $row['key']) : '';
+    if ($key === '' || strlen($key) > 190) {
+        return;
+    }
+    $row['key'] = $key;
+    $row['signature'] = admin_alert_signature($signature_parts);
+    $row['severity'] = isset($row['severity']) && $row['severity'] === 'critical' ? 'critical' : 'warning';
+    $row['title'] = admin_alert_clean_text(isset($row['title']) ? $row['title'] : '', '자동화 확인 필요');
+    $row['message'] = admin_alert_clean_text(isset($row['message']) ? $row['message'] : '', '상세 상태를 확인해주세요.');
+    $row['status'] = 'active';
+    $row['unread'] = true;
+    $alerts[$key] = $row;
+}
+
+function admin_task_alert_label($task_type) {
+    $labels = array(
+        'upload' => '스페이스클라우드 예약 등록',
+        'delete' => '스페이스클라우드 일정 삭제',
+        'naver_block' => '네이버 예약 차단',
+        'naver_restore' => '네이버 예약 복구',
+        'naver_cancel' => '네이버 후예약 자동취소',
+        'spacecloud_cancel' => '스페이스클라우드 후예약 자동취소',
+    );
+    return isset($labels[$task_type]) ? $labels[$task_type] : '예약 자동화 작업';
+}
+
+function current_admin_alert_candidates($pdo) {
+    $alerts = array();
+
+    if (admin_table_exists($pdo, 'rhythmjoy_spacecloud_tasks')) {
+        $stmt = $pdo->query("
+            SELECT id, task_type, status, result_text, reservation_date, room_key,
+                   TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
+                   TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
+                   reservation_number,
+                   DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
+                   DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at,
+                   CASE
+                     WHEN status IN ('failed','needs_review','needs-review') THEN 'terminal'
+                     WHEN status IN ('running','claimed') AND COALESCE(locked_at, updated_at, created_at) < DATE_SUB(NOW(), INTERVAL 10 MINUTE) THEN 'stale-running'
+                     WHEN status='pending' AND updated_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE) THEN 'stale-pending'
+                     ELSE ''
+                   END AS alert_kind
+            FROM rhythmjoy_spacecloud_tasks
+            WHERE (
+                    status IN ('failed','needs_review','needs-review')
+                 OR (status IN ('running','claimed') AND COALESCE(locked_at, updated_at, created_at) < DATE_SUB(NOW(), INTERVAL 10 MINUTE))
+                 OR (status='pending' AND updated_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))
+                  )
+              AND (
+                    reservation_date IS NULL
+                 OR reservation_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                 OR updated_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                  )
+            ORDER BY FIELD(status, 'failed', 'needs_review', 'needs-review', 'running', 'claimed', 'pending'), updated_at DESC
+            LIMIT 80
+        ");
+        foreach ($stmt->fetchAll() as $task) {
+            $result = json_decode((string) $task['result_text'], true);
+            if (!is_array($result)) $result = array();
+            $detail = isset($result['error']) ? $result['error'] : (isset($result['reason']) ? $result['reason'] : (isset($result['status']) ? $result['status'] : $task['status']));
+            $task_type = (string) $task['task_type'];
+            $terminal = $task['alert_kind'] === 'terminal';
+            $end = $task['end_time_text'] === '00:00' && $task['start_time_text'] !== '00:00' ? '24:00' : $task['end_time_text'];
+            $context = trim(implode(' ', array_filter(array(
+                $task['reservation_date'],
+                $task['room_key'] ? strtoupper($task['room_key']) . '홀' : '',
+                $task['start_time_text'] && $end ? $task['start_time_text'] . '-' . $end : '',
+            ))));
+            admin_alert_add($alerts, array(
+                'key' => 'task:' . intval($task['id']),
+                'source' => 'task',
+                'sourceLabel' => '자동화 작업',
+                'severity' => $terminal ? 'critical' : 'warning',
+                'title' => in_array($task_type, array('naver_cancel', 'spacecloud_cancel'), true)
+                    ? '후예약 자동취소 확인 필요'
+                    : admin_task_alert_label($task_type) . ' 확인 필요',
+                'message' => ($context ? $context . ' · ' : '') . admin_alert_clean_text($detail, $terminal ? '작업이 오류 상태입니다.' : '작업 처리가 오래 지연되고 있습니다.'),
+                'occurredAt' => $task['created_at'],
+                'updatedAt' => $task['updated_at'],
+                'targetSection' => 'tasks',
+                'taskId' => intval($task['id']),
+                'taskType' => $task_type,
+                'contextLabel' => $context,
+            ), array($task['id'], $task['status'], isset($result['status']) ? $result['status'] : '', $detail, $task['alert_kind']));
+        }
+    }
+
+    if (admin_table_exists($pdo, 'rhythmjoy_reflection_audits')) {
+        $stmt = $pdo->query("
+            SELECT audit_key, severity, reason, task_id, task_status, reservation_date, room_key,
+                   TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
+                   TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
+                   DATE_FORMAT(first_seen_at, '%Y-%m-%dT%H:%i:%s+09:00') AS first_seen_at,
+                   DATE_FORMAT(checked_at, '%Y-%m-%dT%H:%i:%s+09:00') AS checked_at
+            FROM rhythmjoy_reflection_audits
+            WHERE audit_status='issue'
+            ORDER BY FIELD(severity, 'critical', 'warning', 'info'), checked_at DESC
+            LIMIT 80
+        ");
+        foreach ($stmt->fetchAll() as $audit) {
+            $task_key = $audit['task_id'] !== null ? 'task:' . intval($audit['task_id']) : '';
+            if ($task_key !== '' && isset($alerts[$task_key])) {
+                continue;
+            }
+            $end = $audit['end_time_text'] === '00:00' && $audit['start_time_text'] !== '00:00' ? '24:00' : $audit['end_time_text'];
+            $context = trim(implode(' ', array_filter(array(
+                $audit['reservation_date'],
+                $audit['room_key'] ? strtoupper($audit['room_key']) . '홀' : '',
+                $audit['start_time_text'] && $end ? $audit['start_time_text'] . '-' . $end : '',
+            ))));
+            admin_alert_add($alerts, array(
+                'key' => 'audit:' . $audit['audit_key'],
+                'source' => 'audit',
+                'sourceLabel' => '반영 정규검사',
+                'severity' => $audit['severity'] === 'critical' ? 'critical' : 'warning',
+                'title' => '예약 반영 오류 확인 필요',
+                'message' => ($context ? $context . ' · ' : '') . $audit['reason'],
+                'occurredAt' => $audit['first_seen_at'],
+                'updatedAt' => $audit['checked_at'],
+                'targetSection' => 'tasks',
+                'taskId' => $audit['task_id'] !== null ? intval($audit['task_id']) : null,
+                'contextLabel' => $context,
+            ), array($audit['audit_key'], $audit['severity'], $audit['reason'], $audit['task_status']));
+        }
+
+        $latest = $pdo->query("SELECT MAX(checked_at) AS checked_at FROM rhythmjoy_reflection_audits")->fetch();
+        $latest_at = $latest && $latest['checked_at'] ? strtotime($latest['checked_at']) : 0;
+        if (!$latest_at || time() - $latest_at > 12 * 60) {
+            admin_alert_add($alerts, array(
+                'key' => 'system:reflection-audit-stale',
+                'source' => 'system',
+                'sourceLabel' => '정규검사',
+                'severity' => 'critical',
+                'title' => '예약 정규검사가 멈췄습니다',
+                'message' => $latest_at ? '마지막 정규검사가 12분 이상 갱신되지 않았습니다.' : '정규검사 기록이 없습니다.',
+                'occurredAt' => $latest_at ? date('c', $latest_at) : null,
+                'updatedAt' => $latest_at ? date('c', $latest_at) : null,
+                'targetSection' => 'tasks',
+                'contextLabel' => '',
+            ), array('reflection-audit-stale', $latest_at ? 'stale' : 'missing'));
+        }
+    }
+
+    $session_rows = array();
+    if (admin_table_exists($pdo, 'rhythmjoy_admin_sessions')) {
+        $stmt = $pdo->query("
+            SELECT platform, status, note, last_checked_at,
+                   DATE_FORMAT(last_checked_at, '%Y-%m-%dT%H:%i:%s+09:00') AS checked_at_text
+            FROM rhythmjoy_admin_sessions
+            WHERE platform IN ('naver','spacecloud')
+        ");
+        foreach ($stmt->fetchAll() as $session) {
+            $session_rows[$session['platform']] = $session;
+        }
+    }
+    foreach (array('naver' => '네이버', 'spacecloud' => '스페이스클라우드') as $platform => $label) {
+        $session = isset($session_rows[$platform]) ? $session_rows[$platform] : null;
+        $checked_at = $session && $session['last_checked_at'] ? strtotime($session['last_checked_at']) : 0;
+        $status = $session ? strtolower(trim((string) $session['status'])) : 'missing';
+        $stale = !$checked_at || time() - $checked_at > 10 * 60;
+        if ($status === 'ready' && !$stale) {
+            continue;
+        }
+        $message = !$session
+            ? $label . ' 자동화 세션 기록이 없습니다.'
+            : ($stale ? $label . ' 세션 점검이 10분 이상 갱신되지 않았습니다.' : admin_alert_clean_text($session['note'], $label . ' 로그인이 필요합니다.'));
+        admin_alert_add($alerts, array(
+            'key' => 'session:' . $platform,
+            'source' => 'session',
+            'sourceLabel' => '로그인 세션',
+            'severity' => 'critical',
+            'title' => $label . ' 자동화 세션 확인 필요',
+            'message' => $message,
+            'occurredAt' => $session ? $session['checked_at_text'] : null,
+            'updatedAt' => $session ? $session['checked_at_text'] : null,
+            'targetSection' => 'sessions',
+            'contextLabel' => $label,
+        ), array($platform, $status, $stale ? 'stale' : 'current', $session ? $session['note'] : 'missing'));
+    }
+
+    if (admin_table_exists($pdo, 'rhythmjoy_sms_deliveries')) {
+        $stmt = $pdo->query("
+            SELECT id, source_task_type, source_task_id, status, error_text,
+                   DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
+                   DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+            FROM rhythmjoy_sms_deliveries
+            WHERE status IN ('failed','uncertain','needs_review')
+               OR (status='sending' AND updated_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE))
+            ORDER BY updated_at DESC
+            LIMIT 50
+        ");
+        foreach ($stmt->fetchAll() as $sms) {
+            admin_alert_add($alerts, array(
+                'key' => 'sms:' . intval($sms['id']),
+                'source' => 'sms',
+                'sourceLabel' => '문자 발송',
+                'severity' => 'critical',
+                'title' => '예약 문자 발송 확인 필요',
+                'message' => admin_alert_clean_text($sms['error_text'], '문자 발송 상태가 ' . $sms['status'] . '입니다.'),
+                'occurredAt' => $sms['created_at'],
+                'updatedAt' => $sms['updated_at'],
+                'targetSection' => 'tasks',
+                'taskId' => $sms['source_task_id'] !== null ? intval($sms['source_task_id']) : null,
+                'taskType' => $sms['source_task_type'],
+                'contextLabel' => $sms['source_task_id'] ? '작업 #' . intval($sms['source_task_id']) : '',
+            ), array($sms['id'], $sms['status'], $sms['error_text']));
+        }
+    }
+
+    if (admin_table_exists($pdo, 'rhythmjoy_naver_email_events')) {
+        $stmt = $pdo->query("
+            SELECT id, event_type, parse_status, processing_status, error_text,
+                   reservation_date, spacecloud_room_key,
+                   DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
+                   DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+            FROM rhythmjoy_naver_email_events
+            WHERE (
+                    parse_status IN ('failed','error','needs_review')
+                 OR processing_status IN ('failed','error','needs_review')
+                  )
+              AND (
+                    reservation_date IS NULL
+                 OR reservation_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                 OR updated_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                  )
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM rhythmjoy_naver_email_events recovered
+                    WHERE rhythmjoy_naver_email_events.reservation_number <> ''
+                      AND recovered.reservation_number = rhythmjoy_naver_email_events.reservation_number
+                      AND recovered.id > rhythmjoy_naver_email_events.id
+                      AND recovered.parse_status = 'parsed'
+                      AND recovered.processing_status NOT IN (
+                          'failed','error','needs_review','payment_pending',
+                          'spacecloud_upload_pending','spacecloud_delete_pending',
+                          'naver_block_pending','naver_restore_pending',
+                          'report_only_conflict','spacecloud_conflict_later_reserv'
+                      )
+                  )
+            ORDER BY updated_at DESC
+            LIMIT 50
+        ");
+        foreach ($stmt->fetchAll() as $email) {
+            $context = trim(implode(' ', array_filter(array(
+                $email['reservation_date'],
+                $email['spacecloud_room_key'] ? strtoupper($email['spacecloud_room_key']) . '홀' : '',
+            ))));
+            admin_alert_add($alerts, array(
+                'key' => 'email:' . intval($email['id']),
+                'source' => 'email',
+                'sourceLabel' => '예약 메일 수집',
+                'severity' => 'critical',
+                'title' => '예약 메일 처리 오류',
+                'message' => ($context ? $context . ' · ' : '') . admin_alert_clean_text($email['error_text'], '메일 처리 상태를 확인해주세요.'),
+                'occurredAt' => $email['created_at'],
+                'updatedAt' => $email['updated_at'],
+                'targetSection' => 'tasks',
+                'contextLabel' => $context,
+            ), array($email['id'], $email['event_type'], $email['parse_status'], $email['processing_status'], $email['error_text']));
+        }
+    }
+
+    if (admin_table_exists($pdo, 'rhythmjoy_admin_platform_audits')) {
+        $stmt = $pdo->query("
+            SELECT reservation_id, audit_status, reservation_status, reservation_date, room_key, reason,
+                   DATE_FORMAT(checked_at, '%Y-%m-%dT%H:%i:%s+09:00') AS checked_at
+            FROM rhythmjoy_admin_platform_audits
+            WHERE audit_status IN ('mismatch','check_failed')
+            ORDER BY checked_at DESC
+            LIMIT 50
+        ");
+        foreach ($stmt->fetchAll() as $audit) {
+            $system_failure = intval($audit['reservation_id']) === 0;
+            $context = trim(implode(' ', array_filter(array(
+                $audit['reservation_date'],
+                $audit['room_key'] ? strtoupper($audit['room_key']) . '홀' : '',
+            ))));
+            admin_alert_add($alerts, array(
+                'key' => $system_failure ? 'system:admin-platform-audit' : 'platform-audit:' . intval($audit['reservation_id']),
+                'source' => 'platform_audit',
+                'sourceLabel' => '실제 플랫폼 검사',
+                'severity' => $audit['audit_status'] === 'mismatch' ? 'critical' : 'warning',
+                'title' => $system_failure
+                    ? '실제 플랫폼 정기검사 실패'
+                    : ($audit['audit_status'] === 'mismatch' ? 'DB와 실제 플랫폼 상태 불일치' : '실제 플랫폼 재검사 필요'),
+                'message' => ($context ? $context . ' · ' : '') . admin_alert_clean_text($audit['reason'], '플랫폼 검사 결과를 확인해주세요.'),
+                'occurredAt' => $audit['checked_at'],
+                'updatedAt' => $audit['checked_at'],
+                'targetSection' => 'tasks',
+                'contextLabel' => $context,
+            ), array($audit['reservation_id'], $audit['audit_status'], $audit['reservation_status'], $audit['reason']));
+        }
+    }
+
+    return $alerts;
+}
+
+function admin_alerts_payload($pdo) {
+    $alerts = current_admin_alert_candidates($pdo);
+    $acknowledged = array();
+    $stmt = $pdo->query("SELECT alert_key, alert_signature, DATE_FORMAT(acknowledged_at, '%Y-%m-%dT%H:%i:%s+09:00') AS acknowledged_at FROM rhythmjoy_admin_alert_acknowledgements");
+    foreach ($stmt->fetchAll() as $row) {
+        $acknowledged[$row['alert_key']] = $row;
+    }
+    foreach ($alerts as $key => &$alert) {
+        $ack = isset($acknowledged[$key]) ? $acknowledged[$key] : null;
+        $alert['unread'] = !$ack || $ack['alert_signature'] !== $alert['signature'];
+        $alert['acknowledgedAt'] = $ack && !$alert['unread'] ? $ack['acknowledged_at'] : null;
+    }
+    unset($alert);
+    $rows = array_values($alerts);
+    usort($rows, function($left, $right) {
+        if ($left['unread'] !== $right['unread']) return $left['unread'] ? -1 : 1;
+        if ($left['severity'] !== $right['severity']) return $left['severity'] === 'critical' ? -1 : 1;
+        return strcmp((string) $right['updatedAt'], (string) $left['updatedAt']);
+    });
+    $critical = 0;
+    $unread = 0;
+    foreach ($rows as $row) {
+        if ($row['severity'] === 'critical') $critical += 1;
+        if ($row['unread']) $unread += 1;
+    }
+    return array(
+        'adminAlerts' => array_slice($rows, 0, 100),
+        'adminAlertSummary' => array(
+            'activeCount' => count($rows),
+            'criticalCount' => $critical,
+            'unreadCount' => $unread,
+            'checkedAt' => date('c'),
+        ),
+    );
+}
+
+function acknowledge_admin_alerts($pdo, $payload) {
+    $current = current_admin_alert_candidates($pdo);
+    $wanted = array();
+    $all = isset($payload['all']) && !!$payload['all'];
+    if (!$all && isset($payload['alertKeys']) && is_array($payload['alertKeys'])) {
+        foreach ($payload['alertKeys'] as $key) {
+            $key = trim((string) $key);
+            if ($key !== '' && isset($current[$key])) $wanted[$key] = true;
+        }
+    }
+    if ($all) {
+        foreach ($current as $key => $row) $wanted[$key] = true;
+    }
+    if (!$all && count($wanted) > 100) {
+        throw new InvalidArgumentException('한 번에 확인할 수 있는 알림은 100건까지입니다.');
+    }
+    $stmt = $pdo->prepare("
+        INSERT INTO rhythmjoy_admin_alert_acknowledgements (alert_key, alert_signature, acknowledged_at)
+        VALUES (?, ?, NOW())
+        ON DUPLICATE KEY UPDATE alert_signature=VALUES(alert_signature), acknowledged_at=NOW()
+    ");
+    foreach (array_keys($wanted) as $key) {
+        $stmt->execute(array($key, $current[$key]['signature']));
+    }
+    return count($wanted);
+}
+
 function industry_snapshot_key() {
     return 'industry-size-segment-2026-07-16-v1';
 }
@@ -2354,7 +2762,7 @@ function industry_comparison_stats($pdo) {
 
 function bootstrap_payload($pdo, $date, $env) {
     $settings = setting_rows($pdo);
-    return array(
+    return array_merge(array(
         'ok' => true,
         'mode' => isset($env['SYNC_ADMIN_ENQUEUE_LIVE_TASKS']) && $env['SYNC_ADMIN_ENQUEUE_LIVE_TASKS'] === '1'
             ? 'db-live-queue'
@@ -2370,7 +2778,7 @@ function bootstrap_payload($pdo, $date, $env) {
         'revenueStats' => revenue_stats($pdo, $date),
         'revenueComparison' => revenue_comparison_stats($pdo),
         'industryComparison' => industry_comparison_stats($pdo),
-    );
+    ), admin_alerts_payload($pdo));
 }
 
 function upsert_setting($pdo, $key, $value) {
@@ -3006,7 +3414,19 @@ function run_sync_admin_selftest() {
         $too_long_rejected = true;
     }
     sync_admin_selftest_assert($too_long_rejected, 'periods longer than one year are rejected');
-    echo "sync-admin self-test OK: recurring weekdays, fifth-week exclusion, per-date override, one-year limit\n";
+    sync_admin_selftest_assert(
+        admin_alert_signature(array('task', 7, 'failed')) === admin_alert_signature(array('task', 7, 'failed')),
+        'alert signatures are deterministic'
+    );
+    sync_admin_selftest_assert(
+        admin_alert_signature(array('task', 7, 'failed')) !== admin_alert_signature(array('task', 7, 'done')),
+        'alert signatures change when the underlying state changes'
+    );
+    sync_admin_selftest_assert(
+        strpos(admin_alert_clean_text('recipient 010-1234-5678 failed'), '010-****-5678') !== false,
+        'alert text masks full phone numbers'
+    );
+    echo "sync-admin self-test OK: recurring weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures and phone redaction\n";
 }
 
 if (PHP_SAPI === 'cli' && isset($argv[1]) && $argv[1] === 'self-test') {
@@ -3040,6 +3460,22 @@ try {
 
     if ($action === 'bootstrap') {
         json_response(bootstrap_payload($pdo, $date, $env));
+    }
+
+    if ($action === 'alerts') {
+        json_response(array_merge(array(
+            'ok' => true,
+            'serverTime' => date('c'),
+        ), admin_alerts_payload($pdo)));
+    }
+
+    if ($action === 'acknowledge_alerts') {
+        $acknowledged_count = acknowledge_admin_alerts($pdo, $payload);
+        json_response(array_merge(array(
+            'ok' => true,
+            'serverTime' => date('c'),
+            'acknowledgedCount' => $acknowledged_count,
+        ), admin_alerts_payload($pdo)));
     }
 
     if ($action === 'month_summary') {
