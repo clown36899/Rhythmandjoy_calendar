@@ -2993,6 +2993,15 @@
   }
 
   function duplicateCancelResolution(task) {
+    if (task.resultStatus === "conflict-cleared-source-requeued") {
+      return {
+        state: "pending",
+        statusLabel: "취소 생략 · 재판정",
+        summary: "선예약 상태가 바뀌어 취소하지 않고 원본 반영을 다시 판정합니다.",
+        smsStatus: task.smsStatus,
+        conflict: task.conflict,
+      };
+    }
     if (isTaskDone(task)) {
       return {
         state: "resolved",
@@ -3093,6 +3102,7 @@
   }
 
   function isTaskDone(task) {
+    if (task?.resultStatus === "conflict-cleared-source-requeued") return false;
     return task?.status === "done"
       || task?.status === "synced"
       || task?.resultStatus === "canceled"
@@ -3125,6 +3135,7 @@
     if (task.taskType === "naver_restore" && task.resultStatus === "restore-skipped-not-owned") return "복구생략";
     if (task.resolution?.statusLabel) return task.resolution.statusLabel;
     if (isDuplicateCancelTask(task)) {
+      if (task.resultStatus === "conflict-cleared-source-requeued") return "취소 생략 · 재판정";
       if (task.status === "done" || task.resultStatus === "canceled") return "중복취소 완료";
       if (task.resultStatus === "already-canceled") return "이미 취소됨";
       if (task.status === "running") return "중복취소 진행";
@@ -3141,6 +3152,7 @@
     if (task.resolution?.state === "running") return "running";
     if (task.resolution?.state === "pending") return "pending";
     if (task.resolution?.state === "linked-attention" || task.resolution?.state === "attention") return "failed";
+    if (task.resultStatus === "conflict-cleared-source-requeued") return "pending";
     if (task.status === "done" || task.status === "synced" || task.resultStatus === "canceled" || task.resultStatus === "already-canceled") return "done";
     if (task.status === "failed" || task.status === "needs_review") return "failed";
     if (task.status === "running") return "running";

@@ -1890,19 +1890,19 @@ function task_conflict_booking($booking) {
     if (!is_array($booking)) {
         return null;
     }
-    $platform = isset($booking['source_platform']) ? (string) $booking['source_platform'] : '';
-    $start = isset($booking['start_time']) ? (string) $booking['start_time'] : '';
-    $end = isset($booking['end_time']) ? (string) $booking['end_time'] : '';
+    $platform = isset($booking['source_platform']) ? (string) $booking['source_platform'] : (isset($booking['sourcePlatform']) ? (string) $booking['sourcePlatform'] : '');
+    $start = isset($booking['start_time']) ? (string) $booking['start_time'] : (isset($booking['startTime']) ? (string) $booking['startTime'] : '');
+    $end = isset($booking['end_time']) ? (string) $booking['end_time'] : (isset($booking['endTime']) ? (string) $booking['endTime'] : '');
     return array(
         'platform' => $platform,
         'platformLabel' => $platform === 'naver' ? '네이버' : ($platform === 'spacecloud' ? '스페이스클라우드' : '예약'),
-        'date' => isset($booking['reservation_date']) ? (string) $booking['reservation_date'] : '',
-        'room' => strtoupper((string) (isset($booking['room_key']) ? $booking['room_key'] : '')),
+        'date' => isset($booking['reservation_date']) ? (string) $booking['reservation_date'] : (isset($booking['date']) ? (string) $booking['date'] : ''),
+        'room' => strtoupper((string) (isset($booking['room_key']) ? $booking['room_key'] : (isset($booking['roomKey']) ? $booking['roomKey'] : ''))),
         'startHour' => hour_from_time_value($start, false),
         'endHour' => hour_from_time_value($end, true),
-        'name' => isset($booking['reserver_name']) ? (string) $booking['reserver_name'] : '',
-        'reservationNo' => isset($booking['reservation_number']) ? (string) $booking['reservation_number'] : '',
-        'receivedAt' => isset($booking['last_event_at']) ? (string) $booking['last_event_at'] : '',
+        'name' => isset($booking['reserver_name']) ? (string) $booking['reserver_name'] : (isset($booking['reserverName']) ? (string) $booking['reserverName'] : ''),
+        'reservationNo' => isset($booking['reservation_number']) ? (string) $booking['reservation_number'] : (isset($booking['reservationNumber']) ? (string) $booking['reservationNumber'] : ''),
+        'receivedAt' => isset($booking['confirmedAt']) ? (string) $booking['confirmedAt'] : (isset($booking['last_event_at']) ? (string) $booking['last_event_at'] : ''),
     );
 }
 

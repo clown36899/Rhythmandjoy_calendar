@@ -542,7 +542,10 @@ function verifySpacecloudReservationText(text, row, reservationId) {
   if (!compact.includes(dateText)) errors.push('date');
   const startHour = displayHour(row.startTime);
   const endHour = displayHour(row.endTime);
-  if (!compact.includes(`${startHour}시~${endHour}시`)) errors.push('time');
+  const acceptedEndHours = row.endTime === '00:00' && row.startTime !== '00:00'
+    ? ['0', '24']
+    : [endHour];
+  if (!acceptedEndHours.some((candidate) => compact.includes(`${startHour}시~${candidate}시`))) errors.push('time');
   const roomName = SPACECLOUD_ROOMS[row.roomKey]?.name || '';
   if (roomName && !compact.includes(roomName)) errors.push('room');
   return { ok: errors.length === 0, errors };
@@ -1673,9 +1676,72 @@ export async function fetchSpacecloudReservationPhone(context, task) {
   };
 }
 
+export async function inspectSpacecloudConfirmedReservation(context, task) {
+  const page = await pageForContext(context);
+  const payload = parseTaskPayload(task);
+  const reservationId = spacecloudReservationIdFromTask(task);
+  const row = {
+    taskId: task.id || task.taskId || null,
+    roomKey: task.roomKey || task.room_key || payload.roomKey || payload.room_key || '',
+    date: normalizeDate(task.date || task.reservation_date || payload.date),
+    startTime: slotTimeText(task.startTime || task.start_time || payload.start_time || payload.startTime),
+    endTime: slotTimeText(task.endTime || task.end_time || payload.end_time || payload.endTime),
+    reserverName: task.reserverName || task.reserver_name || payload.name || '',
+    reservationId,
+  };
+  if (!reservationId) {
+    return { ...row, status: 'needs-review', confirmed: false, reason: 'spacecloud-reservation-id-missing' };
+  }
+  try {
+    await page.goto(`https://partner.spacecloud.kr/reservation/${encodeURIComponent(reservationId)}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
+    });
+    await page.waitForTimeout(700);
+    const detail = await fetchSpacecloudReservationDetail(page, reservationId);
+    if (!detail.ok) {
+      return {
+        ...row,
+        status: 'needs-review',
+        confirmed: false,
+        reason: detail.error || `spacecloud-detail-http-${detail.status}`,
+      };
+    }
+    const statusCode = spacecloudReservationStatus(detail);
+    const bodyText = await page.locator('body').innerText({ timeout: 10000 });
+    const verification = verifySpacecloudReservationText(bodyText, row, reservationId);
+    if (!verification.ok) {
+      return {
+        ...row,
+        status: 'needs-review',
+        confirmed: false,
+        statusCode,
+        verification,
+        reason: `spacecloud-winner-identity-mismatch:${verification.errors.join(',')}`,
+      };
+    }
+    return {
+      ...row,
+      status: statusCode === 'RSCMP' ? 'confirmed' : statusCode === 'RCCMP' ? 'canceled' : 'needs-review',
+      confirmed: statusCode === 'RSCMP',
+      statusCode,
+      verification,
+      reason: statusCode === 'RSCMP' ? '' : `spacecloud-winner-status-${statusCode || 'unknown'}`,
+    };
+  } catch (error) {
+    return {
+      ...row,
+      status: 'needs-review',
+      confirmed: false,
+      reason: String(error?.message || error),
+    };
+  }
+}
+
 export async function cancelSpacecloudConfirmedReservation(context, task, {
   reasonCode = 'PRSCH',
   reasonText = '',
+  beforeConfirm = null,
 } = {}) {
   const page = await pageForContext(context);
   const payload = parseTaskPayload(task);
@@ -1781,6 +1847,25 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
 
     const confirmButton = page.locator('a.btn.btn_full.btn_default').filter({ hasText: '확인', visible: true });
     if (await confirmButton.count() !== 1) throw new Error('SpaceCloud cancel confirm button not visible');
+    if (typeof beforeConfirm === 'function') {
+      const guard = await beforeConfirm({
+        taskId: row.taskId,
+        reservationId,
+        roomKey: row.roomKey,
+        date: row.date,
+        startTime: row.startTime,
+        endTime: row.endTime,
+      });
+      row.cancelGuard = guard?.summary || guard || {};
+      if (guard?.approved !== true) {
+        row.status = guard?.retryable ? 'guard-retry-pending' : 'needs-review';
+        row.error = `SpaceCloud cancellation guard blocked final confirm: ${guard?.reason || 'not-approved'}`;
+        row.finishedAt = new Date().toISOString();
+        await page.locator('.btn_pop_close').filter({ visible: true }).first().click({ timeout: 3000 }).catch(() => {});
+        return row;
+      }
+    }
+    row.submissionAttempted = true;
     await confirmButton.first().click({ timeout: 8000 });
 
     let afterStatus = '';
@@ -1793,8 +1878,10 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
     row.afterStatusCode = afterStatus;
     if (afterStatus === 'RCCMP') {
       row.status = 'canceled';
+      row.submissionConfirmed = true;
     } else {
       row.status = 'failed';
+      row.submissionConfirmed = false;
       row.error = `SpaceCloud status did not become canceled after confirm: ${afterStatus || 'unknown'}`;
     }
     if (dialogTypes.length > 0) row.dialogTypes = dialogTypes;

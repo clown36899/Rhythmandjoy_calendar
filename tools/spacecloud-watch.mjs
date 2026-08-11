@@ -10,6 +10,7 @@ import {
   checkSpacecloudLogin,
   deleteSpacecloudDirectReservation,
   fetchSpacecloudReservationPhone,
+  inspectSpacecloudConfirmedReservation,
   inspectSpacecloudDirectReservation,
   openSpacecloudContext,
   spacecloudUploadEventFromTask,
@@ -19,9 +20,16 @@ import {
   cancelNaverConfirmedReservation,
   checkNaverSmartplaceLogin,
   fetchNaverReservationPhone,
+  inspectNaverReservationStatus,
   inspectNaverAvailability,
   setNaverAvailability,
 } from './naver-playwright-availability.mjs';
+import {
+  assessCancellationGuard,
+  assessLaterReservationConflict,
+  cancellationPairForConflict,
+  conflictGuardSummary,
+} from './booking-conflict-policy.mjs';
 
 const DEFAULT_CONFIG_PATH = 'config/spacecloud-sync.local.json';
 const DEFAULT_STATE_PATH = 'state/spacecloud-sync-log.json';
@@ -47,9 +55,17 @@ const CONFIRMATION_INFO_URLS = {
   s: 'https://리듬앤조이일정표.com/s',
 };
 const TELEGRAM_LOG_HINT = '로그: 자동화 관리패널 또는 spacecloud-watch/launchd.log';
-const CUSTOMER_RESERVATION_CANCELLATION_DISABLED = true;
+const CUSTOMER_RESERVATION_CANCELLATION_DEFAULT_ENABLED = true;
+const CANCELLATION_PRIORITY_RULE = 'first-email-confirmed-real-platform-wins-strict';
+const CANCELLATION_GUARD_MAX_ATTEMPTS = 6;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+function customerReservationCancellationEnabled() {
+  const configured = String(process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED || '').trim();
+  if (!configured) return CUSTOMER_RESERVATION_CANCELLATION_DEFAULT_ENABLED;
+  return !['0', 'false', 'off', 'disabled'].includes(configured.toLowerCase());
+}
 
 function usage() {
   return `Usage:
@@ -955,7 +971,7 @@ async function sendPriorBookingCancellationSms(args, {
 
 function shouldSendPriorBookingCancellationSms(task, row) {
   return row?.status === 'canceled'
-    || (task?.recoveredFromStaleRunning === true && row?.status === 'already-canceled');
+    || (row?.status === 'already-canceled' && taskPriorCancellationAttempted(task));
 }
 
 const REMOTE_TASK_ENRICHMENT_PY = String.raw`
@@ -1449,9 +1465,6 @@ async function fetchRemoteNaverCancelTasks(args) {
 }
 
 async function createRemoteSpacecloudCancelTask(args, sourceTask, conflictRow) {
-  if (CUSTOMER_RESERVATION_CANCELLATION_DISABLED) {
-    throw new Error('customer reservation cancellation automation is disabled');
-  }
   const target = await loadCafe24Target(args);
   const sourcePayload = payloadForTask(sourceTask);
   const losing = conflictRow.losingBooking || {};
@@ -1460,22 +1473,31 @@ async function createRemoteSpacecloudCancelTask(args, sourceTask, conflictRow) {
     sourcePayload.spacecloud_reservation_id
     || sourcePayload.spacecloudReservationId
     || conflictRow.reservationId
+    || losing.spacecloudReservationId
+    || losing.spacecloud_reservation_id
     || ''
   ).trim();
+  const sourceTaskId = Number(sourceTask.id || sourceTask.taskId || 0);
+  const winningLedgerId = Number(winning.id || 0);
+  const losingLedgerId = Number(losing.id || 0);
+  if (!Number.isSafeInteger(sourceTaskId) || sourceTaskId <= 0) throw new Error('source task id missing for SpaceCloud cancellation');
+  if (!Number.isSafeInteger(winningLedgerId) || winningLedgerId <= 0) throw new Error('winning ledger id missing for SpaceCloud cancellation');
+  if (!Number.isSafeInteger(losingLedgerId) || losingLedgerId <= 0) throw new Error('losing ledger id missing for SpaceCloud cancellation');
+  if (!reservationId) throw new Error('SpaceCloud reservation id missing for cancellation queue');
   const payload = {
     ...sourcePayload,
-    sourceTaskId: sourceTask.id || sourceTask.taskId || null,
+    sourceTaskId,
     sourceTaskType: sourceTask.taskType || sourceTask.task_type || 'naver_block',
     source: 'spacecloud-later-reservation-conflict',
     action: 'cancel-spacecloud-confirmed-reservation',
-    priorityRule: conflictRow.priorityRule || 'first-real-platform-confirmed-email-wins',
+    priorityRule: CANCELLATION_PRIORITY_RULE,
     winningBooking: winning,
     losingBooking: losing,
     spacecloud_reservation_id: reservationId,
     originalPayload: sourcePayload,
   };
   const insertPayload = Buffer.from(JSON.stringify({
-    dedupeKey: `spacecloud_cancel|${sourceTask.id || sourceTask.taskId || ''}|${reservationId}`.slice(0, 96),
+    dedupeKey: `spacecloud_cancel|${sourceTaskId}|${losingLedgerId}|${reservationId}`.slice(0, 96),
     emailEventId: sourceTask.emailEventId || sourceTask.email_event_id || null,
     roomKey: sourceTask.roomKey || sourceTask.room_key || losing.roomKey || losing.room_key || '',
     reservationNumber: reservationId,
@@ -1534,7 +1556,7 @@ try:
             VALUES (%s,%s,'spacecloud_cancel','pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
             ON DUPLICATE KEY UPDATE
                 status=IF(status IN ('running', 'done', 'needs_review', 'failed'), status, 'pending'),
-                payload_json=VALUES(payload_json),
+                payload_json=IF(status='pending', VALUES(payload_json), payload_json),
                 updated_at=NOW()
             """,
             (
@@ -1557,13 +1579,14 @@ finally:
     conn.close()
 PY
 `;
-  return JSON.parse(runSshScript(target, script).trim() || '{}');
+  const saved = JSON.parse(runSshScript(target, script).trim() || '{}');
+  if (!Number(saved.id) || !['pending', 'running'].includes(saved.status)) {
+    throw new Error(`SpaceCloud cancellation task is not safely queued: ${JSON.stringify(saved)}`);
+  }
+  return saved;
 }
 
 async function createRemoteNaverCancelTask(args, sourceTask, conflictRow) {
-  if (CUSTOMER_RESERVATION_CANCELLATION_DISABLED) {
-    throw new Error('customer reservation cancellation automation is disabled');
-  }
   const target = await loadCafe24Target(args);
   const sourcePayload = payloadForTask(sourceTask);
   const losing = conflictRow.losingBooking || {};
@@ -1577,19 +1600,26 @@ async function createRemoteNaverCancelTask(args, sourceTask, conflictRow) {
     || losing.reservation_number
     || ''
   ).trim();
+  const sourceTaskId = Number(sourceTask.id || sourceTask.taskId || 0);
+  const winningLedgerId = Number(winning.id || 0);
+  const losingLedgerId = Number(losing.id || 0);
+  if (!Number.isSafeInteger(sourceTaskId) || sourceTaskId <= 0) throw new Error('source task id missing for Naver cancellation');
+  if (!Number.isSafeInteger(winningLedgerId) || winningLedgerId <= 0) throw new Error('winning ledger id missing for Naver cancellation');
+  if (!Number.isSafeInteger(losingLedgerId) || losingLedgerId <= 0) throw new Error('losing ledger id missing for Naver cancellation');
+  if (!reservationNo) throw new Error('Naver reservation number missing for cancellation queue');
   const payload = {
     ...sourcePayload,
-    sourceTaskId: sourceTask.id || sourceTask.taskId || null,
+    sourceTaskId,
     sourceTaskType: sourceTask.taskType || sourceTask.task_type || 'upload',
     source: 'naver-later-reservation-conflict',
     action: 'cancel-naver-confirmed-reservation',
-    priorityRule: conflictRow.priorityRule || 'first-real-platform-confirmed-email-wins',
+    priorityRule: CANCELLATION_PRIORITY_RULE,
     winningBooking: winning,
     losingBooking: losing,
     originalPayload: sourcePayload,
   };
   const insertPayload = Buffer.from(JSON.stringify({
-    dedupeKey: `naver_cancel|${sourceTask.id || sourceTask.taskId || ''}|${reservationNo}`.slice(0, 96),
+    dedupeKey: `naver_cancel|${sourceTaskId}|${losingLedgerId}|${reservationNo}`.slice(0, 96),
     emailEventId: sourceTask.emailEventId || sourceTask.email_event_id || null,
     roomKey: sourceTask.roomKey || sourceTask.room_key || losing.roomKey || losing.room_key || '',
     reservationNumber: reservationNo,
@@ -1648,7 +1678,7 @@ try:
             VALUES (%s,%s,'naver_cancel','pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
             ON DUPLICATE KEY UPDATE
                 status=IF(status IN ('running', 'done', 'needs_review', 'failed'), status, 'pending'),
-                payload_json=VALUES(payload_json),
+                payload_json=IF(status='pending', VALUES(payload_json), payload_json),
                 updated_at=NOW()
             """,
             (
@@ -1671,7 +1701,254 @@ finally:
     conn.close()
 PY
 `;
+  const saved = JSON.parse(runSshScript(target, script).trim() || '{}');
+  if (!Number(saved.id) || !['pending', 'running'].includes(saved.status)) {
+    throw new Error(`Naver cancellation task is not safely queued: ${JSON.stringify(saved)}`);
+  }
+  return saved;
+}
+
+async function fetchRemoteCancellationGuardSnapshot(args, task) {
+  const target = await loadCafe24Target(args);
+  const request = Buffer.from(JSON.stringify({
+    taskId: Number(task.id || task.taskId || 0),
+    claimToken: String(task.claimToken || task.claim_token || ''),
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export CANCELLATION_GUARD_B64=${shellQuote(request)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from datetime import datetime, timedelta
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+def parse_json(value):
+    try:
+        parsed = json.loads(value or '{}')
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+def time_text(value):
+    text = str(value or '')
+    return text[:5] if len(text) >= 5 else text
+
+def date_text(value):
+    return str(value or '')[:10]
+
+def slot_datetimes(date_value, start_value, end_value):
+    try:
+        day = datetime.strptime(date_text(date_value), '%Y-%m-%d')
+        start_hour, start_minute = [int(part) for part in time_text(start_value).split(':')[:2]]
+        end_hour, end_minute = [int(part) for part in time_text(end_value).split(':')[:2]]
+    except (TypeError, ValueError):
+        return None, None
+    start_total = start_hour * 60 + start_minute
+    end_total = end_hour * 60 + end_minute
+    if end_total <= start_total:
+        end_total += 24 * 60
+    return (
+        (day + timedelta(minutes=start_total)).strftime('%Y-%m-%d %H:%M:%S'),
+        (day + timedelta(minutes=end_total)).strftime('%Y-%m-%d %H:%M:%S'),
+    )
+
+def task_row(row, include_payload=False):
+    if not row:
+        return None
+    result = {
+        'id': row.get('id'),
+        'status': row.get('status') or '',
+        'claimToken': row.get('claim_token') or '',
+        'taskType': row.get('task_type') or '',
+        'ledgerId': row.get('ledger_id'),
+        'emailEventId': row.get('email_event_id'),
+        'roomKey': row.get('room_key') or '',
+        'reservationNo': row.get('reservation_number') or '',
+        'date': date_text(row.get('reservation_date')),
+        'startTime': time_text(row.get('start_time')),
+        'endTime': time_text(row.get('end_time')),
+        'reserverName': row.get('reserver_name') or '',
+        'product': row.get('product') or '',
+    }
+    if include_payload:
+        payload = parse_json(row.get('payload_json'))
+        result['payload'] = {
+            'source': payload.get('source') or '',
+            'action': payload.get('action') or '',
+            'sourceTaskId': payload.get('sourceTaskId'),
+            'sourceTaskType': payload.get('sourceTaskType') or '',
+            'priorityRule': payload.get('priorityRule') or '',
+            'winningBooking': {'id': (payload.get('winningBooking') or {}).get('id')},
+            'losingBooking': {'id': (payload.get('losingBooking') or {}).get('id')},
+            'spacecloud_reservation_id': payload.get('spacecloud_reservation_id') or payload.get('spacecloudReservationId') or '',
+        }
+    return result
+
+def ledger_row(row):
+    if not row:
+        return None
+    payload = parse_json(row.get('payload_json'))
+    return {
+        'id': row.get('id'),
+        'sourcePlatform': row.get('source_platform') or '',
+        'sourceMode': row.get('source_mode') or '',
+        'currentStatus': row.get('current_status') or '',
+        'roomKey': row.get('room_key') or '',
+        'date': date_text(row.get('reservation_date')),
+        'startTime': time_text(row.get('start_time')),
+        'endTime': time_text(row.get('end_time')),
+        'reservationNumber': row.get('reservation_number') or '',
+        'reserverName': row.get('reserver_name') or '',
+        'product': row.get('product') or '',
+        'confirmedEmailEventId': row.get('confirmed_email_event_id'),
+        'confirmedAt': str(row.get('confirmed_email_received_at') or ''),
+        'spacecloudReservationId': payload.get('spacecloud_reservation_id') or payload.get('spacecloudReservationId') or '',
+    }
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+request = json.loads(base64.b64decode(os.environ['CANCELLATION_GUARD_B64']).decode('utf-8'))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=True,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT t.*, l.id AS ledger_id
+            FROM rhythmjoy_spacecloud_tasks t
+            LEFT JOIN rhythmjoy_booking_ledger l
+              ON l.confirmed_email_event_id=t.email_event_id
+             AND l.source_platform=IF(t.task_type='naver_cancel', 'naver', 'spacecloud')
+            WHERE t.id=%s AND t.status='running' AND t.claim_token=%s
+            LIMIT 1
+            """,
+            (request.get('taskId'), request.get('claimToken') or ''),
+        )
+        child_db = cur.fetchone()
+        child = task_row(child_db, include_payload=True)
+        if not child:
+            print(json.dumps({'child': None, 'sourceTask': None, 'loser': None, 'winner': None, 'overlaps': []}, ensure_ascii=False))
+            raise SystemExit(0)
+        payload = child.get('payload') or {}
+        losing_id = int((payload.get('losingBooking') or {}).get('id') or 0)
+        winning_id = int((payload.get('winningBooking') or {}).get('id') or 0)
+        cur.execute('SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s LIMIT 1', (payload.get('sourceTaskId'),))
+        source_task = task_row(cur.fetchone())
+        cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s LIMIT 1', (losing_id,))
+        loser = ledger_row(cur.fetchone())
+        cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s LIMIT 1', (winning_id,))
+        winner = ledger_row(cur.fetchone())
+        target_start, target_end = slot_datetimes(child.get('date'), child.get('startTime'), child.get('endTime'))
+        overlaps = []
+        if target_start and target_end:
+            cur.execute(
+                """
+                SELECT *
+                FROM rhythmjoy_booking_ledger
+                WHERE current_status='confirmed'
+                  AND room_key=%s
+                  AND source_platform IN ('naver','spacecloud')
+                  AND DATE_ADD(TIMESTAMP(reservation_date, '00:00:00'), INTERVAL TIME_TO_SEC(start_time) SECOND) < %s
+                  AND DATE_ADD(
+                        TIMESTAMP(reservation_date, '00:00:00'),
+                        INTERVAL (TIME_TO_SEC(end_time) + IF(end_time <= start_time, 86400, 0)) SECOND
+                      ) > %s
+                ORDER BY COALESCE(confirmed_email_received_at, '9999-12-31 23:59:59'), id
+                """,
+                (child.get('roomKey') or '', target_end, target_start),
+            )
+            overlaps = [ledger_row(row) for row in cur.fetchall()]
+    print(json.dumps({
+        'child': child,
+        'sourceTask': source_task,
+        'loser': loser,
+        'winner': winner,
+        'overlaps': overlaps,
+    }, ensure_ascii=False))
+finally:
+    conn.close()
+PY
+`;
   return JSON.parse(runSshScript(target, script).trim() || '{}');
+}
+
+async function verifyRemoteCancellationGuard(args, task) {
+  const snapshot = await fetchRemoteCancellationGuardSnapshot(args, task);
+  const guard = assessCancellationGuard(snapshot);
+  return { ...guard, snapshot };
+}
+
+function taskPriorCancellationAttempted(task) {
+  if (task?.recoveredFromStaleRunning === true && task?.stalePreviousResultStatus === 'cancel-submit-checkpoint') return true;
+  try {
+    const result = JSON.parse(task?.resultText || task?.result_text || '{}');
+    return result?.submissionAttempted === true || result?.status === 'cancel-submit-checkpoint';
+  } catch {
+    return false;
+  }
+}
+
+async function verifyWinningBookingLive(context, guard, args) {
+  const winner = guard?.winner || null;
+  if (!winner) return { confirmed: false, status: 'needs-review', reason: 'winning-booking-missing' };
+  if (winner.sourcePlatform === 'naver') {
+    const result = await inspectNaverReservationStatus(context, {
+      roomKey: winner.roomKey,
+      date: winner.date,
+      startTime: winner.startTime,
+      endTime: winner.endTime,
+      reservationNo: winner.reservationNumber,
+      reserverName: winner.reserverName,
+      product: winner.product,
+    }, { businessId: args.naverBusinessId });
+    return {
+      confirmed: result.status === '확정',
+      platform: 'naver',
+      status: result.status,
+      reservationNo: result.reservationNo || '',
+      reason: result.status === '확정' ? '' : (result.reason || `naver-winner-status-${result.status || 'unknown'}`),
+    };
+  }
+  if (winner.sourcePlatform === 'spacecloud') {
+    const result = await inspectSpacecloudConfirmedReservation(context, {
+      roomKey: winner.roomKey,
+      date: winner.date,
+      startTime: winner.startTime,
+      endTime: winner.endTime,
+      reserverName: winner.reserverName,
+      product: winner.product,
+      payload: { spacecloud_reservation_id: winner.spacecloudReservationId },
+    });
+    return {
+      confirmed: result.confirmed === true,
+      platform: 'spacecloud',
+      status: result.status,
+      statusCode: result.statusCode || '',
+      reservationId: result.reservationId || '',
+      verification: result.verification || null,
+      reason: result.reason || '',
+    };
+  }
+  return { confirmed: false, status: 'needs-review', reason: 'winning-platform-invalid' };
 }
 
 function shortenResultString(value, maxLength = 220) {
@@ -1701,6 +1978,28 @@ function compactCandidate(candidate) {
     text: shortenResultString(candidate.text || candidate.visibleText || '', 120),
     className: candidate.className,
     directHint: Boolean(candidate.directHint),
+  };
+}
+
+function compactConflictResultBooking(booking) {
+  if (!booking || typeof booking !== 'object') return booking;
+  return {
+    id: Number(booking.id || 0) || null,
+    sourcePlatform: booking.sourcePlatform || booking.source_platform || '',
+    sourceMode: booking.sourceMode || booking.source_mode || '',
+    currentStatus: booking.currentStatus || booking.current_status || '',
+    roomKey: booking.roomKey || booking.room_key || '',
+    date: booking.date || booking.reservationDate || booking.reservation_date || '',
+    startTime: booking.startTime || booking.start_time || '',
+    endTime: booking.endTime || booking.end_time || '',
+    reservationNumber: booking.reservationNumber || booking.reservation_number || '',
+    reserverName: booking.reserverName || booking.reserver_name || '',
+    product: booking.product || '',
+    confirmedEmailEventId: booking.confirmedEmailEventId || booking.confirmed_email_event_id || null,
+    confirmedAt: booking.confirmedAt || booking.confirmed_email_received_at || booking.lastEventAt || booking.last_event_at || '',
+    spacecloudReservationId: booking.spacecloudReservationId || booking.spacecloud_reservation_id || '',
+    sourceTaskId: booking.sourceTaskId || null,
+    sourceTaskType: booking.sourceTaskType || '',
   };
 }
 
@@ -1784,6 +2083,11 @@ function compactTaskResultObject(value) {
   if (row.popupTextPreview) row.popupTextPreview = shortenResultString(row.popupTextPreview, 260);
   if (row.textPreview) row.textPreview = shortenResultString(row.textPreview, 260);
   if (row.error) row.error = shortenResultString(row.error, 500);
+  if (row.winningBooking) row.winningBooking = compactConflictResultBooking(row.winningBooking);
+  if (row.losingBooking) row.losingBooking = compactConflictResultBooking(row.losingBooking);
+  if (Array.isArray(row.overlapBookings)) row.overlapBookings = row.overlapBookings.slice(0, 4).map(compactConflictResultBooking);
+  if (Array.isArray(row.actionableOverlapBookings)) row.actionableOverlapBookings = row.actionableOverlapBookings.slice(0, 4).map(compactConflictResultBooking);
+  if (Array.isArray(row.ignoredRecordOnlyOverlapBookings)) row.ignoredRecordOnlyOverlapBookings = row.ignoredRecordOnlyOverlapBookings.slice(0, 4).map(compactConflictResultBooking);
 
   return row;
 }
@@ -1810,6 +2114,11 @@ function taskResultTextForDb(resultText, maxLength = 4000) {
       resubmitBlocked: compacted.resubmitBlocked === true,
       retryMode: compacted.retryMode || '',
       error: shortenResultString(compacted.error, 500),
+      winningBooking: compacted.winningBooking,
+      losingBooking: compacted.losingBooking,
+      cancellationTask: compacted.cancellationTask,
+      cancellationGuard: compacted.cancellationGuard || compacted.preflightCancellationGuard,
+      liveWinner: compacted.liveWinner,
       resultSummary: 'result compacted to keep valid JSON in DB',
       preflightVerification: compacted.preflightVerification,
       postSubmitVerification: compacted.postSubmitVerification,
@@ -1976,6 +2285,275 @@ PY
     throw new Error(`task claim lost before status update: task=${task.id || task.taskId || ''}`);
   }
   return result;
+}
+
+async function requeueRemoteConflictSource(args, task, guard) {
+  const target = await loadCafe24Target(args);
+  const payload = Buffer.from(JSON.stringify({
+    taskId: Number(task.id || task.taskId || 0),
+    claimToken: String(task.claimToken || task.claim_token || ''),
+    sourceTaskId: Number(guard?.sourceTaskId || 0),
+    loserLedgerId: Number(guard?.loser?.id || guard?.conflict?.current?.id || 0),
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export CONFLICT_REQUEUE_B64=${shellQuote(payload)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+def parse_json(value):
+    try:
+        parsed = json.loads(value or '{}')
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+request = json.loads(base64.b64decode(os.environ['CONFLICT_REQUEUE_B64']).decode('utf-8'))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=False,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s AND status='running' AND claim_token=%s FOR UPDATE",
+            (request.get('taskId'), request.get('claimToken') or ''),
+        )
+        child = cur.fetchone()
+        if not child:
+            raise RuntimeError('cancel task claim lost before conflict requeue')
+        payload = parse_json(child.get('payload_json'))
+        source_task_id = int(payload.get('sourceTaskId') or 0)
+        loser_id = int((payload.get('losingBooking') or {}).get('id') or 0)
+        if source_task_id != int(request.get('sourceTaskId') or 0) or loser_id != int(request.get('loserLedgerId') or 0):
+            raise RuntimeError('conflict requeue identity changed')
+        cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s FOR UPDATE', (loser_id,))
+        loser = cur.fetchone()
+        if not loser:
+            raise RuntimeError('losing ledger missing during conflict requeue')
+        if loser.get('current_status') == 'confirmed':
+            cur.execute(
+                """
+                UPDATE rhythmjoy_spacecloud_tasks
+                SET status='pending', locked_at=NULL, claim_token='', processed_at=NULL,
+                    result_text=%s, updated_at=NOW()
+                WHERE id=%s
+                  AND email_event_id=%s
+                  AND status IN ('done','needs_review','failed','pending')
+                """,
+                (
+                    json.dumps({
+                        'status': 'conflict-cleared-requeued',
+                        'reason': 'previous winning booking is no longer confirmed',
+                        'cancellationTaskId': child.get('id'),
+                        'loserLedgerId': loser_id,
+                    }, ensure_ascii=False, separators=(',', ':')),
+                    source_task_id,
+                    loser.get('confirmed_email_event_id'),
+                ),
+            )
+            source_updated = cur.rowcount
+        else:
+            source_updated = 0
+    conn.commit()
+    print(json.dumps({'sourceUpdated': source_updated, 'loserStatus': loser.get('current_status')}, ensure_ascii=False))
+except Exception:
+    conn.rollback()
+    raise
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '{}');
+}
+
+async function finalizeRemoteCancellationSuccess(args, task, guard, platformResult) {
+  const target = await loadCafe24Target(args);
+  const payload = Buffer.from(JSON.stringify({
+    taskId: Number(task.id || task.taskId || 0),
+    claimToken: String(task.claimToken || task.claim_token || ''),
+    sourceTaskId: Number(guard?.sourceTaskId || 0),
+    winnerLedgerId: Number(guard?.winner?.id || 0),
+    loserLedgerId: Number(guard?.loser?.id || 0),
+    loserPlatform: String(guard?.loser?.sourcePlatform || ''),
+    platformStatus: String(platformResult?.status || ''),
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export CANCELLATION_FINALIZE_B64=${shellQuote(payload)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+def parse_json(value):
+    try:
+        parsed = json.loads(value or '{}')
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+request = json.loads(base64.b64decode(os.environ['CANCELLATION_FINALIZE_B64']).decode('utf-8'))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=False,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s AND status='running' AND claim_token=%s FOR UPDATE",
+            (request.get('taskId'), request.get('claimToken') or ''),
+        )
+        child = cur.fetchone()
+        if not child:
+            raise RuntimeError('cancel task claim lost before finalization')
+        payload = parse_json(child.get('payload_json'))
+        source_task_id = int(payload.get('sourceTaskId') or 0)
+        winner_id = int((payload.get('winningBooking') or {}).get('id') or 0)
+        loser_id = int((payload.get('losingBooking') or {}).get('id') or 0)
+        if (
+            source_task_id != int(request.get('sourceTaskId') or 0)
+            or winner_id != int(request.get('winnerLedgerId') or 0)
+            or loser_id != int(request.get('loserLedgerId') or 0)
+        ):
+            raise RuntimeError('cancellation finalization identity changed')
+        cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s FOR UPDATE', (loser_id,))
+        loser = cur.fetchone()
+        if not loser:
+            raise RuntimeError('losing ledger missing during cancellation finalization')
+        if child.get('email_event_id') != loser.get('confirmed_email_event_id'):
+            raise RuntimeError('cancellation finalization email identity mismatch')
+        if loser.get('source_platform') != request.get('loserPlatform'):
+            raise RuntimeError('cancellation finalization platform mismatch')
+        ledger_updated = 0
+        if loser.get('current_status') == 'confirmed':
+            cancel_audit = {
+                'source': 'automatic-later-booking-cancellation',
+                'cancelTaskId': child.get('id'),
+                'sourceTaskId': source_task_id,
+                'winnerLedgerId': winner_id,
+                'loserLedgerId': loser_id,
+                'platformStatus': request.get('platformStatus') or '',
+            }
+            cur.execute(
+                """
+                UPDATE rhythmjoy_booking_ledger
+                SET current_status='canceled',
+                    automation_canceled_at=NOW(),
+                    automation_cancel_task_id=%s,
+                    automation_cancel_platform=%s,
+                    cancel_payload_json=%s,
+                    updated_at=NOW()
+                WHERE id=%s AND current_status='confirmed' AND confirmed_email_event_id=%s
+                """,
+                (
+                    child.get('id'),
+                    request.get('loserPlatform') or '',
+                    json.dumps(cancel_audit, ensure_ascii=False, separators=(',', ':')),
+                    loser_id,
+                    child.get('email_event_id'),
+                ),
+            )
+            ledger_updated = cur.rowcount
+        elif loser.get('current_status') == 'canceled':
+            cur.execute(
+                """
+                UPDATE rhythmjoy_booking_ledger
+                SET automation_canceled_at=COALESCE(automation_canceled_at, NOW()),
+                    automation_cancel_task_id=COALESCE(automation_cancel_task_id, %s),
+                    automation_cancel_platform=COALESCE(NULLIF(automation_cancel_platform, ''), %s),
+                    updated_at=NOW()
+                WHERE id=%s AND current_status='canceled' AND confirmed_email_event_id=%s
+                """,
+                (
+                    child.get('id'),
+                    request.get('loserPlatform') or '',
+                    loser_id,
+                    child.get('email_event_id'),
+                ),
+            )
+            ledger_updated = cur.rowcount
+        else:
+            raise RuntimeError('losing ledger is neither confirmed nor canceled during finalization')
+
+        cur.execute('SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s FOR UPDATE', (source_task_id,))
+        source = cur.fetchone()
+        if not source or source.get('email_event_id') != child.get('email_event_id'):
+            raise RuntimeError('source task missing or email identity changed during finalization')
+        previous = parse_json(source.get('result_text'))
+        resolved = {
+            'status': 'conflict-resolved',
+            'originalStatus': previous.get('status') or source.get('status') or '',
+            'resolutionTaskId': child.get('id'),
+            'winnerLedgerId': winner_id,
+            'loserLedgerId': loser_id,
+            'canceledPlatform': request.get('loserPlatform') or '',
+            'platformStatus': request.get('platformStatus') or '',
+            'priorityRule': payload.get('priorityRule') or '',
+        }
+        cur.execute(
+            """
+            UPDATE rhythmjoy_spacecloud_tasks
+            SET status='done', processed_at=COALESCE(processed_at, NOW()),
+                locked_at=NULL, claim_token='', result_text=%s, updated_at=NOW()
+            WHERE id=%s AND email_event_id=%s
+            """,
+            (json.dumps(resolved, ensure_ascii=False, separators=(',', ':')), source_task_id, child.get('email_event_id')),
+        )
+        source_updated = cur.rowcount
+    conn.commit()
+    print(json.dumps({
+        'ledgerUpdated': ledger_updated,
+        'ledgerStatus': 'canceled',
+        'sourceUpdated': source_updated,
+        'sourceTaskId': source_task_id,
+    }, ensure_ascii=False))
+except Exception:
+    conn.rollback()
+    raise
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '{}');
 }
 
 async function updateRemoteAdminSessions(args, sessions) {
@@ -2643,7 +3221,7 @@ try:
               AND current_status='confirmed'
               AND confirmed_email_event_id IS NOT NULL
               AND (
-                    (source_platform='naver' AND COALESCE(source_mode, '')='')
+                    (source_platform='naver' AND COALESCE(source_mode, '') IN ('', 'naver_email'))
                  OR (source_platform='spacecloud' AND COALESCE(source_mode, '')='spacecloud_email')
               )
               AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
@@ -2724,22 +3302,37 @@ try:
                 out['latestWaiting'].append(view)
 
         cur.execute("""
-            SELECT CAST(reservation_date AS CHAR) AS reservation_date, room_key,
-                   CAST(start_time AS CHAR) AS start_time, CAST(end_time AS CHAR) AS end_time,
-                   COUNT(*) AS cnt,
-                   GROUP_CONCAT(CONCAT(id, ':', source_platform, ':', COALESCE(reservation_number, ''), ':', COALESCE(reserver_name, '')) ORDER BY COALESCE(last_event_at, created_at, updated_at), id SEPARATOR ' | ') AS rows_text
-            FROM rhythmjoy_booking_ledger
-            WHERE current_status='confirmed'
-              AND confirmed_email_event_id IS NOT NULL
+            SELECT CONCAT(a.id, ':', b.id) AS pair_key,
+                   CAST(a.reservation_date AS CHAR) AS reservation_date, a.room_key,
+                   CAST(a.start_time AS CHAR) AS start_time, CAST(a.end_time AS CHAR) AS end_time,
+                   CAST(b.reservation_date AS CHAR) AS right_reservation_date,
+                   CAST(b.start_time AS CHAR) AS right_start_time, CAST(b.end_time AS CHAR) AS right_end_time,
+                   2 AS cnt,
+                   CONCAT(a.id, ':', a.source_platform, ':', COALESCE(a.reservation_number, ''), ':', COALESCE(a.reserver_name, ''),
+                          ' | ', b.id, ':', b.source_platform, ':', COALESCE(b.reservation_number, ''), ':', COALESCE(b.reserver_name, '')) AS rows_text
+            FROM rhythmjoy_booking_ledger a
+            JOIN rhythmjoy_booking_ledger b
+              ON b.id > a.id
+             AND b.room_key = a.room_key
+             AND b.reservation_date BETWEEN DATE_SUB(a.reservation_date, INTERVAL 1 DAY)
+                                        AND DATE_ADD(a.reservation_date, INTERVAL 1 DAY)
+             AND DATE_ADD(TIMESTAMP(a.reservation_date, '00:00:00'), INTERVAL TIME_TO_SEC(a.start_time) SECOND)
+                 < DATE_ADD(TIMESTAMP(b.reservation_date, '00:00:00'), INTERVAL (TIME_TO_SEC(b.end_time) + IF(b.end_time <= b.start_time, 86400, 0)) SECOND)
+             AND DATE_ADD(TIMESTAMP(b.reservation_date, '00:00:00'), INTERVAL TIME_TO_SEC(b.start_time) SECOND)
+                 < DATE_ADD(TIMESTAMP(a.reservation_date, '00:00:00'), INTERVAL (TIME_TO_SEC(a.end_time) + IF(a.end_time <= a.start_time, 86400, 0)) SECOND)
+            WHERE a.current_status='confirmed' AND b.current_status='confirmed'
+              AND a.confirmed_email_event_id IS NOT NULL AND b.confirmed_email_event_id IS NOT NULL
               AND (
-                    (source_platform='naver' AND COALESCE(source_mode, '')='')
-                 OR (source_platform='spacecloud' AND COALESCE(source_mode, '')='spacecloud_email')
+                    (a.source_platform='naver' AND COALESCE(a.source_mode, '') IN ('', 'naver_email'))
+                 OR (a.source_platform='spacecloud' AND COALESCE(a.source_mode, '')='spacecloud_email')
               )
-              AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
-                                      AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
-            GROUP BY reservation_date, room_key, start_time, end_time
-            HAVING COUNT(*) > 1
-            ORDER BY reservation_date ASC, start_time ASC, room_key ASC
+              AND (
+                    (b.source_platform='naver' AND COALESCE(b.source_mode, '') IN ('', 'naver_email'))
+                 OR (b.source_platform='spacecloud' AND COALESCE(b.source_mode, '')='spacecloud_email')
+              )
+              AND a.reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                                         AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+            ORDER BY a.reservation_date ASC, a.start_time ASC, a.room_key ASC, a.id ASC, b.id ASC
             LIMIT 30
         """, (past_days, future_days))
         duplicates = cur.fetchall()
@@ -2748,7 +3341,7 @@ try:
             start = short_time(duplicate.get('start_time'))
             end = short_time(duplicate.get('end_time'))
             item = {
-                'audit_key': f"duplicate:{duplicate.get('reservation_date')}:{duplicate.get('room_key')}:{start}:{end}",
+                'audit_key': f"duplicate:{duplicate.get('pair_key') or (str(duplicate.get('reservation_date')) + ':' + str(duplicate.get('room_key')) + ':' + start + ':' + end)}",
                 'ledger_id': None,
                 'source_platform': 'ledger',
                 'target_platform': 'ledger',
@@ -3864,6 +4457,7 @@ function dbStatusForNaverBlockRow(row) {
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'blocked' || row.status === 'already-blocked') return 'done';
   if (row.status === 'spacecloud-cancel-queued') return 'done';
+  if (row.status === 'winner-waiting-loser-cancellation') return 'pending';
   if (row.status === 'naver-conflict' || row.status === 'later-reservation-conflict' || row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   if (isRetryablePlatformProblem(row.error)) return 'pending';
@@ -3875,7 +4469,8 @@ function dbStatusForSpacecloudCancelRow(row) {
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
-  if (row.status === 'canceled' || row.status === 'already-canceled') return 'done';
+  if (['canceled', 'already-canceled', 'conflict-cleared-source-requeued'].includes(row.status)) return 'done';
+  if (['guard-retry-pending', 'winner-verification-pending', 'cancellation-verification-pending', 'canceled-finalization-pending', 'external-cancellation-sync-pending'].includes(row.status)) return 'pending';
   if (row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   if (isRetryablePlatformProblem(row.error)) return 'pending';
@@ -3887,7 +4482,8 @@ function dbStatusForNaverCancelRow(row) {
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
-  if (row.status === 'canceled' || row.status === 'already-canceled') return 'done';
+  if (['canceled', 'already-canceled', 'conflict-cleared-source-requeued'].includes(row.status)) return 'done';
+  if (['guard-retry-pending', 'winner-verification-pending', 'cancellation-verification-pending', 'canceled-finalization-pending', 'external-cancellation-sync-pending'].includes(row.status)) return 'pending';
   if (row.status === 'needs-review') return 'needs_review';
   if (isLoginProblem(row.error)) return 'pending';
   if (isRetryablePlatformProblem(row.error)) return 'pending';
@@ -3908,8 +4504,11 @@ function dbStatusForNaverRestoreRow(row) {
 
 function isRetryingPlatformRow(row) {
   return row?.dbStatus === 'pending'
-    && !isLoginProblem(row.error)
-    && isRetryablePlatformProblem(row.error);
+    && (
+      ['guard-retry-pending', 'winner-verification-pending', 'cancellation-verification-pending', 'canceled-finalization-pending', 'external-cancellation-sync-pending'].includes(row?.status)
+      || row?.status === 'winner-waiting-loser-cancellation'
+      || (!isLoginProblem(row.error) && isRetryablePlatformProblem(row.error))
+    );
 }
 
 function taskRowsRetrying(rows) {
@@ -4145,6 +4744,66 @@ function adminPanelSmsSkipped(task, source) {
   };
 }
 
+function sourceTaskForConflictBooking(booking) {
+  const sourcePlatform = String(booking?.sourcePlatform || booking?.source_platform || '').trim();
+  const sourceTaskType = sourcePlatform === 'naver' ? 'upload' : sourcePlatform === 'spacecloud' ? 'naver_block' : '';
+  let sourcePayload = {};
+  try {
+    sourcePayload = JSON.parse(booking?.sourceTaskPayloadJson || '{}');
+    if (!sourcePayload || typeof sourcePayload !== 'object' || Array.isArray(sourcePayload)) sourcePayload = {};
+  } catch {
+    sourcePayload = {};
+  }
+  const reservationId = String(booking?.spacecloudReservationId || booking?.spacecloud_reservation_id || '').trim();
+  if (sourcePlatform === 'spacecloud' && reservationId) {
+    sourcePayload.spacecloud_reservation_id = reservationId;
+  }
+  return {
+    id: Number(booking?.sourceTaskId || 0),
+    taskType: booking?.sourceTaskType || sourceTaskType,
+    status: booking?.sourceTaskStatus || '',
+    emailEventId: booking?.confirmedEmailEventId || booking?.confirmed_email_event_id || null,
+    ledgerId: booking?.id || null,
+    roomKey: booking?.roomKey || booking?.room_key || '',
+    reservationNo: booking?.reservationNumber || booking?.reservation_number || reservationId,
+    reserverName: booking?.reserverName || booking?.reserver_name || '',
+    product: booking?.product || '',
+    date: booking?.date || booking?.reservation_date || '',
+    startTime: booking?.startTime || booking?.start_time || '',
+    endTime: booking?.endTime || booking?.end_time || '',
+    payloadJson: JSON.stringify(sourcePayload),
+  };
+}
+
+async function queueStrictLaterBookingCancellation(args, winner, loser) {
+  const sourceTask = sourceTaskForConflictBooking(loser);
+  const expectedSourceTaskType = loser?.sourcePlatform === 'naver' ? 'upload' : 'naver_block';
+  if (!Number.isSafeInteger(sourceTask.id) || sourceTask.id <= 0) {
+    throw new Error(`losing booking source task missing: ledger=${loser?.id || ''}`);
+  }
+  if (sourceTask.taskType !== expectedSourceTaskType) {
+    throw new Error(`losing booking source task type mismatch: expected=${expectedSourceTaskType} actual=${sourceTask.taskType || ''}`);
+  }
+  if (String(sourceTask.emailEventId || '') !== String(loser?.confirmedEmailEventId || '')) {
+    throw new Error(`losing booking email identity mismatch: ledger=${loser?.id || ''}`);
+  }
+  const conflictRow = {
+    priorityRule: CANCELLATION_PRIORITY_RULE,
+    winningBooking: winner,
+    losingBooking: loser,
+  };
+  const queued = loser.sourcePlatform === 'naver'
+    ? await createRemoteNaverCancelTask(args, sourceTask, conflictRow)
+    : await createRemoteSpacecloudCancelTask(args, sourceTask, conflictRow);
+  return {
+    ...queued,
+    taskType: loser.sourcePlatform === 'naver' ? 'naver_cancel' : 'spacecloud_cancel',
+    winnerLedgerId: winner.id,
+    loserLedgerId: loser.id,
+    sourceTaskId: sourceTask.id,
+  };
+}
+
 async function classifyLaterReservationConflict(args, task, row, currentPlatform) {
   const target = await loadCafe24Target(args);
   const payload = Buffer.from(JSON.stringify({
@@ -4177,6 +4836,13 @@ def load_env(path):
         key, value = line.split('=', 1)
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
+def parse_json(value):
+    try:
+        parsed = json.loads(value or '{}')
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
 def time_value(value):
     text = str(value or '')
     if len(text) == 5:
@@ -4197,9 +4863,6 @@ def slot_datetimes(date_text, start_text, end_text):
     start_at = day + timedelta(minutes=start_total)
     end_at = day + timedelta(minutes=end_total)
     return start_at.strftime('%Y-%m-%d %H:%M:%S'), end_at.strftime('%Y-%m-%d %H:%M:%S')
-
-def is_real_booking(item):
-    return item.get('sourcePlatform') in {'naver', 'spacecloud'}
 
 load_env(os.environ['RHYTHMJOY_ENV_FILE'])
 payload = json.loads(base64.b64decode(os.environ['CONFLICT_PAYLOAD_B64']).decode('utf-8'))
@@ -4230,8 +4893,11 @@ try:
                 reserver_name AS reserverName,
                 reservation_number AS reservationNumber,
                 product,
+                confirmed_email_event_id AS confirmedEmailEventId,
+                CAST(confirmed_email_received_at AS CHAR) AS confirmedAt,
                 CAST(last_event_at AS CHAR) AS lastEventAt,
-                CAST(created_at AS CHAR) AS createdAt
+                CAST(created_at AS CHAR) AS createdAt,
+                payload_json AS ledgerPayloadJson
             FROM rhythmjoy_booking_ledger
             WHERE current_status='confirmed'
               AND room_key=%s
@@ -4242,7 +4908,7 @@ try:
                     INTERVAL (TIME_TO_SEC(end_time) + IF(end_time <= start_time, 86400, 0)) SECOND
                   ) > %s
             ORDER BY
-              COALESCE(last_event_at, created_at, '9999-12-31 23:59:59') ASC,
+              COALESCE(confirmed_email_received_at, '9999-12-31 23:59:59') ASC,
               id ASC
             """,
             (
@@ -4252,33 +4918,31 @@ try:
             ),
         )
         overlaps = cur.fetchall()
-    actionable_overlaps = [item for item in overlaps if is_real_booking(item)]
-    ignored_record_only_overlaps = [item for item in overlaps if not is_real_booking(item)]
-    current = None
-    current_platform = payload.get('sourcePlatform') or ''
-    current_reservation_no = str(payload.get('reservationNo') or '').strip()
-    for item in actionable_overlaps:
-        if payload.get('ledgerId') and int(item.get('id') or 0) == int(payload.get('ledgerId') or 0):
-            current = item
-            break
-    if current is None and current_reservation_no:
-        for item in actionable_overlaps:
-            if item.get('sourcePlatform') == current_platform and str(item.get('reservationNumber') or '').strip() == current_reservation_no:
-                current = item
-                break
-    if current is None:
-        for item in actionable_overlaps:
-            if item.get('sourcePlatform') == current_platform:
-                current = item
-                break
-    winner = actionable_overlaps[0] if actionable_overlaps else None
+        for booking in overlaps:
+            ledger_payload = parse_json(booking.get('ledgerPayloadJson'))
+            booking['spacecloudReservationId'] = (
+                ledger_payload.get('spacecloud_reservation_id')
+                or ledger_payload.get('spacecloudReservationId')
+                or ''
+            )
+            source_task_type = 'upload' if booking.get('sourcePlatform') == 'naver' else 'naver_block'
+            cur.execute(
+                """
+                SELECT id, task_type, status
+                FROM rhythmjoy_spacecloud_tasks
+                WHERE email_event_id=%s AND task_type=%s
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (booking.get('confirmedEmailEventId'), source_task_type),
+            )
+            source_task = cur.fetchone() or {}
+            booking['sourceTaskId'] = source_task.get('id')
+            booking['sourceTaskType'] = source_task.get('task_type') or source_task_type
+            booking['sourceTaskStatus'] = source_task.get('status') or ''
+            booking.pop('ledgerPayloadJson', None)
     print(json.dumps({
         'overlaps': overlaps,
-        'actionableOverlaps': actionable_overlaps,
-        'ignoredRecordOnlyOverlaps': ignored_record_only_overlaps,
-        'current': current,
-        'winner': winner,
-        'isLaterReservation': bool(winner and current and winner.get('id') != current.get('id')),
     }, ensure_ascii=False))
 finally:
     conn.close()
@@ -4291,34 +4955,133 @@ PY
   } catch (error) {
     return {
       ...row,
+      status: 'needs-review',
+      error: `예약 충돌 순서 검증 실패: ${String(error?.message || error)}`,
+      nextAction: 'manual-review-conflict-classification-failed',
       conflictClassificationError: String(error?.message || error),
     };
   }
 
-  if (classification.isLaterReservation) {
-    const winner = classification.winner || null;
-    const current = classification.current || null;
+  const policy = assessLaterReservationConflict({
+    overlaps: classification.overlaps || [],
+    currentLedgerId: task.ledgerId || task.ledger_id,
+    currentPlatform,
+  });
+  const cancellationPair = cancellationPairForConflict(policy);
+  if (policy.decision === 'invalid' || policy.decision === 'ambiguous') {
     return {
       ...row,
-      status: 'later-reservation-conflict',
+      status: 'needs-review',
+      priorityRule: CANCELLATION_PRIORITY_RULE,
+      overlapBookings: classification.overlaps || [],
+      actionableOverlapBookings: policy.ordered || [],
+      ignoredRecordOnlyOverlapBookings: policy.unknownPriorityBookings || [],
+      conflictPolicyDecision: policy.decision,
+      conflictPolicyReason: policy.reason,
+      error: `예약 충돌 자동판정 중단: ${policy.reason}`,
+      nextAction: 'manual-review-ambiguous-booking-priority',
+    };
+  }
+
+  if (policy.decision === 'later') {
+    const winner = cancellationPair?.winner || null;
+    const current = cancellationPair?.loser || null;
+    if (!winner || !current) {
+      return {
+        ...row,
+        status: 'needs-review',
+        priorityRule: CANCELLATION_PRIORITY_RULE,
+        conflictPolicyDecision: policy.decision,
+        conflictPolicyReason: 'strict-cancellation-pair-missing',
+        error: '후예약 충돌 판정은 났지만 안전한 취소 쌍을 만들 수 없습니다.',
+        nextAction: 'manual-review-strict-cancellation-pair-missing',
+      };
+    }
+    let cancellationTask;
+    try {
+      cancellationTask = await queueStrictLaterBookingCancellation(args, winner, current);
+    } catch (error) {
+      return {
+        ...row,
+        status: 'needs-review',
+        priorityRule: CANCELLATION_PRIORITY_RULE,
+        winningBooking: winner,
+        losingBooking: current,
+        overlapBookings: classification.overlaps || [],
+        actionableOverlapBookings: policy.ordered || [],
+        conflictPolicyDecision: policy.decision,
+        conflictPolicyReason: policy.reason,
+        error: `후예약 취소 작업 생성 실패: ${String(error?.message || error)}`,
+        nextAction: 'manual-review-cancel-task-queue-failed',
+      };
+    }
+    return {
+      ...row,
+      status: currentPlatform === 'naver' ? 'naver-cancel-queued' : 'spacecloud-cancel-queued',
       originalStatus: row.status || '',
-      priorityRule: 'first-real-platform-confirmed-email-wins',
+      priorityRule: CANCELLATION_PRIORITY_RULE,
       winningBooking: winner,
       losingBooking: current,
+      cancellationTask,
       overlapBookings: classification.overlaps || [],
-      actionableOverlapBookings: classification.actionableOverlaps || [],
-      ignoredRecordOnlyOverlapBookings: classification.ignoredRecordOnlyOverlaps || [],
-      error: '후예약 충돌: 선예약이 이미 확정되어 후예약 취소 처리가 필요합니다.',
-      nextAction: 'cancel-later-reservation-and-send-prior-booking-sms',
+      actionableOverlapBookings: policy.ordered || [],
+      ignoredRecordOnlyOverlapBookings: [],
+      error: '',
+      nextAction: 'cancel-later-reservation-after-strict-recheck',
+    };
+  }
+
+  if (policy.decision === 'winner' && cancellationPair) {
+    const winner = cancellationPair.winner;
+    const loser = cancellationPair.loser;
+    let cancellationTask;
+    try {
+      cancellationTask = await queueStrictLaterBookingCancellation(args, winner, loser);
+    } catch (error) {
+      return {
+        ...row,
+        status: 'needs-review',
+        priorityRule: CANCELLATION_PRIORITY_RULE,
+        winningBooking: winner,
+        losingBooking: loser,
+        overlapBookings: classification.overlaps || [],
+        actionableOverlapBookings: policy.ordered || [],
+        conflictPolicyDecision: policy.decision,
+        conflictPolicyReason: policy.reason,
+        error: `역순 유입 후예약 취소 작업 생성 실패: ${String(error?.message || error)}`,
+        nextAction: 'manual-review-reversed-arrival-cancel-task-queue-failed',
+      };
+    }
+    return {
+      ...row,
+      status: currentPlatform === 'spacecloud' ? 'winner-waiting-loser-cancellation' : row.status,
+      originalStatus: row.status || '',
+      priorityRule: CANCELLATION_PRIORITY_RULE,
+      winningBooking: winner,
+      losingBooking: loser,
+      cancellationTask,
+      overlapBookings: classification.overlaps || [],
+      actionableOverlapBookings: policy.ordered || [],
+      ignoredRecordOnlyOverlapBookings: [],
+      conflictPolicyDecision: policy.decision,
+      conflictPolicyReason: policy.reason,
+      error: currentPlatform === 'spacecloud'
+        ? '선예약은 유지하고 네이버 후예약 취소 완료 후 예약불가 반영을 다시 확인합니다.'
+        : '',
+      nextAction: currentPlatform === 'spacecloud'
+        ? 'retry-winner-block-after-loser-cancellation'
+        : 'continue-winner-upload-while-loser-cancellation-is-guarded',
     };
   }
 
   return {
     ...row,
-    priorityRule: 'first-real-platform-confirmed-email-wins',
+    priorityRule: CANCELLATION_PRIORITY_RULE,
+    conflictPolicyDecision: policy.decision,
+    conflictPolicyReason: policy.reason,
     overlapBookings: classification.overlaps || [],
-    actionableOverlapBookings: classification.actionableOverlaps || [],
-    ignoredRecordOnlyOverlapBookings: classification.ignoredRecordOnlyOverlaps || [],
+    actionableOverlapBookings: policy.ordered || [],
+    ignoredRecordOnlyOverlapBookings: [],
   };
 }
 
@@ -4473,13 +5236,20 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
               status: 'upload-pending',
               startedAt: new Date().toISOString(),
             };
-            row = await classifyUploadConflict(args, task, row);
-            if (row.status === 'later-reservation-conflict') {
-              row.status = 'needs-review';
-              row.error = '중복예약 충돌: 스페이스클라우드 선예약이 있어 네이버 예약을 반영하지 못했습니다. 자동 취소 없이 관리자 확인이 필요합니다.';
-              row.nextAction = 'manual-review-no-cancellation';
-            } else {
+            const classifiedRow = await classifyUploadConflict(args, task, row);
+            row = classifiedRow;
+            if (!['needs-review', 'naver-cancel-queued'].includes(row.status)) {
+              const conflictContext = row.cancellationTask ? {
+                priorityRule: row.priorityRule,
+                conflictPolicyDecision: row.conflictPolicyDecision,
+                conflictPolicyReason: row.conflictPolicyReason,
+                winningBooking: row.winningBooking,
+                losingBooking: row.losingBooking,
+                cancellationTask: row.cancellationTask,
+                nextAction: row.nextAction,
+              } : null;
               row = await uploadSpacecloudDirectReservation(activeContext, event);
+              if (conflictContext) Object.assign(row, conflictContext);
               if (row.status === 'submitted') {
                 const marked = markSubmittedRows(args, [row]);
                 row.marked = marked;
@@ -4713,6 +5483,375 @@ async function runNaverBlockTasks(args, context = null) {
   };
 }
 
+function cancellationTaskType(platform) {
+  return platform === 'naver' ? 'naver_cancel' : 'spacecloud_cancel';
+}
+
+function cancellationAttemptCount(task) {
+  const value = Number(task?.attempts ?? task?.staleAttempts ?? 0);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+function cancellationHoldRow(task, platform, pendingStatus, reason, extra = {}) {
+  const attempts = cancellationAttemptCount(task);
+  const retry = attempts < CANCELLATION_GUARD_MAX_ATTEMPTS;
+  return {
+    ...basicTaskSummary(task),
+    taskType: cancellationTaskType(platform),
+    status: retry ? pendingStatus : 'needs-review',
+    attempts,
+    maxAutomaticAttempts: CANCELLATION_GUARD_MAX_ATTEMPTS,
+    reason,
+    error: reason,
+    ...extra,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+  };
+}
+
+async function inspectCancellationTargetLive(context, task, platform, args) {
+  if (platform === 'naver') {
+    const result = await inspectNaverReservationStatus(context, task, {
+      businessId: args.naverBusinessId,
+    });
+    return {
+      platform,
+      confirmed: result.status === '확정',
+      canceled: result.status === '취소',
+      status: result.status || 'unknown',
+      reservationNo: result.reservationNo || '',
+      source: result.source || '',
+      reason: result.reason || '',
+    };
+  }
+  const result = await inspectSpacecloudConfirmedReservation(context, task);
+  return {
+    platform,
+    confirmed: result.confirmed === true,
+    canceled: result.status === 'canceled',
+    status: result.status || 'unknown',
+    statusCode: result.statusCode || '',
+    reservationId: result.reservationId || '',
+    verification: result.verification || null,
+    reason: result.reason || '',
+  };
+}
+
+async function fetchCancellationPhone(context, task, platform, args) {
+  if (platform === 'naver') {
+    return fetchNaverReservationPhone(context, task, { businessId: args.naverBusinessId });
+  }
+  return fetchSpacecloudReservationPhone(context, task);
+}
+
+async function attachPriorBookingCancellationSms(args, task, row, platform) {
+  row.smsPreview = priorBookingCancelSmsMessage(task);
+  if (!shouldSendPriorBookingCancellationSms(task, row)) return row;
+  try {
+    row.sms = await sendPriorBookingCancellationSms(args, {
+      task: {
+        ...task,
+        taskType: cancellationTaskType(platform),
+      },
+      phone: row.phone,
+    });
+  } catch (smsError) {
+    row.sms = {
+      status: 'failed',
+      reason: 'sms-send-exception',
+      error: String(smsError?.message || smsError),
+      templateName: PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME,
+    };
+  }
+  return row;
+}
+
+async function finishConflictClearedCancellation(args, task, platform, guard) {
+  const summary = conflictGuardSummary(guard);
+  try {
+    const requeue = await requeueRemoteConflictSource(args, task, guard);
+    if (requeue.sourceUpdated !== 1 || requeue.loserStatus !== 'confirmed') {
+      throw new Error(`source requeue invariant failed: ${JSON.stringify(requeue)}`);
+    }
+    return {
+      ...basicTaskSummary(task),
+      taskType: cancellationTaskType(platform),
+      status: 'conflict-cleared-source-requeued',
+      reason: 'queued winner is no longer the strict live winner; cancellation skipped and source task requeued',
+      cancellationGuard: summary,
+      requeue,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'guard-retry-pending',
+      `conflict changed but source task could not be requeued safely: ${String(error?.message || error)}`,
+      { cancellationGuard: summary },
+    );
+  }
+}
+
+async function finalizeProvenCancellation(args, task, row, platform, guard) {
+  try {
+    const finalization = await finalizeRemoteCancellationSuccess(args, task, guard, row);
+    if (finalization.sourceUpdated !== 1 || finalization.ledgerStatus !== 'canceled') {
+      throw new Error(`cancellation finalization invariant failed: ${JSON.stringify(finalization)}`);
+    }
+    row.dbFinalization = finalization;
+  } catch (error) {
+    row.platformStatus = row.status;
+    row.status = cancellationAttemptCount(task) < CANCELLATION_GUARD_MAX_ATTEMPTS
+      ? 'canceled-finalization-pending'
+      : 'needs-review';
+    row.error = `platform cancellation is confirmed but DB finalization failed: ${String(error?.message || error)}`;
+    row.finishedAt = new Date().toISOString();
+    return row;
+  }
+  return attachPriorBookingCancellationSms(args, task, row, platform);
+}
+
+async function recoverPreviouslySubmittedCancellation(args, context, task, platform, guard, knownLiveTarget = null) {
+  const guardSummary = conflictGuardSummary(guard);
+  let liveTarget = knownLiveTarget;
+  try {
+    if (!liveTarget) liveTarget = await inspectCancellationTargetLive(context, task, platform, args);
+  } catch (error) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'cancellation-verification-pending',
+      `could not verify previously submitted cancellation: ${String(error?.message || error)}`,
+      { cancellationGuard: guardSummary },
+    );
+  }
+  if (!liveTarget.canceled) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'cancellation-verification-pending',
+      liveTarget.confirmed
+        ? 'DB says canceled after a submit checkpoint, but the exact platform reservation is still confirmed; no repeat click allowed'
+        : `previously submitted cancellation has no exact canceled platform match: ${liveTarget.reason || liveTarget.status}`,
+      { cancellationGuard: guardSummary, liveTarget },
+    );
+  }
+
+  let phoneLookup;
+  try {
+    phoneLookup = await fetchCancellationPhone(context, task, platform, args);
+  } catch (error) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'cancellation-verification-pending',
+      `canceled reservation phone lookup failed during recovery: ${String(error?.message || error)}`,
+      { cancellationGuard: guardSummary, liveTarget },
+    );
+  }
+  if (phoneLookup.status !== 'found' || !/^01[016789]\d{7,8}$/.test(phoneLookup.phone || '')) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'cancellation-verification-pending',
+      `canceled reservation phone is not verifiable during recovery: ${phoneLookup.reason || phoneLookup.status}`,
+      { cancellationGuard: guardSummary, liveTarget, maskedPhone: phoneLookup.maskedPhone || '' },
+    );
+  }
+
+  const row = {
+    ...basicTaskSummary(task),
+    taskType: cancellationTaskType(platform),
+    status: 'already-canceled',
+    submissionAttempted: true,
+    submissionConfirmed: true,
+    recoveredAfterSubmitCheckpoint: true,
+    maskedPhone: phoneLookup.maskedPhone || '',
+    cancellationGuard: guardSummary,
+    liveTarget,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+  };
+  Object.defineProperty(row, 'phone', { value: phoneLookup.phone, enumerable: false });
+  return finalizeProvenCancellation(args, task, row, platform, guard);
+}
+
+async function runGuardedCustomerCancellation(args, context, task, platform) {
+  const taskType = cancellationTaskType(platform);
+  const ledgerIssue = ledgerIssueForTask(task, taskType);
+  if (ledgerIssue && ledgerIssue !== 'already-canceled') return ledgerIssueRow(task, taskType, ledgerIssue);
+
+  let guard;
+  try {
+    guard = await verifyRemoteCancellationGuard(args, task);
+  } catch (error) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'guard-retry-pending',
+      `cancellation DB guard could not be read: ${String(error?.message || error)}`,
+    );
+  }
+  const guardSummary = conflictGuardSummary(guard);
+
+  if (guard.decision === 'already-canceled') {
+    if (taskPriorCancellationAttempted(task)) {
+      return recoverPreviouslySubmittedCancellation(args, context, task, platform, guard);
+    }
+    return {
+      ...ledgerIssueRow(task, taskType, 'already-canceled'),
+      cancellationGuard: guardSummary,
+      reason: 'ledger is already canceled and no automation submit checkpoint exists; no click and no cancellation SMS',
+    };
+  }
+  if (guard.decision === 'conflict-cleared') {
+    if (taskPriorCancellationAttempted(task)) {
+      let liveTarget;
+      try {
+        liveTarget = await inspectCancellationTargetLive(context, task, platform, args);
+      } catch (error) {
+        return cancellationHoldRow(
+          task,
+          platform,
+          'cancellation-verification-pending',
+          `conflict changed after a submit checkpoint and target verification failed: ${String(error?.message || error)}`,
+          { cancellationGuard: guardSummary },
+        );
+      }
+      if (liveTarget.canceled) {
+        return recoverPreviouslySubmittedCancellation(args, context, task, platform, guard, liveTarget);
+      }
+      if (!liveTarget.confirmed) {
+        return cancellationHoldRow(
+          task,
+          platform,
+          'cancellation-verification-pending',
+          `conflict changed after a submit checkpoint and target state is ambiguous: ${liveTarget.reason || liveTarget.status}`,
+          { cancellationGuard: guardSummary, liveTarget },
+        );
+      }
+    }
+    return finishConflictClearedCancellation(args, task, platform, guard);
+  }
+  if (guard.approved !== true) {
+    return {
+      ...basicTaskSummary(task),
+      taskType,
+      status: 'needs-review',
+      reason: `cancellation guard rejected the queued task: ${guard.reason || 'not-approved'}`,
+      error: `cancellation guard rejected the queued task: ${guard.reason || 'not-approved'}`,
+      cancellationGuard: guardSummary,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    };
+  }
+
+  let liveWinner;
+  try {
+    liveWinner = await verifyWinningBookingLive(context, guard, args);
+  } catch (error) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'winner-verification-pending',
+      `winning reservation live verification failed: ${String(error?.message || error)}`,
+      { cancellationGuard: guardSummary },
+    );
+  }
+  if (liveWinner.confirmed !== true) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'winner-verification-pending',
+      `winning reservation is not exactly confirmed on its platform: ${liveWinner.reason || liveWinner.status}`,
+      { cancellationGuard: guardSummary, liveWinner },
+    );
+  }
+
+  let finalGuard = guard;
+  const beforeConfirm = async () => {
+    try {
+      finalGuard = await verifyRemoteCancellationGuard(args, task);
+      const summary = conflictGuardSummary(finalGuard);
+      if (finalGuard.approved !== true) {
+        return {
+          approved: false,
+          retryable: false,
+          reason: finalGuard.reason || finalGuard.decision || 'not-approved',
+          summary,
+        };
+      }
+      await updateRemoteTask(args, task, 'running', JSON.stringify({
+        ...basicTaskSummary(task),
+        status: 'cancel-submit-checkpoint',
+        submissionAttempted: true,
+        priorityRule: CANCELLATION_PRIORITY_RULE,
+        cancellationGuard: summary,
+        liveWinner,
+        checkpointAt: new Date().toISOString(),
+      }, null, 2), { releaseClaim: false });
+      return { approved: true, summary };
+    } catch (error) {
+      return {
+        approved: false,
+        retryable: true,
+        reason: `final cancellation guard failed: ${String(error?.message || error)}`,
+        summary: conflictGuardSummary(finalGuard),
+      };
+    }
+  };
+
+  let row;
+  if (platform === 'naver') {
+    row = await cancelNaverConfirmedReservation(context, task, {
+      businessId: args.naverBusinessId,
+      beforeConfirm,
+    });
+  } else {
+    row = await cancelSpacecloudConfirmedReservation(context, task, { beforeConfirm });
+  }
+  row.preflightCancellationGuard = guardSummary;
+  row.liveWinner = liveWinner;
+
+  if (finalGuard.decision === 'conflict-cleared' && row.submissionAttempted !== true) {
+    return finishConflictClearedCancellation(args, task, platform, finalGuard);
+  }
+  if (finalGuard.decision === 'already-canceled' && row.submissionAttempted !== true) {
+    return {
+      ...ledgerIssueRow(task, taskType, 'already-canceled'),
+      cancellationGuard: conflictGuardSummary(finalGuard),
+      reason: 'losing ledger became canceled before final confirm; no click and no automation cancellation SMS',
+    };
+  }
+  if (row.status === 'guard-retry-pending') return row;
+  if (row.submissionAttempted === true && !['canceled', 'already-canceled'].includes(row.status)) {
+    row.platformStatus = row.status;
+    row.status = cancellationAttemptCount(task) < CANCELLATION_GUARD_MAX_ATTEMPTS
+      ? 'cancellation-verification-pending'
+      : 'needs-review';
+    row.error = `cancellation submit result is not yet exact; retry will verify platform state first: ${row.error || row.platformStatus}`;
+    return row;
+  }
+  if (row.status === 'canceled' && row.submissionAttempted === true) {
+    return finalizeProvenCancellation(args, task, row, platform, finalGuard);
+  }
+  if (row.status === 'already-canceled' && taskPriorCancellationAttempted(task)) {
+    return finalizeProvenCancellation(args, task, row, platform, finalGuard);
+  }
+  if (row.status === 'already-canceled') {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'external-cancellation-sync-pending',
+      'the exact platform reservation was already canceled before this automation reached submit; waiting for cancellation email/ledger sync and not sending an automation cancellation SMS',
+      { liveWinner, preflightCancellationGuard: guardSummary },
+    );
+  }
+  return row;
+}
+
 async function runSpacecloudCancelTasks(args, context = null) {
   if (args.dryRun) {
     return {
@@ -4723,6 +5862,17 @@ async function runSpacecloudCancelTasks(args, context = null) {
       failed: [],
     };
   }
+  if (!customerReservationCancellationEnabled()) {
+    return {
+      status: 'spacecloud-cancel-disabled-wait',
+      fetched: 0,
+      attempted: 0,
+      rows: [],
+      failed: [],
+      retrying: [],
+      reason: 'customer reservation cancellation emergency stop is active; pending tasks were left unclaimed',
+    };
+  }
   const tasks = await fetchRemoteSpacecloudCancelTasks(args);
   if (tasks.length === 0) {
     return {
@@ -4731,29 +5881,6 @@ async function runSpacecloudCancelTasks(args, context = null) {
       attempted: 0,
       rows: [],
       failed: [],
-    };
-  }
-  if (CUSTOMER_RESERVATION_CANCELLATION_DISABLED) {
-    const rows = [];
-    for (const claimedTask of tasks) {
-      const task = normalizeClaimedTaskForRecovery(claimedTask);
-      const row = {
-        ...basicTaskSummary(task),
-        status: 'needs-review',
-        error: '고객 예약 자동 취소는 영구 차단되어 있습니다.',
-        safetyPolicy: 'manual-review-no-cancellation',
-        dbStatus: 'needs_review',
-      };
-      rows.push(row);
-      await updateRemoteTask(args, task, 'needs_review', JSON.stringify(row, null, 2));
-    }
-    return {
-      status: 'spacecloud-cancel-needs-review',
-      fetched: tasks.length,
-      attempted: 0,
-      rows,
-      failed: rows,
-      retrying: [],
     };
   }
 
@@ -4774,28 +5901,7 @@ async function runSpacecloudCancelTasks(args, context = null) {
       if (task.status === 'running') {
         row = staleRunningNeedsReviewRow(task, 'spacecloud_cancel');
       } else {
-        const ledgerIssue = ledgerIssueForTask(task, 'spacecloud_cancel');
-        if (ledgerIssue) {
-          row = ledgerIssueRow(task, 'spacecloud_cancel', ledgerIssue);
-        } else {
-          row = await cancelSpacecloudConfirmedReservation(activeContext, task);
-          row.smsPreview = priorBookingCancelSmsMessage(task);
-          if (shouldSendPriorBookingCancellationSms(task, row)) {
-            try {
-              row.sms = await sendPriorBookingCancellationSms(args, {
-                task,
-                phone: row.phone,
-              });
-            } catch (smsError) {
-              row.sms = {
-                status: 'failed',
-                reason: 'sms-send-exception',
-                error: String(smsError?.message || smsError),
-                templateName: PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME,
-              };
-            }
-          }
-        }
+        row = await runGuardedCustomerCancellation(args, activeContext, task, 'spacecloud');
       }
 
       rows.push(row);
@@ -4818,6 +5924,7 @@ async function runSpacecloudCancelTasks(args, context = null) {
   const failed = taskRowsNeedingReview(rows, [
     'canceled',
     'already-canceled',
+    'conflict-cleared-source-requeued',
     'stale-ledger-skip',
   ]);
   return {
@@ -4840,6 +5947,17 @@ async function runNaverCancelTasks(args, context = null) {
       failed: [],
     };
   }
+  if (!customerReservationCancellationEnabled()) {
+    return {
+      status: 'naver-cancel-disabled-wait',
+      fetched: 0,
+      attempted: 0,
+      rows: [],
+      failed: [],
+      retrying: [],
+      reason: 'customer reservation cancellation emergency stop is active; pending tasks were left unclaimed',
+    };
+  }
   const tasks = await fetchRemoteNaverCancelTasks(args);
   if (tasks.length === 0) {
     return {
@@ -4848,29 +5966,6 @@ async function runNaverCancelTasks(args, context = null) {
       attempted: 0,
       rows: [],
       failed: [],
-    };
-  }
-  if (CUSTOMER_RESERVATION_CANCELLATION_DISABLED) {
-    const rows = [];
-    for (const claimedTask of tasks) {
-      const task = normalizeClaimedTaskForRecovery(claimedTask);
-      const row = {
-        ...basicTaskSummary(task),
-        status: 'needs-review',
-        error: '고객 예약 자동 취소는 영구 차단되어 있습니다.',
-        safetyPolicy: 'manual-review-no-cancellation',
-        dbStatus: 'needs_review',
-      };
-      rows.push(row);
-      await updateRemoteTask(args, task, 'needs_review', JSON.stringify(row, null, 2));
-    }
-    return {
-      status: 'naver-cancel-needs-review',
-      fetched: tasks.length,
-      attempted: 0,
-      rows,
-      failed: rows,
-      retrying: [],
     };
   }
 
@@ -4891,33 +5986,7 @@ async function runNaverCancelTasks(args, context = null) {
       if (task.status === 'running') {
         row = staleRunningNeedsReviewRow(task, 'naver_cancel');
       } else {
-        const ledgerIssue = ledgerIssueForTask(task, 'naver_cancel');
-        if (ledgerIssue) {
-          row = ledgerIssueRow(task, 'naver_cancel', ledgerIssue);
-        } else {
-          row = await cancelNaverConfirmedReservation(activeContext, task, {
-            businessId: args.naverBusinessId,
-          });
-          row.smsPreview = priorBookingCancelSmsMessage(task);
-          if (shouldSendPriorBookingCancellationSms(task, row)) {
-            try {
-              row.sms = await sendPriorBookingCancellationSms(args, {
-                task: {
-                  ...task,
-                  taskType: 'naver_cancel',
-                },
-                phone: row.phone,
-              });
-            } catch (smsError) {
-              row.sms = {
-                status: 'failed',
-                reason: 'sms-send-exception',
-                error: String(smsError?.message || smsError),
-                templateName: PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME,
-              };
-            }
-          }
-        }
+        row = await runGuardedCustomerCancellation(args, activeContext, task, 'naver');
       }
 
       rows.push(row);
@@ -4940,6 +6009,7 @@ async function runNaverCancelTasks(args, context = null) {
   const failed = taskRowsNeedingReview(rows, [
     'canceled',
     'already-canceled',
+    'conflict-cleared-source-requeued',
     'stale-ledger-skip',
   ]);
   return {
@@ -5134,11 +6204,6 @@ async function runNaverAvailabilityTasks(args, context = null) {
           });
           row.taskType = taskType;
           row = await classifyNaverConflict(args, task, row);
-          if (row.status === 'later-reservation-conflict') {
-            row.status = 'needs-review';
-            row.error = '중복예약 충돌: 네이버 선예약의 스페이스클라우드 반영 누락 가능성이 있습니다. 자동 취소 없이 관리자 확인이 필요합니다.';
-            row.nextAction = 'manual-review-no-cancellation';
-          }
         }
       }
 
@@ -5480,7 +6545,14 @@ function runNowModeSelfTest() {
   assert.equal(spacecloudUploadEventFromTask(recoveredClaim).attempts, 2);
   assert.equal(basicTaskSummary(recoveredClaim).recoveredFromStaleRunning, true);
   assert.equal(shouldSendPriorBookingCancellationSms({}, { status: 'canceled' }), true);
-  assert.equal(shouldSendPriorBookingCancellationSms(recoveredClaim, { status: 'already-canceled' }), true);
+  assert.equal(shouldSendPriorBookingCancellationSms(recoveredClaim, { status: 'already-canceled' }), false);
+  const recoveredCancellationClaim = normalizeClaimedTaskForRecovery({
+    ...staleClaim,
+    taskType: 'spacecloud_cancel',
+    resultText: JSON.stringify({ status: 'cancel-submit-checkpoint', submissionAttempted: true }),
+  });
+  assert.equal(taskPriorCancellationAttempted(recoveredCancellationClaim), true);
+  assert.equal(shouldSendPriorBookingCancellationSms(recoveredCancellationClaim, { status: 'already-canceled' }), true);
   assert.equal(shouldSendPriorBookingCancellationSms({}, { status: 'already-canceled' }), false);
 
   const freshTask = {
@@ -5532,6 +6604,11 @@ function runNowModeSelfTest() {
   assert.equal(dbStatusForNaverRestoreRow(closedContextRow), 'pending');
   assert.equal(dbStatusForNaverCancelRow(closedContextRow), 'pending');
   assert.equal(dbStatusForSpacecloudCancelRow(closedContextRow), 'pending');
+  assert.equal(dbStatusForNaverCancelRow({ status: 'winner-verification-pending' }), 'pending');
+  assert.equal(dbStatusForSpacecloudCancelRow({ status: 'cancellation-verification-pending' }), 'pending');
+  assert.equal(dbStatusForNaverCancelRow({ status: 'conflict-cleared-source-requeued' }), 'done');
+  assert.equal(dbStatusForSpacecloudCancelRow({ status: 'conflict-cleared-source-requeued' }), 'done');
+  assert.equal(dbStatusForNaverBlockRow({ status: 'winner-waiting-loser-cancellation' }), 'pending');
   const ambiguousSubmitRow = {
     status: 'submitted-modal-still-visible',
     error: 'modal still visible after submit',
@@ -5596,9 +6673,21 @@ function runNowModeSelfTest() {
   assert.match(telegramSuccess, /DB 원장: 정상/);
   assert.match(telegramSuccess, /네이버: 예약불가 완료/);
   assert.doesNotMatch(telegramSuccess, /흐름:/);
-  assert.equal(CUSTOMER_RESERVATION_CANCELLATION_DISABLED, true);
-  assert.match(createRemoteSpacecloudCancelTask.toString(), /CUSTOMER_RESERVATION_CANCELLATION_DISABLED/);
-  assert.match(createRemoteNaverCancelTask.toString(), /CUSTOMER_RESERVATION_CANCELLATION_DISABLED/);
+  const previousCancellationSetting = process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED;
+  delete process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED;
+  assert.equal(customerReservationCancellationEnabled(), true);
+  process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED = '0';
+  assert.equal(customerReservationCancellationEnabled(), false);
+  if (previousCancellationSetting === undefined) delete process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED;
+  else process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED = previousCancellationSetting;
+  assert.match(createRemoteSpacecloudCancelTask.toString(), /CANCELLATION_PRIORITY_RULE/);
+  assert.match(createRemoteNaverCancelTask.toString(), /CANCELLATION_PRIORITY_RULE/);
+  assert.match(runGuardedCustomerCancellation.toString(), /verifyWinningBookingLive/);
+  assert.match(runGuardedCustomerCancellation.toString(), /beforeConfirm/);
+  assert.match(runGuardedCustomerCancellation.toString(), /cancel-submit-checkpoint/);
+  assert.match(classifyLaterReservationConflict.toString(), /policy\.decision === 'winner'/);
+  assert.match(classifyLaterReservationConflict.toString(), /queueStrictLaterBookingCancellation/);
+  assert.doesNotMatch(runWatch.toString(), /stopping after (?:db upload|delete|naver block|naver restore|naver cancel|spacecloud cancel) failure/);
   assert.match(fetchRemoteTasks.toString(), /FOR UPDATE/);
   assert.match(fetchRemoteTasks.toString(), /claim_token/);
   assert.match(fetchRemoteTaskTypes.toString(), /FOR UPDATE/);
@@ -5628,7 +6717,9 @@ function runNowModeSelfTest() {
       'SMS errors redact full recipient phone numbers',
       'oversized task results remain valid JSON with status and reservation identity',
       'notification cooldown suppresses only identical issue text',
-      'customer reservation cancellation is hard-disabled',
+      'customer cancellation defaults on, supports an emergency off switch, and requires live winner plus final DB guard',
+      'reversed mailbox arrival still queues the strictly later opposite-platform reservation',
+      'one quarantined reservation task does not stop later queue processing',
       'task claims use transactional row locks and unique claim tokens',
       'only the current claim owner can checkpoint or finish a task',
       'task rows are claimed one at a time so untouched rows never remain running',
@@ -5995,8 +7086,7 @@ async function runWatch(args) {
             logLine(`login needed; waiting for manual login: ${JSON.stringify(row.failed)}`);
           } else {
             await notifyWithCooldown(args, 'spacecloud-upload-failed', uploadFailureMessage(row));
-            logLine(`stopping after non-login failure: ${JSON.stringify(row.failed)}`);
-            break;
+            logLine(`reservation work quarantined after non-login failure; watcher continues: ${JSON.stringify(row.failed)}`);
           }
         }
         if (row.uploadTasks?.failed?.length) {
@@ -6006,8 +7096,7 @@ async function runWatch(args) {
             logLine(`login needed during db upload; waiting for manual login: ${JSON.stringify(row.uploadTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.uploadTasks, 'platform', 'upload', uploadTaskFailureMessage(row.uploadTasks));
-            logLine(`stopping after db upload failure: ${JSON.stringify(row.uploadTasks.failed)}`);
-            break;
+            logLine(`upload task quarantined; watcher continues: ${JSON.stringify(row.uploadTasks.failed)}`);
           }
         }
         if (row.deleteTasks?.failed?.length) {
@@ -6017,8 +7106,7 @@ async function runWatch(args) {
             logLine(`login needed during delete; waiting for manual login: ${JSON.stringify(row.deleteTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.deleteTasks, 'platform', 'delete', deleteFailureMessage(row.deleteTasks));
-            logLine(`stopping after delete failure: ${JSON.stringify(row.deleteTasks.failed)}`);
-            break;
+            logLine(`delete task quarantined; watcher continues: ${JSON.stringify(row.deleteTasks.failed)}`);
           }
         }
         if (row.naverBlockTasks?.failed?.length) {
@@ -6028,8 +7116,7 @@ async function runWatch(args) {
             logLine(`login needed during naver block; waiting for manual login: ${JSON.stringify(row.naverBlockTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.naverBlockTasks, 'platform', 'naver_block', naverBlockFailureMessage(row.naverBlockTasks));
-            logLine(`stopping after naver block failure: ${JSON.stringify(row.naverBlockTasks.failed)}`);
-            break;
+            logLine(`naver block task quarantined; watcher continues: ${JSON.stringify(row.naverBlockTasks.failed)}`);
           }
         }
         if (row.naverRestoreTasks?.failed?.length) {
@@ -6039,8 +7126,7 @@ async function runWatch(args) {
             logLine(`login needed during naver restore; waiting for manual login: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.naverRestoreTasks, 'platform', 'naver_restore', naverRestoreFailureMessage(row.naverRestoreTasks));
-            logLine(`stopping after naver restore failure: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
-            break;
+            logLine(`naver restore task quarantined; watcher continues: ${JSON.stringify(row.naverRestoreTasks.failed)}`);
           }
         }
         if (row.naverCancelTasks?.failed?.length) {
@@ -6050,8 +7136,7 @@ async function runWatch(args) {
             logLine(`login needed during naver cancel; waiting for manual login: ${JSON.stringify(row.naverCancelTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.naverCancelTasks, 'platform', 'naver_cancel', naverCancelFailureMessage(row.naverCancelTasks));
-            logLine(`stopping after naver cancel failure: ${JSON.stringify(row.naverCancelTasks.failed)}`);
-            break;
+            logLine(`naver cancel task quarantined; watcher continues: ${JSON.stringify(row.naverCancelTasks.failed)}`);
           }
         }
         if (row.spacecloudCancelTasks?.failed?.length) {
@@ -6061,8 +7146,7 @@ async function runWatch(args) {
             logLine(`login needed during spacecloud cancel; waiting for manual login: ${JSON.stringify(row.spacecloudCancelTasks.failed)}`);
           } else {
             await notifyReservationAttention(args, row.spacecloudCancelTasks, 'platform', 'spacecloud_cancel', spacecloudCancelFailureMessage(row.spacecloudCancelTasks));
-            logLine(`stopping after spacecloud cancel failure: ${JSON.stringify(row.spacecloudCancelTasks.failed)}`);
-            break;
+            logLine(`spacecloud cancel task quarantined; watcher continues: ${JSON.stringify(row.spacecloudCancelTasks.failed)}`);
           }
         }
       } catch (error) {

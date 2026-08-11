@@ -806,6 +806,9 @@ def ensure_db_tables(config, logger):
             ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'net_amount', 'INT UNSIGNED NULL AFTER fee_amount')
             ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'amount_source', "VARCHAR(64) NOT NULL DEFAULT '' AFTER net_amount")
             ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'payment_method', "VARCHAR(64) NOT NULL DEFAULT '' AFTER amount_source")
+            ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'automation_canceled_at', 'DATETIME NULL AFTER canceled_email_received_at')
+            ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'automation_cancel_task_id', 'BIGINT UNSIGNED NULL AFTER automation_canceled_at')
+            ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'automation_cancel_platform', "VARCHAR(32) NOT NULL DEFAULT '' AFTER automation_cancel_task_id")
             ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'claim_token', "VARCHAR(64) NOT NULL DEFAULT '' AFTER locked_at")
         logger.info('Email DB tables checked')
     except Exception as error:
@@ -1043,7 +1046,12 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                 )
                 ON DUPLICATE KEY UPDATE
                     source_mode=IF(VALUES(source_mode) <> '', VALUES(source_mode), source_mode),
-                    current_status=IF(VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), 'confirmed', current_status),
+                    current_status=IF(
+                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
+                        'confirmed',
+                        current_status
+                    ),
                     target_calendar=VALUES(target_calendar),
                     room_key=VALUES(room_key),
                     reservation_number=VALUES(reservation_number),
@@ -1061,17 +1069,39 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                     amount_source=IF(amount_source LIKE '%%platform-export', amount_source, IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source)),
                     payment_method=IF(amount_source LIKE '%%platform-export', payment_method, IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method)),
                     confirmed_email_event_id=IF(
-                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'),
+                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
                         VALUES(confirmed_email_event_id),
                         confirmed_email_event_id
                     ),
                     confirmed_email_received_at=IF(
-                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'),
+                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
                         VALUES(confirmed_email_received_at),
                         confirmed_email_received_at
                     ),
-                    last_event_at=IF(VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(confirmed_email_received_at), last_event_at),
+                    last_event_at=IF(
+                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
+                        VALUES(confirmed_email_received_at),
+                        last_event_at
+                    ),
                     payload_json=IF(amount_source LIKE '%%platform-export', payload_json, VALUES(payload_json)),
+                    automation_cancel_task_id=IF(
+                        VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
+                        NULL,
+                        automation_cancel_task_id
+                    ),
+                    automation_cancel_platform=IF(
+                        VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
+                        '',
+                        automation_cancel_platform
+                    ),
+                    automation_canceled_at=IF(
+                        VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
+                        NULL,
+                        automation_canceled_at
+                    ),
                     updated_at=NOW()
                 """,
                 row,

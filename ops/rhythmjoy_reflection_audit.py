@@ -594,7 +594,7 @@ def run_audit(
                   AND current_status='confirmed'
                   AND confirmed_email_event_id IS NOT NULL
                   AND (
-                        (source_platform='naver' AND COALESCE(source_mode, '')='')
+                        (source_platform='naver' AND COALESCE(source_mode, '') IN ('', 'naver_email'))
                      OR (source_platform='spacecloud' AND COALESCE(source_mode, '')='spacecloud_email')
                   )
                   AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
@@ -674,19 +674,58 @@ def run_audit(
                     out['latestWaiting'].append(view)
 
             cur.execute("""
-                SELECT DATE_FORMAT(reservation_date, '%%Y-%%m-%%d') AS reservation_date, room_key,
-                       TIME_FORMAT(start_time, '%%H:%%i:%%s') AS start_time,
-                       TIME_FORMAT(end_time, '%%H:%%i:%%s') AS end_time,
-                       COUNT(*) AS cnt,
-                       GROUP_CONCAT(CONCAT(id, ':', source_platform, ':', COALESCE(reservation_number, ''), ':', COALESCE(reserver_name, '')) ORDER BY COALESCE(last_event_at, created_at, updated_at), id SEPARATOR ' | ') AS rows_text
-                FROM rhythmjoy_booking_ledger
-                WHERE current_status <> 'canceled'
-                  AND COALESCE(source_mode, '') <> 'admin-task-anchor'
-                  AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
-                                          AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
-                GROUP BY reservation_date, room_key, start_time, end_time
-                HAVING COUNT(*) > 1
-                ORDER BY reservation_date ASC, start_time ASC, room_key ASC
+                SELECT
+                    CONCAT(a.id, ':', b.id) AS pair_key,
+                    a.id AS left_id,
+                    b.id AS right_id,
+                    DATE_FORMAT(a.reservation_date, '%%Y-%%m-%%d') AS reservation_date,
+                    a.room_key,
+                    TIME_FORMAT(a.start_time, '%%H:%%i:%%s') AS start_time,
+                    TIME_FORMAT(a.end_time, '%%H:%%i:%%s') AS end_time,
+                    DATE_FORMAT(b.reservation_date, '%%Y-%%m-%%d') AS right_reservation_date,
+                    TIME_FORMAT(b.start_time, '%%H:%%i:%%s') AS right_start_time,
+                    TIME_FORMAT(b.end_time, '%%H:%%i:%%s') AS right_end_time,
+                    2 AS cnt,
+                    CONCAT(
+                        a.id, ':', a.source_platform, ':', COALESCE(a.reservation_number, ''), ':', COALESCE(a.reserver_name, ''),
+                        ' | ',
+                        b.id, ':', b.source_platform, ':', COALESCE(b.reservation_number, ''), ':', COALESCE(b.reserver_name, '')
+                    ) AS rows_text
+                FROM rhythmjoy_booking_ledger a
+                JOIN rhythmjoy_booking_ledger b
+                  ON b.id > a.id
+                 AND b.room_key = a.room_key
+                 AND b.reservation_date BETWEEN DATE_SUB(a.reservation_date, INTERVAL 1 DAY)
+                                            AND DATE_ADD(a.reservation_date, INTERVAL 1 DAY)
+                 AND DATE_ADD(
+                       TIMESTAMP(a.reservation_date, '00:00:00'),
+                       INTERVAL TIME_TO_SEC(a.start_time) SECOND
+                     ) < DATE_ADD(
+                       TIMESTAMP(b.reservation_date, '00:00:00'),
+                       INTERVAL (TIME_TO_SEC(b.end_time) + IF(b.end_time <= b.start_time, 86400, 0)) SECOND
+                     )
+                 AND DATE_ADD(
+                       TIMESTAMP(b.reservation_date, '00:00:00'),
+                       INTERVAL TIME_TO_SEC(b.start_time) SECOND
+                     ) < DATE_ADD(
+                       TIMESTAMP(a.reservation_date, '00:00:00'),
+                       INTERVAL (TIME_TO_SEC(a.end_time) + IF(a.end_time <= a.start_time, 86400, 0)) SECOND
+                     )
+                WHERE a.current_status='confirmed'
+                  AND b.current_status='confirmed'
+                  AND a.confirmed_email_event_id IS NOT NULL
+                  AND b.confirmed_email_event_id IS NOT NULL
+                  AND (
+                        (a.source_platform='naver' AND COALESCE(a.source_mode, '') IN ('', 'naver_email'))
+                     OR (a.source_platform='spacecloud' AND COALESCE(a.source_mode, '')='spacecloud_email')
+                  )
+                  AND (
+                        (b.source_platform='naver' AND COALESCE(b.source_mode, '') IN ('', 'naver_email'))
+                     OR (b.source_platform='spacecloud' AND COALESCE(b.source_mode, '')='spacecloud_email')
+                  )
+                  AND a.reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                                             AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+                ORDER BY a.reservation_date ASC, a.start_time ASC, a.room_key ASC, a.id ASC, b.id ASC
             """, (past_days, future_days))
             duplicates = cur.fetchall()
             out['duplicateCount'] = len(duplicates)
@@ -694,7 +733,7 @@ def run_audit(
                 start = short_time(duplicate.get('start_time'))
                 end = short_time(duplicate.get('end_time'))
                 item = {
-                    'audit_key': f"duplicate:{duplicate.get('reservation_date')}:{duplicate.get('room_key')}:{start}:{end}",
+                    'audit_key': f"duplicate:{duplicate.get('pair_key') or (str(duplicate.get('reservation_date')) + ':' + str(duplicate.get('room_key')) + ':' + start + ':' + end)}",
                     'ledger_id': None,
                     'source_platform': 'ledger',
                     'target_platform': 'ledger',

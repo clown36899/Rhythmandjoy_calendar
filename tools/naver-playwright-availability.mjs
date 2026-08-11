@@ -925,6 +925,7 @@ export async function fetchNaverReservationPhone(context, task, {
 export async function cancelNaverConfirmedReservation(context, task, {
   businessId = NAVER_BOOKING_BUSINESS_ID,
   refundType = 'ALL',
+  beforeConfirm = null,
 } = {}) {
   const page = await pageForContext(context);
   const row = {
@@ -999,6 +1000,24 @@ export async function cancelNaverConfirmedReservation(context, task, {
       const cancelButton = page.locator('[class*="SideLayer__visible"] button').filter({ hasText: /^예약 취소$/ });
       const count = await cancelButton.count();
       if (count !== 1) throw new Error(`Naver final cancel button count ${count}`);
+      if (typeof beforeConfirm === 'function') {
+        const guard = await beforeConfirm({
+          taskId: row.taskId,
+          reservationNo,
+          roomKey: row.roomKey,
+          date: row.date,
+          startTime: row.startTime,
+          endTime: row.endTime,
+        });
+        row.cancelGuard = guard?.summary || guard || {};
+        if (guard?.approved !== true) {
+          row.status = guard?.retryable ? 'guard-retry-pending' : 'needs-review';
+          row.error = `Naver cancellation guard blocked final confirm: ${guard?.reason || 'not-approved'}`;
+          row.finishedAt = new Date().toISOString();
+          return row;
+        }
+      }
+      row.submissionAttempted = true;
       await cancelButton.first().click({ timeout: 10000 });
       await page.waitForTimeout(1500);
 
@@ -1031,8 +1050,10 @@ export async function cancelNaverConfirmedReservation(context, task, {
     row.finishedAt = new Date().toISOString();
     if (row.afterStatus === '취소') {
       row.status = 'canceled';
+      row.submissionConfirmed = true;
     } else {
       row.status = 'failed';
+      row.submissionConfirmed = false;
       row.error = 'Naver reservation status did not become canceled after confirm';
     }
     return row;
