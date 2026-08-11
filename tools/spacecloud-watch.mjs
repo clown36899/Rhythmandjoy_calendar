@@ -1691,9 +1691,47 @@ function compactCandidate(candidate) {
   };
 }
 
+function compactDirectVerification(value) {
+  if (!value || typeof value !== 'object') return value;
+  return {
+    ok: Boolean(value.ok),
+    reason: value.reason || '',
+    waitedMs: value.waitedMs,
+    refreshCount: value.refreshCount,
+    candidateReadCount: value.candidateReadCount,
+    verificationPasses: value.verificationPasses,
+    candidateCount: value.candidateCount,
+    nameMatched: Boolean(value.nameMatched),
+    identityMatched: Boolean(value.identityMatched),
+    identityVerification: value.identityVerification || null,
+    reservationNo: value.reservationNo || '',
+    candidates: (value.candidates || []).slice(0, 5).map(compactCandidate),
+    dayCellText: shortenResultString(value.dayCellText, 180),
+    identityAttempts: (value.identityAttempts || []).slice(-6).map((attempt) => ({
+      candidate: compactCandidate(attempt.candidate),
+      status: attempt.status || '',
+      error: shortenResultString(attempt.error, 180),
+      popupTextPreview: shortenResultString(attempt.popupTextPreview, 220),
+      verification: attempt.verification || null,
+    })),
+  };
+}
+
 function compactTaskResultObject(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const row = { ...value };
+
+  for (const key of [
+    'preflightVerification',
+    'postSubmitVerification',
+    'fastVerification',
+    'confirmationVerification',
+    'verification',
+  ]) {
+    if (row[key] && typeof row[key] === 'object') {
+      row[key] = compactDirectVerification(row[key]);
+    }
+  }
 
   if (row.candidateSearch && typeof row.candidateSearch === 'object') {
     row.candidateSearch = {
@@ -1749,8 +1787,14 @@ function taskResultTextForDb(resultText, maxLength = 4000) {
       endTime: compacted.endTime || '',
       reserverName: compacted.reserverName || '',
       reservationNo: compacted.reservationNo || compacted.reservationId || '',
+      submissionAttempted: compacted.submissionAttempted === true,
+      submissionConfirmed: compacted.submissionConfirmed === true,
+      resubmitBlocked: compacted.resubmitBlocked === true,
+      retryMode: compacted.retryMode || '',
       error: shortenResultString(compacted.error, 500),
       resultSummary: 'result compacted to keep valid JSON in DB',
+      preflightVerification: compacted.preflightVerification,
+      postSubmitVerification: compacted.postSubmitVerification,
       deleteVerification: compacted.deleteVerification,
       selectedCandidate: compacted.selectedCandidate,
       candidateSearch: compacted.candidateSearch,
@@ -1765,6 +1809,10 @@ function taskResultTextForDb(resultText, maxLength = 4000) {
       startTime: compacted.startTime || '',
       endTime: compacted.endTime || '',
       reservationNo: compacted.reservationNo || compacted.reservationId || '',
+      submissionAttempted: compacted.submissionAttempted === true,
+      submissionConfirmed: compacted.submissionConfirmed === true,
+      resubmitBlocked: compacted.resubmitBlocked === true,
+      retryMode: compacted.retryMode || '',
       error: shortenResultString(compacted.error, 500),
       resultSummary: 'result compacted to keep valid JSON in DB',
     }, null, 2);
@@ -5494,6 +5542,10 @@ function runNowModeSelfTest() {
     status: 'needs-review',
     taskId: 777,
     reservationNo: '1311471051',
+    submissionAttempted: true,
+    submissionConfirmed: false,
+    resubmitBlocked: true,
+    retryMode: 'verification-only',
     error: 'x'.repeat(20_000),
     candidates: Array.from({ length: 100 }, (_, index) => ({ index, text: '후보'.repeat(1000) })),
   }));
@@ -5501,6 +5553,10 @@ function runNowModeSelfTest() {
   assert.ok(compactedLongResult.length <= 4000);
   assert.equal(parsedLongResult.status, 'needs-review');
   assert.equal(parsedLongResult.reservationNo, '1311471051');
+  assert.equal(parsedLongResult.submissionAttempted, true);
+  assert.equal(parsedLongResult.submissionConfirmed, false);
+  assert.equal(parsedLongResult.resubmitBlocked, true);
+  assert.equal(parsedLongResult.retryMode, 'verification-only');
   const alertNow = Date.parse('2026-08-03T12:00:00Z');
   const priorAlert = { lastSentAt: '2026-08-03T11:59:00Z', textPreview: 'same issue' };
   assert.equal(notificationSuppressedByCooldown(priorAlert, 'same issue', alertNow, 3600), true);

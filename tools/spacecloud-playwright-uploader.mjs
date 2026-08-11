@@ -6,6 +6,8 @@ import { pathToFileURL } from 'node:url';
 const require = createRequire(import.meta.url);
 const SPACECLOUD_PAGE_LOAD_TIMEOUT_MS = 20000;
 const DIRECT_UPLOAD_VERIFICATION_REFRESH_AT_MS = Object.freeze([3000, 10000, 30000, 60000]);
+const CALENDAR_MONTH_READY_TIMEOUT_MS = 20000;
+const CALENDAR_DOM_STABLE_MS = 750;
 
 export const SPACECLOUD_ROOMS = {
   a: { spaceId: '66056', productId: '108673', name: 'A홀' },
@@ -26,6 +28,14 @@ function ymFromDate(value) {
 
 function ymIndex(ym) {
   return ym.year * 12 + ym.month;
+}
+
+function shiftYm(ym, offset) {
+  const shifted = new Date(Date.UTC(ym.year, ym.month - 1 + offset, 1));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+  };
 }
 
 function reservationCalendarUrl(roomKey) {
@@ -170,6 +180,17 @@ function parseTaskPayload(task) {
   }
 }
 
+function parseTaskResult(task) {
+  if (task.result && typeof task.result === 'object') return task.result;
+  const raw = task.resultText || task.result_text || '{}';
+  try {
+    const parsed = JSON.parse(raw || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function spacecloudReservationIdFromTask(task) {
   const payload = parseTaskPayload(task);
   return String(
@@ -237,6 +258,7 @@ function verifySpacecloudReservationText(text, row, reservationId) {
 
 export function spacecloudUploadEventFromTask(task) {
   const payload = parseTaskPayload(task);
+  const previousResult = parseTaskResult(task);
   const roomKey = task.roomKey || task.room_key || payload.roomKey || payload.room_key || '';
   const room = SPACECLOUD_ROOMS[roomKey];
   if (!room) throw new Error(`unknown SpaceCloud room key: ${roomKey}`);
@@ -268,6 +290,8 @@ export function spacecloudUploadEventFromTask(task) {
     paymentStatus: payload.payment_status || task.payment_status || '',
     product: payload.product || task.product || '',
     attempts: Number(task.attempts || 0),
+    previousResult,
+    recoveredFromStaleRunning: Boolean(task.recoveredFromStaleRunning),
   };
   event.memo = [
     'Rhythmjoy Naver email DB sync',
@@ -279,6 +303,29 @@ export function spacecloudUploadEventFromTask(task) {
   event.fingerprint = eventFingerprint(event);
   event.spacecloudUiInput = buildSpacecloudUiInput(event);
   return event;
+}
+
+export function directUploadRetryMode(event) {
+  if (Number(event?.attempts || 0) <= 0) return 'new-submit';
+  if (event?.recoveredFromStaleRunning) return 'verification-only';
+
+  const previous = event?.previousResult && typeof event.previousResult === 'object'
+    ? event.previousResult
+    : {};
+  if (previous.submissionAttempted === false) return 'safe-retry-before-submit';
+  if (
+    previous.submissionAttempted === true
+    || previous.postSubmitVerification
+    || previous.verifiedAfterSubmit
+    || /post-submit|after submit|candidate did not match/i.test(String(previous.error || ''))
+  ) {
+    return 'verification-only';
+  }
+
+  // An old or interrupted task without an explicit pre-submit checkpoint is
+  // ambiguous. Re-submitting it could duplicate a reservation, so only the
+  // exact reservation identity may recover it automatically.
+  return 'verification-only';
 }
 
 export async function loadPlaywright() {
@@ -362,6 +409,9 @@ async function loadSpacecloudCalendar(page, roomKey, {
     { productId: room.productId, spaceId: room.spaceId },
     { timeout: timeoutMs },
   );
+  await waitForCalendarMonthReady(page, await calendarMonth(page), {
+    timeoutMs,
+  });
   return targetUrl;
 }
 
@@ -418,18 +468,63 @@ async function calendarMonth(page) {
   return { year: Number(match[1]), month: Number(match[2]) };
 }
 
+async function waitForCalendarMonthReady(page, expectedYm, {
+  timeoutMs = CALENDAR_MONTH_READY_TIMEOUT_MS,
+  stableMs = CALENDAR_DOM_STABLE_MS,
+} = {}) {
+  await page.waitForFunction(
+    ({ year, month, stableMs: requiredStableMs }) => {
+      const title = document.querySelector('.calendar_tit.short strong')?.textContent
+        || document.querySelector('.calendar_tit.short')?.textContent
+        || '';
+      const titleMatch = String(title).match(/(\d{4})\s*\.\s*(\d{1,2})/);
+      const cells = [...document.querySelectorAll('.booking_wrap')];
+      const jqueryBusy = Boolean(window.jQuery && Number(window.jQuery.active || 0) > 0);
+      const stateKey = '__rhythmjoyCalendarReadyState';
+      const expectedKey = `${year}-${month}`;
+      const expectedTitle = Boolean(
+        titleMatch
+        && Number(titleMatch[1]) === year
+        && Number(titleMatch[2]) === month
+      );
+
+      if (!expectedTitle || cells.length !== 42 || jqueryBusy) {
+        window[stateKey] = null;
+        return false;
+      }
+
+      const signature = cells.map((cell) => cell.innerHTML).join('\u241e');
+      const now = Date.now();
+      const previous = window[stateKey];
+      if (!previous || previous.expectedKey !== expectedKey || previous.signature !== signature) {
+        window[stateKey] = { expectedKey, signature, stableSince: now };
+        return false;
+      }
+      return now - previous.stableSince >= requiredStableMs;
+    },
+    { year: expectedYm.year, month: expectedYm.month, stableMs },
+    { polling: 100, timeout: timeoutMs },
+  );
+  return expectedYm;
+}
+
 async function gotoCalendarMonth(page, targetDate) {
   const targetYm = ymFromDate(targetDate);
   for (let i = 0; i < 36; i += 1) {
     const currentYm = await calendarMonth(page);
     const diff = ymIndex(targetYm) - ymIndex(currentYm);
-    if (diff === 0) return currentYm;
+    if (diff === 0) {
+      await waitForCalendarMonthReady(page, currentYm);
+      return currentYm;
+    }
+    const direction = diff > 0 ? 1 : -1;
+    const expectedYm = shiftYm(currentYm, direction);
     const selector = diff > 0 ? '.calendar_tit.short .btn_next' : '.calendar_tit.short .btn_prev';
     const button = page.locator(selector).filter({ visible: true });
     const count = await button.count();
     if (count < 1) throw new Error(`calendar month control not found: ${selector}`);
     await button.first().click({ timeout: 5000 });
-    await page.waitForTimeout(700);
+    await waitForCalendarMonthReady(page, expectedYm);
   }
   throw new Error(`calendar month navigation failed for ${targetDate}`);
 }
@@ -668,6 +763,86 @@ export async function waitForDirectEventCandidates(page, row, {
   };
 }
 
+export async function pollForVerifiedDirectCandidate({
+  readCandidates,
+  verifyCandidates,
+  refresh = null,
+  wait,
+  timeoutMs = 12000,
+  intervalMs = 500,
+  refreshAtMs = [],
+  now = () => Date.now(),
+}) {
+  if (typeof readCandidates !== 'function') throw new Error('readCandidates is required');
+  if (typeof verifyCandidates !== 'function') throw new Error('verifyCandidates is required');
+  if (typeof wait !== 'function') throw new Error('wait is required');
+
+  const started = now();
+  const refreshSchedule = (Array.isArray(refreshAtMs) ? refreshAtMs : [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 0 && value < timeoutMs)
+    .sort((left, right) => left - right);
+  let refreshIndex = 0;
+  let refreshCount = 0;
+  let candidateReadCount = 0;
+  let verificationPasses = 0;
+  let latestSearch = null;
+  let latestCandidateSearch = null;
+  let latestSelection = null;
+  const identityAttempts = [];
+
+  while (true) {
+    latestSearch = await readCandidates();
+    candidateReadCount += 1;
+    const candidates = latestSearch?.candidates || [];
+    if (candidates.length > 0) {
+      latestCandidateSearch = latestSearch;
+      latestSelection = await verifyCandidates(candidates);
+      verificationPasses += 1;
+      identityAttempts.push(...(latestSelection?.attempts || []));
+      if (latestSelection?.candidate) {
+        return {
+          matched: true,
+          search: latestSearch,
+          selection: latestSelection,
+          identityAttempts: identityAttempts.slice(-24),
+          candidateReadCount,
+          verificationPasses,
+          refreshCount,
+          waitedMs: Math.max(0, now() - started),
+        };
+      }
+    }
+
+    const elapsedMs = Math.max(0, now() - started);
+    if (elapsedMs >= timeoutMs) break;
+
+    if (
+      typeof refresh === 'function'
+      && refreshIndex < refreshSchedule.length
+      && elapsedMs >= refreshSchedule[refreshIndex]
+    ) {
+      await refresh({ elapsedMs, refreshCount });
+      refreshIndex += 1;
+      refreshCount += 1;
+      continue;
+    }
+
+    await wait(Math.min(intervalMs, Math.max(1, timeoutMs - elapsedMs)));
+  }
+
+  return {
+    matched: false,
+    search: latestCandidateSearch || latestSearch || { candidates: [], dayCellText: '', visibleLinks: [] },
+    selection: latestSelection,
+    identityAttempts: identityAttempts.slice(-24),
+    candidateReadCount,
+    verificationPasses,
+    refreshCount,
+    waitedMs: Math.max(0, now() - started),
+  };
+}
+
 async function verifyDirectEventCreated(page, event, {
   timeoutMs = 90000,
   intervalMs = 1500,
@@ -692,40 +867,50 @@ async function verifyDirectEventCreated(page, event, {
     );
     await gotoCalendarMonth(page, event.date);
   };
-  const latest = await waitForDirectEventCandidates(page, row, {
+  const poll = await pollForVerifiedDirectCandidate({
+    readCandidates: () => findDirectEventCandidates(page, row),
+    verifyCandidates: async (candidates) => {
+      const selection = await findVerifiedDeleteCandidate(page, candidates, row);
+      await closeReservationPopup(page).catch(() => {});
+      return selection;
+    },
     timeoutMs,
     intervalMs,
     refreshAtMs: DIRECT_UPLOAD_VERIFICATION_REFRESH_AT_MS,
     refresh: refreshCalendar,
+    wait: (delayMs) => page.waitForTimeout(delayMs),
   });
+  const latest = poll.search || { candidates: [], dayCellText: '', visibleLinks: [] };
   const candidates = latest.candidates || [];
   const nameMatched = expectedName
     ? candidates.some((candidate) => compactText(candidate.text || candidate.visibleText || '').includes(expectedName))
     : false;
-  let identityMatched = false;
-  let identityVerification = null;
-  let identityAttempts = [];
-  if (candidates.length > 0) {
-    const selection = await findVerifiedDeleteCandidate(page, candidates, row);
-    identityMatched = Boolean(selection.candidate);
-    identityAttempts = (selection.attempts || []).map((attempt) => ({
+  const identityMatched = poll.matched === true;
+  const identityVerification = identityMatched
+    ? poll.selection?.verification
+    : {
+      ok: false,
+      error: poll.selection?.error || 'candidate-identity-verification-failed',
+    };
+  const identityAttempts = (poll.identityAttempts || []).map((attempt) => ({
       candidate: attempt.candidate,
       status: attempt.status,
       error: attempt.error || '',
       popupTextPreview: redactPhone(attempt.popupTextPreview || ''),
       verification: attempt.verification || null,
     }));
-    identityVerification = identityMatched
-      ? selection.verification
-      : { ok: false, error: selection.error || 'candidate-identity-verification-failed' };
-    await closeReservationPopup(page).catch(() => {});
-  }
 
   return {
-    ok: candidates.length > 0,
-    reason: candidates.length > 0 ? 'calendar-candidate-found' : 'calendar-candidate-not-found',
-    waitedMs: latest.waitedMs,
-    refreshCount: latest.refreshCount || 0,
+    ok: identityMatched,
+    reason: identityMatched
+      ? 'calendar-identity-matched'
+      : candidates.length > 0
+        ? 'calendar-candidate-identity-not-matched'
+        : 'calendar-candidate-not-found',
+    waitedMs: poll.waitedMs,
+    refreshCount: poll.refreshCount || 0,
+    candidateReadCount: poll.candidateReadCount || 0,
+    verificationPasses: poll.verificationPasses || 0,
     candidateCount: candidates.length,
     nameMatched,
     identityMatched,
@@ -738,26 +923,13 @@ async function verifyDirectEventCreated(page, event, {
   };
 }
 
-export function classifyDirectUploadVerification(hidden, verification, {
-  allowUniquePostSubmitNameFallback = false,
-} = {}) {
+export function classifyDirectUploadVerification(hidden, verification) {
   const result = verification || {};
   const expectedIdentityMatched = result.reservationNo
     ? result.identityMatched === true
     : result.nameMatched === true;
   if (result.ok && expectedIdentityMatched) {
     return { status: 'submitted', error: '', verified: true };
-  }
-  const uniqueDirectCandidate = Number(result.candidateCount || 0) === 1
-    && result.nameMatched === true
-    && result.candidates?.[0]?.directHint === true;
-  if (hidden && allowUniquePostSubmitNameFallback && uniqueDirectCandidate) {
-    return {
-      status: 'submitted',
-      error: '',
-      verified: true,
-      verificationMode: 'unique-direct-candidate-name-fallback',
-    };
   }
   if (Number(result.candidateCount || 0) > 0) {
     return {
@@ -940,6 +1112,7 @@ export function popupDeleteVerification(popupText, row) {
   const nameKey = normalizeName(row.reserverName);
   const maskedNameKey = normalizeName(displayReserverName(row.reserverName));
   const reservationNo = String(row.reservationNo || '').trim();
+  const taskId = String(row.taskId || '').trim();
   const timePatterns = [
     `${startHour}:00~${endHour}:00`,
     `${String(startHour).padStart(2, '0')}:00~${String(endHour).padStart(2, '0')}:00`,
@@ -964,13 +1137,23 @@ export function popupDeleteVerification(popupText, row) {
     reservationNo
     && new RegExp(`(?:naverreservationno=|예약번호[:：]?)(?:\\s*)${escapedReservationNo}(?!\\d)`, 'i').test(normalized)
   );
-  const identityMode = reservationNo ? 'reservation-number' : 'reserver-name-fallback';
+  const escapedTaskId = taskId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const taskIdMatched = Boolean(
+    taskId
+    && new RegExp(`taskid=${escapedTaskId}(?!\\d)`, 'i').test(normalized)
+  );
+  const identityMode = reservationNo
+    ? row.requireTaskId && taskId ? 'reservation-number-and-task-id' : 'reservation-number'
+    : 'reserver-name-fallback';
   if (reservationNo) {
     if (!reservationNoMatched) errors.push(`reservation-number-mismatch:${reservationNo}`);
   } else if (nameKey) {
     if (!nameMatched) errors.push(`reserver-name-mismatch:${nameKey}`);
   } else {
     errors.push('identity-missing');
+  }
+  if (row.requireTaskId && taskId && !taskIdMatched) {
+    errors.push(`task-id-mismatch:${taskId}`);
   }
 
   return {
@@ -980,9 +1163,11 @@ export function popupDeleteVerification(popupText, row) {
       mode: identityMode,
       nameMatched,
       reservationNoMatched,
+      taskIdMatched,
       nameKey,
       maskedNameKey,
       reservationNo: reservationNo || '',
+      taskId,
     },
   };
 }
@@ -1080,6 +1265,8 @@ async function readJsonArray(filePath) {
 
 export function directUploadVerificationTarget(event) {
   return {
+    taskId: event.taskId || null,
+    requireTaskId: Boolean(event.taskId),
     roomKey: event.roomKey,
     date: event.date,
     startTime: event.startTime,
@@ -1102,6 +1289,7 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     startTime: event.startTime,
     endTime: event.endTime,
     reserverName: event.reserverName,
+    submissionAttempted: false,
     startedAt: new Date().toISOString(),
   };
 
@@ -1118,21 +1306,34 @@ export async function uploadSpacecloudDirectReservation(context, event) {
 
     await closeModalIfOpen(page);
 
-    if (Number(event.attempts || 0) > 0) {
+    const retryMode = directUploadRetryMode(event);
+    row.retryMode = retryMode;
+    if (retryMode !== 'new-submit') {
       row.preflightVerification = await verifyDirectEventCreated(page, event, {
-        timeoutMs: 12000,
-        intervalMs: 750,
+        timeoutMs: retryMode === 'verification-only' ? 90000 : 30000,
+        intervalMs: 1000,
       });
       const preflightOutcome = classifyDirectUploadVerification(true, row.preflightVerification);
       if (preflightOutcome.status === 'submitted') {
         row.status = 'submitted';
         row.alreadyPresentOnRetry = true;
+        row.submissionConfirmed = true;
+        row.finishedAt = new Date().toISOString();
+        return row;
+      }
+      if (retryMode === 'verification-only') {
+        row.status = 'needs-review';
+        row.resubmitBlocked = true;
+        row.error = 'Previous upload may have reached SpaceCloud, but its exact reservation identity was not confirmed; automatic resubmit is blocked';
         row.finishedAt = new Date().toISOString();
         return row;
       }
       if (row.preflightVerification.candidateCount > 0) {
         row.status = 'needs-review';
-        throw new Error('existing SpaceCloud schedule overlaps retry slot; manual review required');
+        row.error = 'Existing SpaceCloud schedule overlaps retry slot; exact identity did not match and automatic resubmit is blocked';
+        row.resubmitBlocked = true;
+        row.finishedAt = new Date().toISOString();
+        return row;
       }
     }
 
@@ -1171,8 +1372,9 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     const submit = page.locator('#_addExternalSchedule').filter({ visible: true });
     const submitCount = await submit.count();
     if (submitCount !== 1) throw new Error(`visible submit count ${submitCount}`);
+    row.submissionAttempted = true;
+    row.submitClickedAt = new Date().toISOString();
     await submit.click({ timeout: 10000 });
-    await page.waitForTimeout(1200);
 
     const hidden = await waitHidden(page, '#start_day', 45000);
     row.postSubmitVerification = await verifyDirectEventCreated(page, event, {
@@ -1181,12 +1383,11 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     });
     row.finishedAt = new Date().toISOString();
     if (dialogs.length > 0) row.dialogs = dialogs;
-    const outcome = classifyDirectUploadVerification(hidden, row.postSubmitVerification, {
-      allowUniquePostSubmitNameFallback: true,
-    });
+    const outcome = classifyDirectUploadVerification(hidden, row.postSubmitVerification);
     row.status = outcome.status;
     if (outcome.verified) {
       row.verifiedAfterSubmit = true;
+      row.submissionConfirmed = true;
       row.verificationMode = outcome.verificationMode || 'reservation-identity';
     } else {
       row.error = outcome.error;
