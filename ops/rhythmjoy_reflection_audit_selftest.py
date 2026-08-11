@@ -16,16 +16,22 @@ except ModuleNotFoundError:
 import rhythmjoy_reflection_audit as audit
 
 
-def sample_result(issues):
+def sample_result(issues, ingestion_gaps=None):
+    ingestion_gaps = ingestion_gaps or []
     return {
         'checked': 3,
         'okCount': 2,
         'waitingCount': 0,
-        'issueCount': len(issues),
+        'issueCount': len(issues) + len(ingestion_gaps),
         'duplicateCount': 0,
         'calendarMismatchCount': 0,
         'ingestionCheckedCount': 3,
-        'ingestionGapCount': 0,
+        'ingestionGapCount': len(ingestion_gaps),
+        'ingestionGapKeys': [
+            f"{row.get('emailEventId')}|{row.get('taskId')}|{row.get('taskStatus')}|{row.get('reason')}"
+            for row in ingestion_gaps
+        ],
+        'latestIngestionGaps': ingestion_gaps,
         'latestIssues': issues,
         'latestWaiting': [],
     }
@@ -80,6 +86,27 @@ def main():
     assert '실제 플랫폼 누락 확정 아님' in message
     assert '같은 상태는 다시 알리지 않습니다' in message
 
+    ingestion_gap = {
+        'emailEventId': 611,
+        'eventType': 'cancellation',
+        'processingStatus': 'spacecloud_delete_pending',
+        'taskId': 573,
+        'taskStatus': 'pending',
+        'taskAttempts': 31,
+        'date': '2026-09-08',
+        'roomKey': 'A',
+        'startTime': '20:00',
+        'endTime': '23:00',
+        'reserverNameMasked': '김*미',
+        'reason': '최신 예약 메일 작업이 pending 상태로 지연됨',
+    }
+    ingestion_message = audit.audit_message(sample_result([], [ingestion_gap]))
+    assert '문제 상세 없음' not in ingestion_message
+    assert '수집·반영 누락 상세' in ingestion_message
+    assert '메일 #611' in ingestion_message
+    assert '작업 #573 (pending, 시도 31회)' in ingestion_message
+    assert '2026-09-08 A홀 20:00-23:00' in ingestion_message
+
     sent_messages = []
 
     def fake_send(text, timeout=12):
@@ -100,6 +127,25 @@ def main():
     assert quiet == {'sent': False, 'reason': 'no_issues'}
     assert len(sent_messages) == 2
     assert sent_messages[1].startswith('✅ 자동검사 경고 해제')
+
+    gap_messages = []
+
+    def fake_gap_send(text, timeout=12):
+        gap_messages.append(text)
+        return {'sent': True, 'messageId': len(gap_messages)}
+
+    replacement_gap = {**ingestion_gap, 'emailEventId': 612}
+    with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(audit, 'send_telegram', fake_gap_send):
+        state_path = str(Path(temp_dir) / 'gap-state.json')
+        logger = logging.getLogger('reflection-audit-gap-selftest')
+        first_gap = audit.notify_if_needed(sample_result([], [ingestion_gap]), state_path, logger)
+        same_gap = audit.notify_if_needed(sample_result([], [ingestion_gap]), state_path, logger)
+        changed_gap = audit.notify_if_needed(sample_result([], [replacement_gap]), state_path, logger)
+
+    assert first_gap['sent'] is True
+    assert same_gap == {'sent': False, 'reason': 'state_unchanged'}
+    assert changed_gap['sent'] is True
+    assert len(gap_messages) == 2
     print('reflection audit notification self-test OK')
 
 

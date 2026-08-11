@@ -287,33 +287,37 @@ def recent_ingestion_rows(cur, lookback_days):
                    ORDER BY l.last_event_at DESC, l.id DESC
                    LIMIT 1
                ) AS ledger_status,
-               (
-                   SELECT t.status
-                   FROM rhythmjoy_spacecloud_tasks t
-                   WHERE t.task_type=CASE
-                       WHEN e.event_type='reservation' THEN 'upload'
-                       WHEN e.event_type='cancellation' THEN 'delete'
-                       WHEN e.event_type='spacecloud_reservation' THEN 'naver_block'
-                       WHEN e.event_type='spacecloud_cancellation' THEN 'naver_restore'
-                       ELSE ''
-                   END
-                     AND (
-                         (
-                             e.event_type IN ('reservation', 'cancellation')
-                             AND e.reservation_number <> ''
-                             AND t.reservation_number=e.reservation_number
-                         ) OR (
-                             e.event_type IN ('spacecloud_reservation', 'spacecloud_cancellation')
-                             AND t.room_key=e.spacecloud_room_key
-                             AND t.reservation_date=e.reservation_date
-                             AND t.start_time=e.start_time
-                             AND t.end_time=e.end_time
-                         )
-                     )
-                   ORDER BY t.id DESC
-                   LIMIT 1
-               ) AS task_status
+               latest_task.id AS task_id,
+               latest_task.status AS task_status,
+               latest_task.attempts AS task_attempts
         FROM rhythmjoy_naver_email_events e
+        LEFT JOIN rhythmjoy_spacecloud_tasks latest_task
+          ON latest_task.id = (
+              SELECT candidate.id
+              FROM rhythmjoy_spacecloud_tasks candidate
+              WHERE candidate.task_type=CASE
+                  WHEN e.event_type='reservation' THEN 'upload'
+                  WHEN e.event_type='cancellation' THEN 'delete'
+                  WHEN e.event_type='spacecloud_reservation' THEN 'naver_block'
+                  WHEN e.event_type='spacecloud_cancellation' THEN 'naver_restore'
+                  ELSE ''
+              END
+                AND (
+                    (
+                        e.event_type IN ('reservation', 'cancellation')
+                        AND e.reservation_number <> ''
+                        AND candidate.reservation_number=e.reservation_number
+                    ) OR (
+                        e.event_type IN ('spacecloud_reservation', 'spacecloud_cancellation')
+                        AND candidate.room_key=e.spacecloud_room_key
+                        AND candidate.reservation_date=e.reservation_date
+                        AND candidate.start_time=e.start_time
+                        AND candidate.end_time=e.end_time
+                    )
+                )
+              ORDER BY candidate.id DESC
+              LIMIT 1
+          )
         WHERE e.email_received_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
           AND e.event_type IN (
               'reservation', 'cancellation',
@@ -371,10 +375,10 @@ def ingestion_gap_reason(row, upload_enabled, block_enabled, grace_minutes):
     task_status = row.get('task_status') or ''
     if task_required and not task_status:
         return '최신 예약 메일의 필수 상대 플랫폼 작업이 없음'
-    if task_status == 'failed':
-        return '최신 예약 메일의 상대 플랫폼 작업 실패'
+    if task_status in ('failed', 'needs_review', 'needs-review'):
+        return f'최신 예약 메일의 상대 플랫폼 작업 {task_status}'
     if (
-        task_status in ('pending', 'running', 'google_pending')
+        task_status in ('pending', 'running', 'claimed', 'google_pending')
         and int(row.get('age_minutes') or 0) > max(1, int(grace_minutes))
     ):
         return f'최신 예약 메일 작업이 {task_status} 상태로 지연됨'
@@ -506,6 +510,8 @@ def run_audit(
         'historyOnlyCount': 0,
         'ingestionCheckedCount': 0,
         'ingestionGapCount': 0,
+        'ingestionGapKeys': [],
+        'latestIngestionGaps': [],
         'latestIssues': [],
         'latestWaiting': [],
     }
@@ -541,6 +547,16 @@ def run_audit(
                     continue
                 out['issueCount'] += 1
                 out['ingestionGapCount'] += 1
+                gap_key = '|'.join(str(value or '') for value in (
+                    row.get('id'),
+                    row.get('event_type'),
+                    row.get('processing_status'),
+                    row.get('task_id'),
+                    row.get('task_status'),
+                    row.get('task_attempts'),
+                    reason,
+                ))
+                out['ingestionGapKeys'].append(gap_key)
                 item = {
                     'audit_key': f"ingestion:email:{row.get('id')}",
                     'ledger_id': None,
@@ -551,7 +567,7 @@ def run_audit(
                     'audit_status': 'issue',
                     'severity': 'critical',
                     'reason': reason[:255],
-                    'task_id': None,
+                    'task_id': row.get('task_id'),
                     'task_status': row.get('task_status') or '',
                     'reservation_date': row.get('reservation_date'),
                     'room_key': row.get('room_key') or '',
@@ -563,13 +579,19 @@ def run_audit(
                 }
                 seen_audit_keys.append(item['audit_key'])
                 upsert_item(cur, item)
-                if len(out['latestIssues']) < 8:
+                if len(out['latestIngestionGaps']) < 8:
                     start = short_time(row.get('start_time'))
                     end = short_time(row.get('end_time'))
-                    out['latestIssues'].append({
+                    out['latestIngestionGaps'].append({
+                        'emailEventId': row.get('id'),
+                        'eventType': row.get('event_type') or '',
+                        'processingStatus': row.get('processing_status') or '',
                         'sourceLabel': '예약메일',
                         'targetLabel': '원장/작업',
                         'taskType': row.get('event_type') or '',
+                        'taskId': row.get('task_id'),
+                        'taskStatus': row.get('task_status') or '',
+                        'taskAttempts': int(row.get('task_attempts') or 0),
                         'status': 'issue',
                         'severity': 'critical',
                         'reason': reason,
@@ -1143,8 +1165,51 @@ def audit_group_line(group, index):
     )
 
 
+def ingestion_gap_line(row, index):
+    event_label = {
+        'reservation': '네이버 예약',
+        'cancellation': '네이버 취소',
+        'spacecloud_reservation': '스페이스클라우드 예약',
+        'spacecloud_cancellation': '스페이스클라우드 취소',
+    }.get(row.get('eventType') or '', row.get('eventType') or '예약 이벤트')
+    room = f"{row.get('roomKey')}홀" if row.get('roomKey') else '-'
+    name = f" / {row.get('reserverNameMasked')}" if row.get('reserverNameMasked') else ''
+    email_event = f"메일 #{row.get('emailEventId')}" if row.get('emailEventId') else '메일 ID 없음'
+    task_id = f"작업 #{row.get('taskId')}" if row.get('taskId') else '작업 없음'
+    task_status = row.get('taskStatus') or '-'
+    attempts = int(row.get('taskAttempts') or 0)
+    attempt_text = f", 시도 {attempts}회" if attempts else ''
+    return (
+        f"{index + 1}. {row.get('date') or '-'} {room} "
+        f"{row.get('startTime') or '-'}-{row.get('endTime') or '-'}{name}\n"
+        f"   {event_label} / {email_event} / {task_id} ({task_status}{attempt_text})\n"
+        f"   원인: {row.get('reason') or '-'}"
+    )
+
+
+def ingestion_gap_signatures(result):
+    keys = sorted(str(value) for value in (result.get('ingestionGapKeys') or []) if str(value))
+    if keys:
+        return keys
+    rows = result.get('latestIngestionGaps') or []
+    derived = sorted('|'.join(str(value or '') for value in (
+        row.get('emailEventId'),
+        row.get('eventType'),
+        row.get('processingStatus'),
+        row.get('taskId'),
+        row.get('taskStatus'),
+        row.get('taskAttempts'),
+        row.get('reason'),
+    )) for row in rows)
+    if derived:
+        return derived
+    count = int(result.get('ingestionGapCount') or 0)
+    return [f'legacy-count:{count}'] if count else []
+
+
 def audit_message(result):
     issue_groups = actionable_issue_groups(result.get('latestIssues') or [])
+    ingestion_rows = result.get('latestIngestionGaps') or []
     waiting = result.get('latestWaiting') or []
     ingestion_gaps = int(result.get('ingestionGapCount') or 0)
     duplicate_count = int(result.get('duplicateCount') or 0)
@@ -1152,8 +1217,20 @@ def audit_message(result):
     parts = [
         f"🟡 자동검사 확인 필요: {alert_count}건",
         f"DB 원장 검사: {int(result.get('ingestionCheckedCount') or 0)}건 / 수집 누락 {ingestion_gaps}건",
-        '\n'.join(audit_group_line(group, index) for index, group in enumerate(issue_groups)) if issue_groups else '문제 상세 없음',
     ]
+    if ingestion_gaps:
+        parts.append(
+            '수집·반영 누락 상세\n'
+            + ('\n'.join(ingestion_gap_line(row, index) for index, row in enumerate(ingestion_rows))
+               if ingestion_rows else '상세 데이터 없음 · 관리자 패널에서 확인')
+        )
+    if issue_groups:
+        parts.append(
+            '플랫폼 반영 확인 상세\n'
+            + '\n'.join(audit_group_line(group, index) for index, group in enumerate(issue_groups))
+        )
+    if not ingestion_gaps and not issue_groups and not duplicate_count:
+        parts.append('문제 상세 없음')
     if duplicate_count:
         parts.append(f"DB 확정 중복: {duplicate_count}건")
     if waiting:
@@ -1210,9 +1287,10 @@ def notify_if_needed(result, state_path, logger):
     state = read_json(state_path)
     issue_groups = actionable_issue_groups(result.get('latestIssues') or [])
     ingestion_gap_count = int(result.get('ingestionGapCount') or 0)
+    ingestion_keys = ingestion_gap_signatures(result)
     issue_key = '||'.join([
         str(duplicate_count),
-        str(ingestion_gap_count),
+        *[f'ingestion:{key}' for key in ingestion_keys],
         *[
             '|'.join([
                 group['key'],
@@ -1230,7 +1308,7 @@ def notify_if_needed(result, state_path, logger):
             'okCount': int(result.get('okCount') or 0),
             'waitingCount': int(result.get('waitingCount') or 0),
             'issueCount': issue_count,
-            'uniqueIssueCount': len(issue_groups),
+            'uniqueIssueCount': len(issue_groups) + len(ingestion_keys) + duplicate_count,
             'duplicateCount': duplicate_count,
             'calendarMismatchCount': int(result.get('calendarMismatchCount') or 0),
         },

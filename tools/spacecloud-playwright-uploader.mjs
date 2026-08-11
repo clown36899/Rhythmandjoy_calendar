@@ -37,6 +37,78 @@ function shiftYm(ym, offset) {
   };
 }
 
+export function calendarGridExpectation(yearValue, monthValue) {
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || year < 2000 || month < 1 || month > 12) {
+    throw new Error(`invalid calendar year/month: ${yearValue}.${monthValue}`);
+  }
+  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const compactCellCount = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
+  const acceptableCellCounts = [];
+  for (let count = compactCellCount; count <= 42; count += 7) acceptableCellCounts.push(count);
+  return {
+    year,
+    month,
+    firstWeekday,
+    daysInMonth,
+    compactCellCount,
+    acceptableCellCounts,
+  };
+}
+
+function calendarTitleMonth(title) {
+  const match = String(title || '').match(/(\d{4})\s*\.\s*(\d{1,2})/);
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]) };
+}
+
+export function assessCalendarMonthGrid(snapshot, expectedYm) {
+  const expected = calendarGridExpectation(expectedYm?.year, expectedYm?.month);
+  const observedTitle = String(snapshot?.title || '').replace(/\s+/g, ' ').trim();
+  const observedYm = calendarTitleMonth(observedTitle);
+  const cellCount = Number(snapshot?.cellCount);
+  const dayNumbers = Array.isArray(snapshot?.dayNumbers) ? snapshot.dayNumbers : [];
+  const base = {
+    ready: false,
+    expected,
+    observedTitle,
+    observedYm,
+    cellCount: Number.isFinite(cellCount) ? cellCount : 0,
+  };
+
+  if (!observedYm) return { ...base, reason: 'calendar title month not found' };
+  if (observedYm.year !== expected.year || observedYm.month !== expected.month) {
+    return {
+      ...base,
+      reason: `calendar title mismatch: observed ${observedYm.year}.${observedYm.month}`,
+    };
+  }
+  if (!expected.acceptableCellCounts.includes(cellCount)) {
+    return {
+      ...base,
+      reason: `calendar grid cell count ${cellCount}; expected ${expected.acceptableCellCounts.join(' or ')}`,
+    };
+  }
+  if (dayNumbers.length !== cellCount) {
+    return {
+      ...base,
+      reason: `calendar day sample count ${dayNumbers.length}; cell count ${cellCount}`,
+    };
+  }
+  for (let day = 1; day <= expected.daysInMonth; day += 1) {
+    const index = expected.firstWeekday + day - 1;
+    if (Number(dayNumbers[index]) !== day) {
+      return {
+        ...base,
+        reason: `calendar day sequence mismatch at cell ${index}: expected ${day}, observed ${dayNumbers[index] ?? ''}`,
+      };
+    }
+  }
+  return { ...base, ready: true, reason: '' };
+}
+
 function reservationCalendarUrl(roomKey) {
   const room = SPACECLOUD_ROOMS[roomKey];
   if (!room) throw new Error(`unknown SpaceCloud room key: ${roomKey}`);
@@ -694,7 +766,7 @@ async function loadSpacecloudCalendar(page, roomKey, {
   const targetUrl = reservationCalendarUrl(roomKey);
 
   // SpaceCloud is an SPA. Changing only the product query can leave the prior
-  // room's 42 calendar cells in the DOM long enough to look fully loaded.
+  // room's calendar cells in the DOM long enough to look fully loaded.
   // Start from a blank document so stale room data can never be classified as
   // the requested room's calendar.
   if (forceFreshDocument) {
@@ -723,7 +795,6 @@ async function loadSpacecloudCalendar(page, roomKey, {
       return url.searchParams.get('product') === productId
         && url.searchParams.get('space') === spaceId
         && /\d{4}\s*\.\s*\d{1,2}/.test(title)
-        && document.querySelectorAll('.booking_wrap').length === 42
         && addButtons.length === 1;
     },
     { productId: room.productId, spaceId: room.spaceId },
@@ -786,27 +857,51 @@ async function calendarMonth(page) {
   return { year: Number(match[1]), month: Number(match[2]) };
 }
 
+async function calendarMonthGridSnapshot(page) {
+  return page.evaluate(() => {
+    const title = document.querySelector('.calendar_tit.short strong')?.textContent
+      || document.querySelector('.calendar_tit.short')?.textContent
+      || '';
+    const cells = [...document.querySelectorAll('.booking_wrap')];
+    return {
+      title: String(title),
+      cellCount: cells.length,
+      dayNumbers: cells.map((cell) => {
+        const firstLine = String(cell?.innerText || cell?.textContent || '').split(/\r?\n/)[0].trim();
+        const match = firstLine.match(/^(\d{1,2})(?:\D|$)/);
+        return match ? Number(match[1]) : null;
+      }),
+    };
+  });
+}
+
 async function waitForCalendarMonthReady(page, expectedYm, {
   timeoutMs = CALENDAR_MONTH_READY_TIMEOUT_MS,
 } = {}) {
-  await page.waitForFunction(
-    ({ year, month }) => {
-      const title = document.querySelector('.calendar_tit.short strong')?.textContent
-        || document.querySelector('.calendar_tit.short')?.textContent
-        || '';
-      const titleMatch = String(title).match(/(\d{4})\s*\.\s*(\d{1,2})/);
-      const cells = [...document.querySelectorAll('.booking_wrap')];
-      return Boolean(
-        titleMatch
-        && Number(titleMatch[1]) === year
-        && Number(titleMatch[2]) === month
-        && cells.length === 42
-      );
-    },
-    { year: expectedYm.year, month: expectedYm.month },
-    { polling: 100, timeout: timeoutMs },
+  const startedAt = Date.now();
+  let lastAssessment = null;
+  let lastReadError = '';
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const snapshot = await calendarMonthGridSnapshot(page);
+      lastAssessment = assessCalendarMonthGrid(snapshot, expectedYm);
+      lastReadError = '';
+      if (lastAssessment.ready) return expectedYm;
+    } catch (error) {
+      lastReadError = String(error?.message || error);
+      if (/Target (?:page, context or browser|page|context|browser) has been closed/i.test(lastReadError)) throw error;
+    }
+    await page.waitForTimeout(100);
+  }
+
+  const expected = calendarGridExpectation(expectedYm?.year, expectedYm?.month);
+  const observed = lastAssessment
+    ? `title=${lastAssessment.observedTitle || '-'}, cells=${lastAssessment.cellCount}, reason=${lastAssessment.reason}`
+    : `readError=${lastReadError || 'no calendar snapshot'}`;
+  throw new Error(
+    `SpaceCloud calendar DOM not ready for ${expected.year}.${expected.month}; ${observed}; `
+      + `expectedCells=${expected.acceptableCellCounts.join('/')}`,
   );
-  return expectedYm;
 }
 
 async function gotoCalendarMonth(page, targetDate) {

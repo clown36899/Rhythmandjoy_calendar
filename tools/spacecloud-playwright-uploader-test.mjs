@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  assessCalendarMonthGrid,
+  calendarGridExpectation,
   classifyDirectUploadVerification,
   directUploadRetryMode,
   directUploadVerificationTarget,
@@ -12,6 +14,56 @@ import {
   verifySpacecloudCalendarIdentity,
   waitForDirectEventCandidates,
 } from './spacecloud-playwright-uploader.mjs';
+
+function calendarSnapshot(year, month, cellCount) {
+  const expected = calendarGridExpectation(year, month);
+  const dayNumbers = Array(cellCount).fill(null);
+  for (let day = 1; day <= expected.daysInMonth; day += 1) {
+    dayNumbers[expected.firstWeekday + day - 1] = day;
+  }
+  return {
+    title: `${year}.${month}`,
+    cellCount,
+    dayNumbers,
+  };
+}
+
+test('calendar grid accepts the month-specific 35 or 42 cell layout', () => {
+  assert.deepEqual(calendarGridExpectation(2026, 9), {
+    year: 2026,
+    month: 9,
+    firstWeekday: 2,
+    daysInMonth: 30,
+    compactCellCount: 35,
+    acceptableCellCounts: [35, 42],
+  });
+  assert.equal(assessCalendarMonthGrid(calendarSnapshot(2026, 9, 35), { year: 2026, month: 9 }).ready, true);
+  assert.equal(assessCalendarMonthGrid(calendarSnapshot(2026, 9, 42), { year: 2026, month: 9 }).ready, true);
+
+  const august = calendarGridExpectation(2026, 8);
+  assert.equal(august.compactCellCount, 42);
+  assert.deepEqual(august.acceptableCellCounts, [42]);
+  assert.equal(assessCalendarMonthGrid(calendarSnapshot(2026, 8, 42), { year: 2026, month: 8 }).ready, true);
+});
+
+test('calendar grid supports compact February and rejects stale or malformed DOM', () => {
+  assert.deepEqual(calendarGridExpectation(2026, 2).acceptableCellCounts, [28, 35, 42]);
+  assert.equal(assessCalendarMonthGrid(calendarSnapshot(2026, 2, 28), { year: 2026, month: 2 }).ready, true);
+
+  const staleMonth = assessCalendarMonthGrid(calendarSnapshot(2026, 8, 42), { year: 2026, month: 9 });
+  assert.equal(staleMonth.ready, false);
+  assert.match(staleMonth.reason, /title mismatch/);
+
+  const wrongCount = assessCalendarMonthGrid(calendarSnapshot(2026, 9, 28), { year: 2026, month: 9 });
+  assert.equal(wrongCount.ready, false);
+  assert.match(wrongCount.reason, /cell count 28/);
+
+  const brokenSequence = calendarSnapshot(2026, 9, 35);
+  brokenSequence.dayNumbers[2] = null;
+  const broken = assessCalendarMonthGrid(brokenSequence, { year: 2026, month: 9 });
+  assert.equal(broken.ready, false);
+  assert.match(broken.reason, /day sequence mismatch/);
+});
 
 test('canceled detail accepts only the known post-cancel name omission', () => {
   assert.equal(spacecloudReservationIdentityAccepted('RSCMP', { ok: true, errors: [] }), true);

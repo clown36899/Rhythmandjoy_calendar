@@ -58,6 +58,7 @@ const TELEGRAM_LOG_HINT = '로그: 자동화 관리패널 또는 spacecloud-watc
 const CUSTOMER_RESERVATION_CANCELLATION_DEFAULT_ENABLED = true;
 const CANCELLATION_PRIORITY_RULE = 'first-email-confirmed-real-platform-wins-strict';
 const CANCELLATION_GUARD_MAX_ATTEMPTS = 6;
+const PLATFORM_TRANSIENT_MAX_ATTEMPTS = 6;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -3992,7 +3993,47 @@ function isBrowserContextClosedProblem(message) {
 
 function isRetryablePlatformProblem(message) {
   return isBrowserContextClosedProblem(message)
-    || /page\.goto|Timeout \d+ms exceeded|domcontentloaded|net::|ERR_|ECONNRESET|ETIMEDOUT|Connection reset|Connection closed|page load|navigation|modal still visible after submit|calendar title month not found/i.test(String(message || ''));
+    || /page\.goto|Timeout \d+ms exceeded|domcontentloaded|net::|ERR_|ECONNRESET|ETIMEDOUT|Connection reset|Connection closed|page load|navigation|modal still visible after submit|calendar title month not found|calendar DOM not ready/i.test(String(message || ''));
+}
+
+function platformTransientMaxAttempts() {
+  const configured = Number.parseInt(process.env.RHYTHMJOY_PLATFORM_TRANSIENT_MAX_ATTEMPTS || '', 10);
+  if (!Number.isFinite(configured) || configured < 1 || configured > 50) {
+    return PLATFORM_TRANSIENT_MAX_ATTEMPTS;
+  }
+  return configured;
+}
+
+function currentPlatformTaskAttempt(row, task = null) {
+  const explicit = Number(row?.currentAttempt);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+  const previous = Number(task?.attempts);
+  if (Number.isFinite(previous) && previous >= 0) return Math.floor(previous) + 1;
+  return 1;
+}
+
+function retryablePlatformDbStatus(row, task = null) {
+  const loginProblem = isLoginProblem(row?.error);
+  const transientProblem = isRetryablePlatformProblem(row?.error);
+  if (!loginProblem && !transientProblem) return '';
+
+  const currentAttempt = currentPlatformTaskAttempt(row, task);
+  const maxAutomaticAttempts = platformTransientMaxAttempts();
+  const exhausted = currentAttempt >= maxAutomaticAttempts;
+  row.automaticRetry = {
+    kind: loginProblem ? 'login-or-session' : 'transient-platform',
+    currentAttempt,
+    maxAutomaticAttempts,
+    exhausted,
+  };
+  if (!exhausted) return 'pending';
+
+  const suffix = `자동 재시도 한도 도달 (${currentAttempt}/${maxAutomaticAttempts}); 관리자 확인 필요`;
+  if (!String(row.error || '').includes('자동 재시도 한도 도달')) {
+    row.error = `${String(row.error || 'platform operation failed')} | ${suffix}`;
+  }
+  row.retryExhausted = true;
+  return 'needs_review';
 }
 
 function rowsFromResult(rowOrError, key = 'failed') {
@@ -4638,19 +4679,19 @@ function cycleErrorMessage(errorText, { transient = false } = {}) {
   ]);
 }
 
-function dbStatusForDeleteRow(row) {
+function dbStatusForDeleteRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'deleted') return 'done';
   if (row.status === 'already-gone') return 'already_gone';
   if (row.status === 'needs-review') return 'needs_review';
-  if (isLoginProblem(row.error)) return 'pending';
-  if (isRetryablePlatformProblem(row.error)) return 'pending';
+  const retryStatus = retryablePlatformDbStatus(row, task);
+  if (retryStatus) return retryStatus;
   return 'failed';
 }
 
-function dbStatusForUploadRow(row) {
+function dbStatusForUploadRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (smsNeedsAttention(row)) return 'needs_review';
@@ -4658,12 +4699,12 @@ function dbStatusForUploadRow(row) {
   if (row.status === 'naver-cancel-queued') return 'done';
   if (row.status === 'submitted') return 'done';
   if (row.status === 'needs-review') return 'needs_review';
-  if (isLoginProblem(row.error)) return 'pending';
-  if (isRetryablePlatformProblem(row.error)) return 'pending';
+  const retryStatus = retryablePlatformDbStatus(row, task);
+  if (retryStatus) return retryStatus;
   return 'failed';
 }
 
-function dbStatusForNaverBlockRow(row) {
+function dbStatusForNaverBlockRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (smsNeedsAttention(row)) return 'needs_review';
@@ -4672,12 +4713,12 @@ function dbStatusForNaverBlockRow(row) {
   if (row.status === 'spacecloud-cancel-queued') return 'done';
   if (row.status === 'winner-waiting-loser-cancellation') return 'pending';
   if (row.status === 'naver-conflict' || row.status === 'later-reservation-conflict' || row.status === 'needs-review') return 'needs_review';
-  if (isLoginProblem(row.error)) return 'pending';
-  if (isRetryablePlatformProblem(row.error)) return 'pending';
+  const retryStatus = retryablePlatformDbStatus(row, task);
+  if (retryStatus) return retryStatus;
   return 'failed';
 }
 
-function dbStatusForSpacecloudCancelRow(row) {
+function dbStatusForSpacecloudCancelRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (smsNeedsAttention(row)) return 'needs_review';
@@ -4685,12 +4726,12 @@ function dbStatusForSpacecloudCancelRow(row) {
   if (['canceled', 'already-canceled', 'conflict-cleared-source-requeued'].includes(row.status)) return 'done';
   if (['guard-retry-pending', 'winner-verification-pending', 'cancellation-verification-pending', 'canceled-finalization-pending', 'external-cancellation-sync-pending'].includes(row.status)) return 'pending';
   if (row.status === 'needs-review') return 'needs_review';
-  if (isLoginProblem(row.error)) return 'pending';
-  if (isRetryablePlatformProblem(row.error)) return 'pending';
+  const retryStatus = retryablePlatformDbStatus(row, task);
+  if (retryStatus) return retryStatus;
   return 'failed';
 }
 
-function dbStatusForNaverCancelRow(row) {
+function dbStatusForNaverCancelRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (smsNeedsAttention(row)) return 'needs_review';
@@ -4698,20 +4739,20 @@ function dbStatusForNaverCancelRow(row) {
   if (['canceled', 'already-canceled', 'conflict-cleared-source-requeued'].includes(row.status)) return 'done';
   if (['guard-retry-pending', 'winner-verification-pending', 'cancellation-verification-pending', 'canceled-finalization-pending', 'external-cancellation-sync-pending'].includes(row.status)) return 'pending';
   if (row.status === 'needs-review') return 'needs_review';
-  if (isLoginProblem(row.error)) return 'pending';
-  if (isRetryablePlatformProblem(row.error)) return 'pending';
+  const retryStatus = retryablePlatformDbStatus(row, task);
+  if (retryStatus) return retryStatus;
   return 'failed';
 }
 
-function dbStatusForNaverRestoreRow(row) {
+function dbStatusForNaverRestoreRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip' || row.status === 'restore-skipped-not-owned') return 'done';
   if (row.status === 'restore-grace-wait') return 'pending';
   if (row.status === 'restored' || row.status === 'already-available') return 'done';
   if (row.status === 'needs-review' || row.status === 'naver-conflict') return 'needs_review';
-  if (isLoginProblem(row.error)) return 'pending';
-  if (isRetryablePlatformProblem(row.error)) return 'pending';
+  const retryStatus = retryablePlatformDbStatus(row, task);
+  if (retryStatus) return retryStatus;
   return 'failed';
 }
 
@@ -5501,7 +5542,7 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
 
       Object.assign(row, adminTaskFields(task));
       rows.push(row);
-      const status = dbStatusForUploadRow(row);
+      const status = dbStatusForUploadRow(row, task);
       row.dbStatus = status;
       await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
@@ -5584,7 +5625,7 @@ async function runDeleteTasks(args, context = null, claimedTasks = null) {
 
       Object.assign(row, adminTaskFields(task));
       rows.push(row);
-      const status = dbStatusForDeleteRow(row);
+      const status = dbStatusForDeleteRow(row, task);
       row.dbStatus = status;
       await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
@@ -5665,7 +5706,7 @@ async function runNaverBlockTasks(args, context = null) {
       }
       Object.assign(row, adminTaskFields(task));
       rows.push(row);
-      const status = dbStatusForNaverBlockRow(row);
+      const status = dbStatusForNaverBlockRow(row, task);
       row.dbStatus = status;
       await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
@@ -6118,7 +6159,7 @@ async function runSpacecloudCancelTasks(args, context = null) {
       }
 
       rows.push(row);
-      const status = dbStatusForSpacecloudCancelRow(row);
+      const status = dbStatusForSpacecloudCancelRow(row, task);
       row.dbStatus = status;
       await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
@@ -6203,7 +6244,7 @@ async function runNaverCancelTasks(args, context = null) {
       }
 
       rows.push(row);
-      const status = dbStatusForNaverCancelRow(row);
+      const status = dbStatusForNaverCancelRow(row, task);
       row.dbStatus = status;
       await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
@@ -6435,8 +6476,8 @@ async function runNaverAvailabilityTasks(args, context = null) {
       Object.assign(row, adminTaskFields(task));
       rows.push(row);
       const status = taskType === 'naver_restore'
-        ? dbStatusForNaverRestoreRow(row)
-        : dbStatusForNaverBlockRow(row);
+        ? dbStatusForNaverRestoreRow(row, task)
+        : dbStatusForNaverBlockRow(row, task);
       row.dbStatus = status;
       await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
@@ -6817,6 +6858,27 @@ function runNowModeSelfTest() {
   assert.equal(dbStatusForNaverRestoreRow(closedContextRow), 'pending');
   assert.equal(dbStatusForNaverCancelRow(closedContextRow), 'pending');
   assert.equal(dbStatusForSpacecloudCancelRow(closedContextRow), 'pending');
+  const exhaustedTransientRow = {
+    status: 'failed',
+    error: 'page.goto: Timeout 20000ms exceeded while waiting until domcontentloaded',
+    currentAttempt: PLATFORM_TRANSIENT_MAX_ATTEMPTS,
+  };
+  assert.equal(dbStatusForDeleteRow(exhaustedTransientRow), 'needs_review');
+  assert.equal(exhaustedTransientRow.retryExhausted, true);
+  assert.equal(exhaustedTransientRow.automaticRetry.currentAttempt, PLATFORM_TRANSIENT_MAX_ATTEMPTS);
+  assert.match(exhaustedTransientRow.error, /자동 재시도 한도 도달/);
+  const belowRetryLimitRow = {
+    status: 'failed',
+    error: 'page.goto: Timeout 20000ms exceeded while waiting until domcontentloaded',
+  };
+  assert.equal(dbStatusForUploadRow(belowRetryLimitRow, { attempts: PLATFORM_TRANSIENT_MAX_ATTEMPTS - 2 }), 'pending');
+  assert.equal(belowRetryLimitRow.automaticRetry.currentAttempt, PLATFORM_TRANSIENT_MAX_ATTEMPTS - 1);
+  const atRetryLimitRow = {
+    status: 'failed',
+    error: 'login required',
+  };
+  assert.equal(dbStatusForNaverBlockRow(atRetryLimitRow, { attempts: PLATFORM_TRANSIENT_MAX_ATTEMPTS - 1 }), 'needs_review');
+  assert.equal(atRetryLimitRow.automaticRetry.kind, 'login-or-session');
   assert.equal(dbStatusForNaverCancelRow({ status: 'winner-verification-pending' }), 'pending');
   assert.equal(dbStatusForSpacecloudCancelRow({ status: 'cancellation-verification-pending' }), 'pending');
   assert.equal(dbStatusForNaverCancelRow({ status: 'conflict-cleared-source-requeued' }), 'done');
