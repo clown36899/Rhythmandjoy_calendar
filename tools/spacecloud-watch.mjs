@@ -3542,6 +3542,7 @@ try:
             LEFT JOIN rhythmjoy_admin_sync_tasks a ON a.reservation_id=r.id
             LEFT JOIN rhythmjoy_spacecloud_tasks t ON t.id=a.live_task_id
             WHERE r.reservation_date >= CURDATE()
+              AND DATE_ADD(CAST(r.reservation_date AS DATETIME), INTERVAL r.end_hour HOUR) > NOW()
               AND r.status IN ('confirmed', 'canceled')
               AND (t.id IS NULL OR t.task_type IN ('upload','naver_block','delete','naver_restore'))
             ORDER BY r.reservation_date ASC, r.id ASC, t.id DESC
@@ -6912,6 +6913,10 @@ function runNowModeSelfTest() {
   assert.equal(safeTaskClaimLimit(50), 1);
   assert.match(dailyReconcileMessage({}), /spacecloud-watch\/launchd\.log/);
   assert.match(runAdminPlatformAudit.toString(), /persistRemoteAdminPlatformAudits/);
+  assert.match(
+    fetchRemoteAdminPlatformAuditCandidates.toString(),
+    /DATE_ADD\(CAST\(r\.reservation_date AS DATETIME\), INTERVAL r\.end_hour HOUR\) > NOW\(\)/,
+  );
   assert.ok(
     runAdminPlatformAudit.toString().indexOf('persistRemoteAdminPlatformAudits')
       < runAdminPlatformAudit.toString().indexOf('writeJson'),
@@ -6945,6 +6950,7 @@ function runNowModeSelfTest() {
       'new platform work is processed in source-received order',
       'daily reconcile message renders with log hint',
       'admin DB reservations rotate through actual Naver and SpaceCloud state inspection',
+      'admin platform audits exclude reservations whose end time is already past',
       'admin platform audit results and audit failures persist to the DB-backed alert center before checkpointing independently of Telegram',
       'platform read failures stay distinct from confirmed mismatches',
     ],
