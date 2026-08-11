@@ -5,13 +5,14 @@ import {
   classifyDirectUploadVerification,
   directUploadRetryMode,
   directUploadVerificationTarget,
-  pollForVerifiedDirectCandidate,
+  pollForSpacecloudCalendarIdentity,
   popupDeleteVerification,
   spacecloudUploadEventFromTask,
+  verifySpacecloudCalendarIdentity,
   waitForDirectEventCandidates,
 } from './spacecloud-playwright-uploader.mjs';
 
-test('post-submit verification refreshes the calendar before giving up', async () => {
+test('UI candidate search can refresh before a delete inspection gives up', async () => {
   let reads = 0;
   let refreshes = 0;
   const page = {
@@ -121,65 +122,6 @@ test('verification target keeps the exact reservation identity', () => {
   }).status, 'submitted');
 });
 
-test('stale same-time candidate is retried until exact identity matches', async () => {
-  let clock = 0;
-  let reads = 0;
-  let refreshes = 0;
-  const stale = { index: '0', text: '추20~22,신*람님', directHint: true };
-  const exact = { index: '0', text: '추20~22,김*미님', directHint: true };
-
-  const result = await pollForVerifiedDirectCandidate({
-    readCandidates: async () => {
-      reads += 1;
-      const candidate = reads >= 3 ? exact : stale;
-      return { candidates: [candidate], dayCellText: candidate.text, visibleLinks: [candidate] };
-    },
-    verifyCandidates: async (candidates) => {
-      const candidate = candidates[0];
-      const matched = candidate === exact;
-      return {
-        candidate: matched ? candidate : null,
-        verification: matched ? { ok: true } : null,
-        error: matched ? '' : 'date-mismatch|reservation-number-mismatch',
-        attempts: [{ candidate, status: matched ? 'verified' : 'verification-failed' }],
-      };
-    },
-    refresh: async () => { refreshes += 1; },
-    wait: async (delayMs) => { clock += delayMs; },
-    now: () => clock,
-    timeoutMs: 100,
-    intervalMs: 10,
-    refreshAtMs: [5],
-  });
-
-  assert.equal(result.matched, true);
-  assert.equal(result.selection.candidate, exact);
-  assert.equal(result.verificationPasses, 3);
-  assert.equal(result.refreshCount, 1);
-  assert.equal(refreshes, 1);
-});
-
-test('candidate mismatch never becomes a successful verification', async () => {
-  let clock = 0;
-  const stale = { index: '0', text: '추20~22,신*람님', directHint: true };
-  const result = await pollForVerifiedDirectCandidate({
-    readCandidates: async () => ({ candidates: [stale] }),
-    verifyCandidates: async () => ({
-      candidate: null,
-      error: 'reservation-number-mismatch',
-      attempts: [{ candidate: stale, status: 'verification-failed' }],
-    }),
-    wait: async (delayMs) => { clock += delayMs; },
-    now: () => clock,
-    timeoutMs: 30,
-    intervalMs: 10,
-  });
-
-  assert.equal(result.matched, false);
-  assert.equal(result.verificationPasses, 4);
-  assert.equal(result.selection.error, 'reservation-number-mismatch');
-});
-
 test('post-submit identity requires both reservation number and task id', () => {
   const popup = '직접 추가한 예약 건입니다. A홀 20평형-외부신발금지 예약자명 : 김*미님 예약내용 : 2026.11.26(목), 20:00~22:00, 2시간 메모 : Rhythmjoy Naver email DB sync / taskId=557 / naverReservationNo=1319633241';
   const row = {
@@ -199,12 +141,152 @@ test('post-submit identity requires both reservation number and task id', () => 
   assert.ok(wrongTask.errors.includes('task-id-mismatch:558'));
 });
 
+test('calendar API verifies the exact task, reservation, date, time, and masked name', () => {
+  const schedule = {
+    id: 9665321,
+    name: '김*미님',
+    symd: '20261126',
+    eymd: '20261126',
+    shour: 20,
+    ehour: 21,
+    memo: 'Rhythmjoy Naver email DB sync / room=A홀 / emailEventId=596 / taskId=557 / naverReservationNo=1319633241',
+  };
+  const calendar = {
+    ok: true,
+    status: 200,
+    productId: '108673',
+    days: [
+      { ymd: '20261126', externalSchedules: [schedule] },
+      // The live endpoint can repeat the same schedule object. Its stable id
+      // must deduplicate it without weakening identity checks.
+      { ymd: '20261127', externalSchedules: [{ ...schedule }] },
+    ],
+  };
+  const row = {
+    taskId: 557,
+    requireTaskId: true,
+    roomKey: 'a',
+    date: '2026-11-26',
+    startTime: '20:00',
+    endTime: '22:00',
+    reserverName: '김*미님',
+    reservationNo: '1319633241',
+  };
+
+  const exact = verifySpacecloudCalendarIdentity(calendar, row);
+  assert.equal(exact.ok, true);
+  assert.equal(exact.identityMatched, true);
+  assert.equal(exact.candidateCount, 1);
+  assert.equal(exact.candidates[0].scheduleId, '9665321');
+  assert.equal(exact.candidates[0].endTime, '22:00');
+
+  for (const changed of [
+    { taskId: 558 },
+    { reservationNo: '1319634015' },
+    { date: '2026-11-27' },
+    { startTime: '19:00' },
+    { endTime: '23:00' },
+    { reserverName: '박*수님' },
+  ]) {
+    assert.equal(verifySpacecloudCalendarIdentity(calendar, { ...row, ...changed }).identityMatched, false);
+  }
+});
+
+test('calendar API rejects two distinct schedules with the same exact memo identity', () => {
+  const schedule = {
+    id: 9665321,
+    name: '김*미님',
+    symd: '20261126',
+    eymd: '20261126',
+    shour: 20,
+    ehour: 21,
+    memo: 'taskId=557 / naverReservationNo=1319633241',
+  };
+  const result = verifySpacecloudCalendarIdentity({
+    ok: true,
+    status: 200,
+    productId: '108673',
+    days: [{ ymd: '20261126', externalSchedules: [schedule, { ...schedule, id: 9665999 }] }],
+  }, {
+    taskId: 557,
+    requireTaskId: true,
+    date: '2026-11-26',
+    startTime: '20:00',
+    endTime: '22:00',
+    reserverName: '김*미님',
+    reservationNo: '1319633241',
+  });
+  assert.equal(result.identityMatched, false);
+  assert.equal(result.identityCandidateCount, 2);
+  assert.ok(result.identityVerification.errors.includes('duplicate-exact-identity'));
+});
+
+test('calendar API polling waits for the authoritative schedule instead of reading stale DOM', async () => {
+  let clock = 0;
+  let reads = 0;
+  const row = {
+    taskId: 557,
+    requireTaskId: true,
+    date: '2026-11-26',
+    startTime: '20:00',
+    endTime: '22:00',
+    reserverName: '김*미님',
+    reservationNo: '1319633241',
+  };
+  const result = await pollForSpacecloudCalendarIdentity({
+    row,
+    readCalendar: async () => {
+      reads += 1;
+      return {
+        ok: true,
+        status: 200,
+        productId: '108673',
+        days: reads < 3 ? [] : [{
+          ymd: '20261126',
+          externalSchedules: [{
+            id: 9665321,
+            name: '김*미님',
+            symd: '20261126',
+            eymd: '20261126',
+            shour: 20,
+            ehour: 21,
+            memo: 'taskId=557 / naverReservationNo=1319633241',
+          }],
+        }],
+      };
+    },
+    wait: async (delayMs) => { clock += delayMs; },
+    now: () => clock,
+    timeoutMs: 100,
+    intervalMs: 10,
+  });
+  assert.equal(result.identityMatched, true);
+  assert.equal(result.candidateReadCount, 3);
+  assert.equal(result.waitedMs, 20);
+});
+
 test('ambiguous upload retries are verification-only and never auto-resubmit', () => {
   assert.equal(directUploadRetryMode({ attempts: 0 }), 'new-submit');
   assert.equal(directUploadRetryMode({
     attempts: 1,
-    previousResult: { submissionAttempted: false, error: 'add button not visible' },
+    previousResult: { retryMode: 'new-submit', submissionAttempted: false, error: 'add button not visible' },
   }), 'safe-retry-before-submit');
+  assert.equal(directUploadRetryMode({
+    attempts: 2,
+    previousResult: { retryMode: 'safe-retry-before-submit', submissionAttempted: false },
+  }), 'safe-retry-before-submit');
+  assert.equal(directUploadRetryMode({
+    attempts: 2,
+    previousResult: { retryMode: 'verification-only', submissionAttempted: false },
+  }), 'verification-only');
+  assert.equal(directUploadRetryMode({
+    attempts: 2,
+    previousResult: { resubmitBlocked: true, submissionAttempted: false },
+  }), 'verification-only');
+  assert.equal(directUploadRetryMode({
+    attempts: 1,
+    previousResult: { submissionAttempted: false, error: 'unknown legacy failure' },
+  }), 'verification-only');
   assert.equal(directUploadRetryMode({
     attempts: 1,
     previousResult: { submissionAttempted: true },

@@ -168,7 +168,7 @@ Operational limits:
 - This is not password automation. If SpaceCloud or Naver expires the session, the watcher sends a Telegram login-needed alert, keeps the Chrome profile open, and retries on the normal watch interval after the host logs in again.
 - The loop detects only DB work queued by the Cafe24 email importer. Calendar-cache planning is not part of the watcher.
 - New mapped-hall Naver reservation emails are uploaded to SpaceCloud through `upload` tasks.
-- After a direct-added upload, the watcher advances calendar months one at a time and waits for the target month DOM to become stable instead of assuming a fixed delay is enough. Verification continues across stale same-time candidates and staged full-page reloads until the popup matches the task room, date/time, Naver reservation number, and task id. A mismatched candidate can never complete the task.
+- After a direct-added upload, the watcher reads the authenticated SpaceCloud calendar API for the exact room product and target month. Completion requires one unique external schedule whose date, inclusive API hour range, masked reserver name, memo task id, and Naver reservation number all match. The calendar screen's asynchronously updated DOM is never used as proof of creation, so a stale same-time item cannot complete the task.
 - Upload retries are phase-aware and fail closed. A task known or suspected to have clicked submit is verification-only on every retry and can never submit a second reservation automatically. Only a prior result explicitly recorded before the submit click may retry creation. Exact identity verification is required before the task is marked done and its confirmation SMS is sent.
 - SpaceCloud direct-added reservation names are privacy-masked before entry: one character becomes `*님`, two characters become `첫글자*님`, three characters become `첫글자*끝글자님`, and four or more characters keep only the first and last character with the middle replaced by `*`. The original reserver name remains only in DB/task data for audit and matching.
 - Cancellation detection is handled earlier at the Naver email import layer: `ops/rhythmjoy_email_import.py` records the cancellation as a retained DB event and creates a follow-up task instead of removing the DB row. Naver-origin cancellations create a SpaceCloud `delete` task for mapped hall rooms. The active browser watcher consumes that task and deletes the matching direct-added SpaceCloud schedule through the logged-in UI.
@@ -391,7 +391,7 @@ Rhythmjoy reservations are handled as one-hour unit slots. Keep this simple:
 
 ## Current Limits
 
-SpaceCloud's iCal export may take up to 24 hours to include newly added reservations. For immediate post-upload verification, use the SpaceCloud calendar screen. Use iCal as a later reconciliation check.
+SpaceCloud's iCal export may take up to 24 hours to include newly added reservations. Immediate post-upload verification uses the authenticated calendar read API inside the already logged-in browser session. Use iCal only as a later reconciliation check.
 
 After a successful manual or browser-assisted upload, mark the event in the local log so the next dry-run skips it immediately:
 
@@ -424,12 +424,12 @@ Create payload from the frontend:
 }
 ```
 
-Unauthenticated direct calls return `401 {"error":"Missing token"}`. The endpoint exists, but an API-mode uploader needs a safe way to use the logged-in browser token/session without printing or storing it in Git.
+Unauthenticated direct calls return `401 {"error":"Missing token"}`. Calendar reads therefore run with `fetch` inside the already logged-in browser page. Only schedule identity fields are returned to the runner; the access token and customer telephone field never leave the browser page and are never printed or stored in Git.
 
-Per the current operating rule, do not use keychain extraction or direct token handling. API-mode remains a possible future optimization only if it can run inside the already logged-in browser session without exposing credentials.
+Create/update/delete remain UI-controlled. The read API is authoritative only for post-submit and retry verification.
 
 Resource-saving path:
 
 1. Keep `plan` and local upload log as-is.
 2. Use UI-mode from `spacecloudUiInput` as the default low-resource path.
-3. Revisit API-mode only when credential/session handling can stay fully inside the logged-in browser boundary.
+3. Keep authenticated calendar verification inside the logged-in browser boundary.

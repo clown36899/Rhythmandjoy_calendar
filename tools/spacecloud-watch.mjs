@@ -1681,6 +1681,19 @@ function shortenResultString(value, maxLength = 220) {
 
 function compactCandidate(candidate) {
   if (!candidate || typeof candidate !== 'object') return candidate;
+  if (candidate.source === 'spacecloud-calendar-api' || candidate.scheduleId) {
+    return {
+      source: 'spacecloud-calendar-api',
+      scheduleId: String(candidate.scheduleId || ''),
+      name: shortenResultString(candidate.name, 80),
+      date: candidate.date || '',
+      endDate: candidate.endDate || '',
+      startTime: candidate.startTime || '',
+      endTime: candidate.endTime || '',
+      taskId: String(candidate.taskId || ''),
+      reservationNo: String(candidate.reservationNo || ''),
+    };
+  }
   return {
     index: candidate.index,
     cellIndex: candidate.cellIndex,
@@ -1696,11 +1709,16 @@ function compactDirectVerification(value) {
   return {
     ok: Boolean(value.ok),
     reason: value.reason || '',
+    source: value.source || '',
+    apiStatus: value.apiStatus,
+    apiError: shortenResultString(value.apiError, 180),
+    productId: String(value.productId || ''),
     waitedMs: value.waitedMs,
     refreshCount: value.refreshCount,
     candidateReadCount: value.candidateReadCount,
     verificationPasses: value.verificationPasses,
     candidateCount: value.candidateCount,
+    identityCandidateCount: value.identityCandidateCount,
     nameMatched: Boolean(value.nameMatched),
     identityMatched: Boolean(value.identityMatched),
     identityVerification: value.identityVerification || null,

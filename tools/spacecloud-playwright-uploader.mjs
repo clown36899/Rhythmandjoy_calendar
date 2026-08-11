@@ -5,9 +5,8 @@ import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const SPACECLOUD_PAGE_LOAD_TIMEOUT_MS = 20000;
-const DIRECT_UPLOAD_VERIFICATION_REFRESH_AT_MS = Object.freeze([3000, 10000, 30000, 60000]);
 const CALENDAR_MONTH_READY_TIMEOUT_MS = 20000;
-const CALENDAR_DOM_STABLE_MS = 750;
+const SPACECLOUD_CALENDAR_API_PATH = '/partner/reservations/calendar';
 
 export const SPACECLOUD_ROOMS = {
   a: { spaceId: '66056', productId: '108673', name: 'A홀' },
@@ -42,6 +41,34 @@ function reservationCalendarUrl(roomKey) {
   const room = SPACECLOUD_ROOMS[roomKey];
   if (!room) throw new Error(`unknown SpaceCloud room key: ${roomKey}`);
   return `https://partner.spacecloud.kr/reservation-calendar?product=${room.productId}&space=${room.spaceId}`;
+}
+
+function isSpacecloudCalendarApiUrl(value, {
+  productId,
+  year = null,
+  month = null,
+} = {}) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.origin !== 'https://api.spacecloud.kr' || url.pathname !== SPACECLOUD_CALENDAR_API_PATH) return false;
+    if (String(url.searchParams.get('product_id') || '') !== String(productId || '')) return false;
+    if (year !== null && Number(url.searchParams.get('year')) !== Number(year)) return false;
+    if (month !== null && Number(url.searchParams.get('month')) !== Number(month)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForSpacecloudCalendarApiResponse(page, expected, timeoutMs) {
+  const response = await page.waitForResponse(
+    (candidate) => isSpacecloudCalendarApiUrl(candidate.url(), expected),
+    { timeout: timeoutMs },
+  );
+  const networkError = await response.finished().catch((error) => error);
+  if (networkError) throw new Error(`SpaceCloud calendar API network failure: ${networkError.message || networkError}`);
+  if (!response.ok()) throw new Error(`SpaceCloud calendar API returned HTTP ${response.status()}`);
+  return response;
 }
 
 function hourFromSlot(value) {
@@ -230,6 +257,271 @@ async function fetchSpacecloudReservationDetail(page, reservationId) {
   }, reservationId);
 }
 
+async function fetchSpacecloudCalendarMonth(page, roomKey, targetDate) {
+  const room = SPACECLOUD_ROOMS[roomKey];
+  if (!room) throw new Error(`unknown SpaceCloud room key: ${roomKey}`);
+  const { year, month } = ymFromDate(normalizeDate(targetDate));
+  return page.evaluate(async ({ endpoint, productId, year: targetYear, month: targetMonth }) => {
+    const rawUserInfo = window.localStorage.getItem('spacecloud__userInfo') || '{}';
+    let accessToken = '';
+    try {
+      const userInfo = JSON.parse(rawUserInfo);
+      accessToken = userInfo.accessToken || userInfo.access_token || userInfo.token || '';
+    } catch {}
+    if (!accessToken) {
+      return {
+        ok: false,
+        status: 0,
+        error: 'spacecloud-access-token-missing',
+        productId,
+        year: targetYear,
+        month: targetMonth,
+        days: [],
+      };
+    }
+
+    const url = new URL(endpoint);
+    url.searchParams.set('year', String(targetYear));
+    url.searchParams.set('month', String(targetMonth).padStart(2, '0'));
+    url.searchParams.set('product_id', String(productId));
+    let response;
+    try {
+      response = await fetch(url.toString(), {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        status: 0,
+        error: `calendar-api-fetch-failed:${error?.message || error}`,
+        productId,
+        year: targetYear,
+        month: targetMonth,
+        days: [],
+      };
+    }
+
+    const text = await response.text();
+    let body = null;
+    try {
+      body = JSON.parse(text);
+    } catch {}
+    const sourceDays = Array.isArray(body)
+      ? body
+      : Array.isArray(body?.data)
+        ? body.data
+        : null;
+    if (!response.ok || !sourceDays) {
+      return {
+        ok: false,
+        status: response.status,
+        error: response.ok ? 'calendar-api-unexpected-response' : `calendar-api-http-${response.status}`,
+        productId,
+        year: targetYear,
+        month: targetMonth,
+        days: [],
+      };
+    }
+
+    // Return only the fields required for identity verification. In particular,
+    // do not move customer phone numbers out of the authenticated browser page.
+    const days = sourceDays.map((day) => ({
+      ymd: String(day?.ymd || ''),
+      externalSchedules: (Array.isArray(day?.external_schedules) ? day.external_schedules : []).map((schedule) => ({
+        id: schedule?.id ?? null,
+        name: String(schedule?.name || ''),
+        symd: String(schedule?.symd || ''),
+        eymd: String(schedule?.eymd || ''),
+        shour: schedule?.shour ?? null,
+        ehour: schedule?.ehour ?? null,
+        memo: String(schedule?.memo || ''),
+      })),
+    }));
+    return {
+      ok: true,
+      status: response.status,
+      productId,
+      year: targetYear,
+      month: targetMonth,
+      days,
+    };
+  }, {
+    endpoint: `https://api.spacecloud.kr${SPACECLOUD_CALENDAR_API_PATH}`,
+    productId: room.productId,
+    year,
+    month,
+  });
+}
+
+function directScheduleMemoIdentity(memo) {
+  const fields = {};
+  for (const segment of String(memo || '').split('/')) {
+    const match = segment.trim().match(/^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (match) fields[match[1]] = match[2];
+  }
+  return {
+    taskId: String(fields.taskId || ''),
+    reservationNo: String(fields.naverReservationNo || ''),
+  };
+}
+
+function calendarScheduleCandidate(schedule, dayYmd) {
+  const identity = directScheduleMemoIdentity(schedule?.memo);
+  const startHour = Number(schedule?.shour);
+  const inclusiveEndHour = Number(schedule?.ehour);
+  const endHour = inclusiveEndHour + 1;
+  return {
+    source: 'spacecloud-calendar-api',
+    scheduleId: String(schedule?.id ?? ''),
+    name: String(schedule?.name || ''),
+    date: String(schedule?.symd || dayYmd || ''),
+    endDate: String(schedule?.eymd || schedule?.symd || dayYmd || ''),
+    startTime: Number.isFinite(startHour) ? `${String(startHour).padStart(2, '0')}:00` : '',
+    endTime: Number.isFinite(endHour) && endHour <= 24 ? `${String(endHour).padStart(2, '0')}:00` : '',
+    taskId: identity.taskId,
+    reservationNo: identity.reservationNo,
+  };
+}
+
+export function verifySpacecloudCalendarIdentity(calendarResult, row) {
+  const targetDate = compactDate(normalizeDate(row.date));
+  const targetStartHour = hourFromSlot(row.startTime);
+  const targetInclusiveEndHour = hourFromSlot(row.endTime) - 1;
+  const expectedTaskId = String(row.taskId || '').trim();
+  const expectedReservationNo = String(row.reservationNo || '').trim();
+  const expectedName = normalizeName(row.reserverName || '');
+
+  if (!calendarResult?.ok) {
+    return {
+      ok: false,
+      reason: 'calendar-api-read-failed',
+      source: 'spacecloud-calendar-api',
+      apiStatus: Number(calendarResult?.status || 0),
+      apiError: String(calendarResult?.error || 'calendar-api-read-failed'),
+      productId: String(calendarResult?.productId || ''),
+      candidateCount: 0,
+      identityCandidateCount: 0,
+      nameMatched: false,
+      identityMatched: false,
+      identityVerification: { ok: false, errors: ['calendar-api-read-failed'] },
+      reservationNo: expectedReservationNo,
+      candidates: [],
+    };
+  }
+
+  const uniqueSchedules = new Map();
+  for (const day of Array.isArray(calendarResult.days) ? calendarResult.days : []) {
+    for (const schedule of Array.isArray(day?.externalSchedules) ? day.externalSchedules : []) {
+      const scheduleDate = compactDate(schedule?.symd || day?.ymd);
+      const scheduleEndDate = compactDate(schedule?.eymd || schedule?.symd || day?.ymd);
+      if (
+        scheduleDate !== targetDate
+        || scheduleEndDate !== targetDate
+        || Number(schedule?.shour) !== targetStartHour
+        || Number(schedule?.ehour) !== targetInclusiveEndHour
+      ) continue;
+      const candidate = calendarScheduleCandidate(schedule, day?.ymd);
+      const dedupeKey = candidate.scheduleId
+        ? `id:${candidate.scheduleId}`
+        : [candidate.date, candidate.startTime, candidate.endTime, candidate.name, candidate.taskId, candidate.reservationNo].join('|');
+      uniqueSchedules.set(dedupeKey, candidate);
+    }
+  }
+
+  const candidates = [...uniqueSchedules.values()];
+  const evaluated = candidates.map((candidate) => {
+    const errors = [];
+    if (row.requireTaskId && !expectedTaskId) errors.push('expected-task-id-missing');
+    if (expectedTaskId && candidate.taskId !== expectedTaskId) errors.push('task-id-mismatch');
+    if (expectedReservationNo && candidate.reservationNo !== expectedReservationNo) errors.push('reservation-number-mismatch');
+    if (expectedName && normalizeName(candidate.name) !== expectedName) errors.push('reserver-name-mismatch');
+    if (!expectedTaskId && !expectedReservationNo && !expectedName) errors.push('expected-identity-missing');
+    return { candidate, errors };
+  });
+  const exactMatches = evaluated.filter((entry) => entry.errors.length === 0);
+  const identityMatched = exactMatches.length === 1;
+  const mismatchErrors = [...new Set(evaluated.flatMap((entry) => entry.errors))];
+  if (exactMatches.length > 1) mismatchErrors.push('duplicate-exact-identity');
+
+  return {
+    ok: identityMatched,
+    reason: identityMatched
+      ? 'calendar-api-identity-matched'
+      : candidates.length > 0
+        ? 'calendar-api-slot-identity-not-matched'
+        : 'calendar-api-slot-not-found',
+    source: 'spacecloud-calendar-api',
+    apiStatus: Number(calendarResult.status || 0),
+    apiError: '',
+    productId: String(calendarResult.productId || ''),
+    candidateCount: candidates.length,
+    identityCandidateCount: exactMatches.length,
+    nameMatched: expectedName
+      ? candidates.some((candidate) => normalizeName(candidate.name) === expectedName)
+      : false,
+    identityMatched,
+    identityVerification: identityMatched
+      ? { ok: true, scheduleId: exactMatches[0].candidate.scheduleId }
+      : { ok: false, errors: mismatchErrors.length ? mismatchErrors : ['matching-slot-not-found'] },
+    reservationNo: expectedReservationNo,
+    candidates: candidates.slice(0, 8),
+  };
+}
+
+export async function pollForSpacecloudCalendarIdentity({
+  readCalendar,
+  row,
+  wait,
+  timeoutMs = 12000,
+  intervalMs = 500,
+  now = () => Date.now(),
+}) {
+  if (typeof readCalendar !== 'function') throw new Error('readCalendar is required');
+  if (typeof wait !== 'function') throw new Error('wait is required');
+  const started = now();
+  let candidateReadCount = 0;
+  let latest = null;
+
+  while (true) {
+    let calendarResult;
+    try {
+      calendarResult = await readCalendar();
+    } catch (error) {
+      calendarResult = {
+        ok: false,
+        status: 0,
+        error: `calendar-api-read-threw:${error?.message || error}`,
+        days: [],
+      };
+    }
+    candidateReadCount += 1;
+    latest = verifySpacecloudCalendarIdentity(calendarResult, row);
+    if (latest.identityMatched) break;
+
+    const terminalAuthenticationFailure = [401, 403].includes(Number(latest.apiStatus || 0))
+      || latest.apiError === 'spacecloud-access-token-missing';
+    const elapsedMs = Math.max(0, now() - started);
+    if (terminalAuthenticationFailure || elapsedMs >= timeoutMs) break;
+    await wait(Math.min(intervalMs, Math.max(1, timeoutMs - elapsedMs)));
+  }
+
+  return {
+    ...latest,
+    waitedMs: Math.max(0, now() - started),
+    refreshCount: 0,
+    candidateReadCount,
+    verificationPasses: candidateReadCount,
+    identityAttempts: [],
+    dayCellText: '',
+    visibleLinks: [],
+  };
+}
+
 function spacecloudReservationStatus(detail) {
   return String(detail?.body?.RSV_STAT_CD || detail?.body?.status || '').trim();
 }
@@ -312,14 +604,21 @@ export function directUploadRetryMode(event) {
   const previous = event?.previousResult && typeof event.previousResult === 'object'
     ? event.previousResult
     : {};
-  if (previous.submissionAttempted === false) return 'safe-retry-before-submit';
   if (
-    previous.submissionAttempted === true
+    previous.retryMode === 'verification-only'
+    || previous.resubmitBlocked === true
+    || previous.submissionAttempted === true
     || previous.postSubmitVerification
     || previous.verifiedAfterSubmit
     || /post-submit|after submit|candidate did not match/i.test(String(previous.error || ''))
   ) {
     return 'verification-only';
+  }
+  if (
+    previous.submissionAttempted === false
+    && (previous.retryMode === 'new-submit' || previous.retryMode === 'safe-retry-before-submit')
+  ) {
+    return 'safe-retry-before-submit';
   }
 
   // An old or interrupted task without an explicit pre-submit checkpoint is
@@ -387,10 +686,16 @@ async function loadSpacecloudCalendar(page, roomKey, {
     await page.goto('about:blank', { waitUntil: 'load', timeout: 10000 });
   }
   if (forceFreshDocument || page.url() !== targetUrl) {
-    await page.goto(targetUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: timeoutMs,
-    });
+    const calendarResponse = waitForSpacecloudCalendarApiResponse(page, {
+      productId: room.productId,
+    }, timeoutMs);
+    await Promise.all([
+      calendarResponse,
+      page.goto(targetUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: timeoutMs,
+      }),
+    ]);
   }
   await page.waitForFunction(
     ({ productId, spaceId }) => {
@@ -409,9 +714,7 @@ async function loadSpacecloudCalendar(page, roomKey, {
     { productId: room.productId, spaceId: room.spaceId },
     { timeout: timeoutMs },
   );
-  await waitForCalendarMonthReady(page, await calendarMonth(page), {
-    timeoutMs,
-  });
+  await waitForCalendarMonthReady(page, await calendarMonth(page), { timeoutMs });
   return targetUrl;
 }
 
@@ -470,39 +773,22 @@ async function calendarMonth(page) {
 
 async function waitForCalendarMonthReady(page, expectedYm, {
   timeoutMs = CALENDAR_MONTH_READY_TIMEOUT_MS,
-  stableMs = CALENDAR_DOM_STABLE_MS,
 } = {}) {
   await page.waitForFunction(
-    ({ year, month, stableMs: requiredStableMs }) => {
+    ({ year, month }) => {
       const title = document.querySelector('.calendar_tit.short strong')?.textContent
         || document.querySelector('.calendar_tit.short')?.textContent
         || '';
       const titleMatch = String(title).match(/(\d{4})\s*\.\s*(\d{1,2})/);
       const cells = [...document.querySelectorAll('.booking_wrap')];
-      const jqueryBusy = Boolean(window.jQuery && Number(window.jQuery.active || 0) > 0);
-      const stateKey = '__rhythmjoyCalendarReadyState';
-      const expectedKey = `${year}-${month}`;
-      const expectedTitle = Boolean(
+      return Boolean(
         titleMatch
         && Number(titleMatch[1]) === year
         && Number(titleMatch[2]) === month
+        && cells.length === 42
       );
-
-      if (!expectedTitle || cells.length !== 42 || jqueryBusy) {
-        window[stateKey] = null;
-        return false;
-      }
-
-      const signature = cells.map((cell) => cell.innerHTML).join('\u241e');
-      const now = Date.now();
-      const previous = window[stateKey];
-      if (!previous || previous.expectedKey !== expectedKey || previous.signature !== signature) {
-        window[stateKey] = { expectedKey, signature, stableSince: now };
-        return false;
-      }
-      return now - previous.stableSince >= requiredStableMs;
     },
-    { year: expectedYm.year, month: expectedYm.month, stableMs },
+    { year: expectedYm.year, month: expectedYm.month },
     { polling: 100, timeout: timeoutMs },
   );
   return expectedYm;
@@ -510,6 +796,8 @@ async function waitForCalendarMonthReady(page, expectedYm, {
 
 async function gotoCalendarMonth(page, targetDate) {
   const targetYm = ymFromDate(targetDate);
+  const productId = new URL(page.url()).searchParams.get('product');
+  if (!productId) throw new Error('SpaceCloud calendar product id is missing from the page URL');
   for (let i = 0; i < 36; i += 1) {
     const currentYm = await calendarMonth(page);
     const diff = ymIndex(targetYm) - ymIndex(currentYm);
@@ -523,7 +811,15 @@ async function gotoCalendarMonth(page, targetDate) {
     const button = page.locator(selector).filter({ visible: true });
     const count = await button.count();
     if (count < 1) throw new Error(`calendar month control not found: ${selector}`);
-    await button.first().click({ timeout: 5000 });
+    const calendarResponse = waitForSpacecloudCalendarApiResponse(page, {
+      productId,
+      year: expectedYm.year,
+      month: expectedYm.month,
+    }, CALENDAR_MONTH_READY_TIMEOUT_MS);
+    await Promise.all([
+      calendarResponse,
+      button.first().click({ timeout: 5000 }),
+    ]);
     await waitForCalendarMonthReady(page, expectedYm);
   }
   throw new Error(`calendar month navigation failed for ${targetDate}`);
@@ -763,164 +1059,21 @@ export async function waitForDirectEventCandidates(page, row, {
   };
 }
 
-export async function pollForVerifiedDirectCandidate({
-  readCandidates,
-  verifyCandidates,
-  refresh = null,
-  wait,
-  timeoutMs = 12000,
-  intervalMs = 500,
-  refreshAtMs = [],
-  now = () => Date.now(),
-}) {
-  if (typeof readCandidates !== 'function') throw new Error('readCandidates is required');
-  if (typeof verifyCandidates !== 'function') throw new Error('verifyCandidates is required');
-  if (typeof wait !== 'function') throw new Error('wait is required');
-
-  const started = now();
-  const refreshSchedule = (Array.isArray(refreshAtMs) ? refreshAtMs : [])
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value) && value >= 0 && value < timeoutMs)
-    .sort((left, right) => left - right);
-  let refreshIndex = 0;
-  let refreshCount = 0;
-  let candidateReadCount = 0;
-  let verificationPasses = 0;
-  let latestSearch = null;
-  let latestCandidateSearch = null;
-  let latestSelection = null;
-  const identityAttempts = [];
-
-  while (true) {
-    latestSearch = await readCandidates();
-    candidateReadCount += 1;
-    const candidates = latestSearch?.candidates || [];
-    if (candidates.length > 0) {
-      latestCandidateSearch = latestSearch;
-      latestSelection = await verifyCandidates(candidates);
-      verificationPasses += 1;
-      identityAttempts.push(...(latestSelection?.attempts || []));
-      if (latestSelection?.candidate) {
-        return {
-          matched: true,
-          search: latestSearch,
-          selection: latestSelection,
-          identityAttempts: identityAttempts.slice(-24),
-          candidateReadCount,
-          verificationPasses,
-          refreshCount,
-          waitedMs: Math.max(0, now() - started),
-        };
-      }
-    }
-
-    const elapsedMs = Math.max(0, now() - started);
-    if (elapsedMs >= timeoutMs) break;
-
-    if (
-      typeof refresh === 'function'
-      && refreshIndex < refreshSchedule.length
-      && elapsedMs >= refreshSchedule[refreshIndex]
-    ) {
-      await refresh({ elapsedMs, refreshCount });
-      refreshIndex += 1;
-      refreshCount += 1;
-      continue;
-    }
-
-    await wait(Math.min(intervalMs, Math.max(1, timeoutMs - elapsedMs)));
-  }
-
-  return {
-    matched: false,
-    search: latestCandidateSearch || latestSearch || { candidates: [], dayCellText: '', visibleLinks: [] },
-    selection: latestSelection,
-    identityAttempts: identityAttempts.slice(-24),
-    candidateReadCount,
-    verificationPasses,
-    refreshCount,
-    waitedMs: Math.max(0, now() - started),
-  };
-}
-
 async function verifyDirectEventCreated(page, event, {
   timeoutMs = 90000,
   intervalMs = 1500,
   forceFreshDocument = true,
 } = {}) {
   const row = directUploadVerificationTarget(event);
-  const expectedName = normalizeName(event.reserverNameDisplay || event.reserverName || '');
-
   await closeModalIfOpen(page).catch(() => {});
   await loadSpacecloudCalendar(page, event.roomKey, { forceFreshDocument });
-  await gotoCalendarMonth(page, event.date);
-
-  const refreshCalendar = async () => {
-    await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
-    await page.waitForFunction(
-      () => /\d{4}\s*\.\s*\d{1,2}/.test(
-        document.querySelector('.calendar_tit.short strong')?.textContent
-        || document.querySelector('.calendar_tit.short')?.textContent
-        || '',
-      ),
-      { timeout: 20000 },
-    );
-    await gotoCalendarMonth(page, event.date);
-  };
-  const poll = await pollForVerifiedDirectCandidate({
-    readCandidates: () => findDirectEventCandidates(page, row),
-    verifyCandidates: async (candidates) => {
-      const selection = await findVerifiedDeleteCandidate(page, candidates, row);
-      await closeReservationPopup(page).catch(() => {});
-      return selection;
-    },
+  return pollForSpacecloudCalendarIdentity({
+    readCalendar: () => fetchSpacecloudCalendarMonth(page, event.roomKey, event.date),
+    row,
     timeoutMs,
     intervalMs,
-    refreshAtMs: DIRECT_UPLOAD_VERIFICATION_REFRESH_AT_MS,
-    refresh: refreshCalendar,
     wait: (delayMs) => page.waitForTimeout(delayMs),
   });
-  const latest = poll.search || { candidates: [], dayCellText: '', visibleLinks: [] };
-  const candidates = latest.candidates || [];
-  const nameMatched = expectedName
-    ? candidates.some((candidate) => compactText(candidate.text || candidate.visibleText || '').includes(expectedName))
-    : false;
-  const identityMatched = poll.matched === true;
-  const identityVerification = identityMatched
-    ? poll.selection?.verification
-    : {
-      ok: false,
-      error: poll.selection?.error || 'candidate-identity-verification-failed',
-    };
-  const identityAttempts = (poll.identityAttempts || []).map((attempt) => ({
-      candidate: attempt.candidate,
-      status: attempt.status,
-      error: attempt.error || '',
-      popupTextPreview: redactPhone(attempt.popupTextPreview || ''),
-      verification: attempt.verification || null,
-    }));
-
-  return {
-    ok: identityMatched,
-    reason: identityMatched
-      ? 'calendar-identity-matched'
-      : candidates.length > 0
-        ? 'calendar-candidate-identity-not-matched'
-        : 'calendar-candidate-not-found',
-    waitedMs: poll.waitedMs,
-    refreshCount: poll.refreshCount || 0,
-    candidateReadCount: poll.candidateReadCount || 0,
-    verificationPasses: poll.verificationPasses || 0,
-    candidateCount: candidates.length,
-    nameMatched,
-    identityMatched,
-    identityVerification,
-    identityAttempts,
-    reservationNo: row.reservationNo || '',
-    candidates: candidates.slice(0, 5),
-    dayCellText: latest.dayCellText || '',
-    visibleLinks: (latest.visibleLinks || []).slice(0, 12),
-  };
 }
 
 export function classifyDirectUploadVerification(hidden, verification) {
@@ -935,6 +1088,13 @@ export function classifyDirectUploadVerification(hidden, verification) {
     return {
       status: 'needs-review',
       error: 'SpaceCloud post-submit candidate did not match the expected reservation identity',
+      verified: false,
+    };
+  }
+  if (result.reason === 'calendar-api-read-failed') {
+    return {
+      status: 'needs-review',
+      error: 'SpaceCloud calendar API could not be read; automatic completion and resubmit are blocked',
       verified: false,
     };
   }
@@ -1277,8 +1437,7 @@ export function directUploadVerificationTarget(event) {
 }
 
 export async function uploadSpacecloudDirectReservation(context, event) {
-  const page = await pageForContext(context);
-  const ui = event.spacecloudUiInput || buildSpacecloudUiInput(event);
+  const retryMode = directUploadRetryMode(event);
   const row = {
     taskId: event.taskId || null,
     fingerprint: event.fingerprint || eventFingerprint(event),
@@ -1290,8 +1449,12 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     endTime: event.endTime,
     reserverName: event.reserverName,
     submissionAttempted: false,
+    retryMode,
+    resubmitBlocked: retryMode === 'verification-only',
     startedAt: new Date().toISOString(),
   };
+  const ui = event.spacecloudUiInput || buildSpacecloudUiInput(event);
+  let page = null;
 
   const dialogs = [];
   const onDialog = async (dialog) => {
@@ -1300,14 +1463,13 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     else await dialog.dismiss();
   };
 
-  page.on('dialog', onDialog);
   try {
+    page = await pageForContext(context);
+    page.on('dialog', onDialog);
     await loadSpacecloudCalendar(page, event.roomKey);
 
     await closeModalIfOpen(page);
 
-    const retryMode = directUploadRetryMode(event);
-    row.retryMode = retryMode;
     if (retryMode !== 'new-submit') {
       row.preflightVerification = await verifyDirectEventCreated(page, event, {
         timeoutMs: retryMode === 'verification-only' ? 90000 : 30000,
@@ -1397,11 +1559,11 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     row.status = row.status || 'failed';
     row.error = String(error?.message || error);
     try {
-      const close = page.locator('.btn_pop_close, a.btn_close, button.btn_close').filter({ visible: true });
-      if (await close.count() === 1) await close.click({ timeout: 3000 });
+      const close = page?.locator('.btn_pop_close, a.btn_close, button.btn_close').filter({ visible: true });
+      if (close && await close.count() === 1) await close.click({ timeout: 3000 });
     } catch {}
   } finally {
-    page.off('dialog', onDialog);
+    page?.off('dialog', onDialog);
   }
 
   return row;
