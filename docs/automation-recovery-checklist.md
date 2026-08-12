@@ -126,7 +126,7 @@ synced-at.txt
 systemd/spacecloud-watch.active
 systemd/kiosk-chrome.active
 systemd/reverse-ssh.active
-spacecloud-watch/launchd.log
+spacecloud-watch/watcher-journal.log
 spacecloud-watch/runs.jsonl
 processes.txt
 ```

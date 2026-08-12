@@ -1045,64 +1045,71 @@ def upsert_booking_ledger_confirmed(config, logger, email_event_id, event_data, 
                     %(payload_json)s, NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
-                    source_mode=IF(VALUES(source_mode) <> '', VALUES(source_mode), source_mode),
+                    source_mode=IF(
+                        VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
+                        IF(VALUES(source_mode) <> '', VALUES(source_mode), source_mode),
+                        source_mode
+                    ),
                     current_status=IF(
-                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00')
                         AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
                         'confirmed',
                         current_status
                     ),
-                    target_calendar=VALUES(target_calendar),
-                    room_key=VALUES(room_key),
-                    reservation_number=VALUES(reservation_number),
-                    reserver_name=VALUES(reserver_name),
-                    reserver_name_key=VALUES(reserver_name_key),
-                    product=VALUES(product),
-                    reservation_date=VALUES(reservation_date),
-                    start_time=VALUES(start_time),
-                    end_time=VALUES(end_time),
-                    payment_status=IF(VALUES(payment_status) <> '', VALUES(payment_status), payment_status),
-                    price=IF(amount_source LIKE '%%platform-export', price, IF(VALUES(price) <> '', VALUES(price), price)),
-                    gross_amount=IF(amount_source LIKE '%%platform-export', gross_amount, COALESCE(VALUES(gross_amount), gross_amount)),
-                    fee_amount=IF(amount_source LIKE '%%platform-export', fee_amount, COALESCE(VALUES(fee_amount), fee_amount)),
-                    net_amount=IF(amount_source LIKE '%%platform-export', net_amount, COALESCE(VALUES(net_amount), net_amount)),
-                    amount_source=IF(amount_source LIKE '%%platform-export', amount_source, IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source)),
-                    payment_method=IF(amount_source LIKE '%%platform-export', payment_method, IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method)),
+                    target_calendar=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), VALUES(target_calendar), target_calendar),
+                    room_key=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), VALUES(room_key), room_key),
+                    reservation_number=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), VALUES(reservation_number), reservation_number),
+                    reserver_name=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), VALUES(reserver_name), reserver_name),
+                    reserver_name_key=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), VALUES(reserver_name_key), reserver_name_key),
+                    product=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), VALUES(product), product),
+                    reservation_date=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), VALUES(reservation_date), reservation_date),
+                    start_time=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), VALUES(start_time), start_time),
+                    end_time=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), VALUES(end_time), end_time),
+                    payment_status=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), IF(VALUES(payment_status) <> '', VALUES(payment_status), payment_status), payment_status),
+                    price=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', price, IF(VALUES(price) <> '', VALUES(price), price)), price),
+                    gross_amount=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', gross_amount, COALESCE(VALUES(gross_amount), gross_amount)), gross_amount),
+                    fee_amount=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', fee_amount, COALESCE(VALUES(fee_amount), fee_amount)), fee_amount),
+                    net_amount=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', net_amount, COALESCE(VALUES(net_amount), net_amount)), net_amount),
+                    amount_source=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', amount_source, IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source)), amount_source),
+                    payment_method=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', payment_method, IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method)), payment_method),
                     confirmed_email_event_id=IF(
-                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00')
                         AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
                         VALUES(confirmed_email_event_id),
                         confirmed_email_event_id
                     ),
                     confirmed_email_received_at=IF(
-                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00')
                         AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
                         VALUES(confirmed_email_received_at),
                         confirmed_email_received_at
                     ),
-                    last_event_at=IF(
-                        VALUES(confirmed_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00')
-                        AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
-                        VALUES(confirmed_email_received_at),
-                        last_event_at
-                    ),
-                    payload_json=IF(amount_source LIKE '%%platform-export', payload_json, VALUES(payload_json)),
+                    payload_json=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', payload_json, VALUES(payload_json)), payload_json),
                     automation_cancel_task_id=IF(
-                        VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
+                        VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
                         NULL,
                         automation_cancel_task_id
                     ),
                     automation_cancel_platform=IF(
-                        VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
+                        VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
                         '',
                         automation_cancel_platform
                     ),
                     automation_canceled_at=IF(
-                        VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
+                        VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00')
+                        AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'),
                         NULL,
                         automation_canceled_at
                     ),
-                    updated_at=NOW()
+                    updated_at=IF(VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00') AND VALUES(confirmed_email_received_at) > COALESCE(automation_canceled_at, '1000-01-01 00:00:00'), NOW(), updated_at),
+                    last_event_at=IF(
+                        VALUES(confirmed_email_received_at) > COALESCE(last_event_at, '1000-01-01 00:00:00'),
+                        VALUES(confirmed_email_received_at),
+                        last_event_at
+                    )
                 """,
                 row,
             )
@@ -1157,24 +1164,24 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                     %(payload_json)s, NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
-                    source_mode=IF(VALUES(source_mode) <> '', VALUES(source_mode), source_mode),
+                    source_mode=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), IF(VALUES(source_mode) <> '', VALUES(source_mode), source_mode), source_mode),
                     current_status=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), 'canceled', current_status),
-                    target_calendar=VALUES(target_calendar),
-                    room_key=VALUES(room_key),
-                    reservation_number=IF(VALUES(reservation_number) <> '', VALUES(reservation_number), reservation_number),
-                    reserver_name=VALUES(reserver_name),
-                    reserver_name_key=VALUES(reserver_name_key),
-                    product=VALUES(product),
-                    reservation_date=VALUES(reservation_date),
-                    start_time=VALUES(start_time),
-                    end_time=VALUES(end_time),
-                    payment_status=IF(VALUES(payment_status) <> '', VALUES(payment_status), payment_status),
-                    price=IF(amount_source LIKE '%%platform-export', price, IF(VALUES(price) <> '', VALUES(price), price)),
-                    gross_amount=IF(amount_source LIKE '%%platform-export', gross_amount, COALESCE(VALUES(gross_amount), gross_amount)),
-                    fee_amount=IF(amount_source LIKE '%%platform-export', fee_amount, COALESCE(VALUES(fee_amount), fee_amount)),
-                    net_amount=IF(amount_source LIKE '%%platform-export', net_amount, COALESCE(VALUES(net_amount), net_amount)),
-                    amount_source=IF(amount_source LIKE '%%platform-export', amount_source, IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source)),
-                    payment_method=IF(amount_source LIKE '%%platform-export', payment_method, IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method)),
+                    target_calendar=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(target_calendar), target_calendar),
+                    room_key=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(room_key), room_key),
+                    reservation_number=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), IF(VALUES(reservation_number) <> '', VALUES(reservation_number), reservation_number), reservation_number),
+                    reserver_name=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(reserver_name), reserver_name),
+                    reserver_name_key=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(reserver_name_key), reserver_name_key),
+                    product=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(product), product),
+                    reservation_date=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(reservation_date), reservation_date),
+                    start_time=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(start_time), start_time),
+                    end_time=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(end_time), end_time),
+                    payment_status=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), IF(VALUES(payment_status) <> '', VALUES(payment_status), payment_status), payment_status),
+                    price=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', price, IF(VALUES(price) <> '', VALUES(price), price)), price),
+                    gross_amount=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', gross_amount, COALESCE(VALUES(gross_amount), gross_amount)), gross_amount),
+                    fee_amount=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', fee_amount, COALESCE(VALUES(fee_amount), fee_amount)), fee_amount),
+                    net_amount=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', net_amount, COALESCE(VALUES(net_amount), net_amount)), net_amount),
+                    amount_source=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', amount_source, IF(VALUES(amount_source) <> '', VALUES(amount_source), amount_source)), amount_source),
+                    payment_method=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), IF(amount_source LIKE '%%platform-export', payment_method, IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method)), payment_method),
                     canceled_email_event_id=IF(
                         VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'),
                         VALUES(canceled_email_event_id),
@@ -1185,9 +1192,9 @@ def upsert_booking_ledger_canceled(config, logger, email_event_id, event_data, c
                         VALUES(canceled_email_received_at),
                         canceled_email_received_at
                     ),
-                    last_event_at=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(canceled_email_received_at), last_event_at),
-                    cancel_payload_json=VALUES(cancel_payload_json),
-                    updated_at=NOW()
+                    cancel_payload_json=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(cancel_payload_json), cancel_payload_json),
+                    updated_at=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), NOW(), updated_at),
+                    last_event_at=IF(VALUES(canceled_email_received_at) >= COALESCE(last_event_at, '1000-01-01 00:00:00'), VALUES(canceled_email_received_at), last_event_at)
                 """,
                 row,
             )

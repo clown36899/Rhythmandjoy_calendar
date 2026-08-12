@@ -1,9 +1,9 @@
 [Unit]
-Description=Run Rhythmjoy email-ledger reflection audit every 5 minutes
+Description=Run Rhythmjoy email-ledger reflection audit every 30 minutes
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=5min
+OnUnitActiveSec=30min
 AccuracySec=30s
 Persistent=true
 Unit=rhythmjoy-reflection-audit.service

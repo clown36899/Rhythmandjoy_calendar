@@ -125,7 +125,6 @@ systemctl --user enable --now rhythmjoy-spacecloud-watch.service
 Check logs:
 
 ```bash
-tail -n 80 ~/rhythmjoy-logs/spacecloud-watch/launchd.log
 journalctl --user -u rhythmjoy-spacecloud-watch.service -n 80 --no-pager
 ```
 
@@ -202,7 +201,7 @@ synced-at.txt
 systemd/spacecloud-watch.active
 systemd/kiosk-chrome.active
 systemd/reverse-ssh.active
-spacecloud-watch/launchd.log
+spacecloud-watch/watcher-journal.log
 spacecloud-watch/runs.jsonl
 processes.txt
 ```

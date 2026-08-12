@@ -30,8 +30,8 @@ Type=simple
 ExecStart=/usr/bin/ssh -NT -i $CAFE24_KEY -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -R 127.0.0.1:$REMOTE_PORT:127.0.0.1:22 $CAFE24_USER@$CAFE24_IP
 Restart=always
 RestartSec=10
-StandardOutput=append:$HOME/rhythmjoy-logs/log-sync/reverse-ssh.log
-StandardError=append:$HOME/rhythmjoy-logs/log-sync/reverse-ssh.log
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=default.target
@@ -58,8 +58,9 @@ hostname > "\$TMP/hostname.txt"
 (systemctl --user status rhythmjoy-spacecloud-watch.service --no-pager -l || true) > "\$TMP/systemd/spacecloud-watch.status"
 (systemctl --user status kiosk-chrome.service --no-pager -l || true) > "\$TMP/systemd/kiosk-chrome.status"
 (systemctl --user status rhythmjoy-reverse-ssh.service --no-pager -l || true) > "\$TMP/systemd/reverse-ssh.status"
+(journalctl --user -u rhythmjoy-spacecloud-watch.service -n 2000 --no-pager -o short-iso || true) > "\$TMP/spacecloud-watch/watcher-journal.log"
 
-for file in launchd.log runs.jsonl notify-state.json; do
+for file in runs.jsonl runs.jsonl.1 runs.jsonl.2 notify-state.json; do
   if [[ -f "\$LOG_DIR/spacecloud-watch/\$file" ]]; then
     cp -a "\$LOG_DIR/spacecloud-watch/\$file" "\$TMP/spacecloud-watch/\$file"
   fi
@@ -80,8 +81,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=$HOME/bin/rhythmjoy-sync-logs-to-cafe24.sh
-StandardOutput=append:$HOME/rhythmjoy-logs/log-sync/log-sync.log
-StandardError=append:$HOME/rhythmjoy-logs/log-sync/log-sync.log
+StandardOutput=journal
+StandardError=journal
 SERVICE
 
 cat > "$HOME/.config/systemd/user/rhythmjoy-log-sync.timer" <<TIMER

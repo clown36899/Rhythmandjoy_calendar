@@ -121,6 +121,7 @@ require_hostname
 require_exact_targets
 
 RHYTHMJOY_ENV_FILE="$SERVER_ENV_FILE" "$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_email_import_selftest.py"
+"$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_ledger_invariant_selftest.py"
 
 install -d "$APP_ROOT" "$OPS_ROOT"
 install -d -m 0700 "$OPS_ROOT/backups/db"
@@ -151,6 +152,7 @@ install -m 0644 "$REPO_ROOT/ops/rhythmjoy-calendar-cache.service" "/etc/systemd/
 install -m 0644 "$REPO_ROOT/ops/my_email_service.service" "/etc/systemd/system/$LEGACY_EMAIL_SERVICE"
 install -m 0644 "$REPO_ROOT/ops/rhythmjoy-reflection-audit.service" /etc/systemd/system/rhythmjoy-reflection-audit.service
 install -m 0644 "$REPO_ROOT/ops/rhythmjoy-reflection-audit.timer" /etc/systemd/system/rhythmjoy-reflection-audit.timer
+install -m 0644 "$REPO_ROOT/ops/rhythmjoy-logrotate" /etc/logrotate.d/rhythmjoy
 install_apache_conf "$REPO_ROOT/ops/clown313python-root-redirect.conf"
 install_apache_conf "$REPO_ROOT/ops/rhythmjoy-calendar-modsecurity.conf"
 install_apache_conf "$REPO_ROOT/ops/rhythmjoy-calendar-static.conf"
@@ -169,6 +171,7 @@ systemctl restart rhythmjoy-reflection-audit.timer
 systemctl reset-failed "$LEGACY_EMAIL_SERVICE" 2>/dev/null || true
 systemctl enable "$LEGACY_EMAIL_SERVICE"
 systemctl restart "$LEGACY_EMAIL_SERVICE"
+logrotate -d /etc/logrotate.d/rhythmjoy >/dev/null 2>&1
 httpd -t
 systemctl reload httpd
 
