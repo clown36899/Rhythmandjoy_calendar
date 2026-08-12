@@ -64,6 +64,40 @@ class CaptureConnection:
         return self.capture
 
 
+class TemporaryLedgerCursor:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def __enter__(self):
+        self.cursor.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return self.cursor.__exit__(exc_type, exc, traceback)
+
+    @property
+    def rowcount(self):
+        return self.cursor.rowcount
+
+    def execute(self, query, params=None):
+        rewritten = str(query).replace(
+            'rhythmjoy_booking_ledger',
+            'rhythmjoy_booking_ledger_selftest',
+        )
+        return self.cursor.execute(rewritten, params)
+
+    def fetchone(self):
+        return self.cursor.fetchone()
+
+
+class TemporaryLedgerConnection:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def cursor(self):
+        return TemporaryLedgerCursor(self.connection.cursor())
+
+
 def capture_upsert(function):
     connection = CaptureConnection()
     row = {
@@ -145,38 +179,39 @@ def run_live_rollback_test(env_file):
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                f'CREATE TEMPORARY TABLE rhythmjoy_booking_ledger '
+                f'CREATE TEMPORARY TABLE rhythmjoy_booking_ledger_selftest '
                 f'LIKE `{config["db_name"]}`.`rhythmjoy_booking_ledger`'
             )
+        test_connection = TemporaryLedgerConnection(connection)
 
         call_live_upsert(
             importer.upsert_booking_ledger_confirmed,
             config,
-            connection,
+            test_connection,
             live_row('selftest:cancel-wins', '2098-01-01 10:00:00', 'initial-confirm'),
         )
         call_live_upsert(
             importer.upsert_booking_ledger_canceled,
             config,
-            connection,
+            test_connection,
             live_row('selftest:cancel-wins', '2098-01-01 12:00:00', 'newer-cancel'),
         )
         call_live_upsert(
             importer.upsert_booking_ledger_confirmed,
             config,
-            connection,
+            test_connection,
             live_row('selftest:cancel-wins', '2098-01-01 11:00:00', 'late-confirm'),
         )
         call_live_upsert(
             importer.upsert_booking_ledger_confirmed,
             config,
-            connection,
+            test_connection,
             live_row('selftest:cancel-wins', '2098-01-01 12:00:00', 'same-second-confirm'),
         )
         with connection.cursor() as cursor:
             cursor.execute(
                 'SELECT current_status, product, reserver_name, last_event_at '
-                'FROM rhythmjoy_booking_ledger WHERE ledger_key=%s',
+                'FROM rhythmjoy_booking_ledger_selftest WHERE ledger_key=%s',
                 ('selftest:cancel-wins',),
             )
             cancel_winner = cursor.fetchone()
@@ -188,25 +223,25 @@ def run_live_rollback_test(env_file):
         call_live_upsert(
             importer.upsert_booking_ledger_confirmed,
             config,
-            connection,
+            test_connection,
             live_row('selftest:new-confirm-wins', '2098-02-01 10:00:00', 'old-confirm'),
         )
         call_live_upsert(
             importer.upsert_booking_ledger_confirmed,
             config,
-            connection,
+            test_connection,
             live_row('selftest:new-confirm-wins', '2098-02-01 12:00:00', 'new-confirm'),
         )
         call_live_upsert(
             importer.upsert_booking_ledger_canceled,
             config,
-            connection,
+            test_connection,
             live_row('selftest:new-confirm-wins', '2098-02-01 11:00:00', 'late-cancel'),
         )
         with connection.cursor() as cursor:
             cursor.execute(
                 'SELECT current_status, product, reserver_name, last_event_at '
-                'FROM rhythmjoy_booking_ledger WHERE ledger_key=%s',
+                'FROM rhythmjoy_booking_ledger_selftest WHERE ledger_key=%s',
                 ('selftest:new-confirm-wins',),
             )
             confirm_winner = cursor.fetchone()
