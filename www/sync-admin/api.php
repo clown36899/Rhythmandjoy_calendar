@@ -2352,11 +2352,13 @@ function current_admin_alert_candidates($pdo) {
     if (admin_table_exists($pdo, 'rhythmjoy_sms_deliveries')) {
         $stmt = $pdo->query("
             SELECT id, source_task_type, source_task_id, status, error_text,
+                   attempt_count, DATE_FORMAT(next_retry_at, '%Y-%m-%dT%H:%i:%s+09:00') AS next_retry_at,
                    DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
                    DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
             FROM rhythmjoy_sms_deliveries
-            WHERE status IN ('failed','uncertain','needs_review')
+            WHERE status IN ('failed','uncertain','needs_review','phone_lookup_failed')
                OR (status='sending' AND updated_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE))
+               OR (status='pending' AND updated_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))
             ORDER BY updated_at DESC
             LIMIT 50
         ");
@@ -2365,9 +2367,14 @@ function current_admin_alert_candidates($pdo) {
                 'key' => 'sms:' . intval($sms['id']),
                 'source' => 'sms',
                 'sourceLabel' => '문자 발송',
-                'severity' => 'critical',
-                'title' => '예약 문자 발송 확인 필요',
-                'message' => admin_alert_clean_text($sms['error_text'], '문자 발송 상태가 ' . $sms['status'] . '입니다.'),
+                'severity' => in_array($sms['status'], array('pending', 'phone_lookup_failed'), true) ? 'warning' : 'critical',
+                'title' => $sms['status'] === 'phone_lookup_failed'
+                    ? '예약 문자 전화번호 확인 대기'
+                    : ($sms['status'] === 'pending' ? '예약 문자 처리 대기' : '예약 문자 발송 확인 필요'),
+                'message' => admin_alert_clean_text($sms['error_text'], '문자 발송 상태가 ' . $sms['status'] . '입니다.')
+                    . ($sms['status'] === 'phone_lookup_failed'
+                        ? ' · 자동 재시도 ' . intval($sms['attempt_count']) . '회' . ($sms['next_retry_at'] ? ' · 다음 ' . $sms['next_retry_at'] : '')
+                        : ''),
                 'occurredAt' => $sms['created_at'],
                 'updatedAt' => $sms['updated_at'],
                 'targetSection' => 'tasks',

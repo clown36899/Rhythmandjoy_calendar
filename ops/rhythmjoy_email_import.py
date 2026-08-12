@@ -728,6 +728,7 @@ def ensure_db_tables(config, logger):
                     payload_json TEXT NULL,
                     attempts INT NOT NULL DEFAULT 0,
                     locked_at DATETIME NULL,
+                    confirmation_sms_required TINYINT(1) NOT NULL DEFAULT 0,
                     processed_at DATETIME NULL,
                     result_text TEXT NULL,
                     created_at DATETIME NULL,
@@ -789,6 +790,10 @@ def ensure_db_tables(config, logger):
                     provider_remaining INT NULL,
                     provider_raw VARCHAR(255) NOT NULL DEFAULT '',
                     error_text TEXT NULL,
+                    attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+                    first_failed_at DATETIME NULL,
+                    last_attempt_at DATETIME NULL,
+                    next_retry_at DATETIME NULL,
                     sent_at DATETIME NULL,
                     created_at DATETIME NULL,
                     updated_at DATETIME NULL,
@@ -810,6 +815,11 @@ def ensure_db_tables(config, logger):
             ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'automation_cancel_task_id', 'BIGINT UNSIGNED NULL AFTER automation_canceled_at')
             ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'automation_cancel_platform', "VARCHAR(32) NOT NULL DEFAULT '' AFTER automation_cancel_task_id")
             ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'claim_token', "VARCHAR(64) NOT NULL DEFAULT '' AFTER locked_at")
+            ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'confirmation_sms_required', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER claim_token')
+            ensure_db_column(cursor, 'rhythmjoy_sms_deliveries', 'attempt_count', 'INT UNSIGNED NOT NULL DEFAULT 0 AFTER error_text')
+            ensure_db_column(cursor, 'rhythmjoy_sms_deliveries', 'first_failed_at', 'DATETIME NULL AFTER attempt_count')
+            ensure_db_column(cursor, 'rhythmjoy_sms_deliveries', 'last_attempt_at', 'DATETIME NULL AFTER first_failed_at')
+            ensure_db_column(cursor, 'rhythmjoy_sms_deliveries', 'next_retry_at', 'DATETIME NULL AFTER last_attempt_at')
         logger.info('Email DB tables checked')
     except Exception as error:
         disable_db_logging(config, logger, 'Email DB table check failed', error)
@@ -1517,6 +1527,32 @@ def upload_task_waiting_on_canceled_reservation(task, canceled_reservation_numbe
     )
 
 
+def ensure_confirmation_sms_intent(cursor, task, enabled=True):
+    """Write the durable SMS intent before any browser or provider work starts."""
+    if not enabled or not task:
+        return None
+    task_type = str(task.get('task_type') or '')
+    task_id = task.get('id')
+    if task_type not in ('upload', 'naver_block') or not task_id:
+        return None
+    # Do not backfill old completed jobs during a duplicate email replay. New
+    # jobs are pending here and become eligible only after platform sync is done.
+    if str(task.get('status') or '') not in ('pending', 'running', 'claimed'):
+        return None
+    idempotency_key = f'reservation-confirmed-v1|{task_type}|{int(task_id)}'
+    cursor.execute(
+        """
+        INSERT IGNORE INTO rhythmjoy_sms_deliveries (
+            idempotency_key, source_task_type, source_task_id, template_name,
+            recipient_phone_hash, recipient_phone_last4, status,
+            attempt_count, created_at, updated_at
+        ) VALUES (%s,%s,%s,'reservation-confirmed-v1','','','pending',0,NOW(),NOW())
+        """,
+        (idempotency_key, task_type, int(task_id)),
+    )
+    return idempotency_key
+
+
 def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, calendar_key, conn=None):
     room_key = calendar_to_spacecloud_room_key(calendar_key)
     if not config['db_enabled'] or not room_key:
@@ -1682,6 +1718,7 @@ def upsert_spacecloud_upload_task(config, logger, email_event_id, event_data, ca
         'reservation_date': clean_date_or_none(event_data.get('date')),
         'start_time': clean_time_or_none(event_data.get('start_time')),
         'end_time': clean_time_or_none(event_data.get('end_time')),
+        'confirmation_sms_required': 1 if config.get('confirmation_sms_enabled', True) else 0,
         'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
     }
 
@@ -1695,13 +1732,13 @@ def upsert_spacecloud_upload_task(config, logger, email_event_id, event_data, ca
                 INSERT INTO rhythmjoy_spacecloud_tasks (
                     dedupe_key, email_event_id, task_type, status,
                     room_key, reservation_number, reserver_name, product,
-                    reservation_date, start_time, end_time, payload_json,
+                    reservation_date, start_time, end_time, confirmation_sms_required, payload_json,
                     created_at, updated_at
                 )
                 VALUES (
                     %(dedupe_key)s, %(email_event_id)s, %(task_type)s, 'pending',
                     %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
-                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(payload_json)s,
+                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(confirmation_sms_required)s, %(payload_json)s,
                     NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
@@ -1724,6 +1761,11 @@ def upsert_spacecloud_upload_task(config, logger, email_event_id, event_data, ca
                 (dedupe_key,),
             )
             task = cursor.fetchone()
+            ensure_confirmation_sms_intent(
+                cursor,
+                task,
+                enabled=config.get('confirmation_sms_enabled', True),
+            )
         logger.info(
             'SpaceCloud upload task saved id=%s room=%s reservation=%s status=%s',
             task.get('id') if task else '-',
@@ -1771,6 +1813,7 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
         'reservation_date': clean_date_or_none(event_data.get('date')),
         'start_time': clean_time_or_none(event_data.get('start_time')),
         'end_time': clean_time_or_none(event_data.get('end_time')),
+        'confirmation_sms_required': 1 if config.get('confirmation_sms_enabled', True) else 0,
         'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
     }
 
@@ -1784,13 +1827,13 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
                 INSERT INTO rhythmjoy_spacecloud_tasks (
                     dedupe_key, email_event_id, task_type, status,
                     room_key, reservation_number, reserver_name, product,
-                    reservation_date, start_time, end_time, payload_json,
+                    reservation_date, start_time, end_time, confirmation_sms_required, payload_json,
                     created_at, updated_at
                 )
                 VALUES (
                     %(dedupe_key)s, %(email_event_id)s, %(task_type)s, 'pending',
                     %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
-                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(payload_json)s,
+                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(confirmation_sms_required)s, %(payload_json)s,
                     NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
@@ -1813,6 +1856,11 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
                 (dedupe_key,),
             )
             task = cursor.fetchone()
+            ensure_confirmation_sms_intent(
+                cursor,
+                task,
+                enabled=config.get('confirmation_sms_enabled', True),
+            )
         logger.info(
             'Naver block task saved id=%s room=%s reservation=%s status=%s',
             task.get('id') if task else '-',
@@ -3070,6 +3118,7 @@ def build_config():
         'naver_spacecloud_upload_enabled': env_flag('RHYTHMJOY_NAVER_SPACECLOUD_UPLOAD_ENABLED', '0'),
         'spacecloud_email_enabled': env_flag('RHYTHMJOY_SPACECLOUD_EMAIL_ENABLED', '0'),
         'spacecloud_naver_block_enabled': env_flag('RHYTHMJOY_SPACECLOUD_NAVER_BLOCK_ENABLED', '0'),
+        'confirmation_sms_enabled': env_flag('RHYTHMJOY_CONFIRMATION_SMS_ENABLED', '1'),
     }
 
 

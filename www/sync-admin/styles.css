@@ -1599,6 +1599,18 @@ input[readonly] {
   color: var(--accent-2);
 }
 
+.session-action-note {
+  max-width: 220px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #eef3f1;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+  text-align: right;
+}
+
 .profile-box {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

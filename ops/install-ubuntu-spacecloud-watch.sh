@@ -4,6 +4,8 @@ set -euo pipefail
 REPO_ROOT="${SPACE_CLOUD_WATCH_REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 SERVICE_NAME="${SPACE_CLOUD_WATCH_SERVICE_NAME:-rhythmjoy-spacecloud-watch.service}"
 SERVICE_PATH="$HOME/.config/systemd/user/$SERVICE_NAME"
+RECOVERY_SERVICE_NAME="rhythmjoy-platform-session-recovery.service"
+RECOVERY_SERVICE_PATH="$HOME/.config/systemd/user/$RECOVERY_SERVICE_NAME"
 LOG_DIR="${SPACE_CLOUD_WATCH_LOG_DIR:-$HOME/rhythmjoy-logs/spacecloud-watch}"
 PROFILE_DIR="${SPACE_CLOUD_WATCH_PROFILE_DIR:-$HOME/.spacecloud-automation}"
 ENV_FILE="${SPACE_CLOUD_WATCH_ENV_FILE:-$HOME/.rhythmjoy-ingestion.env}"
@@ -40,6 +42,8 @@ if [[ -z "$XVFB_RUN_BIN" ]]; then
 fi
 
 mkdir -p "$(dirname "$SERVICE_PATH")" "$LOG_DIR" "$PROFILE_DIR"
+install -m 644 "$REPO_ROOT/ops/$RECOVERY_SERVICE_NAME" "$RECOVERY_SERVICE_PATH"
+chmod 755 "$REPO_ROOT/ops/ubuntu-platform-session-recovery.sh"
 
 EXTRA_ARGS=""
 if [[ "$NOW_MODE" == "1" ]]; then

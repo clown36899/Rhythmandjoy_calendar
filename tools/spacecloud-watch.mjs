@@ -80,6 +80,7 @@ function customerReservationCancellationEnabled() {
 function usage() {
   return `Usage:
   node tools/spacecloud-watch.mjs login [options]
+  node tools/spacecloud-watch.mjs check-sessions [options]
   node tools/spacecloud-watch.mjs check-login [options]
   node tools/spacecloud-watch.mjs check-naver-login [options]
   node tools/spacecloud-watch.mjs notify-test [options]
@@ -171,7 +172,8 @@ Options:
   --sms-test-end <HH:MM>
 
 Examples:
-  node tools/spacecloud-watch.mjs login
+  node tools/spacecloud-watch.mjs login       # saves both SpaceCloud and Naver sessions
+  node tools/spacecloud-watch.mjs check-sessions
   node tools/spacecloud-watch.mjs check-login
   node tools/spacecloud-watch.mjs check-naver-login
   node tools/spacecloud-watch.mjs notify-test
@@ -769,6 +771,8 @@ function safeSmsResult(result) {
     provider: result?.provider || '',
     providerCode: result?.providerCode || result?.code || '',
     remaining: Number.isFinite(result?.remaining) ? result.remaining : result?.remaining ?? null,
+    attemptCount: Number.parseInt(result?.attemptCount || '0', 10) || 0,
+    nextRetryAt: result?.nextRetryAt || '',
   };
   if (result?.reason) safe.reason = redactPhoneText(result.reason);
   if (result?.error) safe.error = cleanTelegramText(redactPhoneText(result.error), 180);
@@ -853,6 +857,10 @@ def ensure_table(cur):
             provider_remaining INT NULL,
             provider_raw VARCHAR(255) NOT NULL DEFAULT '',
             error_text TEXT NULL,
+            attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+            first_failed_at DATETIME NULL,
+            last_attempt_at DATETIME NULL,
+            next_retry_at DATETIME NULL,
             sent_at DATETIME NULL,
             created_at DATETIME NULL,
             updated_at DATETIME NULL,
@@ -862,6 +870,15 @@ def ensure_table(cur):
             KEY idx_task (source_task_type, source_task_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """)
+    for column, definition in (
+        ('attempt_count', 'INT UNSIGNED NOT NULL DEFAULT 0'),
+        ('first_failed_at', 'DATETIME NULL'),
+        ('last_attempt_at', 'DATETIME NULL'),
+        ('next_retry_at', 'DATETIME NULL'),
+    ):
+        cur.execute('SHOW COLUMNS FROM rhythmjoy_sms_deliveries LIKE %s', (column,))
+        if cur.fetchone() is None:
+            cur.execute(f'ALTER TABLE rhythmjoy_sms_deliveries ADD COLUMN {column} {definition}')
 
 load_env(os.environ['RHYTHMJOY_ENV_FILE'])
 payload = json.loads(base64.b64decode(os.environ['SMS_PAYLOAD_B64']).decode('utf-8'))
@@ -891,9 +908,9 @@ try:
             INSERT IGNORE INTO rhythmjoy_sms_deliveries (
                 idempotency_key, source_task_type, source_task_id, template_name,
                 recipient_phone_hash, recipient_phone_last4, status,
-                created_at, updated_at
+                attempt_count, last_attempt_at, created_at, updated_at
             )
-            VALUES (%s,%s,%s,%s,%s,%s,'sending',NOW(),NOW())
+            VALUES (%s,%s,%s,%s,%s,%s,'sending',1,NOW(),NOW(),NOW())
             """,
             (idempotency_key, task_type, task_id or None, template_name, phone_hash, phone[-4:]),
         )
@@ -910,14 +927,18 @@ try:
                     'templateName': template_name,
                     'providerCode': existing.get('provider_code') or '',
                     'remaining': existing.get('provider_remaining'),
-                }, ensure_ascii=False))
+                    'attemptCount': existing.get('attempt_count') or 0,
+                    'nextRetryAt': existing.get('next_retry_at'),
+                }, ensure_ascii=False, default=str))
                 raise SystemExit(0)
-            if existing_status == 'failed':
+            if existing_status in ('pending', 'failed', 'phone_lookup_failed'):
                 cur.execute(
                     """
                     UPDATE rhythmjoy_sms_deliveries
-                    SET status='sending', error_text=NULL, updated_at=NOW()
-                    WHERE idempotency_key=%s AND status='failed'
+                    SET status='sending', error_text=NULL,
+                        attempt_count=attempt_count+1,
+                        last_attempt_at=NOW(), next_retry_at=NULL, updated_at=NOW()
+                    WHERE idempotency_key=%s AND status IN ('pending','failed','phone_lookup_failed')
                     """,
                     (idempotency_key,),
                 )
@@ -929,7 +950,9 @@ try:
                     'maskedPhone': masked,
                     'templateName': template_name,
                     'reason': 'provider-result-uncertain-no-auto-resend' if existing_status == 'uncertain' else 'same-message-send-already-claimed',
-                }, ensure_ascii=False))
+                    'attemptCount': existing.get('attempt_count') or 0,
+                    'nextRetryAt': existing.get('next_retry_at'),
+                }, ensure_ascii=False, default=str))
                 raise SystemExit(0)
 
         try:
@@ -950,16 +973,25 @@ try:
                     provider_remaining=%s,
                     provider_raw=%s,
                     error_text=%s,
+                    first_failed_at=IF(%s='failed' AND first_failed_at IS NULL,NOW(),first_failed_at),
+                    next_retry_at=CASE
+                      WHEN %s<>'failed' THEN NULL
+                      WHEN attempt_count < 2 THEN DATE_ADD(NOW(),INTERVAL 5 MINUTE)
+                      WHEN attempt_count < 3 THEN DATE_ADD(NOW(),INTERVAL 15 MINUTE)
+                      WHEN attempt_count < 5 THEN DATE_ADD(NOW(),INTERVAL 60 MINUTE)
+                      ELSE DATE_ADD(NOW(),INTERVAL 360 MINUTE)
+                    END,
                     sent_at=IF(%s='sent', NOW(), sent_at),
                     updated_at=NOW()
                 WHERE idempotency_key=%s AND status='sending'
                 """,
                 (
                     status, result.get('code') or '', result.get('remaining'),
-                    str(result.get('raw') or '')[:255], error_text, status, idempotency_key,
+                    str(result.get('raw') or '')[:255], error_text,
+                    status, status, status, idempotency_key,
                 ),
             )
-            cur.execute('SELECT id FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
+            cur.execute('SELECT id,attempt_count,next_retry_at FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
             saved = cur.fetchone() or {}
             print(json.dumps({
                 'status': status,
@@ -970,12 +1002,16 @@ try:
                 'providerCode': result.get('code') or '',
                 'remaining': result.get('remaining'),
                 'raw': str(result.get('raw') or '')[:80],
-            }, ensure_ascii=False))
+                'attemptCount': saved.get('attempt_count') or 0,
+                'nextRetryAt': saved.get('next_retry_at'),
+            }, ensure_ascii=False, default=str))
         except Exception as error:
             cur.execute(
                 """
                 UPDATE rhythmjoy_sms_deliveries
-                SET status='uncertain', error_text=%s, updated_at=NOW()
+                SET status='uncertain', error_text=%s,
+                    first_failed_at=IF(first_failed_at IS NULL,NOW(),first_failed_at),
+                    next_retry_at=NULL, updated_at=NOW()
                 WHERE idempotency_key=%s AND status='sending'
                 """,
                 (str(error)[:1000], idempotency_key),
@@ -989,13 +1025,147 @@ try:
                 'templateName': template_name,
                 'reason': 'provider-result-uncertain-no-auto-resend',
                 'error': str(error),
-            }, ensure_ascii=False))
+            }, ensure_ascii=False, default=str))
 finally:
     conn.close()
 PY
 `;
   const result = JSON.parse(runSshScript(target, script).trim() || '{}');
   return safeSmsResult(result);
+}
+
+async function recordRemoteSmsPhoneLookupFailure(args, {
+  task,
+  reason,
+  source,
+  templateName = CONFIRMATION_SMS_TEMPLATE_NAME,
+} = {}) {
+  const target = await loadCafe24Target(args);
+  const payload = Buffer.from(JSON.stringify({
+    taskId: task.id || task.taskId,
+    taskType: task.taskType || task.task_type || '',
+    templateName,
+    reason: cleanTelegramText(reason || 'recipient-phone-lookup-failed', 300),
+    source: source || '',
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export SMS_FOLLOWUP_B64=${shellQuote(payload)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+payload = json.loads(base64.b64decode(os.environ['SMS_FOLLOWUP_B64']).decode('utf-8'))
+task_id = int(payload.get('taskId') or 0)
+task_type = payload.get('taskType') or ''
+template_name = payload.get('templateName') or 'reservation-confirmed-v1'
+reason = payload.get('reason') or 'recipient-phone-lookup-failed'
+source = payload.get('source') or ''
+idempotency_key = f'{template_name}|{task_type}|{task_id}'
+
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'], port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'], password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'], charset='utf8mb4', autocommit=True,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS rhythmjoy_sms_deliveries (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                idempotency_key VARCHAR(160) NOT NULL,
+                source_task_type VARCHAR(32) NOT NULL DEFAULT '',
+                source_task_id BIGINT UNSIGNED NULL,
+                template_name VARCHAR(64) NOT NULL DEFAULT '',
+                recipient_phone_hash CHAR(64) NOT NULL DEFAULT '',
+                recipient_phone_last4 VARCHAR(4) NOT NULL DEFAULT '',
+                status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                provider_code VARCHAR(64) NOT NULL DEFAULT '',
+                provider_remaining INT NULL,
+                provider_raw VARCHAR(255) NOT NULL DEFAULT '',
+            error_text TEXT NULL,
+            attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+            first_failed_at DATETIME NULL,
+            last_attempt_at DATETIME NULL,
+            next_retry_at DATETIME NULL,
+            sent_at DATETIME NULL,
+                created_at DATETIME NULL,
+                updated_at DATETIME NULL,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_idempotency_key (idempotency_key),
+                KEY idx_status (status),
+                KEY idx_task (source_task_type, source_task_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+        for column, definition in (
+            ('attempt_count', 'INT UNSIGNED NOT NULL DEFAULT 0'),
+            ('first_failed_at', 'DATETIME NULL'),
+            ('last_attempt_at', 'DATETIME NULL'),
+            ('next_retry_at', 'DATETIME NULL'),
+        ):
+            cur.execute('SHOW COLUMNS FROM rhythmjoy_sms_deliveries LIKE %s', (column,))
+            if cur.fetchone() is None:
+                cur.execute(f'ALTER TABLE rhythmjoy_sms_deliveries ADD COLUMN {column} {definition}')
+        detail = f'{source}: {reason}' if source else reason
+        cur.execute('SELECT id,status,attempt_count FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
+        existing = cur.fetchone()
+        if existing and existing.get('status') in ('sent', 'uncertain', 'needs_review'):
+            pass
+        else:
+            attempt_count = int((existing or {}).get('attempt_count') or 0) + 1
+            retry_minutes = 5 if attempt_count < 2 else (15 if attempt_count < 3 else (60 if attempt_count < 5 else 360))
+            if existing:
+                cur.execute("""
+                    UPDATE rhythmjoy_sms_deliveries
+                    SET status='phone_lookup_failed', error_text=%s,
+                        attempt_count=%s,
+                        first_failed_at=IF(first_failed_at IS NULL,NOW(),first_failed_at),
+                        last_attempt_at=NOW(),
+                        next_retry_at=DATE_ADD(NOW(),INTERVAL %s MINUTE),
+                        updated_at=NOW()
+                    WHERE idempotency_key=%s AND status IN ('pending','failed','phone_lookup_failed')
+                """, (detail, attempt_count, retry_minutes, idempotency_key))
+            else:
+                cur.execute("""
+                    INSERT INTO rhythmjoy_sms_deliveries (
+                        idempotency_key, source_task_type, source_task_id, template_name,
+                        recipient_phone_hash, recipient_phone_last4, status,
+                        provider_code, provider_raw, error_text,
+                        attempt_count, first_failed_at, last_attempt_at, next_retry_at,
+                        created_at, updated_at
+                    ) VALUES (%s,%s,%s,%s,'','','phone_lookup_failed','','',%s,%s,NOW(),NOW(),DATE_ADD(NOW(),INTERVAL %s MINUTE),NOW(),NOW())
+                """, (idempotency_key, task_type, task_id or None, template_name, detail, attempt_count, retry_minutes))
+        cur.execute('SELECT id,status,error_text,attempt_count,next_retry_at FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
+        saved = cur.fetchone() or {}
+        print(json.dumps({
+            'status': saved.get('status') or 'phone_lookup_failed',
+            'deliveryId': saved.get('id'),
+            'templateName': template_name,
+            'reason': reason,
+            'source': source,
+            'maskedPhone': '',
+            'attemptCount': saved.get('attempt_count') or 0,
+            'nextRetryAt': saved.get('next_retry_at'),
+        }, ensure_ascii=False, default=str))
+finally:
+    conn.close()
+PY
+`;
+  return safeSmsResult(JSON.parse(runSshScript(target, script).trim() || '{}'));
 }
 
 async function sendRemoteConfirmationSms(args, {
@@ -3586,7 +3756,7 @@ async function runAdminPlatformAudit(args, context, { force = false } = {}) {
     if (args.telegram && ['mismatch', 'check_failed'].includes(auditStatus)) {
       const signature = `${auditStatus}:${issueRows.map((row) => `${row.taskType}:${row.classification.reason}`).join('|')}`;
       await notifyOnStateChange(args, `admin-platform-audit:${reservationId}`, signature, adminPlatformAuditIssueMessage(reservation, reservationRows));
-    } else if (args.telegram && auditStatus === 'ok' && ['mismatch', 'check_failed'].includes(previous.auditStatus || '')) {
+    } else if (args.telegram && auditStatus === 'ok' && previous.auditStatus === 'mismatch') {
       await notifyOnStateChange(args, `admin-platform-audit:${reservationId}`, 'ok', adminPlatformAuditRecoveryMessage(reservation));
     }
     nextReservations[reservationId] = {
@@ -3624,7 +3794,12 @@ async function runAdminPlatformAudit(args, context, { force = false } = {}) {
   return result;
 }
 
-async function maybeRunAdminPlatformAudit(args, context) {
+async function maybeRunAdminPlatformAudit(args, context, sessionStatuses = []) {
+  const blocked = blockedSessionPlatforms(sessionStatuses);
+  if (blocked.length) {
+    logLine(`admin platform audit skipped by session circuit breaker: ${blocked.join(',')}`);
+    return { skipped: true, reason: 'platform-session-unavailable', platforms: blocked };
+  }
   try {
     return await runAdminPlatformAudit(args, context);
   } catch (error) {
@@ -4100,7 +4275,7 @@ async function runCustomerPlatformAudit(args, context, { force = false } = {}) {
       const issueRows = row.rows.filter((item) => !item.classification.ok);
       const signature = `${row.auditStatus}:${issueRows.map((item) => `${item.checkType}:${item.classification.reason}`).join('|')}`;
       await notifyOnStateChange(args, `customer-platform-audit:${row.candidate.ledgerId}`, signature, customerPlatformAuditIssueMessage(row.candidate, row.rows));
-    } else if (args.telegram && row.auditStatus === 'ok' && ['mismatch', 'check_failed'].includes(previousStatus)) {
+    } else if (args.telegram && row.auditStatus === 'ok' && previousStatus === 'mismatch') {
       await notifyOnStateChange(args, `customer-platform-audit:${row.candidate.ledgerId}`, 'ok', customerPlatformAuditRecoveryMessage(row.candidate, row.rows));
     }
   }
@@ -4121,7 +4296,12 @@ async function runCustomerPlatformAudit(args, context, { force = false } = {}) {
   return result;
 }
 
-async function maybeRunCustomerPlatformAudit(args, context) {
+async function maybeRunCustomerPlatformAudit(args, context, sessionStatuses = []) {
+  const blocked = blockedSessionPlatforms(sessionStatuses);
+  if (blocked.length) {
+    logLine(`customer platform audit skipped by session circuit breaker: ${blocked.join(',')}`);
+    return { skipped: true, reason: 'platform-session-unavailable', platforms: blocked };
+  }
   try {
     return await runCustomerPlatformAudit(args, context);
   } catch (error) {
@@ -4380,6 +4560,7 @@ function smsStatusText(status) {
     needs_review: '발송 결과 확인 필요',
     skipped: '발송 생략',
     failed: '발송 실패',
+    phone_lookup_failed: '전화번호 확인 대기',
     disabled: '문자 비활성',
   };
   return map[status] || status || '-';
@@ -4392,6 +4573,7 @@ function smsRowsFromCycle(row) {
     ...(row.naverAvailabilityTasks?.rows || []).map((taskRow) => ({ ...taskRow, taskType: taskRow.taskType || 'naver_restore' })),
     ...(row.naverCancelTasks?.rows || []).map((taskRow) => ({ ...taskRow, taskType: taskRow.taskType || 'naver_cancel' })),
     ...(row.spacecloudCancelTasks?.rows || []).map((taskRow) => ({ ...taskRow, taskType: taskRow.taskType || 'spacecloud_cancel' })),
+    ...(row.smsFollowUpTasks?.rows || []),
   ].filter((taskRow) => taskRow.sms);
   const seen = new Set();
   return rows.filter((taskRow) => {
@@ -4553,25 +4735,15 @@ function syncSuccessRowsFromCycle(row) {
   });
 }
 
-function syncSuccessNeedsAttention(row) {
-  return smsNeedsAttention(row);
-}
-
 function syncSuccessMessage(row) {
-  const needsAttention = syncSuccessNeedsAttention(row);
   const taskType = row.taskType || row.task_type || '';
   const isCancellation = ['delete', 'naver_restore', 'spacecloud_cancel', 'naver_cancel'].includes(taskType);
-  const smsStatus = syncSmsStatusText(row);
   return compactNotice(
-    needsAttention
-      ? '🟡 예약 반영 후 확인 필요'
-      : (isCancellation ? '✅ 예약 취소 반영 완료' : '✅ 예약 반영 완료'),
+    isCancellation ? '✅ 예약 취소 반영 완료' : '✅ 예약 반영 완료',
     [
       syncReservationLine(row),
       'DB 원장: 정상',
       syncPlatformResultLine(row),
-      smsStatus || '',
-      needsAttention ? '판정: 실제 예약 누락 확정 아님' : '',
     ],
   );
 }
@@ -4584,7 +4756,6 @@ function reservationCompletionSignature(row) {
   return [
     'complete',
     row.status || '',
-    row.sms?.status || '',
   ].join(':');
 }
 
@@ -4639,11 +4810,12 @@ function loginNeededMessage(rowOrError) {
     : rows.map((row) => row.error || row.status).filter(Boolean).join('\n');
   const candidates = typeof rowOrError === 'object' ? rowOrError?.uploadCandidates : null;
   return compactNotice('🟡 자동화 로그인 필요', [
-    '예약 감시: 로그인 확인 대기',
+    '예약 감시: 해당 플랫폼 작업만 안전하게 대기',
     `후보: ${candidates ?? '-'}건`,
     rows.length ? `대상:\n${formatBriefRows(rows, 1)}` : '',
     `원인: ${cleanTelegramText(errorText || '-', 120)}`,
-    '조치: 자동화 Chrome에서 네이버/스페이스클라우드 로그인',
+    '조치: 맥북에서 ops/recover-ubuntu-platform-sessions.sh 실행 후 열린 미니PC 창에서 로그인',
+    '세션 복구 후 미완료 작업은 DB 기록 순서대로 자동 재실행됩니다.',
   ]);
 }
 
@@ -4820,18 +4992,56 @@ function smsMessageKind(rows) {
 }
 
 function smsSuccessMessage(rows) {
-  return compactNotice(`✅ 성공: ${smsMessageKind(rows)} 발송`, [
-    `처리: ${rows.length}건`,
+  return compactNotice(`✅ ${smsMessageKind(rows)} 발송 완료`, [
     formatSmsRows(rows),
+    '일정 동기화 상태와 별도로 처리됐습니다.',
   ]);
 }
 
+function smsFailureReasonText(row) {
+  const reason = String(row?.sms?.reason || row?.sms?.error || row?.sms?.providerCode || '');
+  if (reason === 'naver-login-required') return '네이버 로그인 세션 만료로 전화번호를 읽지 못함';
+  if (reason === 'naver-reservation-not-found') return '네이버 예약 상세를 찾지 못해 전화번호를 확인하지 못함';
+  if (reason === 'naver-phone-not-visible') return '네이버 예약 상세에 전화번호가 보이지 않음';
+  if (reason === 'spacecloud-phone-not-visible') return '스페이스클라우드 예약 상세에 전화번호가 보이지 않음';
+  if (reason === 'recipient-phone-missing') return '발송할 전화번호를 확보하지 못함';
+  if (reason === 'provider-result-uncertain-no-auto-resend') return '문자 업체의 발송 결과가 불확실하여 중복 발송을 차단함';
+  return cleanTelegramText(reason || '문자 후속처리 실패', 140);
+}
+
 function smsFailureMessage(rows) {
-  return compactNotice(`⚠️ 실패: ${smsMessageKind(rows)}`, [
-    `대상: ${rows.length}건`,
-    formatSmsRows(rows),
-    '조치: 전화번호 조회 또는 알리고 전송결과 확인',
+  const row = rows[0] || {};
+  return compactNotice('🟡 예약 안내문자 후속처리 필요', [
+    `대상: ${taskTargetText(row)}`,
+    '예약 반영: DB 원장·상대 플랫폼 완료',
+    `문자: ${smsFailureReasonText(row)}`,
+    '영향: 일정 동기화에는 없음',
+    '조치: 로그인 복구 후 자동 재시도 · 발송 결과 불확실 건은 수동 확인',
   ]);
+}
+
+function smsNotificationKey(row) {
+  return `sms-delivery:${taskIdentityKey(row)}`;
+}
+
+async function notifySmsState(args, row) {
+  const key = smsNotificationKey(row);
+  if (smsNeedsAttention(row)) {
+    if (isLoginProblem(row.sms?.reason || row.sms?.error || '')) {
+      return { sent: false, reason: 'covered-by-platform-session-alert' };
+    }
+    if (!smsFailureShouldAlert(row)) {
+      return { sent: false, reason: `automatic-retry-scheduled:${row.sms?.nextRetryAt || '-'}` };
+    }
+    const signature = `problem:${row.sms?.status || 'failed'}:${row.sms?.reason || row.sms?.providerCode || ''}`;
+    return notifyOnStateChange(args, key, signature, smsFailureMessage([row]));
+  }
+  const state = await readJsonObject(args.notifyState);
+  const previous = state[key] || {};
+  if (!previous.lastSentAt || !String(previous.stateSignature || '').startsWith('problem:')) {
+    return { sent: false, reason: 'no-prior-sms-alert' };
+  }
+  return notifyOnStateChange(args, key, 'healthy', smsSuccessMessage([row]));
 }
 
 function cycleErrorMessage(errorText, { transient = false } = {}) {
@@ -4857,7 +5067,6 @@ function dbStatusForDeleteRow(row, task = null) {
 function dbStatusForUploadRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
-  if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'naver-cancel-queued') return 'done';
   if (row.status === 'submitted') return 'done';
@@ -4870,7 +5079,6 @@ function dbStatusForUploadRow(row, task = null) {
 function dbStatusForNaverBlockRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
-  if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'blocked' || row.status === 'already-blocked') return 'done';
   if (row.status === 'spacecloud-cancel-queued') return 'done';
@@ -4884,7 +5092,6 @@ function dbStatusForNaverBlockRow(row, task = null) {
 function dbStatusForSpacecloudCancelRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
-  if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (['canceled', 'already-canceled', 'conflict-cleared-source-requeued'].includes(row.status)) return 'done';
   if (['guard-retry-pending', 'winner-verification-pending', 'cancellation-verification-pending', 'canceled-finalization-pending', 'external-cancellation-sync-pending'].includes(row.status)) return 'pending';
@@ -4897,7 +5104,6 @@ function dbStatusForSpacecloudCancelRow(row, task = null) {
 function dbStatusForNaverCancelRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
-  if (smsNeedsAttention(row)) return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
   if (['canceled', 'already-canceled', 'conflict-cleared-source-requeued'].includes(row.status)) return 'done';
   if (['guard-retry-pending', 'winner-verification-pending', 'cancellation-verification-pending', 'canceled-finalization-pending', 'external-cancellation-sync-pending'].includes(row.status)) return 'pending';
@@ -5529,12 +5735,11 @@ async function sendNaverOriginConfirmationSms(args, context, task) {
     businessId: args.naverBusinessId,
   });
   if (lookup.status !== 'found') {
-    return {
-      status: 'skipped',
+    return recordRemoteSmsPhoneLookupFailure(args, {
+      task,
       reason: lookup.reason || lookup.status || 'naver-phone-lookup-failed',
       source: lookup.source || 'naver',
-      maskedPhone: lookup.maskedPhone || '',
-    };
+    });
   }
   return sendRemoteConfirmationSms(args, {
     task,
@@ -5547,18 +5752,158 @@ async function sendSpacecloudOriginConfirmationSms(args, context, task) {
   if (isAdminPanelTask(task)) return adminPanelSmsSkipped(task, 'admin-panel');
   const lookup = await fetchSpacecloudReservationPhone(context, task);
   if (lookup.status !== 'found') {
-    return {
-      status: 'skipped',
+    return recordRemoteSmsPhoneLookupFailure(args, {
+      task,
       reason: lookup.reason || lookup.status || 'spacecloud-phone-lookup-failed',
       source: lookup.source || 'spacecloud',
-      maskedPhone: lookup.maskedPhone || '',
-    };
+    });
   }
   return sendRemoteConfirmationSms(args, {
     task,
     phone: lookup.phone,
     source: lookup.source || 'spacecloud',
   });
+}
+
+async function fetchRemoteSmsPhoneLookupFollowUps(args) {
+  const target = await loadCafe24Target(args);
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'], port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'], password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'], charset='utf8mb4',
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        for column, definition in (
+            ('attempt_count', 'INT UNSIGNED NOT NULL DEFAULT 0'),
+            ('first_failed_at', 'DATETIME NULL'),
+            ('last_attempt_at', 'DATETIME NULL'),
+            ('next_retry_at', 'DATETIME NULL'),
+        ):
+            cur.execute('SHOW COLUMNS FROM rhythmjoy_sms_deliveries LIKE %s', (column,))
+            if cur.fetchone() is None:
+                cur.execute(f'ALTER TABLE rhythmjoy_sms_deliveries ADD COLUMN {column} {definition}')
+        cur.execute("SHOW COLUMNS FROM rhythmjoy_spacecloud_tasks LIKE 'confirmation_sms_required'")
+        if cur.fetchone() is None:
+            cur.execute(
+                'ALTER TABLE rhythmjoy_spacecloud_tasks '
+                'ADD COLUMN confirmation_sms_required TINYINT(1) NOT NULL DEFAULT 0 AFTER claim_token'
+            )
+        # Double-check the transactional outbox invariant. New reservation tasks
+        # declare the obligation on the task row; if an outbox row is ever lost,
+        # the watcher recreates it before looking for work.
+        cur.execute("""
+            INSERT IGNORE INTO rhythmjoy_sms_deliveries (
+              idempotency_key, source_task_type, source_task_id, template_name,
+              recipient_phone_hash, recipient_phone_last4, status,
+              attempt_count, created_at, updated_at
+            )
+            SELECT
+              CONCAT('reservation-confirmed-v1|', t.task_type, '|', t.id),
+              t.task_type, t.id, 'reservation-confirmed-v1',
+              '', '', 'pending', 0, NOW(), NOW()
+            FROM rhythmjoy_spacecloud_tasks t
+            WHERE t.confirmation_sms_required=1
+              AND t.task_type IN ('upload','naver_block')
+        """)
+        conn.commit()
+        cur.execute("""
+            SELECT
+              d.id AS deliveryId,
+              d.attempt_count AS attemptCount,
+              CAST(d.next_retry_at AS CHAR) AS nextRetryAt,
+              t.id, t.id AS taskId, t.task_type AS taskType,
+              t.room_key AS roomKey, CAST(t.reservation_date AS CHAR) AS date,
+              TIME_FORMAT(t.start_time, '%H:%i') AS startTime,
+              TIME_FORMAT(t.end_time, '%H:%i') AS endTime,
+              t.reservation_number AS reservationNo, t.reserver_name AS reserverName,
+              t.product, t.payload_json AS payloadJson
+            FROM rhythmjoy_sms_deliveries d
+            INNER JOIN rhythmjoy_spacecloud_tasks t
+              ON t.id=d.source_task_id AND t.task_type=d.source_task_type
+            WHERE d.status IN ('pending','phone_lookup_failed','failed')
+              AND d.template_name='reservation-confirmed-v1'
+              AND (
+                    d.status='pending'
+                 OR COALESCE(d.next_retry_at, DATE_ADD(d.updated_at, INTERVAL 5 MINUTE)) <= NOW()
+                  )
+              AND t.status IN ('done','already_gone')
+              AND t.task_type IN ('upload','naver_block')
+            ORDER BY d.updated_at ASC, d.id ASC
+            LIMIT 10
+        """)
+        rows = cur.fetchall()
+finally:
+    conn.close()
+print(json.dumps(rows, ensure_ascii=False, default=str))
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '[]');
+}
+
+async function runSmsPhoneLookupFollowUps(args, context, sessionStatuses = []) {
+  if (args.dryRun) {
+    return {
+      status: 'sms-follow-up-dry-run', fetched: 0, attempted: 0, rows: [], failed: [],
+    };
+  }
+  const candidates = await fetchRemoteSmsPhoneLookupFollowUps(args);
+  const task = candidates.find((row) => !platformSessionBlocked(
+    sessionStatuses,
+    row.taskType === 'upload' ? 'naver' : 'spacecloud',
+  ));
+  if (!task) {
+    return {
+      status: candidates.length ? 'sms-follow-up-session-blocked' : 'no-sms-follow-ups',
+      fetched: candidates.length,
+      attempted: 0,
+      rows: [],
+      failed: [],
+    };
+  }
+  let sms;
+  try {
+    sms = task.taskType === 'upload'
+      ? await sendNaverOriginConfirmationSms(args, context, task)
+      : await sendSpacecloudOriginConfirmationSms(args, context, task);
+  } catch (error) {
+    sms = await recordRemoteSmsPhoneLookupFailure(args, {
+      task,
+      reason: `sms-follow-up-exception:${String(error?.message || error)}`,
+      source: task.taskType === 'upload' ? 'naver' : 'spacecloud',
+    });
+  }
+  const row = {
+    ...task,
+    status: 'sms-follow-up',
+    sms,
+  };
+  return {
+    status: smsSendOk(sms.status) ? 'sms-follow-up-sent' : 'sms-follow-up-pending',
+    fetched: candidates.length,
+    attempted: 1,
+    rows: [row],
+    failed: [],
+  };
 }
 
 async function runSmsTest(args) {
@@ -5594,6 +5939,15 @@ function smsSendOk(status) {
 
 function smsNeedsAttention(row) {
   return row?.sms && !smsSendOk(row.sms.status);
+}
+
+function smsFailureShouldAlert(row) {
+  const status = String(row?.sms?.status || '');
+  if (['needs_review', 'uncertain', 'delivery_in_progress'].includes(status)) return true;
+  if (['phone_lookup_failed', 'failed', 'skipped'].includes(status)) {
+    return Number(row?.sms?.attemptCount || 0) >= 3;
+  }
+  return true;
 }
 
 async function runUploadTasks(args, context = null, claimedTasks = null) {
@@ -6721,50 +7075,110 @@ async function runLogin(args) {
     headless: args.headless,
   });
   const page = context.pages()[0] || await context.newPage();
-  const targetUrl = 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056';
-  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+  const spacecloudUrl = 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056';
+  const naverUrl = `https://partner.booking.naver.com/bizes/${args.naverBusinessId}/booking-calendar-view`;
+  await page.goto(spacecloudUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
   logLine(`Chrome profile opened: ${args.profileDir}`);
-  logLine('Log in manually. This command exits when the reservation add button is visible.');
+  logLine('Log in to SpaceCloud first. Naver opens automatically after the SpaceCloud calendar is verified.');
 
   const deadline = Date.now() + 30 * 60 * 1000;
   let lastUrl = '';
+  let platform = 'spacecloud';
   let postLoginNavigateAttempted = false;
+  const sessions = [];
   while (Date.now() < deadline) {
-    const addCount = await page.locator('a._additionalReserveLayerOpen').filter({ visible: true }).count().catch(() => 0);
-    if (addCount === 1) {
+    const currentUrl = page.url();
+    const spacecloudReady = platform === 'spacecloud'
+      && /^https:\/\/partner\.spacecloud\.kr\/reservation-calendar(?:[/?#]|$)/.test(currentUrl)
+      && await page.locator('a._additionalReserveLayerOpen').filter({ visible: true }).count().catch(() => 0) === 1;
+    if (spacecloudReady) {
+      sessions.push({
+        platform: 'spacecloud',
+        ok: true,
+        url: currentUrl,
+        title: await page.title().catch(() => ''),
+      });
+      logLine('SpaceCloud login verified. Opening Naver SmartPlace login/calendar.');
+      platform = 'naver';
+      lastUrl = '';
+      postLoginNavigateAttempted = false;
+      await page.goto(naverUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      continue;
+    }
+
+    const naverReady = platform === 'naver'
+      && /^https:\/\/partner\.booking\.naver\.com\/bizes\/[^/]+\/booking-calendar-view(?:[/?#]|$)/.test(currentUrl)
+      && await page.locator('button[class*="Select__btn-selected"]').filter({ visible: true }).count().catch(() => 0) >= 1;
+    if (naverReady) {
+      sessions.push({
+        platform: 'naver',
+        ok: true,
+        url: currentUrl,
+        title: await page.title().catch(() => ''),
+      });
       const result = {
         ok: true,
-        url: page.url(),
-        title: await page.title().catch(() => ''),
+        sessions,
+        profileDir: args.profileDir,
         reason: '',
       };
-      logLine('login check ok');
+      logLine('SpaceCloud and Naver login checks both passed; closing the profile cleanly.');
       await context.close();
       return result;
     }
-    const currentUrl = page.url();
 
     // Do not navigate while the user is inside the Naver/SpaceCloud auth flow.
     // Restarting these URLs can invalidate the active OAuth token and force a new login page.
     const isAuthFlow = /nid\.naver\.com|partner\.spacecloud\.kr\/auth\//.test(currentUrl);
+    const expectedPlatformHost = platform === 'spacecloud'
+      ? /partner\.spacecloud\.kr/.test(currentUrl)
+      : /(?:nid|partner\.booking)\.naver\.com/.test(currentUrl);
+    const expectedCalendar = platform === 'spacecloud'
+      ? /partner\.spacecloud\.kr\/reservation-calendar/.test(currentUrl)
+      : /partner\.booking\.naver\.com\/bizes\/[^/]+\/booking-calendar-view/.test(currentUrl);
     if (
       !postLoginNavigateAttempted
       && !isAuthFlow
-      && /partner\.spacecloud\.kr/.test(currentUrl)
-      && !/reservation-calendar/.test(currentUrl)
+      && expectedPlatformHost
+      && !expectedCalendar
     ) {
       postLoginNavigateAttempted = true;
-      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+      await page.goto(platform === 'spacecloud' ? spacecloudUrl : naverUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000,
+      }).catch(() => {});
     }
     if (currentUrl !== lastUrl) {
       lastUrl = currentUrl;
-      logLine(`waiting for login: ${currentUrl}`);
+      logLine(`waiting for ${platform} login: ${currentUrl}`);
     }
     await sleep(5000);
   }
 
   await context.close();
-  throw new Error('login check timed out after 30 minutes');
+  throw new Error(`login check timed out after 30 minutes while waiting for ${platform}`);
+}
+
+async function runCheckSessions(args) {
+  const context = await openSpacecloudContext({
+    profileDir: args.profileDir,
+    headless: args.headless,
+  });
+  try {
+    const spacecloud = await checkSpacecloudLogin(context);
+    const naver = await checkNaverSmartplaceLogin(context, {
+      businessId: args.naverBusinessId,
+    });
+    return {
+      ok: Boolean(spacecloud.ok && naver.ok),
+      sessions: [
+        { platform: 'spacecloud', ...spacecloud },
+        { platform: 'naver', ...naver },
+      ],
+    };
+  } finally {
+    await context.close();
+  }
 }
 
 async function runCheckLogin(args) {
@@ -7170,11 +7584,11 @@ async function runNowModeSelfTest() {
   const smsFailedRow = { status: 'submitted', sms: { status: 'failed' } };
   const smsUncertainRow = { status: 'submitted', sms: { status: 'needs_review' } };
   const smsSentRow = { status: 'submitted', sms: { status: 'sent' } };
-  assert.equal(dbStatusForUploadRow(smsFailedRow), 'needs_review');
-  assert.equal(dbStatusForNaverBlockRow(smsFailedRow), 'needs_review');
-  assert.equal(dbStatusForNaverCancelRow({ status: 'canceled', sms: { status: 'failed' } }), 'needs_review');
-  assert.equal(dbStatusForSpacecloudCancelRow({ status: 'canceled', sms: { status: 'needs_review' } }), 'needs_review');
-  assert.equal(dbStatusForUploadRow(smsUncertainRow), 'needs_review');
+  assert.equal(dbStatusForUploadRow(smsFailedRow), 'done');
+  assert.equal(dbStatusForNaverBlockRow({ ...smsFailedRow, status: 'blocked' }), 'done');
+  assert.equal(dbStatusForNaverCancelRow({ status: 'canceled', sms: { status: 'failed' } }), 'done');
+  assert.equal(dbStatusForSpacecloudCancelRow({ status: 'canceled', sms: { status: 'needs_review' } }), 'done');
+  assert.equal(dbStatusForUploadRow(smsUncertainRow), 'done');
   assert.equal(dbStatusForUploadRow(smsSentRow), 'done');
   assert.equal(smsSendOk('already_sent'), true);
   assert.equal(smsSendOk('delivery_in_progress'), false);
@@ -7220,6 +7634,25 @@ async function runNowModeSelfTest() {
   assert.match(telegramSuccess, /DB 원장: 정상/);
   assert.match(telegramSuccess, /네이버: 예약불가 완료/);
   assert.doesNotMatch(telegramSuccess, /흐름:/);
+  assert.doesNotMatch(telegramSuccess, /문자|확인 필요/);
+  const smsAttention = smsFailureMessage([{
+    id: 597,
+    taskType: 'upload',
+    status: 'submitted',
+    date: '2026-09-19',
+    roomKey: 'a',
+    startTime: '10:00',
+    endTime: '13:00',
+    reserverName: '황*정님',
+    sms: { status: 'phone_lookup_failed', reason: 'naver-reservation-not-found' },
+  }]);
+  assert.match(smsAttention, /^🟡 예약 안내문자 후속처리 필요/m);
+  assert.match(smsAttention, /예약 반영: DB 원장·상대 플랫폼 완료/);
+  assert.match(smsAttention, /영향: 일정 동기화에는 없음/);
+  assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'login_required' }], 'naver'), true);
+  assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'ready' }], 'naver'), false);
+  assert.equal(sessionBlockedTaskResult('naver').attempted, 0);
+  assert.match(sessionProblemMessage('naver', { status: 'login_required' }), /같은 세션 장애를 예약별로 반복 알리지 않습니다/);
   const previousCancellationSetting = process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED;
   delete process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED;
   assert.equal(customerReservationCancellationEnabled(), true);
@@ -7292,7 +7725,7 @@ async function runNowModeSelfTest() {
       'closed browser context retries every task type',
       'ambiguous SpaceCloud submit is verified on retry',
       'task runners depend only on the DB queue and opposite booking platform',
-      'sms send is task-visible on failure/uncertainty and duplicate states are not treated as success',
+      'SMS delivery state stays separate from successful reservation synchronization and retries by idempotency key',
       'SMS errors redact full recipient phone numbers',
       'oversized task results remain valid JSON with status and reservation identity',
       'notification cooldown suppresses only identical issue text',
@@ -7308,6 +7741,7 @@ async function runNowModeSelfTest() {
       'admin platform audits exclude reservations whose end time is already past',
       'admin platform audit results and audit failures persist to the DB-backed alert center before checkpointing independently of Telegram',
       'platform read failures stay distinct from mismatches and require a three-minute second pass before alerting',
+      'platform session circuit breakers pause affected work and audits without consuming reservation attempts',
       'customer DB reservations rotate through source and mirrored actual-platform inspection',
       'customer platform audit alerts persist to DB before the local interval checkpoint',
       'reflection audit uses the single canonical Cafe24 implementation',
@@ -7360,6 +7794,53 @@ async function checkAutomationSessionStatuses(args, context) {
   return statuses;
 }
 
+function sessionStatusForPlatform(statuses, platform) {
+  return (Array.isArray(statuses) ? statuses : [])
+    .find((row) => row?.platform === platform) || null;
+}
+
+function platformSessionBlocked(statuses, platform) {
+  const row = sessionStatusForPlatform(statuses, platform);
+  return Boolean(row && ['login_required', 'check_failed'].includes(String(row.status || '')));
+}
+
+function blockedSessionPlatforms(statuses, platforms = ['naver', 'spacecloud']) {
+  return platforms.filter((platform) => platformSessionBlocked(statuses, platform));
+}
+
+function sessionPlatformLabel(platform) {
+  return platform === 'naver' ? '네이버 스마트플레이스' : '스페이스클라우드';
+}
+
+function sessionProblemMessage(platform, row) {
+  return compactNotice(`⚠️ ${sessionPlatformLabel(platform)} 로그인 필요`, [
+    '상태: 해당 플랫폼 자동 작업·실제 화면 검사를 일시 중지',
+    'DB 원장과 다른 플랫폼 작업: 계속 운영',
+    `원인: ${row?.status === 'login_required' ? '저장된 로그인 세션 만료' : cleanTelegramText(row?.note || '화면 확인 실패', 140)}`,
+    '조치: 미니 PC 자동화 브라우저에서 수동 로그인',
+    '같은 세션 장애를 예약별로 반복 알리지 않습니다.',
+  ]);
+}
+
+async function notifySessionStateChanges(args, statuses) {
+  for (const platform of ['naver', 'spacecloud']) {
+    const row = sessionStatusForPlatform(statuses, platform);
+    if (!row || !['ready', 'login_required', 'check_failed'].includes(String(row.status || ''))) continue;
+    const key = `system:session:${platform}`;
+    if (row.status !== 'ready') {
+      await notifyOnStateChange(args, key, 'problem:unavailable', sessionProblemMessage(platform, row));
+      continue;
+    }
+    const state = await readJsonObject(args.notifyState);
+    const previous = state[key] || {};
+    if (!previous.lastSentAt || !String(previous.stateSignature || '').startsWith('problem:')) continue;
+    await notifyOnStateChange(args, key, 'healthy', compactNotice(`✅ ${sessionPlatformLabel(platform)} 로그인 복구`, [
+      '상태: 자동 작업·실제 화면 검사 재개',
+      '대기 작업은 DB 접수 순서대로 자동 처리합니다.',
+    ]));
+  }
+}
+
 async function maybeCheckAutomationSessionStatuses(args, context, workDir) {
   if (!args.nowMode || args.sessionCheckIntervalSeconds <= 0) {
     return checkAutomationSessionStatuses(args, context);
@@ -7370,11 +7851,10 @@ async function maybeCheckAutomationSessionStatuses(args, context, workDir) {
   const lastCheckedAt = state.checkedAt ? new Date(state.checkedAt).getTime() : 0;
   const now = Date.now();
   if (lastCheckedAt && now - lastCheckedAt < args.sessionCheckIntervalSeconds * 1000) {
-    return [{
-      platform: 'all',
-      status: 'check_skipped',
-      note: `NOW mode: session check skipped until ${args.sessionCheckIntervalSeconds}s interval passes`,
-    }];
+    if (Array.isArray(state.statuses) && state.statuses.length) {
+      return state.statuses.map((row) => ({ ...row, cached: true }));
+    }
+    return [];
   }
 
   const statuses = await checkAutomationSessionStatuses(args, context);
@@ -7392,8 +7872,32 @@ function setCycleStatusFromResult(row, result, { processed, needsReview, retryin
   else row.status = processed;
 }
 
-async function runNowModeCycleTasks(args, row, activeContext) {
-  const firstSpacecloudCancel = await runSpacecloudCancelTasks(args, activeContext);
+function sessionBlockedTaskResult(platform) {
+  return {
+    status: `${platform}-session-blocked`,
+    fetched: 0,
+    attempted: 0,
+    rows: [],
+    failed: [],
+    retrying: [],
+    sessionBlocked: true,
+  };
+}
+
+function sessionBlockedBookingSyncResult() {
+  return {
+    order: [],
+    uploadTasks: sessionBlockedTaskResult('spacecloud'),
+    deleteTasks: sessionBlockedTaskResult('spacecloud'),
+  };
+}
+
+async function runNowModeCycleTasks(args, row, activeContext, sessionStatuses = []) {
+  const naverBlocked = platformSessionBlocked(sessionStatuses, 'naver');
+  const spacecloudBlocked = platformSessionBlocked(sessionStatuses, 'spacecloud');
+  const firstSpacecloudCancel = spacecloudBlocked
+    ? sessionBlockedTaskResult('spacecloud')
+    : await runSpacecloudCancelTasks(args, activeContext);
   row.spacecloudCancelTasks = firstSpacecloudCancel;
   setCycleStatusFromResult(row, row.spacecloudCancelTasks, {
     processed: 'spacecloud-cancel-processed',
@@ -7402,7 +7906,9 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   });
   if (hasBlockingFailures(row.spacecloudCancelTasks)) return;
 
-  const firstNaverCancel = await runNaverCancelTasks(args, activeContext);
+  const firstNaverCancel = naverBlocked
+    ? sessionBlockedTaskResult('naver')
+    : await runNaverCancelTasks(args, activeContext);
   row.naverCancelTasks = firstNaverCancel;
   setCycleStatusFromResult(row, row.naverCancelTasks, {
     processed: 'naver-cancel-processed',
@@ -7411,7 +7917,9 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   });
   if (hasBlockingFailures(row.naverCancelTasks)) return;
 
-  row.naverAvailabilityTasks = await runNaverAvailabilityTasks(args, activeContext);
+  row.naverAvailabilityTasks = naverBlocked
+    ? sessionBlockedTaskResult('naver')
+    : await runNaverAvailabilityTasks(args, activeContext);
   const split = splitNaverAvailabilityResult(row.naverAvailabilityTasks);
   row.naverBlockTasks = split.naverBlockTasks;
   row.naverRestoreTasks = split.naverRestoreTasks;
@@ -7422,7 +7930,9 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   });
   if (hasBlockingFailures(row.naverAvailabilityTasks)) return;
 
-  const secondSpacecloudCancel = await runSpacecloudCancelTasks(args, activeContext);
+  const secondSpacecloudCancel = spacecloudBlocked
+    ? sessionBlockedTaskResult('spacecloud')
+    : await runSpacecloudCancelTasks(args, activeContext);
   row.spacecloudCancelTasks = mergeTaskResults(row.spacecloudCancelTasks, secondSpacecloudCancel);
   setCycleStatusFromResult(row, row.spacecloudCancelTasks, {
     processed: 'spacecloud-cancel-processed',
@@ -7431,7 +7941,9 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   });
   if (hasBlockingFailures(row.spacecloudCancelTasks)) return;
 
-  row.bookingSyncTasks = await runOrderedBookingSyncTasks(args, activeContext);
+  row.bookingSyncTasks = spacecloudBlocked
+    ? sessionBlockedBookingSyncResult()
+    : await runOrderedBookingSyncTasks(args, activeContext);
   row.uploadTasks = row.bookingSyncTasks.uploadTasks;
   row.deleteTasks = row.bookingSyncTasks.deleteTasks;
   setCycleStatusFromResult(row, row.uploadTasks, {
@@ -7448,7 +7960,9 @@ async function runNowModeCycleTasks(args, row, activeContext) {
   }
   if (hasBlockingFailures(row.uploadTasks) || hasBlockingFailures(row.deleteTasks)) return;
 
-  const secondNaverCancel = await runNaverCancelTasks(args, activeContext);
+  const secondNaverCancel = naverBlocked
+    ? sessionBlockedTaskResult('naver')
+    : await runNaverCancelTasks(args, activeContext);
   row.naverCancelTasks = mergeTaskResults(row.naverCancelTasks, secondNaverCancel);
   setCycleStatusFromResult(row, row.naverCancelTasks, {
     processed: 'naver-cancel-processed',
@@ -7492,9 +8006,13 @@ async function runCycle(args, context = null) {
     row.sessionStatus = await maybeCheckAutomationSessionStatuses(args, await getContext(), workDir);
 
     if (args.nowMode) {
-      await runNowModeCycleTasks(args, row, activeContext);
+      await runNowModeCycleTasks(args, row, activeContext, row.sessionStatus);
     } else {
-      row.bookingSyncTasks = await runOrderedBookingSyncTasks(args, activeContext);
+      const naverBlocked = platformSessionBlocked(row.sessionStatus, 'naver');
+      const spacecloudBlocked = platformSessionBlocked(row.sessionStatus, 'spacecloud');
+      row.bookingSyncTasks = spacecloudBlocked
+        ? sessionBlockedBookingSyncResult()
+        : await runOrderedBookingSyncTasks(args, activeContext);
       row.uploadTasks = row.bookingSyncTasks.uploadTasks;
       row.deleteTasks = row.bookingSyncTasks.deleteTasks;
       if (['planned', 'dry-run'].includes(row.status) && row.uploadTasks.attempted > 0) {
@@ -7513,7 +8031,9 @@ async function runCycle(args, context = null) {
       }
 
       if (!hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.deleteTasks)) {
-        row.naverCancelTasks = await runNaverCancelTasks(args, activeContext);
+        row.naverCancelTasks = naverBlocked
+          ? sessionBlockedTaskResult('naver')
+          : await runNaverCancelTasks(args, activeContext);
         if (['planned', 'dry-run', 'idle', 'upload-task-processed'].includes(row.status) && row.naverCancelTasks.attempted > 0) {
           setCycleStatusFromResult(row, row.naverCancelTasks, {
             processed: 'naver-cancel-processed',
@@ -7524,7 +8044,9 @@ async function runCycle(args, context = null) {
       }
 
       if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && !hasBlockingFailures(row.deleteTasks)) {
-        row.naverAvailabilityTasks = await runNaverAvailabilityTasks(args, activeContext);
+        row.naverAvailabilityTasks = naverBlocked
+          ? sessionBlockedTaskResult('naver')
+          : await runNaverAvailabilityTasks(args, activeContext);
         const split = splitNaverAvailabilityResult(row.naverAvailabilityTasks);
         row.naverBlockTasks = split.naverBlockTasks;
         row.naverRestoreTasks = split.naverRestoreTasks;
@@ -7538,7 +8060,9 @@ async function runCycle(args, context = null) {
       }
 
       if (!row.failed?.length && !hasBlockingFailures(row.uploadTasks) && !hasBlockingFailures(row.naverCancelTasks) && !hasBlockingFailures(row.deleteTasks) && !hasBlockingFailures(row.naverAvailabilityTasks)) {
-        row.spacecloudCancelTasks = await runSpacecloudCancelTasks(args, activeContext);
+        row.spacecloudCancelTasks = spacecloudBlocked
+          ? sessionBlockedTaskResult('spacecloud')
+          : await runSpacecloudCancelTasks(args, activeContext);
         if (['planned', 'dry-run', 'idle'].includes(row.status) && row.spacecloudCancelTasks.attempted > 0) {
           setCycleStatusFromResult(row, row.spacecloudCancelTasks, {
             processed: 'spacecloud-cancel-processed',
@@ -7548,6 +8072,8 @@ async function runCycle(args, context = null) {
         }
       }
     }
+
+    row.smsFollowUpTasks = await runSmsPhoneLookupFollowUps(args, activeContext, row.sessionStatus);
 
     if (row.status === 'planned') {
       row.status = 'idle';
@@ -7583,6 +8109,7 @@ function cycleNeedsUrgentFollowUp(row) {
     row.naverAvailabilityTasks,
     row.spacecloudCancelTasks,
     row.naverCancelTasks,
+    row.smsFollowUpTasks,
   ].some(resultAttempted);
 }
 
@@ -7621,12 +8148,15 @@ async function runWatch(args) {
   try {
     while (!stopping) {
       let watcherProblemThisCycle = false;
+      let cycleSessionStatuses = [];
       const reportWatcherProblem = async (stateSignature, text) => {
         watcherProblemThisCycle = true;
         return notifyWatcherProblem(args, stateSignature, text);
       };
       try {
         const row = await runCycle(args, context);
+        cycleSessionStatuses = row.sessionStatus || [];
+        await notifySessionStateChanges(args, cycleSessionStatuses);
         if (args.nowMode && cycleNeedsUrgentFollowUp(row)) {
           urgentUntil = Math.max(urgentUntil, Date.now() + args.urgentCooldownSeconds * 1000);
         }
@@ -7635,7 +8165,6 @@ async function runWatch(args) {
           await reopenBrowserContext();
         }
         const successRows = syncSuccessRowsFromCycle(row);
-        const successKeys = new Set(successRows.map((taskRow) => taskIdentityKey(taskRow)));
         if (successRows.length) {
           for (const successRow of successRows) {
             const result = await notifyOnStateChange(
@@ -7648,21 +8177,9 @@ async function runWatch(args) {
           }
         }
         const smsRows = smsRowsFromCycle(row);
-        const smsFailureRows = smsRows.filter((taskRow) => (
-          smsNeedsAttention(taskRow)
-          && !successKeys.has(taskIdentityKey(taskRow))
-        ));
-        if (smsFailureRows.length) {
-          for (const smsFailureRow of smsFailureRows) {
-            const result = await notifyReservationAttention(
-              args,
-              smsFailureRow,
-              'sms',
-              smsFailureRow.taskType || '',
-              smsFailureMessage([smsFailureRow]),
-            );
-            if (!result.sent) logLine(`telegram confirmation sms failure skipped: ${result.reason}`);
-          }
+        for (const smsRow of smsRows) {
+          const result = await notifySmsState(args, smsRow);
+          if (!result.sent) logLine(`telegram sms state skipped: ${result.reason}`);
         }
         if (row.failed?.length) {
           const errorText = row.failed.map((failedRow) => failedRow.error).join('\n');
@@ -7764,8 +8281,8 @@ async function runWatch(args) {
       }
 
       if (!watcherProblemThisCycle) await notifyWatcherRecoveredIfNeeded(args);
-      await maybeRunAdminPlatformAudit(args, context);
-      await maybeRunCustomerPlatformAudit(args, context);
+      await maybeRunAdminPlatformAudit(args, context, cycleSessionStatuses);
+      await maybeRunCustomerPlatformAudit(args, context, cycleSessionStatuses);
       await maybeSendReflectionAudit(args);
       await maybeSendDailyReconcile(args);
       const sleepSeconds = watchSleepSeconds(args, urgentUntil);
@@ -7803,6 +8320,14 @@ async function main() {
     const result = await runCheckLogin(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else console.log(result.ok ? 'SpaceCloud login OK' : `SpaceCloud login needed: ${result.reason}`);
+    process.exitCode = result.ok ? 0 : 2;
+    return;
+  }
+
+  if (args.command === 'check-sessions') {
+    const result = await runCheckSessions(args);
+    if (args.json) console.log(JSON.stringify(result, null, 2));
+    else console.log(result.ok ? 'SpaceCloud and Naver login OK' : 'One or more platform logins need attention');
     process.exitCode = result.ok ? 0 : 2;
     return;
   }

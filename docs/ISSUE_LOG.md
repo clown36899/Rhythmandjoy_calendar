@@ -1,5 +1,17 @@
 # Issue Log
 
+## 2026-08-12 — 미니PC 원격 복구 및 플랫폼 로그인 세션 절차
+
+- 상태: 원격 접속 경로 구성 완료. 맥북의 Windows App은 `Rhythmjoy Mini PC` 장치로 `127.0.0.1:13389`에 접속하며, macOS LaunchAgent `com.rhythmjoy.mini-rdp-tunnel`이 Cafe24의 `127.0.0.1:22013` 역방향 SSH를 거쳐 미니PC RDP `127.0.0.1:3389`로 연결한다. 터널은 로그인·재부팅·네트워크 단절 뒤 자동 재시작한다.
+- `0x204` 판정법: 미니PC의 `gnome-remote-desktop.service`, 3389 리슨, `rhythmjoy-reverse-ssh.service`가 정상인데 맥북 `127.0.0.1:13389`만 거부되면 RDP/암호 오류가 아니라 맥북 로컬 터널 종료다. `ops/open-ubuntu-remote-desktop.sh`가 LaunchAgent를 다시 설치·기동하고 실제 포트가 열린 뒤 Windows App을 연다. `0x207`과 서버의 NLA 인증 실패는 터널 장애와 구분하며, 키체인 값을 미니PC RDP 자격 증명과 다시 맞춘 뒤 암호 끝 줄바꿈 없이 클립보드에 복사한다.
+- 보안: RDP 계정은 `rhythmjoy-remote`, 암호는 macOS 키체인의 `Rhythmjoy Mini PC RDP` 항목과 미니PC GNOME Remote Desktop 자격 증명에만 저장한다. 저장소와 로그에는 암호를 기록하지 않는다. Windows App의 오디오·마이크·카메라·프린터·폴더·스마트카드·클립보드 리디렉션은 비활성화한다. Codex에는 맥북 화면·오디오·손쉬운 사용 권한을 부여하지 않는다.
+- 플랫폼 재로그인: 임의 Chrome이나 여러 탭을 열지 않고 미니PC 화면 `:0`의 전용 프로필 `/home/kiosk-j/.spacecloud-automation`에서 `node tools/spacecloud-watch.mjs login`만 사용한다. 네이버 OAuth URL(`nid.naver.com`) 또는 파트너 인증 URL(`partner.spacecloud.kr/auth/`)에 들어간 동안 자동 새로고침·재이동을 금지해 OAuth 토큰을 보존한다.
+- 복구 순서: 워처와 kiosk Chrome을 중지한 뒤 로그인 도우미 한 개만 실행한다. 스페이스클라우드에서 실제 `예약추가`가 보일 때까지 기다리고, 이어 같은 전용 프로필에서 네이버 SmartPlace 달력까지 확인한다. 두 플랫폼 독립 세션 검사가 모두 `ready`인 경우에만 로그인 창을 정상 종료하고 워처를 다시 시작한다. 실패하면 워처를 켜지 않고 세션 장애 상태를 유지한다.
+- 실제 복구 검증: 2026-08-12 19:48 KST에 순차 로그인 도우미가 스페이스클라우드 달력과 네이버 SmartPlace 달력을 모두 확인한 뒤 프로필을 정상 종료했다. 이어 구버전과 독립된 `check-login`, `check-naver-login`을 각각 실행해 두 결과가 모두 `ok=true`임을 확인했다. 워처와 kiosk Chrome을 재가동한 첫 주기에서 세션 오류 없이 등록 작업 `#601`과 삭제 작업 `#602`가 완료됐고, 상태 변경 Telegram도 각각 한 건만 발송됐다.
+- 미완료 복구 상태기계: 예약 이메일을 DB 원장·플랫폼 Outbox에 저장하는 같은 트랜잭션에서 예약 작업의 `confirmation_sms_required=1` 의무 표시와 문자 후속작업 `pending` 행을 외부 브라우저 작업보다 먼저 함께 기록한다. 둘 중 하나라도 저장에 실패하면 예약 handoff 전체를 롤백하고 이메일을 미처리로 남긴다. 별도 감시 루프도 매 순환마다 `문자 의무가 있는 작업 ↔ 문자 후속작업`을 대조해 후속 행이 사라졌다면 `INSERT IGNORE`로 자동 복원한다. 따라서 프로세스·브라우저·세션이 작업 직전에 죽어도 의도가 사라지지 않는다. 플랫폼 작업과 문자 후속작업은 실패 원인·시도 횟수·마지막 시도·다음 재시도 시각을 DB에 남기며, 세션 장애 동안 해당 플랫폼 작업은 시도 횟수를 소모하지 않고 대기한다. 세션이 `ready`로 바뀌면 오래된 미완료부터 5분→15분→60분(장기 실패는 6시간) 간격으로 자동 재실행하고 실제 반영/발송이 확인돼야 완료한다. 3회 이상 계속 실패하는 예약만 상태 변화 시 Telegram 한 건을 보내고, 해결된 경우에만 복구 한 건을 보낸다. 문자 업체가 발송을 받았는지 불확실한 `uncertain` 상태는 중복 발송 방지를 위해 자동 재발송하지 않는다. 15분 넘게 `pending`인 후속작업과 5분 넘게 `sending`인 후속작업은 관리자 경고 센터에도 표시한다.
+- 다음 만료 대응: 맥북에서 `ops/recover-ubuntu-platform-sessions.sh`를 실행한다. 이 명령이 RDP 터널과 Windows App을 열고 미니PC 워처·키오스크를 정지한 뒤 전용 프로필 로그인 도우미 하나만 실행한다. 사용자는 2차 인증만 완료하면 된다. 도우미가 두 플랫폼 달력을 확인하고 독립 재검사까지 통과한 경우에만 워처·키오스크를 자동 재시작한다.
+- 관련 파일: `ops/com.rhythmjoy.mini-rdp-tunnel.plist`, `ops/open-ubuntu-remote-desktop.sh`, `ops/recover-ubuntu-platform-sessions.sh`, `ops/ubuntu-platform-session-recovery.sh`, `ops/rhythmjoy-platform-session-recovery.service`, `tools/spacecloud-watch.mjs`
+
 ## 2026-08-12 — 동기화 감사 오판·이벤트 역전·반복 실행 구조 개선
 
 - 상태: 해결 및 운영 반영 완료.

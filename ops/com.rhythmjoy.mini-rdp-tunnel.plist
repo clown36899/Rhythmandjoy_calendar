@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.rhythmjoy.mini-rdp-tunnel</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/ssh</string>
+    <string>-NT</string>
+    <string>-o</string>
+    <string>BatchMode=yes</string>
+    <string>-o</string>
+    <string>ExitOnForwardFailure=yes</string>
+    <string>-o</string>
+    <string>ServerAliveInterval=30</string>
+    <string>-o</string>
+    <string>ServerAliveCountMax=3</string>
+    <string>-o</string>
+    <string>ConnectTimeout=12</string>
+    <string>-o</string>
+    <string>IdentitiesOnly=yes</string>
+    <string>-o</string>
+    <string>StrictHostKeyChecking=accept-new</string>
+    <string>-o</string>
+    <string>HostKeyAlias=rhythmjoy-mini-via-cafe24</string>
+    <string>-o</string>
+    <string>ProxyCommand=/usr/bin/ssh -i /Users/inteyeo/.ssh/swingenjoy_cafe24_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=12 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -W 127.0.0.1:22013 root@1.234.23.64</string>
+    <string>-i</string>
+    <string>/Users/inteyeo/.ssh/rhythmjoy_minipc_ed25519</string>
+    <string>-L</string>
+    <string>127.0.0.1:13389:127.0.0.1:3389</string>
+    <string>kiosk-j@127.0.0.1</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/inteyeo/Library/Logs/Rhythmjoy/mini-rdp-tunnel.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/inteyeo/Library/Logs/Rhythmjoy/mini-rdp-tunnel-error.log</string>
+</dict>
+</plist>

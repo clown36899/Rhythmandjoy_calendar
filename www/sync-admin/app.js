@@ -322,10 +322,6 @@
       });
     });
 
-    document.querySelectorAll("[data-open-login]").forEach((button) => {
-      button.addEventListener("click", () => openLoginWindow(button.dataset.openLogin));
-    });
-
     document.querySelectorAll("[data-open-reservation-modal]").forEach((link) => {
       link.addEventListener("click", (event) => {
         event.preventDefault();
@@ -1206,7 +1202,6 @@
     const status = normalizeSessionStatus(session.status, session.readyAt || session.ready_at);
     const checkedAt = session.lastCheckedAt || session.last_checked_at || session.updatedAt || session.updated_at || session.readyAt || session.ready_at;
     const note = session.note || "";
-    const loginButton = row.querySelector("[data-open-login]");
     const isReady = status === "ready";
 
     row.classList.remove("ready", "warn", "failed", "checking", "needs-check");
@@ -1215,10 +1210,6 @@
       ? `${sessionStatusLabel(status)} ${formatDateTime(checkedAt)}`
       : sessionStatusLabel(status);
     row.title = note ? `${sessionStatusLabel(status)}: ${note}` : sessionStatusLabel(status);
-    if (loginButton) {
-      loginButton.disabled = isReady;
-      loginButton.title = isReady ? "정상 상태라 재로그인이 필요 없습니다." : "로그인 세션을 다시 연결합니다.";
-    }
   }
 
   function normalizeSessionStatus(status, readyAt) {
@@ -1265,15 +1256,6 @@
       }
     }
     showToast("프로필 경로가 로컬에 저장됐습니다.");
-  }
-
-  function openLoginWindow(platform) {
-    const urls = {
-      naver: "https://partner.booking.naver.com/",
-      spacecloud: "https://partner.spacecloud.kr/",
-    };
-    window.open(urls[platform], "_blank", "noopener,noreferrer");
-    showToast(`${platform === "naver" ? "네이버" : "스페이스클라우드"} 로그인 창을 열었습니다. 상태는 미니PC 다음 점검 후 갱신됩니다.`);
   }
 
   async function clearDrafts() {

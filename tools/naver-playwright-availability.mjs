@@ -19,15 +19,16 @@ function naverCalendarUrl(businessId = NAVER_BOOKING_BUSINESS_ID) {
 
 function naverBookingListUrl(businessId = NAVER_BOOKING_BUSINESS_ID, {
   date,
-  reservationNo,
 } = {}) {
   const params = new URLSearchParams({
     dateDropdownType: 'DIRECT',
     startDateTime: normalizeDate(date),
     endDateTime: normalizeDate(date),
     dateFilter: 'USEDATE',
-    searchValueCode: 'BOOKING_ID',
-    searchValue: String(reservationNo || '').trim(),
+    // Naver currently ignores or inconsistently applies a reservation-number
+    // query in this SPA. Load the one-day list and match the booking link
+    // ourselves so a false empty search can never hide a real reservation.
+    searchValueCode: 'USER_NAME',
   });
   return `https://partner.booking.naver.com/bizes/${businessId}/booking-list-view?${params}`;
 }
@@ -920,19 +921,45 @@ export async function fetchNaverReservationPhone(context, task, {
 
   const targetUrl = naverBookingListUrl(businessId, {
     date: row.date,
-    reservationNo,
   });
   await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+  const currentUrl = page.url();
+  if (/^https:\/\/nid\.naver\.com\/nidlogin\.login(?:[?#]|$)/.test(currentUrl)) {
+    return {
+      status: 'login_required',
+      reason: 'naver-login-required',
+      phone: '',
+      maskedPhone: '',
+      source: 'naver-login',
+      reservationNo,
+    };
+  }
   const deadline = Date.now() + timeoutMs;
   let last = null;
+  let stableScrolls = 0;
+  let previousScrollKey = '';
   while (Date.now() < deadline) {
     last = await page.evaluate((wantedReservationNo) => {
-      const text = document.body?.innerText || '';
+      const anchors = Array.from(document.querySelectorAll('a[href*="booking-list-view/bookings/"]'));
+      const anchor = anchors.find((candidate) => {
+        const href = candidate.getAttribute('href') || '';
+        const text = candidate.innerText || candidate.textContent || '';
+        return href.includes(`/bookings/${wantedReservationNo}`) || text.includes(wantedReservationNo);
+      });
+      const text = anchor?.innerText || anchor?.textContent || '';
       const phones = [...text.matchAll(/01[016789][^0-9]{0,3}[0-9]{3,4}[^0-9]{0,3}[0-9]{4}/g)].map((match) => match[0]);
+      const scrollCandidates = [
+        document.querySelector('[class*="booking-list-table-wrap"]'),
+        document.scrollingElement,
+      ].filter(Boolean);
+      const scrollElement = scrollCandidates.find((element) => element.scrollHeight > element.clientHeight + 20)
+        || document.scrollingElement;
       return {
-        hasReservation: text.includes(wantedReservationNo),
-        noResults: text.includes('검색된 예약내역이 없습니다'),
+        hasReservation: !!anchor,
         phones,
+        scrollTop: scrollElement?.scrollTop || 0,
+        scrollHeight: scrollElement?.scrollHeight || 0,
+        clientHeight: scrollElement?.clientHeight || 0,
       };
     }, String(reservationNo));
     if (last.hasReservation && last.phones.length) {
@@ -945,12 +972,65 @@ export async function fetchNaverReservationPhone(context, task, {
         reservationNo,
       };
     }
+    const scrollKey = `${last.scrollTop}:${last.scrollHeight}:${last.clientHeight}`;
+    stableScrolls = scrollKey === previousScrollKey ? stableScrolls + 1 : 0;
+    previousScrollKey = scrollKey;
+    if (!last.hasReservation && stableScrolls < 4) {
+      await page.evaluate(() => {
+        const candidates = [
+          document.querySelector('[class*="booking-list-table-wrap"]'),
+          document.scrollingElement,
+        ].filter(Boolean);
+        const element = candidates.find((candidate) => candidate.scrollHeight > candidate.clientHeight + 20)
+          || document.scrollingElement;
+        if (element) element.scrollTop = Math.min(element.scrollHeight, element.scrollTop + Math.max(500, element.clientHeight * 0.8));
+      });
+    }
+    if (last.hasReservation || stableScrolls >= 4) break;
     await page.waitForTimeout(500);
+  }
+
+  // The list can omit phone text depending on Naver's responsive rendering.
+  // The exact booking detail is a safe second read because identity is fixed
+  // by reservation number; never take a phone from an unrelated page row.
+  await page.goto(naverBookingDetailUrl(businessId, reservationNo), {
+    waitUntil: 'domcontentloaded',
+    timeout: timeoutMs,
+  }).catch(() => {});
+  if (/^https:\/\/nid\.naver\.com\/nidlogin\.login(?:[?#]|$)/.test(page.url())) {
+    return {
+      status: 'login_required',
+      reason: 'naver-login-required',
+      phone: '',
+      maskedPhone: '',
+      source: 'naver-login',
+      reservationNo,
+    };
+  }
+  const detailDeadline = Date.now() + Math.min(timeoutMs, 10000);
+  let detail = null;
+  while (Date.now() < detailDeadline) {
+    detail = await page.evaluate((wantedReservationNo) => {
+      const text = document.body?.innerText || document.body?.textContent || '';
+      const phones = [...text.matchAll(/01[016789][^0-9]{0,3}[0-9]{3,4}[^0-9]{0,3}[0-9]{4}/g)].map((match) => match[0]);
+      return { hasReservation: text.includes(wantedReservationNo), phones };
+    }, String(reservationNo));
+    if (detail.hasReservation && detail.phones.length) {
+      const phone = normalizePhone(detail.phones[0]);
+      return {
+        status: 'found',
+        phone,
+        maskedPhone: maskPhone(phone),
+        source: 'naver-detail',
+        reservationNo,
+      };
+    }
+    await page.waitForTimeout(400);
   }
 
   return {
     status: 'not_found',
-    reason: last?.hasReservation ? 'naver-phone-not-visible' : 'naver-reservation-not-found',
+    reason: last?.hasReservation || detail?.hasReservation ? 'naver-phone-not-visible' : 'naver-reservation-not-found',
     phone: '',
     maskedPhone: '',
     source: 'naver-list',
