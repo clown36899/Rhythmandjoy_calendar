@@ -66,6 +66,14 @@ The Cafe24 SSH key is required because `tools/spacecloud-watch.mjs` reads and mu
 
 The local env file is used for Telegram notification settings. Aligo SMS values remain on Cafe24 and are loaded from the server env during SMS sends.
 
+Telegram state-change deduplication is stored durably at:
+
+```text
+/home/kiosk-j/rhythmjoy-logs/spacecloud-watch/notify-state.json
+```
+
+The service installer copies the old repo-local state once when this file is missing. State updates use an atomic temporary-file rename, so a restart or deployment cannot leave a half-written JSON file that causes repeated messages.
+
 ## Validation Commands
 
 Run from the Ubuntu device:
@@ -220,5 +228,6 @@ Do not run Mac and Ubuntu watchers at the same time after login. They share the 
 ## Notes
 
 - The Ubuntu watcher should run through `xvfb-run` so the automation browser does not interrupt the kiosk display.
-- The watcher interval is 60 seconds and per-cycle limits are set to 1 to keep CPU usage predictable on the J4005.
+- The installer default interval is 60 seconds. The current production NOW-mode service uses 10 seconds with every per-cycle platform limit set to 1; keep those exact values when reinstalling so a deploy does not silently change operating cadence.
 - Login is still required once on the Ubuntu automation Chrome profile for Naver and SpaceCloud.
+- A Playwright `Page crashed`/browser disconnect is not treated as proof of logout. Session checks and both admin/customer platform audits defer their alert and audit write, recreate the private browser context, and immediately retry. Only an actual login page produces the manual-login message; a browser read failure that remains after recovery is labeled as an inspection failure.

@@ -88,13 +88,17 @@ def ensure_schema(cur):
             checked_at DATETIME NOT NULL,
             first_seen_at DATETIME NOT NULL,
             resolved_at DATETIME NULL,
-            detail_json TEXT NULL,
+            detail_json MEDIUMTEXT NULL,
             PRIMARY KEY (audit_key),
             KEY idx_status (audit_status, severity),
             KEY idx_checked (checked_at),
             KEY idx_ledger (ledger_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """)
+    cur.execute("SHOW COLUMNS FROM rhythmjoy_reflection_audits LIKE 'detail_json'")
+    detail_column = cur.fetchone()
+    if detail_column and str(detail_column.get('Type') or '').lower() != 'mediumtext':
+        cur.execute("ALTER TABLE rhythmjoy_reflection_audits MODIFY detail_json MEDIUMTEXT NULL")
 
 
 def short_time(value):

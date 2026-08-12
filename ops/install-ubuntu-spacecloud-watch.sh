@@ -7,6 +7,7 @@ SERVICE_PATH="$HOME/.config/systemd/user/$SERVICE_NAME"
 RECOVERY_SERVICE_NAME="rhythmjoy-platform-session-recovery.service"
 RECOVERY_SERVICE_PATH="$HOME/.config/systemd/user/$RECOVERY_SERVICE_NAME"
 LOG_DIR="${SPACE_CLOUD_WATCH_LOG_DIR:-$HOME/rhythmjoy-logs/spacecloud-watch}"
+NOTIFY_STATE="$LOG_DIR/notify-state.json"
 PROFILE_DIR="${SPACE_CLOUD_WATCH_PROFILE_DIR:-$HOME/.spacecloud-automation}"
 ENV_FILE="${SPACE_CLOUD_WATCH_ENV_FILE:-$HOME/.rhythmjoy-ingestion.env}"
 INTERVAL_SECONDS="${SPACE_CLOUD_WATCH_INTERVAL_SECONDS:-60}"
@@ -42,6 +43,10 @@ if [[ -z "$XVFB_RUN_BIN" ]]; then
 fi
 
 mkdir -p "$(dirname "$SERVICE_PATH")" "$LOG_DIR" "$PROFILE_DIR"
+LEGACY_NOTIFY_STATE="$REPO_ROOT/state/spacecloud-watch/notify-state.json"
+if [[ ! -e "$NOTIFY_STATE" && -f "$LEGACY_NOTIFY_STATE" ]]; then
+  install -m 600 "$LEGACY_NOTIFY_STATE" "$NOTIFY_STATE"
+fi
 install -m 644 "$REPO_ROOT/ops/$RECOVERY_SERVICE_NAME" "$RECOVERY_SERVICE_PATH"
 chmod 755 "$REPO_ROOT/ops/ubuntu-platform-session-recovery.sh"
 
@@ -61,7 +66,7 @@ Type=simple
 WorkingDirectory=$REPO_ROOT
 Environment=HOME=$HOME
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=$XVFB_RUN_BIN -a $NODE_BIN $REPO_ROOT/tools/spacecloud-watch.mjs watch --interval-seconds $INTERVAL_SECONDS --limit-per-cycle $LIMIT_PER_CYCLE --delete-limit-per-cycle $DELETE_LIMIT_PER_CYCLE --naver-block-limit-per-cycle $NAVER_BLOCK_LIMIT_PER_CYCLE --naver-cancel-limit-per-cycle $NAVER_CANCEL_LIMIT_PER_CYCLE --spacecloud-cancel-limit-per-cycle $SPACECLOUD_CANCEL_LIMIT_PER_CYCLE $EXTRA_ARGS --daily-reconcile-hour $DAILY_RECONCILE_HOUR --daily-reconcile-state $LOG_DIR/daily-reconcile-state.json --admin-platform-audit-interval-minutes $ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES --admin-platform-audit-limit $ADMIN_PLATFORM_AUDIT_LIMIT --admin-platform-audit-state $LOG_DIR/admin-platform-audit-state.json --customer-platform-audit --customer-platform-audit-interval-minutes $CUSTOMER_PLATFORM_AUDIT_INTERVAL_MINUTES --customer-platform-audit-limit $CUSTOMER_PLATFORM_AUDIT_LIMIT --customer-platform-audit-state $LOG_DIR/customer-platform-audit-state.json --no-reflection-audit --env-file $ENV_FILE --profile-dir $PROFILE_DIR --work-dir $LOG_DIR
+ExecStart=$XVFB_RUN_BIN -a $NODE_BIN $REPO_ROOT/tools/spacecloud-watch.mjs watch --interval-seconds $INTERVAL_SECONDS --limit-per-cycle $LIMIT_PER_CYCLE --delete-limit-per-cycle $DELETE_LIMIT_PER_CYCLE --naver-block-limit-per-cycle $NAVER_BLOCK_LIMIT_PER_CYCLE --naver-cancel-limit-per-cycle $NAVER_CANCEL_LIMIT_PER_CYCLE --spacecloud-cancel-limit-per-cycle $SPACECLOUD_CANCEL_LIMIT_PER_CYCLE $EXTRA_ARGS --daily-reconcile-hour $DAILY_RECONCILE_HOUR --daily-reconcile-state $LOG_DIR/daily-reconcile-state.json --notify-state $NOTIFY_STATE --admin-platform-audit-interval-minutes $ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES --admin-platform-audit-limit $ADMIN_PLATFORM_AUDIT_LIMIT --admin-platform-audit-state $LOG_DIR/admin-platform-audit-state.json --customer-platform-audit --customer-platform-audit-interval-minutes $CUSTOMER_PLATFORM_AUDIT_INTERVAL_MINUTES --customer-platform-audit-limit $CUSTOMER_PLATFORM_AUDIT_LIMIT --customer-platform-audit-state $LOG_DIR/customer-platform-audit-state.json --no-reflection-audit --env-file $ENV_FILE --profile-dir $PROFILE_DIR --work-dir $LOG_DIR
 Restart=always
 RestartSec=10
 StandardOutput=journal

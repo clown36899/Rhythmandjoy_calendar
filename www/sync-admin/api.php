@@ -125,6 +125,28 @@ function ensure_column($pdo, $table, $column, $definition) {
     }
 }
 
+function ensure_column_type($pdo, $table, $column, $expected_type, $definition) {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table) || !preg_match('/^[A-Za-z0-9_]+$/', $column)) {
+        throw new InvalidArgumentException('안전하지 않은 스키마 식별값입니다.');
+    }
+    $stmt = $pdo->query("SHOW COLUMNS FROM `$table`");
+    $row = false;
+    while ($candidate = $stmt->fetch()) {
+        if (isset($candidate['Field']) && (string) $candidate['Field'] === (string) $column) {
+            $row = $candidate;
+            break;
+        }
+    }
+    if (!$row) {
+        $pdo->exec("ALTER TABLE `$table` ADD COLUMN `$column` $definition");
+        return;
+    }
+    $actual_type = isset($row['Type']) ? strtolower((string) $row['Type']) : '';
+    if ($actual_type !== strtolower((string) $expected_type)) {
+        $pdo->exec("ALTER TABLE `$table` MODIFY COLUMN `$column` $definition");
+    }
+}
+
 function ensure_schema($pdo) {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS rhythmjoy_admin_settings (
@@ -187,7 +209,7 @@ function ensure_schema($pdo) {
             reservation_date DATE NULL,
             room_key VARCHAR(8) NOT NULL DEFAULT '',
             reason VARCHAR(500) NOT NULL DEFAULT '',
-            detail_json TEXT NULL,
+            detail_json MEDIUMTEXT NULL,
             checked_at DATETIME NOT NULL,
             resolved_at DATETIME NULL,
             updated_at DATETIME NOT NULL,
@@ -195,6 +217,7 @@ function ensure_schema($pdo) {
             KEY idx_platform_audit_status (audit_status, checked_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+    ensure_column_type($pdo, 'rhythmjoy_admin_platform_audits', 'detail_json', 'mediumtext', 'MEDIUMTEXT NULL');
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS rhythmjoy_customer_platform_audits (
             ledger_id BIGINT UNSIGNED NOT NULL,
@@ -307,13 +330,14 @@ function ensure_schema($pdo) {
             checked_at DATETIME NOT NULL,
             first_seen_at DATETIME NOT NULL,
             resolved_at DATETIME NULL,
-            detail_json TEXT NULL,
+            detail_json MEDIUMTEXT NULL,
             PRIMARY KEY (audit_key),
             KEY idx_status (audit_status, severity),
             KEY idx_checked (checked_at),
             KEY idx_ledger (ledger_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+    ensure_column_type($pdo, 'rhythmjoy_reflection_audits', 'detail_json', 'mediumtext', 'MEDIUMTEXT NULL');
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS rhythmjoy_industry_comparison_snapshots (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -406,6 +430,51 @@ function clean_hour_value($value, $allow24) {
 
 function clean_phone($value) {
     return preg_replace('/\D+/', '', (string) $value);
+}
+
+function clean_request_id($value, $label) {
+    $request_id = trim((string) $value);
+    if ($request_id === '' || strlen($request_id) > 128) {
+        throw new InvalidArgumentException($label . ' 요청 식별값이 올바르지 않습니다.');
+    }
+    return $request_id;
+}
+
+function admin_single_request_key($request_id) {
+    return 'admin-request:' . hash('sha256', (string) $request_id);
+}
+
+function canonical_recurring_occurrences($occurrences) {
+    $canonical = array();
+    foreach ($occurrences as $row) {
+        $canonical[] = array(
+            'key' => isset($row['key']) ? (string) $row['key'] : '',
+            'originalDate' => isset($row['originalDate']) ? (string) $row['originalDate'] : '',
+            'date' => isset($row['date']) ? (string) $row['date'] : '',
+            'ruleIndex' => isset($row['ruleIndex']) ? intval($row['ruleIndex']) : 0,
+            'room' => isset($row['room']) ? (string) $row['room'] : '',
+            'start' => isset($row['start']) ? intval($row['start']) : -1,
+            'end' => isset($row['end']) ? intval($row['end']) : -1,
+            'included' => !empty($row['included']),
+            'excludedReason' => isset($row['excludedReason']) ? (string) $row['excludedReason'] : '',
+            'modified' => !empty($row['modified']),
+        );
+    }
+    return $canonical;
+}
+
+function recurring_request_signature($title, $name, $phone_hash, $memo, $start, $end, $policy, $rules, $occurrences) {
+    return hash('sha256', json_encode(array(
+        'title' => substr((string) $title, 0, 128),
+        'name' => substr((string) $name, 0, 128),
+        'phoneHash' => (string) $phone_hash,
+        'memo' => substr((string) $memo, 0, 255),
+        'startDate' => (string) $start,
+        'endDate' => (string) $end,
+        'fifthWeekPolicy' => (string) $policy,
+        'rules' => array_values($rules),
+        'occurrences' => canonical_recurring_occurrences($occurrences),
+    ), JSON_UNESCAPED_UNICODE));
 }
 
 function normalize_recurring_rules($raw_rules) {
@@ -542,6 +611,25 @@ function normalize_recurring_occurrences($raw_occurrences) {
         );
     }
     return $rows;
+}
+
+function normalized_recurring_request($payload) {
+    if (isset($payload['occurrences'])) {
+        $occurrences = normalize_recurring_occurrences($payload['occurrences']);
+        $rules = isset($payload['rules']) ? normalize_recurring_rules($payload['rules']) : array();
+        $dates = array_map(function($row) { return $row['date']; }, $occurrences);
+        $start = min($dates);
+        $end = max($dates);
+        recurring_date_range($start, $end);
+        $policy = isset($payload['fifthWeekPolicy']) && $payload['fifthWeekPolicy'] === 'exclude' ? 'exclude' : 'include';
+        return array($rules, $occurrences, $start, $end, $policy);
+    }
+    return generate_recurring_occurrences(
+        isset($payload['startDate']) ? $payload['startDate'] : '',
+        isset($payload['endDate']) ? $payload['endDate'] : '',
+        isset($payload['rules']) ? $payload['rules'] : array(),
+        isset($payload['fifthWeekPolicy']) ? $payload['fifthWeekPolicy'] : 'include'
+    );
 }
 
 function mask_phone($last4) {
@@ -789,22 +877,7 @@ function recurring_conflict_row($source, $row) {
 }
 
 function recurring_preview_payload($pdo, $payload) {
-    if (isset($payload['occurrences'])) {
-        $occurrences = normalize_recurring_occurrences($payload['occurrences']);
-        $rules = isset($payload['rules']) ? normalize_recurring_rules($payload['rules']) : array();
-        $dates = array_map(function($row) { return $row['date']; }, $occurrences);
-        $start = min($dates);
-        $end = max($dates);
-        recurring_date_range($start, $end);
-        $policy = isset($payload['fifthWeekPolicy']) && $payload['fifthWeekPolicy'] === 'exclude' ? 'exclude' : 'include';
-    } else {
-        list($rules, $occurrences, $start, $end, $policy) = generate_recurring_occurrences(
-            isset($payload['startDate']) ? $payload['startDate'] : '',
-            isset($payload['endDate']) ? $payload['endDate'] : '',
-            isset($payload['rules']) ? $payload['rules'] : array(),
-            isset($payload['fifthWeekPolicy']) ? $payload['fifthWeekPolicy'] : 'include'
-        );
-    }
+    list($rules, $occurrences, $start, $end, $policy) = normalized_recurring_request($payload);
 
     $ledger_rows = array();
     $admin_rows = array();
@@ -3213,6 +3286,36 @@ function queue_admin_cancellation($pdo, $event, $env) {
     insert_admin_sync_task($pdo, $event['admin_reservation_id'], $restore_task, 'restore_naver_availability', 'naver', $env);
 }
 
+function find_admin_reservation_by_key($pdo, $reservation_key) {
+    $stmt = $pdo->prepare("\n        SELECT id, reservation_key, reservation_date, room_key, start_hour, end_hour,\n               reserver_name, phone_hash, memo\n        FROM rhythmjoy_admin_reservations\n        WHERE reservation_key=?\n        LIMIT 1\n    ");
+    $stmt->execute(array($reservation_key));
+    return $stmt->fetch();
+}
+
+function admin_single_request_matches($row, $date, $room, $start, $end, $name, $phone_hash, $memo) {
+    if (!$row) {
+        return false;
+    }
+    return (string) $row['reservation_date'] === (string) $date
+        && strtoupper((string) $row['room_key']) === (string) $room
+        && intval($row['start_hour']) === intval($start)
+        && intval($row['end_hour']) === intval($end)
+        && (string) $row['reserver_name'] === substr((string) $name, 0, 128)
+        && (string) $row['phone_hash'] === (string) $phone_hash
+        && (string) $row['memo'] === substr((string) $memo, 0, 255);
+}
+
+function duplicate_admin_single_result($existing, $date, $room, $start, $end, $name, $phone_hash, $memo) {
+    if (!admin_single_request_matches($existing, $date, $room, $start, $end, $name, $phone_hash, $memo)) {
+        throw new InvalidArgumentException('같은 요청 식별값에 다른 일정 정보가 들어왔습니다. 화면을 새로고침한 뒤 다시 등록해주세요.');
+    }
+    return array(
+        'reservationId' => intval($existing['id']),
+        'createdCount' => 0,
+        'duplicateRequest' => true,
+    );
+}
+
 function create_reservation($pdo, $payload, $env) {
     $date = clean_date_value(isset($payload['date']) ? $payload['date'] : '');
     $room = clean_room_value(isset($payload['room']) ? $payload['room'] : '');
@@ -3221,6 +3324,7 @@ function create_reservation($pdo, $payload, $env) {
     $name = trim((string) (isset($payload['name']) ? $payload['name'] : ''));
     $memo = trim((string) (isset($payload['memo']) ? $payload['memo'] : ''));
     $phone = clean_phone(isset($payload['phone']) ? $payload['phone'] : '');
+    $request_id = clean_request_id(isset($payload['requestId']) ? $payload['requestId'] : '', '단건 예약');
 
     if ($date === '' || $room === '' || $start < 0 || $end < 0 || $start >= $end) {
         json_response(array('ok' => false, 'error' => 'invalid_input', 'message' => '예약 날짜, 방, 시간이 올바르지 않습니다.'), 400);
@@ -3234,6 +3338,16 @@ function create_reservation($pdo, $payload, $env) {
     $product = room_product_name($room);
     $start_time = hour_time_text($start);
     $end_time = hour_time_text($end);
+    $phone_last4 = $phone !== '' ? substr($phone, -4) : '';
+    $phone_hash = $phone !== '' ? hash('sha256', $phone) : '';
+    $reservation_key = admin_single_request_key($request_id);
+
+    $existing_request = find_admin_reservation_by_key($pdo, $reservation_key);
+    if ($existing_request) {
+        return duplicate_admin_single_result(
+            $existing_request, $date, $room, $start, $end, $name, $phone_hash, $memo
+        );
+    }
 
     $ledger_overlap = $pdo->prepare("
         SELECT id, reserver_name,
@@ -3279,10 +3393,6 @@ function create_reservation($pdo, $payload, $env) {
         ), 409);
     }
 
-    $phone_last4 = $phone !== '' ? substr($phone, -4) : '';
-    $phone_hash = $phone !== '' ? hash('sha256', $phone) : '';
-    $reservation_key = 'admin:' . strtolower($room) . ':' . $date . ':' . sprintf('%02d-%02d', $start, $end) . ':' . substr(hash('sha256', $name . '|' . $phone . '|' . microtime(true)), 0, 16);
-
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare("
@@ -3293,15 +3403,71 @@ function create_reservation($pdo, $payload, $env) {
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', 'pending', NOW(), NOW())
         ");
-        $stmt->execute(array($reservation_key, $date, $room, $start, $end, $name, $phone_hash, $phone_last4, $memo));
+        $stmt->execute(array(
+            $reservation_key, $date, $room, $start, $end,
+            substr($name, 0, 128), $phone_hash, $phone_last4, substr($memo, 0, 255),
+        ));
         $reservation_id = intval($pdo->lastInsertId());
         $event = admin_event_payload($reservation_id, $date, $room, $start, $end, $name, $memo, $phone_last4);
         queue_admin_registration($pdo, $event, $env);
         $pdo->commit();
+        return array(
+            'reservationId' => $reservation_id,
+            'createdCount' => 1,
+            'duplicateRequest' => false,
+        );
     } catch (Exception $error) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        $duplicate = find_admin_reservation_by_key($pdo, $reservation_key);
+        if ($duplicate) {
+            return duplicate_admin_single_result(
+                $duplicate, $date, $room, $start, $end, $name, $phone_hash, $memo
+            );
+        }
         throw $error;
     }
+}
+
+function find_admin_series_by_key($pdo, $series_key) {
+    $stmt = $pdo->prepare("\n        SELECT id, series_key, title, start_date, end_date, fifth_week_policy, definition_json,\n               reserver_name, phone_hash, memo\n        FROM rhythmjoy_admin_series\n        WHERE series_key=?\n        LIMIT 1\n    ");
+    $stmt->execute(array($series_key));
+    return $stmt->fetch();
+}
+
+function existing_recurring_request_signature($row) {
+    if (!$row) {
+        return '';
+    }
+    $definition = json_decode((string) $row['definition_json'], true);
+    if (!is_array($definition)) {
+        return '';
+    }
+    if (isset($definition['requestSignature']) && trim((string) $definition['requestSignature']) !== '') {
+        return trim((string) $definition['requestSignature']);
+    }
+    return recurring_request_signature(
+        $row['title'],
+        $row['reserver_name'],
+        $row['phone_hash'],
+        $row['memo'],
+        $row['start_date'],
+        $row['end_date'],
+        $row['fifth_week_policy'],
+        isset($definition['rules']) && is_array($definition['rules']) ? $definition['rules'] : array(),
+        isset($definition['occurrences']) && is_array($definition['occurrences']) ? $definition['occurrences'] : array()
+    );
+}
+
+function duplicate_recurring_result($existing, $request_signature) {
+    $stored_signature = existing_recurring_request_signature($existing);
+    if ($stored_signature === '' || !timing_safe_equals($stored_signature, $request_signature)) {
+        throw new InvalidArgumentException('같은 정기대관 요청 식별값에 다른 일정 정보가 들어왔습니다. 화면을 새로고침한 뒤 다시 등록해주세요.');
+    }
+    return array(
+        'seriesId' => intval($existing['id']),
+        'createdCount' => 0,
+        'duplicateRequest' => true,
+    );
 }
 
 function create_recurring_reservations($pdo, $payload, $env) {
@@ -3309,12 +3475,23 @@ function create_recurring_reservations($pdo, $payload, $env) {
     $name = trim((string) (isset($payload['name']) ? $payload['name'] : ''));
     $memo = trim((string) (isset($payload['memo']) ? $payload['memo'] : ''));
     $phone = clean_phone(isset($payload['phone']) ? $payload['phone'] : '');
-    $request_id = trim((string) (isset($payload['requestId']) ? $payload['requestId'] : ''));
+    $request_id = clean_request_id(isset($payload['requestId']) ? $payload['requestId'] : '', '정기대관');
     if ($title === '' || $name === '') {
         throw new InvalidArgumentException('정기대관명과 예약자명이 필요합니다.');
     }
-    if ($request_id === '' || strlen($request_id) > 128) {
-        throw new InvalidArgumentException('정기대관 요청 식별값이 올바르지 않습니다.');
+
+    list($request_rules, $request_occurrences, $request_start, $request_end, $request_policy) = normalized_recurring_request($payload);
+    $phone_last4 = $phone !== '' ? substr($phone, -4) : '';
+    $phone_hash = $phone !== '' ? hash('sha256', $phone) : '';
+    $request_signature = recurring_request_signature(
+        $title, $name, $phone_hash, $memo,
+        $request_start, $request_end, $request_policy,
+        $request_rules, $request_occurrences
+    );
+    $series_key = 'series:' . hash('sha256', $request_id);
+    $existing_row = find_admin_series_by_key($pdo, $series_key);
+    if ($existing_row) {
+        return duplicate_recurring_result($existing_row, $request_signature);
     }
 
     $preview = recurring_preview_payload($pdo, $payload);
@@ -3325,21 +3502,12 @@ function create_recurring_reservations($pdo, $payload, $env) {
         throw new InvalidArgumentException('충돌 날짜를 제외하거나 홀·시간을 변경한 뒤 다시 검사해주세요.');
     }
 
-    $series_key = 'series:' . hash('sha256', $request_id);
-    $existing = $pdo->prepare("SELECT id FROM rhythmjoy_admin_series WHERE series_key=? LIMIT 1");
-    $existing->execute(array($series_key));
-    $existing_row = $existing->fetch();
-    if ($existing_row) {
-        return array('seriesId' => intval($existing_row['id']), 'createdCount' => 0, 'duplicateRequest' => true);
-    }
-
-    $phone_last4 = $phone !== '' ? substr($phone, -4) : '';
-    $phone_hash = $phone !== '' ? hash('sha256', $phone) : '';
     $definition = array(
         'rules' => $preview['rules'],
         'fifthWeekPolicy' => $preview['fifthWeekPolicy'],
         'occurrences' => $preview['occurrences'],
         'previewHash' => $preview['previewHash'],
+        'requestSignature' => $request_signature,
     );
     $included = array_values(array_filter($preview['occurrences'], function($row) { return $row['included']; }));
 
@@ -3413,6 +3581,10 @@ function create_recurring_reservations($pdo, $payload, $env) {
         return array('seriesId' => $series_id, 'createdCount' => count($included), 'duplicateRequest' => false);
     } catch (Exception $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
+        $duplicate = find_admin_series_by_key($pdo, $series_key);
+        if ($duplicate) {
+            return duplicate_recurring_result($duplicate, $request_signature);
+        }
         throw $error;
     }
 }
@@ -3543,6 +3715,45 @@ function run_sync_admin_selftest() {
     }
     sync_admin_selftest_assert($too_long_rejected, 'periods longer than one year are rejected');
     sync_admin_selftest_assert(
+        admin_single_request_key('single-request-1') === admin_single_request_key('single-request-1')
+            && admin_single_request_key('single-request-1') !== admin_single_request_key('single-request-2'),
+        'single reservation request keys are deterministic and distinct'
+    );
+    $single_row = array(
+        'id' => 17,
+        'reservation_date' => '2026-08-20',
+        'room_key' => 'C',
+        'start_hour' => 13,
+        'end_hour' => 15,
+        'reserver_name' => '관리자',
+        'phone_hash' => hash('sha256', '01012345678'),
+        'memo' => '단건 테스트',
+    );
+    sync_admin_selftest_assert(
+        admin_single_request_matches($single_row, '2026-08-20', 'C', 13, 15, '관리자', hash('sha256', '01012345678'), '단건 테스트'),
+        'single reservation retries accept the exact same payload'
+    );
+    sync_admin_selftest_assert(
+        !admin_single_request_matches($single_row, '2026-08-20', 'C', 14, 15, '관리자', hash('sha256', '01012345678'), '단건 테스트'),
+        'single reservation retries reject a changed payload'
+    );
+    $signature_a = recurring_request_signature(
+        '월 정기', '관리자', '', '', '2026-08-01', '2026-08-31', 'include', $rules, $included_rows
+    );
+    $decorated_rows = $included_rows;
+    $decorated_rows[0]['status'] = 'ready';
+    $decorated_rows[0]['conflicts'] = array(array('id' => 99));
+    $signature_b = recurring_request_signature(
+        '월 정기', '관리자', '', '', '2026-08-01', '2026-08-31', 'include', $rules, $decorated_rows
+    );
+    $changed_rows = $included_rows;
+    $changed_rows[0]['start'] = 14;
+    $signature_c = recurring_request_signature(
+        '월 정기', '관리자', '', '', '2026-08-01', '2026-08-31', 'include', $rules, $changed_rows
+    );
+    sync_admin_selftest_assert($signature_a === $signature_b, 'recurring request identity ignores transient conflict display fields');
+    sync_admin_selftest_assert($signature_a !== $signature_c, 'recurring request identity changes when an occurrence changes');
+    sync_admin_selftest_assert(
         admin_alert_signature(array('task', 7, 'failed')) === admin_alert_signature(array('task', 7, 'failed')),
         'alert signatures are deterministic'
     );
@@ -3554,12 +3765,16 @@ function run_sync_admin_selftest() {
         strpos(admin_alert_clean_text('recipient 010-1234-5678 failed'), '010-****-5678') !== false,
         'alert text masks full phone numbers'
     );
-    echo "sync-admin self-test OK: recurring weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures and phone redaction\n";
+    echo "sync-admin self-test OK: single/recurring idempotency, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures and phone redaction\n";
 }
 
 if (PHP_SAPI === 'cli' && isset($argv[1]) && $argv[1] === 'self-test') {
     run_sync_admin_selftest();
     exit(0);
+}
+
+if (defined('RHYTHMJOY_SYNC_ADMIN_LIBRARY_ONLY') && RHYTHMJOY_SYNC_ADMIN_LIBRARY_ONLY) {
+    return;
 }
 
 $env_path = isset($_SERVER['RHYTHMJOY_ENV_FILE']) ? $_SERVER['RHYTHMJOY_ENV_FILE'] : dirname(dirname(__FILE__)) . '/.env';
@@ -3640,8 +3855,8 @@ try {
     }
 
     if ($action === 'create_reservation') {
-        create_reservation($pdo, $payload, $env);
-        json_response(bootstrap_payload($pdo, $date, $env));
+        $result = create_reservation($pdo, $payload, $env);
+        json_response(array_merge(bootstrap_payload($pdo, $date, $env), array('reservationResult' => $result)));
     }
 
     if ($action === 'create_recurring') {

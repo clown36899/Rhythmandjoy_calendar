@@ -4,10 +4,17 @@ import { extname, join, normalize } from 'node:path';
 
 const root = join(process.cwd(), 'www');
 const port = Number(process.env.SYNC_ADMIN_MOCK_PORT || 8765);
+const mockState = {
+  createReservationCalls: [],
+};
 
 function json(res, body, status = 200) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function basePayload() {
@@ -122,6 +129,38 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/sync-admin/api.php') {
     const body = await requestBody(req);
     const action = url.searchParams.get('action') || 'bootstrap';
+    if (action === 'mock_reset') {
+      mockState.createReservationCalls = [];
+      return json(res, { ok: true });
+    }
+    if (action === 'mock_state') {
+      return json(res, {
+        ok: true,
+        createReservationCalls: mockState.createReservationCalls,
+      });
+    }
+    if (action === 'create_reservation') {
+      mockState.createReservationCalls.push({
+        requestId: String(body.requestId || ''),
+        name: String(body.name || ''),
+      });
+      const matchingCalls = mockState.createReservationCalls.filter((entry) => entry.name === body.name);
+      await delay(250);
+      if (body.name === 'UI 충돌 검사') {
+        return json(res, { ok: false, error: 'reservation_overlap', message: '기존 예약과 겹칩니다.' }, 409);
+      }
+      if (body.name === 'UI 재시도 검사' && matchingCalls.length === 1) {
+        return json(res, { ok: false, error: 'mock_temporary_failure', message: '모의 일시 장애' }, 503);
+      }
+      return json(res, {
+        ...basePayload(),
+        reservationResult: {
+          reservationId: 9,
+          createdCount: matchingCalls.length === 1 ? 1 : 0,
+          duplicateRequest: matchingCalls.length > 1,
+        },
+      });
+    }
     if (action === 'preview_recurring') return json(res, previewPayload(body));
     if (action === 'series_occurrences') {
       return json(res, {

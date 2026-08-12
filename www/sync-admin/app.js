@@ -7,6 +7,8 @@
   const profileKey = "rhythmjoy.syncAdmin.profile.v1";
   const sessionKey = "rhythmjoy.syncAdmin.sessions.v1";
   const tokenKey = "rhythmjoy.syncAdmin.adminToken.v1";
+  const singleRequestKey = "rhythmjoy.syncAdmin.pendingSingleRequest.v1";
+  const recurringRequestKey = "rhythmjoy.syncAdmin.pendingRecurringRequest.v1";
   const baseTitle = document.title;
 
   const state = {
@@ -82,6 +84,7 @@
     memoInput: document.getElementById("memoInput"),
     startInput: document.getElementById("startInput"),
     endInput: document.getElementById("endInput"),
+    createReservation: document.getElementById("createReservation"),
     reflectionAudit: document.getElementById("reflectionAudit"),
     adminAlertButton: document.getElementById("adminAlertButton"),
     adminAlertBadge: document.getElementById("adminAlertBadge"),
@@ -448,8 +451,51 @@
     }
   }
 
+  function newRequestId(prefix) {
+    return window.crypto?.randomUUID?.() || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function fallbackFingerprint(text) {
+    let first = 2166136261;
+    let second = 2246822507;
+    for (let index = 0; index < text.length; index += 1) {
+      const code = text.charCodeAt(index);
+      first = Math.imul(first ^ code, 16777619);
+      second = Math.imul(second ^ code, 3266489909);
+    }
+    return `${(first >>> 0).toString(16).padStart(8, "0")}${(second >>> 0).toString(16).padStart(8, "0")}`;
+  }
+
+  async function requestPayloadFingerprint(payload) {
+    const text = JSON.stringify(payload);
+    if (!window.crypto?.subtle || typeof TextEncoder === "undefined") {
+      return fallbackFingerprint(text);
+    }
+    const digest = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function pendingRequestId(storageKeyName, prefix, payload) {
+    const fingerprint = await requestPayloadFingerprint(payload);
+    const existing = loadJson(storageKeyName, {});
+    if (existing?.requestId && existing?.fingerprint === fingerprint) {
+      return existing.requestId;
+    }
+    const requestId = newRequestId(prefix);
+    localStorage.setItem(storageKeyName, JSON.stringify({ requestId, fingerprint }));
+    return requestId;
+  }
+
+  function clearPendingRequest(storageKeyName, requestId) {
+    const existing = loadJson(storageKeyName, {});
+    if (!requestId || existing?.requestId === requestId) {
+      localStorage.removeItem(storageKeyName);
+    }
+  }
+
   async function createDraftTask(event) {
     event.preventDefault();
+    if (createDraftTask.pending) return;
     const start = Number(el.startInput.value);
     const end = Number(el.endInput.value);
     const room = el.roomInput.value;
@@ -465,43 +511,42 @@
       memo: el.memoInput.value.trim(),
     };
 
-    if (adminToken()) {
-      try {
-        const data = await apiRequest("create_reservation", payload);
-        applyApiData(data);
-        resetForm(room, start, end);
-        closeReservationModal();
-        setApiState("ready", data.mode === "db-live-queue" ? "DB 큐" : "DB 테스트", "DB 작업 생성됨");
-        renderAll();
-        showToast("DB에 동기화 작업을 생성했습니다.");
-        return;
-      } catch (error) {
-        showToast(error.message || "DB 작업 생성 실패. 로컬 초안으로 저장합니다.");
-        setApiState("warn", "로컬 초안", error.message || "DB 작업 생성 실패");
-      }
+    if (!adminToken()) {
+      showToast("DB 관리자 연결 후 등록해주세요. 로컬 초안은 일정으로 처리하지 않습니다.");
+      return;
     }
 
-    const task = {
-      id: `draft-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      date: state.activeDate,
-      room,
-      start,
-      end,
-      name: payload.name,
-      phone: payload.phone,
-      memo: payload.memo,
-      status: "pending",
-      naver: "대기",
-      spacecloud: "대기",
-    };
-
-    state.drafts.unshift(task);
-    persistDrafts();
-    resetForm(room, start, end);
-    closeReservationModal();
-    renderAll();
-    showToast("로컬 동기화 작업 초안이 생성됐습니다.");
+    const originalLabel = el.createReservation?.textContent || "동기화 작업 만들기";
+    createDraftTask.pending = true;
+    if (el.createReservation) {
+      el.createReservation.disabled = true;
+      el.createReservation.textContent = "DB 등록 중…";
+    }
+    let requestId = "";
+    try {
+      requestId = await pendingRequestId(singleRequestKey, "single", payload);
+      const data = await apiRequest("create_reservation", { ...payload, requestId });
+      applyApiData(data);
+      clearPendingRequest(singleRequestKey, requestId);
+      resetForm(room, start, end);
+      closeReservationModal();
+      setApiState("ready", data.mode === "db-live-queue" ? "DB 큐" : "DB 테스트", "DB 작업 생성됨");
+      renderAll();
+      showToast(data.reservationResult?.duplicateRequest
+        ? "이미 처리된 동일 요청을 DB에서 확인했습니다."
+        : "DB에 동기화 작업을 생성했습니다.");
+    } catch (error) {
+      showToast(error.message || "DB 작업 생성 실패. 같은 내용으로 다시 누르면 안전하게 재확인합니다.");
+      if (!error.status || error.status >= 500 || [401, 403].includes(error.status)) {
+        setApiState("warn", "DB 확인 필요", error.message || "DB 작업 생성 실패");
+      }
+    } finally {
+      createDraftTask.pending = false;
+      if (el.createReservation) {
+        el.createReservation.disabled = false;
+        el.createReservation.textContent = originalLabel;
+      }
+    }
   }
 
   function validateRange(room, start, end) {
@@ -2570,6 +2615,24 @@
     };
   }
 
+  function recurringRequestFingerprintPayload(preview) {
+    return {
+      ...recurringBasePayload(),
+      occurrences: (preview?.occurrences || []).map((row) => ({
+        key: row.key,
+        originalDate: row.originalDate,
+        date: row.date,
+        ruleIndex: row.ruleIndex,
+        room: row.room,
+        start: row.start,
+        end: row.end,
+        included: row.included,
+        excludedReason: row.excludedReason || "",
+        modified: Boolean(row.modified),
+      })),
+    };
+  }
+
   function openRecurringModal() {
     if (!el.recurringStartDate.value) initializeRecurringForm();
     el.recurringModal.hidden = false;
@@ -2633,9 +2696,11 @@
       });
       state.recurringPreview = data;
       state.selectedOccurrenceKey = options.selectKey || state.selectedOccurrenceKey || "";
-      if (!state.recurringRequestId) {
-        state.recurringRequestId = window.crypto?.randomUUID?.() || `series-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      }
+      state.recurringRequestId = await pendingRequestId(
+        recurringRequestKey,
+        "series",
+        recurringRequestFingerprintPayload(data),
+      );
       renderRecurringPreview();
       el.recurringPreview.hidden = false;
       el.recurringPreview.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -2803,6 +2868,7 @@
 
   async function createRecurringSchedule(event) {
     event.preventDefault();
+    if (createRecurringSchedule.pending) return;
     const preview = state.recurringPreview;
     if (!preview || Number(preview.summary?.conflicts || 0) > 0) {
       showToast("충돌을 모두 해결한 뒤 등록해주세요.");
@@ -2810,6 +2876,7 @@
     }
     const count = Number(preview.summary?.included || 0);
     if (!window.confirm(`${count}건을 DB 원장에 등록하고 두 플랫폼 반영 작업을 만들까요?`)) return;
+    createRecurringSchedule.pending = true;
     el.createRecurring.disabled = true;
     try {
       const data = await apiRequest("create_recurring", {
@@ -2818,6 +2885,7 @@
         occurrences: preview.occurrences,
         previewHash: preview.previewHash,
       });
+      clearPendingRequest(recurringRequestKey, state.recurringRequestId);
       applyApiData(data);
       renderAll();
       closeRecurringModal();
@@ -2827,7 +2895,9 @@
       initializeRecurringForm();
     } catch (error) {
       showToast(error.message || "정기대관 등록 실패");
-      el.createRecurring.disabled = false;
+    } finally {
+      createRecurringSchedule.pending = false;
+      if (!el.recurringModal.hidden && state.recurringPreview) renderRecurringPreview();
     }
   }
 
@@ -2931,11 +3001,14 @@
   }
 
   async function cancelSeriesOccurrences(scope) {
-    if (!state.selectedSeries) return;
+    if (!state.selectedSeries || cancelSeriesOccurrences.pending) return;
     const ids = scope === "selected" ? selectedSeriesOccurrenceIds() : [];
     const label = scope === "selected" ? `선택한 미래 일정 ${ids.length}건` : "오늘을 포함한 남은 일정 전부";
     if (scope === "selected" && !ids.length) return;
     if (!window.confirm(`${label}를 취소할까요? 플랫폼 복구 확인 전까지 공개 일정에는 유지됩니다.`)) return;
+    cancelSeriesOccurrences.pending = true;
+    el.cancelSeriesSelected.disabled = true;
+    el.cancelSeriesFuture.disabled = true;
     try {
       const data = await apiRequest("cancel_admin_reservations", {
         reservationIds: ids,
@@ -2951,13 +3024,19 @@
       await openSeriesModal(state.selectedSeries.id);
     } catch (error) {
       showToast(error.message || "정기대관 취소 실패");
+    } finally {
+      cancelSeriesOccurrences.pending = false;
+      el.cancelSeriesFuture.disabled = false;
+      updateSelectedSeriesOccurrenceCount();
     }
   }
 
   async function cancelDetailedAdminReservation() {
     const event = state.eventDetailEvents[0];
-    if (!event?.dbId || event.source !== "admin") return;
+    if (!event?.dbId || event.source !== "admin" || cancelDetailedAdminReservation.pending) return;
     if (!window.confirm(`${event.date} ${event.room}홀 ${formatHour(event.start)}-${formatHour(event.end)} 일정을 취소할까요?`)) return;
+    cancelDetailedAdminReservation.pending = true;
+    el.cancelAdminReservation.disabled = true;
     try {
       const data = await apiRequest("cancel_admin_reservations", {
         reservationIds: [event.dbId],
@@ -2970,6 +3049,9 @@
       showToast("취소·복구 작업을 만들었습니다.");
     } catch (error) {
       showToast(error.message || "일정 취소 실패");
+    } finally {
+      cancelDetailedAdminReservation.pending = false;
+      el.cancelAdminReservation.disabled = false;
     }
   }
 
@@ -3063,7 +3145,10 @@
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) {
-      throw new Error(data.message || `API 오류 ${response.status}`);
+      const error = new Error(data.message || `API 오류 ${response.status}`);
+      error.status = response.status;
+      error.code = data.error || "";
+      throw error;
     }
     return data;
   }

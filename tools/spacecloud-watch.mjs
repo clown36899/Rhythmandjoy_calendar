@@ -453,7 +453,15 @@ function kstNowText() {
 
 async function writeJson(filePath, data) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`);
+  const temporaryPath = `${filePath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+  try {
+    await fs.writeFile(temporaryPath, `${JSON.stringify(data, null, 2)}\n`);
+    await fs.rename(temporaryPath, filePath);
+  } finally {
+    await fs.unlink(temporaryPath).catch((error) => {
+      if (error?.code !== 'ENOENT') throw error;
+    });
+  }
 }
 
 async function appendJsonl(filePath, row) {
@@ -4101,7 +4109,7 @@ try:
                 reservation_date DATE NULL,
                 room_key VARCHAR(8) NOT NULL DEFAULT '',
                 reason VARCHAR(500) NOT NULL DEFAULT '',
-                detail_json TEXT NULL,
+                detail_json MEDIUMTEXT NULL,
                 checked_at DATETIME NOT NULL,
                 resolved_at DATETIME NULL,
                 updated_at DATETIME NOT NULL,
@@ -4208,7 +4216,7 @@ try:
                 reservation_date DATE NULL,
                 room_key VARCHAR(8) NOT NULL DEFAULT '',
                 reason VARCHAR(500) NOT NULL DEFAULT '',
-                detail_json TEXT NULL,
+                detail_json MEDIUMTEXT NULL,
                 checked_at DATETIME NOT NULL,
                 resolved_at DATETIME NULL,
                 updated_at DATETIME NOT NULL,
@@ -4364,6 +4372,7 @@ async function runAdminPlatformAudit(args, context, { force = false } = {}) {
         } catch (error) {
           inspection = { status: 'failed', error: String(error?.message || error) };
         }
+        ensureBrowserInspectionUsable(inspection, `${taskType} admin audit`);
       }
       const classification = classifyAdminPlatformInspection(task || { taskType }, inspection);
       reservationRows.push({
@@ -4418,16 +4427,21 @@ async function runAdminPlatformAudit(args, context, { force = false } = {}) {
   return result;
 }
 
-async function maybeRunAdminPlatformAudit(args, context, sessionStatuses = []) {
+async function maybeRunAdminPlatformAudit(args, context, sessionStatuses = [], options = {}) {
   const blocked = blockedSessionPlatforms(sessionStatuses);
   if (blocked.length) {
     logLine(`admin platform audit skipped by session circuit breaker: ${blocked.join(',')}`);
     return { skipped: true, reason: 'platform-session-unavailable', platforms: blocked };
   }
   try {
-    return await runAdminPlatformAudit(args, context);
+    return await runAdminPlatformAudit(args, context, options);
   } catch (error) {
-    logLine(`admin platform audit failed: ${String(error?.message || error)}`);
+    const errorText = String(error?.message || error);
+    logLine(`admin platform audit failed: ${errorText}`);
+    if (options.deferBrowserFailure && isBrowserContextClosedProblem(errorText)) {
+      logLine('admin platform audit browser failure deferred until immediate recovery check');
+      return { error: errorText, recoveryRequired: true };
+    }
     try {
       await persistRemoteAdminPlatformAuditFailure(args, error);
     } catch (persistError) {
@@ -5007,6 +5021,7 @@ async function inspectCustomerAuditCandidate(args, context, candidate) {
     } catch (error) {
       inspection = { status: 'failed', error: String(error?.message || error) };
     }
+    ensureBrowserInspectionUsable(inspection, `${check.checkType} customer audit`);
     rows.push({
       ...check,
       classification: classifyCustomerPlatformInspection(check.checkType, inspection, task),
@@ -5079,16 +5094,21 @@ async function runCustomerPlatformAudit(args, context, { force = false } = {}) {
   return result;
 }
 
-async function maybeRunCustomerPlatformAudit(args, context, sessionStatuses = []) {
+async function maybeRunCustomerPlatformAudit(args, context, sessionStatuses = [], options = {}) {
   const blocked = blockedSessionPlatforms(sessionStatuses);
   if (blocked.length) {
     logLine(`customer platform audit skipped by session circuit breaker: ${blocked.join(',')}`);
     return { skipped: true, reason: 'platform-session-unavailable', platforms: blocked };
   }
   try {
-    return await runCustomerPlatformAudit(args, context);
+    return await runCustomerPlatformAudit(args, context, options);
   } catch (error) {
-    logLine(`customer platform audit failed: ${String(error?.message || error)}`);
+    const errorText = String(error?.message || error);
+    logLine(`customer platform audit failed: ${errorText}`);
+    if (options.deferBrowserFailure && isBrowserContextClosedProblem(errorText)) {
+      logLine('customer platform audit browser failure deferred until immediate recovery check');
+      return { error: errorText, recoveryRequired: true };
+    }
     try {
       await persistRemoteCustomerPlatformAuditFailure(args, error);
     } catch (persistError) {
@@ -5114,7 +5134,14 @@ function isTransientRemoteProblem(message) {
 }
 
 function isBrowserContextClosedProblem(message) {
-  return /Target (?:page, context or browser|page|context|browser) has been closed/i.test(String(message || ''));
+  return /Target (?:page, context or browser|page|context|browser) has been closed|Page crashed|browser (?:has )?disconnected|browser process (?:closed|crashed)/i.test(String(message || ''));
+}
+
+function ensureBrowserInspectionUsable(inspection, label = 'platform inspection') {
+  const inspectionText = typeof inspection === 'string' ? inspection : JSON.stringify(inspection || {});
+  if (!isBrowserContextClosedProblem(inspectionText)) return inspection;
+  const reason = String(inspection?.error || inspection?.reason || inspectionText);
+  throw new Error(`${label}: ${reason}`);
 }
 
 function isRetryablePlatformProblem(message) {
@@ -5536,26 +5563,33 @@ function reservationNotificationKey(row, fallbackTaskType = '') {
 }
 
 function reservationCompletionSignature(row) {
-  return [
-    'complete',
-    row.status || '',
-  ].join(':');
+  // submitted/already-blocked/already-available are implementation paths to
+  // the same verified final state. A retry must not create a second success
+  // notification merely because that path label changed.
+  return 'complete:verified';
 }
 
-function reservationAttentionSignature(rowOrError, category) {
+function reservationAttentionSignature(rowOrError, category, taskType = '') {
   const row = firstProblemRow(rowOrError);
-  return `attention:${category}:${row.status || 'failed'}`;
+  const reason = firstFailureReason(rowOrError);
+  const reasonFingerprint = createHash('sha256').update(reason).digest('hex').slice(0, 12);
+  return `attention:${category}:${taskType || row.taskType || row.task_type || 'task'}:${row.status || 'failed'}:${reasonFingerprint}`;
+}
+
+function reservationAttentionNotificationKey(row, taskType = '') {
+  if (row?.adminPanelTask && row?.adminReservationId) {
+    return `admin-reservation:${row.adminReservationId}`;
+  }
+  return reservationNotificationKey(row, taskType);
 }
 
 async function notifyReservationAttention(args, rowOrError, category, taskType, text) {
   const row = firstProblemRow(rowOrError);
-  const notificationKey = row.adminPanelTask && row.adminSeriesId
-    ? `admin-series:${row.adminSeriesId}`
-    : reservationNotificationKey(row, taskType);
+  const notificationKey = reservationAttentionNotificationKey(row, taskType);
   return notifyOnStateChange(
     args,
     notificationKey,
-    reservationAttentionSignature(rowOrError, category),
+    reservationAttentionSignature(rowOrError, category, taskType),
     text,
   );
 }
@@ -8633,6 +8667,33 @@ async function runNowModeSelfTest() {
   assert.equal(notificationSuppressedByCooldown(priorAlert, 'different issue', alertNow, 3600), false);
   assert.equal(notificationSuppressedByState({ stateSignature: 'complete:done', lastSentAt: '2026-08-03T12:00:00Z' }, 'complete:done'), true);
   assert.equal(notificationSuppressedByState({ stateSignature: 'attention:failed', lastSentAt: '2026-08-03T12:00:00Z' }, 'complete:done'), false);
+  assert.equal(
+    reservationCompletionSignature({ status: 'blocked' }),
+    reservationCompletionSignature({ status: 'already-blocked' }),
+    'equivalent verified completion paths must share one Telegram state',
+  );
+  const adminAttentionA = { rows: [{
+    taskId: 701,
+    taskType: 'naver_block',
+    status: 'needs-review',
+    error: 'calendar panel missing',
+    adminPanelTask: true,
+    adminReservationId: 51,
+    adminSeriesId: 9,
+  }] };
+  const adminAttentionB = { rows: [{
+    ...adminAttentionA.rows[0],
+    taskId: 702,
+    error: 'save verification failed',
+    adminReservationId: 52,
+  }] };
+  assert.equal(reservationAttentionNotificationKey(adminAttentionA.rows[0], 'naver_block'), 'admin-reservation:51');
+  assert.equal(reservationAttentionNotificationKey(adminAttentionB.rows[0], 'naver_block'), 'admin-reservation:52');
+  assert.notEqual(
+    reservationAttentionSignature(adminAttentionA, 'platform', 'naver_block'),
+    reservationAttentionSignature(adminAttentionB, 'platform', 'naver_block'),
+    'a different actionable failure must create a new Telegram state',
+  );
   const telegramSuccess = syncSuccessMessage({
     id: 513,
     taskType: 'naver_block',
@@ -8668,6 +8729,28 @@ async function runNowModeSelfTest() {
   assert.equal(sessionBlockedTaskResult('naver').attempted, 0);
   assert.match(sessionProblemMessage('naver', { status: 'login_required' }), /같은 세션 장애를 예약별로 반복 알리지 않습니다/);
   assert.doesNotMatch(sessionProblemMessage('naver', { status: 'login_required' }), /세션 만료/);
+  const crashedSession = {
+    platform: 'naver',
+    status: 'check_failed',
+    note: 'page.waitForTimeout: Page crashed',
+    diagnostic: { failureCategory: 'browser_check_failed' },
+  };
+  assert.equal(isBrowserContextClosedProblem(crashedSession.note), true);
+  assert.throws(
+    () => ensureBrowserInspectionUsable({ status: 'failed', error: 'page.waitForTimeout: Page crashed' }, 'audit'),
+    /Page crashed/,
+  );
+  assert.equal(browserSessionRecoveryNeeded([crashedSession]), true);
+  assert.equal(browserSessionRecoveryNeeded([{ ...crashedSession, status: 'login_required' }]), false);
+  assert.match(sessionProblemMessage('naver', crashedSession), /로그인 만료 확정 아님/);
+  assert.doesNotMatch(sessionProblemMessage('naver', crashedSession), /로그인 필요/);
+  assert.notEqual(
+    sessionProblemSignature(crashedSession),
+    sessionProblemSignature({ ...crashedSession, status: 'login_required' }),
+  );
+  assert.match(runWatch.toString(), /session check repeated after browser recovery/);
+  assert.match(runWatch.toString(), /browser page crash detected during admin platform audit/);
+  assert.match(runWatch.toString(), /browser page crash detected during customer platform audit/);
   const liveCookie = {
     primaryPresent: true,
     primaryFingerprint: 'cookie-a',
@@ -8775,6 +8858,13 @@ async function runNowModeSelfTest() {
     assert.equal(await fs.readFile(`${rotationPath}.1`, 'utf8'), '123456789');
     await appendJsonl(rotationPath, { ok: true });
     assert.match(await fs.readFile(rotationPath, 'utf8'), /"ok":true/);
+    const atomicStatePath = path.join(rotationDir, 'notify-state.json');
+    await writeJson(atomicStatePath, { first: { stateSignature: 'problem:a' } });
+    await writeJson(atomicStatePath, { second: { stateSignature: 'healthy' } });
+    assert.deepEqual(JSON.parse(await fs.readFile(atomicStatePath, 'utf8')), {
+      second: { stateSignature: 'healthy' },
+    });
+    assert.equal((await fs.readdir(rotationDir)).some((name) => name.endsWith('.tmp')), false);
   } finally {
     await fs.rm(rotationDir, { recursive: true, force: true });
   }
@@ -8790,12 +8880,13 @@ async function runNowModeSelfTest() {
       'same-cycle cancellation result merge',
       'platform page timeout becomes next-cycle retry',
       'closed browser context retries every task type',
+      'crashed session pages reopen and recheck before any login warning',
       'ambiguous SpaceCloud submit is verified on retry',
       'task runners depend only on the DB queue and opposite booking platform',
       'SMS delivery state stays separate from successful reservation synchronization and retries by idempotency key',
       'SMS errors redact full recipient phone numbers',
       'oversized task results remain valid JSON with status and reservation identity',
-      'notification cooldown suppresses only identical issue text',
+      'Telegram state writes are atomic and suppress only equivalent reservation states',
       'customer cancellation defaults on, supports an emergency off switch, and requires live winner plus final DB guard',
       'reversed mailbox arrival still queues the strictly later opposite-platform reservation',
       'one quarantined reservation task does not stop later queue processing',
@@ -8909,13 +9000,34 @@ function sessionPlatformLabel(platform) {
 
 function sessionProblemMessage(platform, row) {
   const diagnosticReason = sessionDiagnosticLabel(row?.diagnostic?.failureCategory);
-  return compactNotice(`⚠️ ${sessionPlatformLabel(platform)} 로그인 필요`, [
-    '상태: 해당 플랫폼 자동 작업·실제 화면 검사를 일시 중지',
-    'DB 원장과 다른 플랫폼 작업: 계속 운영',
-    `진단: ${row?.status === 'login_required' ? diagnosticReason : cleanTelegramText(row?.note || '화면 확인 실패', 140)}`,
-    '조치: 미니 PC 자동화 브라우저에서 수동 로그인',
-    '같은 세션 장애를 예약별로 반복 알리지 않습니다.',
+  if (row?.status === 'login_required') {
+    return compactNotice(`⚠️ ${sessionPlatformLabel(platform)} 로그인 필요`, [
+      '상태: 해당 플랫폼 자동 작업·실제 화면 검사를 일시 중지',
+      'DB 원장과 다른 플랫폼 작업: 계속 운영',
+      `진단: ${diagnosticReason}`,
+      '조치: 미니 PC 자동화 브라우저에서 수동 로그인',
+      '같은 세션 장애를 예약별로 반복 알리지 않습니다.',
+    ]);
+  }
+  return compactNotice(`🟡 ${sessionPlatformLabel(platform)} 화면 검사 장애`, [
+    '판정: 로그인 만료 확정 아님',
+    '상태: 자동 브라우저 재생성 후에도 실제 화면 확인 실패',
+    `원인: ${cleanTelegramText(row?.note || diagnosticReason || '화면 확인 실패', 140)}`,
+    '조치: 다음 순환에서 다시 검사하며 같은 원인은 반복 발송하지 않습니다.',
   ]);
+}
+
+function sessionProblemSignature(row) {
+  const status = String(row?.status || 'check_failed');
+  const category = String(row?.diagnostic?.failureCategory || 'unknown');
+  return `problem:${status}:${category}`;
+}
+
+function browserSessionRecoveryNeeded(statuses) {
+  return (Array.isArray(statuses) ? statuses : []).some((row) => (
+    row?.status === 'check_failed'
+    && isBrowserContextClosedProblem(`${row?.note || ''} ${JSON.stringify(row?.diagnostic || {})}`)
+  ));
 }
 
 async function notifySessionStateChanges(args, statuses) {
@@ -8924,7 +9036,7 @@ async function notifySessionStateChanges(args, statuses) {
     if (!row || !['ready', 'login_required', 'check_failed'].includes(String(row.status || ''))) continue;
     const key = `system:session:${platform}`;
     if (row.status !== 'ready') {
-      await notifyOnStateChange(args, key, 'problem:unavailable', sessionProblemMessage(platform, row));
+      await notifyOnStateChange(args, key, sessionProblemSignature(row), sessionProblemMessage(platform, row));
       continue;
     }
     const state = await readJsonObject(args.notifyState);
@@ -9231,6 +9343,17 @@ async function runWatch(args) {
     });
     logLine('browser context reopened after unexpected close');
   };
+  const recoverBrowserAndRecheckSessions = async (reason) => {
+    logLine(`${reason}; reopening context before notification`);
+    await reopenBrowserContext();
+    const statuses = await checkAutomationSessionStatuses(args, context);
+    await writeJson(path.join(args.workDir, 'session-check-state.json'), {
+      checkedAt: new Date().toISOString(),
+      statuses,
+    });
+    logLine(`session check repeated after browser recovery: ${statuses.map((entry) => `${entry.platform}=${entry.status}`).join(',')}`);
+    return statuses;
+  };
   let stopping = false;
   const watcherParentPid = process.ppid;
   const stop = () => {
@@ -9253,6 +9376,10 @@ async function runWatch(args) {
       try {
         const row = await runCycle(args, context);
         cycleSessionStatuses = row.sessionStatus || [];
+        if (browserSessionRecoveryNeeded(cycleSessionStatuses)) {
+          cycleSessionStatuses = await recoverBrowserAndRecheckSessions('browser page crash detected during session check');
+          row.sessionStatus = cycleSessionStatuses;
+        }
         await notifySessionStateChanges(args, cycleSessionStatuses);
         if (args.nowMode && cycleNeedsUrgentFollowUp(row)) {
           urgentUntil = Math.max(urgentUntil, Date.now() + args.urgentCooldownSeconds * 1000);
@@ -9378,8 +9505,38 @@ async function runWatch(args) {
       }
 
       if (!watcherProblemThisCycle) await notifyWatcherRecoveredIfNeeded(args);
-      await maybeRunAdminPlatformAudit(args, context, cycleSessionStatuses);
-      await maybeRunCustomerPlatformAudit(args, context, cycleSessionStatuses);
+      let adminAuditResult = await maybeRunAdminPlatformAudit(
+        args,
+        context,
+        cycleSessionStatuses,
+        { deferBrowserFailure: true },
+      );
+      if (isBrowserContextClosedProblem(adminAuditResult?.error)) {
+        cycleSessionStatuses = await recoverBrowserAndRecheckSessions('browser page crash detected during admin platform audit');
+        await notifySessionStateChanges(args, cycleSessionStatuses);
+        adminAuditResult = await maybeRunAdminPlatformAudit(
+          args,
+          context,
+          cycleSessionStatuses,
+          { force: true },
+        );
+      }
+      let customerAuditResult = await maybeRunCustomerPlatformAudit(
+        args,
+        context,
+        cycleSessionStatuses,
+        { deferBrowserFailure: true },
+      );
+      if (isBrowserContextClosedProblem(customerAuditResult?.error)) {
+        cycleSessionStatuses = await recoverBrowserAndRecheckSessions('browser page crash detected during customer platform audit');
+        await notifySessionStateChanges(args, cycleSessionStatuses);
+        customerAuditResult = await maybeRunCustomerPlatformAudit(
+          args,
+          context,
+          cycleSessionStatuses,
+          { force: true },
+        );
+      }
       await maybeSendReflectionAudit(args);
       await maybeSendDailyReconcile(args);
       const sleepSeconds = watchSleepSeconds(args, urgentUntil);
