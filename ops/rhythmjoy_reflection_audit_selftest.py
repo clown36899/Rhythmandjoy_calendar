@@ -38,6 +38,46 @@ def sample_result(issues, ingestion_gaps=None):
 
 
 def main():
+    overlap_rows = [
+        {
+            'record_kind': 'ledger', 'record_id': 1, 'room_key': 'a',
+            'reservation_date': '2026-08-12', 'start_time': '19:00:00', 'end_time': '21:00:00',
+        },
+        {
+            'record_kind': 'admin', 'record_id': 2, 'room_key': 'a',
+            'reservation_date': '2026-08-12', 'start_time': '20:00:00', 'end_time': '22:00:00',
+        },
+        {
+            'record_kind': 'ledger', 'record_id': 3, 'room_key': 'a',
+            'reservation_date': '2026-08-12', 'start_time': '22:00:00', 'end_time': '23:00:00',
+        },
+        {
+            'record_kind': 'ledger', 'record_id': 4, 'room_key': 'b',
+            'reservation_date': '2026-08-12', 'start_time': '23:00:00', 'end_time': '01:00:00',
+        },
+        {
+            'record_kind': 'admin', 'record_id': 5, 'room_key': 'b',
+            'reservation_date': '2026-08-13', 'start_time': '00:30:00', 'end_time': '02:00:00',
+        },
+        {
+            'record_kind': 'ledger', 'record_id': 6, 'room_key': 'c',
+            'reservation_date': '2026-08-14', 'start_time': '10:00:00', 'end_time': '12:00:00',
+        },
+        {
+            'record_kind': 'ledger', 'record_id': 7, 'room_key': 'c',
+            'reservation_date': '2026-08-14', 'start_time': '10:00:00', 'end_time': '12:00:00',
+        },
+    ]
+    overlaps = audit.find_schedule_overlaps(overlap_rows)
+    assert [row['pair_key'] for row in overlaps] == [
+        'admin:2:ledger:1',
+        'admin:5:ledger:4',
+        'ledger:6:ledger:7',
+    ]
+    assert overlaps[0]['exact_slot'] is False
+    assert overlaps[1]['overlap_start'] == '2026-08-13 00:30:00'
+    assert overlaps[2]['exact_slot'] is True
+
     cache_payload = {
         'source': 'db-booking-ledger',
         'coverageStart': '2026-04-12',

@@ -12,6 +12,7 @@ import {
   fetchSpacecloudReservationPhone,
   inspectSpacecloudConfirmedReservation,
   inspectSpacecloudDirectReservation,
+  inspectSpacecloudReservationStatus,
   openSpacecloudContext,
   spacecloudUploadEventFromTask,
   uploadSpacecloudDirectReservation,
@@ -45,6 +46,9 @@ const DEFAULT_REFLECTION_AUDIT_INTERVAL_MINUTES = 30;
 const DEFAULT_ADMIN_PLATFORM_AUDIT_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'admin-platform-audit-state.json');
 const DEFAULT_ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES = 30;
 const DEFAULT_ADMIN_PLATFORM_AUDIT_LIMIT = 2;
+const DEFAULT_CUSTOMER_PLATFORM_AUDIT_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'customer-platform-audit-state.json');
+const DEFAULT_CUSTOMER_PLATFORM_AUDIT_INTERVAL_MINUTES = 240;
+const DEFAULT_CUSTOMER_PLATFORM_AUDIT_LIMIT = 1;
 const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
 const CONFIRMATION_SMS_TITLE = '리듬앤조이 연습실 예약 확정 안내문자';
 const PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME = 'spacecloud-prior-booking-canceled-v1';
@@ -78,6 +82,7 @@ function usage() {
   node tools/spacecloud-watch.mjs now-mode-self-test
   node tools/spacecloud-watch.mjs reflection-audit [options]
   node tools/spacecloud-watch.mjs admin-platform-audit [options]
+  node tools/spacecloud-watch.mjs customer-platform-audit [options]
   node tools/spacecloud-watch.mjs once [options]
   node tools/spacecloud-watch.mjs watch [options]
 
@@ -109,6 +114,17 @@ Options:
   --admin-platform-audit-state <path>
                             Defaults to ${DEFAULT_ADMIN_PLATFORM_AUDIT_STATE_PATH}.
   --no-admin-platform-audit Disable actual-platform audit for admin reservations.
+  --customer-platform-audit-interval-minutes <n>
+                            Defaults to ${DEFAULT_CUSTOMER_PLATFORM_AUDIT_INTERVAL_MINUTES}. Re-reads source and mirrored platform state for customer reservations.
+  --customer-platform-audit-limit <n>
+                            Defaults to ${DEFAULT_CUSTOMER_PLATFORM_AUDIT_LIMIT} reservations per run (two platform checks each).
+  --customer-platform-audit-state <path>
+                            Defaults to ${DEFAULT_CUSTOMER_PLATFORM_AUDIT_STATE_PATH}.
+  --customer-platform-audit-ledger-id <n>
+                            Command-only targeted recheck of one DB ledger row.
+  --no-customer-platform-audit
+                            Disable actual-platform audit for customer reservations.
+  --customer-platform-audit Enable the low-frequency customer actual-platform audit.
   --from <YYYY-MM-DD>       Defaults to today in KST.
   --days <n>                Defaults to 370.
   --rooms <keys>            Defaults to a,b,c,d,e.
@@ -182,6 +198,11 @@ function parseArgs(argv) {
     adminPlatformAuditIntervalMinutes: DEFAULT_ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES,
     adminPlatformAuditLimit: DEFAULT_ADMIN_PLATFORM_AUDIT_LIMIT,
     adminPlatformAuditState: DEFAULT_ADMIN_PLATFORM_AUDIT_STATE_PATH,
+    customerPlatformAudit: false,
+    customerPlatformAuditIntervalMinutes: DEFAULT_CUSTOMER_PLATFORM_AUDIT_INTERVAL_MINUTES,
+    customerPlatformAuditLimit: DEFAULT_CUSTOMER_PLATFORM_AUDIT_LIMIT,
+    customerPlatformAuditState: DEFAULT_CUSTOMER_PLATFORM_AUDIT_STATE_PATH,
+    customerPlatformAuditLedgerId: 0,
     days: 370,
     rooms: 'a,b,c,d,e',
     intervalSeconds: 30,
@@ -241,6 +262,14 @@ function parseArgs(argv) {
       args.adminPlatformAudit = false;
       continue;
     }
+    if (arg === '--no-customer-platform-audit') {
+      args.customerPlatformAudit = false;
+      continue;
+    }
+    if (arg === '--customer-platform-audit') {
+      args.customerPlatformAudit = true;
+      continue;
+    }
     if (arg === '--now-mode') {
       args.nowMode = true;
       continue;
@@ -269,6 +298,9 @@ function parseArgs(argv) {
       'reflection-audit-interval-minutes',
       'admin-platform-audit-interval-minutes',
       'admin-platform-audit-limit',
+      'customer-platform-audit-interval-minutes',
+      'customer-platform-audit-limit',
+      'customer-platform-audit-ledger-id',
     ].includes(key)) {
       const parsed = Number.parseInt(next, 10);
       if (!Number.isFinite(parsed) || parsed < 1) throw new Error(`${arg} must be a positive integer`);
@@ -297,6 +329,8 @@ function parseArgs(argv) {
       args.reflectionAuditState = next;
     } else if (key === 'admin-platform-audit-state') {
       args.adminPlatformAuditState = next;
+    } else if (key === 'customer-platform-audit-state') {
+      args.customerPlatformAuditState = next;
     } else if (key === 'to') {
       args.smsTestTo = next;
     } else if (key === 'sms-test-task-id') {
@@ -3177,6 +3211,7 @@ load_env(os.environ['RHYTHMJOY_ENV_FILE'])
 grace_minutes = int(os.environ.get('REFLECTION_AUDIT_GRACE_MINUTES', '10'))
 past_days = int(os.environ.get('REFLECTION_AUDIT_PAST_DAYS', '3'))
 future_days = int(os.environ.get('REFLECTION_AUDIT_FUTURE_DAYS', '120'))
+overlap_past_days = min(past_days, max(0, int(os.environ.get('REFLECTION_AUDIT_OVERLAP_PAST_DAYS', '7'))))
 
 conn = pymysql.connect(
     host=os.environ['DB_SERVERNAME'],
@@ -3302,18 +3337,42 @@ try:
             elif audit_status == 'waiting' and len(out['latestWaiting']) < 5:
                 out['latestWaiting'].append(view)
 
+        cur.execute("DROP TEMPORARY TABLE IF EXISTS rhythmjoy_effective_schedule_audit")
+        cur.execute("DROP TEMPORARY TABLE IF EXISTS rhythmjoy_effective_schedule_audit_right")
         cur.execute("""
-            SELECT CONCAT(a.id, ':', b.id) AS pair_key,
+            CREATE TEMPORARY TABLE rhythmjoy_effective_schedule_audit AS
+            SELECT CONCAT('ledger:', id) AS record_key, 'ledger' AS record_kind, id AS record_id,
+                   source_platform, source_mode, reservation_number, reserver_name,
+                   reservation_date, room_key, start_time, end_time
+            FROM rhythmjoy_booking_ledger
+            WHERE current_status='confirmed'
+              AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+              AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                                       AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+            UNION ALL
+            SELECT CONCAT('admin:', id), 'admin', id, 'admin', source, reservation_key, reserver_name,
+                   reservation_date, room_key, SEC_TO_TIME(start_hour * 3600), SEC_TO_TIME(end_hour * 3600)
+            FROM rhythmjoy_admin_reservations
+            WHERE status <> 'canceled'
+              AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                                       AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+        """, (overlap_past_days + 1, future_days, overlap_past_days + 1, future_days))
+        cur.execute("CREATE TEMPORARY TABLE rhythmjoy_effective_schedule_audit_right LIKE rhythmjoy_effective_schedule_audit")
+        cur.execute("INSERT INTO rhythmjoy_effective_schedule_audit_right SELECT * FROM rhythmjoy_effective_schedule_audit")
+        cur.execute("""
+            SELECT CONCAT(a.record_key, ':', b.record_key) AS pair_key,
+                   a.record_kind AS left_kind, a.record_id AS left_id,
+                   b.record_kind AS right_kind, b.record_id AS right_id,
                    CAST(a.reservation_date AS CHAR) AS reservation_date, a.room_key,
                    CAST(a.start_time AS CHAR) AS start_time, CAST(a.end_time AS CHAR) AS end_time,
                    CAST(b.reservation_date AS CHAR) AS right_reservation_date,
                    CAST(b.start_time AS CHAR) AS right_start_time, CAST(b.end_time AS CHAR) AS right_end_time,
-                   2 AS cnt,
-                   CONCAT(a.id, ':', a.source_platform, ':', COALESCE(a.reservation_number, ''), ':', COALESCE(a.reserver_name, ''),
-                          ' | ', b.id, ':', b.source_platform, ':', COALESCE(b.reservation_number, ''), ':', COALESCE(b.reserver_name, '')) AS rows_text
-            FROM rhythmjoy_booking_ledger a
-            JOIN rhythmjoy_booking_ledger b
-              ON b.id > a.id
+                   IF(a.reservation_date=b.reservation_date AND a.start_time=b.start_time AND a.end_time=b.end_time, 1, 0) AS exact_slot,
+                   CONCAT(a.record_key, ':', a.source_platform, ':', COALESCE(a.reservation_number, ''), ':', COALESCE(a.reserver_name, ''),
+                          ' | ', b.record_key, ':', b.source_platform, ':', COALESCE(b.reservation_number, ''), ':', COALESCE(b.reserver_name, '')) AS rows_text
+            FROM rhythmjoy_effective_schedule_audit a
+            JOIN rhythmjoy_effective_schedule_audit_right b
+              ON b.record_key > a.record_key
              AND b.room_key = a.room_key
              AND b.reservation_date BETWEEN DATE_SUB(a.reservation_date, INTERVAL 1 DAY)
                                         AND DATE_ADD(a.reservation_date, INTERVAL 1 DAY)
@@ -3321,28 +3380,18 @@ try:
                  < DATE_ADD(TIMESTAMP(b.reservation_date, '00:00:00'), INTERVAL (TIME_TO_SEC(b.end_time) + IF(b.end_time <= b.start_time, 86400, 0)) SECOND)
              AND DATE_ADD(TIMESTAMP(b.reservation_date, '00:00:00'), INTERVAL TIME_TO_SEC(b.start_time) SECOND)
                  < DATE_ADD(TIMESTAMP(a.reservation_date, '00:00:00'), INTERVAL (TIME_TO_SEC(a.end_time) + IF(a.end_time <= a.start_time, 86400, 0)) SECOND)
-            WHERE a.current_status='confirmed' AND b.current_status='confirmed'
-              AND a.confirmed_email_event_id IS NOT NULL AND b.confirmed_email_event_id IS NOT NULL
-              AND (
-                    (a.source_platform='naver' AND COALESCE(a.source_mode, '') IN ('', 'naver_email'))
-                 OR (a.source_platform='spacecloud' AND COALESCE(a.source_mode, '')='spacecloud_email')
-              )
-              AND (
-                    (b.source_platform='naver' AND COALESCE(b.source_mode, '') IN ('', 'naver_email'))
-                 OR (b.source_platform='spacecloud' AND COALESCE(b.source_mode, '')='spacecloud_email')
-              )
-              AND a.reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+            WHERE a.reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
                                          AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
-            ORDER BY a.reservation_date ASC, a.start_time ASC, a.room_key ASC, a.id ASC, b.id ASC
-            LIMIT 30
-        """, (past_days, future_days))
+            ORDER BY a.reservation_date ASC, a.start_time ASC, a.room_key ASC, a.record_id ASC, b.record_id ASC
+        """, (overlap_past_days, future_days))
         duplicates = cur.fetchall()
         out['duplicateCount'] = len(duplicates)
         for duplicate in duplicates:
             start = short_time(duplicate.get('start_time'))
             end = short_time(duplicate.get('end_time'))
+            overlap_kind = '정확 중복' if duplicate.get('exact_slot') else '시간 겹침'
             item = {
-                'audit_key': f"duplicate:{duplicate.get('pair_key') or (str(duplicate.get('reservation_date')) + ':' + str(duplicate.get('room_key')) + ':' + start + ':' + end)}",
+                'audit_key': f"overlap:{duplicate.get('pair_key')}",
                 'ledger_id': None,
                 'source_platform': 'ledger',
                 'target_platform': 'ledger',
@@ -3350,7 +3399,7 @@ try:
                 'current_status': 'confirmed',
                 'audit_status': 'issue',
                 'severity': 'critical',
-                'reason': f"원장 확정 예약 중복 {duplicate.get('cnt')}건"[:255],
+                'reason': f"DB 활성 일정 {overlap_kind}: {duplicate.get('left_kind')} #{duplicate.get('left_id')} ↔ {duplicate.get('right_kind')} #{duplicate.get('right_id')}"[:255],
                 'task_id': None,
                 'task_status': '',
                 'reservation_date': duplicate.get('reservation_date'),
@@ -3970,6 +4019,443 @@ async function maybeRunAdminPlatformAudit(args, context) {
     }
     if (args.telegram) {
       await notifyOnStateChange(args, 'system:admin-platform-audit', 'check-failed', compactNotice('🟡 관리자 일정 정기검사 실패', [
+        '판정: 예약 누락 확정 아님',
+        `원인: ${cleanTelegramText(String(error?.message || error), 140)}`,
+        '조치: 다음 순환에서 자동 재검사',
+      ]));
+    }
+    return { error: String(error?.message || error) };
+  }
+}
+
+async function fetchRemoteCustomerPlatformAuditCandidates(args) {
+  const target = await loadCafe24Target(args);
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS rhythmjoy_customer_platform_audits (
+                ledger_id BIGINT UNSIGNED NOT NULL,
+                audit_status VARCHAR(32) NOT NULL DEFAULT 'check_failed',
+                source_platform VARCHAR(32) NOT NULL DEFAULT '',
+                source_mode VARCHAR(64) NOT NULL DEFAULT '',
+                current_status VARCHAR(32) NOT NULL DEFAULT '',
+                reservation_date DATE NULL,
+                room_key VARCHAR(8) NOT NULL DEFAULT '',
+                reason VARCHAR(500) NOT NULL DEFAULT '',
+                detail_json MEDIUMTEXT NULL,
+                checked_at DATETIME NOT NULL,
+                resolved_at DATETIME NULL,
+                updated_at DATETIME NOT NULL,
+                PRIMARY KEY (ledger_id),
+                KEY idx_customer_platform_audit_status (audit_status, checked_at),
+                KEY idx_customer_platform_audit_date (reservation_date, checked_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        cur.execute("""
+            SELECT
+              l.id AS ledgerId,
+              l.source_platform AS sourcePlatform,
+              l.source_mode AS sourceMode,
+              l.current_status AS currentStatus,
+              CAST(l.reservation_date AS CHAR) AS date,
+              l.room_key AS roomKey,
+              TIME_FORMAT(l.start_time, '%H:%i') AS startTime,
+              TIME_FORMAT(l.end_time, '%H:%i') AS endTime,
+              l.reserver_name AS reserverName,
+              l.reservation_number AS reservationNo,
+              l.product,
+              l.payload_json AS payloadJson,
+              l.confirmed_email_event_id AS confirmedEmailEventId,
+              CAST(a.checked_at AS CHAR) AS auditCheckedAt,
+              a.audit_status AS previousAuditStatus,
+              (
+                SELECT t.id FROM rhythmjoy_spacecloud_tasks t
+                WHERE t.email_event_id=l.confirmed_email_event_id
+                  AND t.task_type=IF(l.source_platform='naver','upload','naver_block')
+                ORDER BY t.id ASC LIMIT 1
+              ) AS mirrorTaskId,
+              (
+                SELECT t.payload_json FROM rhythmjoy_spacecloud_tasks t
+                WHERE t.email_event_id=l.confirmed_email_event_id
+                  AND t.task_type=IF(l.source_platform='naver','upload','naver_block')
+                ORDER BY t.id ASC LIMIT 1
+              ) AS mirrorPayloadJson
+            FROM rhythmjoy_booking_ledger l
+            LEFT JOIN rhythmjoy_customer_platform_audits a ON a.ledger_id=l.id
+            WHERE l.current_status='confirmed'
+              AND l.source_platform IN ('naver','spacecloud')
+              AND COALESCE(l.source_mode, '') <> 'admin-task-anchor'
+              AND DATE_ADD(
+                    TIMESTAMP(l.reservation_date, '00:00:00'),
+                    INTERVAL (TIME_TO_SEC(l.end_time) + IF(l.end_time <= l.start_time, 86400, 0)) SECOND
+                  ) > NOW()
+            ORDER BY IF(a.audit_status='recheck_pending', 0, 1) ASC,
+                     COALESCE(a.checked_at, '1000-01-01 00:00:00') ASC,
+                     l.reservation_date ASC, l.start_time ASC, l.id ASC
+        """)
+        rows = cur.fetchall()
+finally:
+    conn.close()
+print(json.dumps(rows, ensure_ascii=False, default=str))
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '[]');
+}
+
+function customerAuditTask(candidate) {
+  let payload = {};
+  for (const raw of [candidate.payloadJson, candidate.mirrorPayloadJson]) {
+    try {
+      const parsed = JSON.parse(raw || '{}');
+      if (parsed && typeof parsed === 'object') payload = { ...payload, ...parsed };
+    } catch {
+      // The task still carries normalized DB identity fields below.
+    }
+  }
+  if (candidate.sourcePlatform === 'spacecloud' && !payload.spacecloud_reservation_id) {
+    payload.spacecloud_reservation_id = candidate.reservationNo || '';
+  }
+  return {
+    id: candidate.mirrorTaskId || candidate.ledgerId,
+    taskId: candidate.mirrorTaskId || candidate.ledgerId,
+    roomKey: String(candidate.roomKey || '').toLowerCase(),
+    date: candidate.date,
+    startTime: candidate.startTime,
+    endTime: candidate.endTime,
+    reserverName: candidate.reserverName || '',
+    reservationNo: candidate.reservationNo || '',
+    product: candidate.product || '',
+    payload,
+    payloadJson: JSON.stringify(payload),
+    ledgerId: candidate.ledgerId,
+  };
+}
+
+function classifyCustomerPlatformInspection(checkType, inspection, task) {
+  if (inspection?.status === 'failed') {
+    return { ok: false, status: 'check_failed', reason: inspection.error || '플랫폼 조회 실패' };
+  }
+  if (checkType === 'naver_source') {
+    if (!task.reservationNo) return { ok: false, status: 'check_failed', reason: '네이버 예약번호가 DB에 없음' };
+    if (inspection?.status === '확정') return { ok: true, status: 'ok', reason: '네이버 원본 예약 확정 확인' };
+    if (inspection?.status === '취소') {
+      return { ok: false, status: 'mismatch', reason: 'DB는 확정이나 네이버 상세 상태는 취소' };
+    }
+    if (inspection?.status === 'not_found') {
+      return { ok: false, status: 'check_failed', reason: '네이버 목록 검색에서 찾지 못함 · 취소나 누락 확정 아님' };
+    }
+    return { ok: false, status: 'check_failed', reason: `네이버 원본 상태 판정 불가: ${inspection?.status || '응답 없음'}` };
+  }
+  if (checkType === 'spacecloud_source') {
+    if (!task.payload?.spacecloud_reservation_id) {
+      return { ok: false, status: 'check_failed', reason: '스페이스클라우드 예약 ID가 DB에 없음' };
+    }
+    if (inspection?.status === 'confirmed' && inspection?.confirmed === true) {
+      return { ok: true, status: 'ok', reason: '스페이스클라우드 원본 예약 확정 확인' };
+    }
+    if (inspection?.status === 'canceled') {
+      return { ok: false, status: 'mismatch', reason: 'DB는 확정이나 스페이스클라우드 원본은 취소' };
+    }
+    return { ok: false, status: 'check_failed', reason: `스페이스클라우드 원본 확인 불충분: ${inspection?.reason || inspection?.status || '응답 없음'}` };
+  }
+  if (checkType === 'spacecloud_mirror') {
+    if (inspection?.status === 'found') return { ok: true, status: 'ok', reason: '스페이스클라우드 복제 예약 확인' };
+    if (inspection?.status === 'not_found') return { ok: false, status: 'mismatch', reason: '스페이스클라우드 복제 예약이 실제 화면에 없음' };
+    return { ok: false, status: 'check_failed', reason: `스페이스클라우드 복제 예약 식별 불충분: ${inspection?.reason || inspection?.status || '응답 없음'}` };
+  }
+  if (checkType === 'naver_mirror') {
+    const statuses = (inspection?.slots || []).map((slot) => slot.status);
+    if (!statuses.length) return { ok: false, status: 'check_failed', reason: '네이버 복제 시간칸을 읽지 못함' };
+    if (statuses.every((status) => status === 'suspended')) {
+      return { ok: true, status: 'ok', reason: '네이버 복제 시간 전체 예약불가 확인' };
+    }
+    return { ok: false, status: 'mismatch', reason: `네이버 복제 차단 불일치: ${statuses.join(',')}` };
+  }
+  return { ok: false, status: 'check_failed', reason: `지원하지 않는 검사: ${checkType}` };
+}
+
+function customerAuditTargetLine(candidate) {
+  const room = `${String(candidate.roomKey || '').toUpperCase()}홀`;
+  return `${candidate.date || '-'} ${candidate.startTime || '-'}-${displayEndTime(candidate.startTime || '', candidate.endTime || '')} · ${room}`;
+}
+
+function customerPlatformAuditIssueMessage(candidate, rows) {
+  const mismatches = rows.filter((row) => row.classification.status === 'mismatch');
+  return compactNotice(mismatches.length ? '⚠️ 고객 예약 실제 반영 불일치' : '🟡 고객 예약 재검사 필요', [
+    `대상: ${customerAuditTargetLine(candidate)}`,
+    `DB 원장: 확정 · 원본 ${candidate.sourcePlatform === 'naver' ? '네이버' : '스페이스클라우드'}`,
+    ...rows.filter((row) => !row.classification.ok).map((row) => `${row.platformLabel}: ${row.classification.reason}`),
+    mismatches.length ? '판정: DB와 실제 플랫폼 상태가 다름' : '판정: 누락 확정 아님 · 다음 순환에서 다시 검사',
+  ]);
+}
+
+function customerPlatformAuditRecoveryMessage(candidate) {
+  return compactNotice('✅ 고객 예약 실제 반영 정상 복구', [
+    `대상: ${customerAuditTargetLine(candidate)}`,
+    'DB 원장·네이버·스페이스클라우드: 모두 일치',
+  ]);
+}
+
+async function persistRemoteCustomerPlatformAudits(args, rows) {
+  const target = await loadCafe24Target(args);
+  const payload = rows.map((row) => ({
+    ledgerId: Number(row.candidate.ledgerId),
+    auditStatus: row.auditStatus,
+    sourcePlatform: row.candidate.sourcePlatform || '',
+    sourceMode: row.candidate.sourceMode || '',
+    currentStatus: row.candidate.currentStatus || '',
+    date: row.candidate.date || '',
+    roomKey: String(row.candidate.roomKey || '').toLowerCase(),
+    reason: row.rows.filter((item) => !item.classification.ok)
+      .map((item) => `${item.platformLabel}: ${item.classification.reason}`).join(' | ').slice(0, 500),
+    detail: row.rows.map((item) => ({
+      checkType: item.checkType,
+      platformLabel: item.platformLabel,
+      status: item.classification.status,
+      reason: item.classification.reason,
+      inspection: item.inspection,
+    })),
+  }));
+  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+rows = json.loads(base64.b64decode(${JSON.stringify(encoded)}).decode('utf-8'))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'], port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'], password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'], charset='utf8mb4', autocommit=False,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS rhythmjoy_customer_platform_audits (
+                ledger_id BIGINT UNSIGNED NOT NULL,
+                audit_status VARCHAR(32) NOT NULL DEFAULT 'check_failed',
+                source_platform VARCHAR(32) NOT NULL DEFAULT '',
+                source_mode VARCHAR(64) NOT NULL DEFAULT '',
+                current_status VARCHAR(32) NOT NULL DEFAULT '',
+                reservation_date DATE NULL,
+                room_key VARCHAR(8) NOT NULL DEFAULT '',
+                reason VARCHAR(500) NOT NULL DEFAULT '',
+                detail_json MEDIUMTEXT NULL,
+                checked_at DATETIME NOT NULL,
+                resolved_at DATETIME NULL,
+                updated_at DATETIME NOT NULL,
+                PRIMARY KEY (ledger_id),
+                KEY idx_customer_platform_audit_status (audit_status, checked_at),
+                KEY idx_customer_platform_audit_date (reservation_date, checked_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        for row in rows:
+            cur.execute("""
+                INSERT INTO rhythmjoy_customer_platform_audits (
+                    ledger_id, audit_status, source_platform, source_mode, current_status,
+                    reservation_date, room_key, reason, detail_json, checked_at, resolved_at, updated_at
+                ) VALUES (%s,%s,%s,%s,%s,NULLIF(%s,''),%s,%s,%s,NOW(),IF(%s='ok',NOW(),NULL),NOW())
+                ON DUPLICATE KEY UPDATE
+                    audit_status=VALUES(audit_status), source_platform=VALUES(source_platform),
+                    source_mode=VALUES(source_mode), current_status=VALUES(current_status),
+                    reservation_date=VALUES(reservation_date), room_key=VALUES(room_key),
+                    reason=VALUES(reason), detail_json=VALUES(detail_json), checked_at=NOW(),
+                    resolved_at=IF(VALUES(audit_status)='ok',NOW(),NULL), updated_at=NOW()
+            """, (
+                int(row['ledgerId']), row['auditStatus'], row['sourcePlatform'], row['sourceMode'],
+                row['currentStatus'], row['date'], row['roomKey'], row['reason'],
+                json.dumps(row['detail'], ensure_ascii=False, separators=(',', ':')),
+                row['auditStatus'],
+            ))
+        if all(int(row['ledgerId']) != 0 for row in rows):
+            cur.execute("""
+                UPDATE rhythmjoy_customer_platform_audits
+                SET audit_status='resolved', reason='정기검사 실행 복구', resolved_at=NOW(), updated_at=NOW()
+                WHERE ledger_id=0 AND audit_status='check_failed'
+            """)
+        cur.execute("""
+            UPDATE rhythmjoy_customer_platform_audits a
+            LEFT JOIN rhythmjoy_booking_ledger l ON l.id=a.ledger_id
+            SET a.audit_status='resolved', a.resolved_at=NOW(), a.updated_at=NOW()
+            WHERE a.ledger_id <> 0
+              AND a.audit_status IN ('mismatch','check_failed')
+              AND (
+                    l.id IS NULL OR l.current_status <> 'confirmed'
+                 OR DATE_ADD(
+                      TIMESTAMP(l.reservation_date, '00:00:00'),
+                      INTERVAL (TIME_TO_SEC(l.end_time) + IF(l.end_time <= l.start_time, 86400, 0)) SECOND
+                    ) <= NOW()
+                  )
+        """)
+    conn.commit()
+except Exception:
+    conn.rollback()
+    raise
+finally:
+    conn.close()
+PY
+`;
+  runSshScript(target, script);
+}
+
+async function persistRemoteCustomerPlatformAuditFailure(args, error) {
+  const failure = [{
+    candidate: { ledgerId: 0, sourcePlatform: 'system', sourceMode: '', currentStatus: 'system', date: '', roomKey: '' },
+    auditStatus: 'check_failed',
+    rows: [{
+      checkType: 'system', platformLabel: '정기검사',
+      classification: { ok: false, status: 'check_failed', reason: cleanTelegramText(String(error?.message || error), 500) },
+      inspection: {},
+    }],
+  }];
+  await persistRemoteCustomerPlatformAudits(args, failure);
+}
+
+function customerAuditStatusForRows(rows, previousStatus = '') {
+  const issueRows = rows.filter((row) => !row.classification.ok);
+  const rawAuditStatus = issueRows.some((row) => row.classification.status === 'mismatch')
+    ? 'mismatch' : issueRows.length ? 'check_failed' : 'ok';
+  const auditStatus = rawAuditStatus === 'check_failed'
+    && !['recheck_pending', 'check_failed'].includes(previousStatus || '')
+    ? 'recheck_pending'
+    : rawAuditStatus;
+  return { auditStatus, rawAuditStatus, issueRows };
+}
+
+async function inspectCustomerAuditCandidate(args, context, candidate) {
+  const task = customerAuditTask(candidate);
+  const checks = candidate.sourcePlatform === 'naver'
+    ? [
+        { checkType: 'naver_source', platformLabel: '네이버 원본' },
+        { checkType: 'spacecloud_mirror', platformLabel: '스페이스클라우드 복제' },
+      ]
+    : [
+        { checkType: 'spacecloud_source', platformLabel: '스페이스클라우드 원본' },
+        { checkType: 'naver_mirror', platformLabel: '네이버 복제' },
+      ];
+  const rows = [];
+  for (const check of checks) {
+    let inspection;
+    try {
+      if (check.checkType === 'naver_source') {
+        inspection = await inspectNaverReservationStatus(context, task, { businessId: args.naverBusinessId });
+      } else if (check.checkType === 'spacecloud_source') {
+        inspection = await inspectSpacecloudConfirmedReservation(context, task);
+      } else if (check.checkType === 'spacecloud_mirror') {
+        inspection = await inspectSpacecloudReservationStatus(context, task);
+      } else {
+        inspection = await inspectNaverAvailability(context, task, { businessId: args.naverBusinessId });
+      }
+    } catch (error) {
+      inspection = { status: 'failed', error: String(error?.message || error) };
+    }
+    rows.push({
+      ...check,
+      classification: classifyCustomerPlatformInspection(check.checkType, inspection, task),
+      inspection,
+    });
+  }
+  const { auditStatus, rawAuditStatus } = customerAuditStatusForRows(rows, candidate.previousAuditStatus || '');
+  return { candidate, auditStatus, rawAuditStatus, rows };
+}
+
+async function runCustomerPlatformAudit(args, context, { force = false } = {}) {
+  if (!args.customerPlatformAudit && !force) return { skipped: true, reason: 'disabled' };
+  const state = await readJsonObject(args.customerPlatformAuditState);
+  const intervalMs = Math.max(1, args.customerPlatformAuditIntervalMinutes || DEFAULT_CUSTOMER_PLATFORM_AUDIT_INTERVAL_MINUTES) * 60 * 1000;
+  const lastRunAt = Date.parse(state.checkedAt || '') || 0;
+  if (!force && lastRunAt && Date.now() - lastRunAt < intervalMs) return { skipped: true, reason: 'interval' };
+
+  const allCandidates = await fetchRemoteCustomerPlatformAuditCandidates(args);
+  const candidates = args.customerPlatformAuditLedgerId
+    ? allCandidates.filter((row) => Number(row.ledgerId) === Number(args.customerPlatformAuditLedgerId))
+    : allCandidates;
+  const selected = candidates.slice(0, Math.max(1, args.customerPlatformAuditLimit || DEFAULT_CUSTOMER_PLATFORM_AUDIT_LIMIT));
+  const rows = [];
+  for (const candidate of selected) rows.push(await inspectCustomerAuditCandidate(args, context, candidate));
+
+  await persistRemoteCustomerPlatformAudits(args, rows);
+  for (const row of rows) {
+    const previousStatus = row.candidate.previousAuditStatus || '';
+    if (args.telegram && ['mismatch', 'check_failed'].includes(row.auditStatus)) {
+      const issueRows = row.rows.filter((item) => !item.classification.ok);
+      const signature = `${row.auditStatus}:${issueRows.map((item) => `${item.checkType}:${item.classification.reason}`).join('|')}`;
+      await notifyOnStateChange(args, `customer-platform-audit:${row.candidate.ledgerId}`, signature, customerPlatformAuditIssueMessage(row.candidate, row.rows));
+    } else if (args.telegram && row.auditStatus === 'ok' && previousStatus && previousStatus !== 'ok' && previousStatus !== 'resolved') {
+      await notifyOnStateChange(args, `customer-platform-audit:${row.candidate.ledgerId}`, 'ok', customerPlatformAuditRecoveryMessage(row.candidate));
+    }
+  }
+  const result = {
+    checkedAt: new Date().toISOString(), candidates: candidates.length, checked: rows.length,
+    ok: rows.filter((row) => row.auditStatus === 'ok').length,
+    mismatches: rows.filter((row) => row.auditStatus === 'mismatch').length,
+    checkFailed: rows.filter((row) => row.auditStatus === 'check_failed').length,
+    recheckPending: rows.filter((row) => row.auditStatus === 'recheck_pending').length,
+    rows,
+  };
+  await writeJson(args.customerPlatformAuditState, {
+    checkedAt: result.checkedAt, candidates: result.candidates, checked: result.checked,
+    ok: result.ok, mismatches: result.mismatches, checkFailed: result.checkFailed,
+    recheckPending: result.recheckPending,
+  });
+  logLine(`customer platform audit: candidates=${result.candidates} checked=${result.checked} ok=${result.ok} mismatches=${result.mismatches} recheckPending=${result.recheckPending} checkFailed=${result.checkFailed}`);
+  return result;
+}
+
+async function maybeRunCustomerPlatformAudit(args, context) {
+  try {
+    return await runCustomerPlatformAudit(args, context);
+  } catch (error) {
+    logLine(`customer platform audit failed: ${String(error?.message || error)}`);
+    try {
+      await persistRemoteCustomerPlatformAuditFailure(args, error);
+    } catch (persistError) {
+      logLine(`customer platform audit failure persistence failed: ${String(persistError?.message || persistError)}`);
+    }
+    if (args.telegram) {
+      await notifyOnStateChange(args, 'system:customer-platform-audit', 'check-failed', compactNotice('🟡 고객 예약 정기검사 실패', [
         '판정: 예약 누락 확정 아님',
         `원인: ${cleanTelegramText(String(error?.message || error), 140)}`,
         '조치: 다음 순환에서 자동 재검사',
@@ -6631,6 +7117,7 @@ async function runCheckNaverLogin(args) {
 }
 
 function runNowModeSelfTest() {
+  assert.equal(parseArgs(['node', 'tools/spacecloud-watch.mjs', 'watch']).customerPlatformAudit, false);
   const parsed = parseArgs([
     'node',
     'tools/spacecloud-watch.mjs',
@@ -6642,6 +7129,7 @@ function runNowModeSelfTest() {
     '45',
     '--session-check-interval-seconds',
     '180',
+    '--customer-platform-audit',
   ]);
   assert.equal(parsed.nowMode, true);
   assert.equal(parsed.urgentWindowMinutes, 180);
@@ -6652,6 +7140,9 @@ function runNowModeSelfTest() {
   assert.equal(parsed.adminPlatformAudit, true);
   assert.equal(parsed.adminPlatformAuditIntervalMinutes, 30);
   assert.equal(parsed.adminPlatformAuditLimit, 2);
+  assert.equal(parsed.customerPlatformAudit, true);
+  assert.equal(parsed.customerPlatformAuditIntervalMinutes, 240);
+  assert.equal(parsed.customerPlatformAuditLimit, 1);
   const bookingFetchArgs = bookingSyncFetchArgs(parsed);
   assert.equal(bookingFetchArgs.nowMode, false);
   assert.equal(parsed.nowMode, true, 'disabling booking-task urgency must not mutate the watcher args');
@@ -6713,6 +7204,49 @@ function runNowModeSelfTest() {
     },
   }, 2);
   assert.deepEqual(selectedAdminAudits.map((row) => row.adminReservationId), [3, 1]);
+  const naverCustomerTask = customerAuditTask({
+    ledgerId: 51,
+    sourcePlatform: 'naver',
+    roomKey: 'a',
+    date: '2026-08-12',
+    startTime: '19:00',
+    endTime: '20:00',
+    reservationNo: '1310000000',
+    payloadJson: '{}',
+  });
+  assert.equal(naverCustomerTask.reservationNo, '1310000000');
+  assert.equal(
+    classifyCustomerPlatformInspection('naver_source', { status: '확정' }, naverCustomerTask).ok,
+    true,
+  );
+  assert.equal(
+    classifyCustomerPlatformInspection('naver_source', { status: 'not_found' }, naverCustomerTask).status,
+    'check_failed',
+  );
+  assert.equal(
+    classifyCustomerPlatformInspection('naver_source', { status: '취소' }, naverCustomerTask).status,
+    'mismatch',
+  );
+  assert.match(inspectNaverReservationStatus.toString(), /naverBookingDetailUrl/);
+  assert.equal(
+    classifyCustomerPlatformInspection('spacecloud_mirror', { status: 'needs_review' }, naverCustomerTask).status,
+    'check_failed',
+  );
+  assert.equal(
+    classifyCustomerPlatformInspection('naver_mirror', { status: 'inspected', slots: [{ status: 'suspended' }] }, naverCustomerTask).ok,
+    true,
+  );
+  assert.equal(
+    classifyCustomerPlatformInspection('naver_mirror', { status: 'inspected', slots: [{ status: 'confirmed' }] }, naverCustomerTask).status,
+    'mismatch',
+  );
+  const uncertainCustomerRow = [{ classification: { ok: false, status: 'check_failed' } }];
+  assert.equal(customerAuditStatusForRows(uncertainCustomerRow, '').auditStatus, 'recheck_pending');
+  assert.equal(customerAuditStatusForRows(uncertainCustomerRow, 'recheck_pending').auditStatus, 'check_failed');
+  assert.equal(
+    customerAuditStatusForRows([{ classification: { ok: false, status: 'mismatch' } }], '').auditStatus,
+    'mismatch',
+  );
 
   const confirmationTask = {
     date: '2026-08-01',
@@ -6985,6 +7519,13 @@ function runNowModeSelfTest() {
     'admin platform audit persistence must finish before the local interval checkpoint',
   );
   assert.match(maybeRunAdminPlatformAudit.toString(), /persistRemoteAdminPlatformAuditFailure/);
+  assert.match(runCustomerPlatformAudit.toString(), /persistRemoteCustomerPlatformAudits/);
+  assert.ok(
+    runCustomerPlatformAudit.toString().indexOf('persistRemoteCustomerPlatformAudits')
+      < runCustomerPlatformAudit.toString().indexOf('writeJson'),
+    'customer platform audit persistence must finish before the local interval checkpoint',
+  );
+  assert.match(maybeRunCustomerPlatformAudit.toString(), /persistRemoteCustomerPlatformAuditFailure/);
 
   return {
     ok: true,
@@ -7015,6 +7556,8 @@ function runNowModeSelfTest() {
       'admin platform audits exclude reservations whose end time is already past',
       'admin platform audit results and audit failures persist to the DB-backed alert center before checkpointing independently of Telegram',
       'platform read failures stay distinct from confirmed mismatches',
+      'customer DB reservations rotate through source and mirrored actual-platform inspection',
+      'customer platform audit alerts persist to DB before the local interval checkpoint',
     ],
   };
 }
@@ -7468,6 +8011,7 @@ async function runWatch(args) {
 
       if (!watcherProblemThisCycle) await notifyWatcherRecoveredIfNeeded(args);
       await maybeRunAdminPlatformAudit(args, context);
+      await maybeRunCustomerPlatformAudit(args, context);
       await maybeSendReflectionAudit(args);
       await maybeSendDailyReconcile(args);
       const sleepSeconds = watchSleepSeconds(args, urgentUntil);
@@ -7561,6 +8105,23 @@ ${kstNowText()}
     });
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else console.log(`admin platform audit checked=${result.checked || 0}; ok=${result.ok || 0}; mismatches=${result.mismatches || 0}; checkFailed=${result.checkFailed || 0}`);
+    return;
+  }
+
+  if (args.command === 'customer-platform-audit') {
+    const result = await withAutomationProcessLock(args, async () => {
+      const context = await openSpacecloudContext({
+        profileDir: args.profileDir,
+        headless: args.headless,
+      });
+      try {
+        return await runCustomerPlatformAudit(args, context, { force: true });
+      } finally {
+        await context.close();
+      }
+    });
+    if (args.json) console.log(JSON.stringify(result, null, 2));
+    else console.log(`customer platform audit checked=${result.checked || 0}; ok=${result.ok || 0}; mismatches=${result.mismatches || 0}; recheckPending=${result.recheckPending || 0}; checkFailed=${result.checkFailed || 0}`);
     return;
   }
 

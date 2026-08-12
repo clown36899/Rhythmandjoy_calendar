@@ -171,6 +171,25 @@ function ensure_schema($pdo) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
     $pdo->exec("
+        CREATE TABLE IF NOT EXISTS rhythmjoy_customer_platform_audits (
+            ledger_id BIGINT UNSIGNED NOT NULL,
+            audit_status VARCHAR(32) NOT NULL DEFAULT 'check_failed',
+            source_platform VARCHAR(32) NOT NULL DEFAULT '',
+            source_mode VARCHAR(64) NOT NULL DEFAULT '',
+            current_status VARCHAR(32) NOT NULL DEFAULT '',
+            reservation_date DATE NULL,
+            room_key VARCHAR(8) NOT NULL DEFAULT '',
+            reason VARCHAR(500) NOT NULL DEFAULT '',
+            detail_json MEDIUMTEXT NULL,
+            checked_at DATETIME NOT NULL,
+            resolved_at DATETIME NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (ledger_id),
+            KEY idx_customer_platform_audit_status (audit_status, checked_at),
+            KEY idx_customer_platform_audit_date (reservation_date, checked_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    $pdo->exec("
         CREATE TABLE IF NOT EXISTS rhythmjoy_admin_series (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             series_key VARCHAR(128) NOT NULL,
@@ -2441,6 +2460,39 @@ function current_admin_alert_candidates($pdo) {
                 'targetSection' => 'tasks',
                 'contextLabel' => $context,
             ), array($audit['reservation_id'], $audit['audit_status'], $audit['reservation_status'], $audit['reason']));
+        }
+    }
+
+    if (admin_table_exists($pdo, 'rhythmjoy_customer_platform_audits')) {
+        $stmt = $pdo->query("
+            SELECT ledger_id, audit_status, source_platform, current_status,
+                   reservation_date, room_key, reason,
+                   DATE_FORMAT(checked_at, '%Y-%m-%dT%H:%i:%s+09:00') AS checked_at
+            FROM rhythmjoy_customer_platform_audits
+            WHERE audit_status IN ('mismatch','check_failed')
+            ORDER BY checked_at DESC
+            LIMIT 80
+        ");
+        foreach ($stmt->fetchAll() as $audit) {
+            $system_failure = intval($audit['ledger_id']) === 0;
+            $context = trim(implode(' ', array_filter(array(
+                $audit['reservation_date'],
+                $audit['room_key'] ? strtoupper($audit['room_key']) . '홀' : '',
+            ))));
+            admin_alert_add($alerts, array(
+                'key' => $system_failure ? 'system:customer-platform-audit' : 'customer-platform-audit:' . intval($audit['ledger_id']),
+                'source' => 'customer_platform_audit',
+                'sourceLabel' => '고객 예약 실제 플랫폼 검사',
+                'severity' => $audit['audit_status'] === 'mismatch' ? 'critical' : 'warning',
+                'title' => $system_failure
+                    ? '고객 예약 실제 플랫폼 정기검사 실패'
+                    : ($audit['audit_status'] === 'mismatch' ? '고객 예약 DB·실제 플랫폼 불일치' : '고객 예약 실제 플랫폼 재검사 필요'),
+                'message' => ($context ? $context . ' · ' : '') . admin_alert_clean_text($audit['reason'], '고객 예약 플랫폼 검사 결과를 확인해주세요.'),
+                'occurredAt' => $audit['checked_at'],
+                'updatedAt' => $audit['checked_at'],
+                'targetSection' => 'tasks',
+                'contextLabel' => $context,
+            ), array($audit['ledger_id'], $audit['audit_status'], $audit['source_platform'], $audit['current_status'], $audit['reason']));
         }
     }
 

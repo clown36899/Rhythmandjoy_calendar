@@ -113,6 +113,123 @@ def normalize_room(value):
     return text if text in ('a', 'b', 'c', 'd', 'e') else ''
 
 
+def schedule_datetime(date_value, time_value):
+    base = datetime.strptime(str(date_value or '')[:10], '%Y-%m-%d')
+    text = str(time_value or '').strip()
+    match = re.match(r'^(\d{1,2}):(\d{2})(?::(\d{2}))?', text)
+    if not match:
+        raise ValueError(f'invalid schedule time: {time_value}')
+    seconds = (
+        int(match.group(1)) * 3600
+        + int(match.group(2)) * 60
+        + int(match.group(3) or 0)
+    )
+    return base + timedelta(seconds=seconds)
+
+
+def find_schedule_overlaps(rows):
+    """Return every overlap among effective DB schedule records, including overnight rows."""
+    normalized = []
+    for source in rows:
+        room = normalize_room(source.get('room_key') or source.get('roomKey'))
+        if not room:
+            continue
+        try:
+            start_at = schedule_datetime(
+                source.get('reservation_date') or source.get('date'),
+                source.get('start_time') or source.get('startTime'),
+            )
+            end_at = schedule_datetime(
+                source.get('reservation_date') or source.get('date'),
+                source.get('end_time') or source.get('endTime'),
+            )
+        except (TypeError, ValueError):
+            continue
+        if end_at <= start_at:
+            end_at += timedelta(days=1)
+        row = dict(source)
+        row['_room'] = room
+        row['_start_at'] = start_at
+        row['_end_at'] = end_at
+        row['_kind'] = str(source.get('record_kind') or source.get('recordKind') or 'ledger')
+        row['_id'] = int(source.get('record_id') or source.get('recordId') or source.get('id') or 0)
+        normalized.append(row)
+
+    normalized.sort(key=lambda row: (
+        row['_room'], row['_start_at'], row['_end_at'], row['_kind'], row['_id']
+    ))
+    overlaps = []
+    active_by_room = {}
+    for row in normalized:
+        active = [prior for prior in active_by_room.get(row['_room'], [])
+                  if prior['_end_at'] > row['_start_at']]
+        for prior in active:
+            left, right = sorted(
+                (prior, row), key=lambda item: (item['_kind'], item['_id'])
+            )
+            overlaps.append({
+                'pair_key': f"{left['_kind']}:{left['_id']}:{right['_kind']}:{right['_id']}",
+                'left_kind': left['_kind'],
+                'left_id': left['_id'],
+                'left_source_platform': left.get('source_platform') or left.get('sourcePlatform') or '',
+                'left_source_mode': left.get('source_mode') or left.get('sourceMode') or '',
+                'left_reservation_number': left.get('reservation_number') or left.get('reservationNumber') or '',
+                'left_reserver_name': left.get('reserver_name') or left.get('reserverName') or '',
+                'left_start_at': left['_start_at'].isoformat(sep=' '),
+                'left_end_at': left['_end_at'].isoformat(sep=' '),
+                'right_kind': right['_kind'],
+                'right_id': right['_id'],
+                'right_source_platform': right.get('source_platform') or right.get('sourcePlatform') or '',
+                'right_source_mode': right.get('source_mode') or right.get('sourceMode') or '',
+                'right_reservation_number': right.get('reservation_number') or right.get('reservationNumber') or '',
+                'right_reserver_name': right.get('reserver_name') or right.get('reserverName') or '',
+                'right_start_at': right['_start_at'].isoformat(sep=' '),
+                'right_end_at': right['_end_at'].isoformat(sep=' '),
+                'reservation_date': row['_start_at'].strftime('%Y-%m-%d'),
+                'room_key': row['_room'],
+                'start_time': row['_start_at'].strftime('%H:%M:%S'),
+                'end_time': row['_end_at'].strftime('%H:%M:%S'),
+                'overlap_start': max(left['_start_at'], right['_start_at']).isoformat(sep=' '),
+                'overlap_end': min(left['_end_at'], right['_end_at']).isoformat(sep=' '),
+                'exact_slot': left['_start_at'] == right['_start_at'] and left['_end_at'] == right['_end_at'],
+            })
+        active.append(row)
+        active_by_room[row['_room']] = active
+    return overlaps
+
+
+def effective_schedule_rows(cur, past_days, future_days):
+    cur.execute("""
+        SELECT 'ledger' AS record_kind, id AS record_id,
+               source_platform, source_mode, reservation_number, reserver_name,
+               DATE_FORMAT(reservation_date, '%%Y-%%m-%%d') AS reservation_date,
+               room_key,
+               TIME_FORMAT(start_time, '%%H:%%i:%%s') AS start_time,
+               TIME_FORMAT(end_time, '%%H:%%i:%%s') AS end_time
+        FROM rhythmjoy_booking_ledger
+        WHERE current_status='confirmed'
+          AND COALESCE(source_mode, '') <> 'admin-task-anchor'
+          AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                                   AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+    """, (past_days + 1, future_days))
+    rows = list(cur.fetchall())
+    cur.execute("""
+        SELECT 'admin' AS record_kind, id AS record_id,
+               'admin' AS source_platform, source AS source_mode,
+               reservation_key AS reservation_number, reserver_name,
+               DATE_FORMAT(reservation_date, '%%Y-%%m-%%d') AS reservation_date,
+               room_key,
+               CONCAT(LPAD(start_hour, 2, '0'), ':00:00') AS start_time,
+               CONCAT(LPAD(end_hour, 2, '0'), ':00:00') AS end_time
+        FROM rhythmjoy_admin_reservations
+        WHERE status <> 'canceled'
+          AND reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                                   AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+    """, (past_days + 1, future_days))
+    rows.extend(cur.fetchall())
+    return rows
+
+
 def reservation_number_from_event(event):
     props = event.get('extendedProps') or {}
     private = props.get('private') or {}
@@ -696,67 +813,20 @@ def run_audit(
                 elif audit_status == 'waiting' and len(out['latestWaiting']) < 5:
                     out['latestWaiting'].append(view)
 
-            cur.execute("""
-                SELECT
-                    CONCAT(a.id, ':', b.id) AS pair_key,
-                    a.id AS left_id,
-                    b.id AS right_id,
-                    DATE_FORMAT(a.reservation_date, '%%Y-%%m-%%d') AS reservation_date,
-                    a.room_key,
-                    TIME_FORMAT(a.start_time, '%%H:%%i:%%s') AS start_time,
-                    TIME_FORMAT(a.end_time, '%%H:%%i:%%s') AS end_time,
-                    DATE_FORMAT(b.reservation_date, '%%Y-%%m-%%d') AS right_reservation_date,
-                    TIME_FORMAT(b.start_time, '%%H:%%i:%%s') AS right_start_time,
-                    TIME_FORMAT(b.end_time, '%%H:%%i:%%s') AS right_end_time,
-                    2 AS cnt,
-                    CONCAT(
-                        a.id, ':', a.source_platform, ':', COALESCE(a.reservation_number, ''), ':', COALESCE(a.reserver_name, ''),
-                        ' | ',
-                        b.id, ':', b.source_platform, ':', COALESCE(b.reservation_number, ''), ':', COALESCE(b.reserver_name, '')
-                    ) AS rows_text
-                FROM rhythmjoy_booking_ledger a
-                JOIN rhythmjoy_booking_ledger b
-                  ON b.id > a.id
-                 AND b.room_key = a.room_key
-                 AND b.reservation_date BETWEEN DATE_SUB(a.reservation_date, INTERVAL 1 DAY)
-                                            AND DATE_ADD(a.reservation_date, INTERVAL 1 DAY)
-                 AND DATE_ADD(
-                       TIMESTAMP(a.reservation_date, '00:00:00'),
-                       INTERVAL TIME_TO_SEC(a.start_time) SECOND
-                     ) < DATE_ADD(
-                       TIMESTAMP(b.reservation_date, '00:00:00'),
-                       INTERVAL (TIME_TO_SEC(b.end_time) + IF(b.end_time <= b.start_time, 86400, 0)) SECOND
-                     )
-                 AND DATE_ADD(
-                       TIMESTAMP(b.reservation_date, '00:00:00'),
-                       INTERVAL TIME_TO_SEC(b.start_time) SECOND
-                     ) < DATE_ADD(
-                       TIMESTAMP(a.reservation_date, '00:00:00'),
-                       INTERVAL (TIME_TO_SEC(a.end_time) + IF(a.end_time <= a.start_time, 86400, 0)) SECOND
-                     )
-                WHERE a.current_status='confirmed'
-                  AND b.current_status='confirmed'
-                  AND a.confirmed_email_event_id IS NOT NULL
-                  AND b.confirmed_email_event_id IS NOT NULL
-                  AND (
-                        (a.source_platform='naver' AND COALESCE(a.source_mode, '') IN ('', 'naver_email'))
-                     OR (a.source_platform='spacecloud' AND COALESCE(a.source_mode, '')='spacecloud_email')
-                  )
-                  AND (
-                        (b.source_platform='naver' AND COALESCE(b.source_mode, '') IN ('', 'naver_email'))
-                     OR (b.source_platform='spacecloud' AND COALESCE(b.source_mode, '')='spacecloud_email')
-                  )
-                  AND a.reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
-                                             AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
-                ORDER BY a.reservation_date ASC, a.start_time ASC, a.room_key ASC, a.id ASC, b.id ASC
-            """, (past_days, future_days))
-            duplicates = cur.fetchall()
+            overlap_past_days = min(
+                past_days,
+                max(0, int(os.environ.get('RHYTHMJOY_REFLECTION_OVERLAP_PAST_DAYS', '7'))),
+            )
+            duplicates = find_schedule_overlaps(
+                effective_schedule_rows(cur, overlap_past_days, future_days)
+            )
             out['duplicateCount'] = len(duplicates)
             for duplicate in duplicates:
                 start = short_time(duplicate.get('start_time'))
                 end = short_time(duplicate.get('end_time'))
+                overlap_kind = '정확 중복' if duplicate.get('exact_slot') else '시간 겹침'
                 item = {
-                    'audit_key': f"duplicate:{duplicate.get('pair_key') or (str(duplicate.get('reservation_date')) + ':' + str(duplicate.get('room_key')) + ':' + start + ':' + end)}",
+                    'audit_key': f"overlap:{duplicate.get('pair_key')}",
                     'ledger_id': None,
                     'source_platform': 'ledger',
                     'target_platform': 'ledger',
@@ -764,7 +834,7 @@ def run_audit(
                     'current_status': 'confirmed',
                     'audit_status': 'issue',
                     'severity': 'critical',
-                    'reason': f"원장 확정 예약 중복 {duplicate.get('cnt')}건"[:255],
+                    'reason': f"DB 활성 일정 {overlap_kind}: {duplicate.get('left_kind')} #{duplicate.get('left_id')} ↔ {duplicate.get('right_kind')} #{duplicate.get('right_id')}"[:255],
                     'task_id': None,
                     'task_status': '',
                     'reservation_date': duplicate.get('reservation_date'),
@@ -1291,7 +1361,7 @@ def audit_message(result):
     if not ingestion_gaps and not issue_groups and not duplicate_count:
         parts.append('문제 상세 없음')
     if duplicate_count:
-        parts.append(f"DB 확정 중복: {duplicate_count}건")
+        parts.append(f"DB 활성 일정 겹침: {duplicate_count}건")
     if waiting:
         parts.append(f"처리 대기: {len(waiting)}건")
     parts.append('실제 누락으로 단정하지 않습니다. 같은 상태는 다시 알리지 않습니다.')

@@ -578,6 +578,29 @@ async function readNaverReservationStatusFromList(page, reservationNo) {
   }, String(reservationNo || '').trim());
 }
 
+async function readNaverReservationStatusFromDetail(page, reservationNo) {
+  return page.evaluate((wantedReservationNo) => {
+    const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const bodyText = norm(document.body?.innerText || document.body?.textContent || '');
+    if (!bodyText.includes(String(wantedReservationNo || '').trim())) {
+      return { status: 'needs_review', reason: 'reservation-identity-not-visible' };
+    }
+    const labeled = bodyText.match(/(?:예약\s*상태|진행\s*상태)\s*[:：]?\s*(확정|취소|완료|신청|노쇼)/)?.[1] || '';
+    if (labeled) return { status: labeled, reason: '' };
+    const exactVisible = Array.from(document.querySelectorAll('span,strong,em,div,p,button'))
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      })
+      .map((element) => norm(element.innerText || element.textContent || ''))
+      .filter((text) => /^(확정|취소|완료|신청|노쇼)$/.test(text));
+    const unique = [...new Set(exactVisible)];
+    return unique.length === 1
+      ? { status: unique[0], reason: '' }
+      : { status: 'needs_review', reason: unique.length ? `ambiguous-status:${unique.join(',')}` : 'status-not-visible' };
+  }, String(reservationNo || '').trim());
+}
+
 export async function inspectNaverReservationStatus(context, task, {
   businessId = NAVER_BOOKING_BUSINESS_ID,
   timeoutMs = 15000,
@@ -605,11 +628,24 @@ export async function inspectNaverReservationStatus(context, task, {
     if (result.status !== 'not_found') break;
     await page.waitForTimeout(400);
   }
+  let source = 'naver-booking-list';
+  let reason = '';
+  if (result.status === 'not_found') {
+    await page.goto(naverBookingDetailUrl(businessId, reservationNo), {
+      waitUntil: 'domcontentloaded',
+      timeout: timeoutMs,
+    });
+    await page.waitForTimeout(900);
+    result = await readNaverReservationStatusFromDetail(page, reservationNo);
+    source = 'naver-booking-detail';
+    reason = result.reason || '';
+  }
   return {
     status: result.status,
     exists: !['not_found', '취소'].includes(result.status),
     reservationNo,
-    source: 'naver-booking-list',
+    reason,
+    source,
   };
 }
 
