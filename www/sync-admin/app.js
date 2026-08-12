@@ -28,6 +28,7 @@
     adminAlertSummary: null,
     adminAlertsLoading: false,
     sessions: loadJson(sessionKey, {}),
+    sessionHistory: [],
     revenueStats: null,
     revenueComparison: null,
     industryComparison: null,
@@ -122,6 +123,9 @@
     adminTokenStatus: document.getElementById("adminTokenStatus"),
     naverStatus: document.getElementById("naverStatus"),
     spacecloudStatus: document.getElementById("spacecloudStatus"),
+    naverDiagnostic: document.getElementById("naverDiagnostic"),
+    spacecloudDiagnostic: document.getElementById("spacecloudDiagnostic"),
+    sessionHistory: document.getElementById("sessionHistory"),
     seriesList: document.getElementById("seriesList"),
     recurringModal: document.getElementById("recurringModal"),
     recurringForm: document.getElementById("recurringForm"),
@@ -1192,17 +1196,18 @@
   }
 
   function renderSessions() {
-    updateSession("naver", el.naverStatus);
-    updateSession("spacecloud", el.spacecloudStatus);
+    updateSession("naver", el.naverStatus, el.naverDiagnostic);
+    updateSession("spacecloud", el.spacecloudStatus, el.spacecloudDiagnostic);
+    renderSessionHistory();
   }
 
-  function updateSession(platform, label) {
+  function updateSession(platform, label, diagnosticLabel) {
     const row = document.querySelector(`.session-row[data-platform="${platform}"]`);
     const session = state.sessions[platform] || {};
     const status = normalizeSessionStatus(session.status, session.readyAt || session.ready_at);
     const checkedAt = session.lastCheckedAt || session.last_checked_at || session.updatedAt || session.updated_at || session.readyAt || session.ready_at;
     const note = session.note || "";
-    const isReady = status === "ready";
+    const diagnostic = session.diagnostic || {};
 
     row.classList.remove("ready", "warn", "failed", "checking", "needs-check");
     row.classList.add(sessionStatusClass(status));
@@ -1210,6 +1215,59 @@
       ? `${sessionStatusLabel(status)} ${formatDateTime(checkedAt)}`
       : sessionStatusLabel(status);
     row.title = note ? `${sessionStatusLabel(status)}: ${note}` : sessionStatusLabel(status);
+    if (diagnosticLabel) {
+      const parts = [];
+      if (diagnostic.failureCategory) parts.push(sessionDiagnosticStatusLabel(diagnostic.failureCategory));
+      if (diagnostic.cookieExpiresAt) parts.push(`쿠키 표시 만료 ${formatDateTime(diagnostic.cookieExpiresAt)}`);
+      if (diagnostic.clockAdjustmentMs !== null && diagnostic.clockAdjustmentMs !== undefined && Math.abs(Number(diagnostic.clockAdjustmentMs)) >= 5000) {
+        parts.push(`시계 보정 ${Math.round(Number(diagnostic.clockAdjustmentMs) / 1000)}초`);
+      }
+      if (diagnostic.runtimeChanges?.rebooted) parts.push("직전 점검 뒤 재부팅");
+      if (diagnostic.runtimeChanges?.profileChanged) parts.push("프로필 저장소 변경");
+      if (diagnostic.runtimeChanges?.networkChanged) parts.push("네트워크 주소 변경");
+      diagnosticLabel.textContent = parts.join(" · ") || "진단 이력 대기";
+    }
+  }
+
+  function sessionDiagnosticStatusLabel(category) {
+    return {
+      authenticated: "인증 쿠키 유지",
+      authenticated_cookie_rotated: "인증 쿠키 자동 교체",
+      authenticated_without_primary_cookie: "대표 쿠키 판별 불가",
+      cookie_expired_on_schedule: "표시 만료시각 도달 후 소실",
+      cookie_expired_before_check: "표시 만료된 쿠키",
+      cookie_removed_before_expiry: "만료 전 로컬 쿠키 소실",
+      cookie_removed_expiry_unknown: "쿠키 소실 · 만료시각 기록 없음",
+      cookie_missing_after_reboot: "재부팅 전후 사이 쿠키 소실",
+      profile_store_changed: "자동화 프로필 저장소 변경",
+      cookie_missing_before_check: "검사 전 인증 쿠키 없음",
+      server_cleared_cookie: "서버 응답 중 쿠키 삭제",
+      server_rejected_unexpired_cookie: "만료 전 서버 인증 거부",
+      server_rejected_cookie_validity_unknown: "서버 인증 거부 · 만료시각 기록 없음",
+      cookie_observation_failed: "쿠키 관찰 실패",
+      browser_check_failed: "브라우저 검사 실패",
+      login_required_unknown: "로그인 해제 원인 미분류",
+    }[String(category || "")] || "원인 분류 대기";
+  }
+
+  function renderSessionHistory() {
+    if (!el.sessionHistory) return;
+    const rows = (state.sessionHistory || []).slice(0, 8);
+    if (!rows.length) {
+      el.sessionHistory.innerHTML = '<p class="session-history-empty">첫 진단 점검 후 변경 이력이 표시됩니다.</p>';
+      return;
+    }
+    el.sessionHistory.innerHTML = rows.map((item) => {
+      const platform = item.platform === "naver" ? "네이버" : "스페이스클라우드";
+      const detail = sessionDiagnosticStatusLabel(item.failure_category);
+      const expiry = item.cookie_expires_at ? ` · 표시 만료 ${formatDateTime(item.cookie_expires_at)}` : "";
+      const destination = item.final_host ? ` · ${escapeHtml(item.final_host)}` : "";
+      return `<article class="session-history-item ${escapeHtml(normalizeSessionStatus(item.status))}">
+        <span>${escapeHtml(platform)} · ${escapeHtml(sessionStatusLabel(normalizeSessionStatus(item.status)))}</span>
+        <strong>${escapeHtml(detail)}</strong>
+        <small>${escapeHtml(`${formatDateTime(item.observed_at) || "시각 없음"}${expiry}`)}${destination}</small>
+      </article>`;
+    }).join("");
   }
 
   function normalizeSessionStatus(status, readyAt) {
@@ -2941,9 +2999,11 @@
         note: sessions[platform].note || "",
         lastCheckedAt: sessions[platform].last_checked_at || "",
         updatedAt: sessions[platform].updated_at || "",
+        diagnostic: sessions[platform].diagnostic || {},
       };
       return acc;
     }, {});
+    state.sessionHistory = Array.isArray(data.sessionHistory) ? data.sessionHistory : [];
     localStorage.setItem(sessionKey, JSON.stringify(state.sessions));
 
     if (settings.automation_profile) {

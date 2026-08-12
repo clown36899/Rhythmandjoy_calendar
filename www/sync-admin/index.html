@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>리듬앤조이 동기화 관리자</title>
-  <link rel="stylesheet" href="./styles.css?v=admin-alerts-v1-20260811">
+  <link rel="stylesheet" href="./styles.css?v=session-diagnostics-v1-20260812">
 </head>
 <body>
   <div class="app-shell">
@@ -192,16 +192,25 @@
               <div>
                 <strong>네이버 예약</strong>
                 <span id="naverStatus">세션 확인 필요</span>
+                <small class="session-diagnostic" id="naverDiagnostic">진단 이력 대기</small>
               </div>
-              <div class="session-action-note">미니 PC 자동화 브라우저에서 수동 로그인</div>
+              <div class="session-action-note">실제 달력 확인으로만 정상 판정<br>로그인 해제 시 해당 작업만 대기</div>
             </article>
             <article class="session-row" data-platform="spacecloud">
               <div>
                 <strong>스페이스클라우드</strong>
                 <span id="spacecloudStatus">세션 확인 필요</span>
+                <small class="session-diagnostic" id="spacecloudDiagnostic">진단 이력 대기</small>
               </div>
-              <div class="session-action-note">미니 PC 자동화 브라우저에서 수동 로그인</div>
+              <div class="session-action-note">실제 달력 확인으로만 정상 판정<br>로그인 해제 시 해당 작업만 대기</div>
             </article>
+          </div>
+          <div class="session-history-box">
+            <div class="session-history-heading">
+              <strong>세션 진단 이력</strong>
+              <span>쿠키 원문·비밀번호는 저장하지 않습니다.</span>
+            </div>
+            <div class="session-history-list" id="sessionHistory" aria-live="polite"></div>
           </div>
           <div class="profile-box">
             <label>
@@ -481,6 +490,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="../calendar_set/calendar_v10/revenue-policy.js?v=db-only-v1-20260810"></script>
-  <script src="./app.js?v=admin-alerts-v1-20260811"></script>
+  <script src="./app.js?v=session-diagnostics-v1-20260812"></script>
 </body>
 </html>

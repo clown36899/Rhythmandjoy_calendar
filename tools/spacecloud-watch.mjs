@@ -2,6 +2,7 @@
 
 import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -52,6 +53,7 @@ const DEFAULT_CUSTOMER_PLATFORM_AUDIT_STATE_PATH = path.join(DEFAULT_WORK_DIR, '
 const DEFAULT_CUSTOMER_PLATFORM_AUDIT_INTERVAL_MINUTES = 240;
 const DEFAULT_CUSTOMER_PLATFORM_AUDIT_RECHECK_MINUTES = 3;
 const DEFAULT_CUSTOMER_PLATFORM_AUDIT_LIMIT = 1;
+const DEFAULT_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS = 10;
 const CONFIRMATION_SMS_TEMPLATE_NAME = 'reservation-confirmed-v1';
 const CONFIRMATION_SMS_TITLE = '리듬앤조이 연습실 예약 확정 안내문자';
 const PRIOR_BOOKING_CANCEL_SMS_TEMPLATE_NAME = 'spacecloud-prior-booking-canceled-v1';
@@ -70,6 +72,14 @@ const CANCELLATION_GUARD_MAX_ATTEMPTS = 6;
 const PLATFORM_TRANSIENT_MAX_ATTEMPTS = 6;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const SESSION_DIAGNOSTIC_LOG_NAME = 'session-diagnostics.jsonl';
+const SESSION_DIAGNOSTIC_SALT_NAME = '.session-diagnostic-salt';
+const SESSION_DIAGNOSTIC_HEARTBEAT_MS = DAY_MS;
+// rhythmjoy_spacecloud_tasks.result_text is MySQL TEXT (65,535 bytes). Keep a
+// conservative margin for utf8mb4 and future schema changes, but do not throw
+// away verification evidence behind the old arbitrary 4,000-character limit.
+const TASK_RESULT_TEXT_MAX_BYTES = 48 * 1024;
+const PROCESS_STARTED_AT = new Date().toISOString();
 
 function customerReservationCancellationEnabled() {
   const configured = String(process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED || '').trim();
@@ -482,6 +492,404 @@ async function readJsonObject(filePath) {
   } catch {
     return {};
   }
+}
+
+async function sessionDiagnosticSalt(workDir) {
+  const saltPath = path.join(workDir, SESSION_DIAGNOSTIC_SALT_NAME);
+  try {
+    const existing = (await fs.readFile(saltPath, 'utf8')).trim();
+    if (existing) return existing;
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+
+  await fs.mkdir(workDir, { recursive: true });
+  const created = randomBytes(32).toString('hex');
+  try {
+    await fs.writeFile(saltPath, `${created}\n`, { mode: 0o600, flag: 'wx' });
+    return created;
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    const existing = (await fs.readFile(saltPath, 'utf8')).trim();
+    if (!existing) throw new Error('session diagnostic salt is empty');
+    return existing;
+  }
+}
+
+function privateFingerprint(salt, value) {
+  if (!value) return '';
+  return createHmac('sha256', salt).update(String(value)).digest('hex');
+}
+
+function stableDiagnosticSignature(value) {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function cookieExpiryIso(expires) {
+  const seconds = Number(expires || 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  const date = new Date(seconds * 1000);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
+function sessionCookiePolicy(platform) {
+  if (platform === 'naver') {
+    return {
+      urls: [
+        'https://www.naver.com/',
+        'https://nid.naver.com/',
+        'https://partner.booking.naver.com/',
+      ],
+      domain: /(?:^|\.)naver\.com$/i,
+      trackedNames: new Set(['NID_AUT', 'NID_SES', 'NID_SAUTO', 'NID_JST', 'nid_slevel']),
+      primaryName: 'NID_AUT',
+    };
+  }
+  return {
+    urls: [
+      'https://spacecloud.kr/',
+      'https://partner.spacecloud.kr/',
+    ],
+    domain: /(?:^|\.)spacecloud\.kr$/i,
+    trackedNames: new Set(['refresh_token']),
+    primaryName: 'refresh_token',
+  };
+}
+
+function cookieLooksOperational(cookie) {
+  return !/^(_ga|_gid|_gat|AMP_|NAC|NNB|BUC|SRT)/i.test(String(cookie?.name || ''));
+}
+
+async function collectSessionCookieSnapshot(context, platform, salt) {
+  const policy = sessionCookiePolicy(platform);
+  const capturedAt = new Date().toISOString();
+  try {
+    const cookies = (await context.cookies(policy.urls))
+      .filter((cookie) => policy.domain.test(String(cookie.domain || '').replace(/^\./, '')))
+      .filter((cookie) => !policy.trackedNames || policy.trackedNames.has(cookie.name))
+      .map((cookie) => ({
+        name: String(cookie.name || '').slice(0, 80),
+        domain: String(cookie.domain || '').slice(0, 120),
+        expiresAt: cookieExpiryIso(cookie.expires),
+        httpOnly: Boolean(cookie.httpOnly),
+        secure: Boolean(cookie.secure),
+        sameSite: String(cookie.sameSite || '').slice(0, 20),
+        fingerprint: privateFingerprint(salt, cookie.value),
+      }))
+      .sort((left, right) => `${left.domain}|${left.name}`.localeCompare(`${right.domain}|${right.name}`));
+
+    let primary = policy.primaryName
+      ? cookies.find((cookie) => cookie.name === policy.primaryName)
+      : null;
+    if (!primary) {
+      primary = cookies.find((cookie) => cookie.httpOnly && cookieLooksOperational(cookie))
+        || cookies.find(cookieLooksOperational)
+        || null;
+    }
+    return {
+      capturedAt,
+      cookieCount: cookies.length,
+      primaryName: primary?.name || policy.primaryName || '',
+      primaryPresent: Boolean(primary),
+      primaryExpiresAt: primary?.expiresAt || '',
+      primaryFingerprint: primary?.fingerprint || '',
+      aggregateFingerprint: stableDiagnosticSignature(cookies.map((cookie) => ({
+        name: cookie.name,
+        domain: cookie.domain,
+        expiresAt: cookie.expiresAt,
+        fingerprint: cookie.fingerprint,
+      }))),
+      cookies,
+      captureError: '',
+    };
+  } catch (error) {
+    return {
+      capturedAt,
+      cookieCount: 0,
+      primaryName: policy.primaryName || '',
+      primaryPresent: false,
+      primaryExpiresAt: '',
+      primaryFingerprint: '',
+      aggregateFingerprint: '',
+      cookies: [],
+      captureError: String(error?.message || error).slice(0, 240),
+    };
+  }
+}
+
+async function readTextIfPresent(filePath) {
+  try {
+    return (await fs.readFile(filePath, 'utf8')).trim();
+  } catch {
+    return '';
+  }
+}
+
+async function statIfPresent(filePath) {
+  try {
+    const value = await fs.stat(filePath);
+    return {
+      device: Number(value.dev || 0),
+      inode: Number(value.ino || 0),
+      size: Number(value.size || 0),
+      modifiedAt: value.mtime?.toISOString?.() || '',
+    };
+  } catch {
+    return { device: 0, inode: 0, size: 0, modifiedAt: '' };
+  }
+}
+
+async function sessionRuntimeSnapshot(args, context, salt) {
+  const bootId = await readTextIfPresent('/proc/sys/kernel/random/boot_id');
+  const profileStat = await statIfPresent(args.profileDir);
+  const cookieStoreStat = await statIfPresent(path.join(args.profileDir, 'Default', 'Cookies'));
+  const networkRows = Object.entries(os.networkInterfaces())
+    .flatMap(([name, rows]) => (rows || [])
+      .filter((row) => row && !row.internal)
+      .map((row) => `${name}|${row.family}|${row.address}`))
+    .sort();
+  let ntpSynchronized = false;
+  try {
+    await fs.access('/run/systemd/timesync/synchronized');
+    ntpSynchronized = true;
+  } catch {}
+  return {
+    observedAt: new Date().toISOString(),
+    observedEpochMs: Date.now(),
+    processStartedAt: PROCESS_STARTED_AT,
+    uptimeSeconds: Math.round(os.uptime()),
+    bootId: bootId.slice(0, 64),
+    browserVersion: String(context.browser()?.version?.() || '').slice(0, 80),
+    profileFingerprint: privateFingerprint(
+      salt,
+      `${args.profileDir}|${profileStat.device}|${profileStat.inode}`,
+    ),
+    profileStore: profileStat,
+    cookieStoreFingerprint: privateFingerprint(
+      salt,
+      `${args.profileDir}|${cookieStoreStat.device}|${cookieStoreStat.inode}`,
+    ),
+    cookieStore: cookieStoreStat,
+    networkFingerprint: privateFingerprint(salt, networkRows.join('\n')),
+    ntpSynchronized,
+  };
+}
+
+function safeUrlLocation(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return {
+      host: url.hostname.slice(0, 128),
+      path: url.pathname.slice(0, 255),
+    };
+  } catch {
+    return { host: '', path: '' };
+  }
+}
+
+function sanitizeSessionDiagnosticNote(value) {
+  return String(value || '')
+    .replace(/https?:\/\/[^\s"'<>]+/gi, (candidate) => {
+      const location = safeUrlLocation(candidate);
+      return location.host ? `https://${location.host}${location.path}` : '[URL 숨김]';
+    })
+    .replace(/\b(token|code|state|session|password|authorization)=([^\s&]+)/gi, '$1=[숨김]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+}
+
+function previousDiagnosticForPlatform(previousStatuses, platform) {
+  return (Array.isArray(previousStatuses) ? previousStatuses : [])
+    .find((row) => row?.platform === platform)?.diagnostic || null;
+}
+
+function sessionCookieIsExpired(snapshot, now = Date.now()) {
+  const expiresAt = snapshot?.primaryExpiresAt ? new Date(snapshot.primaryExpiresAt).getTime() : 0;
+  return Boolean(expiresAt && expiresAt <= now);
+}
+
+function classifySessionDiagnostic({ platform, status, before, after, previous, result, error }) {
+  if (status === 'check_failed' || error) return 'browser_check_failed';
+  if (before?.captureError || after?.captureError) return 'cookie_observation_failed';
+  const beforePrimary = Boolean(before?.primaryPresent);
+  const afterPrimary = Boolean(after?.primaryPresent);
+  const rotatedDuringCheck = Boolean(
+    before?.primaryFingerprint
+    && after?.primaryFingerprint
+    && before.primaryFingerprint !== after.primaryFingerprint
+  );
+  const rotatedSincePrevious = Boolean(
+    previous?.cookieFingerprint
+    && after?.primaryFingerprint
+    && previous.cookieFingerprint !== after.primaryFingerprint
+  );
+
+  if (status === 'ready') {
+    if (rotatedDuringCheck || rotatedSincePrevious) return 'authenticated_cookie_rotated';
+    if (!afterPrimary) return 'authenticated_without_primary_cookie';
+    return 'authenticated';
+  }
+
+  if (!beforePrimary) {
+    const priorExpiry = previous?.cookieExpiresAt ? new Date(previous.cookieExpiresAt).getTime() : 0;
+    if (priorExpiry && priorExpiry <= Date.now()) return 'cookie_expired_on_schedule';
+    if (previous?.cookieFingerprint && priorExpiry > Date.now()) return 'cookie_removed_before_expiry';
+    if (previous?.cookieFingerprint) return 'cookie_removed_expiry_unknown';
+    return 'cookie_missing_before_check';
+  }
+  if (sessionCookieIsExpired(before)) return 'cookie_expired_before_check';
+  if (!afterPrimary) return 'server_cleared_cookie';
+  const finalLocation = safeUrlLocation(result?.url);
+  if (platform === 'naver' && finalLocation.host === 'nid.naver.com') {
+    return before?.primaryExpiresAt
+      ? 'server_rejected_unexpired_cookie'
+      : 'server_rejected_cookie_validity_unknown';
+  }
+  return 'login_required_unknown';
+}
+
+function buildSessionDiagnostic({ platform, status, before, after, previous, result, error, runtime }) {
+  const finalLocation = safeUrlLocation(result?.url);
+  let failureCategory = classifySessionDiagnostic({
+    platform,
+    status,
+    before,
+    after,
+    previous,
+    result,
+    error,
+  });
+  const runtimeChanges = {
+    rebooted: Boolean(previous?.runtime?.bootId && previous.runtime.bootId !== runtime.bootId),
+    profileChanged: Boolean(
+      previous?.runtime?.profileFingerprint
+      && previous.runtime.profileFingerprint !== runtime.profileFingerprint
+    ),
+    cookieStoreChanged: Boolean(
+      previous?.runtime?.cookieStoreFingerprint
+      && previous.runtime.cookieStoreFingerprint !== runtime.cookieStoreFingerprint
+    ),
+    networkChanged: Boolean(
+      previous?.runtime?.networkFingerprint
+      && previous.runtime.networkFingerprint !== runtime.networkFingerprint
+    ),
+  };
+  if (status !== 'ready' && runtimeChanges.profileChanged) {
+    failureCategory = 'profile_store_changed';
+  } else if (
+    status !== 'ready'
+    && runtimeChanges.rebooted
+    && previous?.cookieFingerprint
+    && !before?.primaryPresent
+  ) {
+    failureCategory = 'cookie_missing_after_reboot';
+  }
+  let clockAdjustmentMs = null;
+  if (
+    previous?.runtime?.bootId
+    && previous.runtime.bootId === runtime.bootId
+    && Number.isFinite(Number(previous.runtime.observedEpochMs))
+    && Number.isFinite(Number(previous.runtime.uptimeSeconds))
+  ) {
+    const wallDelta = runtime.observedEpochMs - Number(previous.runtime.observedEpochMs);
+    const uptimeDelta = (runtime.uptimeSeconds - Number(previous.runtime.uptimeSeconds)) * 1000;
+    clockAdjustmentMs = Math.round(wallDelta - uptimeDelta);
+  }
+  const diagnostic = {
+    capturedAt: new Date().toISOString(),
+    failureCategory,
+    cookieName: after?.primaryName || before?.primaryName || '',
+    cookiePresentBefore: Boolean(before?.primaryPresent),
+    cookiePresentAfter: Boolean(after?.primaryPresent),
+    cookieExpiresAt: after?.primaryExpiresAt || before?.primaryExpiresAt || previous?.cookieExpiresAt || '',
+    cookieFingerprint: after?.primaryFingerprint || before?.primaryFingerprint || '',
+    finalHost: finalLocation.host,
+    finalPath: finalLocation.path,
+    clockAdjustmentMs,
+    runtimeChanges,
+    before,
+    after,
+    runtime,
+  };
+  diagnostic.signature = stableDiagnosticSignature({
+    platform,
+    status,
+    failureCategory,
+    cookieFingerprint: diagnostic.cookieFingerprint,
+    cookieExpiresAt: diagnostic.cookieExpiresAt,
+    finalHost: diagnostic.finalHost,
+    finalPath: diagnostic.finalPath,
+    bootId: runtime.bootId,
+    profileFingerprint: runtime.profileFingerprint,
+    networkFingerprint: runtime.networkFingerprint,
+    runtimeChanges,
+    clockAdjustmentBucket: clockAdjustmentMs !== null && Math.abs(clockAdjustmentMs) >= 5000
+      ? Math.round(clockAdjustmentMs / 1000)
+      : 0,
+  });
+  return diagnostic;
+}
+
+function sessionDiagnosticLabel(category) {
+  return {
+    authenticated: '로그인 확인 · 인증 쿠키 유지',
+    authenticated_cookie_rotated: '로그인 확인 · 인증 쿠키 자동 교체 감지',
+    authenticated_without_primary_cookie: '로그인 확인 · 대표 인증 쿠키 판별 불가',
+    cookie_expired_on_schedule: '직전 기록의 표시 만료시각 도달 후 쿠키 소실',
+    cookie_expired_before_check: '표시 만료시각이 지난 인증 쿠키로 로그인 해제',
+    cookie_removed_before_expiry: '표시 만료 전 인증 쿠키가 로컬에서 소실',
+    cookie_removed_expiry_unknown: '인증 쿠키 소실 · 표시 만료시각 기록 없음',
+    cookie_missing_after_reboot: '재부팅 전후 사이 인증 쿠키 소실',
+    profile_store_changed: '자동화 프로필 저장소 변경 감지',
+    cookie_missing_before_check: '검사 시작 전에 인증 쿠키가 없음',
+    server_cleared_cookie: '플랫폼 응답 과정에서 인증 쿠키 삭제 감지',
+    server_rejected_unexpired_cookie: '표시 만료 전 쿠키를 네이버 서버가 거부',
+    server_rejected_cookie_validity_unknown: '네이버 서버가 쿠키를 거부 · 표시 만료시각 기록 없음',
+    cookie_observation_failed: '인증 쿠키 상태를 읽지 못함',
+    browser_check_failed: '브라우저 화면 검사 실패',
+    login_required_unknown: '로그인 해제 · 기록만으로 원인 미분류',
+  }[category] || '원인 분류 대기';
+}
+
+async function persistLocalSessionDiagnostics(args, statuses, previousStatuses = []) {
+  const statePath = path.join(args.workDir, 'session-diagnostic-log-state.json');
+  const historyPath = path.join(args.workDir, SESSION_DIAGNOSTIC_LOG_NAME);
+  const state = await readJsonObject(statePath);
+  const platforms = state.platforms && typeof state.platforms === 'object' ? state.platforms : {};
+  const now = Date.now();
+  for (const row of statuses) {
+    const diagnostic = row?.diagnostic;
+    if (!diagnostic?.signature) continue;
+    const platform = String(row.platform || '');
+    const prior = platforms[platform] || {};
+    const previousStatus = (Array.isArray(previousStatuses) ? previousStatuses : [])
+      .find((candidate) => candidate?.platform === platform)?.status || '';
+    const lastLoggedAt = prior.loggedAt ? new Date(prior.loggedAt).getTime() : 0;
+    const changed = (
+      prior.signature !== diagnostic.signature
+      || prior.status !== row.status
+      || previousStatus !== row.status
+      || prior.failureCategory !== diagnostic.failureCategory
+    );
+    const heartbeatDue = !lastLoggedAt || now - lastLoggedAt >= SESSION_DIAGNOSTIC_HEARTBEAT_MS;
+    if (changed || heartbeatDue) {
+      await appendJsonl(historyPath, {
+        at: diagnostic.capturedAt,
+        platform,
+        status: row.status,
+        note: row.note,
+        diagnostic,
+      });
+      platforms[platform] = {
+        signature: diagnostic.signature,
+        status: row.status,
+        failureCategory: diagnostic.failureCategory,
+        loggedAt: diagnostic.capturedAt,
+      };
+    }
+  }
+  await writeJson(statePath, { updatedAt: new Date().toISOString(), platforms });
 }
 
 function logLine(message) {
@@ -2268,9 +2676,105 @@ function compactDirectVerification(value) {
   };
 }
 
+function compactNaverPlannedSlot(value) {
+  if (!value || typeof value !== 'object') return value;
+  return {
+    date: value.date || '',
+    startTime: value.startTime || '',
+    endTime: value.endTime || '',
+    slotIndex: value.slotIndex,
+  };
+}
+
+function compactNaverBeforeSlot(value) {
+  if (!value || typeof value !== 'object') return value;
+  const slot = value.slot || value.beforeSlot || {};
+  return {
+    ...compactNaverPlannedSlot(value),
+    status: slot.status || value.status || 'unknown',
+    reason: shortenResultString(slot.reason || value.reason, 160),
+  };
+}
+
+function compactNaverAppliedSlot(value, expectedStatus) {
+  if (!value || typeof value !== 'object') return value;
+  const beforeStatus = value.beforeSlot?.status || value.slot?.status || value.beforeStatus || 'unknown';
+  const afterStatus = value.afterSlot?.status || value.afterStatus || (
+    ['already-blocked', 'already-available'].includes(value.status) ? beforeStatus : 'unknown'
+  );
+  const changed = ['blocked', 'restored'].includes(value.status);
+  const panelChecked = Boolean(value.panelVerification);
+  const saveRequired = changed;
+  return {
+    ...compactNaverPlannedSlot(value),
+    status: value.status || '',
+    beforeStatus,
+    afterStatus,
+    expectedStatus,
+    verified: Boolean(expectedStatus && afterStatus === expectedStatus),
+    panelChecked,
+    panelVerified: panelChecked ? value.panelVerification?.ok === true : !changed,
+    saveRequired,
+    saveCompleted: saveRequired ? Boolean(value.save) : true,
+    error: shortenResultString(value.error, 240),
+  };
+}
+
+function compactNaverAvailabilityResult(row) {
+  const taskType = String(row.taskType || row.task_type || '');
+  const looksLikeNaverAvailability = ['naver_block', 'naver_restore'].includes(taskType)
+    || ['available', 'unavailable'].includes(row.targetStatus)
+    || Array.isArray(row.appliedSlots)
+    || Array.isArray(row.beforeSlots);
+  if (!looksLikeNaverAvailability) return row;
+
+  const expectedStatus = row.targetStatus === 'available' || taskType === 'naver_restore'
+    ? 'available'
+    : 'suspended';
+  const plannedSlots = (row.slotRows || []).map(compactNaverPlannedSlot);
+  const beforeSlots = (row.beforeSlots || []).map(compactNaverBeforeSlot);
+  const appliedSlots = (row.appliedSlots || []).map((slot) => compactNaverAppliedSlot(slot, expectedStatus));
+  const evidenceByKey = new Map();
+  const slotKey = (slot) => [slot.date, slot.startTime, slot.endTime].join('|');
+  for (const slot of beforeSlots) {
+    evidenceByKey.set(slotKey(slot), {
+      ...slot,
+      beforeStatus: slot.status,
+      afterStatus: slot.status,
+      expectedStatus,
+      verified: slot.status === expectedStatus,
+      panelChecked: false,
+      panelVerified: false,
+      saveRequired: false,
+      saveCompleted: false,
+    });
+  }
+  for (const slot of appliedSlots) evidenceByKey.set(slotKey(slot), slot);
+  const slots = [...evidenceByKey.values()].sort((left, right) => (
+    Number(left.slotIndex || 0) - Number(right.slotIndex || 0)
+  ));
+  const slotCount = Number(row.slotCount || plannedSlots.length || slots.length || 0);
+  const verifiedSlotCount = slots.filter((slot) => slot.verified === true).length;
+
+  row.slotRows = plannedSlots;
+  row.beforeSlots = beforeSlots;
+  row.appliedSlots = appliedSlots;
+  row.verificationEvidence = {
+    version: 1,
+    kind: 'naver-availability-slots',
+    expectedStatus,
+    slotCount,
+    observedSlotCount: slots.length,
+    verifiedSlotCount,
+    allSlotsVerified: slotCount > 0 && slots.length === slotCount && verifiedSlotCount === slotCount,
+    slots,
+  };
+  return row;
+}
+
 function compactTaskResultObject(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const row = { ...value };
+  const row = compactNaverAvailabilityResult({ ...value });
 
   for (const key of [
     'preflightVerification',
@@ -2326,64 +2830,89 @@ function compactTaskResultObject(value) {
   return row;
 }
 
-function taskResultTextForDb(resultText, maxLength = 4000) {
+function resultTextFits(value, maxBytes) {
+  return Buffer.byteLength(value, 'utf8') <= maxBytes;
+}
+
+function taskResultTextForDb(resultText, maxBytes = TASK_RESULT_TEXT_MAX_BYTES) {
   const raw = String(resultText || '');
   if (!raw) return '';
+  let parsed;
   try {
-    const compacted = compactTaskResultObject(JSON.parse(raw));
-    const compactText = JSON.stringify(compacted, null, 2);
-    if (compactText.length <= maxLength) return compactText;
-    const summaryText = JSON.stringify({
-      status: compacted.status || '',
-      taskId: compacted.taskId || null,
-      taskType: compacted.taskType || '',
-      roomKey: compacted.roomKey || '',
-      date: compacted.date || '',
-      startTime: compacted.startTime || '',
-      endTime: compacted.endTime || '',
-      reserverName: compacted.reserverName || '',
-      reservationNo: compacted.reservationNo || compacted.reservationId || '',
-      submissionAttempted: compacted.submissionAttempted === true,
-      submissionConfirmed: compacted.submissionConfirmed === true,
-      resubmitBlocked: compacted.resubmitBlocked === true,
-      retryMode: compacted.retryMode || '',
-      error: shortenResultString(compacted.error, 500),
-      winningBooking: compacted.winningBooking,
-      losingBooking: compacted.losingBooking,
-      cancellationTask: compacted.cancellationTask,
-      cancellationGuard: compacted.cancellationGuard || compacted.preflightCancellationGuard,
-      liveWinner: compacted.liveWinner,
-      resultSummary: 'result compacted to keep valid JSON in DB',
-      preflightVerification: compacted.preflightVerification,
-      postSubmitVerification: compacted.postSubmitVerification,
-      deleteVerification: compacted.deleteVerification,
-      selectedCandidate: compacted.selectedCandidate,
-      candidateSearch: compacted.candidateSearch,
-    }, null, 2);
-    if (summaryText.length <= maxLength) return summaryText;
-    return JSON.stringify({
-      status: compacted.status || '',
-      taskId: compacted.taskId || null,
-      taskType: compacted.taskType || '',
-      roomKey: compacted.roomKey || '',
-      date: compacted.date || '',
-      startTime: compacted.startTime || '',
-      endTime: compacted.endTime || '',
-      reservationNo: compacted.reservationNo || compacted.reservationId || '',
-      submissionAttempted: compacted.submissionAttempted === true,
-      submissionConfirmed: compacted.submissionConfirmed === true,
-      resubmitBlocked: compacted.resubmitBlocked === true,
-      retryMode: compacted.retryMode || '',
-      error: shortenResultString(compacted.error, 500),
-      resultSummary: 'result compacted to keep valid JSON in DB',
-    }, null, 2);
+    parsed = JSON.parse(raw);
   } catch {
-    return JSON.stringify({
+    const fallback = JSON.stringify({
       status: '',
       resultSummary: 'non-json result compacted to keep valid JSON in DB',
       rawPreview: shortenResultString(raw, 1000),
     }, null, 2);
+    return resultTextFits(fallback, maxBytes)
+      ? fallback
+      : JSON.stringify({ status: '', resultSummary: 'non-json result omitted: DB byte limit' });
   }
+
+  const compacted = compactTaskResultObject(parsed);
+  const compactText = JSON.stringify(compacted, null, 2);
+  if (resultTextFits(compactText, maxBytes)) return compactText;
+  const summary = {
+    status: compacted.status || '',
+    taskId: compacted.taskId || null,
+    taskType: compacted.taskType || '',
+    roomKey: compacted.roomKey || '',
+    date: compacted.date || '',
+    startTime: compacted.startTime || '',
+    endTime: compacted.endTime || '',
+    reservationNo: compacted.reservationNo || compacted.reservationId || '',
+    submissionAttempted: compacted.submissionAttempted === true,
+    submissionConfirmed: compacted.submissionConfirmed === true,
+    resubmitBlocked: compacted.resubmitBlocked === true,
+    retryMode: compacted.retryMode || '',
+    error: shortenResultString(compacted.error, 500),
+    winningBooking: compacted.winningBooking,
+    losingBooking: compacted.losingBooking,
+    cancellationTask: compacted.cancellationTask,
+    cancellationGuard: compacted.cancellationGuard || compacted.preflightCancellationGuard,
+    liveWinner: compacted.liveWinner,
+    resultSummary: 'result compacted to keep valid JSON in DB',
+    preflightVerification: compacted.preflightVerification,
+    postSubmitVerification: compacted.postSubmitVerification,
+    deleteVerification: compacted.deleteVerification,
+    selectedCandidate: compacted.selectedCandidate,
+    candidateSearch: compacted.candidateSearch,
+    slotCount: compacted.slotCount,
+    changedSlotCount: compacted.changedSlotCount,
+    alreadySlotCount: compacted.alreadySlotCount,
+    verificationEvidence: compacted.verificationEvidence,
+    appliedSlots: compacted.appliedSlots,
+  };
+  const summaryText = JSON.stringify(summary, null, 2);
+  if (resultTextFits(summaryText, maxBytes)) return summaryText;
+  const essentialText = JSON.stringify({
+    status: summary.status,
+    taskId: summary.taskId,
+    taskType: summary.taskType,
+    roomKey: summary.roomKey,
+    date: summary.date,
+    startTime: summary.startTime,
+    endTime: summary.endTime,
+    reservationNo: summary.reservationNo,
+    submissionAttempted: summary.submissionAttempted,
+    submissionConfirmed: summary.submissionConfirmed,
+    resubmitBlocked: summary.resubmitBlocked,
+    retryMode: summary.retryMode,
+    error: summary.error,
+    slotCount: summary.slotCount,
+    changedSlotCount: summary.changedSlotCount,
+    alreadySlotCount: summary.alreadySlotCount,
+    verificationEvidence: summary.verificationEvidence,
+    appliedSlots: summary.appliedSlots,
+    resultSummary: summary.resultSummary,
+  });
+  if (resultTextFits(essentialText, maxBytes)) return essentialText;
+  // A task must never become done while its essential platform proof vanished.
+  // Let the update fail and remain retryable instead of silently storing a
+  // misleading success-only summary.
+  throw new Error(`essential task verification evidence exceeds ${maxBytes} bytes`);
 }
 
 async function updateRemoteTask(args, task, status, resultText, { releaseClaim = true } = {}) {
@@ -2797,6 +3326,7 @@ async function updateRemoteAdminSessions(args, sessions) {
     platform: session.platform,
     status: session.status,
     note: String(session.note || '').slice(0, 240),
+    diagnostic: session.diagnostic || null,
   }))), 'utf8').toString('base64');
   const script = `
 set -e
@@ -2840,8 +3370,35 @@ try:
                 ready_at DATETIME NULL,
                 last_checked_at DATETIME NULL,
                 note VARCHAR(255) NOT NULL DEFAULT '',
+                diagnostic_json MEDIUMTEXT NULL,
                 updated_at DATETIME NOT NULL,
                 PRIMARY KEY (platform)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        cur.execute("SHOW COLUMNS FROM rhythmjoy_admin_sessions LIKE 'diagnostic_json'")
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE rhythmjoy_admin_sessions ADD COLUMN diagnostic_json MEDIUMTEXT NULL AFTER note")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS rhythmjoy_session_diagnostic_events (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                platform VARCHAR(32) NOT NULL,
+                status VARCHAR(32) NOT NULL,
+                failure_category VARCHAR(64) NOT NULL DEFAULT '',
+                event_signature CHAR(64) NOT NULL,
+                cookie_fingerprint CHAR(64) NOT NULL DEFAULT '',
+                cookie_expires_at DATETIME NULL,
+                boot_id VARCHAR(64) NOT NULL DEFAULT '',
+                profile_fingerprint CHAR(64) NOT NULL DEFAULT '',
+                network_fingerprint CHAR(64) NOT NULL DEFAULT '',
+                final_host VARCHAR(128) NOT NULL DEFAULT '',
+                final_path VARCHAR(255) NOT NULL DEFAULT '',
+                clock_adjustment_ms BIGINT NULL,
+                diagnostic_json MEDIUMTEXT NOT NULL,
+                observed_at DATETIME NOT NULL,
+                created_at DATETIME NOT NULL,
+                PRIMARY KEY (id),
+                KEY idx_platform_observed (platform, observed_at),
+                KEY idx_signature_observed (event_signature, observed_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
         updated = 0
@@ -2853,20 +3410,80 @@ try:
             if status not in allowed_statuses:
                 status = 'check_failed'
             note = str(row.get('note') or '')[:255]
+            diagnostic = row.get('diagnostic') if isinstance(row.get('diagnostic'), dict) else {}
+            diagnostic_json = json.dumps(diagnostic, ensure_ascii=False, separators=(',', ':'))
             cur.execute(
                 """
-                INSERT INTO rhythmjoy_admin_sessions (platform, status, ready_at, last_checked_at, note, updated_at)
-                VALUES (%s, %s, IF(%s='ready', NOW(), NULL), NOW(), %s, NOW())
+                INSERT INTO rhythmjoy_admin_sessions (
+                    platform, status, ready_at, last_checked_at, note, diagnostic_json, updated_at
+                )
+                VALUES (%s, %s, IF(%s='ready', NOW(), NULL), NOW(), %s, %s, NOW())
                 ON DUPLICATE KEY UPDATE
                     status=VALUES(status),
-                    ready_at=IF(VALUES(status)='ready', NOW(), NULL),
+                    ready_at=IF(VALUES(status)='ready', NOW(), ready_at),
                     last_checked_at=NOW(),
                     note=VALUES(note),
+                    diagnostic_json=VALUES(diagnostic_json),
                     updated_at=NOW()
                 """,
-                (platform, status, status, note),
+                (platform, status, status, note, diagnostic_json),
             )
             updated += cur.rowcount
+            signature = str(diagnostic.get('signature') or '')[:64]
+            if not signature:
+                continue
+            cur.execute(
+                """
+                SELECT event_signature, status, failure_category, observed_at,
+                       TIMESTAMPDIFF(SECOND, observed_at, NOW()) AS age_seconds
+                FROM rhythmjoy_session_diagnostic_events
+                WHERE platform=%s
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (platform,),
+            )
+            previous = cur.fetchone()
+            heartbeat_due = (
+                not previous
+                or previous.get('age_seconds') is None
+                or int(previous.get('age_seconds') or 0) >= 86400
+            )
+            changed = (
+                not previous
+                or previous.get('event_signature') != signature
+                or previous.get('status') != status
+                or previous.get('failure_category') != str(diagnostic.get('failureCategory') or '')[:64]
+            )
+            if not changed and not heartbeat_due:
+                continue
+            expires = str(diagnostic.get('cookieExpiresAt') or '').replace('T', ' ')[:19] or None
+            runtime = diagnostic.get('runtime') if isinstance(diagnostic.get('runtime'), dict) else {}
+            cur.execute(
+                """
+                INSERT INTO rhythmjoy_session_diagnostic_events (
+                    platform, status, failure_category, event_signature,
+                    cookie_fingerprint, cookie_expires_at, boot_id,
+                    profile_fingerprint, network_fingerprint, final_host, final_path,
+                    clock_adjustment_ms, diagnostic_json, observed_at, created_at
+                ) VALUES (%s,%s,%s,%s,%s,CONVERT_TZ(%s,'+00:00','+09:00'),%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
+                """,
+                (
+                    platform,
+                    status,
+                    str(diagnostic.get('failureCategory') or '')[:64],
+                    signature,
+                    str(diagnostic.get('cookieFingerprint') or '')[:64],
+                    expires,
+                    str(runtime.get('bootId') or '')[:64],
+                    str(runtime.get('profileFingerprint') or '')[:64],
+                    str(runtime.get('networkFingerprint') or '')[:64],
+                    str(diagnostic.get('finalHost') or '')[:128],
+                    str(diagnostic.get('finalPath') or '')[:255],
+                    diagnostic.get('clockAdjustmentMs'),
+                    diagnostic_json,
+                ),
+            )
         print(json.dumps({'updated': updated}, ensure_ascii=False))
 finally:
     conn.close()
@@ -3216,10 +3833,17 @@ async function fetchRemoteReflectionAudit(args) {
   const graceMinutes = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_GRACE_MINUTES || '10', 10);
   const pastDays = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_PAST_DAYS || '3650', 10);
   const futureDays = Number.parseInt(process.env.RHYTHMJOY_REFLECTION_AUDIT_FUTURE_DAYS || '730', 10);
+  const ingestionLookbackDays = Number.parseInt(
+    process.env.RHYTHMJOY_REFLECTION_INGESTION_LOOKBACK_DAYS || '10',
+    10,
+  );
   const auditScript = `${target.OPS_ROOT}/rhythmjoy_reflection_audit.py`;
   const script = `
 set -e
 export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export RHYTHMJOY_REFLECTION_INGESTION_LOOKBACK_DAYS=${shellQuote(
+    Number.isFinite(ingestionLookbackDays) && ingestionLookbackDays > 0 ? ingestionLookbackDays : 10
+  )}
 ${shellQuote(target.PYTHON_BIN)} ${shellQuote(auditScript)} --env-file ${shellQuote(target.SERVER_ENV_FILE)} --grace-minutes ${shellQuote(Number.isFinite(graceMinutes) && graceMinutes > 0 ? graceMinutes : 10)} --past-days ${shellQuote(Number.isFinite(pastDays) && pastDays >= 0 ? pastDays : 3650)} --future-days ${shellQuote(Number.isFinite(futureDays) && futureDays > 0 ? futureDays : 730)} --json
 `;
   const stdout = runSshScript(target, script);
@@ -3820,8 +4444,19 @@ async function maybeRunAdminPlatformAudit(args, context, sessionStatuses = []) {
   }
 }
 
+function customerCancellationAuditLookbackDays() {
+  return Math.max(
+    1,
+    Number.parseInt(
+      process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS || '',
+      10,
+    ) || DEFAULT_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS,
+  );
+}
+
 async function fetchRemoteCustomerPlatformAuditCandidates(args) {
   const target = await loadCafe24Target(args);
+  const cancellationLookbackDays = customerCancellationAuditLookbackDays();
   const script = `
 set -e
 export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
@@ -3889,9 +4524,13 @@ try:
               a.audit_status AS previousAuditStatus,
               (
                 SELECT t.id FROM rhythmjoy_spacecloud_tasks t
-                WHERE t.task_type=IF(l.source_platform='naver','upload','naver_block')
+                WHERE t.task_type=IF(
+                        l.current_status='canceled',
+                        IF(l.source_platform='naver','delete','naver_restore'),
+                        IF(l.source_platform='naver','upload','naver_block')
+                      )
                   AND (
-                       t.email_event_id=l.confirmed_email_event_id
+                       t.email_event_id=IF(l.current_status='canceled',l.canceled_email_event_id,l.confirmed_email_event_id)
                        OR (
                             t.room_key=l.room_key AND t.reservation_date=l.reservation_date
                             AND t.start_time=l.start_time AND t.end_time=l.end_time
@@ -3905,9 +4544,13 @@ try:
               ) AS mirrorTaskId,
               (
                 SELECT t.status FROM rhythmjoy_spacecloud_tasks t
-                WHERE t.task_type=IF(l.source_platform='naver','upload','naver_block')
+                WHERE t.task_type=IF(
+                        l.current_status='canceled',
+                        IF(l.source_platform='naver','delete','naver_restore'),
+                        IF(l.source_platform='naver','upload','naver_block')
+                      )
                   AND (
-                       t.email_event_id=l.confirmed_email_event_id
+                       t.email_event_id=IF(l.current_status='canceled',l.canceled_email_event_id,l.confirmed_email_event_id)
                        OR (
                             t.room_key=l.room_key AND t.reservation_date=l.reservation_date
                             AND t.start_time=l.start_time AND t.end_time=l.end_time
@@ -3921,9 +4564,13 @@ try:
               ) AS mirrorTaskStatus,
               (
                 SELECT t.payload_json FROM rhythmjoy_spacecloud_tasks t
-                WHERE t.task_type=IF(l.source_platform='naver','upload','naver_block')
+                WHERE t.task_type=IF(
+                        l.current_status='canceled',
+                        IF(l.source_platform='naver','delete','naver_restore'),
+                        IF(l.source_platform='naver','upload','naver_block')
+                      )
                   AND (
-                       t.email_event_id=l.confirmed_email_event_id
+                       t.email_event_id=IF(l.current_status='canceled',l.canceled_email_event_id,l.confirmed_email_event_id)
                        OR (
                             t.room_key=l.room_key AND t.reservation_date=l.reservation_date
                             AND t.start_time=l.start_time AND t.end_time=l.end_time
@@ -3937,7 +4584,13 @@ try:
               ) AS mirrorPayloadJson
             FROM rhythmjoy_booking_ledger l
             LEFT JOIN rhythmjoy_customer_platform_audits a ON a.ledger_id=l.id
-            WHERE l.current_status='confirmed'
+            WHERE (
+                    l.current_status='confirmed'
+                 OR (
+                      l.current_status='canceled'
+                      AND l.canceled_email_received_at >= DATE_SUB(NOW(), INTERVAL ${cancellationLookbackDays} DAY)
+                    )
+                  )
               AND l.source_platform IN ('naver','spacecloud')
               AND COALESCE(l.source_mode, '') <> 'admin-task-anchor'
               AND DATE_ADD(
@@ -3945,6 +4598,7 @@ try:
                     INTERVAL (TIME_TO_SEC(l.end_time) + IF(l.end_time <= l.start_time, 86400, 0)) SECOND
                   ) > NOW()
             ORDER BY IF(a.audit_status='recheck_pending', 0, 1) ASC,
+                     IF(l.current_status='canceled', 0, 1) ASC,
                      IF(mirrorTaskStatus IN ('done','google_pending'), 0, 1) ASC,
                      COALESCE(a.checked_at, '1000-01-01 00:00:00') ASC,
                      l.reservation_date ASC, l.start_time ASC, l.id ASC
@@ -4021,6 +4675,11 @@ function classifyCustomerPlatformInspection(checkType, inspection, task) {
     if (inspection?.status === 'not_found') return { ok: false, status: 'mismatch', reason: '스페이스클라우드 복제 예약이 실제 화면에 없음' };
     return { ok: false, status: 'check_failed', reason: `스페이스클라우드 복제 예약 식별 불충분: ${inspection?.reason || inspection?.status || '응답 없음'}` };
   }
+  if (checkType === 'spacecloud_mirror_absent') {
+    if (inspection?.status === 'not_found') return { ok: true, status: 'ok', reason: '스페이스클라우드 복제 예약 삭제 확인' };
+    if (inspection?.status === 'found') return { ok: false, status: 'mismatch', reason: '취소한 스페이스클라우드 복제 예약이 아직 보임' };
+    return { ok: false, status: 'check_failed', reason: `스페이스클라우드 삭제 확인 불충분: ${inspection?.reason || inspection?.status || '응답 없음'}` };
+  }
   if (checkType === 'naver_mirror') {
     const statuses = (inspection?.slots || []).map((slot) => slot.status);
     if (!statuses.length) return { ok: false, status: 'check_failed', reason: '네이버 복제 시간칸을 읽지 못함' };
@@ -4028,6 +4687,14 @@ function classifyCustomerPlatformInspection(checkType, inspection, task) {
       return { ok: true, status: 'ok', reason: '네이버 복제 시간 전체 예약불가 확인' };
     }
     return { ok: false, status: 'mismatch', reason: `네이버 복제 차단 불일치: ${statuses.join(',')}` };
+  }
+  if (checkType === 'naver_mirror_available') {
+    const statuses = (inspection?.slots || []).map((slot) => slot.status);
+    if (!statuses.length) return { ok: false, status: 'check_failed', reason: '네이버 복구 시간칸을 읽지 못함' };
+    if (statuses.every((status) => status === 'available')) {
+      return { ok: true, status: 'ok', reason: '네이버 예약 가능 복원 확인' };
+    }
+    return { ok: false, status: 'mismatch', reason: `네이버 예약 가능 복원 불일치: ${statuses.join(',')}` };
   }
   return { ok: false, status: 'check_failed', reason: `지원하지 않는 검사: ${checkType}` };
 }
@@ -4038,6 +4705,11 @@ function customerAuditTargetLine(candidate) {
 }
 
 function customerAuditChecks(candidate) {
+  if (candidate.currentStatus === 'canceled') {
+    return candidate.sourcePlatform === 'naver'
+      ? [{ checkType: 'spacecloud_mirror_absent', platformLabel: '스페이스클라우드 복제본' }]
+      : [{ checkType: 'naver_mirror_available', platformLabel: '네이버 복제 시간' }];
+  }
   const hasCompletedMirror = Boolean(candidate.mirrorTaskId)
     && ['done', 'google_pending'].includes(String(candidate.mirrorTaskStatus || ''));
   if (candidate.sourcePlatform === 'naver') {
@@ -4053,6 +4725,11 @@ function customerAuditChecks(candidate) {
 }
 
 function customerAuditScopeLine(candidate, rows) {
+  if (candidate.currentStatus === 'canceled') {
+    return candidate.sourcePlatform === 'naver'
+      ? '검사 범위: 취소 후 스페이스클라우드 복제본 삭제'
+      : '검사 범위: 취소 후 네이버 예약 가능 복원';
+  }
   return rows.length > 1
     ? '검사 범위: 원본 + 완료 기록이 있는 복제본'
     : `검사 범위: ${candidate.sourcePlatform === 'naver' ? '네이버' : '스페이스클라우드'} 원본만 · 복제 작업 완료 기록 없음`;
@@ -4062,7 +4739,7 @@ function customerPlatformAuditIssueMessage(candidate, rows) {
   const mismatches = rows.filter((row) => row.classification.status === 'mismatch');
   return compactNotice(mismatches.length ? '⚠️ 고객 예약 실제 반영 불일치' : '🟡 고객 예약 재검사 필요', [
     `대상: ${customerAuditTargetLine(candidate)}`,
-    `DB 원장: 확정 · 원본 ${candidate.sourcePlatform === 'naver' ? '네이버' : '스페이스클라우드'}`,
+    `DB 원장: ${candidate.currentStatus === 'canceled' ? '취소' : '확정'} · 원본 ${candidate.sourcePlatform === 'naver' ? '네이버' : '스페이스클라우드'}`,
     customerAuditScopeLine(candidate, rows),
     ...rows.filter((row) => !row.classification.ok).map((row) => `${row.platformLabel}: ${row.classification.reason}`),
     mismatches.length ? '판정: DB와 실제 플랫폼 상태가 다름' : '판정: 누락 확정 아님 · 실제 화면 2회 연속 조회 실패',
@@ -4073,12 +4750,15 @@ function customerPlatformAuditRecoveryMessage(candidate, rows) {
   return compactNotice('✅ 고객 예약 실제 반영 정상 복구', [
     `대상: ${customerAuditTargetLine(candidate)}`,
     customerAuditScopeLine(candidate, rows),
-    rows.length > 1 ? '판정: DB 원장·원본·복제본 일치' : '판정: DB 원장·원본 플랫폼 일치',
+    candidate.currentStatus === 'canceled'
+      ? '판정: DB 취소 원장과 반대 플랫폼의 취소 반영 일치'
+      : (rows.length > 1 ? '판정: DB 원장·원본·복제본 일치' : '판정: DB 원장·원본 플랫폼 일치'),
   ]);
 }
 
 async function persistRemoteCustomerPlatformAudits(args, rows) {
   const target = await loadCafe24Target(args);
+  const cancellationLookbackDays = customerCancellationAuditLookbackDays();
   const payload = rows.map((row) => ({
     ledgerId: Number(row.candidate.ledgerId),
     auditStatus: row.auditStatus,
@@ -4176,7 +4856,15 @@ try:
             WHERE a.ledger_id <> 0
               AND a.audit_status IN ('mismatch','check_failed')
               AND (
-                    l.id IS NULL OR l.current_status <> 'confirmed'
+                    l.id IS NULL
+                 OR l.current_status NOT IN ('confirmed','canceled')
+                 OR (
+                      l.current_status='canceled'
+                      AND (
+                           l.canceled_email_received_at IS NULL
+                           OR l.canceled_email_received_at < DATE_SUB(NOW(), INTERVAL ${cancellationLookbackDays} DAY)
+                          )
+                    )
                  OR DATE_ADD(
                       TIMESTAMP(l.reservation_date, '00:00:00'),
                       INTERVAL (TIME_TO_SEC(l.end_time) + IF(l.end_time <= l.start_time, 86400, 0)) SECOND
@@ -4222,7 +4910,7 @@ async function inspectCustomerAuditCandidate(args, context, candidate) {
         inspection = await inspectNaverReservationStatus(context, task, { businessId: args.naverBusinessId });
       } else if (check.checkType === 'spacecloud_source') {
         inspection = await inspectSpacecloudConfirmedReservation(context, task);
-      } else if (check.checkType === 'spacecloud_mirror') {
+      } else if (['spacecloud_mirror', 'spacecloud_mirror_absent'].includes(check.checkType)) {
         inspection = await inspectSpacecloudReservationStatus(context, task);
       } else {
         inspection = await inspectNaverAvailability(context, task, { businessId: args.naverBusinessId });
@@ -7362,6 +8050,18 @@ async function runNowModeSelfTest() {
     ['spacecloud_source', 'naver_mirror'],
     'legacy Google-pending means the platform mirror itself was already submitted',
   );
+  assert.deepEqual(
+    customerAuditChecks({ currentStatus: 'canceled', sourcePlatform: 'naver' })
+      .map((row) => row.checkType),
+    ['spacecloud_mirror_absent'],
+    'recent Naver cancellations must re-read the SpaceCloud mirror absence',
+  );
+  assert.deepEqual(
+    customerAuditChecks({ currentStatus: 'canceled', sourcePlatform: 'spacecloud' })
+      .map((row) => row.checkType),
+    ['naver_mirror_available'],
+    'recent SpaceCloud cancellations must re-read restored Naver availability',
+  );
   assert.equal(
     classifyCustomerPlatformInspection('naver_source', { status: '확정' }, naverCustomerTask).ok,
     true,
@@ -7387,6 +8087,26 @@ async function runNowModeSelfTest() {
     classifyCustomerPlatformInspection('naver_mirror', { status: 'inspected', slots: [{ status: 'confirmed' }] }, naverCustomerTask).status,
     'mismatch',
   );
+  assert.equal(
+    classifyCustomerPlatformInspection('spacecloud_mirror_absent', { status: 'not_found' }, naverCustomerTask).ok,
+    true,
+  );
+  assert.equal(
+    classifyCustomerPlatformInspection('spacecloud_mirror_absent', { status: 'found' }, naverCustomerTask).status,
+    'mismatch',
+  );
+  assert.equal(
+    classifyCustomerPlatformInspection('naver_mirror_available', { status: 'inspected', slots: [{ status: 'available' }] }, naverCustomerTask).ok,
+    true,
+  );
+  const previousCancellationAuditLookback = process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS;
+  delete process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS;
+  assert.equal(customerCancellationAuditLookbackDays(), 10);
+  if (previousCancellationAuditLookback === undefined) {
+    delete process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS;
+  } else {
+    process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS = previousCancellationAuditLookback;
+  }
   const uncertainCustomerRow = [{ classification: { ok: false, status: 'check_failed' } }];
   assert.equal(customerAuditStatusForRows(uncertainCustomerRow, '').auditStatus, 'recheck_pending');
   assert.equal(customerAuditStatusForRows(uncertainCustomerRow, 'recheck_pending').auditStatus, 'check_failed');
@@ -7604,15 +8324,74 @@ async function runNowModeSelfTest() {
     retryMode: 'verification-only',
     error: 'x'.repeat(20_000),
     candidates: Array.from({ length: 100 }, (_, index) => ({ index, text: '후보'.repeat(1000) })),
-  }));
+  }), 4000);
   const parsedLongResult = JSON.parse(compactedLongResult);
-  assert.ok(compactedLongResult.length <= 4000);
+  assert.ok(Buffer.byteLength(compactedLongResult, 'utf8') <= 4000);
   assert.equal(parsedLongResult.status, 'needs-review');
   assert.equal(parsedLongResult.reservationNo, '1311471051');
   assert.equal(parsedLongResult.submissionAttempted, true);
   assert.equal(parsedLongResult.submissionConfirmed, false);
   assert.equal(parsedLongResult.resubmitBlocked, true);
   assert.equal(parsedLongResult.retryMode, 'verification-only');
+  const verboseNaverSlots = Array.from({ length: 24 }, (_, index) => ({
+    date: '2026-09-17',
+    startTime: `${String(index).padStart(2, '0')}:00`,
+    endTime: `${String(index + 1).padStart(2, '0')}:00`,
+    slotIndex: index + 1,
+    beforeSlot: {
+      status: 'suspended',
+      cellText: '불필요한 DOM 화면 정보'.repeat(200),
+      buttons: Array.from({ length: 20 }, () => ({ text: '예약불가', visible: true })),
+    },
+    panelVerification: {
+      ok: true,
+      errors: [],
+      textPreview: '불필요한 패널 전문'.repeat(200),
+      panelCandidateCount: 1,
+    },
+    save: { dialogTypes: [] },
+    afterSlot: {
+      status: 'available',
+      cellText: '불필요한 DOM 화면 정보'.repeat(200),
+      buttons: Array.from({ length: 20 }, () => ({ text: '예약가능', visible: true })),
+    },
+    status: 'restored',
+  }));
+  const preservedNaverResult = taskResultTextForDb(JSON.stringify({
+    status: 'restored',
+    taskId: 571,
+    taskType: 'naver_restore',
+    roomKey: 'e',
+    date: '2026-09-17',
+    startTime: '00:00',
+    endTime: '24:00',
+    targetStatus: 'available',
+    slotCount: verboseNaverSlots.length,
+    changedSlotCount: verboseNaverSlots.length,
+    beforeSlots: verboseNaverSlots.map((slot) => ({ ...slot, slot: slot.beforeSlot })),
+    appliedSlots: verboseNaverSlots,
+  }));
+  const parsedNaverResult = JSON.parse(preservedNaverResult);
+  assert.ok(Buffer.byteLength(preservedNaverResult, 'utf8') <= TASK_RESULT_TEXT_MAX_BYTES);
+  assert.equal(parsedNaverResult.verificationEvidence.slotCount, 24);
+  assert.equal(parsedNaverResult.verificationEvidence.observedSlotCount, 24);
+  assert.equal(parsedNaverResult.verificationEvidence.verifiedSlotCount, 24);
+  assert.equal(parsedNaverResult.verificationEvidence.allSlotsVerified, true);
+  assert.equal(parsedNaverResult.verificationEvidence.slots.length, 24);
+  assert.equal(parsedNaverResult.appliedSlots.length, 24);
+  assert.equal(parsedNaverResult.appliedSlots[0].beforeStatus, 'suspended');
+  assert.equal(parsedNaverResult.appliedSlots[0].afterStatus, 'available');
+  assert.equal(parsedNaverResult.appliedSlots[0].verified, true);
+  assert.equal(Object.hasOwn(parsedNaverResult.appliedSlots[0], 'beforeSlot'), false);
+  assert.throws(
+    () => taskResultTextForDb(JSON.stringify({
+      status: 'restored',
+      taskType: 'naver_restore',
+      slotCount: verboseNaverSlots.length,
+      appliedSlots: verboseNaverSlots,
+    }), 300),
+    /essential task verification evidence exceeds/,
+  );
   const alertNow = Date.parse('2026-08-03T12:00:00Z');
   const priorAlert = { lastSentAt: '2026-08-03T11:59:00Z', textPreview: 'same issue' };
   assert.equal(notificationSuppressedByCooldown(priorAlert, 'same issue', alertNow, 3600), true);
@@ -7653,6 +8432,59 @@ async function runNowModeSelfTest() {
   assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'ready' }], 'naver'), false);
   assert.equal(sessionBlockedTaskResult('naver').attempted, 0);
   assert.match(sessionProblemMessage('naver', { status: 'login_required' }), /같은 세션 장애를 예약별로 반복 알리지 않습니다/);
+  assert.doesNotMatch(sessionProblemMessage('naver', { status: 'login_required' }), /세션 만료/);
+  const liveCookie = {
+    primaryPresent: true,
+    primaryFingerprint: 'cookie-a',
+    primaryExpiresAt: '2026-09-11T10:47:59.000Z',
+    captureError: '',
+  };
+  assert.equal(classifySessionDiagnostic({
+    platform: 'naver',
+    status: 'login_required',
+    before: liveCookie,
+    after: liveCookie,
+    previous: {},
+    result: { url: 'https://nid.naver.com/nidlogin.login?url=redacted' },
+  }), 'server_rejected_unexpired_cookie');
+  assert.equal(classifySessionDiagnostic({
+    platform: 'naver',
+    status: 'login_required',
+    before: { ...liveCookie, primaryPresent: false, primaryFingerprint: '', primaryExpiresAt: '' },
+    after: { ...liveCookie, primaryPresent: false, primaryFingerprint: '', primaryExpiresAt: '' },
+    previous: { cookieFingerprint: 'cookie-old', cookieExpiresAt: '2099-01-01T00:00:00.000Z' },
+    result: { url: 'https://nid.naver.com/nidlogin.login' },
+  }), 'cookie_removed_before_expiry');
+  assert.equal(classifySessionDiagnostic({
+    platform: 'naver',
+    status: 'login_required',
+    before: { ...liveCookie, primaryPresent: false, primaryFingerprint: '', primaryExpiresAt: '' },
+    after: { ...liveCookie, primaryPresent: false, primaryFingerprint: '', primaryExpiresAt: '' },
+    previous: { cookieFingerprint: 'cookie-old', cookieExpiresAt: '' },
+    result: { url: 'https://nid.naver.com/nidlogin.login' },
+  }), 'cookie_removed_expiry_unknown');
+  assert.equal(classifySessionDiagnostic({
+    platform: 'naver',
+    status: 'login_required',
+    before: { ...liveCookie, primaryExpiresAt: '' },
+    after: { ...liveCookie, primaryExpiresAt: '' },
+    previous: {},
+    result: { url: 'https://nid.naver.com/nidlogin.login' },
+  }), 'server_rejected_cookie_validity_unknown');
+  assert.equal(classifySessionDiagnostic({
+    platform: 'naver',
+    status: 'ready',
+    before: liveCookie,
+    after: { ...liveCookie, primaryFingerprint: 'cookie-b' },
+    previous: { cookieFingerprint: 'cookie-a' },
+    result: { url: 'https://partner.booking.naver.com/bizes/1/booking-calendar-view' },
+  }), 'authenticated_cookie_rotated');
+  assert.equal(privateFingerprint('local-secret', 'cookie-value'), privateFingerprint('local-secret', 'cookie-value'));
+  assert.notEqual(privateFingerprint('local-secret', 'cookie-value'), privateFingerprint('local-secret', 'other-value'));
+  assert.equal(
+    sanitizeSessionDiagnosticNote('failed https://nid.naver.com/login?token=secret&state=private'),
+    'failed https://nid.naver.com/login',
+  );
   const previousCancellationSetting = process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED;
   delete process.env.RHYTHMJOY_CUSTOMER_RESERVATION_CANCELLATION_ENABLED;
   assert.equal(customerReservationCancellationEnabled(), true);
@@ -7742,6 +8574,7 @@ async function runNowModeSelfTest() {
       'admin platform audit results and audit failures persist to the DB-backed alert center before checkpointing independently of Telegram',
       'platform read failures stay distinct from mismatches and require a three-minute second pass before alerting',
       'platform session circuit breakers pause affected work and audits without consuming reservation attempts',
+      'session diagnostics distinguish local cookie loss, scheduled expiry, and server rejection without storing cookie values',
       'customer DB reservations rotate through source and mirrored actual-platform inspection',
       'customer platform audit alerts persist to DB before the local interval checkpoint',
       'reflection audit uses the single canonical Cafe24 implementation',
@@ -7752,37 +8585,64 @@ async function runNowModeSelfTest() {
 
 async function checkAutomationSessionStatuses(args, context) {
   const statuses = [];
-  const addStatus = (platform, result, error = null) => {
+  const priorState = await readJsonObject(path.join(args.workDir, 'session-check-state.json'));
+  const previousStatuses = Array.isArray(priorState.statuses) ? priorState.statuses : [];
+  const salt = await sessionDiagnosticSalt(args.workDir);
+  const checkPlatform = async (platform, callback) => {
+    const before = await collectSessionCookieSnapshot(context, platform, salt);
+    let result = null;
+    let error = null;
+    try {
+      result = await callback();
+    } catch (caught) {
+      error = caught;
+    }
+    const after = await collectSessionCookieSnapshot(context, platform, salt);
+    const runtime = await sessionRuntimeSnapshot(args, context, salt);
+    const status = error ? 'check_failed' : (result?.ok ? 'ready' : 'login_required');
+    const diagnostic = buildSessionDiagnostic({
+      platform,
+      status,
+      before,
+      after,
+      previous: previousDiagnosticForPlatform(previousStatuses, platform),
+      result,
+      error,
+      runtime,
+    });
     if (error) {
       statuses.push({
         platform,
-        status: 'check_failed',
-        note: String(error?.message || error).slice(0, 240),
+        status,
+        note: sanitizeSessionDiagnosticNote(error?.message || error),
+        diagnostic,
       });
       return;
     }
     statuses.push({
       platform,
-      status: result?.ok ? 'ready' : 'login_required',
-      note: String(result?.ok ? '자동화 화면 확인됨' : (result?.reason || 'login may be required')).slice(0, 240),
+      status,
+      note: sanitizeSessionDiagnosticNote(result?.ok
+        ? sessionDiagnosticLabel(diagnostic.failureCategory)
+        : `${sessionDiagnosticLabel(diagnostic.failureCategory)} · ${result?.reason || 'login may be required'}`
+      ),
+      diagnostic,
     });
   };
 
-  try {
-    addStatus('naver', await checkNaverSmartplaceLogin(context, {
+  await checkPlatform('naver', () => checkNaverSmartplaceLogin(context, {
       businessId: args.naverBusinessId,
       timeoutMs: 15000,
-    }));
-  } catch (error) {
-    addStatus('naver', null, error);
-  }
+  }));
+
+  await checkPlatform('spacecloud', () => checkSpacecloudLogin(context, {
+    timeoutMs: 15000,
+  }));
 
   try {
-    addStatus('spacecloud', await checkSpacecloudLogin(context, {
-      timeoutMs: 15000,
-    }));
+    await persistLocalSessionDiagnostics(args, statuses, previousStatuses);
   } catch (error) {
-    addStatus('spacecloud', null, error);
+    logLine(`local session diagnostic persistence failed: ${String(error?.message || error)}`);
   }
 
   try {
@@ -7813,10 +8673,11 @@ function sessionPlatformLabel(platform) {
 }
 
 function sessionProblemMessage(platform, row) {
+  const diagnosticReason = sessionDiagnosticLabel(row?.diagnostic?.failureCategory);
   return compactNotice(`⚠️ ${sessionPlatformLabel(platform)} 로그인 필요`, [
     '상태: 해당 플랫폼 자동 작업·실제 화면 검사를 일시 중지',
     'DB 원장과 다른 플랫폼 작업: 계속 운영',
-    `원인: ${row?.status === 'login_required' ? '저장된 로그인 세션 만료' : cleanTelegramText(row?.note || '화면 확인 실패', 140)}`,
+    `진단: ${row?.status === 'login_required' ? diagnosticReason : cleanTelegramText(row?.note || '화면 확인 실패', 140)}`,
     '조치: 미니 PC 자동화 브라우저에서 수동 로그인',
     '같은 세션 장애를 예약별로 반복 알리지 않습니다.',
   ]);
@@ -7833,11 +8694,12 @@ async function notifySessionStateChanges(args, statuses) {
     }
     const state = await readJsonObject(args.notifyState);
     const previous = state[key] || {};
-    if (!previous.lastSentAt || !String(previous.stateSignature || '').startsWith('problem:')) continue;
-    await notifyOnStateChange(args, key, 'healthy', compactNotice(`✅ ${sessionPlatformLabel(platform)} 로그인 복구`, [
-      '상태: 자동 작업·실제 화면 검사 재개',
-      '대기 작업은 DB 접수 순서대로 자동 처리합니다.',
-    ]));
+    if (previous.lastSentAt && String(previous.stateSignature || '').startsWith('problem:')) {
+      await notifyOnStateChange(args, key, 'healthy', compactNotice(`✅ ${sessionPlatformLabel(platform)} 로그인 복구`, [
+        '상태: 자동 작업·실제 화면 검사 재개',
+        '대기 작업은 DB 접수 순서대로 자동 처리합니다.',
+      ]));
+    }
   }
 }
 

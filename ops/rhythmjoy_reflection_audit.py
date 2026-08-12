@@ -648,7 +648,7 @@ def run_audit(
             ensure_schema(cur)
             ingestion_rows = recent_ingestion_rows(
                 cur,
-                int(os.environ.get('RHYTHMJOY_REFLECTION_INGESTION_LOOKBACK_DAYS', '7')),
+                int(os.environ.get('RHYTHMJOY_REFLECTION_INGESTION_LOOKBACK_DAYS', '10')),
             )
             out['ingestionCheckedCount'] = len(ingestion_rows)
             upload_enabled = str(

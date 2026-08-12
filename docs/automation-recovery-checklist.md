@@ -1,6 +1,6 @@
 # Rhythmjoy Automation Recovery Checklist
 
-Last reviewed: 2026-07-14 KST
+Last reviewed: 2026-08-12 KST
 
 This document records the current recovery point for the Rhythmjoy reservation automation. It is intentionally safe for Git: it records service names, file paths, and rebuild steps, but does not include passwords, API keys, private SSH keys, browser cookies, or login sessions.
 
@@ -110,6 +110,8 @@ Durable state is in Cafe24 DB:
 ```text
 rhythmjoy_spacecloud_tasks
 rhythmjoy_sms_deliveries
+rhythmjoy_admin_sessions
+rhythmjoy_session_diagnostic_events
 email event tables used by ops/rhythmjoy_email_import.py
 ```
 
@@ -128,6 +130,7 @@ systemd/kiosk-chrome.active
 systemd/reverse-ssh.active
 spacecloud-watch/watcher-journal.log
 spacecloud-watch/runs.jsonl
+spacecloud-watch/session-diagnostics.jsonl
 processes.txt
 ```
 
@@ -146,6 +149,28 @@ If a session expires:
 3. Telegram alerts should report that login is required.
 4. Open the mini PC remote screen and log in manually.
 5. The watcher processes remaining work on the next cycle.
+
+Do not mark a session `ready` manually in the admin panel. Only the mini PC's
+successful read of the real Naver and SpaceCloud calendars can publish `ready`.
+For remote recovery, run this on the Mac:
+
+```bash
+cd /Users/inteyeo/Rhythmjoy_calendar
+bash ops/recover-ubuntu-platform-sessions.sh
+```
+
+The user completes only the platform login/second-factor step. The recovery
+service verifies both calendars before restarting the watcher. If the failure
+repeats, compare these records before naming a cause:
+
+```text
+/home/kiosk-j/rhythmjoy-logs/spacecloud-watch/session-diagnostics.jsonl
+/home/kiosk-j/rhythmjoy-logs/spacecloud-watch/session-check-state.json
+Cafe24 DB: rhythmjoy_session_diagnostic_events
+```
+
+The diagnostic log stores HMAC fingerprints and safe metadata only. Never add
+raw cookies, passwords, OAuth query strings, private keys, or IP addresses.
 
 ## Mac Rollback
 

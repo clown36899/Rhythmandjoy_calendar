@@ -1572,7 +1572,8 @@ input[readonly] {
 }
 
 .session-row strong,
-.session-row span {
+.session-row span,
+.session-row small {
   display: block;
 }
 
@@ -1599,6 +1600,14 @@ input[readonly] {
   color: var(--accent-2);
 }
 
+.session-row .session-diagnostic {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .session-action-note {
   max-width: 220px;
   padding: 9px 11px;
@@ -1609,6 +1618,66 @@ input[readonly] {
   font-weight: 800;
   line-height: 1.4;
   text-align: right;
+}
+
+.session-history-box {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfa;
+}
+
+.session-history-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.session-history-heading span,
+.session-history-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.session-history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.session-history-item {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #dfe8e5;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.session-history-item > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.session-history-item > strong {
+  font-size: 13px;
+}
+
+.session-history-item > small {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.session-history-item.login_required,
+.session-history-item.check_failed {
+  border-color: #efcaca;
+  background: #fff9f9;
 }
 
 .profile-box {
@@ -3560,6 +3629,7 @@ body.alert-drawer-open {
   .topbar,
   .panel-heading,
   .session-row,
+  .session-history-heading,
   .auth-box,
   .profile-box {
     align-items: stretch;
@@ -3586,6 +3656,14 @@ body.alert-drawer-open {
   .recurring-rule,
   .occurrence-editor-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .session-history-item {
+    grid-template-columns: 1fr;
+  }
+
+  .session-history-item > small {
+    text-align: left;
   }
 
 }

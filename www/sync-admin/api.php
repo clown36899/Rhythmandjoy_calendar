@@ -141,8 +141,33 @@ function ensure_schema($pdo) {
             ready_at DATETIME NULL,
             last_checked_at DATETIME NULL,
             note VARCHAR(255) NOT NULL DEFAULT '',
+            diagnostic_json MEDIUMTEXT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY (platform)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+    ensure_column($pdo, 'rhythmjoy_admin_sessions', 'diagnostic_json', 'MEDIUMTEXT NULL AFTER note');
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS rhythmjoy_session_diagnostic_events (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            platform VARCHAR(32) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            failure_category VARCHAR(64) NOT NULL DEFAULT '',
+            event_signature CHAR(64) NOT NULL,
+            cookie_fingerprint CHAR(64) NOT NULL DEFAULT '',
+            cookie_expires_at DATETIME NULL,
+            boot_id VARCHAR(64) NOT NULL DEFAULT '',
+            profile_fingerprint CHAR(64) NOT NULL DEFAULT '',
+            network_fingerprint CHAR(64) NOT NULL DEFAULT '',
+            final_host VARCHAR(128) NOT NULL DEFAULT '',
+            final_path VARCHAR(255) NOT NULL DEFAULT '',
+            clock_adjustment_ms BIGINT NULL,
+            diagnostic_json MEDIUMTEXT NOT NULL,
+            observed_at DATETIME NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_platform_observed (platform, observed_at),
+            KEY idx_signature_observed (event_signature, observed_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
     $pdo->exec("
@@ -532,10 +557,34 @@ function setting_rows($pdo) {
     return $settings;
 }
 
+function session_public_diagnostic($diagnostic) {
+    if (!is_array($diagnostic)) {
+        return array();
+    }
+    $changes = isset($diagnostic['runtimeChanges']) && is_array($diagnostic['runtimeChanges'])
+        ? $diagnostic['runtimeChanges']
+        : array();
+    return array(
+        'capturedAt' => isset($diagnostic['capturedAt']) ? (string) $diagnostic['capturedAt'] : '',
+        'failureCategory' => isset($diagnostic['failureCategory']) ? (string) $diagnostic['failureCategory'] : '',
+        'cookieName' => isset($diagnostic['cookieName']) ? (string) $diagnostic['cookieName'] : '',
+        'cookieExpiresAt' => isset($diagnostic['cookieExpiresAt']) ? (string) $diagnostic['cookieExpiresAt'] : '',
+        'finalHost' => isset($diagnostic['finalHost']) ? (string) $diagnostic['finalHost'] : '',
+        'finalPath' => isset($diagnostic['finalPath']) ? (string) $diagnostic['finalPath'] : '',
+        'clockAdjustmentMs' => isset($diagnostic['clockAdjustmentMs']) ? intval($diagnostic['clockAdjustmentMs']) : null,
+        'runtimeChanges' => array(
+            'rebooted' => !empty($changes['rebooted']),
+            'profileChanged' => !empty($changes['profileChanged']),
+            'cookieStoreChanged' => !empty($changes['cookieStoreChanged']),
+            'networkChanged' => !empty($changes['networkChanged']),
+        ),
+    );
+}
+
 function session_rows($pdo) {
     $sessions = array();
     $stmt = $pdo->query("
-        SELECT platform, status, note,
+        SELECT platform, status, note, diagnostic_json,
                DATE_FORMAT(ready_at, '%Y-%m-%dT%H:%i:%s+09:00') AS ready_at,
                DATE_FORMAT(last_checked_at, '%Y-%m-%dT%H:%i:%s+09:00') AS last_checked_at,
                DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
@@ -543,9 +592,28 @@ function session_rows($pdo) {
         ORDER BY platform
     ");
     foreach ($stmt->fetchAll() as $row) {
+        $diagnostic = json_decode((string) $row['diagnostic_json'], true);
+        $row['diagnostic'] = session_public_diagnostic($diagnostic);
+        unset($row['diagnostic_json']);
         $sessions[$row['platform']] = $row;
     }
     return $sessions;
+}
+
+function session_diagnostic_history_rows($pdo) {
+    if (!admin_table_exists($pdo, 'rhythmjoy_session_diagnostic_events')) {
+        return array();
+    }
+    $stmt = $pdo->query("
+        SELECT id, platform, status, failure_category,
+               DATE_FORMAT(cookie_expires_at, '%Y-%m-%dT%H:%i:%s+09:00') AS cookie_expires_at,
+               final_host, final_path, clock_adjustment_ms,
+               DATE_FORMAT(observed_at, '%Y-%m-%dT%H:%i:%s+09:00') AS observed_at
+        FROM rhythmjoy_session_diagnostic_events
+        ORDER BY observed_at DESC, id DESC
+        LIMIT 20
+    ");
+    return $stmt->fetchAll();
 }
 
 function task_summary_rows($pdo) {
@@ -2829,6 +2897,7 @@ function bootstrap_payload($pdo, $date, $env) {
         'serverTime' => date('c'),
         'settings' => $settings,
         'sessions' => session_rows($pdo),
+        'sessionHistory' => session_diagnostic_history_rows($pdo),
         'reservations' => reservation_rows($pdo, $date),
         'adminSeries' => admin_series_rows($pdo),
         'tasks' => recent_task_rows($pdo),
@@ -3605,17 +3674,11 @@ try {
     }
 
     if ($action === 'session_ready') {
-        $platform = isset($payload['platform']) ? trim((string) $payload['platform']) : '';
-        if (!in_array($platform, array('naver', 'spacecloud'), true)) {
-            json_response(array('ok' => false, 'error' => 'invalid_platform', 'message' => '지원하지 않는 플랫폼입니다.'), 400);
-        }
-        $stmt = $pdo->prepare("
-            INSERT INTO rhythmjoy_admin_sessions (platform, status, ready_at, last_checked_at, note, updated_at)
-            VALUES (?, 'ready', NOW(), NOW(), '', NOW())
-            ON DUPLICATE KEY UPDATE status='ready', ready_at=NOW(), last_checked_at=NOW(), updated_at=NOW()
-        ");
-        $stmt->execute(array($platform));
-        json_response(bootstrap_payload($pdo, $date, $env));
+        json_response(array(
+            'ok' => false,
+            'error' => 'browser_verification_required',
+            'message' => '로그인 정상 상태는 관리자 화면에서 지정할 수 없습니다. 미니PC가 실제 플랫폼 달력을 확인한 결과만 반영됩니다.',
+        ), 409);
     }
 
     json_response(array('ok' => false, 'error' => 'unknown_action', 'message' => 'Unknown action: ' . $action), 404);
