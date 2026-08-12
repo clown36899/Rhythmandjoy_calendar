@@ -4522,6 +4522,11 @@ try:
               l.confirmed_email_event_id AS confirmedEmailEventId,
               CAST(a.checked_at AS CHAR) AS auditCheckedAt,
               a.audit_status AS previousAuditStatus,
+              IF(
+                l.current_status='canceled',
+                IF(l.source_platform='naver','delete','naver_restore'),
+                IF(l.source_platform='naver','upload','naver_block')
+              ) AS mirrorTaskType,
               (
                 SELECT t.id FROM rhythmjoy_spacecloud_tasks t
                 WHERE t.task_type=IF(
@@ -4592,7 +4597,6 @@ try:
                     )
                   )
               AND l.source_platform IN ('naver','spacecloud')
-              AND COALESCE(l.source_mode, '') <> 'admin-task-anchor'
               AND DATE_ADD(
                     TIMESTAMP(l.reservation_date, '00:00:00'),
                     INTERVAL (TIME_TO_SEC(l.end_time) + IF(l.end_time <= l.start_time, 86400, 0)) SECOND
@@ -4640,6 +4644,72 @@ function customerAuditTask(candidate) {
     payload,
     payloadJson: JSON.stringify(payload),
     ledgerId: candidate.ledgerId,
+    cancellationOverlapBookings: candidate.cancellationOverlapBookings || [],
+  };
+}
+
+function compactCustomerAuditOverlapBooking(booking) {
+  return {
+    ledgerId: Number(booking.ledgerId || 0) || null,
+    sourcePlatform: booking.sourcePlatform || '',
+    sourceMode: booking.sourceMode || '',
+    currentStatus: booking.currentStatus || '',
+    date: booking.date || '',
+    roomKey: String(booking.roomKey || '').toLowerCase(),
+    startTime: booking.startTime || '',
+    endTime: booking.endTime || '',
+    mirrorTaskType: booking.mirrorTaskType || '',
+    mirrorTaskId: Number(booking.mirrorTaskId || 0) || null,
+    mirrorTaskStatus: booking.mirrorTaskStatus || '',
+  };
+}
+
+function customerCancellationOverlapBookings(candidate, allRows) {
+  if (candidate.currentStatus !== 'canceled' || candidate.sourcePlatform !== 'spacecloud') return [];
+  return (Array.isArray(allRows) ? allRows : [])
+    .filter((booking) => Number(booking.ledgerId) !== Number(candidate.ledgerId))
+    .filter((booking) => booking.currentStatus === 'confirmed')
+    .filter((booking) => String(booking.roomKey || '').toLowerCase() === String(candidate.roomKey || '').toLowerCase())
+    .filter((booking) => reservationSlotsOverlap(candidate, booking))
+    .map(compactCustomerAuditOverlapBooking);
+}
+
+function naverCancellationSlotExpectation(slot, overlapBookings) {
+  const overlaps = (Array.isArray(overlapBookings) ? overlapBookings : [])
+    .filter((booking) => reservationSlotsOverlap(slot, booking));
+  const activeNaverSources = overlaps.filter((booking) => (
+    booking.sourceMode !== 'admin-task-anchor'
+    && booking.sourcePlatform === 'naver'
+  ));
+  const activeOwnedBlocks = overlaps.filter((booking) => (
+    (booking.sourceMode === 'admin-task-anchor' || booking.sourcePlatform === 'spacecloud')
+    && booking.mirrorTaskType === 'naver_block'
+    && ['done', 'google_pending'].includes(String(booking.mirrorTaskStatus || ''))
+  ));
+  const allowedStatuses = new Set(['available']);
+  if (activeNaverSources.length) {
+    allowedStatuses.add('confirmed');
+    allowedStatuses.add('soldout');
+  }
+  if (activeOwnedBlocks.length) allowedStatuses.add('suspended');
+  return {
+    date: slot.date || '',
+    startTime: slot.startTime || '',
+    endTime: slot.endTime || '',
+    actualStatus: slot.status || 'unknown',
+    allowedStatuses: [...allowedStatuses],
+    justifiedBy: [
+      ...activeNaverSources.map((booking) => ({
+        ledgerId: booking.ledgerId,
+        kind: 'active-naver-source',
+      })),
+      ...activeOwnedBlocks.map((booking) => ({
+        ledgerId: booking.ledgerId,
+        kind: booking.sourceMode === 'admin-task-anchor' ? 'active-admin-block' : 'active-spacecloud-block',
+        taskId: booking.mirrorTaskId,
+      })),
+    ],
+    ok: allowedStatuses.has(slot.status),
   };
 }
 
@@ -4689,12 +4759,31 @@ function classifyCustomerPlatformInspection(checkType, inspection, task) {
     return { ok: false, status: 'mismatch', reason: `네이버 복제 차단 불일치: ${statuses.join(',')}` };
   }
   if (checkType === 'naver_mirror_available') {
-    const statuses = (inspection?.slots || []).map((slot) => slot.status);
-    if (!statuses.length) return { ok: false, status: 'check_failed', reason: '네이버 복구 시간칸을 읽지 못함' };
-    if (statuses.every((status) => status === 'available')) {
-      return { ok: true, status: 'ok', reason: '네이버 예약 가능 복원 확인' };
+    const slots = inspection?.slots || [];
+    if (!slots.length) return { ok: false, status: 'check_failed', reason: '네이버 복구 시간칸을 읽지 못함' };
+    const expectations = slots.map((slot) => naverCancellationSlotExpectation(
+      slot,
+      task.cancellationOverlapBookings,
+    ));
+    inspection.slotExpectations = expectations;
+    const problems = expectations.filter((row) => !row.ok);
+    if (!problems.length) {
+      const protectedCount = expectations.filter((row) => row.actualStatus !== 'available').length;
+      return {
+        ok: true,
+        status: 'ok',
+        reason: protectedCount
+          ? `네이버 복원 확인 · 다른 활성 예약 보호 ${protectedCount}칸`
+          : '네이버 예약 가능 복원 확인',
+      };
     }
-    return { ok: false, status: 'mismatch', reason: `네이버 예약 가능 복원 불일치: ${statuses.join(',')}` };
+    return {
+      ok: false,
+      status: 'mismatch',
+      reason: `네이버 복원 불일치: ${problems.map((row) => (
+        `${row.date} ${row.startTime}-${row.endTime} ${row.actualStatus} (허용 ${row.allowedStatuses.join('/')})`
+      )).join(', ')}`,
+    };
   }
   return { ok: false, status: 'check_failed', reason: `지원하지 않는 검사: ${checkType}` };
 }
@@ -4948,7 +5037,13 @@ async function runCustomerPlatformAudit(args, context, { force = false } = {}) {
   const lastRunAt = Date.parse(state.checkedAt || '') || 0;
   if (!force && lastRunAt && Date.now() - lastRunAt < intervalMs) return { skipped: true, reason: 'interval' };
 
-  const allCandidates = await fetchRemoteCustomerPlatformAuditCandidates(args);
+  const fetchedRows = await fetchRemoteCustomerPlatformAuditCandidates(args);
+  const allCandidates = fetchedRows
+    .filter((row) => row.sourceMode !== 'admin-task-anchor')
+    .map((candidate) => ({
+      ...candidate,
+      cancellationOverlapBookings: customerCancellationOverlapBookings(candidate, fetchedRows),
+    }));
   const candidates = args.customerPlatformAuditLedgerId
     ? allCandidates.filter((row) => Number(row.ledgerId) === Number(args.customerPlatformAuditLedgerId))
     : allCandidates;
@@ -8099,6 +8194,146 @@ async function runNowModeSelfTest() {
     classifyCustomerPlatformInspection('naver_mirror_available', { status: 'inspected', slots: [{ status: 'available' }] }, naverCustomerTask).ok,
     true,
   );
+  const canceledSpacecloudCandidate = {
+    ledgerId: 9152,
+    currentStatus: 'canceled',
+    sourcePlatform: 'spacecloud',
+    sourceMode: 'spacecloud_email',
+    roomKey: 'e',
+    date: '2026-09-17',
+    startTime: '19:00',
+    endTime: '22:00',
+    payloadJson: '{}',
+  };
+  const overlapPool = [
+    canceledSpacecloudCandidate,
+    {
+      ledgerId: 9199,
+      currentStatus: 'confirmed',
+      sourcePlatform: 'spacecloud',
+      sourceMode: 'spacecloud_email',
+      roomKey: 'e',
+      date: '2026-09-17',
+      startTime: '20:00',
+      endTime: '22:00',
+      mirrorTaskType: 'naver_block',
+      mirrorTaskId: 572,
+      mirrorTaskStatus: 'done',
+    },
+    {
+      ledgerId: 9200,
+      currentStatus: 'confirmed',
+      sourcePlatform: 'naver',
+      sourceMode: '',
+      roomKey: 'e',
+      date: '2026-09-17',
+      startTime: '22:00',
+      endTime: '23:00',
+      mirrorTaskStatus: 'done',
+    },
+  ];
+  const overlapBookings = customerCancellationOverlapBookings(canceledSpacecloudCandidate, overlapPool);
+  assert.deepEqual(overlapBookings.map((row) => row.ledgerId), [9199], 'adjacent reservations must not justify a canceled slot block');
+  const cancellationTaskWithOverlap = customerAuditTask({
+    ...canceledSpacecloudCandidate,
+    cancellationOverlapBookings: overlapBookings,
+  });
+  const partiallyProtectedInspection = {
+    status: 'inspected',
+    slots: [
+      { date: '2026-09-17', startTime: '19:00', endTime: '20:00', status: 'available' },
+      { date: '2026-09-17', startTime: '20:00', endTime: '21:00', status: 'suspended' },
+      { date: '2026-09-17', startTime: '21:00', endTime: '22:00', status: 'suspended' },
+    ],
+  };
+  const protectedClassification = classifyCustomerPlatformInspection(
+    'naver_mirror_available',
+    partiallyProtectedInspection,
+    cancellationTaskWithOverlap,
+  );
+  assert.equal(protectedClassification.ok, true, 'a later active SpaceCloud booking must keep only its overlapping slots blocked');
+  assert.match(protectedClassification.reason, /다른 활성 예약 보호 2칸/);
+  assert.deepEqual(
+    partiallyProtectedInspection.slotExpectations.map((row) => row.allowedStatuses),
+    [['available'], ['available', 'suspended'], ['available', 'suspended']],
+  );
+  assert.equal(
+    classifyCustomerPlatformInspection('naver_mirror_available', {
+      status: 'inspected',
+      slots: [{ date: '2026-09-17', startTime: '19:00', endTime: '20:00', status: 'suspended' }],
+    }, cancellationTaskWithOverlap).status,
+    'mismatch',
+    'a non-overlapping leftover block must still be detected',
+  );
+  const naverOverlapTask = customerAuditTask({
+    ...canceledSpacecloudCandidate,
+    cancellationOverlapBookings: [{
+      ledgerId: 9178,
+      currentStatus: 'confirmed',
+      sourcePlatform: 'naver',
+      sourceMode: '',
+      roomKey: 'e',
+      date: '2026-09-17',
+      startTime: '20:00',
+      endTime: '21:00',
+    }],
+  });
+  assert.equal(
+    classifyCustomerPlatformInspection('naver_mirror_available', {
+      status: 'inspected',
+      slots: [{ date: '2026-09-17', startTime: '20:00', endTime: '21:00', status: 'confirmed' }],
+    }, naverOverlapTask).ok,
+    true,
+    'an overlapping active Naver source reservation must remain confirmed',
+  );
+  const unownedSpacecloudBlockTask = customerAuditTask({
+    ...canceledSpacecloudCandidate,
+    cancellationOverlapBookings: [{
+      ledgerId: 9300,
+      currentStatus: 'confirmed',
+      sourcePlatform: 'spacecloud',
+      sourceMode: 'historical-source-only',
+      roomKey: 'e',
+      date: '2026-09-17',
+      startTime: '20:00',
+      endTime: '21:00',
+      mirrorTaskType: 'naver_block',
+      mirrorTaskStatus: '',
+    }],
+  });
+  assert.equal(
+    classifyCustomerPlatformInspection('naver_mirror_available', {
+      status: 'inspected',
+      slots: [{ date: '2026-09-17', startTime: '20:00', endTime: '21:00', status: 'suspended' }],
+    }, unownedSpacecloudBlockTask).status,
+    'mismatch',
+    'a source-only historical row must not hide a leftover canceled-reservation block',
+  );
+  const adminSlot = { date: '2026-09-17', startTime: '20:00', endTime: '21:00', status: 'suspended' };
+  assert.equal(naverCancellationSlotExpectation(adminSlot, [{
+    ledgerId: 9401,
+    currentStatus: 'confirmed',
+    sourcePlatform: 'naver',
+    sourceMode: 'admin-task-anchor',
+    roomKey: 'e',
+    date: '2026-09-17',
+    startTime: '20:00',
+    endTime: '21:00',
+    mirrorTaskType: 'upload',
+    mirrorTaskStatus: 'done',
+  }]).ok, false, 'an admin SpaceCloud upload must not be mistaken for ownership of a Naver block');
+  assert.equal(naverCancellationSlotExpectation(adminSlot, [{
+    ledgerId: 9402,
+    currentStatus: 'confirmed',
+    sourcePlatform: 'spacecloud',
+    sourceMode: 'admin-task-anchor',
+    roomKey: 'e',
+    date: '2026-09-17',
+    startTime: '20:00',
+    endTime: '21:00',
+    mirrorTaskType: 'naver_block',
+    mirrorTaskStatus: 'done',
+  }]).ok, true, 'only a completed admin Naver-block task may justify a protected slot');
   const previousCancellationAuditLookback = process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS;
   delete process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS;
   assert.equal(customerCancellationAuditLookbackDays(), 10);
