@@ -16,6 +16,7 @@ def ledger_row(**changes):
     row = {
         'id': 1,
         'source_platform': 'naver',
+        'source_mode': 'naver_email',
         'current_status': 'confirmed',
         'reservation_number': '1317110201',
         'reserver_name': '김*진님',
@@ -36,6 +37,19 @@ def main():
         ledger_row(id=2, source_platform='spacecloud', reservation_number=''),
         ledger_row(id=3, current_status='canceled', room_key='b'),
         ledger_row(id=4, room_key='e', start_time='23:00:00', end_time='00:00:00'),
+        ledger_row(
+            id=5,
+            source_platform='google-backfill',
+            source_mode='visible-site-year-backfill',
+            room_key='d',
+            reservation_number='10222302',
+        ),
+        ledger_row(
+            id=6,
+            source_platform='google-backfill',
+            source_mode='google-calendar-backfill',
+            room_key='b',
+        ),
     ]
     admin_rows = [{
         'id': 8,
@@ -48,17 +62,20 @@ def main():
         'updated_at': '2026-08-10 11:00:00',
     }]
     events, meta = cache.build_db_calendar_events(rows, admin_rows)
-    assert len(events) == 3
+    assert len(events) == 4
     assert meta == {
-        'confirmedCount': 3,
+        'confirmedCount': 4,
         'adminCount': 1,
-        'publishedCount': 3,
+        'publishedCount': 4,
         'duplicateSlotCount': 1,
         'invalidRowCount': 0,
     }
     assert events[0]['extendedProps']['recordSource'] == 'db-ledger'
     overnight = next(event for event in events if event['className'] == 'e')
     assert overnight['end'] == '2026-08-13T00:00:00+09:00'
+    migrated = next(event for event in events if event['id'] == 'ledger:5')
+    assert migrated['extendedProps']['sourcePlatform'] == 'google-backfill'
+    assert not any(event['id'] == 'ledger:6' for event in events)
     admin = next(event for event in events if event['id'] == 'admin:8')
     assert admin['end'] == '2026-08-14T00:00:00+09:00'
     assert admin['extendedProps']['recordSource'] == 'db-admin'

@@ -744,6 +744,10 @@ function chooseExisting(event, indexes, visibleSlotStats) {
 }
 
 function buildAction(existing, event, match) {
+  const promoteExistingPlatform = (
+    existing?.source_platform === 'google-backfill'
+    && ['naver', 'spacecloud'].includes(event.platform)
+  );
   const payload = {
     source: 'visible-site-year-backfill',
     platform: event.platform,
@@ -771,9 +775,13 @@ function buildAction(existing, event, match) {
     operation: existing ? 'update' : 'insert',
     match,
     id: existing?.id || null,
-    preserveSourcePlatform: !!existing,
-    ledgerKey: existing?.ledger_key || ledgerKey(event.platform, event),
-    sourcePlatform: existing?.source_platform || event.platform,
+    preserveSourcePlatform: !!existing && !promoteExistingPlatform,
+    ledgerKey: promoteExistingPlatform
+      ? ledgerKey(event.platform, event)
+      : (existing?.ledger_key || ledgerKey(event.platform, event)),
+    sourcePlatform: promoteExistingPlatform
+      ? event.platform
+      : (existing?.source_platform || event.platform),
     sourceMode: event.sourceMode,
     currentStatus: event.currentStatus,
     targetCalendar: existing?.target_calendar || event.targetCalendar,
@@ -957,6 +965,8 @@ try:
                 cur.execute("""
                     UPDATE rhythmjoy_booking_ledger
                     SET
+                        ledger_key=IF(confirmed_email_event_id IS NOT NULL OR %s=1, ledger_key, %s),
+                        source_platform=IF(confirmed_email_event_id IS NOT NULL OR %s=1, source_platform, %s),
                         source_mode=IF(confirmed_email_event_id IS NOT NULL, source_mode, %s),
                         current_status=IF(confirmed_email_event_id IS NOT NULL, current_status, %s),
                         target_calendar=IF(COALESCE(target_calendar, '')='', %s, target_calendar),
@@ -989,6 +999,10 @@ try:
                         updated_at=NOW()
                     WHERE id=%s
                 """, (
+                    1 if item['preserveSourcePlatform'] else 0,
+                    item['ledgerKey'],
+                    1 if item['preserveSourcePlatform'] else 0,
+                    item['sourcePlatform'],
                     item['sourceMode'],
                     item['currentStatus'],
                     item['targetCalendar'],
@@ -1249,6 +1263,32 @@ function runSelfTest() {
     { date: '2026-06-18', startTime: '23:00:00', endTime: '23:59:00' },
     'Naver explicit PM late range',
   );
+  const legacyGoogleRow = {
+    id: 138,
+    ledger_key: 'google-backfill|legacy',
+    source_platform: 'google-backfill',
+    target_calendar: 'Ahall',
+  };
+  const verifiedSpacecloud = {
+    platform: 'spacecloud',
+    sourceMode: 'visible-site-year-backfill',
+    currentStatus: 'confirmed',
+    targetCalendar: 'Ahall',
+    roomKey: 'a',
+    reservationNumber: '10222302',
+    reserverName: '용태은',
+    nameKey: '용태은',
+    product: 'A홀',
+    date: '2026-08-17',
+    startTime: '15:00',
+    endTime: '19:00',
+    paymentStatus: '예약완료',
+    price: '80,000원',
+  };
+  const promoted = buildAction(legacyGoogleRow, verifiedSpacecloud, 'reservation-number');
+  if (promoted.sourcePlatform !== 'spacecloud') throw new Error('verified platform must replace google-backfill source');
+  if (promoted.preserveSourcePlatform) throw new Error('google-backfill source must not be preserved after platform verification');
+  if (!promoted.ledgerKey.startsWith('spacecloud|')) throw new Error('promoted row must receive a native ledger key');
   console.log('self-test ok');
 }
 

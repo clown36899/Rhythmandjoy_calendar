@@ -89,7 +89,13 @@ def fetch_booking_ledger_rows():
                        TIME_FORMAT(end_time, '%%H:%%i:%%s') AS end_time,
                        CAST(updated_at AS CHAR) AS updated_at
                 FROM rhythmjoy_booking_ledger
-                WHERE source_platform IN ('naver', 'spacecloud')
+                WHERE (
+                        source_platform IN ('naver', 'spacecloud')
+                     OR (
+                            source_platform = 'google-backfill'
+                        AND source_mode = 'visible-site-year-backfill'
+                     )
+                )
                   AND current_status = 'confirmed'
                   AND COALESCE(source_mode, '') <> 'admin-task-anchor'
                   AND reservation_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
@@ -182,6 +188,17 @@ def ledger_to_calendar_event(row):
     }
 
 
+def is_publishable_ledger_row(row):
+    source_platform = str(row.get('source_platform') or '').lower()
+    source_mode = str(row.get('source_mode') or '').lower()
+    if source_platform in ('naver', 'spacecloud'):
+        return True
+    return (
+        source_platform == 'google-backfill'
+        and source_mode == 'visible-site-year-backfill'
+    )
+
+
 def admin_to_calendar_event(row):
     room_key = str(row.get('room_key') or '').lower()
     room = ROOMS.get(room_key)
@@ -228,9 +245,13 @@ def build_db_calendar_events(ledger_rows, admin_rows=None):
     duplicate_slots = 0
     invalid_rows = 0
 
-    source_order = {'naver': 0, 'spacecloud': 1}
+    source_order = {'naver': 0, 'spacecloud': 1, 'google-backfill': 2}
     confirmed_rows = sorted(
-        (row for row in ledger_rows if row.get('current_status') == 'confirmed'),
+        (
+            row for row in ledger_rows
+            if row.get('current_status') == 'confirmed'
+            and is_publishable_ledger_row(row)
+        ),
         key=lambda row: (
             source_order.get(str(row.get('source_platform') or ''), 9),
             int(row.get('id') or 0),

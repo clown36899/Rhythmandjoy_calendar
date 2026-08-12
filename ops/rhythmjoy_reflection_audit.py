@@ -507,6 +507,7 @@ def run_audit(
         'issueCount': 0,
         'duplicateCount': 0,
         'calendarMismatchCount': 0,
+        'migrationGapCount': 0,
         'historyOnlyCount': 0,
         'ingestionCheckedCount': 0,
         'ingestionGapCount': 0,
@@ -852,13 +853,12 @@ def run_audit(
                 FROM rhythmjoy_booking_ledger a
                 WHERE a.current_status='confirmed'
                   AND a.source_platform='google-backfill'
-                  AND a.source_mode='google-calendar-backfill'
                   AND COALESCE(a.confirmed_email_received_at, a.last_event_at, a.created_at, a.updated_at)
                       <= DATE_SUB(NOW(), INTERVAL %s MINUTE)
-                  AND a.reservation_date BETWEEN DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                  AND a.reservation_date BETWEEN CURDATE()
                                              AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
                 ORDER BY a.reservation_date, a.start_time, a.room_key, a.id
-            """, (max(0, int(calendar_grace_minutes)), past_days, future_days))
+            """, (max(0, int(calendar_grace_minutes)), future_days))
             google_backfill_rows = cur.fetchall()
 
             google_by_number = {}
@@ -978,6 +978,58 @@ def run_audit(
                             'reserverNameMasked': mask_name(row.get('reserver_name')),
                             'reservationNumber': reservation_number,
                         })
+
+            for row in (google_backfill_rows if public_cache_is_db else []):
+                reason = '구글 종료 전 예약이 실제 플랫폼 원장으로 승격되지 않음'
+                out['checked'] += 1
+                out['issueCount'] += 1
+                out['migrationGapCount'] += 1
+                item = {
+                    'audit_key': f"migration:ledger:{row.get('id')}",
+                    'ledger_id': row.get('id'),
+                    'source_platform': row.get('source_platform') or '',
+                    'target_platform': 'ledger-migration',
+                    'expected_task_type': 'ledger_migration',
+                    'current_status': row.get('current_status') or '',
+                    'audit_status': 'issue',
+                    'severity': 'critical',
+                    'reason': reason,
+                    'task_id': None,
+                    'task_status': '',
+                    'reservation_date': row.get('reservation_date'),
+                    'room_key': row.get('room_key') or '',
+                    'start_time': row.get('start_time'),
+                    'end_time': row.get('end_time'),
+                    'reserver_name': row.get('reserver_name') or '',
+                    'reservation_number': row.get('reservation_number') or '',
+                    'detail_json': json.dumps({
+                        'ledgerSlot': ledger_slot(row),
+                        'sourceMode': row.get('source_mode') or '',
+                        'requiredAction': 'promote verified future booking to naver or spacecloud source',
+                    }, ensure_ascii=False, default=str),
+                }
+                seen_audit_keys.append(item['audit_key'])
+                upsert_item(cur, item)
+                if len(out['latestIssues']) < 8:
+                    start = short_time(row.get('start_time'))
+                    end = short_time(row.get('end_time'))
+                    out['latestIssues'].append({
+                        'ledgerId': row.get('id'),
+                        'sourcePlatform': row.get('source_platform') or '',
+                        'sourceLabel': platform_label(row.get('source_platform')),
+                        'targetPlatform': 'ledger-migration',
+                        'targetLabel': 'DB 원장 이관',
+                        'taskType': 'ledger_migration',
+                        'status': 'issue',
+                        'severity': 'critical',
+                        'reason': reason,
+                        'date': row.get('reservation_date'),
+                        'roomKey': (row.get('room_key') or '').upper(),
+                        'startTime': start,
+                        'endTime': display_end(start, end),
+                        'reserverNameMasked': mask_name(row.get('reserver_name')),
+                        'reservationNumber': row.get('reservation_number') or '',
+                    })
 
             for row in ([] if public_cache_is_db else google_backfill_rows):
                 google_event_id = google_event_id_from_ledger(row)
@@ -1148,6 +1200,13 @@ def audit_group_line(group, index):
     room = f"{row.get('roomKey')}홀" if row.get('roomKey') else '-'
     source = row.get('sourceLabel') or platform_label(row.get('sourcePlatform'))
     task = f" / 작업 #{','.join(sorted(group['taskIds']))}" if group['taskIds'] else ''
+    if row.get('taskType') == 'ledger_migration':
+        return (
+            f"{index + 1}. {row.get('date') or '-'} {room} "
+            f"{row.get('startTime') or '-'}-{row.get('endTime') or '-'} / 원천 {source}\n"
+            "   DB 원장: 구글 종료 전 분류에 멈춤 / 실제 플랫폼 승격 필요\n"
+            f"   판정: {row.get('reason') or '-'}"
+        )
     states = []
     if group['targets'] & {'spacecloud', 'naver'}:
         states.append('자동 반영 기록: 확인 필요')

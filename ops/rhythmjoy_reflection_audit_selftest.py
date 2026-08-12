@@ -86,6 +86,19 @@ def main():
     assert '실제 플랫폼 누락 확정 아님' in message
     assert '같은 상태는 다시 알리지 않습니다' in message
 
+    migration_issue = {
+        **platform_issue,
+        'sourcePlatform': 'google-backfill',
+        'sourceLabel': '구글 백필',
+        'targetPlatform': 'ledger-migration',
+        'targetLabel': 'DB 원장 이관',
+        'taskType': 'ledger_migration',
+        'reason': '구글 종료 전 예약이 실제 플랫폼 원장으로 승격되지 않음',
+    }
+    migration_message = audit.audit_message(sample_result([migration_issue]))
+    assert 'DB 원장: 구글 종료 전 분류에 멈춤' in migration_message
+    assert '실제 플랫폼 승격 필요' in migration_message
+
     ingestion_gap = {
         'emailEventId': 611,
         'eventType': 'cancellation',
