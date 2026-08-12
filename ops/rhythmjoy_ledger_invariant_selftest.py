@@ -10,6 +10,7 @@ import argparse
 import logging
 import os
 import re
+from pathlib import Path
 from unittest import mock
 
 import rhythmjoy_email_import as importer
@@ -129,7 +130,7 @@ def call_live_upsert(function, config, connection, row):
 
 
 def run_live_rollback_test(env_file):
-    importer.load_env_file(env_file)
+    importer.load_env_file(Path(env_file))
     config = {
         'db_enabled': True,
         'db_server': os.environ['DB_SERVERNAME'],

@@ -46,6 +46,7 @@ const DEFAULT_REFLECTION_AUDIT_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'reflect
 const DEFAULT_REFLECTION_AUDIT_INTERVAL_MINUTES = 30;
 const DEFAULT_ADMIN_PLATFORM_AUDIT_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'admin-platform-audit-state.json');
 const DEFAULT_ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES = 30;
+const DEFAULT_ADMIN_PLATFORM_AUDIT_RECHECK_MINUTES = 3;
 const DEFAULT_ADMIN_PLATFORM_AUDIT_LIMIT = 2;
 const DEFAULT_CUSTOMER_PLATFORM_AUDIT_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'customer-platform-audit-state.json');
 const DEFAULT_CUSTOMER_PLATFORM_AUDIT_INTERVAL_MINUTES = 240;
@@ -3330,8 +3331,8 @@ try:
                     room_key=VALUES(room_key),
                     reason=VALUES(reason),
                     detail_json=VALUES(detail_json),
-                    checked_at=NOW(),
-                    resolved_at=IF(VALUES(audit_status)='ok',NOW(),NULL),
+                    checked_at=VALUES(checked_at),
+                    resolved_at=IF(VALUES(audit_status)='ok',VALUES(checked_at),NULL),
                     updated_at=NOW()
             """, (
                 reservation_id,
@@ -3483,6 +3484,17 @@ function expectedAdminAuditTaskTypes(reservationStatus) {
     : ['upload', 'naver_block'];
 }
 
+function platformAuditStatusForRows(rows, previousStatus = '') {
+  const issueRows = rows.filter((row) => !row.classification.ok);
+  const rawAuditStatus = issueRows.some((row) => row.classification.status === 'mismatch')
+    ? 'mismatch' : issueRows.length ? 'check_failed' : 'ok';
+  const auditStatus = rawAuditStatus === 'check_failed'
+    && !['recheck_pending', 'check_failed'].includes(previousStatus || '')
+    ? 'recheck_pending'
+    : rawAuditStatus;
+  return { auditStatus, rawAuditStatus, issueRows };
+}
+
 function adminAuditTargetLine(reservation) {
   const room = `${String(reservation.roomKey || '').toUpperCase()}홀`;
   return `${reservation.date || '-'} ${reservation.startTime || '-'}-${displayEndTime(reservation.startTime || '', reservation.endTime || '')} · ${room}`;
@@ -3495,7 +3507,7 @@ function adminPlatformAuditIssueMessage(reservation, rows) {
     `대상: ${adminAuditTargetLine(reservation)}`,
     `DB 원장: ${reservation.reservationStatus === 'canceled' ? '취소' : '예약 확정'}`,
     ...rows.filter((row) => !row.classification.ok).map((row) => `${row.platformLabel}: ${row.classification.reason}`),
-    mismatches.length ? '판정: DB와 실제 플랫폼 상태가 다름' : '판정: 누락 확정 아님 · 다음 순환에서 다시 검사',
+    mismatches.length ? '판정: DB와 실제 플랫폼 상태가 다름' : '판정: 누락 확정 아님 · 실제 화면 2회 연속 조회 실패',
   ]);
 }
 
@@ -3512,19 +3524,32 @@ function selectAdminPlatformAuditReservations(candidates, state, limit) {
   const checked = state.reservations || {};
   return [...candidates]
     .sort((left, right) => {
+      const leftPriority = checked[String(left.adminReservationId)]?.auditStatus === 'recheck_pending' ? 0 : 1;
+      const rightPriority = checked[String(right.adminReservationId)]?.auditStatus === 'recheck_pending' ? 0 : 1;
       const leftAt = Date.parse(checked[String(left.adminReservationId)]?.checkedAt || '') || 0;
       const rightAt = Date.parse(checked[String(right.adminReservationId)]?.checkedAt || '') || 0;
-      return leftAt - rightAt
+      return leftPriority - rightPriority
+        || leftAt - rightAt
         || String(left.date || '').localeCompare(String(right.date || ''))
         || Number(left.adminReservationId) - Number(right.adminReservationId);
     })
     .slice(0, Math.max(1, limit || DEFAULT_ADMIN_PLATFORM_AUDIT_LIMIT));
 }
 
+function adminPlatformAuditIntervalMs(args, state) {
+  const regularMinutes = Math.max(
+    1,
+    args.adminPlatformAuditIntervalMinutes || DEFAULT_ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES,
+  );
+  const hasPendingRecheck = Object.values(state.reservations || {})
+    .some((row) => row?.auditStatus === 'recheck_pending');
+  return (hasPendingRecheck ? DEFAULT_ADMIN_PLATFORM_AUDIT_RECHECK_MINUTES : regularMinutes) * 60 * 1000;
+}
+
 async function runAdminPlatformAudit(args, context, { force = false } = {}) {
   if (!args.adminPlatformAudit && !force) return { skipped: true, reason: 'disabled' };
   const state = await readJsonObject(args.adminPlatformAuditState);
-  const intervalMs = Math.max(1, args.adminPlatformAuditIntervalMinutes || DEFAULT_ADMIN_PLATFORM_AUDIT_INTERVAL_MINUTES) * 60 * 1000;
+  const intervalMs = adminPlatformAuditIntervalMs(args, state);
   const lastRunAt = Date.parse(state.checkedAt || '') || 0;
   if (!force && lastRunAt && Date.now() - lastRunAt < intervalMs) return { skipped: true, reason: 'interval' };
 
@@ -3555,16 +3580,13 @@ async function runAdminPlatformAudit(args, context, { force = false } = {}) {
         inspection,
       });
     }
-    const issueRows = reservationRows.filter((row) => !row.classification.ok);
-    const auditStatus = issueRows.some((row) => row.classification.status === 'mismatch')
-      ? 'mismatch'
-      : issueRows.length ? 'check_failed' : 'ok';
     const reservationId = String(reservation.adminReservationId);
     const previous = nextReservations[reservationId] || {};
-    if (args.telegram && auditStatus !== 'ok') {
+    const { auditStatus, issueRows } = platformAuditStatusForRows(reservationRows, previous.auditStatus || '');
+    if (args.telegram && ['mismatch', 'check_failed'].includes(auditStatus)) {
       const signature = `${auditStatus}:${issueRows.map((row) => `${row.taskType}:${row.classification.reason}`).join('|')}`;
       await notifyOnStateChange(args, `admin-platform-audit:${reservationId}`, signature, adminPlatformAuditIssueMessage(reservation, reservationRows));
-    } else if (args.telegram && auditStatus === 'ok' && previous.auditStatus && previous.auditStatus !== 'ok') {
+    } else if (args.telegram && auditStatus === 'ok' && ['mismatch', 'check_failed'].includes(previous.auditStatus || '')) {
       await notifyOnStateChange(args, `admin-platform-audit:${reservationId}`, 'ok', adminPlatformAuditRecoveryMessage(reservation));
     }
     nextReservations[reservationId] = {
@@ -3593,11 +3615,12 @@ async function runAdminPlatformAudit(args, context, { force = false } = {}) {
     ok: rows.filter((row) => row.auditStatus === 'ok').length,
     mismatches: rows.filter((row) => row.auditStatus === 'mismatch').length,
     checkFailed: rows.filter((row) => row.auditStatus === 'check_failed').length,
+    recheckPending: rows.filter((row) => row.auditStatus === 'recheck_pending').length,
     rows,
   };
   await persistRemoteAdminPlatformAudits(args, nextReservations);
   await writeJson(args.adminPlatformAuditState, { ...result, reservations: nextReservations });
-  logLine(`admin platform audit: candidates=${result.candidates} checked=${result.checked} ok=${result.ok} mismatches=${result.mismatches} checkFailed=${result.checkFailed}`);
+  logLine(`admin platform audit: candidates=${result.candidates} checked=${result.checked} ok=${result.ok} mismatches=${result.mismatches} recheckPending=${result.recheckPending} checkFailed=${result.checkFailed}`);
   return result;
 }
 
@@ -3867,7 +3890,7 @@ function customerPlatformAuditIssueMessage(candidate, rows) {
     `DB 원장: 확정 · 원본 ${candidate.sourcePlatform === 'naver' ? '네이버' : '스페이스클라우드'}`,
     customerAuditScopeLine(candidate, rows),
     ...rows.filter((row) => !row.classification.ok).map((row) => `${row.platformLabel}: ${row.classification.reason}`),
-    mismatches.length ? '판정: DB와 실제 플랫폼 상태가 다름' : '판정: 누락 확정 아님 · 다음 순환에서 다시 검사',
+    mismatches.length ? '판정: DB와 실제 플랫폼 상태가 다름' : '판정: 누락 확정 아님 · 실제 화면 2회 연속 조회 실패',
   ]);
 }
 
@@ -4010,14 +4033,7 @@ async function persistRemoteCustomerPlatformAuditFailure(args, error) {
 }
 
 function customerAuditStatusForRows(rows, previousStatus = '') {
-  const issueRows = rows.filter((row) => !row.classification.ok);
-  const rawAuditStatus = issueRows.some((row) => row.classification.status === 'mismatch')
-    ? 'mismatch' : issueRows.length ? 'check_failed' : 'ok';
-  const auditStatus = rawAuditStatus === 'check_failed'
-    && !['recheck_pending', 'check_failed'].includes(previousStatus || '')
-    ? 'recheck_pending'
-    : rawAuditStatus;
-  return { auditStatus, rawAuditStatus, issueRows };
+  return platformAuditStatusForRows(rows, previousStatus);
 }
 
 async function inspectCustomerAuditCandidate(args, context, candidate) {
@@ -4084,7 +4100,7 @@ async function runCustomerPlatformAudit(args, context, { force = false } = {}) {
       const issueRows = row.rows.filter((item) => !item.classification.ok);
       const signature = `${row.auditStatus}:${issueRows.map((item) => `${item.checkType}:${item.classification.reason}`).join('|')}`;
       await notifyOnStateChange(args, `customer-platform-audit:${row.candidate.ledgerId}`, signature, customerPlatformAuditIssueMessage(row.candidate, row.rows));
-    } else if (args.telegram && row.auditStatus === 'ok' && previousStatus && previousStatus !== 'ok' && previousStatus !== 'resolved') {
+    } else if (args.telegram && row.auditStatus === 'ok' && ['mismatch', 'check_failed'].includes(previousStatus)) {
       await notifyOnStateChange(args, `customer-platform-audit:${row.candidate.ledgerId}`, 'ok', customerPlatformAuditRecoveryMessage(row.candidate, row.rows));
     }
   }
@@ -6865,6 +6881,25 @@ async function runNowModeSelfTest() {
     },
   }, 2);
   assert.deepEqual(selectedAdminAudits.map((row) => row.adminReservationId), [3, 1]);
+  const recheckAdminAudits = selectAdminPlatformAuditReservations([
+    { adminReservationId: 1, date: '2026-08-12' },
+    { adminReservationId: 2, date: '2026-08-13' },
+  ], {
+    reservations: {
+      1: { checkedAt: '2026-08-10T01:00:00Z' },
+      2: { checkedAt: '2026-08-10T02:00:00Z', auditStatus: 'recheck_pending' },
+    },
+  }, 1);
+  assert.deepEqual(recheckAdminAudits.map((row) => row.adminReservationId), [2]);
+  const failedPlatformRead = [{ classification: { ok: false, status: 'check_failed' } }];
+  assert.equal(platformAuditStatusForRows(failedPlatformRead, '').auditStatus, 'recheck_pending');
+  assert.equal(platformAuditStatusForRows(failedPlatformRead, 'recheck_pending').auditStatus, 'check_failed');
+  assert.equal(
+    adminPlatformAuditIntervalMs({ adminPlatformAuditIntervalMinutes: 30 }, {
+      reservations: { 2: { auditStatus: 'recheck_pending' } },
+    }),
+    3 * 60 * 1000,
+  );
   const naverCustomerTask = customerAuditTask({
     ledgerId: 51,
     sourcePlatform: 'naver',
@@ -7272,7 +7307,7 @@ async function runNowModeSelfTest() {
       'admin DB reservations rotate through actual Naver and SpaceCloud state inspection',
       'admin platform audits exclude reservations whose end time is already past',
       'admin platform audit results and audit failures persist to the DB-backed alert center before checkpointing independently of Telegram',
-      'platform read failures stay distinct from confirmed mismatches',
+      'platform read failures stay distinct from mismatches and require a three-minute second pass before alerting',
       'customer DB reservations rotate through source and mirrored actual-platform inspection',
       'customer platform audit alerts persist to DB before the local interval checkpoint',
       'reflection audit uses the single canonical Cafe24 implementation',
@@ -7823,7 +7858,7 @@ ${kstNowText()}
       }
     });
     if (args.json) console.log(JSON.stringify(result, null, 2));
-    else console.log(`admin platform audit checked=${result.checked || 0}; ok=${result.ok || 0}; mismatches=${result.mismatches || 0}; checkFailed=${result.checkFailed || 0}`);
+    else console.log(`admin platform audit checked=${result.checked || 0}; ok=${result.ok || 0}; mismatches=${result.mismatches || 0}; recheckPending=${result.recheckPending || 0}; checkFailed=${result.checkFailed || 0}`);
     return;
   }
 
