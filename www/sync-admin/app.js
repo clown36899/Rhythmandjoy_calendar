@@ -1085,12 +1085,14 @@
     });
     const dismissedId = Number(localStorage.getItem(dismissedReservationOperationKey) || 0);
     const recentThreshold = Date.now() - (3 * 24 * 60 * 60 * 1000);
+    const recentCompletionThreshold = Date.now() - (24 * 60 * 60 * 1000);
     const candidates = Array.from(groups.entries())
       .filter(([reservationId, tasks]) => {
         if (Number(reservationId) === dismissedId) return false;
         const newest = Math.max(...tasks.map((task) => new Date(task.updatedAt || task.createdAt || 0).getTime() || 0));
         if (newest < recentThreshold) return false;
-        return reservationOperationPhase(operationFromTasks(reservationId, tasks)) !== "done";
+        const phase = reservationOperationPhase(operationFromTasks(reservationId, tasks));
+        return phase !== "done" || newest >= recentCompletionThreshold;
       })
       .sort((left, right) => {
         const leftTime = Math.max(...left[1].map((task) => new Date(task.updatedAt || task.createdAt || 0).getTime() || 0));
