@@ -6175,6 +6175,41 @@ function adminTaskFields(task) {
   };
 }
 
+function classifyAdminPanelConflict(task, row, currentPlatform, overlaps) {
+  if (!isAdminPanelTask(task)) return null;
+  const bookings = Array.isArray(overlaps) ? overlaps : [];
+  const taskType = String(task?.taskType || task?.task_type || '');
+
+  if (taskType === 'upload' && currentPlatform === 'naver' && bookings.length === 0) {
+    return {
+      ...row,
+      conflictPolicyDecision: 'admin-panel-clear',
+      conflictPolicyReason: 'admin-panel-no-real-platform-overlap',
+      overlapBookings: [],
+      actionableOverlapBookings: [],
+      ignoredRecordOnlyOverlapBookings: [],
+      error: '',
+      nextAction: 'continue-admin-panel-upload',
+    };
+  }
+
+  return {
+    ...row,
+    status: 'needs-review',
+    conflictPolicyDecision: 'admin-panel-manual-review',
+    conflictPolicyReason: bookings.length
+      ? 'admin-panel-real-platform-overlap'
+      : 'admin-panel-platform-conflict',
+    overlapBookings: bookings,
+    actionableOverlapBookings: bookings,
+    ignoredRecordOnlyOverlapBookings: [],
+    error: bookings.length
+      ? `관리자 입력 시간에 기존 실제 플랫폼 예약 ${bookings.length}건이 확인되어 자동 반영을 중단했습니다.`
+      : '관리자 입력 시간에 플랫폼 충돌이 감지되어 기존 예약을 자동 취소하지 않았습니다.',
+    nextAction: 'manual-review-admin-panel-conflict',
+  };
+}
+
 function adminPanelSmsSkipped(task, source) {
   return {
     status: 'disabled',
@@ -6401,6 +6436,14 @@ PY
       conflictClassificationError: String(error?.message || error),
     };
   }
+
+  const adminClassification = classifyAdminPanelConflict(
+    task,
+    row,
+    currentPlatform,
+    classification.overlaps || [],
+  );
+  if (adminClassification) return adminClassification;
 
   const policy = assessLaterReservationConflict({
     overlaps: classification.overlaps || [],
@@ -8076,6 +8119,28 @@ async function runNowModeSelfTest() {
     adminReservationId: 41,
     adminSeriesId: 9,
   });
+  const adminUploadTask = {
+    taskType: 'upload',
+    payloadJson: JSON.stringify({ source: 'admin-panel', admin_reservation_id: 41 }),
+  };
+  assert.equal(
+    classifyAdminPanelConflict(adminUploadTask, { status: 'upload-pending' }, 'naver', []).status,
+    'upload-pending',
+    'an admin upload without a real-platform overlap must continue to the uploader',
+  );
+  const guardedAdminUpload = classifyAdminPanelConflict(
+    adminUploadTask,
+    { status: 'upload-pending' },
+    'naver',
+    [{ id: 92, sourcePlatform: 'spacecloud' }],
+  );
+  assert.equal(guardedAdminUpload.status, 'needs-review');
+  assert.equal(guardedAdminUpload.conflictPolicyReason, 'admin-panel-real-platform-overlap');
+  assert.equal(
+    classifyAdminPanelConflict({ taskType: 'upload', payloadJson: '{}' }, { status: 'upload-pending' }, 'naver', []),
+    null,
+    'email-origin tasks must keep the strict confirmed-email conflict policy',
+  );
   assert.equal(syncSuccessRowsFromCycle({
     uploadTasks: { rows: [{
       taskId: 501,

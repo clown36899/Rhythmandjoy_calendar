@@ -9,7 +9,10 @@
   const tokenKey = "rhythmjoy.syncAdmin.adminToken.v1";
   const singleRequestKey = "rhythmjoy.syncAdmin.pendingSingleRequest.v1";
   const recurringRequestKey = "rhythmjoy.syncAdmin.pendingRecurringRequest.v1";
+  const reservationOperationKey = "rhythmjoy.syncAdmin.reservationOperation.v1";
+  const dismissedReservationOperationKey = "rhythmjoy.syncAdmin.dismissedReservationOperation.v1";
   const baseTitle = document.title;
+  let reservationOperationTimer = null;
 
   const state = {
     activeDate: today(),
@@ -29,6 +32,9 @@
     adminAlerts: [],
     adminAlertSummary: null,
     adminAlertsLoading: false,
+    reservationOperation: loadJson(reservationOperationKey, null),
+    reservationOperationPolling: false,
+    reservationOperationPollCount: 0,
     sessions: loadJson(sessionKey, {}),
     sessionHistory: [],
     revenueStats: null,
@@ -93,6 +99,7 @@
     adminAlertBanner: document.getElementById("adminAlertBanner"),
     adminAlertBannerTitle: document.getElementById("adminAlertBannerTitle"),
     adminAlertBannerText: document.getElementById("adminAlertBannerText"),
+    reservationOperation: document.getElementById("reservationOperation"),
     adminAlertDrawer: document.getElementById("adminAlertDrawer"),
     adminAlertDrawerSubtitle: document.getElementById("adminAlertDrawerSubtitle"),
     adminAlertDrawerSummary: document.getElementById("adminAlertDrawerSummary"),
@@ -189,6 +196,7 @@
     el.todayButton.addEventListener("click", goToday);
     el.adminAlertButton.addEventListener("click", openAdminAlertDrawer);
     el.adminAlertBanner.addEventListener("click", openAdminAlertDrawer);
+    el.reservationOperation.addEventListener("click", handleReservationOperationAction);
     el.closeAdminAlertDrawer.addEventListener("click", closeAdminAlertDrawer);
     el.adminAlertDrawer.addEventListener("click", (event) => {
       if (event.target === el.adminAlertDrawer) closeAdminAlertDrawer();
@@ -538,6 +546,17 @@
       el.activeDate.value = date;
       if (dateChanged) state.monthSummary = null;
       applyApiData(data);
+      const reservationId = Number(data.reservationResult?.reservationId || 0);
+      if (reservationId > 0) {
+        const operation = data.reservationOperation || operationFromTasks(reservationId, state.tasks, {
+          date,
+          room,
+          start,
+          end,
+          name: payload.name,
+        });
+        setReservationOperation(operation, { force: true });
+      }
       clearPendingRequest(singleRequestKey, requestId);
       clearReservationFeedback();
       resetForm(date, room, start, end);
@@ -545,8 +564,8 @@
       setApiState("ready", data.mode === "db-live-queue" ? "DB 큐" : "DB 테스트", "DB 작업 생성됨");
       renderAll();
       showToast(data.reservationResult?.duplicateRequest
-        ? "이미 처리된 동일 요청을 DB에서 확인했습니다."
-        : "DB에 동기화 작업을 생성했습니다.");
+        ? "이미 접수된 예약입니다. 현재 반영 상태를 확인합니다."
+        : "예약 접수 완료 · 두 플랫폼 반영 상태를 확인 중입니다.");
     } catch (error) {
       showReservationFeedback(error.message || "DB 작업 생성 실패. 같은 내용으로 다시 누르면 안전하게 재확인합니다.");
       if (!error.status || error.status >= 500 || [401, 403].includes(error.status)) {
@@ -586,6 +605,7 @@
   function renderAll() {
     updateDateControls();
     renderAdminAlerts();
+    renderReservationOperation();
     renderSchedule();
     renderPriceReference();
     renderReflectionAudits();
@@ -953,6 +973,286 @@
       `;
       el.taskRows.appendChild(row);
     });
+  }
+
+  function registrationTasksForReservation(reservationId, tasks = state.tasks) {
+    return (tasks || []).filter((task) => (
+      Number(task.reservationId) === Number(reservationId)
+      && ["naver_block", "upload"].includes(task.taskType)
+    ));
+  }
+
+  function operationFromTasks(reservationId, tasks, fallback = {}) {
+    const relatedTasks = registrationTasksForReservation(reservationId, tasks);
+    const first = relatedTasks[0] || {};
+    const updatedAt = relatedTasks.reduce((latest, task) => (
+      String(task.updatedAt || "") > String(latest || "") ? task.updatedAt : latest
+    ), fallback.updatedAt || "");
+    return {
+      reservationId: Number(reservationId),
+      date: fallback.date || first.date || "",
+      room: fallback.room || first.room || "",
+      start: Number.isFinite(Number(fallback.start)) ? Number(fallback.start) : Number(first.start),
+      end: Number.isFinite(Number(fallback.end)) ? Number(fallback.end) : Number(first.end),
+      name: fallback.name || first.name || "",
+      reservationStatus: fallback.reservationStatus || "pending",
+      tasks: relatedTasks,
+      createdAt: fallback.createdAt || first.createdAt || "",
+      updatedAt,
+      pollError: fallback.pollError || "",
+    };
+  }
+
+  function normalizeReservationOperation(operation) {
+    if (!operation) return null;
+    const reservation = operation.reservation || operation;
+    const reservationId = Number(reservation.id || reservation.reservationId || operation.reservationId || 0);
+    if (reservationId < 1) return null;
+    const tasks = (operation.tasks || []).map((task) => (
+      Object.prototype.hasOwnProperty.call(task, "start") ? task : taskItemFromApi(task)
+    ));
+    return operationFromTasks(reservationId, tasks, {
+      date: reservation.date || operation.date || "",
+      room: reservation.room || operation.room || "",
+      start: reservation.startHour ?? reservation.start ?? operation.start,
+      end: reservation.endHour ?? reservation.end ?? operation.end,
+      name: reservation.name || operation.name || "",
+      reservationStatus: reservation.status || operation.reservationStatus || "pending",
+      createdAt: reservation.createdAt || operation.createdAt || "",
+      updatedAt: operation.updatedAt || reservation.updatedAt || "",
+      pollError: operation.pollError || "",
+    });
+  }
+
+  function operationTaskPhase(task) {
+    if (!task) return "pending";
+    if (task.status === "failed" || task.status === "needs_review") return "attention";
+    if (isTaskDone(task)) return "done";
+    if (task.status === "running") return "running";
+    return "pending";
+  }
+
+  function reservationOperationPhase(operation = state.reservationOperation) {
+    if (!operation) return "hidden";
+    const naver = operationTaskPhase((operation.tasks || []).find((task) => task.taskType === "naver_block"));
+    const spacecloud = operationTaskPhase((operation.tasks || []).find((task) => task.taskType === "upload"));
+    if (naver === "attention" || spacecloud === "attention") return "attention";
+    if (naver === "done" && spacecloud === "done") return "done";
+    if (naver === "running" || spacecloud === "running" || naver === "done" || spacecloud === "done") return "running";
+    return "pending";
+  }
+
+  function setReservationOperation(operation, options = {}) {
+    const normalized = normalizeReservationOperation(operation);
+    if (!normalized) return;
+    const dismissedId = Number(localStorage.getItem(dismissedReservationOperationKey) || 0);
+    if (!options.force && dismissedId === normalized.reservationId) return;
+    if (options.force && dismissedId === normalized.reservationId) {
+      localStorage.removeItem(dismissedReservationOperationKey);
+    }
+    state.reservationOperation = normalized;
+    state.reservationOperationPollCount = 0;
+    localStorage.setItem(reservationOperationKey, JSON.stringify(normalized));
+    window.clearTimeout(reservationOperationTimer);
+    reservationOperationTimer = null;
+    renderReservationOperation();
+    scheduleReservationOperationPoll(800);
+  }
+
+  function syncReservationOperation(apiOperation = null) {
+    if (apiOperation) {
+      setReservationOperation(apiOperation, { force: true });
+      return;
+    }
+
+    const current = normalizeReservationOperation(state.reservationOperation);
+    if (current) {
+      const relatedTasks = registrationTasksForReservation(current.reservationId);
+      if (relatedTasks.length) {
+        setReservationOperation(operationFromTasks(current.reservationId, relatedTasks, current));
+      } else {
+        state.reservationOperation = current;
+      }
+      return;
+    }
+
+    const groups = new Map();
+    state.tasks.forEach((task) => {
+      if (!task.reservationId || !["naver_block", "upload"].includes(task.taskType)) return;
+      const rows = groups.get(task.reservationId) || [];
+      rows.push(task);
+      groups.set(task.reservationId, rows);
+    });
+    const dismissedId = Number(localStorage.getItem(dismissedReservationOperationKey) || 0);
+    const recentThreshold = Date.now() - (3 * 24 * 60 * 60 * 1000);
+    const candidates = Array.from(groups.entries())
+      .filter(([reservationId, tasks]) => {
+        if (Number(reservationId) === dismissedId) return false;
+        const newest = Math.max(...tasks.map((task) => new Date(task.updatedAt || task.createdAt || 0).getTime() || 0));
+        if (newest < recentThreshold) return false;
+        return reservationOperationPhase(operationFromTasks(reservationId, tasks)) !== "done";
+      })
+      .sort((left, right) => {
+        const leftTime = Math.max(...left[1].map((task) => new Date(task.updatedAt || task.createdAt || 0).getTime() || 0));
+        const rightTime = Math.max(...right[1].map((task) => new Date(task.updatedAt || task.createdAt || 0).getTime() || 0));
+        return rightTime - leftTime;
+      });
+    if (candidates.length) {
+      setReservationOperation(operationFromTasks(candidates[0][0], candidates[0][1]));
+    }
+  }
+
+  function operationPhaseCopy(phase) {
+    if (phase === "done") return { title: "예약 반영 완료", description: "네이버와 스페이스클라우드 반영을 모두 확인했습니다." };
+    if (phase === "attention") return { title: "일부 반영 확인 필요", description: "완료된 작업은 유지되며, 아래 표시된 플랫폼만 확인하면 됩니다." };
+    if (phase === "running") return { title: "자동 반영 처리 중", description: "완료될 때까지 이 카드에서 상태가 자동으로 바뀝니다." };
+    return { title: "예약 접수 완료", description: "DB에 저장됐으며 자동화 작업이 시작되기를 기다리고 있습니다." };
+  }
+
+  function operationPlatformCopy(task, platform) {
+    const phase = operationTaskPhase(task);
+    const isNaver = platform === "naver";
+    const label = isNaver ? "네이버 예약불가" : "스페이스클라우드 예약등록";
+    const stateLabel = phase === "done" ? "완료" : (phase === "attention" ? "확인 필요" : (phase === "running" ? "처리 중" : "대기"));
+    let detail = phase === "done"
+      ? (isNaver ? "선택 시간의 예약불가 처리를 확인했습니다." : "직접 예약 등록을 확인했습니다.")
+      : (phase === "running" ? "자동화가 플랫폼에 반영하고 있습니다." : "앞선 작업 순서에 따라 자동으로 시작됩니다.");
+    if (phase === "attention") {
+      detail = humanTaskError(task?.error) || "자동 확인이 끝나지 않아 관리자 확인이 필요합니다.";
+    }
+    return { phase, label, stateLabel, detail };
+  }
+
+  function operationDateText(value) {
+    const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return match ? `${match[1]}. ${match[2]}. ${match[3]}.` : String(value || "");
+  }
+
+  function renderReservationOperation() {
+    if (!el.reservationOperation) return;
+    const operation = normalizeReservationOperation(state.reservationOperation);
+    if (!operation) {
+      el.reservationOperation.hidden = true;
+      el.reservationOperation.innerHTML = "";
+      return;
+    }
+    state.reservationOperation = operation;
+    const phase = reservationOperationPhase(operation);
+    const copy = operationPhaseCopy(phase);
+    const naver = operationPlatformCopy(operation.tasks.find((task) => task.taskType === "naver_block"), "naver");
+    const spacecloud = operationPlatformCopy(operation.tasks.find((task) => task.taskType === "upload"), "spacecloud");
+    const slot = `${operationDateText(operation.date)} ${operation.room}홀 ${formatHour(operation.start)}-${formatHour(operation.end)}`;
+    const lastChecked = operation.updatedAt ? `DB 확인 ${formatDateTime(operation.updatedAt)}` : "DB 상태 확인 중";
+    el.reservationOperation.className = `reservation-operation ${phase}`;
+    el.reservationOperation.hidden = false;
+    el.reservationOperation.innerHTML = `
+      <div class="reservation-operation-head">
+        <span class="reservation-operation-icon" aria-hidden="true">${phase === "done" ? "✓" : (phase === "attention" ? "!" : "")}</span>
+        <div>
+          <span class="reservation-operation-kicker">관리자 예약 #${operation.reservationId}</span>
+          <h2>${escapeHtml(copy.title)}</h2>
+          <p>${escapeHtml(slot)}${operation.name ? ` · ${escapeHtml(operation.name)}` : ""}</p>
+        </div>
+        <span class="reservation-operation-badge">${escapeHtml(phase === "done" ? "완료" : (phase === "attention" ? "확인 필요" : (phase === "running" ? "처리 중" : "접수")))}</span>
+      </div>
+      <p class="reservation-operation-description">${escapeHtml(copy.description)}</p>
+      <div class="reservation-operation-steps">
+        ${operationStepHtml(naver)}
+        ${operationStepHtml(spacecloud)}
+      </div>
+      ${operation.pollError ? `<p class="reservation-operation-poll-error">${escapeHtml(operation.pollError)}</p>` : ""}
+      <div class="reservation-operation-foot">
+        <small>${escapeHtml(lastChecked)}${state.reservationOperationPolling ? " · 새 상태 확인 중…" : ""}</small>
+        <div class="reservation-operation-actions">
+          <button type="button" class="secondary-button compact-button" data-operation-refresh>지금 확인</button>
+          ${phase === "attention" ? '<button type="button" class="secondary-button compact-button" data-operation-alerts>관련 오류 보기</button>' : '<button type="button" class="secondary-button compact-button" data-operation-tasks>작업 상태 보기</button>'}
+          ${["done", "attention"].includes(phase) ? '<button type="button" class="secondary-button compact-button" data-operation-dismiss>닫기</button>' : ""}
+        </div>
+      </div>
+    `;
+    scheduleReservationOperationPoll();
+  }
+
+  function operationStepHtml(step) {
+    return `
+      <div class="reservation-operation-step ${escapeHtml(step.phase)}">
+        <span class="operation-step-dot" aria-hidden="true"></span>
+        <div><strong>${escapeHtml(step.label)}</strong><small>${escapeHtml(step.detail)}</small></div>
+        <b>${escapeHtml(step.stateLabel)}</b>
+      </div>
+    `;
+  }
+
+  function scheduleReservationOperationPoll(delay) {
+    if (reservationOperationTimer || state.reservationOperationPolling || !adminToken()) return;
+    const phase = reservationOperationPhase();
+    if (!["pending", "running"].includes(phase)) return;
+    const nextDelay = Number(delay) || (state.reservationOperationPollCount < 100 ? 3000 : 10000);
+    reservationOperationTimer = window.setTimeout(() => {
+      reservationOperationTimer = null;
+      pollReservationOperation();
+    }, nextDelay);
+  }
+
+  async function pollReservationOperation(options = {}) {
+    const reservationId = Number(state.reservationOperation?.reservationId || 0);
+    if (reservationId < 1 || state.reservationOperationPolling || !adminToken()) return;
+    window.clearTimeout(reservationOperationTimer);
+    reservationOperationTimer = null;
+    const previousPhase = reservationOperationPhase();
+    state.reservationOperationPolling = true;
+    renderReservationOperation();
+    try {
+      const data = await apiRequest("reservation_status", { reservationId });
+      state.reservationOperationPollCount += 1;
+      const next = normalizeReservationOperation(data.reservationOperation);
+      if (!next) throw new Error("예약 작업 상태를 찾지 못했습니다.");
+      state.reservationOperation = next;
+      localStorage.setItem(reservationOperationKey, JSON.stringify(next));
+      const nextPhase = reservationOperationPhase(next);
+      if (nextPhase === "done" && previousPhase !== "done") {
+        showToast("예약 반영이 모두 완료됐습니다.");
+        refreshFromApi({ silent: true });
+      } else if (nextPhase === "attention" && previousPhase !== "attention") {
+        showToast("일부 플랫폼 반영에 확인이 필요합니다.");
+        refreshFromApi({ silent: true });
+      } else if (options.manual) {
+        showToast("최신 작업 상태를 확인했습니다.");
+      }
+    } catch (error) {
+      state.reservationOperation.pollError = "상태 조회가 지연되고 있습니다. 예약은 DB에 보존되어 있으며 자동으로 다시 확인합니다.";
+      if (options.manual) showToast(error.message || "작업 상태 조회 실패");
+    } finally {
+      state.reservationOperationPolling = false;
+      renderReservationOperation();
+      scheduleReservationOperationPoll(state.reservationOperation?.pollError ? 10000 : undefined);
+    }
+  }
+
+  function handleReservationOperationAction(event) {
+    const button = event.target.closest("button");
+    if (!button) return;
+    if (button.matches("[data-operation-refresh]")) {
+      pollReservationOperation({ manual: true });
+      return;
+    }
+    if (button.matches("[data-operation-alerts]")) {
+      openAdminAlertDrawer();
+      return;
+    }
+    if (button.matches("[data-operation-tasks]")) {
+      document.getElementById("tasks")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (button.matches("[data-operation-dismiss]")) {
+      const reservationId = Number(state.reservationOperation?.reservationId || 0);
+      if (reservationId > 0) localStorage.setItem(dismissedReservationOperationKey, String(reservationId));
+      localStorage.removeItem(reservationOperationKey);
+      state.reservationOperation = null;
+      window.clearTimeout(reservationOperationTimer);
+      reservationOperationTimer = null;
+      renderReservationOperation();
+    }
   }
 
   function renderReflectionAudits() {
@@ -3092,6 +3392,33 @@
     }
   }
 
+  function taskItemFromApi(item) {
+    return {
+      id: item.id,
+      reservationId: Number(item.reservationId || 0) || null,
+      liveTaskId: item.liveTaskId || "",
+      sourceTaskId: item.sourceTaskId || "",
+      taskType: item.taskType || "",
+      actionLabel: item.actionLabel || "",
+      status: item.status || "pending",
+      resultStatus: item.resultStatus || "",
+      smsStatus: item.smsStatus || "",
+      error: item.error || "",
+      conflict: item.conflict || null,
+      date: item.date || "",
+      room: item.room || "",
+      start: Number(item.startHour),
+      end: Number(item.endHour),
+      name: item.name || "",
+      reservationNo: item.reservationNo || "",
+      product: item.product || "",
+      naver: item.naverStatus || "pending",
+      spacecloud: item.spacecloudStatus || "pending",
+      createdAt: item.createdAt || "",
+      updatedAt: item.updatedAt || "",
+    };
+  }
+
   function applyApiData(data) {
     const settings = data.settings || {};
     const sessions = data.sessions || {};
@@ -3129,29 +3456,8 @@
     state.reflectionAudits = data.reflectionAudits || [];
     state.reflectionAuditSummary = data.reflectionAuditSummary || null;
     applyAdminAlertData(data);
-    state.tasks = annotateTaskRelations((data.tasks || []).map((item) => ({
-      id: item.id,
-      liveTaskId: item.liveTaskId || "",
-      sourceTaskId: item.sourceTaskId || "",
-      taskType: item.taskType || "",
-      actionLabel: item.actionLabel || "",
-      status: item.status || "pending",
-      resultStatus: item.resultStatus || "",
-      smsStatus: item.smsStatus || "",
-      error: item.error || "",
-      conflict: item.conflict || null,
-      date: item.date || "",
-      room: item.room || "",
-      start: Number(item.startHour),
-      end: Number(item.endHour),
-      name: item.name || "",
-      reservationNo: item.reservationNo || "",
-      product: item.product || "",
-      naver: item.naverStatus || "pending",
-      spacecloud: item.spacecloudStatus || "pending",
-      createdAt: item.createdAt || "",
-      updatedAt: item.updatedAt || "",
-    })));
+    state.tasks = annotateTaskRelations((data.tasks || []).map(taskItemFromApi));
+    syncReservationOperation(data.reservationOperation || null);
   }
 
   async function apiRequest(action, payload) {
@@ -3483,6 +3789,7 @@
     const text = String(error || "").trim();
     if (!text) return "";
     if (/modal still visible after submit/i.test(text)) return "등록 후 확인창이 닫히지 않음";
+    if (/current-ledger-not-found/i.test(text)) return "관리자 입력 작업을 이메일 예약 원장으로 잘못 판정해 자동 등록이 중단됨";
     if (/later-reservation-conflict|후예약 충돌/i.test(text)) return "선예약 중복 충돌";
     return text;
   }

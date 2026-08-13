@@ -466,6 +466,226 @@ input[readonly] {
   display: none;
 }
 
+.reservation-operation {
+  --operation-color: var(--accent-2);
+  --operation-soft: #eef5ff;
+  border: 1px solid #b9d0f4;
+  border-left: 5px solid var(--operation-color);
+  border-radius: 10px;
+  padding: 18px;
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgba(31, 111, 235, 0.09);
+  -webkit-user-drag: none;
+}
+
+.reservation-operation[hidden] {
+  display: none;
+}
+
+.reservation-operation.pending {
+  --operation-color: #1f6feb;
+  --operation-soft: #eef5ff;
+}
+
+.reservation-operation.running {
+  --operation-color: #0b7f68;
+  --operation-soft: #eaf8f3;
+  border-color: #9bd5c8;
+  box-shadow: 0 12px 28px rgba(11, 127, 104, 0.09);
+}
+
+.reservation-operation.done {
+  --operation-color: var(--ok);
+  --operation-soft: #e9f8f1;
+  border-color: #97d8ba;
+}
+
+.reservation-operation.attention {
+  --operation-color: var(--danger);
+  --operation-soft: #fff0ee;
+  border-color: #efb8b3;
+  box-shadow: 0 12px 28px rgba(180, 35, 24, 0.1);
+}
+
+.reservation-operation-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+}
+
+.reservation-operation-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--operation-color);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.reservation-operation.pending .reservation-operation-icon,
+.reservation-operation.running .reservation-operation-icon {
+  width: 14px;
+  height: 14px;
+  margin: 0 12px;
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--operation-color) 15%, transparent);
+  animation: reservation-operation-pulse 1.6s ease-in-out infinite;
+}
+
+.reservation-operation-kicker {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--operation-color);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.reservation-operation h2 {
+  margin: 0;
+  font-size: 21px;
+}
+
+.reservation-operation-head p,
+.reservation-operation-description {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.reservation-operation-badge {
+  align-self: start;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--operation-soft);
+  color: var(--operation-color);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.reservation-operation-description {
+  margin-top: 12px;
+}
+
+.reservation-operation-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.reservation-operation-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 70px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: #f8fbfa;
+}
+
+.operation-step-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #a5afac;
+  box-shadow: 0 0 0 4px rgba(101, 112, 109, 0.1);
+}
+
+.reservation-operation-step.running .operation-step-dot {
+  background: var(--accent-2);
+  box-shadow: 0 0 0 4px rgba(31, 111, 235, 0.13);
+  animation: reservation-operation-pulse 1.6s ease-in-out infinite;
+}
+
+.reservation-operation-step.done .operation-step-dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 4px rgba(7, 128, 79, 0.12);
+}
+
+.reservation-operation-step.attention .operation-step-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 4px rgba(180, 35, 24, 0.11);
+}
+
+.reservation-operation-step strong,
+.reservation-operation-step small {
+  display: block;
+}
+
+.reservation-operation-step strong {
+  font-size: 14px;
+}
+
+.reservation-operation-step small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.reservation-operation-step b {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.reservation-operation-step.done b {
+  color: var(--ok);
+}
+
+.reservation-operation-step.running b {
+  color: var(--accent-2);
+}
+
+.reservation-operation-step.attention b {
+  color: var(--danger);
+}
+
+.reservation-operation-poll-error {
+  margin: 10px 0 0;
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.reservation-operation-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.reservation-operation-foot > small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.reservation-operation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+@keyframes reservation-operation-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.88); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reservation-operation-icon,
+  .operation-step-dot {
+    animation: none !important;
+  }
+}
+
 .admin-alert-banner:hover,
 .admin-alert-banner:focus-visible {
   border-color: var(--danger);
@@ -3666,12 +3886,22 @@ body.alert-drawer-open {
   }
 
   .status-strip,
+  .reservation-operation-steps,
   .two-column,
   .industry-review-list,
   .industry-source-grid,
   .auth-box,
   .profile-box {
     grid-template-columns: 1fr;
+  }
+
+  .reservation-operation-foot {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reservation-operation-actions {
+    justify-content: flex-start;
   }
 
   .recurring-rule,
@@ -3871,6 +4101,40 @@ body.alert-drawer-open {
 
   .status-strip strong {
     font-size: 18px;
+  }
+
+  .reservation-operation {
+    padding: 15px 13px;
+  }
+
+  .reservation-operation-head {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .reservation-operation-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .reservation-operation h2 {
+    font-size: 19px;
+  }
+
+  .reservation-operation-step {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .reservation-operation-step b {
+    grid-column: 2;
+  }
+
+  .reservation-operation-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reservation-operation-actions button {
+    width: 100%;
   }
 
   .schedule-time-nav {

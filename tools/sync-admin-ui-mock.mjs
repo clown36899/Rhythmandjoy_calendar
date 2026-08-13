@@ -40,7 +40,7 @@ function basePayload(date = '2026-08-13') {
     settings: {},
     sessions: {},
     reservations,
-    tasks: [],
+    tasks: mockState.createdReservations.flatMap(mockOperationTasks),
     reflectionAudits: [],
     reflectionAuditSummary: { issueCount: 0, waitingCount: 0, okCount: 10 },
     revenueStats: null,
@@ -58,6 +58,70 @@ function basePayload(date = '2026-08-13') {
       visibleCount: 8,
       canceledCount: 0,
     }],
+  };
+}
+
+function mockOperationTasks(reservation) {
+  const polls = Number(reservation.operationPolls || 0);
+  const attention = String(reservation.name || '').includes('확인필요');
+  const naverStatus = polls < 1 ? 'pending' : (polls < 2 ? 'running' : 'done');
+  let spacecloudStatus = polls < 2 ? 'pending' : (polls < 3 ? 'running' : 'done');
+  if (attention && polls >= 3) spacecloudStatus = 'needs_review';
+  const common = {
+    reservationId: reservation.id,
+    date: reservation.date,
+    room: reservation.room,
+    startHour: reservation.startHour,
+    endHour: reservation.endHour,
+    name: reservation.name,
+    createdAt: reservation.createdAt,
+    updatedAt: new Date().toISOString(),
+  };
+  return [{
+    ...common,
+    id: String(reservation.id * 10 + 1),
+    liveTaskId: reservation.id * 10 + 101,
+    taskType: 'naver_block',
+    actionLabel: '네이버 예약불가',
+    status: naverStatus,
+    naverStatus,
+    spacecloudStatus: 'source',
+  }, {
+    ...common,
+    id: String(reservation.id * 10 + 2),
+    liveTaskId: reservation.id * 10 + 102,
+    taskType: 'upload',
+    actionLabel: '스페이스클라우드 예약등록',
+    status: spacecloudStatus,
+    naverStatus: 'source',
+    spacecloudStatus,
+    error: spacecloudStatus === 'needs_review'
+      ? '관리자 입력 시간에 기존 실제 플랫폼 예약 1건이 확인되어 자동 반영을 중단했습니다.'
+      : '',
+  }];
+}
+
+function mockReservationOperation(reservation) {
+  const tasks = mockOperationTasks(reservation);
+  const statuses = tasks.map((task) => task.status);
+  const state = statuses.some((status) => ['failed', 'needs_review'].includes(status))
+    ? 'attention'
+    : (statuses.every((status) => status === 'done') ? 'done' : (statuses.some((status) => ['done', 'running'].includes(status)) ? 'running' : 'pending'));
+  return {
+    reservation: {
+      id: reservation.id,
+      date: reservation.date,
+      room: reservation.room,
+      startHour: reservation.startHour,
+      endHour: reservation.endHour,
+      name: reservation.name,
+      status: state === 'done' ? 'confirmed' : 'pending',
+      createdAt: reservation.createdAt,
+      updatedAt: new Date().toISOString(),
+    },
+    tasks,
+    state,
+    updatedAt: new Date().toISOString(),
   };
 }
 
@@ -169,27 +233,52 @@ const server = http.createServer(async (req, res) => {
       if (body.name === 'UI 재시도 검사' && matchingCalls.length === 1) {
         return json(res, { ok: false, error: 'mock_temporary_failure', message: '모의 일시 장애' }, 503);
       }
-      if (matchingCalls.length === 1) mockState.createdReservations.push({
-        id: 8 + mockState.createdReservations.length + 1,
-        date: String(body.date || ''),
-        room: String(body.room || 'A'),
-        startHour: Number(body.start),
-        endHour: Number(body.end),
-        name: String(body.name || ''),
-        source: 'admin',
-        sourceLabel: '관리자 입력',
-        status: 'pending',
-        naverStatus: 'pending',
-        spacecloudStatus: 'pending',
-      });
+      let createdReservation = mockState.createdReservations.find((item) => item.name === body.name);
+      const wasCreated = !createdReservation;
+      if (wasCreated) {
+        createdReservation = {
+          id: 8 + mockState.createdReservations.length + 1,
+          date: String(body.date || ''),
+          room: String(body.room || 'A'),
+          startHour: Number(body.start),
+          endHour: Number(body.end),
+          name: String(body.name || ''),
+          source: 'admin',
+          sourceLabel: '관리자 입력',
+          status: 'pending',
+          naverStatus: 'pending',
+          spacecloudStatus: 'pending',
+          operationPolls: 0,
+          createdAt: new Date().toISOString(),
+        };
+        mockState.createdReservations.push(createdReservation);
+      }
       const responsePayload = basePayload(body.date);
       return json(res, {
         ...responsePayload,
         reservationResult: {
-          reservationId: 9,
-          createdCount: matchingCalls.length === 1 ? 1 : 0,
-          duplicateRequest: matchingCalls.length > 1,
+          reservationId: createdReservation.id,
+          createdCount: wasCreated ? 1 : 0,
+          duplicateRequest: !wasCreated,
         },
+        reservationOperation: mockReservationOperation(createdReservation),
+      });
+    }
+    if (action === 'reservation_status') {
+      const reservation = mockState.createdReservations.find((item) => Number(item.id) === Number(body.reservationId));
+      if (!reservation) {
+        return json(res, { ok: false, error: 'reservation_not_found', message: '관리자 예약 작업을 찾지 못했습니다.' }, 404);
+      }
+      reservation.operationPolls = Number(reservation.operationPolls || 0) + 1;
+      if (reservation.operationPolls >= 3 && !String(reservation.name || '').includes('확인필요')) {
+        reservation.status = 'confirmed';
+        reservation.naverStatus = 'done';
+        reservation.spacecloudStatus = 'done';
+      }
+      return json(res, {
+        ok: true,
+        serverTime: new Date().toISOString(),
+        reservationOperation: mockReservationOperation(reservation),
       });
     }
     if (action === 'preview_recurring') return json(res, previewPayload(body));

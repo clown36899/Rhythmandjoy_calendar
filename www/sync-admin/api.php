@@ -2210,6 +2210,94 @@ function recent_task_rows($pdo) {
     return array_slice($rows, 0, 80);
 }
 
+function admin_reservation_operation_state($tasks) {
+    if (!$tasks) {
+        return 'pending';
+    }
+    $done_count = 0;
+    $has_progress = false;
+    foreach ($tasks as $task) {
+        $status = isset($task['status']) ? (string) $task['status'] : 'pending';
+        if ($status === 'failed' || $status === 'needs_review') {
+            return 'attention';
+        }
+        if ($status === 'done' || $status === 'synced' || $status === 'already_gone') {
+            $done_count += 1;
+            $has_progress = true;
+        } elseif ($status === 'running') {
+            $has_progress = true;
+        }
+    }
+    if (count($tasks) >= 2 && $done_count === count($tasks)) {
+        return 'done';
+    }
+    return $has_progress ? 'running' : 'pending';
+}
+
+function admin_reservation_operation_payload($pdo, $reservation_id) {
+    $stmt = $pdo->prepare("
+        SELECT id, reservation_date, room_key, start_hour, end_hour, reserver_name, status,
+               DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
+               DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+        FROM rhythmjoy_admin_reservations
+        WHERE id=?
+        LIMIT 1
+    ");
+    $stmt->execute(array(intval($reservation_id)));
+    $reservation = $stmt->fetch();
+    if (!$reservation) {
+        return null;
+    }
+
+    $task_stmt = $pdo->prepare("
+        SELECT t.id, t.reservation_id, t.live_task_id, t.platform, t.action_type,
+               COALESCE(l.task_type, t.action_type) AS task_type,
+               COALESCE(l.status, t.status) AS status,
+               COALESCE(l.result_text, t.result_text) AS result_text,
+               COALESCE(l.payload_json, '') AS payload_json,
+               r.reservation_date, r.room_key,
+               CONCAT(LPAD(r.start_hour, 2, '0'), ':00') AS start_time_text,
+               IF(r.end_hour = 24, '00:00', CONCAT(LPAD(r.end_hour, 2, '0'), ':00')) AS end_time_text,
+               r.reserver_name, '' AS reservation_number, '' AS product,
+               DATE_FORMAT(t.created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
+               DATE_FORMAT(GREATEST(t.updated_at, COALESCE(l.updated_at, t.updated_at)), '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+        FROM rhythmjoy_admin_sync_tasks t
+        JOIN rhythmjoy_admin_reservations r ON r.id = t.reservation_id
+        LEFT JOIN rhythmjoy_spacecloud_tasks l ON l.id = t.live_task_id
+        WHERE t.reservation_id=?
+          AND t.status <> 'canceled'
+          AND t.action_type IN ('block_naver_availability', 'add_spacecloud_reservation')
+        ORDER BY t.id ASC
+    ");
+    $task_stmt->execute(array(intval($reservation_id)));
+    $tasks = array();
+    $updated_at = $reservation['updated_at'];
+    foreach ($task_stmt->fetchAll() as $row) {
+        $task = normalize_task_row($row);
+        $tasks[] = $task;
+        if ((string) $task['updatedAt'] > (string) $updated_at) {
+            $updated_at = $task['updatedAt'];
+        }
+    }
+
+    return array(
+        'reservation' => array(
+            'id' => intval($reservation['id']),
+            'date' => $reservation['reservation_date'],
+            'room' => strtoupper((string) $reservation['room_key']),
+            'startHour' => intval($reservation['start_hour']),
+            'endHour' => intval($reservation['end_hour']),
+            'name' => $reservation['reserver_name'],
+            'status' => $reservation['status'],
+            'createdAt' => $reservation['created_at'],
+            'updatedAt' => $reservation['updated_at'],
+        ),
+        'tasks' => $tasks,
+        'state' => admin_reservation_operation_state($tasks),
+        'updatedAt' => $updated_at,
+    );
+}
+
 function reflection_audit_summary($pdo) {
     $stmt = $pdo->query("
         SELECT
@@ -3752,6 +3840,34 @@ function run_sync_admin_selftest() {
         !admin_single_request_matches($single_row, '2026-08-20', 'C', 14, 15, '관리자', hash('sha256', '01012345678'), '단건 테스트'),
         'single reservation retries reject a changed payload'
     );
+    sync_admin_selftest_assert(
+        admin_reservation_operation_state(array(
+            array('status' => 'pending'),
+            array('status' => 'pending'),
+        )) === 'pending',
+        'a newly queued admin reservation reports pending'
+    );
+    sync_admin_selftest_assert(
+        admin_reservation_operation_state(array(
+            array('status' => 'done'),
+            array('status' => 'running'),
+        )) === 'running',
+        'partial platform completion reports running'
+    );
+    sync_admin_selftest_assert(
+        admin_reservation_operation_state(array(
+            array('status' => 'done'),
+            array('status' => 'done'),
+        )) === 'done',
+        'both admin platform tasks must finish before completion is reported'
+    );
+    sync_admin_selftest_assert(
+        admin_reservation_operation_state(array(
+            array('status' => 'done'),
+            array('status' => 'needs_review'),
+        )) === 'attention',
+        'a partial platform failure reports attention instead of completion'
+    );
     $signature_a = recurring_request_signature(
         '월 정기', '관리자', '', '', '2026-08-01', '2026-08-31', 'include', $rules, $included_rows
     );
@@ -3789,7 +3905,7 @@ function run_sync_admin_selftest() {
         admin_reflection_audit_is_stale($audit_now - (40 * 60), $audit_now),
         'a missed reflection audit is marked stale after the grace period'
     );
-    echo "sync-admin self-test OK: single/recurring idempotency, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures, phone redaction and reflection-audit timing\n";
+    echo "sync-admin self-test OK: single/recurring idempotency, operation progress, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures, phone redaction and reflection-audit timing\n";
 }
 
 if (PHP_SAPI === 'cli' && isset($argv[1]) && $argv[1] === 'self-test') {
@@ -3862,6 +3978,26 @@ try {
         ));
     }
 
+    if ($action === 'reservation_status') {
+        $reservation_id = isset($payload['reservationId']) ? intval($payload['reservationId']) : 0;
+        if ($reservation_id < 1) {
+            throw new InvalidArgumentException('확인할 관리자 예약을 선택해주세요.');
+        }
+        $operation = admin_reservation_operation_payload($pdo, $reservation_id);
+        if (!$operation) {
+            json_response(array(
+                'ok' => false,
+                'error' => 'reservation_not_found',
+                'message' => '관리자 예약 작업을 찾지 못했습니다.',
+            ), 404);
+        }
+        json_response(array(
+            'ok' => true,
+            'serverTime' => date('c'),
+            'reservationOperation' => $operation,
+        ));
+    }
+
     if ($action === 'preview_recurring') {
         json_response(recurring_preview_payload($pdo, $payload));
     }
@@ -3880,7 +4016,10 @@ try {
 
     if ($action === 'create_reservation') {
         $result = create_reservation($pdo, $payload, $env);
-        json_response(array_merge(bootstrap_payload($pdo, $date, $env), array('reservationResult' => $result)));
+        json_response(array_merge(bootstrap_payload($pdo, $date, $env), array(
+            'reservationResult' => $result,
+            'reservationOperation' => admin_reservation_operation_payload($pdo, $result['reservationId']),
+        )));
     }
 
     if ($action === 'create_recurring') {
