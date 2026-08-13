@@ -6,6 +6,7 @@ const root = join(process.cwd(), 'www');
 const port = Number(process.env.SYNC_ADMIN_MOCK_PORT || 8765);
 const mockState = {
   createReservationCalls: [],
+  createdReservations: [],
 };
 
 function json(res, body, status = 200) {
@@ -17,14 +18,28 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function basePayload() {
+function basePayload(date = '2026-08-13') {
+  const reservations = date === '2026-08-13' ? [{
+    id: 77,
+    date: '2026-08-13',
+    room: 'A',
+    startHour: 15,
+    endHour: 17,
+    name: '기존 예약',
+    source: 'naver',
+    sourceLabel: '네이버 원장',
+    status: 'confirmed',
+    naverStatus: 'source',
+    spacecloudStatus: 'synced',
+  }] : [];
+  reservations.push(...mockState.createdReservations.filter((item) => item.date === date));
   return {
     ok: true,
     mode: 'db-live-queue',
     serverTime: new Date().toISOString(),
     settings: {},
     sessions: {},
-    reservations: [],
+    reservations,
     tasks: [],
     reflectionAudits: [],
     reflectionAuditSummary: { issueCount: 0, waitingCount: 0, okCount: 10 },
@@ -131,12 +146,14 @@ const server = http.createServer(async (req, res) => {
     const action = url.searchParams.get('action') || 'bootstrap';
     if (action === 'mock_reset') {
       mockState.createReservationCalls = [];
+      mockState.createdReservations = [];
       return json(res, { ok: true });
     }
     if (action === 'mock_state') {
       return json(res, {
         ok: true,
         createReservationCalls: mockState.createReservationCalls,
+        createdReservations: mockState.createdReservations,
       });
     }
     if (action === 'create_reservation') {
@@ -152,8 +169,22 @@ const server = http.createServer(async (req, res) => {
       if (body.name === 'UI 재시도 검사' && matchingCalls.length === 1) {
         return json(res, { ok: false, error: 'mock_temporary_failure', message: '모의 일시 장애' }, 503);
       }
+      if (matchingCalls.length === 1) mockState.createdReservations.push({
+        id: 8 + mockState.createdReservations.length + 1,
+        date: String(body.date || ''),
+        room: String(body.room || 'A'),
+        startHour: Number(body.start),
+        endHour: Number(body.end),
+        name: String(body.name || ''),
+        source: 'admin',
+        sourceLabel: '관리자 입력',
+        status: 'pending',
+        naverStatus: 'pending',
+        spacecloudStatus: 'pending',
+      });
+      const responsePayload = basePayload(body.date);
       return json(res, {
-        ...basePayload(),
+        ...responsePayload,
         reservationResult: {
           reservationId: 9,
           createdCount: matchingCalls.length === 1 ? 1 : 0,
@@ -176,7 +207,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (action === 'create_recurring') return json(res, { ...basePayload(), recurringResult: { seriesId: 2, createdCount: 8 } });
     if (action === 'cancel_admin_reservations') return json(res, { ...basePayload(), cancelResult: { requestedCount: 2 } });
-    return json(res, basePayload());
+    return json(res, basePayload(body.date));
   }
 
   const relative = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]/, '');

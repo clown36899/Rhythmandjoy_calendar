@@ -1534,6 +1534,22 @@ input[readonly] {
   margin-top: 18px;
 }
 
+.form-feedback {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(180, 35, 24, 0.28);
+  border-radius: 8px;
+  background: #fff2f0;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.form-feedback[hidden] {
+  display: none;
+}
+
 .session-list {
   display: grid;
   gap: 10px;
@@ -3574,13 +3590,18 @@ body.alert-drawer-open {
 
 .toast {
   position: fixed;
+  z-index: 80;
   left: 50%;
-  bottom: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
   transform: translateX(-50%) translateY(24px);
   padding: 11px 14px;
   border-radius: 8px;
   background: #10201d;
   color: #fff;
+  box-shadow: 0 12px 32px rgba(16, 32, 29, 0.28);
+  text-align: center;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.18s ease, transform 0.18s ease;

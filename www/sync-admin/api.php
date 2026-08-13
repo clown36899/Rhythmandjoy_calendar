@@ -2308,6 +2308,20 @@ function admin_alert_signature($parts) {
     }, $parts)));
 }
 
+function admin_reflection_audit_stale_after_seconds() {
+    // The production timer runs every 30 minutes. Allow enough time for
+    // systemd scheduling jitter and the audit itself before declaring a stop.
+    return 40 * 60;
+}
+
+function admin_reflection_audit_is_stale($latest_at, $now = null) {
+    if (!$latest_at) {
+        return true;
+    }
+    $current_time = $now === null ? time() : intval($now);
+    return $current_time - intval($latest_at) >= admin_reflection_audit_stale_after_seconds();
+}
+
 function admin_alert_add(&$alerts, $row, $signature_parts) {
     $key = isset($row['key']) ? trim((string) $row['key']) : '';
     if ($key === '' || strlen($key) > 190) {
@@ -2437,19 +2451,20 @@ function current_admin_alert_candidates($pdo) {
 
         $latest = $pdo->query("SELECT MAX(checked_at) AS checked_at FROM rhythmjoy_reflection_audits")->fetch();
         $latest_at = $latest && $latest['checked_at'] ? strtotime($latest['checked_at']) : 0;
-        if (!$latest_at || time() - $latest_at > 12 * 60) {
+        if (admin_reflection_audit_is_stale($latest_at)) {
+            $stale_minutes = intval(admin_reflection_audit_stale_after_seconds() / 60);
             admin_alert_add($alerts, array(
                 'key' => 'system:reflection-audit-stale',
                 'source' => 'system',
                 'sourceLabel' => '정규검사',
                 'severity' => 'critical',
                 'title' => '예약 정규검사가 멈췄습니다',
-                'message' => $latest_at ? '마지막 정규검사가 12분 이상 갱신되지 않았습니다.' : '정규검사 기록이 없습니다.',
+                'message' => $latest_at ? '마지막 정규검사가 ' . $stale_minutes . '분 이상 갱신되지 않았습니다.' : '정규검사 기록이 없습니다.',
                 'occurredAt' => $latest_at ? date('c', $latest_at) : null,
                 'updatedAt' => $latest_at ? date('c', $latest_at) : null,
                 'targetSection' => 'tasks',
                 'contextLabel' => '',
-            ), array('reflection-audit-stale', $latest_at ? 'stale' : 'missing'));
+            ), array('reflection-audit-stale', $latest_at ? $latest_at : 'missing'));
         }
     }
 
@@ -3765,7 +3780,16 @@ function run_sync_admin_selftest() {
         strpos(admin_alert_clean_text('recipient 010-1234-5678 failed'), '010-****-5678') !== false,
         'alert text masks full phone numbers'
     );
-    echo "sync-admin self-test OK: single/recurring idempotency, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures and phone redaction\n";
+    $audit_now = strtotime('2026-08-13 17:35:00');
+    sync_admin_selftest_assert(
+        !admin_reflection_audit_is_stale($audit_now - (31 * 60), $audit_now),
+        'a healthy 30-minute reflection audit interval is not marked stale'
+    );
+    sync_admin_selftest_assert(
+        admin_reflection_audit_is_stale($audit_now - (40 * 60), $audit_now),
+        'a missed reflection audit is marked stale after the grace period'
+    );
+    echo "sync-admin self-test OK: single/recurring idempotency, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures, phone redaction and reflection-audit timing\n";
 }
 
 if (PHP_SAPI === 'cli' && isset($argv[1]) && $argv[1] === 'self-test') {

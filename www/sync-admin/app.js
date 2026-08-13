@@ -78,6 +78,7 @@
     closeReservationModal: document.getElementById("closeReservationModal"),
     cancelReservationModal: document.getElementById("cancelReservationModal"),
     form: document.getElementById("new-reservation"),
+    reservationDateInput: document.getElementById("reservationDateInput"),
     roomInput: document.getElementById("roomInput"),
     nameInput: document.getElementById("nameInput"),
     phoneInput: document.getElementById("phoneInput"),
@@ -85,6 +86,7 @@
     startInput: document.getElementById("startInput"),
     endInput: document.getElementById("endInput"),
     createReservation: document.getElementById("createReservation"),
+    reservationFeedback: document.getElementById("reservationFeedback"),
     reflectionAudit: document.getElementById("reflectionAudit"),
     adminAlertButton: document.getElementById("adminAlertButton"),
     adminAlertBadge: document.getElementById("adminAlertBadge"),
@@ -167,6 +169,7 @@
   function init() {
     syncTokenFromUrl();
     el.activeDate.value = state.activeDate;
+    el.reservationDateInput.value = state.activeDate;
     if (el.adminToken) el.adminToken.value = localStorage.getItem(tokenKey) || "";
     el.profilePath.value = localStorage.getItem(profileKey) || el.profilePath.value;
     fillTimeSelects();
@@ -225,12 +228,14 @@
       button.addEventListener("click", () => setScheduleView(button.dataset.scheduleView));
     });
 
+    el.reservationDateInput.addEventListener("change", updateModalSlotSummary);
     el.roomInput.addEventListener("change", updateModalSlotSummary);
     el.startInput.addEventListener("change", () => {
       ensureEndAfterStart();
       updateModalSlotSummary();
     });
     el.endInput.addEventListener("change", updateModalSlotSummary);
+    el.form.addEventListener("input", clearReservationFeedback);
     el.form.addEventListener("submit", createDraftTask);
     el.closeReservationModal.addEventListener("click", closeReservationModal);
     el.cancelReservationModal.addEventListener("click", closeReservationModal);
@@ -496,13 +501,15 @@
   async function createDraftTask(event) {
     event.preventDefault();
     if (createDraftTask.pending) return;
+    clearReservationFeedback();
+    const date = el.reservationDateInput.value || state.activeDate;
     const start = Number(el.startInput.value);
     const end = Number(el.endInput.value);
     const room = el.roomInput.value;
-    if (!validateRange(room, start, end)) return;
+    if (!validateRange(date, room, start, end)) return;
 
     const payload = {
-      date: state.activeDate,
+      date,
       room,
       start,
       end,
@@ -512,7 +519,7 @@
     };
 
     if (!adminToken()) {
-      showToast("DB 관리자 연결 후 등록해주세요. 로컬 초안은 일정으로 처리하지 않습니다.");
+      showReservationFeedback("DB 관리자 연결 후 등록해주세요. 로컬 초안은 일정으로 처리하지 않습니다.");
       return;
     }
 
@@ -526,9 +533,14 @@
     try {
       requestId = await pendingRequestId(singleRequestKey, "single", payload);
       const data = await apiRequest("create_reservation", { ...payload, requestId });
+      const dateChanged = state.activeDate !== date;
+      state.activeDate = date;
+      el.activeDate.value = date;
+      if (dateChanged) state.monthSummary = null;
       applyApiData(data);
       clearPendingRequest(singleRequestKey, requestId);
-      resetForm(room, start, end);
+      clearReservationFeedback();
+      resetForm(date, room, start, end);
       closeReservationModal();
       setApiState("ready", data.mode === "db-live-queue" ? "DB 큐" : "DB 테스트", "DB 작업 생성됨");
       renderAll();
@@ -536,7 +548,7 @@
         ? "이미 처리된 동일 요청을 DB에서 확인했습니다."
         : "DB에 동기화 작업을 생성했습니다.");
     } catch (error) {
-      showToast(error.message || "DB 작업 생성 실패. 같은 내용으로 다시 누르면 안전하게 재확인합니다.");
+      showReservationFeedback(error.message || "DB 작업 생성 실패. 같은 내용으로 다시 누르면 안전하게 재확인합니다.");
       if (!error.status || error.status >= 500 || [401, 403].includes(error.status)) {
         setApiState("warn", "DB 확인 필요", error.message || "DB 작업 생성 실패");
       }
@@ -549,20 +561,23 @@
     }
   }
 
-  function validateRange(room, start, end) {
+  function validateRange(date, room, start, end) {
     if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
-      showToast("종료 시간이 시작 시간보다 늦어야 합니다.");
+      showReservationFeedback("종료 시간이 시작 시간보다 늦어야 합니다.");
       return false;
     }
     const overlap = state.drafts.find((item) => (
-      item.date === state.activeDate &&
+      item.date === date &&
       item.room === room &&
       item.status !== "canceled" &&
       start < item.end &&
       end > item.start
     ));
     if (overlap) {
-      showToast(`${room}홀 ${formatHour(overlap.start)}-${formatHour(overlap.end)} 예약과 겹칩니다.`);
+      const source = overlap.sourceLabel ? `${overlap.sourceLabel} ` : "";
+      showReservationFeedback(
+        `${room}홀 ${formatHour(overlap.start)}-${formatHour(overlap.end)}에 이미 ${source}예약이 있습니다. 새 작업을 만들지 않았습니다.`,
+      );
       return false;
     }
     return true;
@@ -2384,8 +2399,10 @@
     return `${Number(match[2])}월`;
   }
 
-  function resetForm(room, start, end) {
+  function resetForm(date, room, start, end) {
     el.form.reset();
+    clearReservationFeedback();
+    el.reservationDateInput.value = date;
     el.roomInput.value = room;
     el.startInput.value = String(start);
     el.endInput.value = String(end);
@@ -2393,6 +2410,8 @@
   }
 
   function openReservationModal() {
+    clearReservationFeedback();
+    el.reservationDateInput.value = state.activeDate;
     updateModalSlotSummary();
     el.reservationModal.hidden = false;
     document.body.classList.add("modal-open");
@@ -2404,6 +2423,7 @@
 
   function closeReservationModal() {
     el.reservationModal.hidden = true;
+    clearReservationFeedback();
     updateModalOpenState();
   }
 
@@ -2490,10 +2510,11 @@
   }
 
   function updateModalSlotSummary() {
+    const date = el.reservationDateInput.value || state.activeDate;
     const room = el.roomInput.value || "A";
     const start = Number(el.startInput.value || 19);
     const end = Number(el.endInput.value || Math.min(24, start + 1));
-    el.modalSlotSummary.textContent = `${state.activeDate} ${room}홀 ${formatHour(start)}-${formatHour(end)}`;
+    el.modalSlotSummary.textContent = `${date} ${room}홀 ${formatHour(start)}-${formatHour(end)}`;
   }
 
   function reservationItemFromApi(item) {
@@ -3801,11 +3822,27 @@
     return source || "예약 원장";
   }
 
+  function showReservationFeedback(message) {
+    const text = String(message || "예약 작업을 만들지 못했습니다.");
+    if (el.reservationFeedback) {
+      el.reservationFeedback.textContent = text;
+      el.reservationFeedback.hidden = false;
+      el.reservationFeedback.scrollIntoView({ block: "nearest" });
+    }
+    showToast(text);
+  }
+
+  function clearReservationFeedback() {
+    if (!el.reservationFeedback) return;
+    el.reservationFeedback.textContent = "";
+    el.reservationFeedback.hidden = true;
+  }
+
   function showToast(message) {
     el.toast.textContent = message;
     el.toast.classList.add("show");
     window.clearTimeout(showToast.timer);
-    showToast.timer = window.setTimeout(() => el.toast.classList.remove("show"), 2200);
+    showToast.timer = window.setTimeout(() => el.toast.classList.remove("show"), 4000);
   }
 
   function loadJson(key, fallback) {
