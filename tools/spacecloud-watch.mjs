@@ -5274,6 +5274,7 @@ function telegramStatusText(status) {
   const map = {
     blocked: '반영 성공',
     'already-blocked': '이미 반영됨',
+    'elapsed-no-action': '지난 시간 자동 생략',
     restored: '복구 성공',
     'already-available': '이미 예약가능',
     'restore-skipped-not-owned': '복구 생략',
@@ -5485,7 +5486,13 @@ function syncActionResultText(row) {
     return `SC 등록 ${telegramStatusText(status)}`;
   }
   if (taskType === 'naver_block') {
-    if (['blocked', 'already-blocked'].includes(status)) return '네이버 예약불가 완료';
+    if (['blocked', 'already-blocked'].includes(status)) {
+      const skipped = Number(row.skippedStartedSlotCount || 0);
+      return skipped > 0
+        ? `네이버 예약불가 완료 (지난 ${skipped}칸 생략)`
+        : '네이버 예약불가 완료';
+    }
+    if (status === 'elapsed-no-action') return '네이버 지난 시간 자동 생략';
     return `네이버 예약불가 ${telegramStatusText(status)}`;
   }
   if (taskType === 'naver_restore') {
@@ -5553,8 +5560,8 @@ function successRowsForResult(result, statuses, taskType) {
 function syncSuccessRowsFromCycle(row) {
   const rows = [
     ...successRowsForResult(row.uploadTasks, ['submitted'], 'upload'),
-    ...successRowsForResult(row.naverBlockTasks, ['blocked', 'already-blocked'], 'naver_block'),
-    ...successRowsForResult(row.naverRestoreTasks, ['restored', 'already-available', 'restore-skipped-not-owned'], 'naver_restore'),
+    ...successRowsForResult(row.naverBlockTasks, ['blocked', 'already-blocked', 'elapsed-no-action'], 'naver_block'),
+    ...successRowsForResult(row.naverRestoreTasks, ['restored', 'already-available', 'restore-skipped-not-owned', 'elapsed-no-action'], 'naver_restore'),
     ...successRowsForResult(row.deleteTasks, ['deleted', 'already-gone'], 'delete'),
     ...successRowsForResult(row.spacecloudCancelTasks, ['canceled', 'already-canceled'], 'spacecloud_cancel'),
     ...successRowsForResult(row.naverCancelTasks, ['canceled', 'already-canceled'], 'naver_cancel'),
@@ -5729,6 +5736,7 @@ function naverBlockSuccessMessage(row) {
   const processed = (row.naverBlockTasks?.rows || []).filter((taskRow) => [
     'blocked',
     'already-blocked',
+    'elapsed-no-action',
   ].includes(taskRow.status));
   return compactNotice('✅ 성공: 네이버 예약불가 반영', [
     `처리: ${processed.length}건`,
@@ -5762,6 +5770,7 @@ function naverRestoreSuccessMessage(row) {
     'restored',
     'already-available',
     'restore-skipped-not-owned',
+    'elapsed-no-action',
   ].includes(taskRow.status));
   return compactNotice('✅ 성공: 네이버 예약가능 복구', [
     `처리: ${processed.length}건`,
@@ -5921,7 +5930,7 @@ function dbStatusForNaverBlockRow(row, task = null) {
   if (row.status === 'stale-running-needs-review') return 'needs_review';
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip') return 'done';
-  if (row.status === 'blocked' || row.status === 'already-blocked') return 'done';
+  if (row.status === 'blocked' || row.status === 'already-blocked' || row.status === 'elapsed-no-action') return 'done';
   if (row.status === 'spacecloud-cancel-queued') return 'done';
   if (row.status === 'winner-waiting-loser-cancellation') return 'pending';
   if (row.status === 'naver-conflict' || row.status === 'later-reservation-conflict' || row.status === 'needs-review') return 'needs_review';
@@ -5959,7 +5968,7 @@ function dbStatusForNaverRestoreRow(row, task = null) {
   if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'stale-ledger-skip' || row.status === 'restore-skipped-not-owned') return 'done';
   if (row.status === 'restore-grace-wait') return 'pending';
-  if (row.status === 'restored' || row.status === 'already-available') return 'done';
+  if (row.status === 'restored' || row.status === 'already-available' || row.status === 'elapsed-no-action') return 'done';
   if (row.status === 'needs-review' || row.status === 'naver-conflict') return 'needs_review';
   const retryStatus = retryablePlatformDbStatus(row, task);
   if (retryStatus) return retryStatus;
@@ -7126,6 +7135,7 @@ async function runNaverBlockTasks(args, context = null) {
   const failed = taskRowsNeedingReview(rows, [
     'blocked',
     'already-blocked',
+    'elapsed-no-action',
     'stale-ledger-skip',
   ]);
   return {
@@ -7900,12 +7910,14 @@ async function runNaverAvailabilityTasks(args, context = null) {
         'restored',
         'already-available',
         'restore-skipped-not-owned',
+        'elapsed-no-action',
         'restore-grace-wait',
         'stale-ledger-skip',
       ]
       : [
         'blocked',
         'already-blocked',
+        'elapsed-no-action',
         'spacecloud-cancel-queued',
         'stale-ledger-skip',
       ];

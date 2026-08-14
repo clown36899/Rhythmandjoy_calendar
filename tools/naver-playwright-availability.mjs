@@ -514,6 +514,34 @@ export function buildHourlySlotRows(row) {
   return rows;
 }
 
+function naverSlotStartMs(slotRow) {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(slotRow?.date || ''));
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(String(slotRow?.startTime || ''));
+  if (!dateMatch || !timeMatch) {
+    throw new Error(`invalid Naver slot start: ${slotRow?.date || '-'} ${slotRow?.startTime || '-'}`);
+  }
+  return Date.UTC(
+    Number(dateMatch[1]),
+    Number(dateMatch[2]) - 1,
+    Number(dateMatch[3]),
+    Number(timeMatch[1]) - 9,
+    Number(timeMatch[2]),
+  );
+}
+
+export function partitionNaverActionableSlotRows(slotRows, { now = new Date() } = {}) {
+  const nowMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  if (!Number.isFinite(nowMs)) throw new Error(`invalid current time: ${now}`);
+
+  const actionable = [];
+  const inactiveStarted = [];
+  for (const slotRow of slotRows) {
+    if (naverSlotStartMs(slotRow) <= nowMs) inactiveStarted.push(slotRow);
+    else actionable.push(slotRow);
+  }
+  return { actionable, inactiveStarted };
+}
+
 function compactSlot(slot) {
   return {
     status: slot?.status || 'unknown',
@@ -775,7 +803,18 @@ export async function setNaverAvailability(context, task, {
 
   try {
     const meta = successStatusesForTarget(targetStatus);
-    const slotRows = buildHourlySlotRows(row);
+    const requestedSlotRows = buildHourlySlotRows(row);
+    const { actionable: slotRows, inactiveStarted } = partitionNaverActionableSlotRows(requestedSlotRows);
+    row.requestedSlotCount = requestedSlotRows.length;
+    row.skippedStartedSlotCount = inactiveStarted.length;
+    row.skippedStartedSlots = inactiveStarted.map((slotRow) => ({
+      date: slotRow.date,
+      startTime: slotRow.startTime,
+      endTime: slotRow.endTime,
+      slotIndex: slotRow.slotIndex,
+      status: 'skipped-started-slot',
+      reason: 'Naver disables availability editing after the slot start time',
+    }));
     row.slotRows = slotRows.map((slotRow) => ({
       date: slotRow.date,
       startTime: slotRow.startTime,
@@ -784,6 +823,16 @@ export async function setNaverAvailability(context, task, {
     }));
     row.slotCount = slotRows.length;
     row.beforeSlots = [];
+
+    if (slotRows.length === 0) {
+      row.appliedSlots = [];
+      row.changedSlotCount = 0;
+      row.alreadySlotCount = 0;
+      row.status = 'elapsed-no-action';
+      row.reason = 'All requested Naver slots already started and are no longer editable';
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
 
     for (const slotRow of slotRows) {
       await prepareCalendar(page, slotRow, { businessId });
