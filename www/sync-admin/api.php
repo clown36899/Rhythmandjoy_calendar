@@ -3254,12 +3254,34 @@ function insert_admin_ledger_anchor($pdo, $source_platform, $event, $calendar_ke
     ));
 }
 
+function admin_source_platform_for_task($task_type) {
+    if ($task_type === 'upload' || $task_type === 'delete') {
+        return 'naver';
+    }
+    if ($task_type === 'naver_block' || $task_type === 'naver_restore') {
+        return 'spacecloud';
+    }
+    return '';
+}
+
+function admin_live_task_payload($task_type, $event) {
+    $source_platform = admin_source_platform_for_task($task_type);
+    if ($source_platform === '') {
+        throw new InvalidArgumentException('지원하지 않는 관리자 동기화 작업입니다.');
+    }
+    $payload = $event;
+    $calendar_key = isset($event['calendar_key']) ? $event['calendar_key'] : '';
+    $payload['ledger_key'] = booking_ledger_key_for_admin($source_platform, $event, $calendar_key);
+    $payload['ledger_source_platform'] = $source_platform;
+    return $payload;
+}
+
 function insert_live_spacecloud_task($pdo, $task_type, $event, $room_key) {
     if (!in_array($task_type, array('upload', 'delete', 'naver_block', 'naver_restore'), true)) {
         throw new InvalidArgumentException('지원하지 않는 관리자 동기화 작업입니다.');
     }
     $dedupe_key = live_task_dedupe_key_for_admin($task_type, $event, $room_key);
-    $payload_json = json_encode($event, JSON_UNESCAPED_UNICODE);
+    $payload_json = json_encode(admin_live_task_payload($task_type, $event), JSON_UNESCAPED_UNICODE);
     $stmt = $pdo->prepare("
         INSERT INTO rhythmjoy_spacecloud_tasks (
             dedupe_key, email_event_id, task_type, status,

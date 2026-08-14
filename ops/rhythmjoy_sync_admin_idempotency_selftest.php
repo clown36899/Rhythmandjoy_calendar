@@ -53,6 +53,31 @@ foreach (array('rhythmjoy_admin_platform_audits', 'rhythmjoy_reflection_audits')
     idempotency_test_assert(strtolower((string) $column['Type']) === 'mediumtext', $table . ' detail evidence migrates without the TEXT limit');
 }
 
+$uppercase_admin_event = admin_event_payload(
+    999,
+    '2098-01-09',
+    'A',
+    12,
+    16,
+    'B홀a로이전',
+    '',
+    ''
+);
+$admin_naver_payload = admin_live_task_payload('upload', $uppercase_admin_event);
+$admin_spacecloud_payload = admin_live_task_payload('naver_block', $uppercase_admin_event);
+idempotency_test_assert(
+    $admin_naver_payload['ledger_key'] === booking_ledger_key_for_admin('naver', $uppercase_admin_event, 'Ahall'),
+    'admin Naver-source task carries the exact ledger key created by PHP'
+);
+idempotency_test_assert(
+    $admin_spacecloud_payload['ledger_key'] === booking_ledger_key_for_admin('spacecloud', $uppercase_admin_event, 'Ahall'),
+    'admin SpaceCloud-source task carries the exact case-normalized ledger key created by PHP'
+);
+idempotency_test_assert(
+    $admin_spacecloud_payload['ledger_source_platform'] === 'spacecloud',
+    'admin Naver-block task records its ledger source platform explicitly'
+);
+
 $test_env = $env;
 $test_env['SYNC_ADMIN_ENQUEUE_LIVE_TASKS'] = '0';
 

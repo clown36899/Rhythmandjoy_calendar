@@ -1676,7 +1676,7 @@ def enrich_task_row(cur, row):
     row['ledgerConfirmedEmailEventId'] = None
     row['ledgerCanceledEmailEventId'] = None
     if source_platform and calendar_key:
-        ledger_key = importer.booking_ledger_key(source_platform, payload, calendar_key)
+        ledger_key = payload.get('ledger_key') or payload.get('ledgerKey') or importer.booking_ledger_key(source_platform, payload, calendar_key)
         row['ledgerKey'] = ledger_key
         cur.execute(
             """
@@ -1690,6 +1690,30 @@ def enrich_task_row(cur, row):
             (ledger_key,),
         )
         ledger = cur.fetchone()
+        # Older admin tasks did not carry their canonical PHP-created ledger
+        # key. PHP normalizes Latin letters with mb_strtolower while the email
+        # importer intentionally preserves name case, so retry the admin-only
+        # compatibility key without changing customer email identities.
+        if not ledger and (payload.get('source') == 'admin-panel' or payload.get('source_mode') == 'admin-panel'):
+            compatibility_payload = dict(payload)
+            compatibility_payload['name'] = importer.normalize_reserver_name_for_match(payload.get('name')).lower()
+            compatibility_key = importer.booking_ledger_key(source_platform, compatibility_payload, calendar_key)
+            if compatibility_key != ledger_key:
+                cur.execute(
+                    """
+                    SELECT id, current_status,
+                           confirmed_email_event_id, canceled_email_event_id,
+                           CAST(last_event_at AS CHAR) AS last_event_at
+                    FROM rhythmjoy_booking_ledger
+                    WHERE ledger_key=%s
+                    LIMIT 1
+                    """,
+                    (compatibility_key,),
+                )
+                ledger = cur.fetchone()
+                if ledger:
+                    ledger_key = compatibility_key
+                    row['ledgerKey'] = compatibility_key
         if ledger:
             row['ledgerId'] = ledger.get('id')
             row['ledgerStatus'] = ledger.get('current_status') or ''
@@ -8112,6 +8136,16 @@ async function runNowModeSelfTest() {
   assert.equal(ledgerIssueForTask(adminCanceledTask, 'delete'), null);
   assert.equal(ledgerIssueForTask(adminCanceledTask, 'naver_restore'), null);
   assert.equal(ledgerIssueForTask({ ...adminConfirmedTask, payloadJson: '{}' }, 'upload'), 'missing-event');
+  assert.match(
+    REMOTE_TASK_ENRICHMENT_PY,
+    /payload\.get\('ledger_key'\).*importer\.booking_ledger_key/,
+    'admin tasks must prefer the exact ledger key supplied by the PHP transaction',
+  );
+  assert.match(
+    REMOTE_TASK_ENRICHMENT_PY,
+    /normalize_reserver_name_for_match\(payload\.get\('name'\)\)\.lower\(\)/,
+    'older admin tasks must retry the PHP-compatible case-normalized ledger key',
+  );
   assert.deepEqual(adminTaskFields({
     payloadJson: JSON.stringify({ source: 'admin-panel', admin_reservation_id: 41, admin_series_id: 9 }),
   }), {
