@@ -906,7 +906,24 @@ export async function inspectNaverAvailability(context, task, {
   };
 
   try {
-    for (const slotRow of buildHourlySlotRows(row)) {
+    const requestedSlotRows = buildHourlySlotRows(row);
+    const { actionable: slotRows, inactiveStarted } = partitionNaverActionableSlotRows(requestedSlotRows);
+    row.requestedSlotCount = requestedSlotRows.length;
+    row.skippedStartedSlotCount = inactiveStarted.length;
+    row.skippedStartedSlots = inactiveStarted.map((slotRow) => ({
+      date: slotRow.date,
+      startTime: slotRow.startTime,
+      endTime: slotRow.endTime,
+      slotIndex: slotRow.slotIndex,
+      status: 'skipped-started-slot',
+      reason: 'Naver disables availability inspection after the slot start time',
+    }));
+    if (slotRows.length === 0) {
+      row.status = 'elapsed-no-action';
+      row.reason = 'All requested Naver slots already started and are no longer inspectable';
+      return row;
+    }
+    for (const slotRow of slotRows) {
       await prepareCalendar(page, slotRow, { businessId });
       const slot = await findWeeklySlot(page, slotRow);
       row.slots.push({

@@ -4274,6 +4274,9 @@ function classifyAdminPlatformInspection(task, inspection) {
   if (inspection?.status === 'failed') {
     return { ok: false, status: 'check_failed', reason: inspection.error || '플랫폼 조회 실패' };
   }
+  if (inspection?.status === 'elapsed-no-action' && ['naver_block', 'naver_restore'].includes(taskType)) {
+    return { ok: true, status: 'ok', reason: '이미 시작된 네이버 시간칸 검사 생략' };
+  }
   if (taskType === 'upload') {
     if (inspection?.status === 'identity-matched') return { ok: true, status: 'ok', reason: '스페이스클라우드 예약 일치' };
     if (inspection?.status === 'candidate-only') return { ok: false, status: 'check_failed', reason: '스페이스클라우드 후보는 있으나 예약자 식별 불충분' };
@@ -4754,6 +4757,9 @@ function naverCancellationSlotExpectation(slot, overlapBookings) {
 function classifyCustomerPlatformInspection(checkType, inspection, task) {
   if (inspection?.status === 'failed') {
     return { ok: false, status: 'check_failed', reason: inspection.error || '플랫폼 조회 실패' };
+  }
+  if (inspection?.status === 'elapsed-no-action' && ['naver_mirror', 'naver_mirror_available'].includes(checkType)) {
+    return { ok: true, status: 'ok', reason: '이미 시작된 네이버 시간칸 검사 생략' };
   }
   if (checkType === 'naver_source') {
     if (!task.reservationNo) return { ok: false, status: 'check_failed', reason: '네이버 예약번호가 DB에 없음' };
@@ -8200,6 +8206,11 @@ async function runNowModeSelfTest() {
     classifyAdminPlatformInspection({ taskType: 'upload' }, { status: 'identity-matched' }),
     { ok: true, status: 'ok', reason: '스페이스클라우드 예약 일치' },
   );
+  assert.deepEqual(
+    classifyAdminPlatformInspection({ taskType: 'naver_block' }, { status: 'elapsed-no-action' }),
+    { ok: true, status: 'ok', reason: '이미 시작된 네이버 시간칸 검사 생략' },
+    'admin audits must not report inaccessible started Naver slots as a mismatch',
+  );
   assert.equal(
     classifyAdminPlatformInspection({ taskType: 'upload' }, { status: 'absent' }).status,
     'mismatch',
@@ -8409,6 +8420,11 @@ async function runNowModeSelfTest() {
     }, cancellationTaskWithOverlap).status,
     'mismatch',
     'a non-overlapping leftover block must still be detected',
+  );
+  assert.deepEqual(
+    classifyCustomerPlatformInspection('naver_mirror_available', { status: 'elapsed-no-action' }, cancellationTaskWithOverlap),
+    { ok: true, status: 'ok', reason: '이미 시작된 네이버 시간칸 검사 생략' },
+    'customer audits must not report inaccessible started Naver slots as a mismatch',
   );
   const naverOverlapTask = customerAuditTask({
     ...canceledSpacecloudCandidate,
