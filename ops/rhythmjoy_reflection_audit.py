@@ -408,6 +408,25 @@ def recent_ingestion_rows(cur, lookback_days):
                    ORDER BY l.last_event_at DESC, l.id DESC
                    LIMIT 1
                ) AS ledger_status,
+               (
+                   SELECT l.cancel_payload_json
+                   FROM rhythmjoy_booking_ledger l
+                   WHERE (
+                       e.event_type IN ('reservation', 'cancellation')
+                       AND e.reservation_number <> ''
+                       AND l.source_platform='naver'
+                       AND l.reservation_number=e.reservation_number
+                   ) OR (
+                       e.event_type IN ('spacecloud_reservation', 'spacecloud_cancellation')
+                       AND l.source_platform='spacecloud'
+                       AND l.room_key=e.spacecloud_room_key
+                       AND l.reservation_date=e.reservation_date
+                       AND l.start_time=e.start_time
+                       AND l.end_time=e.end_time
+                   )
+                   ORDER BY l.last_event_at DESC, l.id DESC
+                   LIMIT 1
+               ) AS ledger_cancel_payload_json,
                latest_task.id AS task_id,
                latest_task.status AS task_status,
                latest_task.attempts AS task_attempts
@@ -490,6 +509,12 @@ def ingestion_gap_reason(row, upload_enabled, block_enabled, grace_minutes):
     if processing_status in ('failed', 'received'):
         detail = row.get('error_text') or processing_status
         return f'예약 메일 수집 단계 실패: {detail}'[:255]
+    if (
+        event_type in ('reservation', 'spacecloud_reservation')
+        and row.get('ledger_status') == 'canceled'
+        and operator_customer_cancellation_payload(row.get('ledger_cancel_payload_json'))
+    ):
+        return ''
     if row.get('ledger_status') != expected_status:
         actual = row.get('ledger_status') or '없음'
         return f'최신 예약 메일 상태({expected_status})와 DB 원장({actual}) 불일치'
@@ -504,6 +529,19 @@ def ingestion_gap_reason(row, upload_enabled, block_enabled, grace_minutes):
     ):
         return f'최신 예약 메일 작업이 {task_status} 상태로 지연됨'
     return ''
+
+
+def operator_customer_cancellation_payload(value):
+    try:
+        payload = json.loads(value or '{}')
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return payload.get('source') in (
+        'sync-admin-customer-request',
+        'operator-manual-db-cancellation',
+    )
 
 
 def latest_task(cur, event_id, task_type, row):

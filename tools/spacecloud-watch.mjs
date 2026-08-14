@@ -2460,7 +2460,13 @@ def task_row(row, include_payload=False):
         payload = parse_json(row.get('payload_json'))
         result['payload'] = {
             'source': payload.get('source') or '',
+            'source_mode': payload.get('source_mode') or '',
             'action': payload.get('action') or '',
+            'manualCustomerCancellation': payload.get('manualCustomerCancellation') is True,
+            'ledgerId': payload.get('ledgerId'),
+            'ledger_key': payload.get('ledger_key') or payload.get('ledgerKey') or '',
+            'ledger_source_platform': payload.get('ledger_source_platform') or '',
+            'confirmedEmailEventId': payload.get('confirmedEmailEventId'),
             'sourceTaskId': payload.get('sourceTaskId'),
             'sourceTaskType': payload.get('sourceTaskType') or '',
             'priorityRule': payload.get('priorityRule') or '',
@@ -2476,6 +2482,7 @@ def ledger_row(row):
     payload = parse_json(row.get('payload_json'))
     return {
         'id': row.get('id'),
+        'ledgerKey': row.get('ledger_key') or '',
         'sourcePlatform': row.get('source_platform') or '',
         'sourceMode': row.get('source_mode') or '',
         'currentStatus': row.get('current_status') or '',
@@ -2520,9 +2527,10 @@ try:
         child_db = cur.fetchone()
         child = task_row(child_db, include_payload=True)
         if not child:
-            print(json.dumps({'child': None, 'sourceTask': None, 'loser': None, 'winner': None, 'overlaps': []}, ensure_ascii=False))
+            print(json.dumps({'child': None, 'sourceTask': None, 'loser': None, 'winner': None, 'manualLedger': None, 'overlaps': []}, ensure_ascii=False))
             raise SystemExit(0)
         payload = child.get('payload') or {}
+        manual_ledger_id = int(payload.get('ledgerId') or 0)
         losing_id = int((payload.get('losingBooking') or {}).get('id') or 0)
         winning_id = int((payload.get('winningBooking') or {}).get('id') or 0)
         cur.execute('SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s LIMIT 1', (payload.get('sourceTaskId'),))
@@ -2531,6 +2539,8 @@ try:
         loser = ledger_row(cur.fetchone())
         cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s LIMIT 1', (winning_id,))
         winner = ledger_row(cur.fetchone())
+        cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s LIMIT 1', (manual_ledger_id,))
+        manual_ledger = ledger_row(cur.fetchone())
         target_start, target_end = slot_datetimes(child.get('date'), child.get('startTime'), child.get('endTime'))
         overlaps = []
         if target_start and target_end:
@@ -2556,6 +2566,7 @@ try:
         'sourceTask': source_task,
         'loser': loser,
         'winner': winner,
+        'manualLedger': manual_ledger,
         'overlaps': overlaps,
     }, ensure_ascii=False))
 finally:
@@ -2567,15 +2578,122 @@ PY
 
 async function verifyRemoteCancellationGuard(args, task) {
   const snapshot = await fetchRemoteCancellationGuardSnapshot(args, task);
+  if (isManualCustomerCancellationTask(task)) {
+    const guard = assessManualCustomerCancellationGuard(snapshot);
+    return { ...guard, snapshot };
+  }
   const guard = assessCancellationGuard(snapshot);
   return { ...guard, snapshot };
 }
 
+function taskIdentityTime(value) {
+  return String(value || '').slice(0, 5);
+}
+
+function assessManualCustomerCancellationGuard(snapshot = {}) {
+  const child = snapshot.child || null;
+  const ledger = snapshot.manualLedger || null;
+  if (!child) {
+    return { approved: false, decision: 'manual-task-claim-missing', reason: 'claimed cancellation task is missing' };
+  }
+  const payload = child.payload || {};
+  if (
+    payload.manualCustomerCancellation !== true
+    || (payload.source !== 'sync-admin-customer-request' && payload.source_mode !== 'sync-admin-customer-request')
+  ) {
+    return { approved: false, decision: 'manual-task-marker-invalid', reason: 'manual customer cancellation marker is missing' };
+  }
+  if (!ledger) {
+    return { approved: false, decision: 'manual-ledger-missing', reason: 'customer booking ledger is missing' };
+  }
+  const sourcePlatform = String(ledger.sourcePlatform || '');
+  const expectedTaskType = sourcePlatform === 'naver'
+    ? 'naver_cancel'
+    : sourcePlatform === 'spacecloud'
+      ? 'spacecloud_cancel'
+      : '';
+  const expectedAction = sourcePlatform === 'naver'
+    ? 'cancel-naver-confirmed-reservation'
+    : sourcePlatform === 'spacecloud'
+      ? 'cancel-spacecloud-confirmed-reservation'
+      : '';
+  const identityMatches = Number(payload.ledgerId || 0) === Number(ledger.id || 0)
+    && Number(child.ledgerId || 0) === Number(ledger.id || 0)
+    && String(payload.ledger_key || '') === String(ledger.ledgerKey || '')
+    && String(payload.ledger_source_platform || '') === sourcePlatform
+    && String(child.taskType || '') === expectedTaskType
+    && String(payload.action || '') === expectedAction
+    && String(child.emailEventId || '') === String(ledger.confirmedEmailEventId || '')
+    && String(payload.confirmedEmailEventId || '') === String(ledger.confirmedEmailEventId || '')
+    && String(child.roomKey || '').toLowerCase() === String(ledger.roomKey || '').toLowerCase()
+    && String(child.date || '') === String(ledger.date || '')
+    && taskIdentityTime(child.startTime) === taskIdentityTime(ledger.startTime)
+    && taskIdentityTime(child.endTime) === taskIdentityTime(ledger.endTime);
+  if (!identityMatches || !expectedTaskType || ledger.sourceMode === 'admin-task-anchor') {
+    return {
+      approved: false,
+      decision: 'manual-task-identity-mismatch',
+      reason: 'customer cancellation task no longer matches the exact ledger booking',
+      ledger,
+      sourcePlatform,
+    };
+  }
+  if (sourcePlatform === 'naver' && String(child.reservationNo || '') !== String(ledger.reservationNumber || '')) {
+    return { approved: false, decision: 'manual-reservation-number-mismatch', reason: 'Naver reservation number changed', ledger, sourcePlatform };
+  }
+  if (
+    sourcePlatform === 'spacecloud'
+    && String(payload.spacecloud_reservation_id || '') !== String(ledger.spacecloudReservationId || '')
+  ) {
+    return { approved: false, decision: 'manual-spacecloud-id-mismatch', reason: 'SpaceCloud reservation id changed', ledger, sourcePlatform };
+  }
+  if (ledger.currentStatus === 'canceled') {
+    return {
+      approved: false,
+      decision: 'already-canceled',
+      reason: 'booking ledger is already canceled; verify the exact source platform before mirror cleanup',
+      ledger,
+      sourcePlatform,
+    };
+  }
+  if (ledger.currentStatus !== 'confirmed') {
+    return {
+      approved: false,
+      decision: 'manual-ledger-state-invalid',
+      reason: `customer booking ledger status is ${ledger.currentStatus || 'missing'}`,
+      ledger,
+      sourcePlatform,
+    };
+  }
+  return {
+    approved: true,
+    decision: 'manual-customer-cancel-approved',
+    reason: 'exact customer booking and cancellation task identity confirmed',
+    ledger,
+    sourcePlatform,
+  };
+}
+
+function manualCancellationGuardSummary(guard = {}) {
+  return {
+    approved: guard.approved === true,
+    decision: guard.decision || '',
+    reason: guard.reason || '',
+    ledgerId: guard.ledger?.id || null,
+    sourcePlatform: guard.sourcePlatform || guard.ledger?.sourcePlatform || '',
+    currentStatus: guard.ledger?.currentStatus || '',
+  };
+}
+
 function taskPriorCancellationAttempted(task) {
-  if (task?.recoveredFromStaleRunning === true && task?.stalePreviousResultStatus === 'cancel-submit-checkpoint') return true;
+  if (
+    task?.recoveredFromStaleRunning === true
+    && ['cancel-submit-checkpoint', 'manual-cancel-submit-checkpoint'].includes(task?.stalePreviousResultStatus)
+  ) return true;
   try {
     const result = JSON.parse(task?.resultText || task?.result_text || '{}');
-    return result?.submissionAttempted === true || result?.status === 'cancel-submit-checkpoint';
+    return result?.submissionAttempted === true
+      || ['cancel-submit-checkpoint', 'manual-cancel-submit-checkpoint'].includes(result?.status);
   } catch {
     return false;
   }
@@ -3160,6 +3278,8 @@ try:
                     json.dumps({
                         'status': 'conflict-cleared-requeued',
                         'reason': 'previous winning booking is no longer confirmed',
+                        'submissionAttempted': False,
+                        'retryMode': 'safe-retry-before-submit',
                         'cancellationTaskId': child.get('id'),
                         'loserLedgerId': loser_id,
                     }, ensure_ascii=False, separators=(',', ':')),
@@ -3340,6 +3460,244 @@ try:
         'ledgerStatus': 'canceled',
         'sourceUpdated': source_updated,
         'sourceTaskId': source_task_id,
+    }, ensure_ascii=False))
+except Exception:
+    conn.rollback()
+    raise
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '{}');
+}
+
+async function finalizeRemoteManualCustomerCancellationSuccess(args, task, guard, platformResult) {
+  const target = await loadCafe24Target(args);
+  const payload = Buffer.from(JSON.stringify({
+    taskId: Number(task.id || task.taskId || 0),
+    claimToken: String(task.claimToken || task.claim_token || ''),
+    ledgerId: Number(guard?.ledger?.id || 0),
+    sourcePlatform: String(guard?.sourcePlatform || guard?.ledger?.sourcePlatform || ''),
+    platformStatus: String(platformResult?.status || ''),
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export MANUAL_CANCELLATION_FINALIZE_B64=${shellQuote(payload)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import hashlib
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+def parse_json(value):
+    try:
+        parsed = json.loads(value or '{}')
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+def time_text(value):
+    return str(value or '')[:5]
+
+def date_text(value):
+    return str(value or '')[:10]
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+request = json.loads(base64.b64decode(os.environ['MANUAL_CANCELLATION_FINALIZE_B64']).decode('utf-8'))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=False,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s AND status='running' AND claim_token=%s FOR UPDATE",
+            (request.get('taskId'), request.get('claimToken') or ''),
+        )
+        child = cur.fetchone()
+        if not child:
+            raise RuntimeError('manual cancellation task claim lost before finalization')
+        child_payload = parse_json(child.get('payload_json'))
+        if not (
+            child_payload.get('manualCustomerCancellation') is True
+            and (
+                child_payload.get('source') == 'sync-admin-customer-request'
+                or child_payload.get('source_mode') == 'sync-admin-customer-request'
+            )
+        ):
+            raise RuntimeError('manual cancellation marker changed before finalization')
+        ledger_id = int(child_payload.get('ledgerId') or 0)
+        if ledger_id != int(request.get('ledgerId') or 0):
+            raise RuntimeError('manual cancellation ledger identity changed')
+        cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s FOR UPDATE', (ledger_id,))
+        ledger = cur.fetchone()
+        if not ledger:
+            raise RuntimeError('manual cancellation ledger missing during finalization')
+        source_platform = ledger.get('source_platform') or ''
+        expected_task_type = 'naver_cancel' if source_platform == 'naver' else 'spacecloud_cancel' if source_platform == 'spacecloud' else ''
+        expected_action = 'cancel-naver-confirmed-reservation' if source_platform == 'naver' else 'cancel-spacecloud-confirmed-reservation'
+        exact_identity = (
+            source_platform == request.get('sourcePlatform')
+            and child.get('task_type') == expected_task_type
+            and child_payload.get('action') == expected_action
+            and child.get('email_event_id') == ledger.get('confirmed_email_event_id')
+            and int(child_payload.get('confirmedEmailEventId') or 0) == int(ledger.get('confirmed_email_event_id') or 0)
+            and str(child_payload.get('ledger_key') or '') == str(ledger.get('ledger_key') or '')
+            and str(child_payload.get('ledger_source_platform') or '') == source_platform
+            and str(child.get('room_key') or '').lower() == str(ledger.get('room_key') or '').lower()
+            and date_text(child.get('reservation_date')) == date_text(ledger.get('reservation_date'))
+            and time_text(child.get('start_time')) == time_text(ledger.get('start_time'))
+            and time_text(child.get('end_time')) == time_text(ledger.get('end_time'))
+        )
+        if not exact_identity or not expected_task_type:
+            raise RuntimeError('manual cancellation exact identity check failed during finalization')
+        if source_platform == 'naver' and str(child.get('reservation_number') or '') != str(ledger.get('reservation_number') or ''):
+            raise RuntimeError('manual Naver cancellation reservation number changed')
+        ledger_payload = parse_json(ledger.get('payload_json'))
+        spacecloud_reservation_id = str(
+            ledger_payload.get('spacecloud_reservation_id')
+            or ledger_payload.get('spacecloudReservationId')
+            or ''
+        )
+        if source_platform == 'spacecloud' and str(child_payload.get('spacecloud_reservation_id') or '') != spacecloud_reservation_id:
+            raise RuntimeError('manual SpaceCloud cancellation reservation id changed')
+        if ledger.get('current_status') not in ('confirmed', 'canceled'):
+            raise RuntimeError('manual cancellation ledger has an invalid final state')
+
+        previous_cancel_payload = parse_json(ledger.get('cancel_payload_json'))
+        cancel_audit = {
+            'source': 'sync-admin-customer-request',
+            'reason': 'customer-request',
+            'manualCustomerCancellation': True,
+            'cancelTaskId': child.get('id'),
+            'ledgerId': ledger_id,
+            'sourcePlatform': source_platform,
+            'platformStatus': request.get('platformStatus') or '',
+        }
+        if previous_cancel_payload and previous_cancel_payload.get('source') != 'sync-admin-customer-request':
+            cancel_audit['priorCancelPayload'] = previous_cancel_payload
+        cur.execute(
+            """
+            UPDATE rhythmjoy_booking_ledger
+            SET current_status='canceled', last_event_at=NOW(),
+                cancel_payload_json=%s, updated_at=NOW()
+            WHERE id=%s AND confirmed_email_event_id=%s
+              AND current_status IN ('confirmed','canceled')
+            """,
+            (
+                json.dumps(cancel_audit, ensure_ascii=False, separators=(',', ':')),
+                ledger_id,
+                child.get('email_event_id'),
+            ),
+        )
+        cur.execute('SELECT current_status, cancel_payload_json FROM rhythmjoy_booking_ledger WHERE id=%s LIMIT 1', (ledger_id,))
+        finalized_ledger = cur.fetchone() or {}
+        finalized_payload = parse_json(finalized_ledger.get('cancel_payload_json'))
+        if (
+            finalized_ledger.get('current_status') != 'canceled'
+            or int(finalized_payload.get('cancelTaskId') or 0) != int(child.get('id') or 0)
+        ):
+            raise RuntimeError('manual cancellation ledger finalization verification failed')
+
+        calendar_key = ledger.get('target_calendar') or ''
+        mirror_task_type = 'delete' if source_platform == 'naver' else 'naver_restore'
+        mirror_action = 'delete-spacecloud-mirror' if source_platform == 'naver' else 'restore-naver-mirror'
+        mirror_payload = dict(ledger_payload)
+        mirror_payload.update({
+            'source': 'sync-admin-customer-request',
+            'source_mode': 'sync-admin-customer-request',
+            'action': mirror_action,
+            'cancellationMode': 'customer-request',
+            'manualCustomerCancellation': True,
+            'customerCancellationTaskId': child.get('id'),
+            'sourceTaskId': child.get('id'),
+            'ledgerId': ledger_id,
+            'ledger_key': ledger.get('ledger_key') or '',
+            'ledger_source_platform': source_platform,
+            'calendarKey': calendar_key,
+            'calendar_key': calendar_key,
+            'target_calendar': calendar_key,
+            'roomKey': ledger.get('room_key') or '',
+            'room_key': ledger.get('room_key') or '',
+            'date': date_text(ledger.get('reservation_date')),
+            'start_time': time_text(ledger.get('start_time')),
+            'end_time': time_text(ledger.get('end_time')),
+            'name': ledger.get('reserver_name') or '',
+            'product': ledger.get('product') or '',
+            'reservation_number': ledger.get('reservation_number') or '',
+            'spacecloud_reservation_id': spacecloud_reservation_id,
+            'suppress_confirmation_sms': True,
+            'suppress_prior_cancellation_sms': True,
+        })
+        if mirror_task_type == 'delete':
+            reservation_number = str(ledger.get('reservation_number') or '')
+            if not reservation_number:
+                raise RuntimeError('manual cancellation mirror delete is missing Naver reservation number')
+            raw_key = f'delete|reservation|{reservation_number}'
+            dedupe_key = 'delete|' + hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+        else:
+            raw_key = '|'.join([
+                'naver_restore',
+                'manual-customer-request',
+                str(ledger_id),
+                str(child.get('email_event_id') or ''),
+                str(ledger.get('room_key') or ''),
+                date_text(ledger.get('reservation_date')),
+                time_text(ledger.get('start_time')),
+                time_text(ledger.get('end_time')),
+            ])
+            dedupe_key = 'naver_restore|' + hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+        cur.execute(
+            """
+            INSERT INTO rhythmjoy_spacecloud_tasks (
+                dedupe_key, email_event_id, task_type, status,
+                room_key, reservation_number, reserver_name, product,
+                reservation_date, start_time, end_time, payload_json,
+                created_at, updated_at
+            ) VALUES (%s,%s,%s,'pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
+            ON DUPLICATE KEY UPDATE dedupe_key=VALUES(dedupe_key)
+            """,
+            (
+                dedupe_key,
+                child.get('email_event_id'),
+                mirror_task_type,
+                ledger.get('room_key') or '',
+                ledger.get('reservation_number') or '',
+                ledger.get('reserver_name') or '',
+                ledger.get('product') or '',
+                ledger.get('reservation_date'),
+                ledger.get('start_time'),
+                ledger.get('end_time'),
+                json.dumps(mirror_payload, ensure_ascii=False, separators=(',', ':')),
+            ),
+        )
+        cur.execute('SELECT id, status FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=%s LIMIT 1', (dedupe_key,))
+        mirror_task = cur.fetchone() or {}
+    conn.commit()
+    print(json.dumps({
+        'ledgerUpdated': 1,
+        'ledgerStatus': 'canceled',
+        'ledgerId': ledger_id,
+        'mirrorTaskId': mirror_task.get('id'),
+        'mirrorTaskType': mirror_task_type,
+        'mirrorTaskStatus': mirror_task.get('status') or '',
     }, ensure_ascii=False))
 except Exception:
     conn.rollback()
@@ -5511,10 +5869,18 @@ function syncActionResultText(row) {
     return `SC 삭제 ${telegramStatusText(status)}`;
   }
   if (taskType === 'spacecloud_cancel') {
+    if (row.manualCustomerCancellation === true) {
+      if (['canceled', 'already-canceled'].includes(status)) return 'SC 고객 요청 취소 완료';
+      return `SC 고객 요청 취소 ${telegramStatusText(status)}`;
+    }
     if (['canceled', 'already-canceled'].includes(status)) return 'SC 후예약 취소 완료';
     return `SC 후예약 취소 ${telegramStatusText(status)}`;
   }
   if (taskType === 'naver_cancel') {
+    if (row.manualCustomerCancellation === true) {
+      if (['canceled', 'already-canceled'].includes(status)) return '네이버 고객 요청 취소 완료';
+      return `네이버 고객 요청 취소 ${telegramStatusText(status)}`;
+    }
     if (['canceled', 'already-canceled'].includes(status)) return '네이버 후예약 취소 완료';
     return `네이버 후예약 취소 ${telegramStatusText(status)}`;
   }
@@ -5545,6 +5911,9 @@ function syncSmsStatusText(row) {
 
 function syncOriginText(row) {
   const taskType = row.taskType || row.task_type || '';
+  if (row.manualCustomerCancellation === true && ['naver_cancel', 'spacecloud_cancel'].includes(taskType)) {
+    return '관리자 고객 요청 취소';
+  }
   if (taskType === 'upload') return '네이버 예약 접수';
   if (taskType === 'delete') return '네이버 취소 접수';
   if (taskType === 'naver_block') return 'SC 예약 접수';
@@ -5799,7 +6168,8 @@ function spacecloudCancelSuccessMessage(row) {
     'canceled',
     'already-canceled',
   ].includes(taskRow.status));
-  return compactNotice('✅ 성공: 스페이스클라우드 후예약 취소', [
+  const manual = processed.some((taskRow) => taskRow.manualCustomerCancellation === true);
+  return compactNotice(manual ? '✅ 성공: 스페이스클라우드 고객 요청 취소' : '✅ 성공: 스페이스클라우드 후예약 취소', [
     `처리: ${processed.length}건`,
     formatBriefRows(processed),
     `문자: ${processed.map((taskRow) => smsStatusText(taskRow.sms?.status)).filter(Boolean).join(', ') || '-'}`,
@@ -5808,7 +6178,8 @@ function spacecloudCancelSuccessMessage(row) {
 
 function spacecloudCancelFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
-  return compactNotice('⚠️ 실패: 스페이스클라우드 후예약 취소', [
+  const manual = rows.some((taskRow) => taskRow.manualCustomerCancellation === true);
+  return compactNotice(manual ? '⚠️ 실패: 스페이스클라우드 고객 요청 취소' : '⚠️ 실패: 스페이스클라우드 후예약 취소', [
     '상태: 자동 처리 중지',
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),
@@ -5822,7 +6193,8 @@ function naverCancelSuccessMessage(row) {
     'canceled',
     'already-canceled',
   ].includes(taskRow.status));
-  return compactNotice('✅ 성공: 네이버 후예약 취소', [
+  const manual = processed.some((taskRow) => taskRow.manualCustomerCancellation === true);
+  return compactNotice(manual ? '✅ 성공: 네이버 고객 요청 취소' : '✅ 성공: 네이버 후예약 취소', [
     `처리: ${processed.length}건`,
     formatBriefRows(processed),
     `문자: ${processed.map((taskRow) => smsStatusText(taskRow.sms?.status)).filter(Boolean).join(', ') || '-'}`,
@@ -5831,7 +6203,8 @@ function naverCancelSuccessMessage(row) {
 
 function naverCancelFailureMessage(rowOrError) {
   const rows = rowsFromResult(rowOrError);
-  return compactNotice('⚠️ 실패: 네이버 후예약 취소', [
+  const manual = rows.some((taskRow) => taskRow.manualCustomerCancellation === true);
+  return compactNotice(manual ? '⚠️ 실패: 네이버 고객 요청 취소' : '⚠️ 실패: 네이버 후예약 취소', [
     '상태: 자동 처리 중지',
     `대상: ${rows.length || '-'}건`,
     formatBriefRows(rows),
@@ -6140,7 +6513,7 @@ function ledgerIssueForTask(task, taskType) {
   if (task.ledgerStatus !== expected) return 'stale';
   // 관리자 입력은 이메일 이벤트가 아니라 DB 트랜잭션에서 원장 앵커와 작업을
   // 함께 만든다. 원장 상태는 검증하되 존재할 수 없는 이메일 ID를 요구하지 않는다.
-  if (isAdminPanelTask(task)) return null;
+  if (isAdminPanelTask(task) || isManualCustomerCancellationTask(task)) return null;
   const taskEventId = String(task.emailEventId || task.email_event_id || '');
   const latestEventId = String(
     taskType === 'delete' || taskType === 'naver_restore'
@@ -6202,6 +6575,15 @@ function payloadForTask(task) {
 function isAdminPanelTask(task) {
   const payload = payloadForTask(task);
   return payload.source === 'admin-panel' || payload.source_mode === 'admin-panel';
+}
+
+function isManualCustomerCancellationTask(task) {
+  const payload = payloadForTask(task);
+  return payload.manualCustomerCancellation === true
+    && (
+      payload.source === 'sync-admin-customer-request'
+      || payload.source_mode === 'sync-admin-customer-request'
+    );
 }
 
 function adminTaskFields(task) {
@@ -7349,7 +7731,173 @@ async function recoverPreviouslySubmittedCancellation(args, context, task, platf
   return finalizeProvenCancellation(args, task, row, platform, guard);
 }
 
+async function finalizeProvenManualCustomerCancellation(args, task, row, platform, guard) {
+  try {
+    const finalization = await finalizeRemoteManualCustomerCancellationSuccess(args, task, guard, row);
+    if (
+      finalization.ledgerStatus !== 'canceled'
+      || Number(finalization.ledgerId || 0) !== Number(guard?.ledger?.id || 0)
+      || !Number(finalization.mirrorTaskId || 0)
+    ) {
+      throw new Error(`manual cancellation finalization invariant failed: ${JSON.stringify(finalization)}`);
+    }
+    row.dbFinalization = finalization;
+    row.manualCustomerCancellation = true;
+    row.sms = {
+      status: 'disabled',
+      reason: 'customer-request-cancellation-does-not-use-prior-booking-template',
+    };
+  } catch (error) {
+    row.platformStatus = row.status;
+    row.status = cancellationAttemptCount(task) < CANCELLATION_GUARD_MAX_ATTEMPTS
+      ? 'canceled-finalization-pending'
+      : 'needs-review';
+    row.error = `customer-request platform cancellation is confirmed but DB/mirror finalization failed: ${String(error?.message || error)}`;
+    row.finishedAt = new Date().toISOString();
+  }
+  return row;
+}
+
+async function recoverManualCustomerCancellation(args, context, task, platform, guard, knownLiveTarget = null) {
+  const guardSummary = manualCancellationGuardSummary(guard);
+  let liveTarget = knownLiveTarget;
+  try {
+    if (!liveTarget) liveTarget = await inspectCancellationTargetLive(context, task, platform, args);
+  } catch (error) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'cancellation-verification-pending',
+      `customer-request cancellation verification failed: ${String(error?.message || error)}`,
+      { manualCustomerCancellation: true, cancellationGuard: guardSummary },
+    );
+  }
+  if (!liveTarget.canceled) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'cancellation-verification-pending',
+      liveTarget.confirmed
+        ? 'a prior customer-request cancellation checkpoint exists, but the exact source reservation is still confirmed; no repeat click allowed'
+        : `customer-request cancellation target state is ambiguous: ${liveTarget.reason || liveTarget.status}`,
+      { manualCustomerCancellation: true, cancellationGuard: guardSummary, liveTarget },
+    );
+  }
+  const row = {
+    ...basicTaskSummary(task),
+    taskType: cancellationTaskType(platform),
+    status: 'already-canceled',
+    submissionAttempted: taskPriorCancellationAttempted(task),
+    submissionConfirmed: true,
+    recoveredAfterSubmitCheckpoint: taskPriorCancellationAttempted(task),
+    manualCustomerCancellation: true,
+    cancellationGuard: guardSummary,
+    liveTarget,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+  };
+  return finalizeProvenManualCustomerCancellation(args, task, row, platform, guard);
+}
+
+async function runManualCustomerCancellation(args, context, task, platform) {
+  let guard;
+  try {
+    guard = await verifyRemoteCancellationGuard(args, task);
+  } catch (error) {
+    return cancellationHoldRow(
+      task,
+      platform,
+      'guard-retry-pending',
+      `customer-request cancellation DB guard could not be read: ${String(error?.message || error)}`,
+      { manualCustomerCancellation: true },
+    );
+  }
+  const guardSummary = manualCancellationGuardSummary(guard);
+
+  if (guard.decision === 'already-canceled' || taskPriorCancellationAttempted(task)) {
+    return recoverManualCustomerCancellation(args, context, task, platform, guard);
+  }
+  if (guard.approved !== true) {
+    const error = `customer-request cancellation guard rejected the task: ${guard.reason || guard.decision || 'not-approved'}`;
+    return {
+      ...basicTaskSummary(task),
+      taskType: cancellationTaskType(platform),
+      status: 'needs-review',
+      manualCustomerCancellation: true,
+      reason: error,
+      error,
+      cancellationGuard: guardSummary,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    };
+  }
+
+  let finalGuard = guard;
+  const beforeConfirm = async () => {
+    try {
+      finalGuard = await verifyRemoteCancellationGuard(args, task);
+      const summary = manualCancellationGuardSummary(finalGuard);
+      if (finalGuard.approved !== true) {
+        return {
+          approved: false,
+          retryable: finalGuard.decision !== 'already-canceled',
+          reason: finalGuard.reason || finalGuard.decision || 'not-approved',
+          summary,
+        };
+      }
+      await updateRemoteTask(args, task, 'running', JSON.stringify({
+        ...basicTaskSummary(task),
+        status: 'manual-cancel-submit-checkpoint',
+        submissionAttempted: true,
+        manualCustomerCancellation: true,
+        cancellationGuard: summary,
+        checkpointAt: new Date().toISOString(),
+      }, null, 2), { releaseClaim: false });
+      return { approved: true, summary };
+    } catch (error) {
+      return {
+        approved: false,
+        retryable: true,
+        reason: `final customer-request cancellation guard failed: ${String(error?.message || error)}`,
+        summary: manualCancellationGuardSummary(finalGuard),
+      };
+    }
+  };
+
+  let row;
+  if (platform === 'naver') {
+    row = await cancelNaverConfirmedReservation(context, task, {
+      businessId: args.naverBusinessId,
+      beforeConfirm,
+    });
+  } else {
+    row = await cancelSpacecloudConfirmedReservation(context, task, { beforeConfirm });
+  }
+  row.manualCustomerCancellation = true;
+  row.preflightCancellationGuard = guardSummary;
+
+  if (finalGuard.decision === 'already-canceled' && row.submissionAttempted !== true) {
+    return recoverManualCustomerCancellation(args, context, task, platform, finalGuard);
+  }
+  if (row.status === 'guard-retry-pending') return row;
+  if (row.submissionAttempted === true && !['canceled', 'already-canceled'].includes(row.status)) {
+    row.platformStatus = row.status;
+    row.status = cancellationAttemptCount(task) < CANCELLATION_GUARD_MAX_ATTEMPTS
+      ? 'cancellation-verification-pending'
+      : 'needs-review';
+    row.error = `customer-request cancellation submit result is not yet exact; retry will verify without clicking again: ${row.error || row.platformStatus}`;
+    return row;
+  }
+  if (['canceled', 'already-canceled'].includes(row.status)) {
+    return finalizeProvenManualCustomerCancellation(args, task, row, platform, finalGuard);
+  }
+  return row;
+}
+
 async function runGuardedCustomerCancellation(args, context, task, platform) {
+  if (isManualCustomerCancellationTask(task)) {
+    return runManualCustomerCancellation(args, context, task, platform);
+  }
   const taskType = cancellationTaskType(platform);
   const ledgerIssue = ledgerIssueForTask(task, taskType);
   if (ledgerIssue && ledgerIssue !== 'already-canceled') return ledgerIssueRow(task, taskType, ledgerIssue);
@@ -8154,6 +8702,64 @@ async function runNowModeSelfTest() {
   assert.equal(ledgerIssueForTask(adminCanceledTask, 'delete'), null);
   assert.equal(ledgerIssueForTask(adminCanceledTask, 'naver_restore'), null);
   assert.equal(ledgerIssueForTask({ ...adminConfirmedTask, payloadJson: '{}' }, 'upload'), 'missing-event');
+  const manualCancellationPayload = {
+    source: 'sync-admin-customer-request',
+    source_mode: 'sync-admin-customer-request',
+    action: 'cancel-naver-confirmed-reservation',
+    manualCustomerCancellation: true,
+    ledgerId: 9259,
+    ledger_key: 'naver|ledger-key',
+    ledger_source_platform: 'naver',
+    confirmedEmailEventId: 669,
+  };
+  const manualCancellationTask = {
+    ledgerStatus: 'confirmed',
+    emailEventId: 669,
+    payloadJson: JSON.stringify(manualCancellationPayload),
+  };
+  assert.equal(isManualCustomerCancellationTask(manualCancellationTask), true);
+  assert.equal(ledgerIssueForTask(manualCancellationTask, 'naver_cancel'), null);
+  assert.equal(ledgerIssueForTask({ ...manualCancellationTask, ledgerStatus: 'canceled' }, 'delete'), null);
+  const manualGuardSnapshot = {
+    child: {
+      id: 701,
+      taskType: 'naver_cancel',
+      ledgerId: 9259,
+      emailEventId: 669,
+      roomKey: 'd',
+      reservationNo: '1322888541',
+      date: '2026-08-14',
+      startTime: '17:00',
+      endTime: '19:00',
+      payload: manualCancellationPayload,
+    },
+    manualLedger: {
+      id: 9259,
+      ledgerKey: 'naver|ledger-key',
+      sourcePlatform: 'naver',
+      sourceMode: 'email-ledger',
+      currentStatus: 'confirmed',
+      roomKey: 'd',
+      reservationNumber: '1322888541',
+      date: '2026-08-14',
+      startTime: '17:00',
+      endTime: '19:00',
+      confirmedEmailEventId: 669,
+    },
+  };
+  const approvedManualGuard = assessManualCustomerCancellationGuard(manualGuardSnapshot);
+  assert.equal(approvedManualGuard.approved, true);
+  assert.equal(approvedManualGuard.decision, 'manual-customer-cancel-approved');
+  const canceledManualGuard = assessManualCustomerCancellationGuard({
+    ...manualGuardSnapshot,
+    manualLedger: { ...manualGuardSnapshot.manualLedger, currentStatus: 'canceled' },
+  });
+  assert.equal(canceledManualGuard.approved, false);
+  assert.equal(canceledManualGuard.decision, 'already-canceled');
+  assert.equal(assessManualCustomerCancellationGuard({
+    ...manualGuardSnapshot,
+    child: { ...manualGuardSnapshot.child, reservationNo: 'changed' },
+  }).decision, 'manual-reservation-number-mismatch');
   assert.match(
     REMOTE_TASK_ENRICHMENT_PY,
     /payload\.get\('ledger_key'\).*importer\.booking_ledger_key/,
@@ -8608,6 +9214,12 @@ async function runNowModeSelfTest() {
     resultText: JSON.stringify({ status: 'cancel-submit-checkpoint', submissionAttempted: true }),
   });
   assert.equal(taskPriorCancellationAttempted(recoveredCancellationClaim), true);
+  const recoveredManualCancellationClaim = normalizeClaimedTaskForRecovery({
+    ...staleClaim,
+    taskType: 'naver_cancel',
+    resultText: JSON.stringify({ status: 'manual-cancel-submit-checkpoint', submissionAttempted: true }),
+  });
+  assert.equal(taskPriorCancellationAttempted(recoveredManualCancellationClaim), true);
   assert.equal(shouldSendPriorBookingCancellationSms(recoveredCancellationClaim, { status: 'already-canceled' }), true);
   assert.equal(shouldSendPriorBookingCancellationSms({}, { status: 'already-canceled' }), false);
 
@@ -9014,7 +9626,7 @@ async function runNowModeSelfTest() {
       'SMS errors redact full recipient phone numbers',
       'oversized task results remain valid JSON with status and reservation identity',
       'Telegram state writes are atomic and suppress only equivalent reservation states',
-      'customer cancellation defaults on, supports an emergency off switch, and requires live winner plus final DB guard',
+      'automatic conflict cancellation requires a live winner, while operator customer requests require exact task, ledger, and platform guards',
       'reversed mailbox arrival still queues the strictly later opposite-platform reservation',
       'one quarantined reservation task does not stop later queue processing',
       'task claims use transactional row locks and unique claim tokens',

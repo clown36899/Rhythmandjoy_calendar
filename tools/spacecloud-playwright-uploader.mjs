@@ -2124,8 +2124,24 @@ export async function deleteSpacecloudDirectReservation(context, task) {
     row.candidates = candidates;
 
     if (candidates.length === 0) {
-      row.status = 'needs-review';
-      row.error = 'no visible SpaceCloud event candidate matched room/date/time; not marking as deleted';
+      let taskPayload = {};
+      try {
+        taskPayload = JSON.parse(task.payloadJson || task.payload_json || '{}');
+      } catch {
+        taskPayload = {};
+      }
+      const manualCustomerCancellation = taskPayload?.manualCustomerCancellation === true
+        && (
+          taskPayload?.source === 'sync-admin-customer-request'
+          || taskPayload?.source_mode === 'sync-admin-customer-request'
+        );
+      row.status = manualCustomerCancellation ? 'already-gone' : 'needs-review';
+      row.manualCustomerCancellation = manualCustomerCancellation;
+      if (manualCustomerCancellation) {
+        row.reason = 'exact customer-request mirror schedule is already absent from SpaceCloud';
+      } else {
+        row.error = 'no visible SpaceCloud event candidate matched room/date/time; not marking as deleted';
+      }
       row.finishedAt = new Date().toISOString();
       return row;
     }

@@ -27,6 +27,7 @@
     selectedSeries: null,
     seriesOccurrences: [],
     eventDetailEvents: [],
+    eventCancellationIntent: null,
     reflectionAudits: [],
     reflectionAuditSummary: null,
     adminAlerts: [],
@@ -78,7 +79,14 @@
     eventDetailList: document.getElementById("eventDetailList"),
     closeEventDetailModal: document.getElementById("closeEventDetailModal"),
     doneEventDetailModal: document.getElementById("doneEventDetailModal"),
+    cancelCustomerReservation: document.getElementById("cancelCustomerReservation"),
     cancelAdminReservation: document.getElementById("cancelAdminReservation"),
+    eventCancelWarningModal: document.getElementById("eventCancelWarningModal"),
+    eventCancelWarningTitle: document.getElementById("eventCancelWarningTitle"),
+    eventCancelWarningSlot: document.getElementById("eventCancelWarningSlot"),
+    eventCancelWarningMessage: document.getElementById("eventCancelWarningMessage"),
+    dismissEventCancellation: document.getElementById("dismissEventCancellation"),
+    confirmEventCancellation: document.getElementById("confirmEventCancellation"),
     reservationModal: document.getElementById("reservationModal"),
     modalSlotSummary: document.getElementById("modalSlotSummary"),
     closeReservationModal: document.getElementById("closeReservationModal"),
@@ -181,6 +189,15 @@
     el.profilePath.value = localStorage.getItem(profileKey) || el.profilePath.value;
     fillTimeSelects();
     initializeRecurringForm();
+    [
+      el.cancelCustomerReservation,
+      el.cancelAdminReservation,
+      el.doneEventDetailModal,
+      el.dismissEventCancellation,
+      el.confirmEventCancellation,
+    ].forEach((button) => {
+      if (button) button.draggable = false;
+    });
     bindEvents();
     renderAll();
     updateActiveNav();
@@ -260,7 +277,13 @@
     el.eventDetailModal.addEventListener("click", (event) => {
       if (event.target === el.eventDetailModal) closeEventDetailModal();
     });
-    el.cancelAdminReservation.addEventListener("click", cancelDetailedAdminReservation);
+    el.cancelCustomerReservation.addEventListener("click", () => openEventCancellationWarning("customer"));
+    el.cancelAdminReservation.addEventListener("click", () => openEventCancellationWarning("admin"));
+    el.dismissEventCancellation.addEventListener("click", closeEventCancellationWarning);
+    el.confirmEventCancellation.addEventListener("click", confirmDetailedEventCancellation);
+    el.eventCancelWarningModal.addEventListener("click", (event) => {
+      if (event.target === el.eventCancelWarningModal) closeEventCancellationWarning();
+    });
     document.querySelectorAll("[data-open-recurring-modal]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault();
@@ -297,6 +320,10 @@
     });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      if (!el.eventCancelWarningModal.hidden) {
+        closeEventCancellationWarning();
+        return;
+      }
       if (!el.adminAlertDrawer.hidden) {
         closeAdminAlertDrawer();
         return;
@@ -1757,6 +1784,15 @@
     `;
   }
 
+  function customerCancellationStatusText(status) {
+    const normalized = String(status || "");
+    if (["pending", "claimed"].includes(normalized)) return "고객 요청 취소 대기";
+    if (normalized === "running") return "고객 요청 취소 처리 중";
+    if (normalized === "done") return "고객 요청 취소 완료";
+    if (["needs_review", "needs-review", "failed"].includes(normalized)) return "고객 요청 취소 확인 필요";
+    return "";
+  }
+
   function eventDetailCardHtml(event) {
     const rows = [
       ["예약자", event.name || "이름 없음"],
@@ -1770,6 +1806,7 @@
       ["결제수단", event.paymentMethod || ""],
       ["금액출처", amountSourceText(event.amountSource) || ""],
       ["결제상태", event.paymentStatus || ""],
+      ["취소상태", customerCancellationStatusText(event.customerCancelTaskStatus)],
       ["네이버", platformText(event.naver)],
       ["스페이스클라우드", platformText(event.spacecloud)],
       ["연락처", event.phone || ""],
@@ -2767,11 +2804,24 @@
     state.eventDetailEvents = Array.isArray(events) ? events : [];
     el.eventDetailSummary.textContent = `${detailDate} ${summary}`;
     el.eventDetailList.innerHTML = events.map(eventDetailCardHtml).join("");
-    const cancelable = state.eventDetailEvents.length === 1
-      && state.eventDetailEvents[0].source === "admin"
-      && state.eventDetailEvents[0].date >= today()
-      && !["canceled", "canceling"].includes(state.eventDetailEvents[0].status);
-    el.cancelAdminReservation.hidden = !cancelable;
+    const event = state.eventDetailEvents.length === 1 ? state.eventDetailEvents[0] : null;
+    const currentOrFuture = event?.date >= today();
+    const active = event && !["canceled", "canceling"].includes(event.status);
+    const adminCancelable = Boolean(event && event.source === "admin" && currentOrFuture && active);
+    const customerCancelable = Boolean(
+      event
+      && ["naver", "spacecloud"].includes(event.source)
+      && currentOrFuture
+      && active,
+    );
+    const customerCancelStatus = String(event?.customerCancelTaskStatus || "");
+    el.cancelAdminReservation.hidden = !adminCancelable;
+    el.cancelAdminReservation.disabled = false;
+    el.cancelCustomerReservation.hidden = !customerCancelable;
+    el.cancelCustomerReservation.disabled = Boolean(customerCancelStatus);
+    el.cancelCustomerReservation.textContent = customerCancelStatus
+      ? customerCancellationStatusText(customerCancelStatus).replace(/^고객 요청 /, "")
+      : "고객 요청 취소";
     el.eventDetailModal.hidden = false;
     document.body.classList.add("modal-open");
     window.setTimeout(() => {
@@ -2780,10 +2830,46 @@
   }
 
   function closeEventDetailModal() {
+    if (!el.eventCancelWarningModal.hidden) closeEventCancellationWarning();
     el.eventDetailModal.hidden = true;
     state.eventDetailEvents = [];
+    el.cancelCustomerReservation.hidden = true;
+    el.cancelCustomerReservation.disabled = false;
+    el.cancelCustomerReservation.textContent = "고객 요청 취소";
     el.cancelAdminReservation.hidden = true;
+    el.cancelAdminReservation.disabled = false;
     updateModalOpenState();
+  }
+
+  function openEventCancellationWarning(kind) {
+    const event = state.eventDetailEvents.length === 1 ? state.eventDetailEvents[0] : null;
+    const customerRequest = kind === "customer" && ["naver", "spacecloud"].includes(event?.source);
+    const adminRequest = kind === "admin" && event?.source === "admin";
+    if (!event?.dbId || (!customerRequest && !adminRequest)) return;
+    state.eventCancellationIntent = { kind, event };
+    el.eventCancelWarningSlot.textContent = `${event.date} ${event.room}홀 ${formatHour(event.start)}-${formatHour(event.end)} · ${event.name || "예약"}`;
+    if (customerRequest) {
+      el.eventCancelWarningTitle.textContent = "고객 예약을 취소할까요?";
+      el.eventCancelWarningMessage.textContent = "고객 예약건입니다. 확인하면 네이버와 스페이스클라우드 양쪽에서도 예약이 취소되고, 원천 예약의 환불 절차가 진행됩니다.\n플랫폼 확인이 끝날 때까지 취소 처리 중으로 표시됩니다.";
+    } else {
+      el.eventCancelWarningTitle.textContent = "관리자 일정을 취소할까요?";
+      el.eventCancelWarningMessage.textContent = "관리자가 예약한 건이라 바로 취소됩니다.\n스페이스클라우드 일정을 삭제하고 네이버 예약 가능 시간을 복구합니다.";
+    }
+    el.confirmEventCancellation.disabled = false;
+    el.dismissEventCancellation.disabled = false;
+    el.eventCancelWarningModal.hidden = false;
+    document.body.classList.add("modal-open");
+    window.setTimeout(() => el.dismissEventCancellation.focus(), 0);
+  }
+
+  function closeEventCancellationWarning(options = {}) {
+    if (confirmDetailedEventCancellation.pending && options.force !== true) return;
+    el.eventCancelWarningModal.hidden = true;
+    state.eventCancellationIntent = null;
+    el.confirmEventCancellation.disabled = false;
+    el.dismissEventCancellation.disabled = false;
+    updateModalOpenState();
+    if (!el.eventDetailModal.hidden) window.setTimeout(() => el.doneEventDetailModal.focus(), 0);
   }
 
   function openRevenueModal() {
@@ -2807,7 +2893,7 @@
     document.body.classList.toggle(
       "modal-open",
       !el.reservationModal.hidden || !el.dayScheduleModal.hidden || !el.eventDetailModal.hidden || !el.revenueModal.hidden
-        || !el.recurringModal.hidden || !el.seriesModal.hidden,
+        || !el.eventCancelWarningModal.hidden || !el.recurringModal.hidden || !el.seriesModal.hidden,
     );
   }
 
@@ -2843,6 +2929,9 @@
       feeAmount: Number(item.feeAmount || 0),
       amountSource: item.amountSource || "",
       paymentMethod: item.paymentMethod || "",
+      customerCancelTaskId: Number(item.customerCancelTaskId || 0) || null,
+      customerCancelTaskStatus: item.customerCancelTaskStatus || "",
+      customerCancelRequestedAt: item.customerCancelRequestedAt || "",
       status: item.status || "pending",
       naver: item.naverStatus || "pending",
       spacecloud: item.spacecloudStatus || "pending",
@@ -3354,28 +3443,58 @@
     }
   }
 
-  async function cancelDetailedAdminReservation() {
-    const event = state.eventDetailEvents[0];
-    if (!event?.dbId || event.source !== "admin" || cancelDetailedAdminReservation.pending) return;
-    if (!window.confirm(`${event.date} ${event.room}홀 ${formatHour(event.start)}-${formatHour(event.end)} 일정을 취소할까요?`)) return;
-    cancelDetailedAdminReservation.pending = true;
-    el.cancelAdminReservation.disabled = true;
+  async function confirmDetailedEventCancellation() {
+    if (confirmDetailedEventCancellation.pending) return;
+    const intent = state.eventCancellationIntent;
+    if (!intent?.event?.dbId) return;
+    confirmDetailedEventCancellation.pending = true;
+    el.confirmEventCancellation.disabled = true;
+    el.dismissEventCancellation.disabled = true;
     try {
-      const data = await apiRequest("cancel_admin_reservations", {
-        reservationIds: [event.dbId],
-        scope: "selected",
-        date: state.activeDate,
-      });
-      applyApiData(data);
-      closeEventDetailModal();
-      renderAll();
-      showToast("취소·복구 작업을 만들었습니다.");
+      if (intent.kind === "customer") {
+        await cancelDetailedCustomerReservation(intent.event);
+      } else if (intent.kind === "admin") {
+        await cancelDetailedAdminReservation(intent.event);
+      }
     } catch (error) {
-      showToast(error.message || "일정 취소 실패");
+      showToast(error.message || "일정 취소 요청 실패");
     } finally {
-      cancelDetailedAdminReservation.pending = false;
-      el.cancelAdminReservation.disabled = false;
+      confirmDetailedEventCancellation.pending = false;
+      if (!el.eventCancelWarningModal.hidden) {
+        el.confirmEventCancellation.disabled = false;
+        el.dismissEventCancellation.disabled = false;
+      }
     }
+  }
+
+  async function cancelDetailedCustomerReservation(event) {
+    if (!event?.dbId || !["naver", "spacecloud"].includes(event.source)) return;
+    const data = await apiRequest("cancel_customer_reservation", {
+      ledgerId: event.dbId,
+      date: state.activeDate,
+    });
+    applyApiData(data);
+    closeEventCancellationWarning({ force: true });
+    closeEventDetailModal();
+    renderAll();
+    const duplicate = Boolean(data.customerCancelResult?.duplicateRequest);
+    showToast(duplicate
+      ? "이미 접수된 고객 요청 취소 작업을 확인했습니다."
+      : "고객 요청 취소를 접수했습니다. 양 플랫폼 확인 후 일정에서 제거됩니다.");
+  }
+
+  async function cancelDetailedAdminReservation(event) {
+    if (!event?.dbId || event.source !== "admin") return;
+    const data = await apiRequest("cancel_admin_reservations", {
+      reservationIds: [event.dbId],
+      scope: "selected",
+      date: state.activeDate,
+    });
+    applyApiData(data);
+    closeEventCancellationWarning({ force: true });
+    closeEventDetailModal();
+    renderAll();
+    showToast("관리자 일정 취소·복구 작업을 만들었습니다.");
   }
 
   function persistDrafts() {

@@ -739,7 +739,50 @@ function hour_from_time_value($value, $is_end) {
     return $hour;
 }
 
+function customer_cancellation_task_payload($value) {
+    $payload = json_decode((string) $value, true);
+    if (!is_array($payload)) {
+        return array();
+    }
+    $source = isset($payload['source']) ? (string) $payload['source'] : '';
+    $mode = isset($payload['source_mode']) ? (string) $payload['source_mode'] : '';
+    if ($source !== 'sync-admin-customer-request' && $mode !== 'sync-admin-customer-request') {
+        return array();
+    }
+    return $payload;
+}
+
+function customer_cancellation_tasks_for_date($pdo, $date) {
+    if (!admin_table_exists($pdo, 'rhythmjoy_spacecloud_tasks')) {
+        return array();
+    }
+    $stmt = $pdo->prepare("
+        SELECT id, status, payload_json,
+               DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+        FROM rhythmjoy_spacecloud_tasks
+        WHERE reservation_date=?
+          AND task_type IN ('naver_cancel', 'spacecloud_cancel')
+        ORDER BY id DESC
+    ");
+    $stmt->execute(array($date));
+    $tasks = array();
+    foreach ($stmt->fetchAll() as $row) {
+        $payload = customer_cancellation_task_payload($row['payload_json']);
+        $ledger_id = isset($payload['ledgerId']) ? intval($payload['ledgerId']) : 0;
+        if ($ledger_id < 1 || isset($tasks[(string) $ledger_id])) {
+            continue;
+        }
+        $tasks[(string) $ledger_id] = array(
+            'id' => intval($row['id']),
+            'status' => (string) $row['status'],
+            'updatedAt' => (string) $row['updated_at'],
+        );
+    }
+    return $tasks;
+}
+
 function ledger_reservation_rows($pdo, $date) {
+    $customer_cancellations = customer_cancellation_tasks_for_date($pdo, $date);
     $stmt = $pdo->prepare("
         SELECT id, ledger_key, source_platform, current_status, target_calendar,
                room_key, reservation_number, reserver_name, product,
@@ -759,6 +802,9 @@ function ledger_reservation_rows($pdo, $date) {
     $stmt->execute(array($date));
     $rows = array();
     foreach ($stmt->fetchAll() as $row) {
+        $customer_cancellation = isset($customer_cancellations[(string) $row['id']])
+            ? $customer_cancellations[(string) $row['id']]
+            : null;
         $source = $row['source_platform'] ?: 'ledger';
         $room = strtoupper($row['room_key']);
         $start_hour = hour_from_time_value($row['start_time_text'], false);
@@ -790,6 +836,9 @@ function ledger_reservation_rows($pdo, $date) {
             'feeAmount' => ledger_fee_amount($row),
             'amountSource' => $row['amount_source'],
             'paymentMethod' => $row['payment_method'],
+            'customerCancelTaskId' => $customer_cancellation ? intval($customer_cancellation['id']) : null,
+            'customerCancelTaskStatus' => $customer_cancellation ? (string) $customer_cancellation['status'] : '',
+            'customerCancelRequestedAt' => $customer_cancellation ? (string) $customer_cancellation['updatedAt'] : '',
             'createdAt' => $row['created_at'] ?: $row['last_event_at'],
             'updatedAt' => $row['updated_at'] ?: $row['last_event_at'],
         );
@@ -2023,7 +2072,25 @@ function revenue_stats($pdo, $date) {
     );
 }
 
-function task_action_label($task_type, $platform, $action_type) {
+function task_action_label($task_type, $platform, $action_type, $payload = array()) {
+    $manual_customer_cancel = is_array($payload) && (
+        (isset($payload['source']) && $payload['source'] === 'sync-admin-customer-request')
+        || (isset($payload['source_mode']) && $payload['source_mode'] === 'sync-admin-customer-request')
+    );
+    if ($manual_customer_cancel) {
+        if ($task_type === 'naver_cancel') {
+            return '고객 요청 취소 - 네이버 예약';
+        }
+        if ($task_type === 'spacecloud_cancel') {
+            return '고객 요청 취소 - 스페이스클라우드 예약';
+        }
+        if ($task_type === 'delete') {
+            return '고객 요청 취소 - 스페이스클라우드 일정';
+        }
+        if ($task_type === 'naver_restore') {
+            return '고객 요청 취소 - 네이버 예약 가능 시간';
+        }
+    }
     if ($task_type === 'spacecloud_cancel') {
         return '중복 후예약 취소 - 스페이스클라우드';
     }
@@ -2123,7 +2190,7 @@ function normalize_task_row($row) {
         'taskType' => $task_type,
         'platform' => $row['platform'],
         'actionType' => $row['action_type'],
-        'actionLabel' => task_action_label($task_type, $row['platform'], $row['action_type']),
+        'actionLabel' => task_action_label($task_type, $row['platform'], $row['action_type'], $payload),
         'status' => $row['status'],
         'resultStatus' => isset($result['status']) ? (string) $result['status'] : '',
         'smsStatus' => isset($sms['status']) ? (string) $sms['status'] : '',
@@ -3098,6 +3165,176 @@ function sync_admin_live_enabled($env) {
     return isset($env['SYNC_ADMIN_ENQUEUE_LIVE_TASKS']) && trim($env['SYNC_ADMIN_ENQUEUE_LIVE_TASKS']) === '1';
 }
 
+function customer_cancellation_task_type_for_source($source_platform) {
+    if ($source_platform === 'naver') {
+        return 'naver_cancel';
+    }
+    if ($source_platform === 'spacecloud') {
+        return 'spacecloud_cancel';
+    }
+    return '';
+}
+
+function customer_cancellation_dedupe_key($ledger_id, $email_event_id, $source_platform) {
+    $raw = implode('|', array(
+        'customer_cancel',
+        intval($ledger_id),
+        intval($email_event_id),
+        (string) $source_platform,
+    ));
+    return 'customer_cancel|' . hash('sha256', $raw);
+}
+
+function customer_cancellation_spacecloud_id($ledger_payload) {
+    if (!is_array($ledger_payload)) {
+        return '';
+    }
+    if (isset($ledger_payload['spacecloud_reservation_id'])) {
+        return trim((string) $ledger_payload['spacecloud_reservation_id']);
+    }
+    if (isset($ledger_payload['spacecloudReservationId'])) {
+        return trim((string) $ledger_payload['spacecloudReservationId']);
+    }
+    return '';
+}
+
+function request_customer_cancellation($pdo, $payload, $env) {
+    if (!sync_admin_live_enabled($env)) {
+        throw new InvalidArgumentException('실제 플랫폼 작업 큐가 꺼져 있어 고객 예약을 안전하게 취소할 수 없습니다.');
+    }
+    $ledger_id = isset($payload['ledgerId']) ? intval($payload['ledgerId']) : 0;
+    if ($ledger_id < 1) {
+        throw new InvalidArgumentException('취소할 고객 예약을 선택해주세요.');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("
+            SELECT id, ledger_key, source_platform, source_mode, current_status,
+                   target_calendar, room_key, reservation_number, reserver_name, product,
+                   reservation_date,
+                   TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
+                   TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
+                   confirmed_email_event_id, payload_json
+            FROM rhythmjoy_booking_ledger
+            WHERE id=?
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $stmt->execute(array($ledger_id));
+        $ledger = $stmt->fetch();
+        if (!$ledger) {
+            throw new InvalidArgumentException('선택한 고객 예약을 DB 원장에서 찾지 못했습니다.');
+        }
+        $source_platform = (string) $ledger['source_platform'];
+        $task_type = customer_cancellation_task_type_for_source($source_platform);
+        if ($task_type === '' || (string) $ledger['source_mode'] === 'admin-task-anchor') {
+            throw new InvalidArgumentException('네이버 또는 스페이스클라우드 고객 예약만 이 기능으로 취소할 수 있습니다.');
+        }
+        if ((string) $ledger['current_status'] !== 'confirmed') {
+            throw new InvalidArgumentException('이미 취소되었거나 취소할 수 없는 상태의 예약입니다.');
+        }
+        if ((string) $ledger['reservation_date'] < date('Y-m-d')) {
+            throw new InvalidArgumentException('지난 고객 예약은 관리자 화면에서 취소할 수 없습니다.');
+        }
+        $email_event_id = intval($ledger['confirmed_email_event_id']);
+        if ($email_event_id < 1) {
+            throw new InvalidArgumentException('원본 예약 메일 식별값이 없어 자동 취소를 안전하게 진행할 수 없습니다.');
+        }
+        if ($source_platform === 'naver' && trim((string) $ledger['reservation_number']) === '') {
+            throw new InvalidArgumentException('네이버 예약번호가 없어 자동 취소를 안전하게 진행할 수 없습니다.');
+        }
+
+        $ledger_payload = json_decode((string) $ledger['payload_json'], true);
+        if (!is_array($ledger_payload)) {
+            $ledger_payload = array();
+        }
+        $spacecloud_reservation_id = customer_cancellation_spacecloud_id($ledger_payload);
+        if ($source_platform === 'spacecloud' && $spacecloud_reservation_id === '') {
+            throw new InvalidArgumentException('스페이스클라우드 예약 식별값이 없어 자동 취소를 안전하게 진행할 수 없습니다.');
+        }
+
+        $calendar_key = (string) $ledger['target_calendar'];
+        $room_key = strtolower((string) $ledger['room_key']);
+        $task_payload = array(
+            'source' => 'sync-admin-customer-request',
+            'source_mode' => 'sync-admin-customer-request',
+            'action' => $source_platform === 'naver'
+                ? 'cancel-naver-confirmed-reservation'
+                : 'cancel-spacecloud-confirmed-reservation',
+            'cancellationMode' => 'customer-request',
+            'manualCustomerCancellation' => true,
+            'ledgerId' => intval($ledger['id']),
+            'ledger_key' => (string) $ledger['ledger_key'],
+            'ledger_source_platform' => $source_platform,
+            'confirmedEmailEventId' => $email_event_id,
+            'emailEventId' => $email_event_id,
+            'calendarKey' => $calendar_key,
+            'calendar_key' => $calendar_key,
+            'target_calendar' => $calendar_key,
+            'roomKey' => $room_key,
+            'room_key' => $room_key,
+            'date' => (string) $ledger['reservation_date'],
+            'start_time' => (string) $ledger['start_time_text'],
+            'end_time' => (string) $ledger['end_time_text'],
+            'name' => (string) $ledger['reserver_name'],
+            'product' => (string) $ledger['product'],
+            'reservation_number' => (string) $ledger['reservation_number'],
+            'spacecloud_reservation_id' => $spacecloud_reservation_id,
+            'suppress_confirmation_sms' => true,
+            'suppress_prior_cancellation_sms' => true,
+        );
+        $dedupe_key = customer_cancellation_dedupe_key($ledger_id, $email_event_id, $source_platform);
+        $stmt = $pdo->prepare("
+            INSERT INTO rhythmjoy_spacecloud_tasks (
+                dedupe_key, email_event_id, task_type, status,
+                room_key, reservation_number, reserver_name, product,
+                reservation_date, start_time, end_time, payload_json,
+                created_at, updated_at
+            ) VALUES (
+                ?, ?, ?, 'pending',
+                ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                NOW(), NOW()
+            )
+            ON DUPLICATE KEY UPDATE dedupe_key=VALUES(dedupe_key)
+        ");
+        $stmt->execute(array(
+            $dedupe_key,
+            $email_event_id,
+            $task_type,
+            $room_key,
+            (string) $ledger['reservation_number'],
+            (string) $ledger['reserver_name'],
+            (string) $ledger['product'],
+            (string) $ledger['reservation_date'],
+            (string) $ledger['start_time_text'],
+            (string) $ledger['end_time_text'],
+            json_encode($task_payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ));
+        $created = $stmt->rowCount() === 1;
+        $stmt = $pdo->prepare("SELECT id, status FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=? LIMIT 1");
+        $stmt->execute(array($dedupe_key));
+        $task = $stmt->fetch();
+        if (!$task) {
+            throw new RuntimeException('고객 요청 취소 작업을 저장하지 못했습니다.');
+        }
+        $pdo->commit();
+        return array(
+            'ledgerId' => $ledger_id,
+            'taskId' => intval($task['id']),
+            'taskType' => $task_type,
+            'status' => (string) $task['status'],
+            'duplicateRequest' => !$created,
+        );
+    } catch (Exception $error) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $error;
+    }
+}
+
 function room_calendar_key($room) {
     $map = array(
         'A' => 'Ahall',
@@ -3918,6 +4155,22 @@ function run_sync_admin_selftest() {
         strpos(admin_alert_clean_text('recipient 010-1234-5678 failed'), '010-****-5678') !== false,
         'alert text masks full phone numbers'
     );
+    sync_admin_selftest_assert(
+        customer_cancellation_task_type_for_source('naver') === 'naver_cancel'
+            && customer_cancellation_task_type_for_source('spacecloud') === 'spacecloud_cancel'
+            && customer_cancellation_task_type_for_source('admin') === '',
+        'customer cancellation only targets supported source platforms'
+    );
+    sync_admin_selftest_assert(
+        customer_cancellation_dedupe_key(9259, 669, 'naver') === customer_cancellation_dedupe_key(9259, 669, 'naver')
+            && customer_cancellation_dedupe_key(9259, 669, 'naver') !== customer_cancellation_dedupe_key(9258, 668, 'naver'),
+        'customer cancellation request keys are deterministic and distinct'
+    );
+    sync_admin_selftest_assert(
+        task_action_label('naver_cancel', 'naver', 'naver_cancel', array('source' => 'sync-admin-customer-request'))
+            === '고객 요청 취소 - 네이버 예약',
+        'manual customer cancellation tasks have a distinct operator label'
+    );
     $audit_now = strtotime('2026-08-13 17:35:00');
     sync_admin_selftest_assert(
         !admin_reflection_audit_is_stale($audit_now - (31 * 60), $audit_now),
@@ -3927,7 +4180,7 @@ function run_sync_admin_selftest() {
         admin_reflection_audit_is_stale($audit_now - (40 * 60), $audit_now),
         'a missed reflection audit is marked stale after the grace period'
     );
-    echo "sync-admin self-test OK: single/recurring idempotency, operation progress, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures, phone redaction and reflection-audit timing\n";
+    echo "sync-admin self-test OK: single/recurring idempotency, customer cancellation identity, operation progress, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures, phone redaction and reflection-audit timing\n";
 }
 
 if (PHP_SAPI === 'cli' && isset($argv[1]) && $argv[1] === 'self-test') {
@@ -4052,6 +4305,11 @@ try {
     if ($action === 'cancel_admin_reservations') {
         $result = cancel_admin_reservations($pdo, $payload, $env);
         json_response(array_merge(bootstrap_payload($pdo, $date, $env), array('cancelResult' => $result)));
+    }
+
+    if ($action === 'cancel_customer_reservation') {
+        $result = request_customer_cancellation($pdo, $payload, $env);
+        json_response(array_merge(bootstrap_payload($pdo, $date, $env), array('customerCancelResult' => $result)));
     }
 
     if ($action === 'clear_drafts') {

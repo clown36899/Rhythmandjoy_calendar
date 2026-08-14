@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>리듬앤조이 동기화 관리자</title>
-  <link rel="stylesheet" href="./styles.css?v=reservation-feedback-v1-20260813">
+  <link rel="stylesheet" href="./styles.css?v=customer-cancel-v1-20260814">
 </head>
 <body>
   <div class="app-shell">
@@ -305,8 +305,28 @@
       <div class="modal-body">
         <div class="detail-list" id="eventDetailList"></div>
         <div class="form-actions">
-          <button type="button" class="danger-button" id="cancelAdminReservation" hidden>이 일정 취소</button>
-          <button type="button" class="primary-button" id="doneEventDetailModal">확인</button>
+          <button type="button" class="danger-button" id="cancelCustomerReservation" draggable="false" hidden>고객 요청 취소</button>
+          <button type="button" class="danger-button" id="cancelAdminReservation" draggable="false" hidden>이 일정 취소</button>
+          <button type="button" class="primary-button" id="doneEventDetailModal" draggable="false">확인</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="eventCancelWarningModal" hidden>
+    <div class="modal-panel cancellation-warning-panel" role="alertdialog" aria-modal="true" aria-labelledby="eventCancelWarningTitle" aria-describedby="eventCancelWarningMessage" tabindex="-1">
+      <div class="modal-heading cancellation-warning-heading">
+        <div>
+          <p class="eyebrow">취소 전 확인</p>
+          <h2 id="eventCancelWarningTitle">예약을 취소할까요?</h2>
+        </div>
+      </div>
+      <div class="modal-body">
+        <p class="cancellation-warning-slot" id="eventCancelWarningSlot"></p>
+        <p class="cancellation-warning-message" id="eventCancelWarningMessage"></p>
+        <div class="form-actions cancellation-warning-actions">
+          <button type="button" class="secondary-button" id="dismissEventCancellation" draggable="false">진행 안 하기</button>
+          <button type="button" class="danger-button" id="confirmEventCancellation" draggable="false">확인</button>
         </div>
       </div>
     </div>
@@ -497,6 +517,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="../calendar_set/calendar_v10/revenue-policy.js?v=db-only-v1-20260810"></script>
-  <script src="./app.js?v=reservation-feedback-v1-20260813"></script>
+  <script src="./app.js?v=customer-cancel-v1-20260814"></script>
 </body>
 </html>

@@ -1654,14 +1654,21 @@ def upsert_spacecloud_delete_task(config, logger, email_event_id, deletion, cale
                 )
             ]
             if retry_ids:
+                safe_retry_result = json.dumps({
+                    'status': 'canceled-overlap-cleared-requeued',
+                    'reason': 'matching earlier cancellation removed the pre-submit overlap',
+                    'submissionAttempted': False,
+                    'retryMode': 'safe-retry-before-submit',
+                    'canceledReservationNumber': row['reservation_number'],
+                }, ensure_ascii=False, separators=(',', ':'))
                 cursor.execute(
                     f"""
                     UPDATE rhythmjoy_spacecloud_tasks
                     SET status='pending', locked_at=NULL, claim_token='',
-                        processed_at=NULL, updated_at=NOW()
+                        processed_at=NULL, result_text=%s, updated_at=NOW()
                     WHERE id IN ({','.join(['%s'] * len(retry_ids))})
                     """,
-                    retry_ids,
+                    [safe_retry_result, *retry_ids],
                 )
                 logger.info(
                     'Requeued uploads after matching Naver cancellation reservation=%s task_ids=%s',

@@ -43,6 +43,7 @@ select {
 button,
 a {
   -webkit-user-drag: none;
+  user-select: none;
 }
 
 img,
@@ -3696,6 +3697,44 @@ body.alert-drawer-open {
 
 .detail-modal-panel {
   width: min(720px, 100%);
+}
+
+.cancellation-warning-panel {
+  width: min(520px, 100%);
+}
+
+.cancellation-warning-heading {
+  border-bottom-color: #efb8b3;
+  background: #fff8f7;
+}
+
+.cancellation-warning-heading .eyebrow {
+  margin: 0 0 6px;
+  color: var(--danger);
+}
+
+.cancellation-warning-slot,
+.cancellation-warning-message {
+  margin: 0;
+}
+
+.cancellation-warning-slot {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfa;
+  font-weight: 900;
+}
+
+.cancellation-warning-message {
+  color: #4c5754;
+  font-weight: 700;
+  line-height: 1.7;
+  white-space: pre-line;
+}
+
+.cancellation-warning-actions {
+  justify-content: flex-end;
 }
 
 .detail-list {

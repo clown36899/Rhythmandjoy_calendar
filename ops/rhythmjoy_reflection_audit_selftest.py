@@ -38,6 +38,25 @@ def sample_result(issues, ingestion_gaps=None):
 
 
 def main():
+    assert audit.operator_customer_cancellation_payload(json.dumps({
+        'source': 'sync-admin-customer-request',
+        'reason': 'customer-request',
+    })) is True
+    assert audit.operator_customer_cancellation_payload(json.dumps({
+        'source': 'naver-email-cancellation',
+    })) is False
+    assert audit.ingestion_gap_reason({
+        'event_type': 'reservation',
+        'parse_status': 'parsed',
+        'processing_status': 'confirmed',
+        'ledger_status': 'canceled',
+        'ledger_cancel_payload_json': json.dumps({
+            'source': 'operator-manual-db-cancellation',
+            'reason': 'customer-request',
+        }),
+        'task_status': 'needs_review',
+    }, True, True, 30) == ''
+
     overlap_rows = [
         {
             'record_kind': 'ledger', 'record_id': 1, 'room_key': 'a',
