@@ -140,4 +140,23 @@ $expected_reservations = 1 + intval($recurring_first['createdCount']);
 idempotency_test_assert($reservation_count === $expected_reservations, 'retries do not add reservation rows');
 idempotency_test_assert($task_count === $expected_reservations * 2, 'each created reservation has exactly two admin task rows');
 
-echo "sync-admin MySQL idempotency self-test OK: single retry, recurring retry, changed-payload rejection, exact task cardinality, MEDIUMTEXT evidence migration\n";
+$cancel_result = cancel_admin_reservations($pdo, array(
+    'reservationIds' => array(intval($single_first['reservationId'])),
+    'scope' => 'selected',
+), $test_env);
+idempotency_test_assert(intval($cancel_result['requestedCount']) === 1, 'single cancellation targets one reservation');
+idempotency_test_assert(
+    $cancel_result['reservationIds'] === array(intval($single_first['reservationId'])),
+    'cancellation returns the exact reservation id for status tracking'
+);
+$canceled_status_stmt = $pdo->prepare('SELECT status FROM rhythmjoy_admin_reservations WHERE id=?');
+$canceled_status_stmt->execute(array(intval($single_first['reservationId'])));
+idempotency_test_assert($canceled_status_stmt->fetchColumn() === 'canceled', 'dry-run cancellation reaches its terminal reservation state');
+$cancel_operation = admin_reservation_operation_payload($pdo, intval($single_first['reservationId']));
+idempotency_test_assert($cancel_operation['operationType'] === 'cancellation', 'canceled reservation exposes cancellation operation tracking');
+idempotency_test_assert(count($cancel_operation['tasks']) === 2, 'cancellation operation exposes both platform tasks');
+$cancel_task_types = array_map(function($task) { return $task['taskType']; }, $cancel_operation['tasks']);
+sort($cancel_task_types);
+idempotency_test_assert($cancel_task_types === array('delete', 'naver_restore'), 'cancellation tasks use canonical UI task types');
+
+echo "sync-admin MySQL idempotency self-test OK: retries, exact task cardinality, cancellation tracking, MEDIUMTEXT evidence migration\n";

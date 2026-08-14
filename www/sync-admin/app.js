@@ -11,6 +11,16 @@
   const recurringRequestKey = "rhythmjoy.syncAdmin.pendingRecurringRequest.v1";
   const reservationOperationKey = "rhythmjoy.syncAdmin.reservationOperation.v1";
   const dismissedReservationOperationKey = "rhythmjoy.syncAdmin.dismissedReservationOperation.v1";
+  const reservationOperationTaskTypes = {
+    registration: ["naver_block", "upload"],
+    cancellation: ["naver_restore", "delete"],
+  };
+  const adminActionTaskTypeAliases = {
+    block_naver_availability: "naver_block",
+    add_spacecloud_reservation: "upload",
+    restore_naver_availability: "naver_restore",
+    delete_spacecloud_reservation: "delete",
+  };
   const baseTitle = document.title;
   let reservationOperationTimer = null;
 
@@ -715,6 +725,9 @@
         const slotEvents = eventsForSlotInList(scheduleEvents, date, room, hour);
         if (slotEvents.length) {
           slot.classList.add("has-event");
+          if (slotEvents.some((event) => event.status === "canceling")) {
+            slot.classList.add("has-canceling-event");
+          }
           slot.title = eventTitle(slotEvents[0]);
         }
         slot.addEventListener("click", () => {
@@ -730,7 +743,7 @@
       });
       eventsStartingForRoomInList(scheduleEvents, date, room).forEach((event) => {
         const block = document.createElement("div");
-        block.className = `event-block ${sourceClass(event.source)}`;
+        block.className = `event-block ${sourceClass(event.source)}${event.status === "canceling" ? " is-canceling" : ""}`;
         block.innerHTML = eventBlockHtml(event);
         block.title = eventTitle(event);
         block.draggable = false;
@@ -1002,15 +1015,48 @@
     });
   }
 
-  function registrationTasksForReservation(reservationId, tasks = state.tasks) {
+  function canonicalOperationTaskType(value) {
+    const taskType = String(value || "");
+    return adminActionTaskTypeAliases[taskType] || taskType;
+  }
+
+  function operationTypeForTask(task) {
+    const taskType = canonicalOperationTaskType(task?.taskType || task?.actionType);
+    if (reservationOperationTaskTypes.cancellation.includes(taskType)) return "cancellation";
+    if (reservationOperationTaskTypes.registration.includes(taskType)) return "registration";
+    return "";
+  }
+
+  function operationTaskTimestamp(task) {
+    return new Date(task?.updatedAt || task?.createdAt || 0).getTime() || 0;
+  }
+
+  function inferReservationOperationType(tasks, fallback = {}) {
+    const explicit = fallback.operationType === "cancellation" ? "cancellation" : "registration";
+    const registrationTasks = (tasks || []).filter((task) => operationTypeForTask(task) === "registration");
+    const cancellationTasks = (tasks || []).filter((task) => operationTypeForTask(task) === "cancellation");
+    const newestRegistration = Math.max(0, ...registrationTasks.map(operationTaskTimestamp));
+    const newestCancellation = Math.max(0, ...cancellationTasks.map(operationTaskTimestamp));
+    if (cancellationTasks.length && (!registrationTasks.length || newestCancellation >= newestRegistration)) {
+      return "cancellation";
+    }
+    if (["canceling", "canceled"].includes(String(fallback.reservationStatus || ""))) {
+      return "cancellation";
+    }
+    return explicit;
+  }
+
+  function operationTasksForReservation(reservationId, tasks = state.tasks, operationType = "registration") {
     return (tasks || []).filter((task) => (
       Number(task.reservationId) === Number(reservationId)
-      && ["naver_block", "upload"].includes(task.taskType)
+      && operationTypeForTask(task) === operationType
     ));
   }
 
   function operationFromTasks(reservationId, tasks, fallback = {}) {
-    const relatedTasks = registrationTasksForReservation(reservationId, tasks);
+    const reservationTasks = (tasks || []).filter((task) => Number(task.reservationId) === Number(reservationId));
+    const operationType = inferReservationOperationType(reservationTasks, fallback);
+    const relatedTasks = operationTasksForReservation(reservationId, reservationTasks, operationType);
     const first = relatedTasks[0] || {};
     const updatedAt = relatedTasks.reduce((latest, task) => (
       String(task.updatedAt || "") > String(latest || "") ? task.updatedAt : latest
@@ -1023,6 +1069,7 @@
       end: Number.isFinite(Number(fallback.end)) ? Number(fallback.end) : Number(first.end),
       name: fallback.name || first.name || "",
       reservationStatus: fallback.reservationStatus || "pending",
+      operationType,
       tasks: relatedTasks,
       createdAt: fallback.createdAt || first.createdAt || "",
       updatedAt,
@@ -1045,6 +1092,7 @@
       end: reservation.endHour ?? reservation.end ?? operation.end,
       name: reservation.name || operation.name || "",
       reservationStatus: reservation.status || operation.reservationStatus || "pending",
+      operationType: operation.operationType || reservation.operationType || "",
       createdAt: reservation.createdAt || operation.createdAt || "",
       updatedAt: operation.updatedAt || reservation.updatedAt || "",
       pollError: operation.pollError || "",
@@ -1061,20 +1109,37 @@
 
   function reservationOperationPhase(operation = state.reservationOperation) {
     if (!operation) return "hidden";
-    const naver = operationTaskPhase((operation.tasks || []).find((task) => task.taskType === "naver_block"));
-    const spacecloud = operationTaskPhase((operation.tasks || []).find((task) => task.taskType === "upload"));
+    const operationType = operation.operationType === "cancellation" ? "cancellation" : "registration";
+    const [naverTaskType, spacecloudTaskType] = operationType === "cancellation"
+      ? ["naver_restore", "delete"]
+      : ["naver_block", "upload"];
+    const naver = operationTaskPhase((operation.tasks || []).find((task) => canonicalOperationTaskType(task.taskType) === naverTaskType));
+    const spacecloud = operationTaskPhase((operation.tasks || []).find((task) => canonicalOperationTaskType(task.taskType) === spacecloudTaskType));
     if (naver === "attention" || spacecloud === "attention") return "attention";
     if (naver === "done" && spacecloud === "done") return "done";
     if (naver === "running" || spacecloud === "running" || naver === "done" || spacecloud === "done") return "running";
     return "pending";
   }
 
+  function reservationOperationDismissToken(operation) {
+    const normalized = normalizeReservationOperation(operation);
+    return normalized ? `${normalized.reservationId}:${normalized.operationType}` : "";
+  }
+
+  function reservationOperationIsDismissed(operation) {
+    const normalized = normalizeReservationOperation(operation);
+    if (!normalized) return false;
+    const stored = String(localStorage.getItem(dismissedReservationOperationKey) || "");
+    if (!stored) return false;
+    if (stored.includes(":")) return stored === reservationOperationDismissToken(normalized);
+    return normalized.operationType === "registration" && Number(stored) === normalized.reservationId;
+  }
+
   function setReservationOperation(operation, options = {}) {
     const normalized = normalizeReservationOperation(operation);
     if (!normalized) return;
-    const dismissedId = Number(localStorage.getItem(dismissedReservationOperationKey) || 0);
-    if (!options.force && dismissedId === normalized.reservationId) return;
-    if (options.force && dismissedId === normalized.reservationId) {
+    if (!options.force && reservationOperationIsDismissed(normalized)) return;
+    if (options.force && reservationOperationIsDismissed(normalized)) {
       localStorage.removeItem(dismissedReservationOperationKey);
     }
     state.reservationOperation = normalized;
@@ -1094,7 +1159,7 @@
 
     const current = normalizeReservationOperation(state.reservationOperation);
     if (current) {
-      const relatedTasks = registrationTasksForReservation(current.reservationId);
+      const relatedTasks = state.tasks.filter((task) => Number(task.reservationId) === current.reservationId);
       if (relatedTasks.length) {
         setReservationOperation(operationFromTasks(current.reservationId, relatedTasks, current));
       } else {
@@ -1105,25 +1170,25 @@
 
     const groups = new Map();
     state.tasks.forEach((task) => {
-      if (!task.reservationId || !["naver_block", "upload"].includes(task.taskType)) return;
+      if (!task.reservationId || !operationTypeForTask(task)) return;
       const rows = groups.get(task.reservationId) || [];
       rows.push(task);
       groups.set(task.reservationId, rows);
     });
-    const dismissedId = Number(localStorage.getItem(dismissedReservationOperationKey) || 0);
     const recentThreshold = Date.now() - (3 * 24 * 60 * 60 * 1000);
     const recentCompletionThreshold = Date.now() - (24 * 60 * 60 * 1000);
     const candidates = Array.from(groups.entries())
       .filter(([reservationId, tasks]) => {
-        if (Number(reservationId) === dismissedId) return false;
-        const newest = Math.max(...tasks.map((task) => new Date(task.updatedAt || task.createdAt || 0).getTime() || 0));
+        const operation = operationFromTasks(reservationId, tasks);
+        if (reservationOperationIsDismissed(operation)) return false;
+        const newest = Math.max(...operation.tasks.map(operationTaskTimestamp));
         if (newest < recentThreshold) return false;
-        const phase = reservationOperationPhase(operationFromTasks(reservationId, tasks));
+        const phase = reservationOperationPhase(operation);
         return phase !== "done" || newest >= recentCompletionThreshold;
       })
       .sort((left, right) => {
-        const leftTime = Math.max(...left[1].map((task) => new Date(task.updatedAt || task.createdAt || 0).getTime() || 0));
-        const rightTime = Math.max(...right[1].map((task) => new Date(task.updatedAt || task.createdAt || 0).getTime() || 0));
+        const leftTime = Math.max(...operationFromTasks(left[0], left[1]).tasks.map(operationTaskTimestamp));
+        const rightTime = Math.max(...operationFromTasks(right[0], right[1]).tasks.map(operationTaskTimestamp));
         return rightTime - leftTime;
       });
     if (candidates.length) {
@@ -1131,21 +1196,37 @@
     }
   }
 
-  function operationPhaseCopy(phase) {
+  function operationPhaseCopy(phase, operationType = "registration") {
+    if (operationType === "cancellation") {
+      if (phase === "done") return { title: "일정 취소 완료", description: "스페이스클라우드 일정 삭제와 네이버 예약 가능 복구를 모두 확인했습니다. 일정표에서도 제거됐습니다." };
+      if (phase === "attention") return { title: "취소 반영 확인 필요", description: "완료된 작업은 유지됩니다. 아래에서 확인이 필요한 플랫폼을 바로 확인해주세요." };
+      if (phase === "running") return { title: "일정 취소 처리 중", description: "완료될 때까지 이 카드와 일정표의 취소 상태가 자동으로 바뀝니다." };
+      return { title: "취소 요청 접수 완료", description: "DB에 취소 상태를 저장했습니다. 두 플랫폼의 삭제·복구 작업 시작을 기다리고 있습니다." };
+    }
     if (phase === "done") return { title: "예약 반영 완료", description: "네이버와 스페이스클라우드 반영을 모두 확인했습니다." };
     if (phase === "attention") return { title: "일부 반영 확인 필요", description: "완료된 작업은 유지되며, 아래 표시된 플랫폼만 확인하면 됩니다." };
     if (phase === "running") return { title: "자동 반영 처리 중", description: "완료될 때까지 이 카드에서 상태가 자동으로 바뀝니다." };
     return { title: "예약 접수 완료", description: "DB에 저장됐으며 자동화 작업이 시작되기를 기다리고 있습니다." };
   }
 
-  function operationPlatformCopy(task, platform) {
+  function operationPlatformCopy(task, platform, operationType = "registration") {
     const phase = operationTaskPhase(task);
     const isNaver = platform === "naver";
-    const label = isNaver ? "네이버 예약불가" : "스페이스클라우드 예약등록";
+    const isCancellation = operationType === "cancellation";
+    const label = isCancellation
+      ? (isNaver ? "네이버 예약 가능 복구" : "스페이스클라우드 일정 삭제")
+      : (isNaver ? "네이버 예약불가" : "스페이스클라우드 예약등록");
     const stateLabel = phase === "done" ? "완료" : (phase === "attention" ? "확인 필요" : (phase === "running" ? "처리 중" : "대기"));
-    let detail = phase === "done"
-      ? (isNaver ? "선택 시간의 예약불가 처리를 확인했습니다." : "직접 예약 등록을 확인했습니다.")
-      : (phase === "running" ? "자동화가 플랫폼에 반영하고 있습니다." : "앞선 작업 순서에 따라 자동으로 시작됩니다.");
+    let detail;
+    if (isCancellation) {
+      detail = phase === "done"
+        ? (isNaver ? "선택 시간이 다시 예약 가능한 상태임을 확인했습니다." : "직접 추가한 일정이 삭제된 것을 확인했습니다.")
+        : (phase === "running" ? "자동화가 취소 내용을 플랫폼에 반영하고 있습니다." : "안전 확인 후 자동으로 시작됩니다.");
+    } else {
+      detail = phase === "done"
+        ? (isNaver ? "선택 시간의 예약불가 처리를 확인했습니다." : "직접 예약 등록을 확인했습니다.")
+        : (phase === "running" ? "자동화가 플랫폼에 반영하고 있습니다." : "앞선 작업 순서에 따라 자동으로 시작됩니다.");
+    }
     if (phase === "attention") {
       detail = humanTaskError(task?.error) || "자동 확인이 끝나지 않아 관리자 확인이 필요합니다.";
     }
@@ -1167,18 +1248,23 @@
     }
     state.reservationOperation = operation;
     const phase = reservationOperationPhase(operation);
-    const copy = operationPhaseCopy(phase);
-    const naver = operationPlatformCopy(operation.tasks.find((task) => task.taskType === "naver_block"), "naver");
-    const spacecloud = operationPlatformCopy(operation.tasks.find((task) => task.taskType === "upload"), "spacecloud");
+    const operationType = operation.operationType === "cancellation" ? "cancellation" : "registration";
+    const [naverTaskType, spacecloudTaskType] = operationType === "cancellation"
+      ? ["naver_restore", "delete"]
+      : ["naver_block", "upload"];
+    const copy = operationPhaseCopy(phase, operationType);
+    const naver = operationPlatformCopy(operation.tasks.find((task) => canonicalOperationTaskType(task.taskType) === naverTaskType), "naver", operationType);
+    const spacecloud = operationPlatformCopy(operation.tasks.find((task) => canonicalOperationTaskType(task.taskType) === spacecloudTaskType), "spacecloud", operationType);
     const slot = `${operationDateText(operation.date)} ${operation.room}홀 ${formatHour(operation.start)}-${formatHour(operation.end)}`;
     const lastChecked = operation.updatedAt ? `DB 확인 ${formatDateTime(operation.updatedAt)}` : "DB 상태 확인 중";
-    el.reservationOperation.className = `reservation-operation ${phase}`;
+    const operationLabel = operationType === "cancellation" ? "관리자 일정 취소" : "관리자 예약";
+    el.reservationOperation.className = `reservation-operation ${phase} ${operationType}`;
     el.reservationOperation.hidden = false;
     el.reservationOperation.innerHTML = `
       <div class="reservation-operation-head">
         <span class="reservation-operation-icon" aria-hidden="true">${phase === "done" ? "✓" : (phase === "attention" ? "!" : "")}</span>
         <div>
-          <span class="reservation-operation-kicker">관리자 예약 #${operation.reservationId}</span>
+          <span class="reservation-operation-kicker">${operationLabel} #${operation.reservationId}</span>
           <h2>${escapeHtml(copy.title)}</h2>
           <p>${escapeHtml(slot)}${operation.name ? ` · ${escapeHtml(operation.name)}` : ""}</p>
         </div>
@@ -1193,9 +1279,9 @@
       <div class="reservation-operation-foot">
         <small>${escapeHtml(lastChecked)}${state.reservationOperationPolling ? " · 새 상태 확인 중…" : ""}</small>
         <div class="reservation-operation-actions">
-          <button type="button" class="secondary-button compact-button" data-operation-refresh>지금 확인</button>
-          ${phase === "attention" ? '<button type="button" class="secondary-button compact-button" data-operation-alerts>관련 오류 보기</button>' : '<button type="button" class="secondary-button compact-button" data-operation-tasks>작업 상태 보기</button>'}
-          ${["done", "attention"].includes(phase) ? '<button type="button" class="secondary-button compact-button" data-operation-dismiss>닫기</button>' : ""}
+          <button type="button" class="secondary-button compact-button" data-operation-refresh draggable="false">지금 확인</button>
+          ${phase === "attention" ? '<button type="button" class="secondary-button compact-button" data-operation-alerts draggable="false">관련 오류 보기</button>' : '<button type="button" class="secondary-button compact-button" data-operation-tasks draggable="false">작업 상태 보기</button>'}
+          ${["done", "attention"].includes(phase) ? '<button type="button" class="secondary-button compact-button" data-operation-dismiss draggable="false">닫기</button>' : ""}
         </div>
       </div>
     `;
@@ -1240,10 +1326,14 @@
       localStorage.setItem(reservationOperationKey, JSON.stringify(next));
       const nextPhase = reservationOperationPhase(next);
       if (nextPhase === "done" && previousPhase !== "done") {
-        showToast("예약 반영이 모두 완료됐습니다.");
+        showToast(next.operationType === "cancellation"
+          ? "일정 취소가 완료되어 일정표에서 제거했습니다."
+          : "예약 반영이 모두 완료됐습니다.");
         refreshFromApi({ silent: true });
       } else if (nextPhase === "attention" && previousPhase !== "attention") {
-        showToast("일부 플랫폼 반영에 확인이 필요합니다.");
+        showToast(next.operationType === "cancellation"
+          ? "일정 취소 중 일부 플랫폼 확인이 필요합니다."
+          : "일부 플랫폼 반영에 확인이 필요합니다.");
         refreshFromApi({ silent: true });
       } else if (options.manual) {
         showToast("최신 작업 상태를 확인했습니다.");
@@ -1274,8 +1364,8 @@
       return;
     }
     if (button.matches("[data-operation-dismiss]")) {
-      const reservationId = Number(state.reservationOperation?.reservationId || 0);
-      if (reservationId > 0) localStorage.setItem(dismissedReservationOperationKey, String(reservationId));
+      const dismissToken = reservationOperationDismissToken(state.reservationOperation);
+      if (dismissToken) localStorage.setItem(dismissedReservationOperationKey, dismissToken);
       localStorage.removeItem(reservationOperationKey);
       state.reservationOperation = null;
       window.clearTimeout(reservationOperationTimer);
@@ -1581,7 +1671,7 @@
         state.revenueStats.yearMissingCount,
       )
       : "선택연도 원장 수익 합계";
-    el.pendingCount.textContent = String(state.drafts.filter((item) => item.status === "pending").length);
+    el.pendingCount.textContent = String(state.drafts.filter((item) => ["pending", "canceling"].includes(item.status)).length);
   }
 
   function renderSessions() {
@@ -1767,14 +1857,21 @@
     const payment = formatPayment(eventGrossAmount(event));
     const source = event.sourceLabel || sourceText(event.source);
     return [
+      event.status === "canceling" ? "취소 처리 중 · 스페이스클라우드 삭제와 네이버 복구 확인 중" : "",
       `${event.name || "예약"} ${formatHour(event.start)}-${formatHour(event.end)}`,
       source,
       payment ? `실결제 ${payment}` : "실결제 금액 미수집",
-    ].join(" / ");
+    ].filter(Boolean).join(" / ");
   }
 
   function eventBlockHtml(event) {
     const payment = formatPayment(eventGrossAmount(event));
+    if (event.status === "canceling") {
+      return `
+        <span class="event-main"><b class="event-cancel-label">취소 처리 중</b> ${escapeHtml(event.name || "예약")} · ${formatHour(event.start)}-${formatHour(event.end)}</span>
+        <span class="event-meta"><span>SC 삭제 · 네이버 복구 확인 중</span></span>
+      `;
+    }
     return `
       <span class="event-main">${escapeHtml(event.name || "예약")} · ${formatHour(event.start)}-${formatHour(event.end)}</span>
       <span class="event-meta">
@@ -1806,6 +1903,7 @@
       ["결제수단", event.paymentMethod || ""],
       ["금액출처", amountSourceText(event.amountSource) || ""],
       ["결제상태", event.paymentStatus || ""],
+      ["처리상태", event.source === "admin" ? adminReservationStatusText(event.status) : ""],
       ["취소상태", customerCancellationStatusText(event.customerCancelTaskStatus)],
       ["네이버", platformText(event.naver)],
       ["스페이스클라우드", platformText(event.spacecloud)],
@@ -3432,7 +3530,7 @@
       applyApiData(data);
       renderAll();
       const requested = Number(data.cancelResult?.requestedCount || 0);
-      showToast(`${requested}건의 취소·복구 작업을 만들었습니다.`);
+      showToast(`${requested}건의 취소 요청을 접수했습니다. 완료 전까지 각 일정에 취소 처리 중으로 표시됩니다.`);
       await openSeriesModal(state.selectedSeries.id);
     } catch (error) {
       showToast(error.message || "정기대관 취소 실패");
@@ -3450,6 +3548,7 @@
     confirmDetailedEventCancellation.pending = true;
     el.confirmEventCancellation.disabled = true;
     el.dismissEventCancellation.disabled = true;
+    el.confirmEventCancellation.textContent = "취소 접수 중…";
     try {
       if (intent.kind === "customer") {
         await cancelDetailedCustomerReservation(intent.event);
@@ -3460,6 +3559,7 @@
       showToast(error.message || "일정 취소 요청 실패");
     } finally {
       confirmDetailedEventCancellation.pending = false;
+      el.confirmEventCancellation.textContent = "확인";
       if (!el.eventCancelWarningModal.hidden) {
         el.confirmEventCancellation.disabled = false;
         el.dismissEventCancellation.disabled = false;
@@ -3494,7 +3594,10 @@
     closeEventCancellationWarning({ force: true });
     closeEventDetailModal();
     renderAll();
-    showToast("관리자 일정 취소·복구 작업을 만들었습니다.");
+    showToast("취소 요청을 접수했습니다. 일정표와 상태 카드에서 완료 여부를 확인합니다.");
+    window.requestAnimationFrame(() => {
+      el.reservationOperation?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   function persistDrafts() {
@@ -3514,12 +3617,14 @@
   }
 
   function taskItemFromApi(item) {
+    const taskType = canonicalOperationTaskType(item.taskType || item.actionType || "");
     return {
       id: item.id,
       reservationId: Number(item.reservationId || 0) || null,
       liveTaskId: item.liveTaskId || "",
       sourceTaskId: item.sourceTaskId || "",
-      taskType: item.taskType || "",
+      taskType,
+      actionType: item.actionType || "",
       actionLabel: item.actionLabel || "",
       status: item.status || "pending",
       resultStatus: item.resultStatus || "",

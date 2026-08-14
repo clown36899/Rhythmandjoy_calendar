@@ -495,6 +495,14 @@ input[readonly] {
   box-shadow: 0 12px 28px rgba(11, 127, 104, 0.09);
 }
 
+.reservation-operation.cancellation.pending,
+.reservation-operation.cancellation.running {
+  --operation-color: #c35f0a;
+  --operation-soft: #fff5e8;
+  border-color: #e8bd88;
+  box-shadow: 0 12px 28px rgba(195, 95, 10, 0.1);
+}
+
 .reservation-operation.done {
   --operation-color: var(--ok);
   --operation-soft: #e9f8f1;
@@ -1265,6 +1273,11 @@ input[readonly] {
   border-color: #b7cdf4;
 }
 
+.grid-cell.has-canceling-event {
+  background: #fff8ed;
+  border-color: #dfad68;
+}
+
 .event-block {
   z-index: 6;
   display: grid;
@@ -1303,6 +1316,26 @@ input[readonly] {
   border-color: #e7c26d;
   background: #fff4cf;
   color: #75530a;
+}
+
+.event-block.is-canceling {
+  border: 2px dashed #c35f0a;
+  background: #fff4e5;
+  color: #853d05;
+  box-shadow: 0 0 0 2px rgba(195, 95, 10, 0.08);
+}
+
+.event-cancel-label {
+  display: inline-block;
+  margin-right: 3px;
+  border-radius: 999px;
+  padding: 2px 5px;
+  background: #c35f0a;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.1;
+  vertical-align: 1px;
 }
 
 .event-block.source-ledger {

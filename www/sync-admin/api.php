@@ -2160,6 +2160,15 @@ function task_conflict_booking($booking) {
 
 function normalize_task_row($row) {
     $task_type = $row['task_type'] ?: $row['action_type'];
+    $admin_action_task_types = array(
+        'block_naver_availability' => 'naver_block',
+        'add_spacecloud_reservation' => 'upload',
+        'delete_spacecloud_reservation' => 'delete',
+        'restore_naver_availability' => 'naver_restore',
+    );
+    if (isset($admin_action_task_types[$task_type])) {
+        $task_type = $admin_action_task_types[$task_type];
+    }
     $result = json_decode((string) ($row['result_text'] ?: ''), true);
     if (!is_array($result)) {
         $result = array();
@@ -2316,6 +2325,13 @@ function admin_reservation_operation_payload($pdo, $reservation_id) {
         return null;
     }
 
+    $operation_type = in_array((string) $reservation['status'], array('canceling', 'canceled'), true)
+        ? 'cancellation'
+        : 'registration';
+    $action_type_filter = $operation_type === 'cancellation'
+        ? "'delete_spacecloud_reservation', 'restore_naver_availability'"
+        : "'block_naver_availability', 'add_spacecloud_reservation'";
+
     $task_stmt = $pdo->prepare("
         SELECT t.id, t.reservation_id, t.live_task_id, t.platform, t.action_type,
                COALESCE(l.task_type, t.action_type) AS task_type,
@@ -2333,7 +2349,7 @@ function admin_reservation_operation_payload($pdo, $reservation_id) {
         LEFT JOIN rhythmjoy_spacecloud_tasks l ON l.id = t.live_task_id
         WHERE t.reservation_id=?
           AND t.status <> 'canceled'
-          AND t.action_type IN ('block_naver_availability', 'add_spacecloud_reservation')
+          AND t.action_type IN ($action_type_filter)
         ORDER BY t.id ASC
     ");
     $task_stmt->execute(array(intval($reservation_id)));
@@ -2360,6 +2376,7 @@ function admin_reservation_operation_payload($pdo, $reservation_id) {
             'updatedAt' => $reservation['updated_at'],
         ),
         'tasks' => $tasks,
+        'operationType' => $operation_type,
         'state' => admin_reservation_operation_state($tasks),
         'updatedAt' => $updated_at,
     );
@@ -4017,7 +4034,12 @@ function cancel_admin_reservations($pdo, $payload, $env) {
             $stmt->execute(array($affected_series_id));
         }
         $pdo->commit();
-        return array('requestedCount' => count($rows));
+        return array(
+            'requestedCount' => count($rows),
+            'reservationIds' => array_values(array_map(function($row) {
+                return intval($row['id']);
+            }, $rows)),
+        );
     } catch (Exception $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
@@ -4304,7 +4326,11 @@ try {
 
     if ($action === 'cancel_admin_reservations') {
         $result = cancel_admin_reservations($pdo, $payload, $env);
-        json_response(array_merge(bootstrap_payload($pdo, $date, $env), array('cancelResult' => $result)));
+        $response = array_merge(bootstrap_payload($pdo, $date, $env), array('cancelResult' => $result));
+        if (count($result['reservationIds']) === 1) {
+            $response['reservationOperation'] = admin_reservation_operation_payload($pdo, $result['reservationIds'][0]);
+        }
+        json_response($response);
     }
 
     if ($action === 'cancel_customer_reservation') {

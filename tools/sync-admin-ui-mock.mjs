@@ -32,7 +32,7 @@ function basePayload(date = '2026-08-13') {
     naverStatus: 'source',
     spacecloudStatus: 'synced',
   }] : [];
-  reservations.push(...mockState.createdReservations.filter((item) => item.date === date));
+  reservations.push(...mockState.createdReservations.filter((item) => item.date === date && item.status !== 'canceled'));
   return {
     ok: true,
     mode: 'db-live-queue',
@@ -40,7 +40,7 @@ function basePayload(date = '2026-08-13') {
     settings: {},
     sessions: {},
     reservations,
-    tasks: mockState.createdReservations.flatMap(mockOperationTasks),
+    tasks: mockState.createdReservations.flatMap(mockAllOperationTasks),
     reflectionAudits: [],
     reflectionAuditSummary: { issueCount: 0, waitingCount: 0, okCount: 10 },
     revenueStats: null,
@@ -62,6 +62,13 @@ function basePayload(date = '2026-08-13') {
 }
 
 function mockOperationTasks(reservation) {
+  if (reservation.operationType === 'cancellation') {
+    return mockCancellationTasks(reservation);
+  }
+  return mockRegistrationTasks(reservation);
+}
+
+function mockRegistrationTasks(reservation) {
   const polls = Number(reservation.operationPolls || 0);
   const attention = String(reservation.name || '').includes('확인필요');
   const naverStatus = polls < 1 ? 'pending' : (polls < 2 ? 'running' : 'done');
@@ -101,6 +108,48 @@ function mockOperationTasks(reservation) {
   }];
 }
 
+function mockCancellationTasks(reservation) {
+  const polls = Number(reservation.operationPolls || 0);
+  const naverStatus = polls < 1 ? 'pending' : (polls < 2 ? 'running' : 'done');
+  const spacecloudStatus = polls < 2 ? 'pending' : (polls < 3 ? 'running' : 'done');
+  const common = {
+    reservationId: reservation.id,
+    date: reservation.date,
+    room: reservation.room,
+    startHour: reservation.startHour,
+    endHour: reservation.endHour,
+    name: reservation.name,
+    createdAt: reservation.createdAt,
+    updatedAt: new Date().toISOString(),
+  };
+  return [{
+    ...common,
+    id: String(reservation.id * 10 + 3),
+    liveTaskId: reservation.id * 10 + 103,
+    taskType: 'naver_restore',
+    actionLabel: '네이버 예약가능 복구',
+    status: naverStatus,
+    naverStatus,
+    spacecloudStatus: 'source',
+  }, {
+    ...common,
+    id: String(reservation.id * 10 + 4),
+    liveTaskId: reservation.id * 10 + 104,
+    taskType: 'delete',
+    actionLabel: '스페이스클라우드 삭제',
+    status: spacecloudStatus,
+    naverStatus: 'source',
+    spacecloudStatus,
+  }];
+}
+
+function mockAllOperationTasks(reservation) {
+  const registrationReservation = { ...reservation, operationType: 'registration', operationPolls: 3 };
+  const tasks = mockRegistrationTasks(registrationReservation);
+  if (reservation.operationType === 'cancellation') tasks.push(...mockCancellationTasks(reservation));
+  return tasks;
+}
+
 function mockReservationOperation(reservation) {
   const tasks = mockOperationTasks(reservation);
   const statuses = tasks.map((task) => task.status);
@@ -120,6 +169,7 @@ function mockReservationOperation(reservation) {
       updatedAt: new Date().toISOString(),
     },
     tasks,
+    operationType: reservation.operationType || 'registration',
     state,
     updatedAt: new Date().toISOString(),
   };
@@ -248,6 +298,7 @@ const server = http.createServer(async (req, res) => {
           status: 'pending',
           naverStatus: 'pending',
           spacecloudStatus: 'pending',
+          operationType: 'registration',
           operationPolls: 0,
           createdAt: new Date().toISOString(),
         };
@@ -271,9 +322,13 @@ const server = http.createServer(async (req, res) => {
       }
       reservation.operationPolls = Number(reservation.operationPolls || 0) + 1;
       if (reservation.operationPolls >= 3 && !String(reservation.name || '').includes('확인필요')) {
-        reservation.status = 'confirmed';
-        reservation.naverStatus = 'done';
-        reservation.spacecloudStatus = 'done';
+        if (reservation.operationType === 'cancellation') {
+          reservation.status = 'canceled';
+        } else {
+          reservation.status = 'confirmed';
+          reservation.naverStatus = 'done';
+          reservation.spacecloudStatus = 'done';
+        }
       }
       return json(res, {
         ok: true,
@@ -295,7 +350,22 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (action === 'create_recurring') return json(res, { ...basePayload(), recurringResult: { seriesId: 2, createdCount: 8 } });
-    if (action === 'cancel_admin_reservations') return json(res, { ...basePayload(), cancelResult: { requestedCount: 2 } });
+    if (action === 'cancel_admin_reservations') {
+      const ids = Array.isArray(body.reservationIds) ? body.reservationIds.map(Number) : [];
+      const reservations = mockState.createdReservations.filter((item) => ids.includes(Number(item.id)));
+      reservations.forEach((reservation) => {
+        reservation.status = 'canceling';
+        reservation.operationType = 'cancellation';
+        reservation.operationPolls = 0;
+      });
+      const requestedCount = reservations.length || (Number(body.seriesId || 0) > 0 ? 2 : 0);
+      const response = {
+        ...basePayload(body.date),
+        cancelResult: { requestedCount, reservationIds: reservations.map((item) => item.id) },
+      };
+      if (reservations.length === 1) response.reservationOperation = mockReservationOperation(reservations[0]);
+      return json(res, response);
+    }
     return json(res, basePayload(body.date));
   }
 
