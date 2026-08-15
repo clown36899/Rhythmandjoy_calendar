@@ -11,6 +11,7 @@ import {
   popupDeleteVerification,
   spacecloudReservationIdentityAccepted,
   spacecloudUploadEventFromTask,
+  summarizeDeleteCandidateIdentityEvidence,
   verifySpacecloudCalendarIdentity,
   waitForDirectEventCandidates,
 } from './spacecloud-playwright-uploader.mjs';
@@ -200,6 +201,33 @@ test('post-submit identity requires both reservation number and task id', () => 
   const wrongTask = popupDeleteVerification(popup, { ...row, taskId: 558 });
   assert.equal(wrongTask.ok, false);
   assert.ok(wrongTask.errors.includes('task-id-mismatch:558'));
+});
+
+test('delete verification reports the different reservation number occupying a rebooked slot', () => {
+  const popup = '직접 추가한 예약 건입니다. A홀 20평형-외부신발금지 예약자명 : 이*지님 예약내용 : 2026.10.03(토), 12:00~14:00, 2시간 메모 : Rhythmjoy Naver email DB sync / taskId=649 / naverReservationNo=1323404722';
+  const result = popupDeleteVerification(popup, {
+    roomKey: 'a',
+    date: '2026-10-03',
+    startTime: '12:00',
+    endTime: '14:00',
+    reserverName: '이*지님',
+    reservationNo: '1312804595',
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.errors, ['reservation-number-mismatch:1312804595']);
+  assert.deepEqual(result.identity.observedReservationNos, ['1323404722']);
+  assert.equal(result.identity.reservationNoMatched, false);
+  assert.deepEqual(summarizeDeleteCandidateIdentityEvidence([{
+    status: 'verification-failed',
+    verification: result,
+  }], 1, '1312804595'), {
+    observedReservationNos: ['1323404722'],
+    allCandidatesVerifiedAsDifferentReservations: true,
+  });
+  assert.equal(summarizeDeleteCandidateIdentityEvidence([{
+    status: 'popup-not-opened',
+  }], 1, '1312804595').allCandidatesVerifiedAsDifferentReservations, false);
 });
 
 test('calendar API verifies the exact task, reservation, date, time, and masked name', () => {

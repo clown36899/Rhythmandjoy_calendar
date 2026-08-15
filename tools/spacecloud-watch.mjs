@@ -4919,6 +4919,7 @@ try:
               l.product,
               l.payload_json AS payloadJson,
               l.confirmed_email_event_id AS confirmedEmailEventId,
+              CAST(l.last_event_at AS CHAR) AS lastEventAt,
               CAST(a.checked_at AS CHAR) AS auditCheckedAt,
               a.audit_status AS previousAuditStatus,
               IF(
@@ -5044,6 +5045,7 @@ function customerAuditTask(candidate) {
     payloadJson: JSON.stringify(payload),
     ledgerId: candidate.ledgerId,
     cancellationOverlapBookings: candidate.cancellationOverlapBookings || [],
+    cancellationSuccessorBookings: candidate.cancellationSuccessorBookings || [],
   };
 }
 
@@ -5060,6 +5062,9 @@ function compactCustomerAuditOverlapBooking(booking) {
     mirrorTaskType: booking.mirrorTaskType || '',
     mirrorTaskId: Number(booking.mirrorTaskId || 0) || null,
     mirrorTaskStatus: booking.mirrorTaskStatus || '',
+    reservationNo: booking.reservationNo || '',
+    reserverName: booking.reserverName || '',
+    lastEventAt: booking.lastEventAt || '',
   };
 }
 
@@ -5071,6 +5076,50 @@ function customerCancellationOverlapBookings(candidate, allRows) {
     .filter((booking) => String(booking.roomKey || '').toLowerCase() === String(candidate.roomKey || '').toLowerCase())
     .filter((booking) => reservationSlotsOverlap(candidate, booking))
     .map(compactCustomerAuditOverlapBooking);
+}
+
+function customerAuditBookingIsLater(candidate, booking) {
+  const candidateEventAt = String(candidate.lastEventAt || '').trim();
+  const bookingEventAt = String(booking.lastEventAt || '').trim();
+  if (candidateEventAt && bookingEventAt && candidateEventAt !== bookingEventAt) {
+    return bookingEventAt > candidateEventAt;
+  }
+  return Number(booking.ledgerId || 0) > Number(candidate.ledgerId || 0);
+}
+
+function customerCancellationSuccessorBookings(candidate, allRows) {
+  if (candidate.currentStatus !== 'canceled' || candidate.sourcePlatform !== 'naver') return [];
+  const expectedReservationNo = String(candidate.reservationNo || '').trim();
+  return (Array.isArray(allRows) ? allRows : [])
+    .filter((booking) => Number(booking.ledgerId) !== Number(candidate.ledgerId))
+    .filter((booking) => booking.currentStatus === 'confirmed' && booking.sourcePlatform === 'naver')
+    .filter((booking) => String(booking.roomKey || '').toLowerCase() === String(candidate.roomKey || '').toLowerCase())
+    .filter((booking) => String(booking.date || '') === String(candidate.date || ''))
+    .filter((booking) => String(booking.startTime || '') === String(candidate.startTime || ''))
+    .filter((booking) => String(booking.endTime || '') === String(candidate.endTime || ''))
+    .filter((booking) => {
+      const reservationNo = String(booking.reservationNo || '').trim();
+      return reservationNo && reservationNo !== expectedReservationNo;
+    })
+    .filter((booking) => booking.mirrorTaskType === 'upload')
+    .filter((booking) => ['done', 'google_pending'].includes(String(booking.mirrorTaskStatus || '')))
+    .filter((booking) => customerAuditBookingIsLater(candidate, booking))
+    .map(compactCustomerAuditOverlapBooking);
+}
+
+function verifiedSpacecloudCancellationSuccessor(inspection, task) {
+  if (inspection?.status !== 'needs_review' || inspection?.allCandidatesVerifiedAsDifferentReservations !== true) {
+    return null;
+  }
+  const expectedReservationNo = String(task.reservationNo || '').trim();
+  const observedReservationNos = new Set(
+    (Array.isArray(inspection.observedReservationNos) ? inspection.observedReservationNos : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  );
+  if (!observedReservationNos.size || observedReservationNos.has(expectedReservationNo)) return null;
+  return (Array.isArray(task.cancellationSuccessorBookings) ? task.cancellationSuccessorBookings : [])
+    .find((booking) => observedReservationNos.has(String(booking.reservationNo || '').trim())) || null;
 }
 
 function naverCancellationSlotExpectation(slot, overlapBookings) {
@@ -5150,6 +5199,16 @@ function classifyCustomerPlatformInspection(checkType, inspection, task) {
   if (checkType === 'spacecloud_mirror_absent') {
     if (inspection?.status === 'not_found') return { ok: true, status: 'ok', reason: '스페이스클라우드 복제 예약 삭제 확인' };
     if (inspection?.status === 'found') return { ok: false, status: 'mismatch', reason: '취소한 스페이스클라우드 복제 예약이 아직 보임' };
+    const successor = verifiedSpacecloudCancellationSuccessor(inspection, task);
+    if (successor) {
+      return {
+        ok: true,
+        status: 'ok',
+        reason: '기존 스페이스클라우드 복제 예약 삭제 확인 · 같은 시간 후속 예약 유지',
+        successorLedgerId: successor.ledgerId,
+        successorTaskId: successor.mirrorTaskId,
+      };
+    }
     return { ok: false, status: 'check_failed', reason: `스페이스클라우드 삭제 확인 불충분: ${inspection?.reason || inspection?.status || '응답 없음'}` };
   }
   if (checkType === 'naver_mirror') {
@@ -5245,6 +5304,10 @@ function customerPlatformAuditRecoveryMessage(candidate, rows) {
       ? '판정: DB 취소 원장과 반대 플랫폼의 취소 반영 일치'
       : (rows.length > 1 ? '판정: DB 원장·원본·복제본 일치' : '판정: DB 원장·원본 플랫폼 일치'),
   ]);
+}
+
+function customerPlatformAuditRecoveryEligible(previousStatus) {
+  return ['mismatch', 'check_failed'].includes(String(previousStatus || ''));
 }
 
 async function persistRemoteCustomerPlatformAudits(args, rows) {
@@ -5446,6 +5509,7 @@ async function runCustomerPlatformAudit(args, context, { force = false } = {}) {
     .map((candidate) => ({
       ...candidate,
       cancellationOverlapBookings: customerCancellationOverlapBookings(candidate, fetchedRows),
+      cancellationSuccessorBookings: customerCancellationSuccessorBookings(candidate, fetchedRows),
     }));
   const candidates = args.customerPlatformAuditLedgerId
     ? allCandidates.filter((row) => Number(row.ledgerId) === Number(args.customerPlatformAuditLedgerId))
@@ -5461,7 +5525,7 @@ async function runCustomerPlatformAudit(args, context, { force = false } = {}) {
       const issueRows = row.rows.filter((item) => !item.classification.ok);
       const signature = `${row.auditStatus}:${issueRows.map((item) => `${item.checkType}:${item.classification.reason}`).join('|')}`;
       await notifyOnStateChange(args, `customer-platform-audit:${row.candidate.ledgerId}`, signature, customerPlatformAuditIssueMessage(row.candidate, row.rows));
-    } else if (args.telegram && row.auditStatus === 'ok' && previousStatus === 'mismatch') {
+    } else if (args.telegram && row.auditStatus === 'ok' && customerPlatformAuditRecoveryEligible(previousStatus)) {
       await notifyOnStateChange(args, `customer-platform-audit:${row.candidate.ledgerId}`, 'ok', customerPlatformAuditRecoveryMessage(row.candidate, row.rows));
     }
   }
@@ -8952,6 +9016,65 @@ async function runNowModeSelfTest() {
     classifyCustomerPlatformInspection('spacecloud_mirror_absent', { status: 'found' }, naverCustomerTask).status,
     'mismatch',
   );
+  const canceledNaverCandidate = {
+    ledgerId: 9074,
+    currentStatus: 'canceled',
+    sourcePlatform: 'naver',
+    roomKey: 'a',
+    date: '2026-10-03',
+    startTime: '12:00',
+    endTime: '14:00',
+    reservationNo: '1312804595',
+    reserverName: '이*지님',
+    lastEventAt: '2026-08-11 21:48:57',
+    payloadJson: '{}',
+  };
+  const activeRebooking = {
+    ledgerId: 9273,
+    currentStatus: 'confirmed',
+    sourcePlatform: 'naver',
+    roomKey: 'a',
+    date: '2026-10-03',
+    startTime: '12:00',
+    endTime: '14:00',
+    reservationNo: '1323404722',
+    reserverName: '이*지님',
+    lastEventAt: '2026-08-15 00:49:23',
+    mirrorTaskType: 'upload',
+    mirrorTaskId: 649,
+    mirrorTaskStatus: 'done',
+  };
+  const successorBookings = customerCancellationSuccessorBookings(
+    canceledNaverCandidate,
+    [canceledNaverCandidate, activeRebooking],
+  );
+  assert.deepEqual(successorBookings.map((row) => row.ledgerId), [9273]);
+  const canceledNaverTaskWithSuccessor = customerAuditTask({
+    ...canceledNaverCandidate,
+    cancellationSuccessorBookings: successorBookings,
+  });
+  const safelyRebookedClassification = classifyCustomerPlatformInspection('spacecloud_mirror_absent', {
+    status: 'needs_review',
+    reason: 'no delete candidate passed detail verification: reservation-number-mismatch:1312804595',
+    observedReservationNos: ['1323404722'],
+    allCandidatesVerifiedAsDifferentReservations: true,
+  }, canceledNaverTaskWithSuccessor);
+  assert.equal(safelyRebookedClassification.ok, true);
+  assert.equal(safelyRebookedClassification.successorLedgerId, 9273);
+  assert.equal(safelyRebookedClassification.successorTaskId, 649);
+  assert.match(safelyRebookedClassification.reason, /후속 예약 유지/);
+  assert.equal(
+    classifyCustomerPlatformInspection('spacecloud_mirror_absent', {
+      status: 'needs_review',
+      observedReservationNos: ['1323404722'],
+      allCandidatesVerifiedAsDifferentReservations: false,
+    }, canceledNaverTaskWithSuccessor).status,
+    'check_failed',
+    'a partial or unread candidate inspection must remain inconclusive',
+  );
+  assert.equal(customerPlatformAuditRecoveryEligible('check_failed'), true);
+  assert.equal(customerPlatformAuditRecoveryEligible('mismatch'), true);
+  assert.equal(customerPlatformAuditRecoveryEligible('recheck_pending'), false);
   assert.equal(
     classifyCustomerPlatformInspection('naver_mirror_available', { status: 'inspected', slots: [{ status: 'available' }] }, naverCustomerTask).ok,
     true,

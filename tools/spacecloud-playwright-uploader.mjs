@@ -1324,6 +1324,30 @@ async function findVerifiedDeleteCandidate(page, candidates, row) {
   };
 }
 
+export function summarizeDeleteCandidateIdentityEvidence(candidateAttempts, candidateCount, reservationNo) {
+  const attempts = Array.isArray(candidateAttempts) ? candidateAttempts : [];
+  const expectedReservationNo = String(reservationNo || '').trim();
+  const observedReservationNos = [...new Set(attempts.flatMap((attempt) => (
+    Array.isArray(attempt.verification?.identity?.observedReservationNos)
+      ? attempt.verification.identity.observedReservationNos
+      : []
+  )))];
+  const allCandidatesVerifiedAsDifferentReservations = Boolean(expectedReservationNo)
+    && attempts.length === Number(candidateCount || 0)
+    && attempts.every((attempt) => {
+      const errors = Array.isArray(attempt.verification?.errors) ? attempt.verification.errors : [];
+      const observed = Array.isArray(attempt.verification?.identity?.observedReservationNos)
+        ? attempt.verification.identity.observedReservationNos
+        : [];
+      return attempt.status === 'verification-failed'
+        && errors.length === 1
+        && errors[0] === `reservation-number-mismatch:${expectedReservationNo}`
+        && observed.length > 0
+        && !observed.includes(expectedReservationNo);
+    });
+  return { observedReservationNos, allCandidatesVerifiedAsDifferentReservations };
+}
+
 export async function inspectSpacecloudReservationStatus(context, task, {
   timeoutMs = 15000,
 } = {}) {
@@ -1355,6 +1379,11 @@ export async function inspectSpacecloudReservationStatus(context, task, {
   const selection = await findVerifiedDeleteCandidate(page, candidates, row);
   await closeReservationPopup(page).catch(() => {});
   if (!selection.candidate) {
+    const identityEvidence = summarizeDeleteCandidateIdentityEvidence(
+      selection.attempts,
+      candidates.length,
+      row.reservationNo,
+    );
     return {
       status: 'needs_review',
       exists: null,
@@ -1362,6 +1391,7 @@ export async function inspectSpacecloudReservationStatus(context, task, {
       candidateCount: candidates.length,
       reason: selection.error || 'candidate-verification-failed',
       source: 'spacecloud-calendar',
+      ...identityEvidence,
     };
   }
   return {
@@ -1402,10 +1432,14 @@ export function popupDeleteVerification(popupText, row) {
     (nameKey && normalized.includes(nameKey))
     || (maskedNameKey && normalized.includes(maskedNameKey))
   );
-  const escapedReservationNo = reservationNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const observedReservationNos = [...new Set(
+    [...normalized.matchAll(/(?:naverreservationno=|예약번호[:：]?)(\d{6,})(?!\d)/gi)]
+      .map((match) => String(match[1] || '').trim())
+      .filter(Boolean),
+  )];
   const reservationNoMatched = Boolean(
     reservationNo
-    && new RegExp(`(?:naverreservationno=|예약번호[:：]?)(?:\\s*)${escapedReservationNo}(?!\\d)`, 'i').test(normalized)
+    && observedReservationNos.includes(reservationNo)
   );
   const escapedTaskId = taskId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const taskIdMatched = Boolean(
@@ -1437,6 +1471,7 @@ export function popupDeleteVerification(popupText, row) {
       nameKey,
       maskedNameKey,
       reservationNo: reservationNo || '',
+      observedReservationNos,
       taskId,
     },
   };
