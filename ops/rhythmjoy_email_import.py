@@ -3618,7 +3618,7 @@ def enrich_naver_cancellation_from_prior_event(
           AND reservation_number=%s
           AND event_order_key IS NOT NULL
           AND event_order_key<%s
-          AND COALESCE(error_text, '') NOT LIKE '%no_side_effects%'
+          AND COALESCE(error_text, '') NOT LIKE '%%no_side_effects%%'
         ORDER BY event_order_key DESC, id DESC
         LIMIT 2
         FOR UPDATE
@@ -6569,7 +6569,7 @@ def verify_booking_event_total_order():
             or enriched.get('end_time') != '15:00:00'
             or not naver_cancellation_identity_complete(enriched, enriched_calendar)
             or 'event_order_key<%s' not in prior_cursor.queries[1][0]
-            or "COALESCE(error_text, '') NOT LIKE '%no_side_effects%'"
+            or "COALESCE(error_text, '') NOT LIKE '%%no_side_effects%%'"
             not in prior_cursor.queries[1][0]
             or "processing_status='awaiting_predecessor'"
             in prior_cursor.queries[1][0]

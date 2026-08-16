@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+import ast
 import logging
 import json
+import re
 import sys
 import types
 import unittest
@@ -31,6 +33,8 @@ class FakeCursor:
     def execute(self, query, args=None):
         if isinstance(args, dict):
             query % {key: "'value'" for key in args}
+        elif isinstance(args, (tuple, list)):
+            query % tuple("'value'" for _ in args)
         return 1
 
     def fetchone(self):
@@ -107,6 +111,38 @@ class EmailPipelineSelfTest(unittest.TestCase):
     def test_imap_fetch_does_not_mark_email_seen(self):
         self.assertIn('BODY.PEEK[]', email_import.IMAP_FETCH_QUERY)
         self.assertNotIn('RFC822', email_import.IMAP_FETCH_QUERY)
+
+    def test_parameterized_sql_escapes_literal_percent(self):
+        source_path = Path(email_import.__file__)
+        tree = ast.parse(source_path.read_text(encoding='utf-8'))
+        violations = []
+        for node in ast.walk(tree):
+            if not (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == 'execute'
+                    and len(node.args) >= 2
+            ):
+                continue
+            query_node = node.args[0]
+            literal_parts = []
+            if isinstance(query_node, ast.Constant) and isinstance(
+                    query_node.value, str
+            ):
+                literal_parts.append(query_node.value)
+            elif isinstance(query_node, ast.JoinedStr):
+                literal_parts.extend(
+                    value.value
+                    for value in query_node.values
+                    if isinstance(value, ast.Constant)
+                    and isinstance(value.value, str)
+                )
+            if any(
+                    re.search(r'(?<!%)%(?!%|s|\()', part)
+                    for part in literal_parts
+            ):
+                violations.append(node.lineno)
+        self.assertEqual(violations, [])
 
     def test_legacy_manual_cancellation_requires_full_terminal_proof(self):
         event_received_at = '2026-08-03 13:15:15'
@@ -291,6 +327,26 @@ class EmailPipelineSelfTest(unittest.TestCase):
         finally:
             email_import.db_connect = original_connect
             email_import.db_select_booking_ledger = original_select
+
+    def test_prior_event_enrichment_positional_sql_is_valid(self):
+        enriched, calendar_key, proof = (
+            email_import.enrich_naver_cancellation_from_prior_event(
+                FakeCursor(),
+                {
+                    'reservation_number': 'R-SQL-1',
+                    'name': '테스트',
+                    'product': 'A홀',
+                    'date': '2026-08-20',
+                    'start_time': '10:00',
+                    'end_time': '11:00',
+                },
+                'Ahall',
+                1787000000000,
+            )
+        )
+        self.assertEqual(enriched['reservation_number'], 'R-SQL-1')
+        self.assertEqual(calendar_key, 'Ahall')
+        self.assertEqual(proof['status'], 'missing-prior-reservation')
 
     def test_db_transaction_commits_once(self):
         connection = FakeConnection()
