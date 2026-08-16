@@ -2728,9 +2728,9 @@ try:
                         FROM rhythmjoy_spacecloud_tasks AS legacy_upload
                         INNER JOIN rhythmjoy_naver_email_events AS legacy_upload_event
                                 ON legacy_upload_event.id=legacy_upload.email_event_id
-                        INNER JOIN rhythmjoy_naver_email_events AS legacy_cancel_event
-                                ON legacy_cancel_event.id=task.email_event_id
+                        CROSS JOIN rhythmjoy_naver_email_events AS legacy_cancel_event
                         WHERE legacy_upload.task_type='upload'
+                          AND legacy_cancel_event.id=task.email_event_id
                           AND legacy_upload.status NOT IN ('pending','running')
                           AND legacy_upload_event.event_type='reservation'
                           AND legacy_upload_event.event_order_trusted=1
@@ -2927,9 +2927,9 @@ try:
                         FROM rhythmjoy_spacecloud_tasks AS legacy_upload
                         INNER JOIN rhythmjoy_naver_email_events AS legacy_upload_event
                                 ON legacy_upload_event.id=legacy_upload.email_event_id
-                        INNER JOIN rhythmjoy_naver_email_events AS legacy_cancel_event
-                                ON legacy_cancel_event.id=task.email_event_id
+                        CROSS JOIN rhythmjoy_naver_email_events AS legacy_cancel_event
                         WHERE legacy_upload.task_type='upload'
+                          AND legacy_cancel_event.id=task.email_event_id
                           AND legacy_upload.status NOT IN ('pending','running')
                           AND legacy_upload_event.event_type='reservation'
                           AND legacy_upload_event.event_order_trusted=1
@@ -12362,11 +12362,15 @@ async function runNowModeSelfTest() {
   assert.match(fetchRemoteTasks.toString(), /locked_at IS NULL OR locked_at <= NOW\(\)/);
   assert.match(fetchRemoteTasks.toString(), /FROM rhythmjoy_spacecloud_tasks AS task/);
   assert.doesNotMatch(fetchRemoteTasks.toString(), /rhythmjoy_spacecloud_tasks\.email_event_id/);
+  assert.match(fetchRemoteTasks.toString(), /CROSS JOIN rhythmjoy_naver_email_events AS legacy_cancel_event/);
+  assert.doesNotMatch(fetchRemoteTasks.toString(), /ON legacy_cancel_event\.id=task\.email_event_id/);
   assert.match(fetchRemoteTaskTypes.toString(), /FOR UPDATE/);
   assert.match(fetchRemoteTaskTypes.toString(), /claim_token/);
   assert.match(fetchRemoteTaskTypes.toString(), /locked_at IS NULL OR locked_at <= NOW\(\)/);
   assert.match(fetchRemoteTaskTypes.toString(), /FROM rhythmjoy_spacecloud_tasks AS task/);
   assert.doesNotMatch(fetchRemoteTaskTypes.toString(), /rhythmjoy_spacecloud_tasks\.email_event_id/);
+  assert.match(fetchRemoteTaskTypes.toString(), /CROSS JOIN rhythmjoy_naver_email_events AS legacy_cancel_event/);
+  assert.doesNotMatch(fetchRemoteTaskTypes.toString(), /ON legacy_cancel_event\.id=task\.email_event_id/);
   assert.match(fetchRemoteTaskTypes.toString(), /WHEN status='pending' THEN 2/);
   assert.match(fetchRemoteTaskTypes.toString(), /AS sourceEventOrderKey/);
   assert.match(fetchRemoteTaskTypes.toString(), /SELECT event_order_key/);
