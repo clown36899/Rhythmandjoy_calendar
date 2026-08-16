@@ -1513,6 +1513,209 @@ def force_project_latest_trusted_naver_event(
         return cursor.rowcount
 
 
+def link_exact_legacy_trusted_cancellation(
+        cursor, email_event_id, deletion, calendar_key):
+    """Link one pre-saga cancellation only from its preserved exact provenance.
+
+    Some trusted cancellation emails predate durable storage of their earlier
+    reservation email.  They must not be reclassified as a new quarantine when
+    the old producer already left one exact canceled ledger and one exact,
+    event-linked delete task.  This migration only fills the ledger link and
+    normalized name key; it deliberately does not promote task status or
+    side-effect state.
+    """
+    event_id = spacecloud_task_event_identity(email_event_id)
+    room_key = spacecloud_room_key_from_calendar(calendar_key)
+    expected = {
+        'reservation_number': str(
+            (deletion or {}).get('reservation_number') or ''
+        ).strip(),
+        'room_key': room_key,
+        'reserver_name_key': normalize_reserver_name_for_match(
+            (deletion or {}).get('name')
+        ),
+        'reservation_date': clean_date_or_none((deletion or {}).get('date')),
+        'start_time': clean_time_or_none((deletion or {}).get('start_time')),
+        'end_time': clean_time_or_none((deletion or {}).get('end_time')),
+    }
+    if not event_id or not all(expected.values()):
+        return None
+
+    cursor.execute(
+        """
+        SELECT task.id AS task_id,
+               task.booking_ledger_id AS task_booking_ledger_id,
+               task.status AS task_status,
+               task.attempts AS task_attempts,
+               task.locked_at AS task_locked_at,
+               task.claim_token AS task_claim_token,
+               task.side_effect_state AS task_side_effect_state,
+               task.side_effect_token AS task_side_effect_token,
+               task.side_effect_armed_at AS task_side_effect_armed_at,
+               task.room_key AS task_room_key,
+               task.reservation_number AS task_reservation_number,
+               task.reserver_name AS task_reserver_name,
+               task.reserver_name_key AS task_reserver_name_key,
+               task.reservation_date AS task_reservation_date,
+               task.start_time AS task_start_time,
+               task.end_time AS task_end_time,
+               ledger.id AS ledger_id,
+               ledger.current_status AS ledger_current_status,
+               ledger.canceled_email_event_id AS ledger_canceled_event_id,
+               ledger.last_event_id AS ledger_last_event_id,
+               ledger.last_event_order_key AS ledger_last_event_order_key,
+               ledger.room_key AS ledger_room_key,
+               ledger.reservation_number AS ledger_reservation_number,
+               ledger.reserver_name AS ledger_reserver_name,
+               ledger.reservation_date AS ledger_reservation_date,
+               ledger.start_time AS ledger_start_time,
+               ledger.end_time AS ledger_end_time,
+               event_row.event_order_key AS event_order_key
+        FROM rhythmjoy_spacecloud_tasks AS task
+        LEFT JOIN rhythmjoy_booking_ledger AS ledger
+               ON ledger.source_platform='naver'
+              AND ledger.canceled_email_event_id=%s
+        INNER JOIN rhythmjoy_naver_email_events AS event_row
+                ON event_row.id=%s
+               AND event_row.event_type='cancellation'
+               AND event_row.parse_status='parsed'
+               AND event_row.event_order_trusted=1
+               AND event_row.event_order_key IS NOT NULL
+               AND event_row.event_order_key>0
+        WHERE task.task_type='delete'
+          AND task.email_event_id=%s
+        ORDER BY task.id ASC, ledger.id ASC
+        FOR UPDATE
+        """,
+        (event_id, event_id, event_id),
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise ConfigError(
+            'Legacy trusted cancellation has ambiguous provenance '
+            f'event_id={event_id} rows={len(rows)}'
+        )
+
+    row = rows[0]
+    ledger_id = spacecloud_task_event_identity(row.get('ledger_id'))
+    task_id = spacecloud_task_event_identity(row.get('task_id'))
+    task_status = str(row.get('task_status') or '')
+    side_effect_state = row.get('task_side_effect_state')
+    terminal_task = (
+        task_status in ('done', 'already_gone')
+        and side_effect_state in (None, '', 'finalized')
+    )
+    inert_uncertain_task = (
+        task_status == 'needs_review'
+        and side_effect_state in (None, '')
+        and row.get('task_side_effect_armed_at') is None
+    )
+
+    def exact_core(prefix):
+        return (
+            str(row.get(f'{prefix}_reservation_number') or '').strip()
+            == expected['reservation_number']
+            and str(row.get(f'{prefix}_room_key') or '').strip().lower()
+            == expected['room_key']
+            and clean_date_or_none(row.get(f'{prefix}_reservation_date'))
+            == expected['reservation_date']
+            and clean_time_or_none(row.get(f'{prefix}_start_time'))
+            == expected['start_time']
+            and clean_time_or_none(row.get(f'{prefix}_end_time'))
+            == expected['end_time']
+            and normalize_reserver_name_for_match(
+                row.get(f'{prefix}_reserver_name')
+            ) == expected['reserver_name_key']
+        )
+
+    if (
+            not ledger_id
+            or not task_id
+            or str(row.get('ledger_current_status') or '') != 'canceled'
+            or int(row.get('ledger_canceled_event_id') or 0) != event_id
+            or int(row.get('ledger_last_event_id') or 0) != event_id
+            or int(row.get('ledger_last_event_order_key') or 0)
+            != int(row.get('event_order_key') or 0)
+            or int(row.get('task_booking_ledger_id') or 0)
+            not in (0, ledger_id)
+            or int(row.get('task_attempts') or 0) < 1
+            or row.get('task_locked_at') is not None
+            or str(row.get('task_claim_token') or '') != ''
+            or str(row.get('task_side_effect_token') or '') != ''
+            or not (terminal_task or inert_uncertain_task)
+            or not exact_core('ledger')
+            or not exact_core('task')
+            or str(row.get('task_reserver_name_key') or '')
+            not in ('', expected['reserver_name_key'])
+    ):
+        raise ConfigError(
+            'Legacy trusted cancellation lacks one exact inert provenance '
+            f'event_id={event_id} ledger_id={ledger_id or "missing"} '
+            f'task_id={task_id or "missing"}'
+        )
+
+    needs_update = (
+        int(row.get('task_booking_ledger_id') or 0) != ledger_id
+        or str(row.get('task_reserver_name_key') or '')
+        != expected['reserver_name_key']
+    )
+    if needs_update:
+        cursor.execute(
+            """
+            UPDATE rhythmjoy_spacecloud_tasks
+            SET booking_ledger_id=%s,
+                reserver_name_key=%s,
+                updated_at=NOW()
+            WHERE id=%s
+              AND task_type='delete'
+              AND email_event_id=%s
+              AND status=%s
+              AND attempts=%s
+              AND (booking_ledger_id IS NULL OR booking_ledger_id=%s)
+              AND room_key=%s
+              AND reservation_number=%s
+              AND reservation_date <=> %s
+              AND start_time <=> %s
+              AND end_time <=> %s
+              AND locked_at IS NULL
+              AND claim_token=''
+              AND side_effect_state <=> %s
+              AND side_effect_token=''
+              AND side_effect_armed_at <=> %s
+              AND (reserver_name_key='' OR reserver_name_key=%s)
+            """,
+            (
+                ledger_id,
+                expected['reserver_name_key'],
+                task_id,
+                event_id,
+                task_status,
+                int(row.get('task_attempts') or 0),
+                ledger_id,
+                expected['room_key'],
+                expected['reservation_number'],
+                expected['reservation_date'],
+                expected['start_time'],
+                expected['end_time'],
+                side_effect_state,
+                row.get('task_side_effect_armed_at'),
+                expected['reserver_name_key'],
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise ConfigError(
+                'Legacy trusted cancellation task changed during link '
+                f'task_id={task_id}'
+            )
+    return {
+        'ledger_id': ledger_id,
+        'task_id': task_id,
+        'task_status': task_status,
+    }
+
+
 def reproject_naver_booking_ledgers(config, logger, conn):
     """Replay durable Naver events in source-clock order before task migration."""
     with conn.cursor() as cursor:
@@ -1587,7 +1790,18 @@ def reproject_naver_booking_ledgers(config, logger, conn):
                         calendar_key,
                     )
                 )
+                legacy_provenance = None
                 if missing_reservation_number or incomplete_identity:
+                    legacy_provenance = link_exact_legacy_trusted_cancellation(
+                        cursor,
+                        row.get('id'),
+                        event_data,
+                        calendar_key,
+                    )
+                if (
+                        (missing_reservation_number or incomplete_identity)
+                        and not legacy_provenance
+                ):
                     quarantine_reason = (
                         'missing-reservation-number'
                         if missing_reservation_number
@@ -1619,6 +1833,15 @@ def reproject_naver_booking_ledgers(config, logger, conn):
                     )
                     quarantined += 1
                     continue
+                if legacy_provenance:
+                    logger.warning(
+                        'Linked preserved legacy trusted cancellation provenance '
+                        'event_id=%s ledger_id=%s task_id=%s status=%s',
+                        row.get('id'),
+                        legacy_provenance.get('ledger_id'),
+                        legacy_provenance.get('task_id'),
+                        legacy_provenance.get('task_status'),
+                    )
         if not calendar_key:
             skipped += 1
             logger.warning(
@@ -2507,6 +2730,7 @@ def ensure_db_tables(config, logger):
             ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'last_event_id', 'BIGINT UNSIGNED NULL AFTER last_event_at')
             ensure_db_column(cursor, 'rhythmjoy_booking_ledger', 'last_event_order_key', 'BIGINT UNSIGNED NULL AFTER last_event_id')
             ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'booking_ledger_id', 'BIGINT UNSIGNED NULL AFTER email_event_id')
+            ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'reserver_name_key', "VARCHAR(128) NOT NULL DEFAULT '' AFTER reserver_name")
             ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'claim_token', "VARCHAR(64) NOT NULL DEFAULT '' AFTER locked_at")
             ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'side_effect_state', 'VARCHAR(24) NULL AFTER claim_token')
             ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', 'side_effect_token', "VARCHAR(64) NOT NULL DEFAULT '' AFTER side_effect_state")

@@ -149,6 +149,7 @@ fail_closed_on_restore_exit() {
     trap - EXIT
     if [[ "$handoff_freeze_active" == "1" && "$handoff_succeeded" != "1" ]]; then
         systemctl mask --runtime --now "$LEGACY_EMAIL_SERVICE" >/dev/null 2>&1 || true
+        systemctl daemon-reload >/dev/null 2>&1 || true
         systemctl stop httpd >/dev/null 2>&1 || true
         echo "Restore failed; $LEGACY_EMAIL_SERVICE remains runtime-masked and httpd remains stopped." >&2
     fi
@@ -205,6 +206,11 @@ esac
 
 handoff_freeze_active=1
 systemctl mask --runtime --now "$LEGACY_EMAIL_SERVICE"
+systemctl daemon-reload
+[[ "$(systemctl_property LoadState "$LEGACY_EMAIL_SERVICE")" == "masked" ]] || {
+    echo "Refusing schema handoff: runtime mask did not take effect for $LEGACY_EMAIL_SERVICE" >&2
+    exit 1
+}
 require_unit_inactive "$LEGACY_EMAIL_SERVICE"
 
 install -d "$APP_ROOT" "$OPS_ROOT"
