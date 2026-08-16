@@ -2692,7 +2692,7 @@ try:
                 COALESCE((SELECT event_order_trusted FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1), 0) AS sourceEventOrderTrusted,
                 CAST(updated_at AS CHAR) AS updatedAt,
                 result_text AS resultText
-            FROM rhythmjoy_spacecloud_tasks
+            FROM rhythmjoy_spacecloud_tasks AS task
             WHERE task_type=%s
               AND (
                 (status='pending' AND (locked_at IS NULL OR locked_at <= NOW()))
@@ -2705,7 +2705,7 @@ try:
                     AND EXISTS (
                         SELECT 1
                         FROM rhythmjoy_naver_email_events AS legacy_delete_event
-                        WHERE legacy_delete_event.id=rhythmjoy_spacecloud_tasks.email_event_id
+                        WHERE legacy_delete_event.id=task.email_event_id
                           AND legacy_delete_event.event_type='cancellation'
                           AND legacy_delete_event.event_order_trusted=1
                     )
@@ -2713,14 +2713,14 @@ try:
                         SELECT 1
                         FROM rhythmjoy_booking_ledger AS legacy_ledger
                         WHERE legacy_ledger.source_platform='naver'
-                          AND legacy_ledger.room_key=rhythmjoy_spacecloud_tasks.room_key
-                          AND legacy_ledger.reservation_number=rhythmjoy_spacecloud_tasks.reservation_number
-                          AND legacy_ledger.reservation_date <=> rhythmjoy_spacecloud_tasks.reservation_date
-                          AND legacy_ledger.start_time <=> rhythmjoy_spacecloud_tasks.start_time
-                          AND legacy_ledger.end_time <=> rhythmjoy_spacecloud_tasks.end_time
+                          AND legacy_ledger.room_key=task.room_key
+                          AND legacy_ledger.reservation_number=task.reservation_number
+                          AND legacy_ledger.reservation_date <=> task.reservation_date
+                          AND legacy_ledger.start_time <=> task.start_time
+                          AND legacy_ledger.end_time <=> task.end_time
                           AND (
-                                rhythmjoy_spacecloud_tasks.booking_ledger_id IS NULL
-                             OR rhythmjoy_spacecloud_tasks.booking_ledger_id=legacy_ledger.id
+                                task.booking_ledger_id IS NULL
+                             OR task.booking_ledger_id=legacy_ledger.id
                           )
                     )
                     AND EXISTS (
@@ -2729,24 +2729,24 @@ try:
                         INNER JOIN rhythmjoy_naver_email_events AS legacy_upload_event
                                 ON legacy_upload_event.id=legacy_upload.email_event_id
                         INNER JOIN rhythmjoy_naver_email_events AS legacy_cancel_event
-                                ON legacy_cancel_event.id=rhythmjoy_spacecloud_tasks.email_event_id
+                                ON legacy_cancel_event.id=task.email_event_id
                         WHERE legacy_upload.task_type='upload'
                           AND legacy_upload.status NOT IN ('pending','running')
                           AND legacy_upload_event.event_type='reservation'
                           AND legacy_upload_event.event_order_trusted=1
                           AND legacy_cancel_event.event_order_trusted=1
-                          AND legacy_upload.reservation_number=rhythmjoy_spacecloud_tasks.reservation_number
-                          AND legacy_upload.room_key=rhythmjoy_spacecloud_tasks.room_key
-                          AND legacy_upload.reservation_date <=> rhythmjoy_spacecloud_tasks.reservation_date
-                          AND legacy_upload.start_time <=> rhythmjoy_spacecloud_tasks.start_time
-                          AND legacy_upload.end_time <=> rhythmjoy_spacecloud_tasks.end_time
+                          AND legacy_upload.reservation_number=task.reservation_number
+                          AND legacy_upload.room_key=task.room_key
+                          AND legacy_upload.reservation_date <=> task.reservation_date
+                          AND legacy_upload.start_time <=> task.start_time
+                          AND legacy_upload.end_time <=> task.end_time
                           AND legacy_upload_event.event_order_key IS NOT NULL
                           AND legacy_cancel_event.event_order_key IS NOT NULL
                           AND (
                                 legacy_upload_event.event_order_key < legacy_cancel_event.event_order_key
                              OR (
                                     legacy_upload_event.event_order_key = legacy_cancel_event.event_order_key
-                                AND legacy_upload.email_event_id < rhythmjoy_spacecloud_tasks.email_event_id
+                                AND legacy_upload.email_event_id < task.email_event_id
                              )
                           )
                     )
@@ -2891,7 +2891,7 @@ try:
                 COALESCE((SELECT event_order_trusted FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1), 0) AS sourceEventOrderTrusted,
                 CAST(updated_at AS CHAR) AS updatedAt,
                 result_text AS resultText
-            FROM rhythmjoy_spacecloud_tasks
+            FROM rhythmjoy_spacecloud_tasks AS task
             WHERE task_type IN ({placeholders})
               AND (
                 (status='pending' AND (locked_at IS NULL OR locked_at <= NOW()))
@@ -2904,7 +2904,7 @@ try:
                     AND EXISTS (
                         SELECT 1
                         FROM rhythmjoy_naver_email_events AS legacy_delete_event
-                        WHERE legacy_delete_event.id=rhythmjoy_spacecloud_tasks.email_event_id
+                        WHERE legacy_delete_event.id=task.email_event_id
                           AND legacy_delete_event.event_type='cancellation'
                           AND legacy_delete_event.event_order_trusted=1
                     )
@@ -2912,14 +2912,14 @@ try:
                         SELECT 1
                         FROM rhythmjoy_booking_ledger AS legacy_ledger
                         WHERE legacy_ledger.source_platform='naver'
-                          AND legacy_ledger.room_key=rhythmjoy_spacecloud_tasks.room_key
-                          AND legacy_ledger.reservation_number=rhythmjoy_spacecloud_tasks.reservation_number
-                          AND legacy_ledger.reservation_date <=> rhythmjoy_spacecloud_tasks.reservation_date
-                          AND legacy_ledger.start_time <=> rhythmjoy_spacecloud_tasks.start_time
-                          AND legacy_ledger.end_time <=> rhythmjoy_spacecloud_tasks.end_time
+                          AND legacy_ledger.room_key=task.room_key
+                          AND legacy_ledger.reservation_number=task.reservation_number
+                          AND legacy_ledger.reservation_date <=> task.reservation_date
+                          AND legacy_ledger.start_time <=> task.start_time
+                          AND legacy_ledger.end_time <=> task.end_time
                           AND (
-                                rhythmjoy_spacecloud_tasks.booking_ledger_id IS NULL
-                             OR rhythmjoy_spacecloud_tasks.booking_ledger_id=legacy_ledger.id
+                                task.booking_ledger_id IS NULL
+                             OR task.booking_ledger_id=legacy_ledger.id
                           )
                     )
                     AND EXISTS (
@@ -2928,24 +2928,24 @@ try:
                         INNER JOIN rhythmjoy_naver_email_events AS legacy_upload_event
                                 ON legacy_upload_event.id=legacy_upload.email_event_id
                         INNER JOIN rhythmjoy_naver_email_events AS legacy_cancel_event
-                                ON legacy_cancel_event.id=rhythmjoy_spacecloud_tasks.email_event_id
+                                ON legacy_cancel_event.id=task.email_event_id
                         WHERE legacy_upload.task_type='upload'
                           AND legacy_upload.status NOT IN ('pending','running')
                           AND legacy_upload_event.event_type='reservation'
                           AND legacy_upload_event.event_order_trusted=1
                           AND legacy_cancel_event.event_order_trusted=1
-                          AND legacy_upload.reservation_number=rhythmjoy_spacecloud_tasks.reservation_number
-                          AND legacy_upload.room_key=rhythmjoy_spacecloud_tasks.room_key
-                          AND legacy_upload.reservation_date <=> rhythmjoy_spacecloud_tasks.reservation_date
-                          AND legacy_upload.start_time <=> rhythmjoy_spacecloud_tasks.start_time
-                          AND legacy_upload.end_time <=> rhythmjoy_spacecloud_tasks.end_time
+                          AND legacy_upload.reservation_number=task.reservation_number
+                          AND legacy_upload.room_key=task.room_key
+                          AND legacy_upload.reservation_date <=> task.reservation_date
+                          AND legacy_upload.start_time <=> task.start_time
+                          AND legacy_upload.end_time <=> task.end_time
                           AND legacy_upload_event.event_order_key IS NOT NULL
                           AND legacy_cancel_event.event_order_key IS NOT NULL
                           AND (
                                 legacy_upload_event.event_order_key < legacy_cancel_event.event_order_key
                              OR (
                                     legacy_upload_event.event_order_key = legacy_cancel_event.event_order_key
-                                AND legacy_upload.email_event_id < rhythmjoy_spacecloud_tasks.email_event_id
+                                AND legacy_upload.email_event_id < task.email_event_id
                              )
                           )
                     )
@@ -12360,9 +12360,13 @@ async function runNowModeSelfTest() {
   assert.match(fetchRemoteTasks.toString(), /FOR UPDATE/);
   assert.match(fetchRemoteTasks.toString(), /claim_token/);
   assert.match(fetchRemoteTasks.toString(), /locked_at IS NULL OR locked_at <= NOW\(\)/);
+  assert.match(fetchRemoteTasks.toString(), /FROM rhythmjoy_spacecloud_tasks AS task/);
+  assert.doesNotMatch(fetchRemoteTasks.toString(), /rhythmjoy_spacecloud_tasks\.email_event_id/);
   assert.match(fetchRemoteTaskTypes.toString(), /FOR UPDATE/);
   assert.match(fetchRemoteTaskTypes.toString(), /claim_token/);
   assert.match(fetchRemoteTaskTypes.toString(), /locked_at IS NULL OR locked_at <= NOW\(\)/);
+  assert.match(fetchRemoteTaskTypes.toString(), /FROM rhythmjoy_spacecloud_tasks AS task/);
+  assert.doesNotMatch(fetchRemoteTaskTypes.toString(), /rhythmjoy_spacecloud_tasks\.email_event_id/);
   assert.match(fetchRemoteTaskTypes.toString(), /WHEN status='pending' THEN 2/);
   assert.match(fetchRemoteTaskTypes.toString(), /AS sourceEventOrderKey/);
   assert.match(fetchRemoteTaskTypes.toString(), /SELECT event_order_key/);
