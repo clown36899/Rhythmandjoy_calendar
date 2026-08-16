@@ -1721,6 +1721,41 @@ def enrich_task_row(cur, row):
             row['ledgerConfirmedEmailEventId'] = ledger.get('confirmed_email_event_id')
             row['ledgerCanceledEmailEventId'] = ledger.get('canceled_email_event_id')
 
+    if task_type == 'delete':
+        row['priorUploadTaskId'] = None
+        row['priorUploadEmailEventId'] = None
+        row['priorUploadTaskStatus'] = ''
+        row['priorUploadResultStatus'] = ''
+        row['priorUploadAttempts'] = 0
+        row['priorUploadSubmissionAttempted'] = None
+        confirmed_event_id = row.get('ledgerConfirmedEmailEventId')
+        reservation_no = row.get('reservationNo') or ''
+        if confirmed_event_id and reservation_no:
+            cur.execute(
+                """
+                SELECT id, email_event_id, status, attempts, result_text
+                FROM rhythmjoy_spacecloud_tasks
+                WHERE task_type='upload'
+                  AND email_event_id=%s
+                  AND reservation_number=%s
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (confirmed_event_id, reservation_no),
+            )
+            prior_upload = cur.fetchone()
+            if prior_upload:
+                try:
+                    prior_result = json.loads(prior_upload.get('result_text') or '{}')
+                except Exception:
+                    prior_result = {}
+                row['priorUploadTaskId'] = prior_upload.get('id')
+                row['priorUploadEmailEventId'] = prior_upload.get('email_event_id')
+                row['priorUploadTaskStatus'] = prior_upload.get('status') or ''
+                row['priorUploadResultStatus'] = prior_result.get('status') or ''
+                row['priorUploadAttempts'] = int(prior_upload.get('attempts') or 0)
+                row['priorUploadSubmissionAttempted'] = prior_result.get('submissionAttempted')
+
     if task_type == 'naver_restore':
         row['priorNaverBlockChanged'] = False
         row['priorNaverBlockTaskId'] = None
@@ -6607,6 +6642,40 @@ function ledgerIssueRow(task, taskType, issue) {
   return null;
 }
 
+function deleteAlreadyGoneAfterSkippedUploadRow(task) {
+  const confirmedEmailEventId = String(
+    task.ledgerConfirmedEmailEventId || task.ledger_confirmed_email_event_id || '',
+  );
+  const priorUploadEmailEventId = String(
+    task.priorUploadEmailEventId || task.prior_upload_email_event_id || '',
+  );
+  const definitelySkippedBeforeSubmit = Boolean(
+    confirmedEmailEventId
+    && priorUploadEmailEventId === confirmedEmailEventId
+    && String(task.ledgerStatus || task.ledger_status || '') === 'canceled'
+    && String(task.priorUploadTaskStatus || task.prior_upload_task_status || '') === 'done'
+    && String(task.priorUploadResultStatus || task.prior_upload_result_status || '') === 'stale-ledger-skip'
+    && Number(task.priorUploadAttempts || task.prior_upload_attempts || 0) === 1
+    && (task.priorUploadSubmissionAttempted ?? task.prior_upload_submission_attempted) !== true
+  );
+  if (!definitelySkippedBeforeSubmit) return null;
+
+  return {
+    ...basicTaskSummary(task),
+    taskType: 'delete',
+    status: 'already-gone',
+    priorUploadTaskId: task.priorUploadTaskId || task.prior_upload_task_id || null,
+    priorUploadEmailEventId,
+    priorUploadTaskStatus: task.priorUploadTaskStatus || task.prior_upload_task_status || '',
+    priorUploadResultStatus: task.priorUploadResultStatus || task.prior_upload_result_status || '',
+    priorUploadAttempts: Number(task.priorUploadAttempts || task.prior_upload_attempts || 0),
+    submissionAttempted: false,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    reason: 'matching SpaceCloud upload was skipped before its first submit because the booking ledger was already canceled',
+  };
+}
+
 function restoreSkippedNotOwnedRow(task) {
   return {
     ...basicTaskSummary(task),
@@ -7477,7 +7546,8 @@ async function runDeleteTasks(args, context = null, claimedTasks = null) {
         if (ledgerIssue) {
           row = ledgerIssueRow(task, 'delete', ledgerIssue);
         } else {
-          row = await deleteSpacecloudDirectReservation(activeContext, task);
+          row = deleteAlreadyGoneAfterSkippedUploadRow(task);
+          if (!row) row = await deleteSpacecloudDirectReservation(activeContext, task);
         }
       }
 
@@ -8766,6 +8836,32 @@ async function runNowModeSelfTest() {
   assert.equal(ledgerIssueForTask(adminCanceledTask, 'delete'), null);
   assert.equal(ledgerIssueForTask(adminCanceledTask, 'naver_restore'), null);
   assert.equal(ledgerIssueForTask({ ...adminConfirmedTask, payloadJson: '{}' }, 'upload'), 'missing-event');
+  const quickCancellationDeleteTask = {
+    id: 675,
+    taskType: 'delete',
+    ledgerStatus: 'canceled',
+    ledgerConfirmedEmailEventId: 708,
+    priorUploadTaskId: 674,
+    priorUploadEmailEventId: 708,
+    priorUploadTaskStatus: 'done',
+    priorUploadResultStatus: 'stale-ledger-skip',
+    priorUploadAttempts: 1,
+    priorUploadSubmissionAttempted: null,
+  };
+  const quickCancellationDeleteRow = deleteAlreadyGoneAfterSkippedUploadRow(quickCancellationDeleteTask);
+  assert.equal(quickCancellationDeleteRow.status, 'already-gone');
+  assert.equal(quickCancellationDeleteRow.priorUploadTaskId, 674);
+  assert.equal(quickCancellationDeleteRow.submissionAttempted, false);
+  assert.equal(dbStatusForDeleteRow(quickCancellationDeleteRow), 'already_gone');
+  assert.equal(deleteAlreadyGoneAfterSkippedUploadRow({
+    ...quickCancellationDeleteTask,
+    priorUploadAttempts: 2,
+  }), null, 'a retried upload has no first-attempt proof and must still be inspected');
+  assert.equal(deleteAlreadyGoneAfterSkippedUploadRow({
+    ...quickCancellationDeleteTask,
+    priorUploadResultStatus: 'submitted',
+  }), null, 'a submitted upload must still be deleted from SpaceCloud');
+  assert.match(REMOTE_TASK_ENRICHMENT_PY, /priorUploadResultStatus/);
   const manualCancellationPayload = {
     source: 'sync-admin-customer-request',
     source_mode: 'sync-admin-customer-request',
@@ -9736,6 +9832,7 @@ async function runNowModeSelfTest() {
     checks: [
       'now-mode argument parsing',
       'booking upload/delete preserve source-received order even in now-mode',
+      'quick reservation cancellation closes delete work when the matching upload provably skipped before first submit',
       'stale running tasks resume through idempotent platform verification and cancellation SMS ledger',
       'adjacent and midnight-crossing booking intervals use full datetimes',
       'restore grace keeps task pending',
