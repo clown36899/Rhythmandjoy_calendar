@@ -280,7 +280,7 @@ systemctl reset-failed "$LEGACY_EMAIL_SERVICE" 2>/dev/null || true
 systemctl enable "$LEGACY_EMAIL_SERVICE"
 systemctl restart "$LEGACY_EMAIL_SERVICE"
 require_unit_active "$LEGACY_EMAIL_SERVICE"
-logrotate -d /etc/logrotate.d/rhythmjoy >/dev/null 2>&1
+logrotate -d /etc/logrotate.d/rhythmjoy >/dev/null 2>&1 || echo "Warning: logrotate debug check reported a non-zero status" >&2
 httpd -t
 systemctl start httpd
 systemctl reload httpd
