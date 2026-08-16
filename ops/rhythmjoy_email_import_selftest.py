@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+import json
 import sys
 import types
 import unittest
@@ -106,6 +107,158 @@ class EmailPipelineSelfTest(unittest.TestCase):
     def test_imap_fetch_does_not_mark_email_seen(self):
         self.assertIn('BODY.PEEK[]', email_import.IMAP_FETCH_QUERY)
         self.assertNotIn('RFC822', email_import.IMAP_FETCH_QUERY)
+
+    def test_legacy_manual_cancellation_requires_full_terminal_proof(self):
+        event_received_at = '2026-08-03 13:15:15'
+        event_order_key = email_import.normalized_event_order_key(
+            '', event_received_at
+        )
+        payload = {
+            'source': 'manual-user-cancellation',
+            'source_mode': 'manual-user-cancellation',
+            'manual_confirmed_by_user': True,
+            'action': 'cancel-and-remove-reflections',
+            'calendarKey': 'Ahall',
+            'calendar_key': 'Ahall',
+            'target_calendar': 'Ahall',
+            'roomKey': 'a',
+            'room_key': 'a',
+            'reservation_number': '1101011441',
+            'name': '테스트',
+            'product': 'A홀',
+            'date': '2026-08-06',
+            'start_time': '20:00',
+            'end_time': '22:00',
+        }
+        result = {
+            'taskId': 404,
+            'roomKey': 'a',
+            'date': '2026-08-06',
+            'startTime': '20:00',
+            'endTime': '22:00',
+            'reserverName': '테스트',
+            'reservationNo': '1101011441',
+            'deleteCandidateAttempts': [{'status': 'verified'}],
+            'deleteVerification': {
+                'ok': True,
+                'identity': {
+                    'mode': 'reservation-number',
+                    'nameMatched': True,
+                    'reservationNoMatched': True,
+                    'reservationNo': '1101011441',
+                },
+            },
+            'remainingSearch': {'candidates': []},
+            'googleCalendar': {'status': 'deleted'},
+            'status': 'deleted',
+            'spacecloudStatus': 'deleted',
+            'dbStatus': 'done',
+        }
+        row = {
+            'ledger_id': 123,
+            'ledger_source_platform': 'naver',
+            'ledger_current_status': 'canceled',
+            'ledger_reservation_number': '1101011441',
+            'ledger_room_key': 'a',
+            'ledger_reserver_name': '테스트',
+            'ledger_reservation_date': '2026-08-06',
+            'ledger_start_time': '20:00:00',
+            'ledger_end_time': '22:00:00',
+            'ledger_canceled_email_event_id': 418,
+            'ledger_canceled_email_received_at': event_received_at,
+            'ledger_last_event_at': event_received_at,
+            'ledger_last_event_id': 418,
+            'ledger_last_event_order_key': event_order_key,
+            'ledger_automation_canceled_at': None,
+            'ledger_automation_canceled_order_key': None,
+            'ledger_automation_cancel_task_id': None,
+            'ledger_automation_cancel_platform': '',
+            'ledger_cancel_payload_json': json.dumps(payload),
+            'event_id': 418,
+            'event_mail_key': (
+                'manual-cancel|naver|1101011441|2026-08-06|20:00|22:00'
+            ),
+            'event_mailbox': 'Manual',
+            'event_imap_id': '',
+            'event_message_id': '',
+            'event_received_at': event_received_at,
+            'event_order_key': event_order_key,
+            'event_order_trusted': 0,
+            'event_type': 'cancellation',
+            'event_parse_status': 'parsed',
+            'event_processing_status': 'calendar_after_delete_done',
+            'event_room_key': 'a',
+            'event_reservation_number': '1101011441',
+            'event_reserver_name': '테스트',
+            'event_reservation_date': '2026-08-06',
+            'event_start_time': '20:00:00',
+            'event_end_time': '22:00:00',
+            'event_error_text': '',
+            'event_parsed_json': json.dumps(payload),
+            'task_id': 404,
+            'task_email_event_id': 418,
+            'task_booking_ledger_id': None,
+            'task_type': 'delete',
+            'task_status': 'done',
+            'task_room_key': 'a',
+            'task_reservation_number': '1101011441',
+            'task_reserver_name': '테스트',
+            'task_reservation_date': '2026-08-06',
+            'task_start_time': '20:00:00',
+            'task_end_time': '22:00:00',
+            'task_attempts': 1,
+            'task_claim_token': '',
+            'task_side_effect_state': None,
+            'task_side_effect_token': '',
+            'task_processed_at': '2026-08-03 13:15:37',
+            'task_payload_json': json.dumps(payload),
+            'task_result_text': json.dumps(result),
+            'later_trusted_event_count': 0,
+        }
+        self.assertTrue(
+            email_import.legacy_manual_naver_terminal_delete_proof(row)
+        )
+
+        unsafe = dict(row)
+        unsafe['task_result_text'] = json.dumps({
+            **result,
+            'remainingSearch': {'candidates': [{'id': 'still-present'}]},
+        })
+        self.assertFalse(
+            email_import.legacy_manual_naver_terminal_delete_proof(unsafe)
+        )
+
+        untrusted_identity = dict(row)
+        untrusted_identity['task_reservation_number'] = 'different-generation'
+        self.assertFalse(
+            email_import.legacy_manual_naver_terminal_delete_proof(
+                untrusted_identity
+            )
+        )
+
+        normalized_with_later_event = dict(row)
+        normalized_with_later_event.update({
+            'task_booking_ledger_id': 123,
+            'task_side_effect_state': 'finalized',
+            'task_side_effect_finalized_at': '2026-08-03 13:15:37',
+            'ledger_automation_canceled_at': event_received_at,
+            'ledger_automation_cancel_task_id': 404,
+            'ledger_automation_cancel_platform': 'naver',
+            'ledger_last_event_id': None,
+            'ledger_last_event_order_key': None,
+            'later_trusted_event_count': 1,
+        })
+        self.assertFalse(
+            email_import.legacy_manual_naver_terminal_delete_proof(
+                normalized_with_later_event
+            )
+        )
+        self.assertTrue(
+            email_import.legacy_manual_naver_terminal_delete_proof(
+                normalized_with_later_event,
+                allow_later_trusted_events=True,
+            )
+        )
 
     def test_named_sql_patterns_are_valid_for_pymysql(self):
         original_connect = email_import.db_connect

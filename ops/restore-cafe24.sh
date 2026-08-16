@@ -91,6 +91,72 @@ require_exact_targets() {
     abort_for_forbidden_target "APACHE_HTTPS_CONF" "$APACHE_HTTPS_CONF"
 }
 
+# Cafe24 currently runs systemd 219, which does not support
+# `systemctl show --value`. Keep property parsing compatible with that version
+# so a missing CLI option can never silently skip a producer freeze.
+systemctl_property() {
+    local property="$1"
+    local unit="$2"
+    local output
+
+    output="$(systemctl show -p "$property" "$unit" 2>/dev/null || true)"
+    case "$output" in
+        "$property="*)
+            printf '%s\n' "${output#*=}"
+            ;;
+        *)
+            printf '%s\n' ""
+            ;;
+    esac
+}
+
+require_unit_inactive() {
+    local unit="$1"
+    local active_state
+
+    active_state="$(systemctl is-active "$unit" 2>/dev/null || true)"
+    case "$active_state" in
+        inactive|failed)
+            ;;
+        *)
+            echo "Refusing schema handoff while $unit is ${active_state:-unknown}" >&2
+            return 1
+            ;;
+    esac
+}
+
+require_unit_active() {
+    local unit="$1"
+    local active_state
+
+    active_state="$(systemctl is-active "$unit" 2>/dev/null || true)"
+    if [[ "$active_state" != "active" ]]; then
+        echo "Restore did not bring $unit back to active state (state=${active_state:-unknown})" >&2
+        return 1
+    fi
+}
+
+# Once the schema/code handoff begins, any later failure must leave both
+# Cafe24 writers stopped. The runtime mask also prevents an accidental start
+# (including Restart=always or an operator start) until this script reaches
+# the verified restart phase or the host reboots.
+handoff_freeze_active=0
+handoff_succeeded=0
+
+fail_closed_on_restore_exit() {
+    local exit_code="$?"
+
+    trap - EXIT
+    if [[ "$handoff_freeze_active" == "1" && "$handoff_succeeded" != "1" ]]; then
+        systemctl mask --runtime --now "$LEGACY_EMAIL_SERVICE" >/dev/null 2>&1 || true
+        systemctl stop httpd >/dev/null 2>&1 || true
+        echo "Restore failed; $LEGACY_EMAIL_SERVICE remains runtime-masked and httpd remains stopped." >&2
+    fi
+    exit "$exit_code"
+}
+
+trap fail_closed_on_restore_exit EXIT
+
 install_apache_conf() {
     local source_path="$1"
     local filename
@@ -127,19 +193,19 @@ RHYTHMJOY_ENV_FILE="$SERVER_ENV_FILE" "$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_em
 # Fail closed during schema/code handoff. A running old importer must not
 # update timestamp-only ledger state while the new event-id ordering columns
 # are being added and backfilled.
-legacy_email_load_state="$(systemctl show -p LoadState --value "$LEGACY_EMAIL_SERVICE" 2>/dev/null || true)"
-if [[ -n "$legacy_email_load_state" && "$legacy_email_load_state" != "not-found" ]]; then
-    systemctl stop "$LEGACY_EMAIL_SERVICE"
-    legacy_email_active_state="$(systemctl is-active "$LEGACY_EMAIL_SERVICE" 2>/dev/null || true)"
-    case "$legacy_email_active_state" in
-        inactive|failed)
-            ;;
-        *)
-            echo "Refusing schema handoff while $LEGACY_EMAIL_SERVICE is $legacy_email_active_state" >&2
-            exit 1
-            ;;
-    esac
-fi
+legacy_email_load_state="$(systemctl_property LoadState "$LEGACY_EMAIL_SERVICE")"
+case "$legacy_email_load_state" in
+    loaded|masked)
+        ;;
+    *)
+        echo "Refusing schema handoff: $LEGACY_EMAIL_SERVICE LoadState is ${legacy_email_load_state:-unknown}" >&2
+        exit 1
+        ;;
+esac
+
+handoff_freeze_active=1
+systemctl mask --runtime --now "$LEGACY_EMAIL_SERVICE"
+require_unit_inactive "$LEGACY_EMAIL_SERVICE"
 
 install -d "$APP_ROOT" "$OPS_ROOT"
 install -d -m 0700 "$OPS_ROOT/backups/db"
@@ -150,15 +216,7 @@ install -d -o clown313python -g clown313python "$OPS_ROOT/logs" "$OPS_ROOT/runti
 # Keeping Apache down here prevents an old PHP request from writing a
 # timestamp-only ledger row between the deterministic replay and code copy.
 systemctl stop httpd
-httpd_active_state="$(systemctl is-active httpd 2>/dev/null || true)"
-case "$httpd_active_state" in
-    inactive|failed)
-        ;;
-    *)
-        echo "Refusing code handoff while httpd is $httpd_active_state" >&2
-        exit 1
-        ;;
-esac
+require_unit_inactive httpd
 RHYTHMJOY_APP_ROOT="$APP_ROOT" \
 RHYTHMJOY_OPS_ROOT="$OPS_ROOT" \
 RHYTHMJOY_ENV_FILE="$SERVER_ENV_FILE" \
@@ -208,15 +266,30 @@ install -m 0755 "$REPO_ROOT/ops/reload-httpd-after-certbot.sh" /etc/letsencrypt/
 systemctl daemon-reload
 systemctl enable "$CACHE_SERVICE"
 systemctl restart "$CACHE_SERVICE"
+require_unit_active "$CACHE_SERVICE"
 systemctl enable rhythmjoy-reflection-audit.timer
 systemctl restart rhythmjoy-reflection-audit.timer
+require_unit_active rhythmjoy-reflection-audit.timer
+systemctl unmask --runtime "$LEGACY_EMAIL_SERVICE"
+systemctl daemon-reload
+legacy_email_load_state="$(systemctl_property LoadState "$LEGACY_EMAIL_SERVICE")"
+if [[ "$legacy_email_load_state" != "loaded" ]]; then
+    echo "Restore could not unmask $LEGACY_EMAIL_SERVICE (LoadState=${legacy_email_load_state:-unknown})" >&2
+    exit 1
+fi
 systemctl reset-failed "$LEGACY_EMAIL_SERVICE" 2>/dev/null || true
 systemctl enable "$LEGACY_EMAIL_SERVICE"
 systemctl restart "$LEGACY_EMAIL_SERVICE"
+require_unit_active "$LEGACY_EMAIL_SERVICE"
 logrotate -d /etc/logrotate.d/rhythmjoy >/dev/null 2>&1
 httpd -t
 systemctl start httpd
 systemctl reload httpd
+require_unit_active httpd
+
+handoff_succeeded=1
+handoff_freeze_active=0
+trap - EXIT
 
 cat <<'EOF'
 Restore finished.

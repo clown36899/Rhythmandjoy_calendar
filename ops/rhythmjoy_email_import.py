@@ -885,6 +885,403 @@ def backfill_email_event_order_keys(cursor):
     return changed_count + cursor.rowcount
 
 
+def _json_dict_or_none(value):
+    if isinstance(value, dict):
+        return value
+    try:
+        parsed = json.loads(value or '{}')
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def legacy_manual_naver_terminal_delete_proof(
+        row, allow_later_trusted_events=False):
+    """Accept only the exact, fully-observed legacy manual-delete protocol.
+
+    These rows were intentionally created outside IMAP, so their received-at
+    timestamp must never be promoted to a trusted Naver source clock.  The
+    proof is deliberately stronger than a terminal DB status: producer
+    markers, immutable core identity, the verified delete result, and stable
+    post-delete absence must all agree.
+    """
+    event_payload = _json_dict_or_none(row.get('event_parsed_json'))
+    task_payload = _json_dict_or_none(row.get('task_payload_json'))
+    cancel_payload = _json_dict_or_none(row.get('ledger_cancel_payload_json'))
+    result = _json_dict_or_none(row.get('task_result_text'))
+    if not all(isinstance(value, dict) for value in (
+            event_payload, task_payload, cancel_payload, result)):
+        return False
+
+    source_marker = {
+        'source': 'manual-user-cancellation',
+        'source_mode': 'manual-user-cancellation',
+        'manual_confirmed_by_user': True,
+        'action': 'cancel-and-remove-reflections',
+    }
+    if any(event_payload.get(key) != value for key, value in source_marker.items()):
+        return False
+    if event_payload != task_payload or event_payload != cancel_payload:
+        return False
+
+    reservation_number = str(row.get('event_reservation_number') or '').strip()
+    room_key = str(row.get('event_room_key') or '').strip().lower()
+    reservation_date = clean_date_or_none(row.get('event_reservation_date'))
+    start_time = clean_time_or_none(row.get('event_start_time'))
+    end_time = clean_time_or_none(row.get('event_end_time'))
+    event_name = normalize_reserver_name_for_match(row.get('event_reserver_name'))
+    if not all((reservation_number, room_key, reservation_date, start_time, end_time, event_name)):
+        return False
+    expected_mail_key = '|'.join((
+        'manual-cancel',
+        'naver',
+        reservation_number,
+        reservation_date,
+        start_time[:5],
+        end_time[:5],
+    ))
+    expected_order_key = normalized_event_order_key(
+        '',
+        row.get('event_received_at'),
+    )
+    if (
+            str(row.get('event_mail_key') or '') != expected_mail_key
+            or str(row.get('event_mailbox') or '') != 'Manual'
+            or str(row.get('event_imap_id') or '') != ''
+            or str(row.get('event_message_id') or '') != ''
+            or str(row.get('event_type') or '') != 'cancellation'
+            or str(row.get('event_parse_status') or '') != 'parsed'
+            or str(row.get('event_processing_status') or '') != 'calendar_after_delete_done'
+            or str(row.get('event_error_text') or '') != ''
+            or int(row.get('event_order_trusted') or 0) != 0
+            or int(row.get('event_order_key') or 0) != int(expected_order_key or 0)
+            or (
+                not allow_later_trusted_events
+                and int(row.get('later_trusted_event_count') or 0) != 0
+            )
+    ):
+        return False
+
+    core_rows = ('ledger', 'task')
+    for prefix in core_rows:
+        if (
+                str(row.get(f'{prefix}_reservation_number') or '').strip()
+                != reservation_number
+                or str(row.get(f'{prefix}_room_key') or '').strip().lower()
+                != room_key
+                or clean_date_or_none(row.get(f'{prefix}_reservation_date'))
+                != reservation_date
+                or clean_time_or_none(row.get(f'{prefix}_start_time')) != start_time
+                or clean_time_or_none(row.get(f'{prefix}_end_time')) != end_time
+                or normalize_reserver_name_for_match(row.get(f'{prefix}_reserver_name'))
+                != event_name
+        ):
+            return False
+
+    event_received_at = str(row.get('event_received_at') or '')
+    ledger_last_event_id = int(row.get('ledger_last_event_id') or 0)
+    ledger_last_event_order_key = row.get('ledger_last_event_order_key')
+    if (
+            str(row.get('ledger_source_platform') or '') != 'naver'
+            or str(row.get('ledger_current_status') or '') != 'canceled'
+            or int(row.get('ledger_canceled_email_event_id') or 0)
+            != int(row.get('event_id') or 0)
+            or str(row.get('ledger_canceled_email_received_at') or '')
+            != event_received_at
+            or str(row.get('ledger_last_event_at') or '') != event_received_at
+            or ledger_last_event_id not in (0, int(row.get('event_id') or 0))
+            or (
+                ledger_last_event_id
+                and int(ledger_last_event_order_key or 0)
+                != int(row.get('event_order_key') or 0)
+            )
+            or (
+                not ledger_last_event_id
+                and ledger_last_event_order_key is not None
+            )
+            or row.get('ledger_automation_canceled_order_key') is not None
+            or (
+                row.get('ledger_automation_canceled_at') is not None
+                and str(row.get('ledger_automation_canceled_at')) != event_received_at
+            )
+            or int(row.get('ledger_automation_cancel_task_id') or 0)
+            not in (0, int(row.get('task_id') or 0))
+            or str(row.get('ledger_automation_cancel_platform') or '')
+            not in ('', 'naver')
+    ):
+        return False
+
+    verification = result.get('deleteVerification')
+    verification_identity = (
+        verification.get('identity') if isinstance(verification, dict) else None
+    )
+    remaining = result.get('remainingSearch')
+    google_calendar = result.get('googleCalendar')
+    verified_attempts = result.get('deleteCandidateAttempts')
+    if (
+            int(row.get('task_id') or 0) < 1
+            or int(row.get('task_email_event_id') or 0) != int(row.get('event_id') or 0)
+            or int(row.get('task_booking_ledger_id') or 0)
+            not in (0, int(row.get('ledger_id') or 0))
+            or str(row.get('task_type') or '') != 'delete'
+            or str(row.get('task_status') or '') != 'done'
+            or int(row.get('task_attempts') or 0) < 1
+            or row.get('task_processed_at') is None
+            or str(row.get('task_claim_token') or '') != ''
+            or str(row.get('task_side_effect_state') or '') not in ('', 'finalized')
+            or str(row.get('task_side_effect_token') or '') != ''
+            or result.get('status') != 'deleted'
+            or result.get('spacecloudStatus') != 'deleted'
+            or result.get('dbStatus') != 'done'
+            or int(result.get('taskId') or 0) != int(row.get('task_id') or 0)
+            or str(result.get('reservationNo') or '').strip() != reservation_number
+            or str(result.get('roomKey') or '').strip().lower() != room_key
+            or clean_date_or_none(result.get('date')) != reservation_date
+            or clean_time_or_none(result.get('startTime')) != start_time
+            or clean_time_or_none(result.get('endTime')) != end_time
+            or normalize_reserver_name_for_match(result.get('reserverName')) != event_name
+            or not isinstance(verification, dict)
+            or verification.get('ok') is not True
+            or not isinstance(verification_identity, dict)
+            or verification_identity.get('mode') != 'reservation-number'
+            or verification_identity.get('nameMatched') is not True
+            or verification_identity.get('reservationNoMatched') is not True
+            or str(verification_identity.get('reservationNo') or '').strip()
+            != reservation_number
+            or not isinstance(remaining, dict)
+            or remaining.get('candidates') != []
+            or not isinstance(google_calendar, dict)
+            or google_calendar.get('status') != 'deleted'
+            or not isinstance(verified_attempts, list)
+            or not any(
+                isinstance(attempt, dict) and attempt.get('status') == 'verified'
+                for attempt in verified_attempts
+            )
+    ):
+        return False
+    return True
+
+
+def normalize_legacy_manual_naver_terminal_cancellations(cursor):
+    """Seal proven pre-saga manual cancellations without trusting their clock."""
+    cursor.execute(
+        """
+        SELECT ledger.id AS ledger_id,
+               ledger.source_platform AS ledger_source_platform,
+               ledger.current_status AS ledger_current_status,
+               ledger.reservation_number AS ledger_reservation_number,
+               ledger.room_key AS ledger_room_key,
+               ledger.reserver_name AS ledger_reserver_name,
+               ledger.reservation_date AS ledger_reservation_date,
+               ledger.start_time AS ledger_start_time,
+               ledger.end_time AS ledger_end_time,
+               ledger.canceled_email_event_id AS ledger_canceled_email_event_id,
+               ledger.canceled_email_received_at AS ledger_canceled_email_received_at,
+               ledger.last_event_at AS ledger_last_event_at,
+               ledger.last_event_id AS ledger_last_event_id,
+               ledger.last_event_order_key AS ledger_last_event_order_key,
+               ledger.automation_canceled_at AS ledger_automation_canceled_at,
+               ledger.automation_canceled_order_key AS ledger_automation_canceled_order_key,
+               ledger.automation_cancel_task_id AS ledger_automation_cancel_task_id,
+               ledger.automation_cancel_platform AS ledger_automation_cancel_platform,
+               ledger.cancel_payload_json AS ledger_cancel_payload_json,
+               event_row.id AS event_id,
+               event_row.mail_key AS event_mail_key,
+               event_row.mailbox AS event_mailbox,
+               event_row.imap_id AS event_imap_id,
+               event_row.message_id AS event_message_id,
+               event_row.email_received_at AS event_received_at,
+               event_row.event_order_key AS event_order_key,
+               event_row.event_order_trusted AS event_order_trusted,
+               event_row.event_type AS event_type,
+               event_row.parse_status AS event_parse_status,
+               event_row.processing_status AS event_processing_status,
+               event_row.spacecloud_room_key AS event_room_key,
+               event_row.reservation_number AS event_reservation_number,
+               event_row.reserver_name AS event_reserver_name,
+               event_row.reservation_date AS event_reservation_date,
+               event_row.start_time AS event_start_time,
+               event_row.end_time AS event_end_time,
+               event_row.error_text AS event_error_text,
+               event_row.parsed_json AS event_parsed_json,
+               task.id AS task_id,
+               task.email_event_id AS task_email_event_id,
+               task.booking_ledger_id AS task_booking_ledger_id,
+               task.task_type AS task_type,
+               task.status AS task_status,
+               task.room_key AS task_room_key,
+               task.reservation_number AS task_reservation_number,
+               task.reserver_name AS task_reserver_name,
+               task.reservation_date AS task_reservation_date,
+               task.start_time AS task_start_time,
+               task.end_time AS task_end_time,
+               task.attempts AS task_attempts,
+               task.claim_token AS task_claim_token,
+               task.side_effect_state AS task_side_effect_state,
+               task.side_effect_token AS task_side_effect_token,
+               task.side_effect_finalized_at AS task_side_effect_finalized_at,
+               task.processed_at AS task_processed_at,
+               task.payload_json AS task_payload_json,
+               task.result_text AS task_result_text,
+               (
+                   SELECT COUNT(*)
+                   FROM rhythmjoy_naver_email_events AS later_event
+                   WHERE later_event.reservation_number=event_row.reservation_number
+                     AND later_event.event_type IN ('reservation','cancellation')
+                     AND later_event.parse_status='parsed'
+                     AND later_event.event_order_trusted=1
+                     AND later_event.event_order_key>=event_row.event_order_key
+                     AND COALESCE(later_event.error_text, '') NOT LIKE '%no_side_effects%'
+               ) AS later_trusted_event_count
+        FROM rhythmjoy_booking_ledger AS ledger
+        INNER JOIN rhythmjoy_naver_email_events AS event_row
+                ON event_row.id=ledger.canceled_email_event_id
+        LEFT JOIN rhythmjoy_spacecloud_tasks AS task
+               ON task.email_event_id=event_row.id
+              AND task.task_type='delete'
+        WHERE ledger.source_platform='naver'
+          AND ledger.current_status='canceled'
+          AND event_row.mailbox='Manual'
+          AND event_row.message_id=''
+          AND event_row.event_type='cancellation'
+          AND event_row.event_order_trusted=0
+          AND (ledger.last_event_id IS NULL OR ledger.last_event_id=event_row.id)
+        ORDER BY ledger.id ASC, task.id ASC
+        FOR UPDATE
+        """
+    )
+    rows = cursor.fetchall()
+    groups = {}
+    for row in rows:
+        groups.setdefault((row.get('ledger_id'), row.get('event_id')), []).append(row)
+
+    normalized = 0
+    for group_rows in groups.values():
+        if len(group_rows) != 1:
+            raise ConfigError(
+                'Legacy manual cancellation has ambiguous delete-task proof '
+                f"ledger_id={group_rows[0].get('ledger_id')} "
+                f'task_rows={len(group_rows)}'
+            )
+        row = group_rows[0]
+        already_normalized = (
+            int(row.get('task_booking_ledger_id') or 0)
+            == int(row.get('ledger_id') or 0)
+            and str(row.get('task_side_effect_state') or '') == 'finalized'
+            and row.get('task_side_effect_finalized_at') is not None
+            and str(row.get('ledger_automation_canceled_at') or '')
+            == str(row.get('event_received_at') or '')
+            and int(row.get('ledger_automation_cancel_task_id') or 0)
+            == int(row.get('task_id') or 0)
+            and str(row.get('ledger_automation_cancel_platform') or '') == 'naver'
+            and int(row.get('ledger_last_event_id') or 0) == 0
+            and row.get('ledger_last_event_order_key') is None
+        )
+        if not legacy_manual_naver_terminal_delete_proof(
+                row,
+                allow_later_trusted_events=already_normalized,
+        ):
+            raise ConfigError(
+                'Legacy manual cancellation lacks exact terminal proof '
+                f"ledger_id={row.get('ledger_id')} event_id={row.get('event_id')}"
+            )
+        if already_normalized:
+            continue
+        cursor.execute(
+            """
+            UPDATE rhythmjoy_spacecloud_tasks
+            SET booking_ledger_id=%s,
+                side_effect_state='finalized',
+                side_effect_token='',
+                side_effect_finalized_at=COALESCE(
+                    side_effect_finalized_at,
+                    processed_at
+                ),
+                confirmation_sms_required=0,
+                updated_at=NOW()
+            WHERE id=%s
+              AND email_event_id=%s
+              AND task_type='delete'
+              AND status='done'
+              AND attempts>0
+              AND processed_at IS NOT NULL
+              AND claim_token=''
+              AND side_effect_token=''
+              AND (side_effect_state IS NULL OR side_effect_state='finalized')
+              AND (booking_ledger_id IS NULL OR booking_ledger_id=%s)
+              AND reservation_number=%s
+              AND room_key=%s
+              AND reservation_date <=> %s
+              AND start_time <=> %s
+              AND end_time <=> %s
+              AND payload_json=%s
+              AND result_text=%s
+            """,
+            (
+                row.get('ledger_id'),
+                row.get('task_id'),
+                row.get('event_id'),
+                row.get('ledger_id'),
+                row.get('event_reservation_number'),
+                row.get('event_room_key'),
+                row.get('event_reservation_date'),
+                row.get('event_start_time'),
+                row.get('event_end_time'),
+                row.get('task_payload_json'),
+                row.get('task_result_text'),
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise ConfigError(
+                'Legacy manual terminal delete changed during normalization '
+                f"task_id={row.get('task_id')}"
+            )
+        cursor.execute(
+            """
+            UPDATE rhythmjoy_booking_ledger
+            SET automation_canceled_at=COALESCE(
+                    automation_canceled_at,
+                    %s
+                ),
+                automation_canceled_order_key=NULL,
+                automation_cancel_task_id=%s,
+                automation_cancel_platform='naver',
+                last_event_id=NULL,
+                last_event_order_key=NULL,
+                updated_at=NOW()
+            WHERE id=%s
+              AND source_platform='naver'
+              AND current_status='canceled'
+              AND canceled_email_event_id=%s
+              AND canceled_email_received_at <=> %s
+              AND last_event_at <=> %s
+              AND (last_event_id IS NULL OR last_event_id=%s)
+              AND automation_canceled_order_key IS NULL
+              AND (automation_canceled_at IS NULL OR automation_canceled_at <=> %s)
+              AND (automation_cancel_task_id IS NULL OR automation_cancel_task_id=%s)
+              AND (automation_cancel_platform='' OR automation_cancel_platform='naver')
+            """,
+            (
+                row.get('event_received_at'),
+                row.get('task_id'),
+                row.get('ledger_id'),
+                row.get('event_id'),
+                row.get('event_received_at'),
+                row.get('event_received_at'),
+                row.get('event_id'),
+                row.get('event_received_at'),
+                row.get('task_id'),
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise ConfigError(
+                'Legacy manual terminal ledger changed during normalization '
+                f"ledger_id={row.get('ledger_id')}"
+            )
+        normalized += 1
+    return normalized
+
+
 def backfill_booking_ledger_last_event_id(cursor):
     """Attach the event-id half of the legacy last-event ordering tuple safely.
 
@@ -919,6 +1316,8 @@ def backfill_booking_ledger_last_event_id(cursor):
             END
         WHERE last_event_id IS NULL
           AND last_event_at IS NOT NULL
+          AND automation_canceled_at IS NULL
+          AND automation_canceled_order_key IS NULL
           AND (
               (confirmed_email_received_at=last_event_at AND confirmed_email_event_id IS NOT NULL)
               OR
@@ -955,6 +1354,8 @@ def backfill_booking_ledger_last_event_order_key(cursor):
         WHERE NOT (
             ledger.last_event_order_key <=> {expected_key_sql}
         )
+          AND ledger.automation_canceled_at IS NULL
+          AND ledger.automation_canceled_order_key IS NULL
         """
     )
     return cursor.rowcount
@@ -2144,6 +2545,9 @@ def ensure_db_tables(config, logger):
                 email_event_order_backfill_count = backfill_email_event_order_keys(cursor)
                 ledger_event_id_backfill_count = backfill_booking_ledger_last_event_id(cursor)
                 ledger_event_order_backfill_count = backfill_booking_ledger_last_event_order_key(cursor)
+                legacy_manual_cancellation_normalized_count = (
+                    normalize_legacy_manual_naver_terminal_cancellations(cursor)
+                )
                 audit_trusted_naver_event_order_collisions(cursor)
                 audit_trusted_naver_ledger_pointers(cursor)
             (
@@ -2188,6 +2592,11 @@ def ensure_db_tables(config, logger):
             logger.info(
                 'Backfilled booking-ledger last event order keys count=%s',
                 ledger_event_order_backfill_count,
+            )
+        if legacy_manual_cancellation_normalized_count:
+            logger.warning(
+                'Sealed verified legacy manual Naver cancellation anchors count=%s',
+                legacy_manual_cancellation_normalized_count,
             )
         if reprojected_naver_count:
             logger.info(
