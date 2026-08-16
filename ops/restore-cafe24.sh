@@ -137,9 +137,8 @@ require_unit_active() {
 }
 
 # Once the schema/code handoff begins, any later failure must leave both
-# Cafe24 writers stopped. The runtime mask also prevents an accidental start
-# (including Restart=always or an operator start) until this script reaches
-# the verified restart phase or the host reboots.
+# Cafe24 writers stopped. A manual systemd stop does not trigger Restart=always;
+# the EXIT guard repeats the stop if any later restore step fails.
 handoff_freeze_active=0
 handoff_succeeded=0
 
@@ -148,10 +147,9 @@ fail_closed_on_restore_exit() {
 
     trap - EXIT
     if [[ "$handoff_freeze_active" == "1" && "$handoff_succeeded" != "1" ]]; then
-        systemctl mask --runtime --now "$LEGACY_EMAIL_SERVICE" >/dev/null 2>&1 || true
-        systemctl daemon-reload >/dev/null 2>&1 || true
+        systemctl stop "$LEGACY_EMAIL_SERVICE" >/dev/null 2>&1 || true
         systemctl stop httpd >/dev/null 2>&1 || true
-        echo "Restore failed; $LEGACY_EMAIL_SERVICE remains runtime-masked and httpd remains stopped." >&2
+        echo "Restore failed; $LEGACY_EMAIL_SERVICE and httpd remain stopped." >&2
     fi
     exit "$exit_code"
 }
@@ -205,12 +203,7 @@ case "$legacy_email_load_state" in
 esac
 
 handoff_freeze_active=1
-systemctl mask --runtime --now "$LEGACY_EMAIL_SERVICE"
-systemctl daemon-reload
-[[ "$(systemctl_property LoadState "$LEGACY_EMAIL_SERVICE")" == "masked" ]] || {
-    echo "Refusing schema handoff: runtime mask did not take effect for $LEGACY_EMAIL_SERVICE" >&2
-    exit 1
-}
+systemctl stop "$LEGACY_EMAIL_SERVICE"
 require_unit_inactive "$LEGACY_EMAIL_SERVICE"
 
 install -d "$APP_ROOT" "$OPS_ROOT"
