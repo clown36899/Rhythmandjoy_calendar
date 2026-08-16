@@ -297,107 +297,7 @@ class EmailPipelineSelfTest(unittest.TestCase):
             )
         )
 
-    def test_legacy_trusted_cancellation_links_only_exact_inert_provenance(self):
-        class ProvenanceCursor:
-            def __init__(self, rows):
-                self.rows = rows
-                self.queries = []
-                self.rowcount = 0
-
-            def execute(self, query, params=None):
-                normalized = ' '.join(str(query).split())
-                self.queries.append((normalized, params))
-                self.rowcount = 1 if normalized.startswith('UPDATE ') else 0
-
-            def fetchall(self):
-                return list(self.rows)
-
-        event_id = 709
-        order_key = 1786870000123
-        base = {
-            'task_id': 675,
-            'task_booking_ledger_id': None,
-            'task_status': 'done',
-            'task_attempts': 2,
-            # The legacy producer kept its final claim timestamp after a
-            # terminal update; the empty claim token is the inactive proof.
-            'task_locked_at': '2026-08-17 21:01:00',
-            'task_claim_token': '',
-            'task_side_effect_state': None,
-            'task_side_effect_token': '',
-            'task_side_effect_armed_at': None,
-            'task_room_key': 'b',
-            'task_reservation_number': 'R-709',
-            'task_reserver_name': '최*우',
-            'task_reserver_name_key': '',
-            'task_reservation_date': '2026-08-17',
-            'task_start_time': '18:00:00',
-            'task_end_time': '21:00:00',
-            'ledger_id': 701,
-            'ledger_current_status': 'canceled',
-            'ledger_canceled_event_id': event_id,
-            'ledger_last_event_id': event_id,
-            'ledger_last_event_order_key': order_key,
-            'ledger_room_key': 'b',
-            'ledger_reservation_number': 'R-709',
-            'ledger_reserver_name': '최선우',
-            'ledger_reservation_date': '2026-08-17',
-            'ledger_start_time': '18:00:00',
-            'ledger_end_time': '21:00:00',
-            'event_order_key': order_key,
-        }
-        deletion = {
-            'reservation_number': 'R-709',
-            'name': '최*우님',
-            'product': 'B홀',
-            'date': '2026-08-17',
-            'start_time': '18:00',
-            'end_time': '21:00',
-        }
-        cursor = ProvenanceCursor([base])
-        proof = email_import.link_exact_legacy_trusted_cancellation(
-            cursor, event_id, deletion, 'Bhall'
-        )
-        self.assertEqual(proof, {
-            'ledger_id': 701, 'task_id': 675, 'task_status': 'done'
-        })
-        update_query, update_params = cursor.queries[-1]
-        update_set = update_query.split(' WHERE ', 1)[0]
-        self.assertIn('SET booking_ledger_id=%s, reserver_name_key=%s', update_set)
-        self.assertNotIn('side_effect_state=', update_set)
-        self.assertNotIn('status=', update_set)
-        self.assertEqual(update_params[:4], (701, '최*우', 675, event_id))
-
-        needs_review = dict(base, task_status='needs_review', task_attempts=1)
-        uncertain_cursor = ProvenanceCursor([needs_review])
-        self.assertEqual(
-            email_import.link_exact_legacy_trusted_cancellation(
-                uncertain_cursor, event_id, deletion, 'Bhall'
-            )['task_status'],
-            'needs_review',
-        )
-        uncertain_set = uncertain_cursor.queries[-1][0].split(' WHERE ', 1)[0]
-        self.assertNotIn('side_effect_state=', uncertain_set)
-        self.assertNotIn('status=', uncertain_set)
-
-        armed = dict(needs_review, task_side_effect_state='armed')
-        with self.assertRaisesRegex(
-                email_import.ConfigError,
-                'lacks one exact inert provenance'):
-            email_import.link_exact_legacy_trusted_cancellation(
-                ProvenanceCursor([armed]),
-                event_id, deletion, 'Bhall'
-            )
-
-        with self.assertRaisesRegex(
-                email_import.ConfigError,
-                'ambiguous provenance'):
-            email_import.link_exact_legacy_trusted_cancellation(
-                ProvenanceCursor([base, dict(base)]),
-                event_id, deletion, 'Bhall'
-            )
-
-    def test_existing_task_schema_adds_reserver_name_key_before_reproject(self):
+    def test_startup_migration_is_additive_and_does_not_replay_history(self):
         source = inspect.getsource(email_import.ensure_db_tables)
         task_name_key = (
             "ensure_db_column(cursor, 'rhythmjoy_spacecloud_tasks', "
@@ -409,10 +309,12 @@ class EmailPipelineSelfTest(unittest.TestCase):
             'backfill_email_event_order_keys(cursor)',
             'backfill_booking_ledger_last_event_id(cursor)',
             'backfill_booking_ledger_last_event_order_key(cursor)',
-            'reproject_naver_booking_ledgers(',
+            'backfill_safe_spacecloud_task_state(cursor)',
         )
         positions = [source.index(step) for step in ordered_steps]
         self.assertEqual(positions, sorted(positions))
+        self.assertNotIn('reproject_naver_booking_ledgers(', source)
+        self.assertNotIn('recover_reprojected_skipped_uploads(', source)
 
     def test_named_sql_patterns_are_valid_for_pymysql(self):
         original_connect = email_import.db_connect
