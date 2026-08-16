@@ -2444,14 +2444,8 @@ def prepare_task_claim_rows(cur, rows, claim_token):
         enrich_task_row(cur, row)
         legacy_delete_recovery = bool(
             row.get('taskType') == 'delete'
-            and row.get('status') in ('pending', 'running', 'needs_review', 'failed', 'done', 'already_gone')
-            and (
-                not row.get('sideEffectState')
-                or (
-                    row.get('status') in ('needs_review', 'failed', 'done', 'already_gone')
-                    and (row.get('sideEffectState') or '') in ('ready', 'armed')
-                )
-            )
+            and row.get('status') in ('pending', 'running')
+            and not row.get('sideEffectState')
         )
         if legacy_delete_recovery:
             ledger_id = int(row.get('ledgerId') or 0)
@@ -2489,14 +2483,8 @@ def prepare_task_claim_rows(cur, rows, claim_token):
                     side_effect_token=%s, side_effect_armed_at=COALESCE(side_effect_armed_at, NOW()),
                     side_effect_finalized_at=NULL, result_text=%s, updated_at=NOW()
                 WHERE id=%s
-                  AND status IN ('pending','running','needs_review','failed','done','already_gone')
-                  AND (
-                        side_effect_state IS NULL
-                     OR (
-                            status IN ('needs_review','failed','done','already_gone')
-                        AND side_effect_state IN ('ready','armed')
-                     )
-                  )
+                  AND status IN ('pending','running')
+                  AND side_effect_state IS NULL
                   AND (%s IS NULL OR booking_ledger_id IS NULL OR booking_ledger_id=%s)
                 """,
                 (
@@ -2697,66 +2685,9 @@ try:
               AND (
                 (status='pending' AND (locked_at IS NULL OR locked_at <= NOW()))
                 OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
-                OR (
-                    status IN ('needs_review','failed','done','already_gone')
-                    AND task_type='delete'
-                    AND COALESCE(side_effect_state, '') IN ('', 'ready', 'armed')
-                    AND email_event_id IS NOT NULL
-                    AND EXISTS (
-                        SELECT 1
-                        FROM rhythmjoy_naver_email_events AS legacy_delete_event
-                        WHERE legacy_delete_event.id=task.email_event_id
-                          AND legacy_delete_event.event_type='cancellation'
-                          AND legacy_delete_event.event_order_trusted=1
-                    )
-                    AND EXISTS (
-                        SELECT 1
-                        FROM rhythmjoy_booking_ledger AS legacy_ledger
-                        WHERE legacy_ledger.source_platform='naver'
-                          AND legacy_ledger.room_key=task.room_key
-                          AND legacy_ledger.reservation_number=task.reservation_number
-                          AND legacy_ledger.reservation_date <=> task.reservation_date
-                          AND legacy_ledger.start_time <=> task.start_time
-                          AND legacy_ledger.end_time <=> task.end_time
-                          AND (
-                                task.booking_ledger_id IS NULL
-                             OR task.booking_ledger_id=legacy_ledger.id
-                          )
-                    )
-                    AND EXISTS (
-                        SELECT 1
-                        FROM rhythmjoy_spacecloud_tasks AS legacy_upload
-                        INNER JOIN rhythmjoy_naver_email_events AS legacy_upload_event
-                                ON legacy_upload_event.id=legacy_upload.email_event_id
-                        CROSS JOIN rhythmjoy_naver_email_events AS legacy_cancel_event
-                        WHERE legacy_upload.task_type='upload'
-                          AND legacy_cancel_event.id=task.email_event_id
-                          AND legacy_upload.status NOT IN ('pending','running')
-                          AND legacy_upload_event.event_type='reservation'
-                          AND legacy_upload_event.event_order_trusted=1
-                          AND legacy_cancel_event.event_order_trusted=1
-                          AND legacy_upload.reservation_number=task.reservation_number
-                          AND legacy_upload.room_key=task.room_key
-                          AND legacy_upload.reservation_date <=> task.reservation_date
-                          AND legacy_upload.start_time <=> task.start_time
-                          AND legacy_upload.end_time <=> task.end_time
-                          AND legacy_upload_event.event_order_key IS NOT NULL
-                          AND legacy_cancel_event.event_order_key IS NOT NULL
-                          AND (
-                                legacy_upload_event.event_order_key < legacy_cancel_event.event_order_key
-                             OR (
-                                    legacy_upload_event.event_order_key = legacy_cancel_event.event_order_key
-                                AND legacy_upload.email_event_id < task.email_event_id
-                             )
-                          )
-                    )
-                )
               )
             ORDER BY
               CASE
-                WHEN task_type='delete'
-                 AND status IN ('needs_review','failed','done','already_gone')
-                 AND COALESCE(side_effect_state, '') IN ('', 'ready', 'armed') THEN 0
                 WHEN status='running' THEN 1
                 WHEN status='pending' THEN 2
                 ELSE 3
@@ -2896,66 +2827,9 @@ try:
               AND (
                 (status='pending' AND (locked_at IS NULL OR locked_at <= NOW()))
                 OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
-                OR (
-                    status IN ('needs_review','failed','done','already_gone')
-                    AND task_type='delete'
-                    AND COALESCE(side_effect_state, '') IN ('', 'ready', 'armed')
-                    AND email_event_id IS NOT NULL
-                    AND EXISTS (
-                        SELECT 1
-                        FROM rhythmjoy_naver_email_events AS legacy_delete_event
-                        WHERE legacy_delete_event.id=task.email_event_id
-                          AND legacy_delete_event.event_type='cancellation'
-                          AND legacy_delete_event.event_order_trusted=1
-                    )
-                    AND EXISTS (
-                        SELECT 1
-                        FROM rhythmjoy_booking_ledger AS legacy_ledger
-                        WHERE legacy_ledger.source_platform='naver'
-                          AND legacy_ledger.room_key=task.room_key
-                          AND legacy_ledger.reservation_number=task.reservation_number
-                          AND legacy_ledger.reservation_date <=> task.reservation_date
-                          AND legacy_ledger.start_time <=> task.start_time
-                          AND legacy_ledger.end_time <=> task.end_time
-                          AND (
-                                task.booking_ledger_id IS NULL
-                             OR task.booking_ledger_id=legacy_ledger.id
-                          )
-                    )
-                    AND EXISTS (
-                        SELECT 1
-                        FROM rhythmjoy_spacecloud_tasks AS legacy_upload
-                        INNER JOIN rhythmjoy_naver_email_events AS legacy_upload_event
-                                ON legacy_upload_event.id=legacy_upload.email_event_id
-                        CROSS JOIN rhythmjoy_naver_email_events AS legacy_cancel_event
-                        WHERE legacy_upload.task_type='upload'
-                          AND legacy_cancel_event.id=task.email_event_id
-                          AND legacy_upload.status NOT IN ('pending','running')
-                          AND legacy_upload_event.event_type='reservation'
-                          AND legacy_upload_event.event_order_trusted=1
-                          AND legacy_cancel_event.event_order_trusted=1
-                          AND legacy_upload.reservation_number=task.reservation_number
-                          AND legacy_upload.room_key=task.room_key
-                          AND legacy_upload.reservation_date <=> task.reservation_date
-                          AND legacy_upload.start_time <=> task.start_time
-                          AND legacy_upload.end_time <=> task.end_time
-                          AND legacy_upload_event.event_order_key IS NOT NULL
-                          AND legacy_cancel_event.event_order_key IS NOT NULL
-                          AND (
-                                legacy_upload_event.event_order_key < legacy_cancel_event.event_order_key
-                             OR (
-                                    legacy_upload_event.event_order_key = legacy_cancel_event.event_order_key
-                                AND legacy_upload.email_event_id < task.email_event_id
-                             )
-                          )
-                    )
-                )
               )
             ORDER BY
               CASE
-                WHEN task_type='delete'
-                 AND status IN ('needs_review','failed','done','already_gone')
-                 AND COALESCE(side_effect_state, '') IN ('', 'ready', 'armed') THEN 0
                 WHEN status='running' THEN 1
                 WHEN status='pending' THEN 2
                 ELSE 3
@@ -12362,15 +12236,13 @@ async function runNowModeSelfTest() {
   assert.match(fetchRemoteTasks.toString(), /locked_at IS NULL OR locked_at <= NOW\(\)/);
   assert.match(fetchRemoteTasks.toString(), /FROM rhythmjoy_spacecloud_tasks AS task/);
   assert.doesNotMatch(fetchRemoteTasks.toString(), /rhythmjoy_spacecloud_tasks\.email_event_id/);
-  assert.match(fetchRemoteTasks.toString(), /CROSS JOIN rhythmjoy_naver_email_events AS legacy_cancel_event/);
-  assert.doesNotMatch(fetchRemoteTasks.toString(), /ON legacy_cancel_event\.id=task\.email_event_id/);
+  assert.doesNotMatch(fetchRemoteTasks.toString(), /status IN \('needs_review','failed','done','already_gone'\)/);
   assert.match(fetchRemoteTaskTypes.toString(), /FOR UPDATE/);
   assert.match(fetchRemoteTaskTypes.toString(), /claim_token/);
   assert.match(fetchRemoteTaskTypes.toString(), /locked_at IS NULL OR locked_at <= NOW\(\)/);
   assert.match(fetchRemoteTaskTypes.toString(), /FROM rhythmjoy_spacecloud_tasks AS task/);
   assert.doesNotMatch(fetchRemoteTaskTypes.toString(), /rhythmjoy_spacecloud_tasks\.email_event_id/);
-  assert.match(fetchRemoteTaskTypes.toString(), /CROSS JOIN rhythmjoy_naver_email_events AS legacy_cancel_event/);
-  assert.doesNotMatch(fetchRemoteTaskTypes.toString(), /ON legacy_cancel_event\.id=task\.email_event_id/);
+  assert.doesNotMatch(fetchRemoteTaskTypes.toString(), /status IN \('needs_review','failed','done','already_gone'\)/);
   assert.match(fetchRemoteTaskTypes.toString(), /WHEN status='pending' THEN 2/);
   assert.match(fetchRemoteTaskTypes.toString(), /AS sourceEventOrderKey/);
   assert.match(fetchRemoteTaskTypes.toString(), /SELECT event_order_key/);

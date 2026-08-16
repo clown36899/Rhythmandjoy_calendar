@@ -700,7 +700,7 @@ test('production source keeps the same exact-link and ambiguous-claim saga guard
   assert.match(WATCH_SOURCE, /function uploadDeleteDependencyRow\(task\)/);
   assert.match(WATCH_SOURCE, /COALESCE\(cleanup\.side_effect_state, ''\) IN \('finalized','skipped'\)/);
   assert.match(WATCH_SOURCE, /cleanup\.email_event_id < %s/);
-  assert.match(WATCH_SOURCE, /legacy_upload\.email_event_id < task\.email_event_id/);
+  assert.doesNotMatch(WATCH_SOURCE, /status IN \('needs_review','failed','done','already_gone'\)\s+AND task_type='delete'/);
   assert.match(WATCH_SOURCE, /upload_event\.event_type='reservation'/);
   assert.match(WATCH_SOURCE, /event_order_trusted=1/);
   assert.match(WATCH_SOURCE, /AS sourceEventOrderTrusted/);
