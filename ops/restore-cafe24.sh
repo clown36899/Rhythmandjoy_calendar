@@ -121,11 +121,49 @@ require_hostname
 require_exact_targets
 
 RHYTHMJOY_ENV_FILE="$SERVER_ENV_FILE" "$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_email_import_selftest.py"
+"$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_email_import.py" --event-order-selftest
 "$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_ledger_invariant_selftest.py"
+
+# Fail closed during schema/code handoff. A running old importer must not
+# update timestamp-only ledger state while the new event-id ordering columns
+# are being added and backfilled.
+legacy_email_load_state="$(systemctl show -p LoadState --value "$LEGACY_EMAIL_SERVICE" 2>/dev/null || true)"
+if [[ -n "$legacy_email_load_state" && "$legacy_email_load_state" != "not-found" ]]; then
+    systemctl stop "$LEGACY_EMAIL_SERVICE"
+    legacy_email_active_state="$(systemctl is-active "$LEGACY_EMAIL_SERVICE" 2>/dev/null || true)"
+    case "$legacy_email_active_state" in
+        inactive|failed)
+            ;;
+        *)
+            echo "Refusing schema handoff while $LEGACY_EMAIL_SERVICE is $legacy_email_active_state" >&2
+            exit 1
+            ;;
+    esac
+fi
 
 install -d "$APP_ROOT" "$OPS_ROOT"
 install -d -m 0700 "$OPS_ROOT/backups/db"
 install -d -o clown313python -g clown313python "$OPS_ROOT/logs" "$OPS_ROOT/runtime"
+
+# Freeze both Cafe24 producers before schema projection. The Ubuntu browser
+# watcher is stopped by the outer deployment runbook before this script runs.
+# Keeping Apache down here prevents an old PHP request from writing a
+# timestamp-only ledger row between the deterministic replay and code copy.
+systemctl stop httpd
+httpd_active_state="$(systemctl is-active httpd 2>/dev/null || true)"
+case "$httpd_active_state" in
+    inactive|failed)
+        ;;
+    *)
+        echo "Refusing code handoff while httpd is $httpd_active_state" >&2
+        exit 1
+        ;;
+esac
+RHYTHMJOY_APP_ROOT="$APP_ROOT" \
+RHYTHMJOY_OPS_ROOT="$OPS_ROOT" \
+RHYTHMJOY_ENV_FILE="$SERVER_ENV_FILE" \
+    "$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_email_import.py" --check-config
+
 install -m 0644 "$TARGET_ENV" "$OPS_ROOT/cafe24-production-target.env"
 rsync -a --delete \
     --exclude='.env' \
@@ -147,6 +185,10 @@ install -m 0755 "$REPO_ROOT/ops/backup-cafe24-db.sh" "$OPS_ROOT/backup-cafe24-db
 rm -f "$OPS_ROOT/cafe24_sms.py"
 install -d "$APP_ROOT/naver_booking_googleimport"
 install -m 0644 "$REPO_ROOT/ops/naver_booking_googleimport/import_email.py" "$APP_ROOT/naver_booking_googleimport/import_email.py"
+
+# Verify the installed importer sees the exact same durable schema before any
+# Cafe24 producer is allowed to resume.
+RHYTHMJOY_ENV_FILE="$SERVER_ENV_FILE" "$PYTHON_BIN" "$OPS_ROOT/rhythmjoy_email_import.py" --check-config
 
 install -m 0644 "$REPO_ROOT/ops/rhythmjoy-calendar-cache.service" "/etc/systemd/system/$CACHE_SERVICE"
 install -m 0644 "$REPO_ROOT/ops/my_email_service.service" "/etc/systemd/system/$LEGACY_EMAIL_SERVICE"
@@ -173,6 +215,7 @@ systemctl enable "$LEGACY_EMAIL_SERVICE"
 systemctl restart "$LEGACY_EMAIL_SERVICE"
 logrotate -d /etc/logrotate.d/rhythmjoy >/dev/null 2>&1
 httpd -t
+systemctl start httpd
 systemctl reload httpd
 
 cat <<'EOF'

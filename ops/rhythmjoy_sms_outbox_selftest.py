@@ -20,6 +20,13 @@ import rhythmjoy_email_import as email_import
 class RecordingCursor:
     def __init__(self, selected_task=None):
         self.selected_task = selected_task
+        # The producer first checks whether this email event already owns a
+        # task, then reads the row written by the INSERT.  Model both reads so
+        # the immutable-replay guard is exercised against a real pre-existing
+        # row only, not against the row that this test expects to be inserted.
+        self.fetchone_responses = (
+            [None, selected_task] if selected_task is not None else []
+        )
         self.statements = []
 
     def __enter__(self):
@@ -33,6 +40,8 @@ class RecordingCursor:
         return 1
 
     def fetchone(self):
+        if self.fetchone_responses:
+            return self.fetchone_responses.pop(0)
         return self.selected_task
 
 
@@ -95,14 +104,23 @@ class SmsOutboxInvariantTests(unittest.TestCase):
         )
         self.assertEqual(result, task)
         sql = [statement for statement, _ in conn.cursor_instance.statements]
-        self.assertIn('confirmation_sms_required', sql[0])
+        task_writes = [
+            statement for statement in sql
+            if 'INSERT INTO rhythmjoy_spacecloud_tasks' in statement
+        ]
+        self.assertEqual(len(task_writes), 1)
+        self.assertIn('confirmation_sms_required', task_writes[0])
         self.assertIn('INSERT IGNORE INTO rhythmjoy_sms_deliveries', sql[-1])
 
     def test_watcher_contains_independent_outbox_reconciliation(self):
         watcher = (Path(__file__).resolve().parents[1] / 'tools' / 'spacecloud-watch.mjs').read_text(encoding='utf-8')
         self.assertIn("WHERE t.confirmation_sms_required=1", watcher)
         self.assertIn("CONCAT('reservation-confirmed-v1|', t.task_type, '|', t.id)", watcher)
-        self.assertIn("d.status IN ('pending','phone_lookup_failed','failed')", watcher)
+        self.assertIn(
+            "d.status IN ('pending','phone_lookup_failed','failed','uncertain')",
+            watcher,
+        )
+        self.assertIn('provider-result-uncertain-no-auto-resend', watcher)
 
 
 if __name__ == '__main__':

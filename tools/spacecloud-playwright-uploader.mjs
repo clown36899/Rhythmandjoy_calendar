@@ -511,7 +511,10 @@ export function verifySpacecloudCalendarIdentity(calendarResult, row) {
     if (row.requireTaskId && !expectedTaskId) errors.push('expected-task-id-missing');
     if (expectedTaskId && candidate.taskId !== expectedTaskId) errors.push('task-id-mismatch');
     if (expectedReservationNo && candidate.reservationNo !== expectedReservationNo) errors.push('reservation-number-mismatch');
-    if (expectedName && normalizeName(candidate.name) !== expectedName) errors.push('reserver-name-mismatch');
+    // Reservation number (+ task id when available) is the durable mirror
+    // identity. Display names are masked and can change formatting, so name is
+    // used only as a legacy fallback when no reservation number exists.
+    if (!expectedReservationNo && expectedName && normalizeName(candidate.name) !== expectedName) errors.push('reserver-name-mismatch');
     if (!expectedTaskId && !expectedReservationNo && !expectedName) errors.push('expected-identity-missing');
     return { candidate, errors };
   });
@@ -594,6 +597,60 @@ export async function pollForSpacecloudCalendarIdentity({
   };
 }
 
+export async function pollForSpacecloudCalendarAbsence({
+  readCalendar,
+  row,
+  wait,
+  timeoutMs = 12000,
+  intervalMs = 500,
+  requiredConsecutiveReads = 2,
+  now = () => Date.now(),
+}) {
+  if (typeof readCalendar !== 'function') throw new Error('readCalendar is required');
+  if (typeof wait !== 'function') throw new Error('wait is required');
+  const started = now();
+  let candidateReadCount = 0;
+  let consecutiveAbsentReads = 0;
+  let latest = null;
+
+  while (true) {
+    let calendarResult;
+    try {
+      calendarResult = await readCalendar();
+    } catch (error) {
+      calendarResult = {
+        ok: false,
+        status: 0,
+        error: `calendar-api-read-threw:${error?.message || error}`,
+        days: [],
+      };
+    }
+    candidateReadCount += 1;
+    latest = verifySpacecloudCalendarIdentity(calendarResult, row);
+    if (calendarResult?.ok && Number(latest.identityCandidateCount || 0) === 0) {
+      consecutiveAbsentReads += 1;
+      if (consecutiveAbsentReads >= Math.max(1, Number(requiredConsecutiveReads || 1))) break;
+    } else {
+      consecutiveAbsentReads = 0;
+    }
+
+    const terminalAuthenticationFailure = [401, 403].includes(Number(latest.apiStatus || 0))
+      || latest.apiError === 'spacecloud-access-token-missing';
+    const elapsedMs = Math.max(0, now() - started);
+    if (terminalAuthenticationFailure || elapsedMs >= timeoutMs) break;
+    await wait(Math.min(intervalMs, Math.max(1, timeoutMs - elapsedMs)));
+  }
+
+  return {
+    ...latest,
+    absenceConfirmed: consecutiveAbsentReads >= Math.max(1, Number(requiredConsecutiveReads || 1)),
+    consecutiveAbsentReads,
+    waitedMs: Math.max(0, now() - started),
+    candidateReadCount,
+    verificationPasses: candidateReadCount,
+  };
+}
+
 function spacecloudReservationStatus(detail) {
   return String(detail?.body?.RSV_STAT_CD || detail?.body?.status || '').trim();
 }
@@ -669,6 +726,8 @@ export function spacecloudUploadEventFromTask(task) {
     paymentStatus: payload.payment_status || task.payment_status || '',
     product: payload.product || task.product || '',
     attempts: Number(task.attempts || 0),
+    sideEffectState: String(task.sideEffectState || task.side_effect_state || ''),
+    sideEffectArmedAt: task.sideEffectArmedAt || task.side_effect_armed_at || '',
     previousResult,
     recoveredFromStaleRunning: Boolean(task.recoveredFromStaleRunning),
   };
@@ -685,6 +744,16 @@ export function spacecloudUploadEventFromTask(task) {
 }
 
 export function directUploadRetryMode(event) {
+  const durableState = String(event?.sideEffectState || '').trim();
+  if (durableState === 'ready') {
+    return Number(event?.attempts || 0) <= 1 ? 'new-submit' : 'safe-retry-before-submit';
+  }
+  if (durableState === 'armed' || durableState === 'finalized') return 'verification-only';
+  if (durableState === 'skipped') return 'verification-only';
+
+  // Legacy rows have no normalized side-effect state. A never-claimed row is
+  // the only legacy shape that is safe to submit; every claimed legacy row is
+  // verification-only because attempts count claims, not browser clicks.
   if (Number(event?.attempts || 0) <= 0) return 'new-submit';
   if (event?.recoveredFromStaleRunning) return 'verification-only';
 
@@ -692,7 +761,9 @@ export function directUploadRetryMode(event) {
     ? event.previousResult
     : {};
   if (
-    previous.retryMode === 'verification-only'
+    previous.mirrorMutationState === 'create_may_have_happened'
+    || previous.mirrorMutationState === 'created_verified'
+    || previous.retryMode === 'verification-only'
     || previous.resubmitBlocked === true
     || previous.submissionAttempted === true
     || previous.postSubmitVerification
@@ -703,7 +774,11 @@ export function directUploadRetryMode(event) {
   }
   if (
     previous.submissionAttempted === false
-    && (previous.retryMode === 'new-submit' || previous.retryMode === 'safe-retry-before-submit')
+    && (
+      previous.mirrorMutationState === 'not_created'
+      || previous.retryMode === 'new-submit'
+      || previous.retryMode === 'safe-retry-before-submit'
+    )
   ) {
     return 'safe-retry-before-submit';
   }
@@ -1581,7 +1656,9 @@ export function directUploadVerificationTarget(event) {
   };
 }
 
-export async function uploadSpacecloudDirectReservation(context, event) {
+export async function uploadSpacecloudDirectReservation(context, event, {
+  beforeSubmit = null,
+} = {}) {
   const retryMode = directUploadRetryMode(event);
   const row = {
     taskId: event.taskId || null,
@@ -1594,6 +1671,9 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     endTime: event.endTime,
     reserverName: event.reserverName,
     submissionAttempted: false,
+    mirrorMutationState: retryMode === 'verification-only'
+      ? 'create_may_have_happened'
+      : 'not_created',
     retryMode,
     resubmitBlocked: retryMode === 'verification-only',
     startedAt: new Date().toISOString(),
@@ -1625,6 +1705,7 @@ export async function uploadSpacecloudDirectReservation(context, event) {
         row.status = 'submitted';
         row.alreadyPresentOnRetry = true;
         row.submissionConfirmed = true;
+        row.mirrorMutationState = 'created_verified';
         row.finishedAt = new Date().toISOString();
         return row;
       }
@@ -1679,7 +1760,40 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     const submit = page.locator('#_addExternalSchedule').filter({ visible: true });
     const submitCount = await submit.count();
     if (submitCount !== 1) throw new Error(`visible submit count ${submitCount}`);
-    row.submissionAttempted = true;
+    if (typeof beforeSubmit === 'function') {
+      // Mark the local outcome as uncertain before the remote checkpoint call.
+      // If the checkpoint commits but its SSH response is lost, a later error
+      // must never overwrite that durable uncertainty with a false "not created".
+      row.submissionAttempted = true;
+      row.mirrorMutationState = 'create_may_have_happened';
+      const guard = await beforeSubmit({
+        taskId: row.taskId,
+        reservationNo: row.reservationNo,
+        roomKey: row.roomKey,
+        date: row.date,
+        startTime: row.startTime,
+        endTime: row.endTime,
+      });
+      row.uploadSubmissionGuard = guard?.summary || guard || {};
+      if (guard?.approved !== true) {
+        row.submissionAttempted = false;
+        row.mirrorMutationState = 'not_created';
+        row.status = guard?.stale === true
+          ? 'stale-ledger-skip'
+          : guard?.retryable === true
+            ? 'upload-dependency-wait'
+            : 'needs-review';
+        row.reason = guard?.reason || 'upload submission guard did not approve the final click';
+        if (row.status === 'needs-review') row.error = row.reason;
+        row.finishedAt = new Date().toISOString();
+        const close = page.locator('.btn_pop_close, a.btn_close, button.btn_close').filter({ visible: true });
+        if (await close.count() === 1) await close.click({ timeout: 3000 }).catch(() => {});
+        return row;
+      }
+    } else {
+      row.submissionAttempted = true;
+      row.mirrorMutationState = 'create_may_have_happened';
+    }
     row.submitClickedAt = new Date().toISOString();
     await submit.click({ timeout: 10000 });
 
@@ -1691,10 +1805,11 @@ export async function uploadSpacecloudDirectReservation(context, event) {
     row.finishedAt = new Date().toISOString();
     if (dialogs.length > 0) row.dialogs = dialogs;
     const outcome = classifyDirectUploadVerification(hidden, row.postSubmitVerification);
-    row.status = outcome.status;
+    row.status = outcome.verified ? outcome.status : 'upload-verification-pending';
     if (outcome.verified) {
       row.verifiedAfterSubmit = true;
       row.submissionConfirmed = true;
+      row.mirrorMutationState = 'created_verified';
       row.verificationMode = outcome.verificationMode || 'reservation-identity';
     } else {
       row.error = outcome.error;
@@ -1750,11 +1865,13 @@ export async function inspectSpacecloudDirectReservation(context, task, {
       row.verification = row.confirmationVerification;
       row.verificationMode = 'fresh-document-confirmation';
     }
-    row.status = row.verification.identityMatched
-      ? 'identity-matched'
-      : row.verification.candidateCount > 0
-        ? 'candidate-only'
-        : 'absent';
+    row.status = row.verification.reason === 'calendar-api-read-failed'
+      ? 'read-failed'
+      : row.verification.identityMatched
+        ? 'identity-matched'
+        : row.verification.candidateCount > 0
+          ? 'candidate-only'
+          : 'absent';
   } catch (error) {
     row.status = 'failed';
     row.error = String(error?.message || error);
@@ -2116,17 +2233,33 @@ export async function createSpacecloudPlaywrightUploader({
   };
 }
 
-export async function deleteSpacecloudDirectReservation(context, task) {
+export async function deleteSpacecloudDirectReservation(context, task, {
+  beforeDelete = null,
+} = {}) {
   const page = await pageForContext(context);
+  const payload = parseTaskPayload(task);
+  const mirrorTaskId = task.priorUploadTaskId
+    || task.prior_upload_task_id
+    || task.mirrorTaskId
+    || task.mirror_task_id
+    || payload.priorUploadTaskId
+    || null;
   const row = {
     taskId: task.id || null,
+    mirrorTaskId,
     roomKey: task.roomKey || task.room_key,
     date: normalizeDate(task.date || task.reservation_date),
     startTime: task.startTime || task.start_time,
     endTime: task.endTime || task.end_time,
     reserverName: task.reserverName || task.reserver_name || '',
     reservationNo: task.reservationNo || task.reservation_number || '',
+    deletionAttempted: false,
     startedAt: new Date().toISOString(),
+  };
+  const identityTarget = {
+    ...row,
+    taskId: mirrorTaskId,
+    requireTaskId: Boolean(mirrorTaskId),
   };
   row.reservationCalendarUrl = task.reservationCalendarUrl || reservationCalendarUrl(row.roomKey);
   if (!row.reservationNo) {
@@ -2152,36 +2285,112 @@ export async function deleteSpacecloudDirectReservation(context, task) {
       throw new Error('calendar add button not visible; login or page load may have failed');
     }
 
+    // The authenticated calendar API is the authority for existence. DOM text
+    // is used only to operate the exact API-proven schedule, never as proof of
+    // absence (a stale calendar page used to create false needs_review rows).
+    row.preDeleteVerification = await pollForSpacecloudCalendarIdentity({
+      readCalendar: () => fetchSpacecloudCalendarMonth(page, row.roomKey, row.date),
+      row: identityTarget,
+      timeoutMs: 8000,
+      intervalMs: 500,
+      wait: (delayMs) => page.waitForTimeout(delayMs),
+    });
+    if (row.preDeleteVerification.reason === 'calendar-api-read-failed') {
+      row.status = 'deletion-verification-pending';
+      row.error = `SpaceCloud calendar API could not be read before delete: ${row.preDeleteVerification.apiError || 'unknown'}`;
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+    if (Number(row.preDeleteVerification.identityCandidateCount || 0) > 1) {
+      row.status = 'needs-review';
+      row.error = 'multiple exact SpaceCloud mirror identities exist; automatic delete is blocked';
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+    if (Number(row.preDeleteVerification.identityCandidateCount || 0) === 0) {
+      row.preDeleteAbsenceVerification = await pollForSpacecloudCalendarAbsence({
+        readCalendar: () => fetchSpacecloudCalendarMonth(page, row.roomKey, row.date),
+        row: identityTarget,
+        timeoutMs: 4000,
+        intervalMs: 500,
+        requiredConsecutiveReads: 2,
+        wait: (delayMs) => page.waitForTimeout(delayMs),
+      });
+      if (!row.preDeleteAbsenceVerification.absenceConfirmed) {
+        row.status = 'deletion-verification-pending';
+        row.error = row.preDeleteAbsenceVerification.reason === 'calendar-api-read-failed'
+          ? `SpaceCloud calendar API could not confirm absence before delete: ${row.preDeleteAbsenceVerification.apiError || 'unknown'}`
+          : 'the exact SpaceCloud mirror absence was not stable across consecutive authenticated reads';
+        row.finishedAt = new Date().toISOString();
+        return row;
+      }
+      if (typeof beforeDelete === 'function') {
+        const guard = await beforeDelete({
+          taskId: row.taskId,
+          mirrorTaskId: row.mirrorTaskId,
+          reservationNo: row.reservationNo,
+          roomKey: row.roomKey,
+          date: row.date,
+          startTime: row.startTime,
+          endTime: row.endTime,
+          scheduleId: '',
+          verificationSource: row.preDeleteAbsenceVerification.source || '',
+          apiStatus: Number(row.preDeleteAbsenceVerification.apiStatus || 0),
+          identityCandidateCount: Number(row.preDeleteAbsenceVerification.identityCandidateCount || 0),
+          identityMatched: false,
+          absenceConfirmed: true,
+          consecutiveAbsentReads: Number(row.preDeleteAbsenceVerification.consecutiveAbsentReads || 0),
+          mode: 'ensure-absent',
+        });
+        row.deleteSubmissionGuard = guard?.summary || guard || {};
+        if (guard?.approved !== true) {
+          row.status = guard?.stale === true
+            ? 'stale-ledger-skip'
+            : guard?.retryable === true
+              ? 'upload-dependency-wait'
+              : 'needs-review';
+          row.reason = guard?.reason || 'delete absence guard did not approve durable reconciliation';
+          if (row.status === 'needs-review') row.error = row.reason;
+          row.finishedAt = new Date().toISOString();
+          return row;
+        }
+      }
+      row.status = 'already-gone';
+      row.authoritativeAbsence = true;
+      row.reason = 'the exact SpaceCloud mirror identity is absent from the authenticated calendar API';
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+    if (!mirrorTaskId) {
+      row.status = 'needs-review';
+      row.error = 'SpaceCloud candidate exists, but no exact prior upload task is linked; automatic delete is blocked';
+      row.finishedAt = new Date().toISOString();
+      return row;
+    }
+
     await gotoCalendarMonth(page, row.date);
-    const candidateSearch = await waitForDirectEventCandidates(page, row);
+    const candidateSearch = await waitForDirectEventCandidates(page, identityTarget, {
+      timeoutMs: 12000,
+      intervalMs: 500,
+      refreshAtMs: [1500, 5000],
+      refresh: async () => {
+        await closeModalIfOpen(page).catch(() => {});
+        await loadSpacecloudCalendar(page, row.roomKey, { forceFreshDocument: true });
+        await gotoCalendarMonth(page, row.date);
+      },
+    });
     const candidates = candidateSearch.candidates || [];
     row.candidateSearch = candidateSearch;
     row.candidates = candidates;
 
     if (candidates.length === 0) {
-      let taskPayload = {};
-      try {
-        taskPayload = JSON.parse(task.payloadJson || task.payload_json || '{}');
-      } catch {
-        taskPayload = {};
-      }
-      const manualCustomerCancellation = taskPayload?.manualCustomerCancellation === true
-        && (
-          taskPayload?.source === 'sync-admin-customer-request'
-          || taskPayload?.source_mode === 'sync-admin-customer-request'
-        );
-      row.status = manualCustomerCancellation ? 'already-gone' : 'needs-review';
-      row.manualCustomerCancellation = manualCustomerCancellation;
-      if (manualCustomerCancellation) {
-        row.reason = 'exact customer-request mirror schedule is already absent from SpaceCloud';
-      } else {
-        row.error = 'no visible SpaceCloud event candidate matched room/date/time; not marking as deleted';
-      }
+      row.status = 'deletion-verification-pending';
+      row.error = 'authoritative API shows the exact mirror, but refreshed calendar DOM did not expose an operable candidate';
       row.finishedAt = new Date().toISOString();
       return row;
     }
 
-    const selection = await findVerifiedDeleteCandidate(page, candidates, row);
+    const selection = await findVerifiedDeleteCandidate(page, candidates, identityTarget);
     row.deleteCandidateAttempts = selection.attempts || [];
     if (!selection.candidate) {
       row.status = 'needs-review';
@@ -2193,7 +2402,7 @@ export async function deleteSpacecloudDirectReservation(context, task) {
     if (selection.ignoredCandidates?.length) row.ignoredCandidates = selection.ignoredCandidates;
     const popupText = selection.popupText || await page.locator('.layer_popup.reservation_state').filter({ visible: true }).first().innerText({ timeout: 5000 });
     row.popupTextPreview = popupText.replace(/\s+/g, ' ').slice(0, 300);
-    const verification = selection.verification || popupDeleteVerification(popupText, row);
+    const verification = selection.verification || popupDeleteVerification(popupText, identityTarget);
     row.deleteVerification = verification;
     if (!verification.ok) {
       row.status = 'needs-review';
@@ -2206,26 +2415,66 @@ export async function deleteSpacecloudDirectReservation(context, task) {
     const deleteButton = page.locator('.layer_popup.reservation_state .btn_negative').filter({ hasText: '예약 삭제', visible: true });
     const deleteCount = await deleteButton.count();
     if (deleteCount !== 1) throw new Error(`visible reservation delete button count ${deleteCount}`);
+    if (typeof beforeDelete === 'function') {
+      // Set local ambiguity before the remote fence. If the fence commits but
+      // its response is lost, this attempt must remain verification-only.
+      row.deletionAttempted = true;
+      const guard = await beforeDelete({
+        taskId: row.taskId,
+        mirrorTaskId: row.mirrorTaskId,
+        reservationNo: row.reservationNo,
+        roomKey: row.roomKey,
+        date: row.date,
+        startTime: row.startTime,
+        endTime: row.endTime,
+        scheduleId: row.preDeleteVerification?.identityVerification?.scheduleId || '',
+        verificationSource: row.preDeleteVerification?.source || '',
+        apiStatus: Number(row.preDeleteVerification?.apiStatus || 0),
+        identityCandidateCount: Number(row.preDeleteVerification?.identityCandidateCount || 0),
+        identityMatched: row.preDeleteVerification?.identityMatched === true,
+      });
+      row.deleteSubmissionGuard = guard?.summary || guard || {};
+      if (guard?.approved !== true) {
+        row.deletionAttempted = false;
+        row.status = guard?.stale === true
+          ? 'stale-ledger-skip'
+          : guard?.retryable === true
+            ? 'upload-dependency-wait'
+            : 'needs-review';
+        row.reason = guard?.reason || 'delete submission guard did not approve the final click';
+        if (row.status === 'needs-review') row.error = row.reason;
+        row.finishedAt = new Date().toISOString();
+        await closeReservationPopup(page).catch(() => {});
+        return row;
+      }
+    } else {
+      row.deletionAttempted = true;
+    }
+    row.deleteClickedAt = new Date().toISOString();
     await deleteButton.first().click({ timeout: 8000 });
 
     const confirmButton = page.locator('#_deleteExternalScheduleOK').filter({ visible: true });
     if (await confirmButton.count() === 1) {
       await confirmButton.first().click({ timeout: 8000 });
     }
-    await page.waitForTimeout(1500);
-
     await waitHidden(page, '.layer_popup.reservation_state', 10000);
-    const remainingSearch = await findDirectEventCandidates(page, row);
-    const remaining = remainingSearch.candidates || [];
-    const directRemaining = remaining.filter((candidate) => candidate.directHint);
-    row.remainingSearch = remainingSearch;
-    if (directRemaining.length === 0) {
+    row.postDeleteVerification = await pollForSpacecloudCalendarAbsence({
+      readCalendar: () => fetchSpacecloudCalendarMonth(page, row.roomKey, row.date),
+      row: identityTarget,
+      timeoutMs: 30000,
+      intervalMs: 1000,
+      requiredConsecutiveReads: 2,
+      wait: (delayMs) => page.waitForTimeout(delayMs),
+    });
+    if (row.postDeleteVerification.absenceConfirmed) {
       row.status = 'deleted';
-      if (remaining.length > 0) row.remainingNonDirectCandidates = remaining;
+      row.authoritativeAbsence = true;
+    } else if (row.postDeleteVerification.reason === 'calendar-api-read-failed') {
+      row.status = 'deletion-verification-pending';
+      row.error = `delete was clicked but the authoritative calendar API could not confirm absence: ${row.postDeleteVerification.apiError || 'unknown'}`;
     } else {
-      row.status = 'failed';
-      row.error = `direct event still visible after delete: ${directRemaining.map((candidate) => candidate.text).join(' / ')}`;
-      row.remaining = directRemaining;
+      row.status = 'deletion-verification-pending';
+      row.error = 'delete was clicked but the exact SpaceCloud mirror is still present; retry will re-verify the same identity';
     }
     if (dialogTypes.length > 0) row.dialogTypes = dialogTypes;
     row.finishedAt = new Date().toISOString();

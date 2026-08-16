@@ -1252,6 +1252,13 @@ def load_env(path):
         key, value = line.split('=', 1)
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
+def parse_result(value):
+    try:
+        parsed = json.loads(value or '{}')
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
 def mask_phone(value):
     digits = ''.join(ch for ch in str(value or '') if ch.isdigit())
     if len(digits) < 7:
@@ -1306,36 +1313,266 @@ masked = mask_phone(phone)
 idempotency_key = f'{template_name}|{task_type}|{task_id}'
 phone_hash = hashlib.sha256(phone.encode('utf-8')).hexdigest() if phone else ''
 
-conn = pymysql.connect(
+def lock_confirmation_generation(cur):
+    if template_name != 'reservation-confirmed-v1':
+        return {'approved': True, 'reason': 'non-confirmation-template'}
+    cur.execute(
+        """
+        SELECT id, task_type, status, email_event_id, booking_ledger_id,
+               side_effect_state, result_text, reservation_number, room_key
+        FROM rhythmjoy_spacecloud_tasks
+        WHERE id=%s AND task_type=%s
+        LIMIT 1
+        """,
+        (task_id, task_type),
+    )
+    snapshot = cur.fetchone()
+    if not snapshot:
+        return {'approved': False, 'reason': 'source task missing before confirmation SMS'}
+    ledger_id = int(snapshot.get('booking_ledger_id') or 0)
+    if ledger_id < 1 and snapshot.get('email_event_id'):
+        cur.execute(
+            """
+            SELECT id FROM rhythmjoy_booking_ledger
+            WHERE confirmed_email_event_id=%s
+              AND source_platform=%s
+            ORDER BY id DESC LIMIT 1
+            """,
+            (snapshot.get('email_event_id'), 'naver' if task_type == 'upload' else 'spacecloud'),
+        )
+        ledger_ref = cur.fetchone() or {}
+        ledger_id = int(ledger_ref.get('id') or 0)
+    if ledger_id < 1:
+        return {'approved': False, 'reason': 'booking ledger missing before confirmation SMS'}
+    # The inbox row is committed before the ledger/task handoff transaction.
+    # Lock an unresolved lifecycle row first (the importer's lock order), so a
+    # quick cancel/rebook or parser failure cannot race an old-generation SMS.
+    if task_type == 'upload' and snapshot.get('email_event_id'):
+        cur.execute(
+            """
+            SELECT id
+            FROM rhythmjoy_naver_email_events
+            WHERE event_type IN ('reservation','cancellation')
+              AND id<>%s
+              AND (
+                    parse_status<>'parsed'
+                 OR processing_status IN ('received','failed','needs_review','parse_failed','awaiting_predecessor')
+                 OR COALESCE(event_order_trusted, 0)<>1
+                 OR (event_type='cancellation' AND COALESCE(reservation_number, '')='')
+                 OR (
+                        event_type='cancellation'
+                    AND (
+                          COALESCE(spacecloud_room_key, '')=''
+                          OR reservation_date IS NULL
+                          OR start_time IS NULL
+                          OR end_time IS NULL
+                    )
+                 )
+                 OR (
+                        event_type='cancellation'
+                    AND event_order_trusted=1
+                    AND event_order_key IS NOT NULL
+                    AND event_order_key=(
+                        SELECT current_event.event_order_key
+                        FROM rhythmjoy_naver_email_events AS current_event
+                        WHERE current_event.id=%s
+                          AND current_event.event_order_trusted=1
+                        LIMIT 1
+                    )
+                 )
+              )
+              AND (
+                    (COALESCE(reservation_number, '')<>'' AND reservation_number=%s)
+                 OR (
+                        COALESCE(reservation_number, '')=''
+                    AND (
+                          COALESCE(spacecloud_room_key, '')=''
+                          OR spacecloud_room_key=%s
+                    )
+                 )
+              )
+            ORDER BY id ASC
+            LIMIT 1
+            FOR UPDATE
+            """,
+            (
+                snapshot.get('email_event_id'), snapshot.get('email_event_id'),
+                snapshot.get('reservation_number'), snapshot.get('room_key'),
+            ),
+        )
+        unresolved_lifecycle = cur.fetchone()
+        if unresolved_lifecycle:
+            return {
+                'approved': False,
+                'retryable': True,
+                'reason': 'reservation lifecycle handoff is unresolved before confirmation SMS',
+                'unresolvedEventId': unresolved_lifecycle.get('id'),
+            }
+    # Serialize the final provider decision with cancellation: ledger first,
+    # then task, matching the importer/checkpoint lock order.
+    cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s FOR UPDATE', (ledger_id,))
+    ledger = cur.fetchone()
+    cur.execute(
+        """
+        SELECT id, task_type, status, email_event_id, booking_ledger_id,
+               side_effect_state, result_text
+        FROM rhythmjoy_spacecloud_tasks
+        WHERE id=%s AND task_type=%s
+        FOR UPDATE
+        """,
+        (task_id, task_type),
+    )
+    task = cur.fetchone()
+    result = parse_result(task.get('result_text') if task else '')
+    same_generation = bool(
+        ledger and task
+        and ledger.get('current_status') == 'confirmed'
+        and task.get('email_event_id')
+        and int(task.get('email_event_id') or 0) == int(ledger.get('confirmed_email_event_id') or 0)
+    )
+    if task_type == 'upload':
+        platform_done = bool(
+            task and task.get('status') == 'done'
+            and task.get('side_effect_state') == 'finalized'
+            and result.get('status') == 'submitted'
+            and int(task.get('booking_ledger_id') or 0) == int(ledger_id)
+        )
+    else:
+        platform_done = bool(
+            task and task.get('status') == 'done'
+            and result.get('status') in ('blocked', 'already-blocked')
+        )
+    return {
+        'approved': bool(same_generation and platform_done),
+        'reason': 'exact confirmed generation is eligible' if same_generation and platform_done else 'reservation is canceled, stale, or not platform-finalized',
+        'ledgerId': ledger_id,
+    }
+
+db_config = dict(
     host=os.environ['DB_SERVERNAME'],
     port=int(os.environ.get('DB_PORT', '3306')),
     user=os.environ['DB_USERNAME'],
     password=os.environ['DB_PASSWORD'],
     database=os.environ['DB_NAME'],
     charset='utf8mb4',
-    autocommit=True,
     cursorclass=pymysql.cursors.DictCursor,
 )
+conn = pymysql.connect(autocommit=False, **db_config)
 try:
     with conn.cursor() as cur:
         ensure_table(cur)
-        cur.execute(
-            """
-            INSERT IGNORE INTO rhythmjoy_sms_deliveries (
-                idempotency_key, source_task_type, source_task_id, template_name,
-                recipient_phone_hash, recipient_phone_last4, status,
-                attempt_count, last_attempt_at, created_at, updated_at
+        confirmation_guard = lock_confirmation_generation(cur)
+        if not confirmation_guard.get('approved'):
+            if confirmation_guard.get('retryable'):
+                cur.execute(
+                    """
+                    INSERT INTO rhythmjoy_sms_deliveries (
+                        idempotency_key, source_task_type, source_task_id, template_name,
+                        recipient_phone_hash, recipient_phone_last4, status,
+                        error_text, attempt_count, next_retry_at, created_at, updated_at
+                    ) VALUES (%s,%s,%s,%s,%s,%s,'pending',%s,0,
+                              DATE_ADD(NOW(),INTERVAL 30 SECOND),NOW(),NOW())
+                    ON DUPLICATE KEY UPDATE
+                        status=IF(status IN ('sent','uncertain','sending'),status,'pending'),
+                        error_text=IF(status IN ('sent','uncertain','sending'),error_text,VALUES(error_text)),
+                        next_retry_at=IF(status IN ('sent','uncertain','sending'),next_retry_at,
+                                         DATE_ADD(NOW(),INTERVAL 30 SECOND)),
+                        updated_at=NOW()
+                    """,
+                    (
+                        idempotency_key, task_type, task_id or None, template_name,
+                        phone_hash, phone[-4:], confirmation_guard.get('reason') or 'confirmation SMS deferred',
+                    ),
+                )
+                conn.commit()
+                print(json.dumps({
+                    'status': 'deferred',
+                    'maskedPhone': masked,
+                    'templateName': template_name,
+                    'reason': confirmation_guard.get('reason') or 'confirmation SMS deferred',
+                    'unresolvedEventId': confirmation_guard.get('unresolvedEventId'),
+                }, ensure_ascii=False))
+                raise SystemExit(0)
+            cur.execute(
+                """
+                INSERT INTO rhythmjoy_sms_deliveries (
+                    idempotency_key, source_task_type, source_task_id, template_name,
+                    recipient_phone_hash, recipient_phone_last4, status,
+                    error_text, attempt_count, created_at, updated_at
+                ) VALUES (%s,%s,%s,%s,%s,%s,'skipped',%s,0,NOW(),NOW())
+                ON DUPLICATE KEY UPDATE
+                    status=IF(status IN ('sent','uncertain','sending'),status,'skipped'),
+                    error_text=IF(status IN ('sent','uncertain','sending'),error_text,VALUES(error_text)),
+                    next_retry_at=NULL,
+                    updated_at=NOW()
+                """,
+                (
+                    idempotency_key, task_type, task_id or None, template_name,
+                    phone_hash, phone[-4:], confirmation_guard.get('reason') or 'confirmation SMS suppressed',
+                ),
             )
-            VALUES (%s,%s,%s,%s,%s,%s,'sending',1,NOW(),NOW(),NOW())
-            """,
-            (idempotency_key, task_type, task_id or None, template_name, phone_hash, phone[-4:]),
-        )
-        claimed = cur.rowcount == 1
+            cur.execute(
+                'UPDATE rhythmjoy_spacecloud_tasks SET confirmation_sms_required=0, updated_at=NOW() WHERE id=%s',
+                (task_id,),
+            )
+            conn.commit()
+            print(json.dumps({
+                'status': 'skipped',
+                'maskedPhone': masked,
+                'templateName': template_name,
+                'reason': confirmation_guard.get('reason') or 'confirmation SMS suppressed',
+            }, ensure_ascii=False))
+            raise SystemExit(0)
+        # Claim the provider call through a second transaction while this
+        # transaction keeps the exact ledger generation locked.  The sending
+        # checkpoint is therefore durable before the external call (no crash
+        # resend), while a cancellation cannot slip between the final guard and
+        # the provider call (no confirmation after cancellation).
+        claim_conn = pymysql.connect(autocommit=False, **db_config)
+        try:
+            with claim_conn.cursor() as claim_cur:
+                claim_cur.execute(
+                    """
+                    INSERT IGNORE INTO rhythmjoy_sms_deliveries (
+                        idempotency_key, source_task_type, source_task_id, template_name,
+                        recipient_phone_hash, recipient_phone_last4, status,
+                        attempt_count, last_attempt_at, created_at, updated_at
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,'sending',1,NOW(),NOW(),NOW())
+                    """,
+                    (idempotency_key, task_type, task_id or None, template_name, phone_hash, phone[-4:]),
+                )
+                claimed = claim_cur.rowcount == 1
+                if not claimed:
+                    claim_cur.execute('SELECT * FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
+                    existing = claim_cur.fetchone() or {}
+                    existing_status = existing.get('status') or ''
+                    if existing_status in ('pending', 'failed', 'phone_lookup_failed'):
+                        claim_cur.execute(
+                            """
+                            UPDATE rhythmjoy_sms_deliveries
+                            SET status='sending', error_text=NULL,
+                                attempt_count=attempt_count+1,
+                                last_attempt_at=NOW(), next_retry_at=NULL, updated_at=NOW()
+                            WHERE idempotency_key=%s AND status IN ('pending','failed','phone_lookup_failed')
+                            """,
+                            (idempotency_key,),
+                        )
+                        claimed = claim_cur.rowcount == 1
+                claim_conn.commit()
+        except Exception:
+            claim_conn.rollback()
+            raise
+        finally:
+            claim_conn.close()
+
         if not claimed:
-            cur.execute('SELECT * FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
-            existing = cur.fetchone() or {}
-            existing_status = existing.get('status') or ''
             if existing_status == 'sent':
+                cur.execute(
+                    'UPDATE rhythmjoy_spacecloud_tasks SET confirmation_sms_required=0, updated_at=NOW() WHERE id=%s',
+                    (task_id,),
+                )
+                conn.commit()
                 print(json.dumps({
                     'status': 'already_sent',
                     'deliveryId': existing.get('id'),
@@ -1347,29 +1584,17 @@ try:
                     'nextRetryAt': existing.get('next_retry_at'),
                 }, ensure_ascii=False, default=str))
                 raise SystemExit(0)
-            if existing_status in ('pending', 'failed', 'phone_lookup_failed'):
-                cur.execute(
-                    """
-                    UPDATE rhythmjoy_sms_deliveries
-                    SET status='sending', error_text=NULL,
-                        attempt_count=attempt_count+1,
-                        last_attempt_at=NOW(), next_retry_at=NULL, updated_at=NOW()
-                    WHERE idempotency_key=%s AND status IN ('pending','failed','phone_lookup_failed')
-                    """,
-                    (idempotency_key,),
-                )
-                claimed = cur.rowcount == 1
-            if not claimed:
-                print(json.dumps({
-                    'status': 'needs_review' if existing_status == 'uncertain' else 'delivery_in_progress',
-                    'deliveryId': existing.get('id'),
-                    'maskedPhone': masked,
-                    'templateName': template_name,
-                    'reason': 'provider-result-uncertain-no-auto-resend' if existing_status == 'uncertain' else 'same-message-send-already-claimed',
-                    'attemptCount': existing.get('attempt_count') or 0,
-                    'nextRetryAt': existing.get('next_retry_at'),
-                }, ensure_ascii=False, default=str))
-                raise SystemExit(0)
+            conn.commit()
+            print(json.dumps({
+                'status': 'needs_review' if existing_status == 'uncertain' else 'delivery_in_progress',
+                'deliveryId': existing.get('id'),
+                'maskedPhone': masked,
+                'templateName': template_name,
+                'reason': 'provider-result-uncertain-no-auto-resend' if existing_status == 'uncertain' else 'same-message-send-already-claimed',
+                'attemptCount': existing.get('attempt_count') or 0,
+                'nextRetryAt': existing.get('next_retry_at'),
+            }, ensure_ascii=False, default=str))
+            raise SystemExit(0)
 
         try:
             result = aligo_sms.send_sms(
@@ -1409,6 +1634,12 @@ try:
             )
             cur.execute('SELECT id,attempt_count,next_retry_at FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
             saved = cur.fetchone() or {}
+            if status == 'sent':
+                cur.execute(
+                    'UPDATE rhythmjoy_spacecloud_tasks SET confirmation_sms_required=0, updated_at=NOW() WHERE id=%s',
+                    (task_id,),
+                )
+            conn.commit()
             print(json.dumps({
                 'status': status,
                 'deliveryId': saved.get('id'),
@@ -1434,6 +1665,7 @@ try:
             )
             cur.execute('SELECT id FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s LIMIT 1', (idempotency_key,))
             saved = cur.fetchone() or {}
+            conn.commit()
             print(json.dumps({
                 'status': 'needs_review',
                 'deliveryId': saved.get('id'),
@@ -1649,6 +1881,14 @@ def task_time_value(value):
         return text + ':00'
     return text
 
+def event_order_before(left_key, left_id, right_key, right_id):
+    if left_key is None or right_key is None:
+        return False
+    # Opposing lifecycle events with the same source millisecond have no
+    # trustworthy total order. DB ids reflect mailbox processing order and
+    # must never authorize an external side effect.
+    return int(left_key) < int(right_key)
+
 def task_slot_datetimes(date_text, start_text, end_text):
     try:
         day = datetime.strptime(str(date_text or ''), '%Y-%m-%d')
@@ -1667,34 +1907,84 @@ def task_slot_datetimes(date_text, start_text, end_text):
 def enrich_task_row(cur, row):
     payload = parse_payload(row)
     task_type = row.get('taskType') or ''
+    row['sourceEventOrderTrusted'] = bool(row.get('sourceEventOrderTrusted'))
     source_platform = source_platform_for_task(task_type)
     calendar_key = payload.get('calendarKey') or payload.get('calendar_key') or payload.get('target_calendar') or ''
     row['ledgerStatus'] = ''
     row['ledgerId'] = None
     row['ledgerKey'] = ''
     row['ledgerLastEventAt'] = ''
+    row['ledgerLastEventOrderKey'] = None
     row['ledgerConfirmedEmailEventId'] = None
     row['ledgerCanceledEmailEventId'] = None
+    row['ledgerConfirmedAt'] = ''
+    row['ledgerCanceledAt'] = ''
+    row['ledgerConfirmedEventOrderKey'] = None
+    row['ledgerCanceledEventOrderKey'] = None
+    row['ledgerConfirmedEventOrderTrusted'] = False
+    row['ledgerCanceledEventOrderTrusted'] = False
     if source_platform and calendar_key:
         ledger_key = payload.get('ledger_key') or payload.get('ledgerKey') or importer.booking_ledger_key(source_platform, payload, calendar_key)
         row['ledgerKey'] = ledger_key
-        cur.execute(
-            """
-            SELECT id, current_status,
-                   confirmed_email_event_id, canceled_email_event_id,
-                   CAST(last_event_at AS CHAR) AS last_event_at
-            FROM rhythmjoy_booking_ledger
-            WHERE ledger_key=%s
-            LIMIT 1
-            """,
-            (ledger_key,),
-        )
-        ledger = cur.fetchone()
+        durable_ledger_id = row.get('bookingLedgerId')
+        if durable_ledger_id:
+            cur.execute(
+                """
+                SELECT id, ledger_key, source_platform, current_status,
+                       confirmed_email_event_id, canceled_email_event_id,
+                       CAST(confirmed_email_received_at AS CHAR) AS confirmed_email_received_at,
+                       CAST(canceled_email_received_at AS CHAR) AS canceled_email_received_at,
+                       CAST(last_event_at AS CHAR) AS last_event_at,
+                       last_event_order_key,
+                       (SELECT event_order_key FROM rhythmjoy_naver_email_events
+                        WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_key,
+                       (SELECT event_order_key FROM rhythmjoy_naver_email_events
+                        WHERE id=canceled_email_event_id LIMIT 1) AS canceled_event_order_key
+                      ,(SELECT event_order_trusted FROM rhythmjoy_naver_email_events
+                        WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_trusted
+                      ,(SELECT event_order_trusted FROM rhythmjoy_naver_email_events
+                        WHERE id=canceled_email_event_id LIMIT 1) AS canceled_event_order_trusted
+                FROM rhythmjoy_booking_ledger
+                WHERE id=%s
+                LIMIT 1
+                """,
+                (durable_ledger_id,),
+            )
+            ledger = cur.fetchone()
+            if ledger and ledger.get('source_platform') != source_platform:
+                ledger = None
+            if ledger:
+                ledger_key = ledger.get('ledger_key') or ledger_key
+                row['ledgerKey'] = ledger_key
+        else:
+            cur.execute(
+                """
+                SELECT id, ledger_key, source_platform, current_status,
+                       confirmed_email_event_id, canceled_email_event_id,
+                       CAST(confirmed_email_received_at AS CHAR) AS confirmed_email_received_at,
+                       CAST(canceled_email_received_at AS CHAR) AS canceled_email_received_at,
+                       CAST(last_event_at AS CHAR) AS last_event_at,
+                       last_event_order_key,
+                       (SELECT event_order_key FROM rhythmjoy_naver_email_events
+                        WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_key,
+                       (SELECT event_order_key FROM rhythmjoy_naver_email_events
+                        WHERE id=canceled_email_event_id LIMIT 1) AS canceled_event_order_key
+                      ,(SELECT event_order_trusted FROM rhythmjoy_naver_email_events
+                        WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_trusted
+                      ,(SELECT event_order_trusted FROM rhythmjoy_naver_email_events
+                        WHERE id=canceled_email_event_id LIMIT 1) AS canceled_event_order_trusted
+                FROM rhythmjoy_booking_ledger
+                WHERE ledger_key=%s
+                LIMIT 1
+                """,
+                (ledger_key,),
+            )
+            ledger = cur.fetchone()
         # Older admin tasks did not carry their canonical PHP-created ledger
         # key. PHP normalizes Latin letters with mb_strtolower while the email
         # importer intentionally preserves name case, so retry the admin-only
         # compatibility key without changing customer email identities.
-        if not ledger and (payload.get('source') == 'admin-panel' or payload.get('source_mode') == 'admin-panel'):
+        if not durable_ledger_id and not ledger and (payload.get('source') == 'admin-panel' or payload.get('source_mode') == 'admin-panel'):
             compatibility_payload = dict(payload)
             compatibility_payload['name'] = importer.normalize_reserver_name_for_match(payload.get('name')).lower()
             compatibility_key = importer.booking_ledger_key(source_platform, compatibility_payload, calendar_key)
@@ -1703,7 +1993,18 @@ def enrich_task_row(cur, row):
                     """
                     SELECT id, current_status,
                            confirmed_email_event_id, canceled_email_event_id,
-                           CAST(last_event_at AS CHAR) AS last_event_at
+                           CAST(confirmed_email_received_at AS CHAR) AS confirmed_email_received_at,
+                           CAST(canceled_email_received_at AS CHAR) AS canceled_email_received_at,
+                           CAST(last_event_at AS CHAR) AS last_event_at,
+                           last_event_order_key,
+                           (SELECT event_order_key FROM rhythmjoy_naver_email_events
+                            WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_key,
+                           (SELECT event_order_key FROM rhythmjoy_naver_email_events
+                            WHERE id=canceled_email_event_id LIMIT 1) AS canceled_event_order_key
+                          ,(SELECT event_order_trusted FROM rhythmjoy_naver_email_events
+                            WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_trusted
+                          ,(SELECT event_order_trusted FROM rhythmjoy_naver_email_events
+                            WHERE id=canceled_email_event_id LIMIT 1) AS canceled_event_order_trusted
                     FROM rhythmjoy_booking_ledger
                     WHERE ledger_key=%s
                     LIMIT 1
@@ -1718,43 +2019,351 @@ def enrich_task_row(cur, row):
             row['ledgerId'] = ledger.get('id')
             row['ledgerStatus'] = ledger.get('current_status') or ''
             row['ledgerLastEventAt'] = ledger.get('last_event_at') or ''
+            row['ledgerLastEventOrderKey'] = ledger.get('last_event_order_key')
             row['ledgerConfirmedEmailEventId'] = ledger.get('confirmed_email_event_id')
             row['ledgerCanceledEmailEventId'] = ledger.get('canceled_email_event_id')
+            row['ledgerConfirmedAt'] = ledger.get('confirmed_email_received_at') or ''
+            row['ledgerCanceledAt'] = ledger.get('canceled_email_received_at') or ''
+            row['ledgerConfirmedEventOrderKey'] = ledger.get('confirmed_event_order_key')
+            row['ledgerCanceledEventOrderKey'] = ledger.get('canceled_event_order_key')
+            row['ledgerConfirmedEventOrderTrusted'] = bool(ledger.get('confirmed_event_order_trusted'))
+            row['ledgerCanceledEventOrderTrusted'] = bool(ledger.get('canceled_event_order_trusted'))
 
     if task_type == 'delete':
         row['priorUploadTaskId'] = None
         row['priorUploadEmailEventId'] = None
         row['priorUploadTaskStatus'] = ''
         row['priorUploadResultStatus'] = ''
+        row['priorUploadSideEffectState'] = ''
+        row['priorUploadSideEffectToken'] = ''
         row['priorUploadAttempts'] = 0
         row['priorUploadSubmissionAttempted'] = None
+        row['priorUploadIdentityMatched'] = False
         confirmed_event_id = row.get('ledgerConfirmedEmailEventId')
         reservation_no = row.get('reservationNo') or ''
-        if confirmed_event_id and reservation_no:
+        ledger_key = row.get('ledgerKey') or payload.get('ledger_key') or payload.get('ledgerKey') or ''
+        booking_ledger_id = row.get('bookingLedgerId') or row.get('ledgerId')
+        cancellation_event_id = row.get('emailEventId')
+        prior_upload = None
+        prior_identity_matched = False
+        if reservation_no and booking_ledger_id:
+            # Target the upload generation that existed immediately before this
+            # cancellation, not merely the ledger's latest confirmation.  A
+            # later reconfirmation may already have created a newer upload task
+            # on the same ledger; deleting that successor would be catastrophic.
             cur.execute(
                 """
-                SELECT id, email_event_id, status, attempts, result_text
+                SELECT upload.id, upload.email_event_id, upload.status, upload.attempts,
+                       upload.result_text, upload.booking_ledger_id,
+                       upload.side_effect_state, upload.side_effect_token,
+                       upload.payload_json AS payloadJson
+                FROM rhythmjoy_spacecloud_tasks AS upload
+                LEFT JOIN rhythmjoy_naver_email_events AS upload_event
+                       ON upload_event.id=upload.email_event_id
+                WHERE upload.task_type='upload'
+                  AND (upload.booking_ledger_id=%s OR upload.booking_ledger_id IS NULL)
+                  AND upload.reservation_number=%s
+                  AND upload.room_key=%s
+                  AND upload.reservation_date=%s
+                  AND upload.start_time=%s
+                  AND upload.end_time=%s
+                  AND (
+                        %s IS NULL
+                     OR (
+                          upload.email_event_id IS NOT NULL
+                          AND upload_event.event_type='reservation'
+                          AND upload_event.event_order_trusted=1
+                          AND upload_event.event_order_key IS NOT NULL
+                          AND (SELECT cancel_event.event_order_trusted
+                               FROM rhythmjoy_naver_email_events AS cancel_event
+                               WHERE cancel_event.id=%s LIMIT 1)=1
+                          AND (SELECT cancel_event.event_order_key
+                           FROM rhythmjoy_naver_email_events AS cancel_event
+                           WHERE cancel_event.id=%s LIMIT 1) IS NOT NULL
+                          AND (
+                                upload_event.event_order_key < (
+                                  SELECT cancel_event.event_order_key
+                                  FROM rhythmjoy_naver_email_events AS cancel_event
+                                  WHERE cancel_event.id=%s LIMIT 1
+                                )
+                             OR (
+                                  upload_event.event_order_key = (
+                                    SELECT cancel_event.event_order_key
+                                    FROM rhythmjoy_naver_email_events AS cancel_event
+                                    WHERE cancel_event.id=%s LIMIT 1
+                                  )
+                                  AND COALESCE(upload.email_event_id, 0) < %s
+                                )
+                          )
+                        )
+                  )
+                ORDER BY
+                  CASE WHEN upload.booking_ledger_id=%s THEN 0 ELSE 1 END,
+                  upload_event.event_order_key DESC,
+                  COALESCE(upload.email_event_id, 0) DESC,
+                  upload.id DESC
+                LIMIT 10
+                """,
+                (
+                    booking_ledger_id,
+                    reservation_no,
+                    row.get('roomKey'),
+                    row.get('date'),
+                    row.get('startTime'),
+                    row.get('endTime'),
+                    cancellation_event_id,
+                    cancellation_event_id,
+                    cancellation_event_id,
+                    cancellation_event_id,
+                    cancellation_event_id,
+                    cancellation_event_id,
+                    booking_ledger_id,
+                ),
+            )
+            for candidate in cur.fetchall():
+                candidate_payload = parse_payload(candidate)
+                normalized_link = int(candidate.get('booking_ledger_id') or 0) == int(booking_ledger_id)
+                legacy_email_link = bool(
+                    candidate.get('booking_ledger_id') is None
+                    and candidate.get('email_event_id')
+                    and candidate_payload.get('source') == 'naver-email-reservation'
+                )
+                admin_link = bool(
+                    normalized_link
+                    and candidate.get('email_event_id') is None
+                    and (
+                        candidate_payload.get('source') == 'admin-panel'
+                        or candidate_payload.get('source_mode') == 'admin-panel'
+                    )
+                )
+                if normalized_link or legacy_email_link or admin_link:
+                    prior_upload = candidate
+                    prior_identity_matched = True
+                    break
+        elif reservation_no:
+            # A missing durable ledger link is legacy-only.  Resolve the exact
+            # source generation by immutable event + full slot identity; if that
+            # cannot be done the browser may prove absence but must not click.
+            cur.execute(
+                """
+                SELECT id, email_event_id, status, attempts, result_text,
+                       booking_ledger_id, side_effect_state, side_effect_token,
+                       payload_json AS payloadJson
                 FROM rhythmjoy_spacecloud_tasks
                 WHERE task_type='upload'
-                  AND email_event_id=%s
                   AND reservation_number=%s
+                  AND room_key=%s
+                  AND reservation_date=%s
+                  AND start_time=%s
+                  AND end_time=%s
                 ORDER BY id DESC
+                LIMIT 10
+                """,
+                (
+                    reservation_no,
+                    row.get('roomKey'),
+                    row.get('date'),
+                    row.get('startTime'),
+                    row.get('endTime'),
+                ),
+                )
+            for candidate in cur.fetchall():
+                candidate_payload = parse_payload(candidate)
+                candidate_ledger_key = candidate_payload.get('ledger_key') or candidate_payload.get('ledgerKey') or ''
+                email_identity_matches = bool(
+                    confirmed_event_id
+                    and candidate.get('email_event_id') == confirmed_event_id
+                )
+                admin_identity_matches = bool(
+                    not confirmed_event_id
+                    and ledger_key
+                    and candidate_ledger_key == ledger_key
+                    and (
+                        candidate_payload.get('source') == 'admin-panel'
+                        or candidate_payload.get('source_mode') == 'admin-panel'
+                    )
+                )
+                if email_identity_matches or admin_identity_matches:
+                    prior_upload = candidate
+                    prior_identity_matched = True
+                    break
+        if prior_upload:
+            try:
+                prior_result = json.loads(prior_upload.get('result_text') or '{}')
+            except Exception:
+                prior_result = {}
+            row['priorUploadTaskId'] = prior_upload.get('id')
+            row['priorUploadEmailEventId'] = prior_upload.get('email_event_id')
+            row['priorUploadTaskStatus'] = prior_upload.get('status') or ''
+            row['priorUploadResultStatus'] = prior_result.get('status') or ''
+            row['priorUploadSideEffectState'] = prior_upload.get('side_effect_state') or ''
+            row['priorUploadSideEffectToken'] = prior_upload.get('side_effect_token') or ''
+            row['priorUploadAttempts'] = int(prior_upload.get('attempts') or 0)
+            row['priorUploadSubmissionAttempted'] = prior_result.get('submissionAttempted')
+            row['priorUploadIdentityMatched'] = bool(prior_identity_matched)
+
+    if task_type == 'upload':
+        row['priorDeleteTaskId'] = None
+        row['priorDeleteTaskStatus'] = ''
+        row['priorDeleteSideEffectState'] = ''
+        row['priorDeleteIdentityMatched'] = False
+        row['priorDeleteFullIdentityMatched'] = False
+        row['priorDeleteDependencyScopeMatched'] = False
+        row['priorUnresolvedLifecycleEventId'] = None
+        booking_ledger_id = row.get('bookingLedgerId') or row.get('ledgerId')
+        upload_event_id = row.get('emailEventId')
+        if booking_ledger_id and upload_event_id:
+            cur.execute(
+                """
+                SELECT cleanup.id, cleanup.status, cleanup.side_effect_state,
+                       cleanup.email_event_id, cleanup.booking_ledger_id
+                FROM rhythmjoy_spacecloud_tasks AS cleanup
+                LEFT JOIN rhythmjoy_naver_email_events AS cleanup_event
+                       ON cleanup_event.id=cleanup.email_event_id
+                WHERE cleanup.task_type='delete'
+                  AND (
+                        cleanup.booking_ledger_id=%s
+                     OR (
+                            cleanup.booking_ledger_id IS NULL
+                        AND cleanup.reservation_number=%s
+                     )
+                     OR (
+                            cleanup.reservation_number=%s
+                        AND cleanup.room_key=%s
+                        AND cleanup.reservation_date <=> %s
+                        AND cleanup.start_time <=> %s
+                        AND cleanup.end_time <=> %s
+                     )
+                  )
+                  AND NOT (
+                        cleanup.status IN ('done','already_gone')
+                    AND COALESCE(cleanup.side_effect_state, '') IN ('finalized','skipped')
+                  )
+                  AND (
+                        cleanup.email_event_id IS NULL
+                     OR cleanup_event.id IS NULL
+                     OR COALESCE(cleanup_event.event_type, '') <> 'cancellation'
+                     OR COALESCE(cleanup_event.event_order_trusted, 0) <> 1
+                     OR cleanup_event.event_order_key IS NULL
+                     OR COALESCE((
+                            SELECT upload_event.event_order_trusted
+                            FROM rhythmjoy_naver_email_events AS upload_event
+                            WHERE upload_event.id=%s LIMIT 1
+                        ), 0) <> 1
+                     OR (
+                            SELECT upload_event.event_order_key
+                            FROM rhythmjoy_naver_email_events AS upload_event
+                            WHERE upload_event.id=%s LIMIT 1
+                        ) IS NULL
+                     OR cleanup_event.event_order_key < (
+                            SELECT upload_event.event_order_key
+                            FROM rhythmjoy_naver_email_events AS upload_event
+                            WHERE upload_event.id=%s LIMIT 1
+                        )
+                     OR (
+                            cleanup_event.event_order_key = (
+                                SELECT upload_event.event_order_key
+                                FROM rhythmjoy_naver_email_events AS upload_event
+                                WHERE upload_event.id=%s LIMIT 1
+                            )
+                        AND cleanup.email_event_id < %s
+                     )
+                  )
+                ORDER BY
+                         CASE
+                           WHEN cleanup.email_event_id IS NULL
+                             OR cleanup_event.id IS NULL
+                             OR COALESCE(cleanup_event.event_type, '') <> 'cancellation'
+                             OR COALESCE(cleanup_event.event_order_trusted, 0) <> 1
+                             OR cleanup_event.event_order_key IS NULL THEN 0
+                           ELSE 1
+                         END ASC,
+                         cleanup_event.event_order_key ASC,
+                         COALESCE(cleanup.email_event_id, 0) ASC,
+                         cleanup.id ASC
                 LIMIT 1
                 """,
-                (confirmed_event_id, reservation_no),
+                (
+                    booking_ledger_id,
+                    row.get('reservationNo'),
+                    row.get('reservationNo'),
+                    row.get('roomKey'),
+                    row.get('date'),
+                    row.get('startTime'),
+                    row.get('endTime'),
+                    upload_event_id,
+                    upload_event_id,
+                    upload_event_id,
+                    upload_event_id,
+                    upload_event_id,
+                ),
             )
-            prior_upload = cur.fetchone()
-            if prior_upload:
-                try:
-                    prior_result = json.loads(prior_upload.get('result_text') or '{}')
-                except Exception:
-                    prior_result = {}
-                row['priorUploadTaskId'] = prior_upload.get('id')
-                row['priorUploadEmailEventId'] = prior_upload.get('email_event_id')
-                row['priorUploadTaskStatus'] = prior_upload.get('status') or ''
-                row['priorUploadResultStatus'] = prior_result.get('status') or ''
-                row['priorUploadAttempts'] = int(prior_upload.get('attempts') or 0)
-                row['priorUploadSubmissionAttempted'] = prior_result.get('submissionAttempted')
+            prior_delete = cur.fetchone()
+            if prior_delete:
+                row['priorDeleteTaskId'] = prior_delete.get('id')
+                row['priorDeleteTaskStatus'] = prior_delete.get('status') or ''
+                row['priorDeleteSideEffectState'] = prior_delete.get('side_effect_state') or ''
+                row['priorDeleteIdentityMatched'] = bool(
+                    int(prior_delete.get('booking_ledger_id') or 0) == int(booking_ledger_id)
+                )
+                row['priorDeleteDependencyScopeMatched'] = True
+        # Any unresolved Naver lifecycle event can represent a cancellation or
+        # a slot-changing reconfirmation on either side of this task. It never
+        # mutates the ledger, but it blocks every automatic create for the
+        # canonical reservation until an operator repairs its evidence.
+        if row.get('reservationNo'):
+            cur.execute(
+                """
+                SELECT id
+                FROM rhythmjoy_naver_email_events
+                WHERE event_type IN ('reservation','cancellation')
+                  AND id<>%s
+                  AND (
+                        parse_status<>'parsed'
+                     OR processing_status IN ('received','failed','needs_review','parse_failed','awaiting_predecessor')
+                     OR COALESCE(event_order_trusted, 0)<>1
+                     OR (event_type='cancellation' AND COALESCE(reservation_number, '')='')
+                     OR (
+                            event_type='cancellation'
+                        AND (
+                              COALESCE(spacecloud_room_key, '')=''
+                              OR reservation_date IS NULL
+                              OR start_time IS NULL
+                              OR end_time IS NULL
+                        )
+                     )
+                     OR (
+                            event_type='cancellation'
+                        AND
+                            event_order_trusted=1
+                        AND event_order_key IS NOT NULL
+                        AND event_order_key=(
+                            SELECT current_event.event_order_key
+                            FROM rhythmjoy_naver_email_events AS current_event
+                            WHERE current_event.id=%s
+                              AND current_event.event_order_trusted=1
+                            LIMIT 1
+                        )
+                     )
+                  )
+                  AND (
+                        (COALESCE(reservation_number, '')<>'' AND reservation_number=%s)
+                     OR (
+                            COALESCE(reservation_number, '')=''
+                        AND (
+                              COALESCE(spacecloud_room_key, '')=''
+                              OR spacecloud_room_key=%s
+                        )
+                     )
+                  )
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (upload_event_id, upload_event_id, row.get('reservationNo'), row.get('roomKey')),
+            )
+            unresolved_lifecycle_event = cur.fetchone()
+            if unresolved_lifecycle_event:
+                row['priorUnresolvedLifecycleEventId'] = unresolved_lifecycle_event.get('id')
 
     if task_type == 'naver_restore':
         row['priorNaverBlockChanged'] = False
@@ -1828,6 +2437,88 @@ def enrich_task_row(cur, row):
         row['restoreActiveOverlapCount'] = len(active_overlaps)
         row['restoreBlockingBookings'] = active_overlaps[:5]
         row['restoreSafeWithoutPriorBlock'] = len(active_overlaps) == 0
+
+def prepare_task_claim_rows(cur, rows, claim_token):
+    prepared = []
+    for row in rows:
+        enrich_task_row(cur, row)
+        legacy_delete_recovery = bool(
+            row.get('taskType') == 'delete'
+            and row.get('status') in ('pending', 'running', 'needs_review', 'failed', 'done', 'already_gone')
+            and (
+                not row.get('sideEffectState')
+                or (
+                    row.get('status') in ('needs_review', 'failed', 'done', 'already_gone')
+                    and (row.get('sideEffectState') or '') in ('ready', 'armed')
+                )
+            )
+        )
+        if legacy_delete_recovery:
+            ledger_id = int(row.get('ledgerId') or 0)
+            exact_generation = bool(
+                ledger_id > 0
+                and int(row.get('emailEventId') or 0) > 0
+                and row.get('priorUploadTaskId')
+                and row.get('priorUploadIdentityMatched') is True
+            )
+            checkpoint_status = (
+                'legacy-delete-verification-requeued'
+                if exact_generation
+                else 'legacy-delete-identity-quarantined'
+            )
+            checkpoint_reason = (
+                'legacy terminal delete requeued from exact ledger/event/slot/prior-upload identity'
+                if exact_generation
+                else 'legacy delete has incomplete immutable identity; keep verification-only claim for manual repair'
+            )
+            checkpoint = json.dumps({
+                'status': checkpoint_status,
+                'taskId': row.get('id'),
+                'taskType': 'delete',
+                'bookingLedgerId': ledger_id or None,
+                'mirrorTaskId': row.get('priorUploadTaskId'),
+                'deletionAttempted': True,
+                'sideEffectState': 'armed',
+                'retryMode': 'verification-only',
+                'reason': checkpoint_reason,
+            }, ensure_ascii=False, separators=(',', ':'))
+            cur.execute(
+                """
+                UPDATE rhythmjoy_spacecloud_tasks
+                SET booking_ledger_id=COALESCE(booking_ledger_id, %s), side_effect_state='armed',
+                    side_effect_token=%s, side_effect_armed_at=COALESCE(side_effect_armed_at, NOW()),
+                    side_effect_finalized_at=NULL, result_text=%s, updated_at=NOW()
+                WHERE id=%s
+                  AND status IN ('pending','running','needs_review','failed','done','already_gone')
+                  AND (
+                        side_effect_state IS NULL
+                     OR (
+                            status IN ('needs_review','failed','done','already_gone')
+                        AND side_effect_state IN ('ready','armed')
+                     )
+                  )
+                  AND (%s IS NULL OR booking_ledger_id IS NULL OR booking_ledger_id=%s)
+                """,
+                (
+                    ledger_id or None,
+                    claim_token,
+                    checkpoint,
+                    row.get('id'),
+                    ledger_id or None,
+                    ledger_id or None,
+                ),
+            )
+            if cur.rowcount != 1:
+                continue
+            if ledger_id > 0:
+                row['bookingLedgerId'] = ledger_id
+            row['sideEffectState'] = 'armed'
+            row['sideEffectToken'] = claim_token
+            row['status'] = 'pending'
+            row['recoveredLegacyTerminal'] = True
+            row['legacyIdentityQuarantined'] = not exact_generation
+        prepared.append(row)
+    return prepared
 `;
 
 function normalizeClaimedTaskForRecovery(task) {
@@ -1857,6 +2548,70 @@ function safeTaskClaimLimit() {
   // One claim per transaction prevents untouched rows from remaining `running`
   // when a preceding platform operation stops the current cycle.
   return 1;
+}
+
+async function assertRemoteDurableTaskSchema(args) {
+  const target = await loadCafe24Target(args);
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+required = {
+    'rhythmjoy_naver_email_events': {'event_order_key', 'event_order_trusted'},
+    'rhythmjoy_spacecloud_tasks': {
+        'booking_ledger_id', 'claim_token', 'side_effect_state',
+        'side_effect_token', 'side_effect_armed_at', 'side_effect_finalized_at',
+    },
+    'rhythmjoy_booking_ledger': {
+        'last_event_id', 'last_event_order_key', 'automation_canceled_order_key',
+    },
+}
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'], port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'], password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'], charset='utf8mb4',
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    missing = []
+    with conn.cursor() as cur:
+        for table, columns in required.items():
+            placeholders = ','.join(['%s'] * len(columns))
+            cur.execute(
+                f"""
+                SELECT COLUMN_NAME
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s
+                  AND COLUMN_NAME IN ({placeholders})
+                """,
+                [table, *sorted(columns)],
+            )
+            present = {row.get('COLUMN_NAME') for row in cur.fetchall()}
+            missing.extend(f'{table}.{column}' for column in sorted(columns - present))
+    if missing:
+        raise RuntimeError('durable task schema missing: ' + ', '.join(missing))
+    print(json.dumps({'ok': True}, separators=(',', ':')))
+finally:
+    conn.close()
+PY
+`;
+  const result = JSON.parse(runSshScript(target, script).trim() || '{}');
+  if (result.ok !== true) throw new Error('durable task schema preflight failed');
+  return result;
 }
 
 async function fetchRemoteTasks(args, { taskType, limit }) {
@@ -1922,25 +2677,89 @@ try:
                 CONCAT(LPAD(HOUR(end_time), 2, '0'), ':', LPAD(MINUTE(end_time), 2, '0')) AS endTime,
                 payload_json AS payloadJson,
                 attempts,
+                booking_ledger_id AS bookingLedgerId,
+                side_effect_state AS sideEffectState,
+                side_effect_token AS sideEffectToken,
+                CAST(side_effect_armed_at AS CHAR) AS sideEffectArmedAt,
+                CAST(side_effect_finalized_at AS CHAR) AS sideEffectFinalizedAt,
                 CAST(locked_at AS CHAR) AS lockedAt,
                 CAST(created_at AS CHAR) AS createdAt,
                 CAST(COALESCE(
                   (SELECT email_received_at FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1),
                   created_at
                 ) AS CHAR) AS sourceReceivedAt,
+                (SELECT event_order_key FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1) AS sourceEventOrderKey,
+                COALESCE((SELECT event_order_trusted FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1), 0) AS sourceEventOrderTrusted,
                 CAST(updated_at AS CHAR) AS updatedAt,
                 result_text AS resultText
             FROM rhythmjoy_spacecloud_tasks
             WHERE task_type=%s
               AND (
-                status='pending'
+                (status='pending' AND (locked_at IS NULL OR locked_at <= NOW()))
                 OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
+                OR (
+                    status IN ('needs_review','failed','done','already_gone')
+                    AND task_type='delete'
+                    AND COALESCE(side_effect_state, '') IN ('', 'ready', 'armed')
+                    AND email_event_id IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1
+                        FROM rhythmjoy_naver_email_events AS legacy_delete_event
+                        WHERE legacy_delete_event.id=rhythmjoy_spacecloud_tasks.email_event_id
+                          AND legacy_delete_event.event_type='cancellation'
+                          AND legacy_delete_event.event_order_trusted=1
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM rhythmjoy_booking_ledger AS legacy_ledger
+                        WHERE legacy_ledger.source_platform='naver'
+                          AND legacy_ledger.room_key=rhythmjoy_spacecloud_tasks.room_key
+                          AND legacy_ledger.reservation_number=rhythmjoy_spacecloud_tasks.reservation_number
+                          AND legacy_ledger.reservation_date <=> rhythmjoy_spacecloud_tasks.reservation_date
+                          AND legacy_ledger.start_time <=> rhythmjoy_spacecloud_tasks.start_time
+                          AND legacy_ledger.end_time <=> rhythmjoy_spacecloud_tasks.end_time
+                          AND (
+                                rhythmjoy_spacecloud_tasks.booking_ledger_id IS NULL
+                             OR rhythmjoy_spacecloud_tasks.booking_ledger_id=legacy_ledger.id
+                          )
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM rhythmjoy_spacecloud_tasks AS legacy_upload
+                        INNER JOIN rhythmjoy_naver_email_events AS legacy_upload_event
+                                ON legacy_upload_event.id=legacy_upload.email_event_id
+                        INNER JOIN rhythmjoy_naver_email_events AS legacy_cancel_event
+                                ON legacy_cancel_event.id=rhythmjoy_spacecloud_tasks.email_event_id
+                        WHERE legacy_upload.task_type='upload'
+                          AND legacy_upload.status NOT IN ('pending','running')
+                          AND legacy_upload_event.event_type='reservation'
+                          AND legacy_upload_event.event_order_trusted=1
+                          AND legacy_cancel_event.event_order_trusted=1
+                          AND legacy_upload.reservation_number=rhythmjoy_spacecloud_tasks.reservation_number
+                          AND legacy_upload.room_key=rhythmjoy_spacecloud_tasks.room_key
+                          AND legacy_upload.reservation_date <=> rhythmjoy_spacecloud_tasks.reservation_date
+                          AND legacy_upload.start_time <=> rhythmjoy_spacecloud_tasks.start_time
+                          AND legacy_upload.end_time <=> rhythmjoy_spacecloud_tasks.end_time
+                          AND legacy_upload_event.event_order_key IS NOT NULL
+                          AND legacy_cancel_event.event_order_key IS NOT NULL
+                          AND (
+                                legacy_upload_event.event_order_key < legacy_cancel_event.event_order_key
+                             OR (
+                                    legacy_upload_event.event_order_key = legacy_cancel_event.event_order_key
+                                AND legacy_upload.email_event_id < rhythmjoy_spacecloud_tasks.email_event_id
+                             )
+                          )
+                    )
+                )
               )
             ORDER BY
               CASE
-                WHEN status='running' THEN 0
-                WHEN status='pending' THEN 1
-                ELSE 2
+                WHEN task_type='delete'
+                 AND status IN ('needs_review','failed','done','already_gone')
+                 AND COALESCE(side_effect_state, '') IN ('', 'ready', 'armed') THEN 0
+                WHEN status='running' THEN 1
+                WHEN status='pending' THEN 2
+                ELSE 3
               END,
               CASE
                 WHEN %s = '1'
@@ -1951,9 +2770,10 @@ try:
                 ELSE 1
               END,
               COALESCE(
-                (SELECT email_received_at FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1),
-                created_at
+                (SELECT event_order_key FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1),
+                UNIX_TIMESTAMP(created_at) * 1000
               ) ASC,
+              COALESCE(email_event_id, 0) ASC,
               id ASC
             LIMIT %s
             FOR UPDATE
@@ -1966,8 +2786,7 @@ try:
             )
         )
         rows = cur.fetchall()
-        for row in rows:
-            enrich_task_row(cur, row)
+        rows = prepare_task_claim_rows(cur, rows, claim_token)
         ids = [row['id'] for row in rows]
         if ids:
             cur.execute(
@@ -2057,25 +2876,89 @@ try:
                 CONCAT(LPAD(HOUR(end_time), 2, '0'), ':', LPAD(MINUTE(end_time), 2, '0')) AS endTime,
                 payload_json AS payloadJson,
                 attempts,
+                booking_ledger_id AS bookingLedgerId,
+                side_effect_state AS sideEffectState,
+                side_effect_token AS sideEffectToken,
+                CAST(side_effect_armed_at AS CHAR) AS sideEffectArmedAt,
+                CAST(side_effect_finalized_at AS CHAR) AS sideEffectFinalizedAt,
                 CAST(locked_at AS CHAR) AS lockedAt,
                 CAST(created_at AS CHAR) AS createdAt,
                 CAST(COALESCE(
                   (SELECT email_received_at FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1),
                   created_at
                 ) AS CHAR) AS sourceReceivedAt,
+                (SELECT event_order_key FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1) AS sourceEventOrderKey,
+                COALESCE((SELECT event_order_trusted FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1), 0) AS sourceEventOrderTrusted,
                 CAST(updated_at AS CHAR) AS updatedAt,
                 result_text AS resultText
             FROM rhythmjoy_spacecloud_tasks
             WHERE task_type IN ({placeholders})
               AND (
-                status='pending'
+                (status='pending' AND (locked_at IS NULL OR locked_at <= NOW()))
                 OR (status='running' AND locked_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
+                OR (
+                    status IN ('needs_review','failed','done','already_gone')
+                    AND task_type='delete'
+                    AND COALESCE(side_effect_state, '') IN ('', 'ready', 'armed')
+                    AND email_event_id IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1
+                        FROM rhythmjoy_naver_email_events AS legacy_delete_event
+                        WHERE legacy_delete_event.id=rhythmjoy_spacecloud_tasks.email_event_id
+                          AND legacy_delete_event.event_type='cancellation'
+                          AND legacy_delete_event.event_order_trusted=1
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM rhythmjoy_booking_ledger AS legacy_ledger
+                        WHERE legacy_ledger.source_platform='naver'
+                          AND legacy_ledger.room_key=rhythmjoy_spacecloud_tasks.room_key
+                          AND legacy_ledger.reservation_number=rhythmjoy_spacecloud_tasks.reservation_number
+                          AND legacy_ledger.reservation_date <=> rhythmjoy_spacecloud_tasks.reservation_date
+                          AND legacy_ledger.start_time <=> rhythmjoy_spacecloud_tasks.start_time
+                          AND legacy_ledger.end_time <=> rhythmjoy_spacecloud_tasks.end_time
+                          AND (
+                                rhythmjoy_spacecloud_tasks.booking_ledger_id IS NULL
+                             OR rhythmjoy_spacecloud_tasks.booking_ledger_id=legacy_ledger.id
+                          )
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM rhythmjoy_spacecloud_tasks AS legacy_upload
+                        INNER JOIN rhythmjoy_naver_email_events AS legacy_upload_event
+                                ON legacy_upload_event.id=legacy_upload.email_event_id
+                        INNER JOIN rhythmjoy_naver_email_events AS legacy_cancel_event
+                                ON legacy_cancel_event.id=rhythmjoy_spacecloud_tasks.email_event_id
+                        WHERE legacy_upload.task_type='upload'
+                          AND legacy_upload.status NOT IN ('pending','running')
+                          AND legacy_upload_event.event_type='reservation'
+                          AND legacy_upload_event.event_order_trusted=1
+                          AND legacy_cancel_event.event_order_trusted=1
+                          AND legacy_upload.reservation_number=rhythmjoy_spacecloud_tasks.reservation_number
+                          AND legacy_upload.room_key=rhythmjoy_spacecloud_tasks.room_key
+                          AND legacy_upload.reservation_date <=> rhythmjoy_spacecloud_tasks.reservation_date
+                          AND legacy_upload.start_time <=> rhythmjoy_spacecloud_tasks.start_time
+                          AND legacy_upload.end_time <=> rhythmjoy_spacecloud_tasks.end_time
+                          AND legacy_upload_event.event_order_key IS NOT NULL
+                          AND legacy_cancel_event.event_order_key IS NOT NULL
+                          AND (
+                                legacy_upload_event.event_order_key < legacy_cancel_event.event_order_key
+                             OR (
+                                    legacy_upload_event.event_order_key = legacy_cancel_event.event_order_key
+                                AND legacy_upload.email_event_id < rhythmjoy_spacecloud_tasks.email_event_id
+                             )
+                          )
+                    )
+                )
               )
             ORDER BY
               CASE
-                WHEN status='running' THEN 0
-                WHEN status='pending' THEN 1
-                ELSE 2
+                WHEN task_type='delete'
+                 AND status IN ('needs_review','failed','done','already_gone')
+                 AND COALESCE(side_effect_state, '') IN ('', 'ready', 'armed') THEN 0
+                WHEN status='running' THEN 1
+                WHEN status='pending' THEN 2
+                ELSE 3
               END,
               CASE
                 WHEN %s = '1' AND task_type='naver_block' THEN 0
@@ -2091,9 +2974,10 @@ try:
                 ELSE 1
               END,
               COALESCE(
-                (SELECT email_received_at FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1),
-                created_at
+                (SELECT event_order_key FROM rhythmjoy_naver_email_events WHERE id=email_event_id LIMIT 1),
+                UNIX_TIMESTAMP(created_at) * 1000
               ) ASC,
+              COALESCE(email_event_id, 0) ASC,
               id ASC
             LIMIT %s
             FOR UPDATE
@@ -2108,8 +2992,7 @@ try:
             ],
         )
         rows = cur.fetchall()
-        for row in rows:
-            enrich_task_row(cur, row)
+        rows = prepare_task_claim_rows(cur, rows, claim_token)
         ids = [row['id'] for row in rows]
         if ids:
             cur.execute(
@@ -2843,6 +3726,8 @@ function compactDirectVerification(value) {
     refreshCount: value.refreshCount,
     candidateReadCount: value.candidateReadCount,
     verificationPasses: value.verificationPasses,
+    absenceConfirmed: value.absenceConfirmed === true,
+    consecutiveAbsentReads: value.consecutiveAbsentReads,
     candidateCount: value.candidateCount,
     identityCandidateCount: value.identityCandidateCount,
     nameMatched: Boolean(value.nameMatched),
@@ -2964,6 +3849,8 @@ function compactTaskResultObject(value) {
   for (const key of [
     'preflightVerification',
     'postSubmitVerification',
+    'preDeleteVerification',
+    'postDeleteVerification',
     'fastVerification',
     'confirmationVerification',
     'verification',
@@ -3048,7 +3935,10 @@ function taskResultTextForDb(resultText, maxBytes = TASK_RESULT_TEXT_MAX_BYTES) 
     startTime: compacted.startTime || '',
     endTime: compacted.endTime || '',
     reservationNo: compacted.reservationNo || compacted.reservationId || '',
+    bookingLedgerId: compacted.bookingLedgerId || compacted.ledgerId || null,
+    sideEffectState: compacted.sideEffectState || '',
     submissionAttempted: compacted.submissionAttempted === true,
+    deletionAttempted: compacted.deletionAttempted === true,
     submissionConfirmed: compacted.submissionConfirmed === true,
     resubmitBlocked: compacted.resubmitBlocked === true,
     retryMode: compacted.retryMode || '',
@@ -3062,6 +3952,10 @@ function taskResultTextForDb(resultText, maxBytes = TASK_RESULT_TEXT_MAX_BYTES) 
     preflightVerification: compacted.preflightVerification,
     postSubmitVerification: compacted.postSubmitVerification,
     deleteVerification: compacted.deleteVerification,
+    preDeleteVerification: compacted.preDeleteVerification,
+    postDeleteVerification: compacted.postDeleteVerification,
+    authoritativeAbsence: compacted.authoritativeAbsence === true,
+    mirrorTaskId: compacted.mirrorTaskId || null,
     selectedCandidate: compacted.selectedCandidate,
     candidateSearch: compacted.candidateSearch,
     slotCount: compacted.slotCount,
@@ -3081,11 +3975,18 @@ function taskResultTextForDb(resultText, maxBytes = TASK_RESULT_TEXT_MAX_BYTES) 
     startTime: summary.startTime,
     endTime: summary.endTime,
     reservationNo: summary.reservationNo,
+    bookingLedgerId: summary.bookingLedgerId,
+    sideEffectState: summary.sideEffectState,
     submissionAttempted: summary.submissionAttempted,
+    deletionAttempted: summary.deletionAttempted,
+    authoritativeAbsence: summary.authoritativeAbsence,
+    mirrorTaskId: summary.mirrorTaskId,
     submissionConfirmed: summary.submissionConfirmed,
     resubmitBlocked: summary.resubmitBlocked,
     retryMode: summary.retryMode,
     error: summary.error,
+    preDeleteVerification: summary.preDeleteVerification,
+    postDeleteVerification: summary.postDeleteVerification,
     slotCount: summary.slotCount,
     changedSlotCount: summary.changedSlotCount,
     alreadySlotCount: summary.alreadySlotCount,
@@ -3100,7 +4001,11 @@ function taskResultTextForDb(resultText, maxBytes = TASK_RESULT_TEXT_MAX_BYTES) 
   throw new Error(`essential task verification evidence exceeds ${maxBytes} bytes`);
 }
 
-async function updateRemoteTask(args, task, status, resultText, { releaseClaim = true } = {}) {
+async function updateRemoteTask(args, task, status, resultText, {
+  releaseClaim = true,
+  sideEffectState = '',
+  retryAfterSeconds = 0,
+} = {}) {
   const target = await loadCafe24Target(args);
   const sourcePayload = payloadForTask(task);
   const payload = Buffer.from(JSON.stringify({
@@ -3111,6 +4016,8 @@ async function updateRemoteTask(args, task, status, resultText, { releaseClaim =
     status,
     resultText: taskResultTextForDb(resultText),
     releaseClaim,
+    retryAfterSeconds: Math.max(0, Math.min(Number(retryAfterSeconds) || 0, 300)),
+    sideEffectState: ['finalized', 'skipped'].includes(sideEffectState) ? sideEffectState : '',
   }), 'utf8').toString('base64');
   const script = `
 set -e
@@ -3140,29 +4047,69 @@ conn = pymysql.connect(
     password=os.environ['DB_PASSWORD'],
     database=os.environ['DB_NAME'],
     charset='utf8mb4',
-    autocommit=True,
+    autocommit=False,
     cursorclass=pymysql.cursors.DictCursor,
 )
 try:
     with conn.cursor() as cur:
         release_claim = bool(payload.get('releaseClaim', True))
+        retry_after_seconds = max(0, min(int(payload.get('retryAfterSeconds') or 0), 300))
         processed_expr = 'NOW()' if release_claim and payload['status'] in ('done', 'already_gone', 'needs_review', 'failed') else 'processed_at'
         next_status = payload['status'] if release_claim else 'running'
         next_claim_token = '' if release_claim else payload['claimToken']
+        final_side_effect_state = payload.get('sideEffectState') or ''
         cur.execute(
             f"""
             UPDATE rhythmjoy_spacecloud_tasks
             SET status=%s,
                 processed_at={processed_expr},
                 claim_token=%s,
+                locked_at=IF(
+                    %s > 0 AND %s='pending' AND %s,
+                    TIMESTAMPADD(SECOND, %s, NOW()),
+                    locked_at
+                ),
+                side_effect_state=IF(%s IN ('finalized','skipped'), %s, side_effect_state),
+                side_effect_finalized_at=IF(%s IN ('finalized','skipped'), NOW(), side_effect_finalized_at),
+                confirmation_sms_required=IF(task_type='upload' AND %s='skipped', 0, confirmation_sms_required),
                 result_text=%s,
                 updated_at=NOW()
             WHERE id=%s AND status='running' AND claim_token=%s
             """,
-            (next_status, next_claim_token, payload['resultText'], payload['taskId'], payload['claimToken'])
+            (
+                next_status, next_claim_token,
+                retry_after_seconds, payload['status'], release_claim, retry_after_seconds,
+                final_side_effect_state, final_side_effect_state,
+                final_side_effect_state, final_side_effect_state,
+                payload['resultText'], payload['taskId'], payload['claimToken'],
+            )
         )
         updated = cur.rowcount
+        already_terminal = False
+        if updated == 0:
+            cur.execute(
+                'SELECT status, side_effect_state FROM rhythmjoy_spacecloud_tasks WHERE id=%s LIMIT 1',
+                (payload['taskId'],),
+            )
+            current = cur.fetchone() or {}
+            already_terminal = bool(
+                current.get('status') in ('done', 'already_gone')
+                and current.get('side_effect_state') == 'skipped'
+                and payload.get('sideEffectState') == 'skipped'
+            )
         if updated == 1:
+            if payload.get('taskType') == 'upload' and final_side_effect_state == 'skipped':
+                cur.execute(
+                    """
+                    UPDATE rhythmjoy_sms_deliveries
+                    SET status='skipped', next_retry_at=NULL,
+                        error_text='upload generation closed without a SpaceCloud create side effect',
+                        updated_at=NOW()
+                    WHERE source_task_type='upload' AND source_task_id=%s
+                      AND status IN ('pending','failed','phone_lookup_failed')
+                    """,
+                    (payload['taskId'],),
+                )
             cur.execute(
                 """
                 UPDATE rhythmjoy_admin_sync_tasks
@@ -3223,16 +4170,928 @@ try:
                         else:
                             series_status = 'active'
                         cur.execute("UPDATE rhythmjoy_admin_series SET status=%s, updated_at=NOW() WHERE id=%s", (series_status, series_id))
-        print(json.dumps({'updated': updated}, ensure_ascii=False))
+    conn.commit()
+    print(json.dumps({'updated': updated, 'alreadyTerminal': already_terminal}, ensure_ascii=False))
+except Exception:
+    conn.rollback()
+    raise
 finally:
     conn.close()
 PY
 `;
   const result = JSON.parse(runSshScript(target, script).trim() || '{}');
-  if (result.updated !== 1) {
+  if (result.updated !== 1 && result.alreadyTerminal !== true) {
     throw new Error(`task claim lost before status update: task=${task.id || task.taskId || ''}`);
   }
   return result;
+}
+
+async function checkpointRemoteUploadSubmission(args, task) {
+  const target = await loadCafe24Target(args);
+  const sourcePayload = payloadForTask(task);
+  const request = Buffer.from(JSON.stringify({
+    taskId: Number(task.id || task.taskId || 0),
+    claimToken: String(task.claimToken || task.claim_token || ''),
+    ledgerId: Number(task.bookingLedgerId || task.booking_ledger_id || task.ledgerId || task.ledger_id || 0),
+    emailEventId: Number(task.emailEventId || task.email_event_id || 0),
+    adminPanelTask: isAdminPanelTask(task),
+    reservationNo: String(task.reservationNo || task.reservation_number || ''),
+    roomKey: String(task.roomKey || task.room_key || ''),
+    adminReservationId: sourcePayload.admin_reservation_id || sourcePayload.adminReservationId || null,
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export UPLOAD_CHECKPOINT_B64=${shellQuote(request)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+request = json.loads(base64.b64decode(os.environ['UPLOAD_CHECKPOINT_B64']).decode('utf-8'))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'],
+    port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'],
+    password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'],
+    charset='utf8mb4',
+    autocommit=False,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        # Lock in the same ledger -> task order used by email/admin writes. If a
+        # cancellation committed first we see canceled and never click; if this
+        # guard committed first, the durable checkpoint tells deletion that the
+        # SpaceCloud mirror may exist even when the process dies before/after click.
+        cur.execute(
+            """
+            SELECT id, ledger_key, source_platform, source_mode, current_status,
+                   room_key, reservation_number, reservation_date, start_time, end_time,
+                   confirmed_email_event_id, canceled_email_event_id,
+                   last_event_id, last_event_order_key,
+                   confirmed_email_received_at, canceled_email_received_at
+            FROM rhythmjoy_booking_ledger
+            WHERE id=%s
+            FOR UPDATE
+            """,
+            (request.get('ledgerId'),),
+        )
+        ledger = cur.fetchone()
+        cur.execute(
+            """
+            SELECT id, email_event_id, task_type, status, claim_token,
+                   booking_ledger_id, side_effect_state, side_effect_token,
+                   room_key, reservation_number, reservation_date, start_time, end_time
+            FROM rhythmjoy_spacecloud_tasks
+            WHERE id=%s AND status='running' AND claim_token=%s
+            FOR UPDATE
+            """,
+            (request.get('taskId'), request.get('claimToken') or ''),
+        )
+        task = cur.fetchone()
+        if not task:
+            cur.execute(
+                """
+                SELECT id, email_event_id, task_type, status, claim_token,
+                       booking_ledger_id, side_effect_state, side_effect_token,
+                       room_key, reservation_number, reservation_date, start_time, end_time
+                FROM rhythmjoy_spacecloud_tasks
+                WHERE id=%s
+                LIMIT 1
+                """,
+                (request.get('taskId'),),
+            )
+            fenced = cur.fetchone()
+            if not (
+                fenced
+                and fenced.get('status') == 'done'
+                and fenced.get('side_effect_state') == 'skipped'
+                and int(fenced.get('booking_ledger_id') or 0) == int(request.get('ledgerId') or 0)
+            ):
+                raise RuntimeError('upload task claim lost before submit checkpoint')
+            task = fenced
+
+        prior_cleanup = None
+        unresolved_lifecycle_event = None
+        expected_event_id = int(request.get('emailEventId') or 0)
+        current_upload_event = None
+        winning_lifecycle_event = None
+        if not request.get('adminPanelTask') and ledger and expected_event_id > 0:
+            cur.execute(
+                'SELECT id, event_type, email_received_at, event_order_key, event_order_trusted FROM rhythmjoy_naver_email_events WHERE id=%s LIMIT 1',
+                (expected_event_id,),
+            )
+            current_upload_event = cur.fetchone()
+            winning_event_id = int(ledger.get('last_event_id') or 0)
+            if winning_event_id == expected_event_id:
+                winning_lifecycle_event = current_upload_event
+            elif winning_event_id > 0:
+                cur.execute(
+                    'SELECT id, event_type, email_received_at, event_order_key, event_order_trusted FROM rhythmjoy_naver_email_events WHERE id=%s LIMIT 1',
+                    (winning_event_id,),
+                )
+                winning_lifecycle_event = cur.fetchone()
+            cur.execute(
+                """
+                SELECT id
+                FROM rhythmjoy_naver_email_events
+                WHERE event_type IN ('reservation','cancellation')
+                  AND id<>%s
+                  AND (
+                        parse_status<>'parsed'
+                     OR processing_status IN ('received','failed','needs_review','parse_failed','awaiting_predecessor')
+                     OR COALESCE(event_order_trusted, 0)<>1
+                     OR (event_type='cancellation' AND COALESCE(reservation_number, '')='')
+                     OR (
+                            event_type='cancellation'
+                        AND (
+                              COALESCE(spacecloud_room_key, '')=''
+                              OR reservation_date IS NULL
+                              OR start_time IS NULL
+                              OR end_time IS NULL
+                        )
+                     )
+                     OR (
+                            event_type='cancellation'
+                        AND
+                            event_order_trusted=1
+                        AND event_order_key IS NOT NULL
+                        AND event_order_key=(
+                            SELECT current_event.event_order_key
+                            FROM rhythmjoy_naver_email_events AS current_event
+                            WHERE current_event.id=%s
+                              AND current_event.event_order_trusted=1
+                            LIMIT 1
+                        )
+                     )
+                  )
+                  AND (
+                        (COALESCE(reservation_number, '')<>'' AND reservation_number=%s)
+                     OR (
+                            COALESCE(reservation_number, '')=''
+                        AND (
+                              COALESCE(spacecloud_room_key, '')=''
+                              OR spacecloud_room_key=%s
+                        )
+                     )
+                  )
+                ORDER BY id ASC
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (expected_event_id, expected_event_id, task.get('reservation_number'), task.get('room_key')),
+            )
+            unresolved_lifecycle_event = cur.fetchone()
+            cur.execute(
+                """
+                SELECT cleanup.id, cleanup.status, cleanup.side_effect_state,
+                       cleanup.email_event_id, cleanup.booking_ledger_id
+                FROM rhythmjoy_spacecloud_tasks AS cleanup
+                LEFT JOIN rhythmjoy_naver_email_events AS cleanup_event
+                       ON cleanup_event.id=cleanup.email_event_id
+                WHERE cleanup.task_type='delete'
+                  AND (
+                        cleanup.booking_ledger_id=%s
+                     OR (
+                            cleanup.booking_ledger_id IS NULL
+                        AND cleanup.reservation_number=%s
+                     )
+                     OR (
+                            cleanup.reservation_number=%s
+                        AND cleanup.room_key=%s
+                        AND cleanup.reservation_date <=> %s
+                        AND cleanup.start_time <=> %s
+                        AND cleanup.end_time <=> %s
+                     )
+                  )
+                  AND NOT (
+                        cleanup.status IN ('done','already_gone')
+                    AND COALESCE(cleanup.side_effect_state, '') IN ('finalized','skipped')
+                  )
+                  AND (
+                        cleanup.email_event_id IS NULL
+                     OR cleanup_event.id IS NULL
+                     OR COALESCE(cleanup_event.event_type, '') <> 'cancellation'
+                     OR COALESCE(cleanup_event.event_order_trusted, 0) <> 1
+                     OR cleanup_event.event_order_key IS NULL
+                     OR COALESCE((
+                            SELECT upload_event.event_order_trusted
+                            FROM rhythmjoy_naver_email_events AS upload_event
+                            WHERE upload_event.id=%s LIMIT 1
+                        ), 0) <> 1
+                     OR (
+                            SELECT upload_event.event_order_key
+                            FROM rhythmjoy_naver_email_events AS upload_event
+                            WHERE upload_event.id=%s LIMIT 1
+                        ) IS NULL
+                     OR cleanup_event.event_order_key < (
+                            SELECT upload_event.event_order_key
+                            FROM rhythmjoy_naver_email_events AS upload_event
+                            WHERE upload_event.id=%s LIMIT 1
+                        )
+                     OR (
+                            cleanup_event.event_order_key = (
+                                SELECT upload_event.event_order_key
+                                FROM rhythmjoy_naver_email_events AS upload_event
+                                WHERE upload_event.id=%s LIMIT 1
+                            )
+                        AND cleanup.email_event_id < %s
+                     )
+                  )
+                ORDER BY CASE
+                           WHEN cleanup.email_event_id IS NULL
+                             OR cleanup_event.id IS NULL
+                             OR COALESCE(cleanup_event.event_type, '') <> 'cancellation'
+                             OR COALESCE(cleanup_event.event_order_trusted, 0) <> 1
+                             OR cleanup_event.event_order_key IS NULL THEN 0
+                           ELSE 1
+                         END ASC,
+                         cleanup_event.event_order_key ASC,
+                         COALESCE(cleanup.email_event_id, 0) ASC,
+                         cleanup.id ASC
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (
+                    ledger.get('id'),
+                    task.get('reservation_number'),
+                    task.get('reservation_number'),
+                    task.get('room_key'),
+                    task.get('reservation_date'),
+                    task.get('start_time'),
+                    task.get('end_time'),
+                    expected_event_id,
+                    expected_event_id,
+                    expected_event_id,
+                    expected_event_id,
+                    expected_event_id,
+                ),
+            )
+            prior_cleanup = cur.fetchone()
+        cleanup_terminal = not prior_cleanup
+        cleanup_active = bool(prior_cleanup)
+
+        identity_ok = bool(
+            ledger
+            and task.get('task_type') == 'upload'
+            and int(task.get('booking_ledger_id') or 0) == int(ledger.get('id') or 0)
+            and ledger.get('source_platform') == 'naver'
+            and task.get('room_key') == ledger.get('room_key')
+            and task.get('reservation_number') == ledger.get('reservation_number')
+            and task.get('reservation_date') == ledger.get('reservation_date')
+            and task.get('start_time') == ledger.get('start_time')
+            and task.get('end_time') == ledger.get('end_time')
+            and str(task.get('reservation_number') or '') == str(request.get('reservationNo') or '')
+            and str(task.get('room_key') or '') == str(request.get('roomKey') or '')
+        )
+        if request.get('adminPanelTask'):
+            event_identity_ok = bool(
+                ledger
+                and ledger.get('source_mode') == 'admin-task-anchor'
+                and task.get('email_event_id') is None
+            )
+        else:
+            event_identity_ok = bool(
+                ledger
+                and expected_event_id > 0
+                and int(task.get('email_event_id') or 0) == expected_event_id
+                and int(ledger.get('confirmed_email_event_id') or 0) == expected_event_id
+                and current_upload_event
+                and current_upload_event.get('event_type') == 'reservation'
+                and current_upload_event.get('email_received_at') is not None
+                and current_upload_event.get('event_order_key') is not None
+                and bool(current_upload_event.get('event_order_trusted'))
+            )
+
+        trusted_later_generation = bool(
+            not request.get('adminPanelTask')
+            and ledger
+            and task.get('side_effect_state') == 'ready'
+            and current_upload_event
+            and winning_lifecycle_event
+            and int(winning_lifecycle_event.get('id') or 0) != expected_event_id
+            and current_upload_event.get('event_type') == 'reservation'
+            and bool(current_upload_event.get('event_order_trusted'))
+            and current_upload_event.get('event_order_key') is not None
+            and bool(winning_lifecycle_event.get('event_order_trusted'))
+            and winning_lifecycle_event.get('event_order_key') is not None
+            and (
+                (
+                    ledger.get('current_status') == 'confirmed'
+                    and winning_lifecycle_event.get('event_type') == 'reservation'
+                )
+                or (
+                    ledger.get('current_status') == 'canceled'
+                    and winning_lifecycle_event.get('event_type') == 'cancellation'
+                )
+            )
+            and (
+                int(winning_lifecycle_event.get('event_order_key') or 0)
+                > int(current_upload_event.get('event_order_key') or 0)
+                or (
+                    int(winning_lifecycle_event.get('event_order_key') or 0)
+                    == int(current_upload_event.get('event_order_key') or 0)
+                    and winning_lifecycle_event.get('event_type')
+                    == current_upload_event.get('event_type')
+                    and int(winning_lifecycle_event.get('id') or 0)
+                    > int(current_upload_event.get('id') or 0)
+                )
+            )
+        )
+
+        summary = {
+            'taskId': task.get('id'),
+            'ledgerId': ledger.get('id') if ledger else None,
+            'ledgerStatus': ledger.get('current_status') if ledger else '',
+            'emailEventId': task.get('email_event_id'),
+            'sideEffectState': task.get('side_effect_state'),
+            'priorDeleteTaskId': prior_cleanup.get('id') if prior_cleanup else None,
+            'priorDeleteStatus': prior_cleanup.get('status') if prior_cleanup else '',
+            'priorDeleteSideEffectState': prior_cleanup.get('side_effect_state') if prior_cleanup else '',
+            'unresolvedLifecycleEventId': unresolved_lifecycle_event.get('id') if unresolved_lifecycle_event else None,
+            'winningLifecycleEventId': winning_lifecycle_event.get('id') if winning_lifecycle_event else None,
+            'trustedLaterGeneration': trusted_later_generation,
+            'identityMatched': bool(identity_ok and event_identity_ok),
+        }
+        if not ledger:
+            result = {'approved': False, 'stale': False, 'decision': 'ledger-missing', 'reason': 'booking ledger missing before SpaceCloud submit', 'summary': summary}
+        elif trusted_later_generation:
+            result = {'approved': False, 'stale': True, 'decision': 'upload-superseded-before-submit', 'reason': 'a strictly later trusted reservation lifecycle generation won before the first SpaceCloud click', 'summary': summary}
+        elif not identity_ok or not event_identity_ok:
+            result = {'approved': False, 'stale': False, 'decision': 'upload-identity-changed', 'reason': 'task and booking ledger identity changed before SpaceCloud submit', 'summary': summary}
+        elif unresolved_lifecycle_event:
+            result = {'approved': False, 'stale': False, 'retryable': True, 'decision': 'unresolved-lifecycle-quarantine', 'reason': 'reservation lifecycle chronology is unresolved; automatic SpaceCloud creation remains quarantined until its evidence is repaired', 'summary': summary}
+        elif ledger.get('current_status') != 'confirmed' or task.get('side_effect_state') == 'skipped':
+            result = {'approved': False, 'stale': True, 'decision': 'ledger-no-longer-confirmed', 'reason': 'booking was canceled before the SpaceCloud submit click', 'summary': summary}
+        elif cleanup_active:
+            result = {'approved': False, 'stale': False, 'retryable': True, 'decision': 'upload-waits-for-prior-delete', 'reason': 'the preceding cancellation cleanup has not reached a durable terminal state', 'summary': summary}
+        elif not cleanup_terminal:
+            result = {'approved': False, 'stale': False, 'retryable': False, 'decision': 'prior-delete-needs-review', 'reason': 'the preceding cancellation cleanup stopped without exact terminal proof', 'summary': summary}
+        elif task.get('side_effect_state') == 'armed' and task.get('side_effect_token') == (request.get('claimToken') or ''):
+            result = {'approved': True, 'stale': False, 'decision': 'upload-submit-already-checkpointed', 'reason': 'the same claim already owns the durable submit fence', 'summary': summary}
+        elif task.get('side_effect_state') != 'ready':
+            result = {'approved': False, 'stale': False, 'decision': 'upload-side-effect-state-not-ready', 'reason': 'upload task has no safe ready state for a new SpaceCloud click', 'summary': summary}
+        else:
+            checkpoint = {
+                'status': 'upload-submit-checkpoint',
+                'taskId': task.get('id'),
+                'taskType': 'upload',
+                'ledgerId': ledger.get('id'),
+                'emailEventId': task.get('email_event_id'),
+                'reservationNo': task.get('reservation_number') or '',
+                'roomKey': task.get('room_key') or '',
+                'submissionAttempted': True,
+                'submissionConfirmed': False,
+                'mirrorMutationState': 'create_may_have_happened',
+                'retryMode': 'verification-only',
+                'reason': 'durable checkpoint committed immediately before the SpaceCloud submit click',
+            }
+            checkpoint_text = json.dumps(checkpoint, ensure_ascii=False, separators=(',', ':'))
+            cur.execute(
+                """
+                UPDATE rhythmjoy_spacecloud_tasks
+                SET side_effect_state='armed',
+                    side_effect_token=%s,
+                    side_effect_armed_at=NOW(),
+                    side_effect_finalized_at=NULL,
+                    result_text=%s,
+                    updated_at=NOW()
+                WHERE id=%s AND status='running' AND claim_token=%s
+                  AND booking_ledger_id=%s
+                  AND side_effect_state='ready'
+                """,
+                (
+                    request.get('claimToken') or '', checkpoint_text,
+                    task.get('id'), request.get('claimToken') or '', ledger.get('id'),
+                ),
+            )
+            if cur.rowcount != 1:
+                raise RuntimeError('upload task claim lost while writing submit checkpoint')
+            cur.execute(
+                """
+                UPDATE rhythmjoy_admin_sync_tasks
+                SET status='running', result_text=%s, updated_at=NOW()
+                WHERE live_task_id=%s
+                """,
+                (checkpoint_text, task.get('id')),
+            )
+            result = {'approved': True, 'stale': False, 'decision': 'upload-submit-checkpointed', 'reason': checkpoint['reason'], 'summary': summary}
+    conn.commit()
+    print(json.dumps(result, ensure_ascii=False))
+except Exception:
+    conn.rollback()
+    raise
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '{}');
+}
+
+async function rearmRemoteUploadAfterVerifiedAbsence(args, task, verification) {
+  const target = await loadCafe24Target(args);
+  const request = Buffer.from(JSON.stringify({
+    taskId: Number(task.id || task.taskId || 0),
+    claimToken: String(task.claimToken || task.claim_token || ''),
+    ledgerId: Number(task.bookingLedgerId || task.booking_ledger_id || task.ledgerId || task.ledger_id || 0),
+    verification: {
+      source: verification?.verification?.source || '',
+      reason: verification?.verification?.reason || '',
+      apiStatus: Number(verification?.verification?.apiStatus || 0),
+      identityCandidateCount: Number(verification?.verification?.identityCandidateCount || 0),
+      verificationMode: verification?.verificationMode || '',
+    },
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export UPLOAD_REARM_B64=${shellQuote(request)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+request = json.loads(base64.b64decode(os.environ['UPLOAD_REARM_B64']).decode('utf-8'))
+proof = request.get('verification') or {}
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'], port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'], password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'], charset='utf8mb4', autocommit=False,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s FOR UPDATE', (request.get('ledgerId'),))
+        ledger = cur.fetchone()
+        cur.execute(
+            "SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s AND status='running' AND claim_token=%s FOR UPDATE",
+            (request.get('taskId'), request.get('claimToken') or ''),
+        )
+        task = cur.fetchone()
+        if not task:
+            raise RuntimeError('upload task claim lost before verified-absence rearm')
+        proof_ok = bool(
+            proof.get('source') == 'spacecloud-calendar-api'
+            and int(proof.get('apiStatus') or 0) == 200
+            and int(proof.get('identityCandidateCount') or 0) == 0
+        )
+        identity_ok = bool(
+            ledger
+            and task.get('task_type') == 'upload'
+            and int(task.get('booking_ledger_id') or 0) == int(ledger.get('id') or 0)
+        )
+        if not proof_ok or not identity_ok:
+            result = {'approved': False, 'retryable': False, 'reason': 'verified-absence rearm proof or identity is invalid'}
+        elif ledger.get('current_status') != 'confirmed':
+            result = {'approved': False, 'stale': True, 'retryable': False, 'reason': 'booking was canceled while the armed upload was being recovered'}
+        elif task.get('side_effect_state') != 'armed':
+            result = {'approved': False, 'retryable': False, 'reason': 'only an armed upload may be rearmed after verified absence'}
+        elif not task.get('side_effect_armed_at'):
+            result = {'approved': False, 'retryable': False, 'reason': 'armed upload timestamp is missing'}
+        else:
+            cur.execute(
+                """
+                UPDATE rhythmjoy_spacecloud_tasks
+                SET side_effect_state='ready', side_effect_token='',
+                    side_effect_armed_at=NULL, side_effect_finalized_at=NULL,
+                    result_text=%s, updated_at=NOW()
+                WHERE id=%s AND status='running' AND claim_token=%s
+                  AND booking_ledger_id=%s AND side_effect_state='armed'
+                  AND side_effect_armed_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+                """,
+                (
+                    json.dumps({
+                        'status': 'upload-rearmed-after-authoritative-absence',
+                        'taskId': task.get('id'),
+                        'ledgerId': ledger.get('id'),
+                        'submissionAttempted': False,
+                        'retryMode': 'safe-retry-before-submit',
+                        'verification': proof,
+                    }, ensure_ascii=False, separators=(',', ':')),
+                    task.get('id'), request.get('claimToken') or '', ledger.get('id'),
+                ),
+            )
+            if cur.rowcount == 1:
+                result = {'approved': True, 'retryable': False, 'reason': 'stale armed upload was authoritatively absent and safely rearmed'}
+            else:
+                result = {'approved': False, 'retryable': True, 'reason': 'armed upload is not old enough to rearm; verification-only wait continues'}
+    conn.commit()
+    print(json.dumps(result, ensure_ascii=False))
+except Exception:
+    conn.rollback()
+    raise
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '{}');
+}
+
+async function checkpointRemoteDeleteSubmission(args, task, proof = {}) {
+  const target = await loadCafe24Target(args);
+  const request = Buffer.from(JSON.stringify({
+    taskId: Number(task.id || task.taskId || 0),
+    claimToken: String(task.claimToken || task.claim_token || ''),
+    ledgerId: Number(task.bookingLedgerId || task.booking_ledger_id || task.ledgerId || task.ledger_id || 0),
+    emailEventId: Number(task.emailEventId || task.email_event_id || 0),
+    adminPanelTask: isAdminPanelTask(task),
+    priorUploadTaskId: Number(task.priorUploadTaskId || task.prior_upload_task_id || 0),
+    reservationNo: String(task.reservationNo || task.reservation_number || ''),
+    roomKey: String(task.roomKey || task.room_key || ''),
+    exactProof: {
+      scheduleId: String(proof.scheduleId || ''),
+      source: String(proof.verificationSource || ''),
+      apiStatus: Number(proof.apiStatus || 0),
+      identityCandidateCount: Number(proof.identityCandidateCount || 0),
+      identityMatched: proof.identityMatched === true,
+      absenceConfirmed: proof.absenceConfirmed === true,
+      consecutiveAbsentReads: Number(proof.consecutiveAbsentReads || 0),
+      mode: String(proof.mode || ''),
+    },
+  }), 'utf8').toString('base64');
+  const script = `
+set -e
+export RHYTHMJOY_ENV_FILE=${shellQuote(target.SERVER_ENV_FILE)}
+export DELETE_CHECKPOINT_B64=${shellQuote(request)}
+${shellQuote(target.PYTHON_BIN)} <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+import pymysql
+
+def load_env(path):
+    for raw in Path(path).read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+def event_order_before(left_key, left_id, right_key, right_id):
+    if left_key is None or right_key is None:
+        return False
+    # Equal source milliseconds are ambiguous across mailboxes. The DB id is
+    # only a storage tie-breaker and cannot authorize a delete click.
+    return int(left_key) < int(right_key)
+
+load_env(os.environ['RHYTHMJOY_ENV_FILE'])
+request = json.loads(base64.b64decode(os.environ['DELETE_CHECKPOINT_B64']).decode('utf-8'))
+conn = pymysql.connect(
+    host=os.environ['DB_SERVERNAME'], port=int(os.environ.get('DB_PORT', '3306')),
+    user=os.environ['DB_USERNAME'], password=os.environ['DB_PASSWORD'],
+    database=os.environ['DB_NAME'], charset='utf8mb4', autocommit=False,
+    cursorclass=pymysql.cursors.DictCursor,
+)
+try:
+    with conn.cursor() as cur:
+        cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s FOR UPDATE', (request.get('ledgerId'),))
+        ledger = cur.fetchone()
+        cur.execute(
+            "SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s AND status='running' AND claim_token=%s FOR UPDATE",
+            (request.get('taskId'), request.get('claimToken') or ''),
+        )
+        task = cur.fetchone()
+        if not task:
+            raise RuntimeError('delete task claim lost before submit checkpoint')
+        prior_upload = None
+        if int(request.get('priorUploadTaskId') or 0) > 0:
+            cur.execute('SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s FOR UPDATE', (request.get('priorUploadTaskId'),))
+            prior_upload = cur.fetchone()
+
+        event_id = int(request.get('emailEventId') or 0)
+        delete_event_at = None
+        delete_event_order_key = None
+        delete_event_order_trusted = False
+        delete_event_type = ''
+        prior_upload_event_at = None
+        prior_upload_event_order_key = None
+        prior_upload_event_order_trusted = False
+        prior_upload_event_type = ''
+        if event_id > 0:
+            cur.execute(
+                'SELECT email_received_at, event_type, event_order_key, event_order_trusted FROM rhythmjoy_naver_email_events WHERE id=%s LIMIT 1',
+                (event_id,),
+            )
+            delete_event = cur.fetchone() or {}
+            delete_event_at = delete_event.get('email_received_at')
+            delete_event_order_key = delete_event.get('event_order_key')
+            delete_event_order_trusted = bool(delete_event.get('event_order_trusted'))
+            delete_event_type = delete_event.get('event_type') or ''
+        if prior_upload and prior_upload.get('email_event_id'):
+            cur.execute(
+                'SELECT email_received_at, event_type, event_order_key, event_order_trusted FROM rhythmjoy_naver_email_events WHERE id=%s LIMIT 1',
+                (prior_upload.get('email_event_id'),),
+            )
+            prior_upload_event = cur.fetchone() or {}
+            prior_upload_event_at = prior_upload_event.get('email_received_at')
+            prior_upload_event_order_key = prior_upload_event.get('event_order_key')
+            prior_upload_event_order_trusted = bool(prior_upload_event.get('event_order_trusted'))
+            prior_upload_event_type = prior_upload_event.get('event_type') or ''
+
+        confirmed_event_order_key = None
+        confirmed_event_order_trusted = False
+        if ledger and ledger.get('confirmed_email_event_id'):
+            cur.execute(
+                'SELECT event_order_key, event_order_trusted FROM rhythmjoy_naver_email_events WHERE id=%s LIMIT 1',
+                (ledger.get('confirmed_email_event_id'),),
+            )
+            confirmed_event = cur.fetchone() or {}
+            confirmed_event_order_key = confirmed_event.get('event_order_key')
+            confirmed_event_order_trusted = bool(confirmed_event.get('event_order_trusted'))
+
+        current_cancellation = bool(ledger and ledger.get('current_status') == 'canceled')
+        superseded_cleanup = bool(
+            ledger
+            and ledger.get('current_status') == 'confirmed'
+            and event_id > 0
+            and delete_event_at
+            and delete_event_order_trusted
+            and delete_event_order_key is not None
+            and confirmed_event_order_trusted
+            and confirmed_event_order_key is not None
+            and event_order_before(
+                delete_event_order_key,
+                event_id,
+                confirmed_event_order_key,
+                ledger.get('confirmed_email_event_id'),
+            )
+        )
+
+        prior_exact_slot = bool(
+            prior_upload and task
+            and prior_upload.get('task_type') == 'upload'
+            and prior_upload.get('room_key') == task.get('room_key')
+            and prior_upload.get('reservation_number') == task.get('reservation_number')
+            and prior_upload.get('reservation_date') == task.get('reservation_date')
+            and prior_upload.get('start_time') == task.get('start_time')
+            and prior_upload.get('end_time') == task.get('end_time')
+        )
+        normalized_prior_link = bool(
+            prior_upload and ledger
+            and int(prior_upload.get('booking_ledger_id') or 0) == int(ledger.get('id') or 0)
+        )
+        legacy_prior_link = bool(
+            prior_upload and ledger
+            and prior_upload.get('booking_ledger_id') is None
+            and prior_upload.get('email_event_id')
+            and prior_upload_event_at
+            and prior_upload_event_order_trusted
+            and prior_upload_event_order_key is not None
+            and prior_upload_event_type == 'reservation'
+            and delete_event_at
+            and delete_event_order_trusted
+            and delete_event_order_key is not None
+            and event_order_before(
+                prior_upload_event_order_key,
+                prior_upload.get('email_event_id'),
+                delete_event_order_key,
+                event_id,
+            )
+        )
+        prior_identity_ok = bool(prior_exact_slot and (normalized_prior_link or legacy_prior_link))
+        historical_delete_generation = bool(
+            not request.get('adminPanelTask')
+            and event_id > 0
+            and delete_event_at
+            and delete_event_order_trusted
+            and delete_event_order_key is not None
+            and delete_event_type == 'cancellation'
+            and int(task.get('email_event_id') or 0) == event_id
+            and prior_identity_ok
+            and prior_upload.get('email_event_id') is not None
+            and prior_upload_event_order_trusted
+            and prior_upload_event_type == 'reservation'
+            and event_order_before(
+                prior_upload_event_order_key,
+                prior_upload.get('email_event_id'),
+                delete_event_order_key,
+                event_id,
+            )
+        )
+        delete_generation_active = bool(
+            current_cancellation if request.get('adminPanelTask') else historical_delete_generation
+        )
+        prior_active = bool(
+            prior_upload
+            and prior_upload.get('status') in ('pending', 'running')
+        )
+
+        task_request_identity_ok = bool(
+            ledger
+            and task.get('task_type') == 'delete'
+            and int(task.get('booking_ledger_id') or 0) == int(ledger.get('id') or 0)
+            and ledger.get('source_platform') == 'naver'
+            and str(task.get('reservation_number') or '') == str(request.get('reservationNo') or '')
+            and str(task.get('room_key') or '') == str(request.get('roomKey') or '')
+        )
+        current_ledger_identity_ok = bool(
+            ledger and task
+            and task.get('room_key') == ledger.get('room_key')
+            and task.get('reservation_number') == ledger.get('reservation_number')
+            and task.get('reservation_date') == ledger.get('reservation_date')
+            and task.get('start_time') == ledger.get('start_time')
+            and task.get('end_time') == ledger.get('end_time')
+        )
+        identity_ok = bool(
+            task_request_identity_ok
+            and (current_ledger_identity_ok if request.get('adminPanelTask') else prior_identity_ok)
+        )
+        if request.get('adminPanelTask'):
+            event_identity_ok = bool(
+                ledger
+                and current_cancellation
+                and ledger.get('source_mode') == 'admin-task-anchor'
+                and task.get('email_event_id') is None
+            )
+        else:
+            event_identity_ok = bool(
+                event_id > 0
+                and int(task.get('email_event_id') or 0) == event_id
+                and historical_delete_generation
+            ) if ledger else False
+        exact_proof = request.get('exactProof') or {}
+        exact_presence_proof_ok = bool(
+            exact_proof.get('source') == 'spacecloud-calendar-api'
+            and int(exact_proof.get('apiStatus') or 0) == 200
+            and int(exact_proof.get('identityCandidateCount') or 0) == 1
+            and exact_proof.get('identityMatched') is True
+            and str(exact_proof.get('scheduleId') or '')
+        )
+        exact_absence_proof_ok = bool(
+            exact_proof.get('source') == 'spacecloud-calendar-api'
+            and int(exact_proof.get('apiStatus') or 0) == 200
+            and int(exact_proof.get('identityCandidateCount') or 0) == 0
+            and exact_proof.get('absenceConfirmed') is True
+            and int(exact_proof.get('consecutiveAbsentReads') or 0) >= 2
+            and exact_proof.get('mode') == 'ensure-absent'
+        )
+        exact_proof_ok = bool(exact_presence_proof_ok or exact_absence_proof_ok)
+        legacy_prior_normalized = False
+        if (
+            identity_ok
+            and event_identity_ok
+            and delete_generation_active
+            and prior_identity_ok
+            and exact_proof_ok
+            and prior_upload
+            and not prior_active
+            and prior_upload.get('side_effect_state') in (None, '', 'ready', 'armed')
+        ):
+            normalized_state = 'skipped' if exact_absence_proof_ok else 'finalized'
+            normalized_result = json.dumps({
+                'status': 'stale-ledger-skip' if exact_absence_proof_ok else 'submitted',
+                'taskId': prior_upload.get('id'),
+                'taskType': 'upload',
+                'bookingLedgerId': ledger.get('id'),
+                'submissionAttempted': None if exact_absence_proof_ok else True,
+                'submissionConfirmed': False if exact_absence_proof_ok else True,
+                'mirrorMutationState': 'absent_verified_after_cancel' if exact_absence_proof_ok else 'created_verified',
+                'sideEffectState': normalized_state,
+                'verificationMode': 'exact-delete-absence-recovery' if exact_absence_proof_ok else 'exact-delete-preflight-recovery',
+                'scheduleId': str(exact_proof.get('scheduleId') or ''),
+                'reason': (
+                    'legacy terminal upload normalized from consecutive authenticated absence after cancellation'
+                    if exact_absence_proof_ok
+                    else 'legacy terminal upload normalized from authenticated exact mirror proof before delete'
+                ),
+            }, ensure_ascii=False, separators=(',', ':'))
+            cur.execute(
+                """
+                UPDATE rhythmjoy_spacecloud_tasks
+                SET booking_ledger_id=COALESCE(booking_ledger_id, %s),
+                    status='done', side_effect_state=%s, side_effect_token='',
+                    side_effect_finalized_at=NOW(), processed_at=COALESCE(processed_at, NOW()),
+                    confirmation_sms_required=0, claim_token='', locked_at=NULL,
+                    result_text=%s, updated_at=NOW()
+                WHERE id=%s
+                  AND status NOT IN ('pending','running')
+                  AND (side_effect_state IS NULL OR side_effect_state='' OR side_effect_state IN ('ready','armed'))
+                """,
+                (ledger.get('id'), normalized_state, normalized_result, prior_upload.get('id')),
+            )
+            legacy_prior_normalized = cur.rowcount == 1
+            if legacy_prior_normalized:
+                prior_upload['booking_ledger_id'] = ledger.get('id')
+                prior_upload['status'] = 'done'
+                prior_upload['side_effect_state'] = normalized_state
+                cur.execute(
+                    """
+                    UPDATE rhythmjoy_sms_deliveries
+                    SET status='skipped', next_retry_at=NULL,
+                        error_text='legacy upload reconciled after authoritative cancellation cleanup',
+                        updated_at=NOW()
+                    WHERE source_task_type='upload' AND source_task_id=%s
+                      AND status IN ('pending','failed','phone_lookup_failed')
+                    """,
+                    (prior_upload.get('id'),),
+                )
+                cur.execute(
+                    "UPDATE rhythmjoy_admin_sync_tasks SET status='done', result_text=%s, updated_at=NOW() WHERE live_task_id=%s",
+                    (normalized_result, prior_upload.get('id')),
+                )
+        prior_terminal = bool(
+            prior_upload
+            and prior_upload.get('status') in ('done', 'already_gone')
+            and prior_upload.get('side_effect_state') in ('finalized', 'skipped')
+        )
+        dependency_ok = bool(prior_identity_ok and prior_terminal)
+        summary = {
+            'taskId': task.get('id'),
+            'ledgerId': ledger.get('id') if ledger else None,
+            'ledgerStatus': ledger.get('current_status') if ledger else '',
+            'sideEffectState': task.get('side_effect_state'),
+            'priorUploadTaskId': prior_upload.get('id') if prior_upload else None,
+            'priorUploadStatus': prior_upload.get('status') if prior_upload else '',
+            'priorUploadSideEffectState': prior_upload.get('side_effect_state') if prior_upload else '',
+            'priorUploadIdentityMatched': prior_identity_ok,
+            'supersededCancellationCleanup': superseded_cleanup,
+            'historicalDeleteGeneration': historical_delete_generation,
+            'exactProofAccepted': exact_proof_ok,
+            'exactPresenceProofAccepted': exact_presence_proof_ok,
+            'exactAbsenceProofAccepted': exact_absence_proof_ok,
+            'legacyPriorNormalized': legacy_prior_normalized,
+        }
+        if not identity_ok or not event_identity_ok:
+            result = {'approved': False, 'stale': False, 'retryable': False, 'reason': 'delete task and booking ledger identity changed', 'summary': summary}
+        elif not delete_generation_active:
+            result = {'approved': False, 'stale': True, 'retryable': False, 'reason': 'booking is no longer canceled before the SpaceCloud delete click', 'summary': summary}
+        elif not prior_upload or not prior_identity_ok:
+            result = {'approved': False, 'stale': False, 'retryable': False, 'reason': 'exact prior upload generation is missing; automatic delete is blocked', 'summary': summary}
+        elif prior_active:
+            result = {'approved': False, 'stale': False, 'retryable': True, 'reason': 'matching upload has not reached a durable terminal state', 'summary': summary}
+        elif not dependency_ok:
+            result = {'approved': False, 'stale': False, 'retryable': False, 'reason': 'matching upload stopped without terminal side-effect proof', 'summary': summary}
+        elif task.get('side_effect_state') not in ('ready', 'armed'):
+            result = {'approved': False, 'stale': False, 'retryable': False, 'reason': 'delete task has no safe ready/armed state for an exact delete click', 'summary': summary}
+        else:
+            checkpoint = {
+                'status': 'delete-submit-checkpoint',
+                'taskId': task.get('id'),
+                'taskType': 'delete',
+                'ledgerId': ledger.get('id'),
+                'mirrorTaskId': prior_upload.get('id') if prior_upload else None,
+                'reservationNo': task.get('reservation_number') or '',
+                'deletionAttempted': True,
+                'reason': 'durable checkpoint committed immediately before the exact SpaceCloud delete click',
+            }
+            checkpoint_text = json.dumps(checkpoint, ensure_ascii=False, separators=(',', ':'))
+            cur.execute(
+                """
+                UPDATE rhythmjoy_spacecloud_tasks
+                SET side_effect_state='armed', side_effect_token=%s,
+                    side_effect_armed_at=COALESCE(side_effect_armed_at, NOW()),
+                    side_effect_finalized_at=NULL,
+                    result_text=%s, updated_at=NOW()
+                WHERE id=%s AND status='running' AND claim_token=%s
+                  AND booking_ledger_id=%s AND side_effect_state IN ('ready','armed')
+                """,
+                (
+                    request.get('claimToken') or '', checkpoint_text,
+                    task.get('id'), request.get('claimToken') or '', ledger.get('id'),
+                ),
+            )
+            if cur.rowcount != 1:
+                raise RuntimeError('delete task claim lost while writing submit checkpoint')
+            cur.execute(
+                "UPDATE rhythmjoy_admin_sync_tasks SET status='running', result_text=%s, updated_at=NOW() WHERE live_task_id=%s",
+                (checkpoint_text, task.get('id')),
+            )
+            result = {'approved': True, 'stale': False, 'retryable': False, 'reason': checkpoint['reason'], 'summary': summary}
+    conn.commit()
+    print(json.dumps(result, ensure_ascii=False))
+except Exception:
+    conn.rollback()
+    raise
+finally:
+    conn.close()
+PY
+`;
+  return JSON.parse(runSshScript(target, script).trim() || '{}');
 }
 
 async function requeueRemoteConflictSource(args, task, guard) {
@@ -3356,6 +5215,7 @@ ${shellQuote(target.PYTHON_BIN)} <<'PY'
 import base64
 import json
 import os
+import time
 from pathlib import Path
 import pymysql
 
@@ -3428,6 +5288,7 @@ try:
                 UPDATE rhythmjoy_booking_ledger
                 SET current_status='canceled',
                     automation_canceled_at=NOW(),
+                    automation_canceled_order_key=%s,
                     automation_cancel_task_id=%s,
                     automation_cancel_platform=%s,
                     cancel_payload_json=%s,
@@ -3435,6 +5296,7 @@ try:
                 WHERE id=%s AND current_status='confirmed' AND confirmed_email_event_id=%s
                 """,
                 (
+                    int(time.time() * 1000),
                     child.get('id'),
                     request.get('loserPlatform') or '',
                     json.dumps(cancel_audit, ensure_ascii=False, separators=(',', ':')),
@@ -3448,12 +5310,14 @@ try:
                 """
                 UPDATE rhythmjoy_booking_ledger
                 SET automation_canceled_at=COALESCE(automation_canceled_at, NOW()),
+                    automation_canceled_order_key=COALESCE(automation_canceled_order_key, %s),
                     automation_cancel_task_id=COALESCE(automation_cancel_task_id, %s),
                     automation_cancel_platform=COALESCE(NULLIF(automation_cancel_platform, ''), %s),
                     updated_at=NOW()
                 WHERE id=%s AND current_status='canceled' AND confirmed_email_event_id=%s
                 """,
                 (
+                    int(time.time() * 1000),
                     child.get('id'),
                     request.get('loserPlatform') or '',
                     loser_id,
@@ -3524,6 +5388,7 @@ import base64
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 import pymysql
 
@@ -3631,12 +5496,19 @@ try:
         cur.execute(
             """
             UPDATE rhythmjoy_booking_ledger
-            SET current_status='canceled', last_event_at=NOW(),
+            SET current_status='canceled',
+                automation_canceled_at=NOW(),
+                automation_canceled_order_key=%s,
+                automation_cancel_task_id=%s,
+                automation_cancel_platform=%s,
                 cancel_payload_json=%s, updated_at=NOW()
             WHERE id=%s AND confirmed_email_event_id=%s
               AND current_status IN ('confirmed','canceled')
             """,
             (
+                int(time.time() * 1000),
+                child.get('id'),
+                source_platform,
                 json.dumps(cancel_audit, ensure_ascii=False, separators=(',', ':')),
                 ledger_id,
                 child.get('email_event_id'),
@@ -5676,6 +7548,23 @@ function retryablePlatformDbStatus(row, task = null) {
   return 'needs_review';
 }
 
+function boundedVerificationDbStatus(row, task = null) {
+  const currentAttempt = currentPlatformTaskAttempt(row, task);
+  const maxAutomaticAttempts = platformTransientMaxAttempts();
+  const exhausted = currentAttempt >= maxAutomaticAttempts;
+  row.automaticRetry = {
+    kind: 'authoritative-platform-verification',
+    currentAttempt,
+    maxAutomaticAttempts,
+    exhausted,
+  };
+  if (!exhausted) return 'pending';
+  row.retryExhausted = true;
+  row.status = 'needs-review';
+  row.error = `${String(row.error || row.reason || 'platform verification remained ambiguous')} | 자동 재검사 한도 도달 (${currentAttempt}/${maxAutomaticAttempts})`;
+  return 'needs_review';
+}
+
 function rowsFromResult(rowOrError, key = 'failed') {
   if (typeof rowOrError !== 'object' || !rowOrError) return [];
   if (Array.isArray(rowOrError)) return rowOrError;
@@ -6380,16 +8269,58 @@ function cycleErrorMessage(errorText, { transient = false } = {}) {
   ]);
 }
 
+function sideEffectOutcomeMayBeAmbiguous(row, task = null) {
+  return Boolean(
+    row?.submissionAttempted === true
+    || row?.deletionAttempted === true
+    || row?.mirrorMutationState === 'create_may_have_happened'
+    || normalizedSideEffectState(row) === 'armed'
+    || normalizedSideEffectState(task) === 'armed'
+  );
+}
+
+function dependencyRetryAfterSeconds(row) {
+  return row?.status === 'upload-dependency-wait' ? 30 : 0;
+}
+
 function dbStatusForDeleteRow(row, task = null) {
-  if (row.status === 'stale-running-needs-review') return 'needs_review';
-  if (row.status === 'missing-ledger-needs-review') return 'needs_review';
-  if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'deleted') return 'done';
   if (row.status === 'already-gone') return 'already_gone';
+  if (row.status === 'upload-dependency-wait') return 'pending';
+  // A committed delete fence means the remote mutation may already have
+  // happened even when the browser/SSH response was lost.  Never terminalize
+  // that ambiguity as a plain failure or immediately reclaim a quarantined
+  // legacy row.  Retaining the running claim lets unrelated queue rows make
+  // progress while the stale-claim recovery later re-reads the exact identity.
+  if (sideEffectOutcomeMayBeAmbiguous(row, task)) return 'pending';
+  if (row.status === 'stale-ledger-skip') return 'done';
+  if (row.status === 'stale-running-needs-review') return 'needs_review';
+  if (row.status === 'missing-ledger-needs-review') return 'needs_review';
   if (row.status === 'needs-review') return 'needs_review';
+  if (row.status === 'deletion-verification-pending') return boundedVerificationDbStatus(row, task);
   const retryStatus = retryablePlatformDbStatus(row, task);
   if (retryStatus) return retryStatus;
   return 'failed';
+}
+
+function uploadFinalSideEffectState(row, dbStatus, task = null) {
+  if (dbStatus !== 'done') return '';
+  if (row.status === 'submitted') return 'finalized';
+  if (['stale-ledger-skip', 'naver-cancel-queued'].includes(row.status)) {
+    const state = row.sideEffectState || normalizedSideEffectState(task);
+    if (row.authoritativeAbsence === true || ['ready', 'skipped'].includes(state)) return 'skipped';
+  }
+  return '';
+}
+
+function deleteFinalSideEffectState(row, dbStatus) {
+  if (!['done', 'already_gone'].includes(dbStatus)) return '';
+  if (row.status === 'stale-ledger-skip' && ['ready', 'skipped'].includes(row.sideEffectState)) return 'skipped';
+  if (row.status === 'already-gone' && row.sideEffectState === 'skipped') return 'skipped';
+  if (row.status === 'deleted' || (row.status === 'already-gone' && row.authoritativeAbsence === true)) {
+    return 'finalized';
+  }
+  return '';
 }
 
 function dbStatusForUploadRow(row, task = null) {
@@ -6398,7 +8329,18 @@ function dbStatusForUploadRow(row, task = null) {
   if (row.status === 'stale-ledger-skip') return 'done';
   if (row.status === 'naver-cancel-queued') return 'done';
   if (row.status === 'submitted') return 'done';
+  if (row.status === 'upload-dependency-wait') return 'pending';
+  if (row.status === 'upload-rearm-wait') return 'pending';
   if (row.status === 'needs-review') return 'needs_review';
+  if (row.status === 'upload-verification-pending') {
+    return sideEffectOutcomeMayBeAmbiguous(row, task) ? 'pending' : boundedVerificationDbStatus(row, task);
+  }
+  // beforeSubmit persists ready -> armed before the final click.  A lost
+  // checkpoint response, browser crash, or inconclusive post-click read must
+  // remain recoverable instead of becoming a terminal failed/needs_review
+  // row.  On the next claim recoverArmedUpload performs exact API recovery and
+  // only rearms after a stable, aged authoritative absence.
+  if (sideEffectOutcomeMayBeAmbiguous(row, task)) return 'pending';
   const retryStatus = retryablePlatformDbStatus(row, task);
   if (retryStatus) return retryStatus;
   return 'failed';
@@ -6457,6 +8399,8 @@ function isRetryingPlatformRow(row) {
   return row?.dbStatus === 'pending'
     && (
       ['guard-retry-pending', 'winner-verification-pending', 'cancellation-verification-pending', 'canceled-finalization-pending', 'external-cancellation-sync-pending'].includes(row?.status)
+      || ['upload-verification-pending', 'upload-rearm-wait', 'upload-dependency-wait', 'deletion-verification-pending'].includes(row?.status)
+      || sideEffectOutcomeMayBeAmbiguous(row)
       || row?.status === 'winner-waiting-loser-cancellation'
       || (!isLoginProblem(row.error) && isRetryablePlatformProblem(row.error))
     );
@@ -6486,9 +8430,20 @@ function basicTaskSummary(task) {
     ledgerId: task.ledgerId || task.ledger_id || null,
     ledgerKey: task.ledgerKey || task.ledger_key || '',
     ledgerLastEventAt: task.ledgerLastEventAt || task.ledger_last_event_at || '',
+    ledgerLastEventOrderKey: task.ledgerLastEventOrderKey || task.ledger_last_event_order_key || null,
     ledgerConfirmedEmailEventId: task.ledgerConfirmedEmailEventId || task.ledger_confirmed_email_event_id || null,
     ledgerCanceledEmailEventId: task.ledgerCanceledEmailEventId || task.ledger_canceled_email_event_id || null,
+    ledgerConfirmedEventOrderKey: task.ledgerConfirmedEventOrderKey || task.ledger_confirmed_event_order_key || null,
+    ledgerCanceledEventOrderKey: task.ledgerCanceledEventOrderKey || task.ledger_canceled_event_order_key || null,
+    ledgerConfirmedEventOrderTrusted: (task.ledgerConfirmedEventOrderTrusted ?? task.ledger_confirmed_event_order_trusted) === true,
+    ledgerCanceledEventOrderTrusted: (task.ledgerCanceledEventOrderTrusted ?? task.ledger_canceled_event_order_trusted) === true,
+    bookingLedgerId: task.bookingLedgerId || task.booking_ledger_id || null,
+    sideEffectState: normalizedSideEffectState(task),
+    sideEffectArmedAt: task.sideEffectArmedAt || task.side_effect_armed_at || '',
+    sideEffectFinalizedAt: task.sideEffectFinalizedAt || task.side_effect_finalized_at || '',
     emailEventId: task.emailEventId || task.email_event_id || null,
+    sourceEventOrderKey: task.sourceEventOrderKey || task.source_event_order_key || null,
+    sourceEventOrderTrusted: (task.sourceEventOrderTrusted ?? task.source_event_order_trusted) === true,
     createdAt: task.createdAt || task.created_at || '',
     updatedAt: task.updatedAt || task.updated_at || '',
   };
@@ -6536,10 +8491,69 @@ function expectedLedgerStatus(taskType) {
   return '';
 }
 
+function normalizedSideEffectState(task) {
+  return String(task?.sideEffectState || task?.side_effect_state || '').trim();
+}
+
+function isSupersededCancellationCleanup(task) {
+  const taskEventId = String(task?.emailEventId || task?.email_event_id || '');
+  const confirmedEventId = String(task?.ledgerConfirmedEmailEventId || task?.ledger_confirmed_email_event_id || '');
+  const confirmedOrderKey = Number(task?.ledgerConfirmedEventOrderKey || task?.ledger_confirmed_event_order_key || 0);
+  const cancellationOrderKey = Number(task?.sourceEventOrderKey || task?.source_event_order_key || 0);
+  const confirmedOrderTrusted = (task?.ledgerConfirmedEventOrderTrusted ?? task?.ledger_confirmed_event_order_trusted) === true;
+  const cancellationOrderTrusted = (task?.sourceEventOrderTrusted ?? task?.source_event_order_trusted) === true;
+  return Boolean(
+    String(task?.ledgerStatus || task?.ledger_status || '') === 'confirmed'
+    && confirmedOrderTrusted
+    && cancellationOrderTrusted
+    && taskEventId
+    && confirmedEventId
+    && Number.isSafeInteger(confirmedOrderKey)
+    && confirmedOrderKey > 0
+    && Number.isSafeInteger(cancellationOrderKey)
+    && cancellationOrderKey > 0
+    && confirmedOrderKey > cancellationOrderKey
+  );
+}
+
+function isExactHistoricalDeleteGeneration(task) {
+  return Boolean(
+    Number(task?.bookingLedgerId || task?.booking_ledger_id || task?.ledgerId || task?.ledger_id || 0) > 0
+    && Number(task?.emailEventId || task?.email_event_id || 0) > 0
+    && Number(task?.priorUploadTaskId || task?.prior_upload_task_id || 0) > 0
+    && (task?.priorUploadIdentityMatched ?? task?.prior_upload_identity_matched) === true
+  );
+}
+
+function uploadSideEffectEvidence(task) {
+  const state = normalizedSideEffectState(task);
+  if (state === 'ready' || state === 'skipped') {
+    return {
+      sideEffectState: state,
+      mirrorMutationState: 'not_created',
+      submissionAttempted: false,
+    };
+  }
+  if (state === 'armed' || state === 'finalized') {
+    return {
+      sideEffectState: state,
+      mirrorMutationState: state === 'finalized' ? 'created_verified' : 'create_may_have_happened',
+      submissionAttempted: true,
+    };
+  }
+  return {
+    sideEffectState: '',
+    mirrorMutationState: 'legacy_unknown',
+    submissionAttempted: null,
+  };
+}
+
 function staleLedgerSkipRow(task, taskType) {
   const expected = expectedLedgerStatus(taskType);
+  const uploadEvidence = taskType === 'upload' ? uploadSideEffectEvidence(task) : {};
   return {
     ...basicTaskSummary(task),
+    ...uploadEvidence,
     taskType,
     status: 'stale-ledger-skip',
     expectedLedgerStatus: expected,
@@ -6555,8 +8569,10 @@ function staleLedgerEventSkipRow(task, taskType) {
     ? (task.ledgerCanceledEmailEventId || task.ledger_canceled_email_event_id || null)
     : (task.ledgerConfirmedEmailEventId || task.ledger_confirmed_email_event_id || null);
   const taskEventId = task.emailEventId || task.email_event_id || null;
+  const uploadEvidence = taskType === 'upload' ? uploadSideEffectEvidence(task) : {};
   return {
     ...basicTaskSummary(task),
+    ...uploadEvidence,
     taskType,
     status: 'stale-ledger-skip',
     expectedEmailEventId: expectedEventId,
@@ -6608,11 +8624,31 @@ function ledgerIssueForTask(task, taskType) {
   const expected = expectedLedgerStatus(taskType);
   if (!expected) return null;
   if (!task.ledgerStatus) return 'missing';
+  // Admin/manual actions are anchored in the DB transaction instead of an
+  // email event. Keep their status policy, but never exempt Naver email tasks
+  // from the trusted source-clock fence below.
+  if (isAdminPanelTask(task) || isManualCustomerCancellationTask(task)) {
+    if ((taskType === 'spacecloud_cancel' || taskType === 'naver_cancel') && task.ledgerStatus === 'canceled') return 'already-canceled';
+    return task.ledgerStatus === expected ? null : 'stale';
+  }
+  if (
+    ['upload', 'delete'].includes(taskType)
+    && (
+      Number(task.sourceEventOrderKey || task.source_event_order_key || 0) <= 0
+      || (task.sourceEventOrderTrusted ?? task.source_event_order_trusted) !== true
+    )
+  ) return 'missing-event';
+  // Every Naver cancellation generation owns the exact upload generation that
+  // immediately preceded it.  Later confirm/cancel round-trips must not erase
+  // that immutable cleanup obligation; the delete targets the prior task ID,
+  // never whichever generation happens to be current now.
+  if (taskType === 'delete' && isExactHistoricalDeleteGeneration(task)) return null;
+  // A later confirmation does not erase the cleanup obligation created by an
+  // earlier authoritative cancellation.  That exact delete generation must
+  // finish first so the subsequent upload cannot inherit an orphan mirror.
+  if (taskType === 'delete' && isSupersededCancellationCleanup(task)) return null;
   if ((taskType === 'spacecloud_cancel' || taskType === 'naver_cancel') && task.ledgerStatus === 'canceled') return 'already-canceled';
   if (task.ledgerStatus !== expected) return 'stale';
-  // 관리자 입력은 이메일 이벤트가 아니라 DB 트랜잭션에서 원장 앵커와 작업을
-  // 함께 만든다. 원장 상태는 검증하되 존재할 수 없는 이메일 ID를 요구하지 않는다.
-  if (isAdminPanelTask(task) || isManualCustomerCancellationTask(task)) return null;
   const taskEventId = String(task.emailEventId || task.email_event_id || '');
   const latestEventId = String(
     taskType === 'delete' || taskType === 'naver_restore'
@@ -6643,20 +8679,10 @@ function ledgerIssueRow(task, taskType, issue) {
 }
 
 function deleteAlreadyGoneAfterSkippedUploadRow(task) {
-  const confirmedEmailEventId = String(
-    task.ledgerConfirmedEmailEventId || task.ledger_confirmed_email_event_id || '',
-  );
-  const priorUploadEmailEventId = String(
-    task.priorUploadEmailEventId || task.prior_upload_email_event_id || '',
-  );
   const definitelySkippedBeforeSubmit = Boolean(
-    confirmedEmailEventId
-    && priorUploadEmailEventId === confirmedEmailEventId
-    && String(task.ledgerStatus || task.ledger_status || '') === 'canceled'
-    && String(task.priorUploadTaskStatus || task.prior_upload_task_status || '') === 'done'
-    && String(task.priorUploadResultStatus || task.prior_upload_result_status || '') === 'stale-ledger-skip'
-    && Number(task.priorUploadAttempts || task.prior_upload_attempts || 0) === 1
-    && (task.priorUploadSubmissionAttempted ?? task.prior_upload_submission_attempted) !== true
+    String(task.ledgerStatus || task.ledger_status || '') === 'canceled'
+    && (task.priorUploadIdentityMatched ?? task.prior_upload_identity_matched) === true
+    && String(task.priorUploadSideEffectState || task.prior_upload_side_effect_state || '') === 'skipped'
   );
   if (!definitelySkippedBeforeSubmit) return null;
 
@@ -6665,14 +8691,18 @@ function deleteAlreadyGoneAfterSkippedUploadRow(task) {
     taskType: 'delete',
     status: 'already-gone',
     priorUploadTaskId: task.priorUploadTaskId || task.prior_upload_task_id || null,
-    priorUploadEmailEventId,
+    priorUploadEmailEventId: task.priorUploadEmailEventId || task.prior_upload_email_event_id || null,
     priorUploadTaskStatus: task.priorUploadTaskStatus || task.prior_upload_task_status || '',
     priorUploadResultStatus: task.priorUploadResultStatus || task.prior_upload_result_status || '',
+    priorUploadSideEffectState: task.priorUploadSideEffectState || task.prior_upload_side_effect_state || '',
     priorUploadAttempts: Number(task.priorUploadAttempts || task.prior_upload_attempts || 0),
+    priorUploadIdentityMatched: true,
     submissionAttempted: false,
+    sideEffectState: 'skipped',
+    mirrorMutationState: 'not_created',
     startedAt: new Date().toISOString(),
     finishedAt: new Date().toISOString(),
-    reason: 'matching SpaceCloud upload was skipped before its first submit because the booking ledger was already canceled',
+    reason: 'the exact matching upload was atomically fenced as skipped before any SpaceCloud create click',
   };
 }
 
@@ -7198,6 +9228,13 @@ def load_env(path):
         key, value = line.split('=', 1)
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
+def parse_result(value):
+    try:
+        parsed = json.loads(value or '{}')
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
 load_env(os.environ['RHYTHMJOY_ENV_FILE'])
 conn = pymysql.connect(
     host=os.environ['DB_SERVERNAME'], port=int(os.environ.get('DB_PORT', '3306')),
@@ -7222,6 +9259,20 @@ try:
                 'ALTER TABLE rhythmjoy_spacecloud_tasks '
                 'ADD COLUMN confirmation_sms_required TINYINT(1) NOT NULL DEFAULT 0 AFTER claim_token'
             )
+        # A durable sending row means the process may have reached the SMS
+        # provider.  Never auto-resend it.  If no worker finalized the evidence
+        # within ten minutes, surface it as uncertain for operator review.
+        cur.execute("""
+            UPDATE rhythmjoy_sms_deliveries
+            SET status='uncertain',
+                error_text=IF(error_text IS NULL OR error_text='',
+                              'sender stopped after durable provider-call checkpoint',
+                              error_text),
+                next_retry_at=NULL,
+                updated_at=NOW()
+            WHERE status='sending'
+              AND updated_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+        """)
         # Double-check the transactional outbox invariant. New reservation tasks
         # declare the obligation on the task row; if an outbox row is ever lost,
         # the watcher recreates it before looking for work.
@@ -7243,6 +9294,7 @@ try:
         cur.execute("""
             SELECT
               d.id AS deliveryId,
+              d.status AS deliveryStatus,
               d.attempt_count AS attemptCount,
               CAST(d.next_retry_at AS CHAR) AS nextRetryAt,
               t.id, t.id AS taskId, t.task_type AS taskType,
@@ -7250,22 +9302,87 @@ try:
               TIME_FORMAT(t.start_time, '%H:%i') AS startTime,
               TIME_FORMAT(t.end_time, '%H:%i') AS endTime,
               t.reservation_number AS reservationNo, t.reserver_name AS reserverName,
-              t.product, t.payload_json AS payloadJson
+              t.product, t.payload_json AS payloadJson,
+              t.status AS taskStatus, t.result_text AS resultText,
+              t.booking_ledger_id AS bookingLedgerId,
+              t.side_effect_state AS sideEffectState,
+              t.email_event_id AS emailEventId,
+              COALESCE(
+                (SELECT l.current_status FROM rhythmjoy_booking_ledger l WHERE l.id=t.booking_ledger_id LIMIT 1),
+                (SELECT l.current_status FROM rhythmjoy_booking_ledger l
+                 WHERE l.confirmed_email_event_id=t.email_event_id
+                   AND l.source_platform=IF(t.task_type='upload','naver','spacecloud')
+                 ORDER BY l.id DESC LIMIT 1)
+              ) AS ledgerStatus,
+              COALESCE(
+                (SELECT l.confirmed_email_event_id FROM rhythmjoy_booking_ledger l WHERE l.id=t.booking_ledger_id LIMIT 1),
+                (SELECT l.confirmed_email_event_id FROM rhythmjoy_booking_ledger l
+                 WHERE l.confirmed_email_event_id=t.email_event_id
+                   AND l.source_platform=IF(t.task_type='upload','naver','spacecloud')
+                 ORDER BY l.id DESC LIMIT 1)
+              ) AS ledgerConfirmedEmailEventId
             FROM rhythmjoy_sms_deliveries d
             INNER JOIN rhythmjoy_spacecloud_tasks t
               ON t.id=d.source_task_id AND t.task_type=d.source_task_type
-            WHERE d.status IN ('pending','phone_lookup_failed','failed')
+            WHERE d.status IN ('pending','phone_lookup_failed','failed','uncertain')
               AND d.template_name='reservation-confirmed-v1'
               AND (
-                    d.status='pending'
-                 OR COALESCE(d.next_retry_at, DATE_ADD(d.updated_at, INTERVAL 5 MINUTE)) <= NOW()
+                    d.status='uncertain'
+                 OR (d.status='pending' AND (d.next_retry_at IS NULL OR d.next_retry_at<=NOW()))
+                 OR (
+                        d.status IN ('phone_lookup_failed','failed')
+                    AND COALESCE(d.next_retry_at, DATE_ADD(d.updated_at, INTERVAL 5 MINUTE))<=NOW()
+                    )
                   )
               AND t.status IN ('done','already_gone')
               AND t.task_type IN ('upload','naver_block')
-            ORDER BY d.updated_at ASC, d.id ASC
-            LIMIT 10
+            ORDER BY CASE WHEN d.status='uncertain' THEN 1 ELSE 0 END,
+                     d.updated_at ASC, d.id ASC
+            LIMIT 50
         """)
-        rows = cur.fetchall()
+        rows = []
+        for candidate in cur.fetchall():
+            if candidate.get('deliveryStatus') == 'uncertain':
+                rows.append(candidate)
+                if len(rows) >= 10:
+                    break
+                continue
+            result = parse_result(candidate.get('resultText'))
+            same_generation = bool(
+                candidate.get('ledgerStatus') == 'confirmed'
+                and candidate.get('emailEventId')
+                and int(candidate.get('emailEventId') or 0) == int(candidate.get('ledgerConfirmedEmailEventId') or 0)
+            )
+            if candidate.get('taskType') == 'upload':
+                platform_done = bool(
+                    candidate.get('taskStatus') == 'done'
+                    and candidate.get('sideEffectState') == 'finalized'
+                    and result.get('status') == 'submitted'
+                )
+            else:
+                platform_done = bool(
+                    candidate.get('taskStatus') == 'done'
+                    and result.get('status') in ('blocked', 'already-blocked')
+                )
+            if same_generation and platform_done:
+                rows.append(candidate)
+                if len(rows) >= 10:
+                    break
+                continue
+            cur.execute(
+                """
+                UPDATE rhythmjoy_sms_deliveries
+                SET status='skipped', error_text='reservation no longer confirmed for this exact platform generation',
+                    next_retry_at=NULL, updated_at=NOW()
+                WHERE id=%s AND status IN ('pending','phone_lookup_failed','failed')
+                """,
+                (candidate.get('deliveryId'),),
+            )
+            cur.execute(
+                'UPDATE rhythmjoy_spacecloud_tasks SET confirmation_sms_required=0, updated_at=NOW() WHERE id=%s',
+                (candidate.get('taskId'),),
+            )
+        conn.commit()
 finally:
     conn.close()
 print(json.dumps(rows, ensure_ascii=False, default=str))
@@ -7296,9 +9413,18 @@ async function runSmsPhoneLookupFollowUps(args, context, sessionStatuses = []) {
   }
   let sms;
   try {
-    sms = task.taskType === 'upload'
-      ? await sendNaverOriginConfirmationSms(args, context, task)
-      : await sendSpacecloudOriginConfirmationSms(args, context, task);
+    if (task.deliveryStatus === 'uncertain') {
+      sms = {
+        status: 'needs_review',
+        reason: 'provider-result-uncertain-no-auto-resend',
+        attemptCount: Number(task.attemptCount || 0),
+        deliveryId: task.deliveryId,
+      };
+    } else {
+      sms = task.taskType === 'upload'
+        ? await sendNaverOriginConfirmationSms(args, context, task)
+        : await sendSpacecloudOriginConfirmationSms(args, context, task);
+    }
   } catch (error) {
     sms = await recordRemoteSmsPhoneLookupFailure(args, {
       task,
@@ -7357,11 +9483,191 @@ function smsNeedsAttention(row) {
 
 function smsFailureShouldAlert(row) {
   const status = String(row?.sms?.status || '');
+  if (status === 'deferred') return false;
   if (['needs_review', 'uncertain', 'delivery_in_progress'].includes(status)) return true;
   if (['phone_lookup_failed', 'failed', 'skipped'].includes(status)) {
     return Number(row?.sms?.attemptCount || 0) >= 3;
   }
   return true;
+}
+
+function authoritativeUploadAbsence(inspection) {
+  const verification = inspection?.verification || {};
+  return inspection?.status !== 'read-failed'
+    && verification.source === 'spacecloud-calendar-api'
+    && Number(verification.apiStatus || 0) === 200
+    && Number(verification.identityCandidateCount || 0) === 0;
+}
+
+async function recoverArmedUpload(args, context, task, ledgerIssue) {
+  const inspection = await inspectSpacecloudDirectReservation(context, task, {
+    fastTimeoutMs: 1500,
+    timeoutMs: 12000,
+    intervalMs: 750,
+  });
+  if (inspection.status === 'identity-matched') {
+    return {
+      row: {
+        ...basicTaskSummary(task),
+        ...inspection,
+        status: 'submitted',
+        alreadyPresentOnRetry: true,
+        submissionAttempted: true,
+        submissionConfirmed: true,
+        sideEffectState: 'finalized',
+        mirrorMutationState: 'created_verified',
+        reason: 'the armed upload was recovered by exact task/reservation identity',
+      },
+      rearmed: false,
+    };
+  }
+  if (inspection.status === 'read-failed') {
+    return {
+      row: {
+        ...basicTaskSummary(task),
+        status: 'upload-verification-pending',
+        submissionAttempted: true,
+        sideEffectState: 'armed',
+        verification: inspection.verification,
+        error: inspection.error || inspection.verification?.apiError || 'authoritative SpaceCloud upload verification failed',
+      },
+      rearmed: false,
+    };
+  }
+  if (Number(inspection.verification?.identityCandidateCount || 0) > 1) {
+    return {
+      row: {
+        ...basicTaskSummary(task),
+        status: 'needs-review',
+        submissionAttempted: true,
+        sideEffectState: 'armed',
+        verification: inspection.verification,
+        error: 'multiple exact SpaceCloud mirrors exist for the same durable upload identity',
+      },
+      rearmed: false,
+    };
+  }
+  if (!authoritativeUploadAbsence(inspection)) {
+    return {
+      row: {
+        ...basicTaskSummary(task),
+        status: 'upload-verification-pending',
+        submissionAttempted: true,
+        sideEffectState: 'armed',
+        verification: inspection.verification,
+        error: 'armed upload identity is not yet conclusively present or absent',
+      },
+      rearmed: false,
+    };
+  }
+
+  if (ledgerIssue) {
+    return {
+      row: {
+        ...ledgerIssueRow(task, 'upload', ledgerIssue),
+        status: 'stale-ledger-skip',
+        sideEffectState: 'skipped',
+        submissionAttempted: true,
+        authoritativeAbsence: true,
+        verification: inspection.verification,
+        reason: 'obsolete armed upload is authoritatively absent, so no SpaceCloud mirror remains to compensate',
+      },
+      rearmed: false,
+    };
+  }
+
+  const rearm = await rearmRemoteUploadAfterVerifiedAbsence(args, task, inspection);
+  if (rearm.approved === true) return { row: null, rearmed: true, rearm };
+  return {
+    row: {
+      ...basicTaskSummary(task),
+      status: rearm.stale === true
+        ? 'stale-ledger-skip'
+        : rearm.retryable === true
+          ? 'upload-rearm-wait'
+          : 'needs-review',
+      submissionAttempted: true,
+      sideEffectState: rearm.stale === true ? 'skipped' : 'armed',
+      authoritativeAbsence: true,
+      verification: inspection.verification,
+      reason: rearm.reason || 'armed upload remains verification-only',
+      error: rearm.stale === true ? '' : (rearm.reason || 'armed upload rearm could not be proven safe'),
+    },
+    rearmed: false,
+  };
+}
+
+function uploadDeleteDependencyRow(task) {
+  const unresolvedEventId = task.priorUnresolvedLifecycleEventId || task.prior_unresolved_lifecycle_event_id || null;
+  if (unresolvedEventId) {
+    return {
+      ...basicTaskSummary(task),
+      taskType: 'upload',
+      status: 'upload-dependency-wait',
+      unresolvedLifecycleEventId: unresolvedEventId,
+      reason: 'reservation lifecycle chronology is unresolved; automatic SpaceCloud creation remains quarantined until its evidence is repaired',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    };
+  }
+  const cleanupTaskId = task.priorDeleteTaskId || task.prior_delete_task_id || null;
+  if (!cleanupTaskId) return null;
+  const identityMatched = (
+    (task.priorDeleteIdentityMatched ?? task.prior_delete_identity_matched) === true
+    || (task.priorDeleteFullIdentityMatched ?? task.prior_delete_full_identity_matched) === true
+    || (task.priorDeleteDependencyScopeMatched ?? task.prior_delete_dependency_scope_matched) === true
+  );
+  const cleanupStatus = String(task.priorDeleteTaskStatus || task.prior_delete_task_status || '');
+  const cleanupState = String(task.priorDeleteSideEffectState || task.prior_delete_side_effect_state || '');
+  const summary = {
+    ...basicTaskSummary(task),
+    taskType: 'upload',
+    priorDeleteTaskId: cleanupTaskId,
+    priorDeleteTaskStatus: cleanupStatus,
+    priorDeleteSideEffectState: cleanupState,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+  };
+  if (!identityMatched) {
+    return {
+      ...summary,
+      status: 'needs-review',
+      error: 'the preceding cancellation cleanup is not linked to this exact booking generation',
+    };
+  }
+  if (!(
+    ['done', 'already_gone'].includes(cleanupStatus)
+    && ['finalized', 'skipped'].includes(cleanupState)
+  )) {
+    return {
+      ...summary,
+      status: 'upload-dependency-wait',
+      reason: 'the newer confirmation is waiting for the preceding exact delete generation to finish',
+    };
+  }
+  return null;
+}
+
+function deleteUploadDependencyRow(task) {
+  const priorTaskId = task.priorUploadTaskId || task.prior_upload_task_id || null;
+  if (!priorTaskId) return null;
+  const priorStatus = String(task.priorUploadTaskStatus || task.prior_upload_task_status || '');
+  const priorState = String(task.priorUploadSideEffectState || task.prior_upload_side_effect_state || '');
+  if (priorState === 'skipped') return null;
+  if (['pending', 'running'].includes(priorStatus) || (priorState === 'ready' && !['done', 'already_gone'].includes(priorStatus))) {
+    return {
+      ...basicTaskSummary(task),
+      taskType: 'delete',
+      status: 'upload-dependency-wait',
+      priorUploadTaskId: priorTaskId,
+      priorUploadTaskStatus: priorStatus,
+      priorUploadSideEffectState: priorState,
+      reason: 'delete is waiting for the exact matching upload fence to reach a terminal state',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    };
+  }
+  return null;
 }
 
 async function runUploadTasks(args, context = null, claimedTasks = null) {
@@ -7404,12 +9710,46 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
           row = staleRunningNeedsReviewRow(task, 'upload');
         } else {
           const ledgerIssue = ledgerIssueForTask(task, 'upload');
-          if (ledgerIssue) {
+          let taskForUpload = task;
+          row = uploadDeleteDependencyRow(task);
+          if (!row && normalizedSideEffectState(task) === 'armed') {
+            const recovery = await recoverArmedUpload(args, activeContext, task, ledgerIssue);
+            row = recovery.row;
+            if (recovery.rearmed) {
+              taskForUpload = { ...task, sideEffectState: 'ready', recoveredFromStaleRunning: false };
+            }
+          } else if (!row && normalizedSideEffectState(task) === 'finalized') {
+            const inspection = await inspectSpacecloudDirectReservation(activeContext, task, {
+              fastTimeoutMs: 1500,
+              timeoutMs: 12000,
+              intervalMs: 750,
+            });
+            row = inspection.status === 'identity-matched'
+              ? {
+                ...basicTaskSummary(task),
+                ...inspection,
+                status: 'submitted',
+                alreadyPresentOnRetry: true,
+                submissionAttempted: true,
+                submissionConfirmed: true,
+                sideEffectState: 'finalized',
+                mirrorMutationState: 'created_verified',
+              }
+              : {
+                ...basicTaskSummary(task),
+                status: inspection.status === 'read-failed' ? 'upload-verification-pending' : 'needs-review',
+                sideEffectState: 'finalized',
+                verification: inspection.verification,
+                error: inspection.error || 'a finalized upload is no longer present with its exact SpaceCloud identity',
+              };
+          }
+
+          if (!row && ledgerIssue) {
             row = ledgerIssueRow(task, 'upload', ledgerIssue);
-          } else {
-            const event = spacecloudUploadEventFromTask(task);
+          } else if (!row) {
+            const event = spacecloudUploadEventFromTask(taskForUpload);
             row = {
-              taskId: task.id,
+              taskId: taskForUpload.id,
               fingerprint: event.fingerprint,
               sourceEventId: event.sourceEventId,
               reservationNo: event.reservationNo,
@@ -7421,7 +9761,7 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
               status: 'upload-pending',
               startedAt: new Date().toISOString(),
             };
-            const classifiedRow = await classifyUploadConflict(args, task, row);
+            const classifiedRow = await classifyUploadConflict(args, taskForUpload, row);
             row = classifiedRow;
             if (!['needs-review', 'naver-cancel-queued'].includes(row.status)) {
               const conflictContext = row.cancellationTask ? {
@@ -7433,7 +9773,9 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
                 cancellationTask: row.cancellationTask,
                 nextAction: row.nextAction,
               } : null;
-              row = await uploadSpacecloudDirectReservation(activeContext, event);
+              row = await uploadSpacecloudDirectReservation(activeContext, event, {
+                beforeSubmit: () => checkpointRemoteUploadSubmission(args, taskForUpload),
+              });
               if (conflictContext) Object.assign(row, conflictContext);
               if (row.status === 'submitted') {
                 const marked = markSubmittedRows(args, [row]);
@@ -7444,15 +9786,10 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
         }
 
         if (row.status === 'submitted') {
-          try {
-            row.sms = await sendNaverOriginConfirmationSms(args, activeContext, task);
-          } catch (smsError) {
-            row.sms = {
-              status: 'failed',
-              reason: 'sms-send-exception',
-              error: String(smsError?.message || smsError),
-            };
-          }
+          // Platform finalization is committed before the separate SMS outbox
+          // is allowed to send. The outbox rechecks the same ledger generation
+          // immediately before the provider call.
+          row.confirmationSms = isAdminPanelTask(task) ? 'not-required' : 'queued-after-platform-finalization';
           row.finishedAt = new Date().toISOString();
         }
       } catch (error) {
@@ -7475,7 +9812,16 @@ async function runUploadTasks(args, context = null, claimedTasks = null) {
       rows.push(row);
       const status = dbStatusForUploadRow(row, task);
       row.dbStatus = status;
-      await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
+      const finalSideEffectState = uploadFinalSideEffectState(row, status, task);
+      if (finalSideEffectState) row.sideEffectState = finalSideEffectState;
+      await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2), {
+        sideEffectState: finalSideEffectState,
+        retryAfterSeconds: dependencyRetryAfterSeconds(row),
+        releaseClaim: !(
+          row.status === 'upload-rearm-wait'
+          || (status === 'pending' && sideEffectOutcomeMayBeAmbiguous(row, task))
+        ),
+      });
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
@@ -7547,7 +9893,12 @@ async function runDeleteTasks(args, context = null, claimedTasks = null) {
           row = ledgerIssueRow(task, 'delete', ledgerIssue);
         } else {
           row = deleteAlreadyGoneAfterSkippedUploadRow(task);
-          if (!row) row = await deleteSpacecloudDirectReservation(activeContext, task);
+          if (!row) row = deleteUploadDependencyRow(task);
+          if (!row) {
+            row = await deleteSpacecloudDirectReservation(activeContext, task, {
+              beforeDelete: (proof) => checkpointRemoteDeleteSubmission(args, task, proof),
+            });
+          }
         }
       }
 
@@ -7559,7 +9910,13 @@ async function runDeleteTasks(args, context = null, claimedTasks = null) {
       rows.push(row);
       const status = dbStatusForDeleteRow(row, task);
       row.dbStatus = status;
-      await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2));
+      const finalSideEffectState = deleteFinalSideEffectState(row, status);
+      if (finalSideEffectState) row.sideEffectState = finalSideEffectState;
+      await updateRemoteTask(args, task, status, JSON.stringify(row, null, 2), {
+        sideEffectState: finalSideEffectState,
+        retryAfterSeconds: dependencyRetryAfterSeconds(row),
+        releaseClaim: !(status === 'pending' && sideEffectOutcomeMayBeAmbiguous(row, task)),
+      });
       if (status === 'pending' && (isLoginProblem(row.error) || isRetryablePlatformProblem(row.error))) {
         break;
       }
@@ -8845,8 +11202,8 @@ async function runNowModeSelfTest() {
     priorUploadEmailEventId: 708,
     priorUploadTaskStatus: 'done',
     priorUploadResultStatus: 'stale-ledger-skip',
-    priorUploadAttempts: 1,
-    priorUploadSubmissionAttempted: null,
+    priorUploadSideEffectState: 'skipped',
+    priorUploadIdentityMatched: true,
   };
   const quickCancellationDeleteRow = deleteAlreadyGoneAfterSkippedUploadRow(quickCancellationDeleteTask);
   assert.equal(quickCancellationDeleteRow.status, 'already-gone');
@@ -8855,13 +11212,163 @@ async function runNowModeSelfTest() {
   assert.equal(dbStatusForDeleteRow(quickCancellationDeleteRow), 'already_gone');
   assert.equal(deleteAlreadyGoneAfterSkippedUploadRow({
     ...quickCancellationDeleteTask,
-    priorUploadAttempts: 2,
-  }), null, 'a retried upload has no first-attempt proof and must still be inspected');
+    priorUploadSideEffectState: 'armed',
+  }), null, 'an armed upload may have clicked and must be authoritatively inspected');
   assert.equal(deleteAlreadyGoneAfterSkippedUploadRow({
     ...quickCancellationDeleteTask,
-    priorUploadResultStatus: 'submitted',
-  }), null, 'a submitted upload must still be deleted from SpaceCloud');
-  assert.match(REMOTE_TASK_ENRICHMENT_PY, /priorUploadResultStatus/);
+    priorUploadIdentityMatched: false,
+  }), null, 'a skipped state from a different generation must never close this delete');
+  const historicalDeleteTask = {
+    ...quickCancellationDeleteTask,
+    bookingLedgerId: 9001,
+    emailEventId: 702,
+    sourceReceivedAt: '2026-08-16 10:01:00',
+    sourceEventOrderKey: 1786856460123,
+    sourceEventOrderTrusted: true,
+    ledgerStatus: 'confirmed',
+    ledgerConfirmedEmailEventId: 703,
+    ledgerConfirmedAt: '2026-08-16 10:02:00',
+    ledgerConfirmedEventOrderKey: 1786856520456,
+    ledgerConfirmedEventOrderTrusted: true,
+    priorUploadTaskId: 701,
+    priorUploadIdentityMatched: true,
+  };
+  assert.equal(isExactHistoricalDeleteGeneration(historicalDeleteTask), true);
+  assert.equal(ledgerIssueForTask(historicalDeleteTask, 'delete'), null);
+  assert.equal(
+    ledgerIssueForTask({ ...historicalDeleteTask, sourceEventOrderTrusted: false }, 'delete'),
+    'missing-event',
+    'an untrusted cancellation clock must fail closed before stale-ledger handling',
+  );
+  const sameSecondHistoricalDeleteTask = {
+    ...historicalDeleteTask,
+    sourceReceivedAt: '2026-08-16 10:01:00',
+    ledgerConfirmedAt: '2026-08-16 10:01:00',
+    sourceEventOrderKey: 1786856460123,
+    ledgerConfirmedEventOrderKey: 1786856460456,
+    emailEventId: 702,
+    ledgerConfirmedEmailEventId: 703,
+  };
+  assert.equal(
+    isSupersededCancellationCleanup(sameSecondHistoricalDeleteTask),
+    true,
+    'same-second cancellation/reconfirmation must be ordered by the immutable source millisecond key',
+  );
+  assert.equal(
+    isSupersededCancellationCleanup({
+      ...sameSecondHistoricalDeleteTask,
+      ledgerConfirmedEventOrderKey: 1786856459999,
+    }),
+    false,
+    'an earlier source millisecond must never supersede a later cancellation even with a higher DB id',
+  );
+  assert.equal(
+    isSupersededCancellationCleanup({
+      ...sameSecondHistoricalDeleteTask,
+      sourceEventOrderTrusted: false,
+    }),
+    false,
+    'an untrusted fallback timestamp must never authorize a historical delete side effect',
+  );
+  assert.equal(
+    isSupersededCancellationCleanup({
+      ...sameSecondHistoricalDeleteTask,
+      ledgerConfirmedEventOrderKey: sameSecondHistoricalDeleteTask.sourceEventOrderKey,
+    }),
+    false,
+    'opposing lifecycle events with the exact same source millisecond must remain quarantined',
+  );
+  assert.equal(
+    uploadDeleteDependencyRow({
+      id: 704,
+      taskType: 'upload',
+      priorUnresolvedLifecycleEventId: 709,
+    }).status,
+    'upload-dependency-wait',
+    'an unresolved cancellation must quarantine a later upload without terminalizing its eventual recovery',
+  );
+  const uploadWaitingForDelete = uploadDeleteDependencyRow({
+    id: 703,
+    taskType: 'upload',
+    priorDeleteTaskId: 702,
+    priorDeleteTaskStatus: 'running',
+    priorDeleteSideEffectState: 'armed',
+    priorDeleteIdentityMatched: true,
+  });
+  assert.equal(uploadWaitingForDelete.status, 'upload-dependency-wait');
+  assert.equal(dbStatusForUploadRow(uploadWaitingForDelete), 'pending');
+  assert.equal(dependencyRetryAfterSeconds(uploadWaitingForDelete), 30);
+  assert.equal(dependencyRetryAfterSeconds({ status: 'submitted' }), 0);
+  assert.equal(uploadDeleteDependencyRow({
+    id: 704,
+    taskType: 'upload',
+    priorDeleteTaskId: 702,
+    priorDeleteTaskStatus: 'running',
+    priorDeleteSideEffectState: 'armed',
+    priorDeleteIdentityMatched: false,
+    priorDeleteFullIdentityMatched: true,
+  }).status, 'upload-dependency-wait', 'a full-slot legacy cleanup must wait while its ledger link is normalized');
+  assert.equal(uploadDeleteDependencyRow({
+    id: 705,
+    taskType: 'upload',
+    priorDeleteTaskId: 701,
+    priorDeleteTaskStatus: 'running',
+    priorDeleteSideEffectState: 'armed',
+    priorDeleteIdentityMatched: false,
+    priorDeleteDependencyScopeMatched: true,
+  }).status, 'upload-dependency-wait', 'an earlier cleanup on the same ledger must finish even when the booking slot changed');
+  assert.equal(uploadDeleteDependencyRow({
+    id: 703,
+    taskType: 'upload',
+    priorDeleteTaskId: 702,
+    priorDeleteTaskStatus: 'done',
+    priorDeleteSideEffectState: 'finalized',
+    priorDeleteIdentityMatched: true,
+  }), null);
+  assert.equal(uploadDeleteDependencyRow({
+    id: 703,
+    taskType: 'upload',
+    priorDeleteTaskId: 702,
+    priorDeleteTaskStatus: 'done',
+    priorDeleteSideEffectState: '',
+    priorDeleteIdentityMatched: true,
+  }).status, 'upload-dependency-wait', 'legacy delete completion without absence proof must wait for exact reconciliation');
+  assert.match(REMOTE_TASK_ENRICHMENT_PY, /priorUploadSideEffectState/);
+  assert.match(REMOTE_TASK_ENRICHMENT_PY, /booking_ledger_id/);
+  assert.match(REMOTE_TASK_ENRICHMENT_PY, /priorDeleteSideEffectState/);
+  assert.match(
+    REMOTE_TASK_ENRICHMENT_PY,
+    /cleanup\.email_event_id < %s/,
+    'exact-source-millisecond predecessor cleanup selection must use email event id as the final tie-break',
+  );
+  assert.match(REMOTE_TASK_ENRICHMENT_PY, /cleanup_event\.event_order_key/);
+  assert.match(REMOTE_TASK_ENRICHMENT_PY, /upload_event\.event_order_key/);
+  assert.match(REMOTE_TASK_ENRICHMENT_PY, /cleanup\.email_event_id IS NULL/);
+  assert.match(REMOTE_TASK_ENRICHMENT_PY, /COALESCE\(cleanup_event\.event_type, ''\) <> 'cancellation'/);
+  assert.match(
+    REMOTE_TASK_ENRICHMENT_PY,
+    /parse_status<>'parsed'[\s\S]*processing_status IN \('received','failed','needs_review','parse_failed','awaiting_predecessor'\)/,
+    'task enrichment must wait while a parsed Naver lifecycle event is visible before its ledger/task transaction commits',
+  );
+  assert.match(checkpointRemoteUploadSubmission.toString(), /cleanup\.email_event_id IS NULL/);
+  assert.match(checkpointRemoteUploadSubmission.toString(), /COALESCE\(cleanup_event\.event_type, ''\) <> 'cancellation'/);
+  assert.match(checkpointRemoteUploadSubmission.toString(), /cleanup_event\.event_order_key/);
+  assert.match(
+    checkpointRemoteUploadSubmission.toString(),
+    /parse_status<>'parsed'[\s\S]*processing_status IN \('received','failed','needs_review','parse_failed','awaiting_predecessor'\)/,
+    'the final SpaceCloud click checkpoint must repeat the inbox-to-ledger visibility fence',
+  );
+  assert.match(checkpointRemoteUploadSubmission.toString(), /upload-superseded-before-submit/);
+  assert.match(
+    checkpointRemoteUploadSubmission.toString(),
+    /task\.get\('side_effect_state'\) == 'ready'[\s\S]*winning_lifecycle_event/,
+    'only a provably unclicked ready upload may be terminally skipped after a later trusted generation wins',
+  );
+  assert.match(
+    checkpointRemoteUploadSubmission.toString(),
+    /winning_lifecycle_event\.get\('event_type'\)[\s\S]*== current_upload_event\.get\('event_type'\)/,
+    'same-source-millisecond opposing events remain quarantined instead of being ordered by DB id',
+  );
   const manualCancellationPayload = {
     source: 'sync-admin-customer-request',
     source_mode: 'sync-admin-customer-request',
@@ -9523,6 +12030,37 @@ async function runNowModeSelfTest() {
   };
   assert.equal(isRetryablePlatformProblem(ambiguousSubmitRow.error), true);
   assert.equal(dbStatusForUploadRow(ambiguousSubmitRow), 'pending');
+  const lostUploadCheckpointResponse = {
+    status: 'failed',
+    submissionAttempted: true,
+    mirrorMutationState: 'create_may_have_happened',
+    error: 'checkpoint response was lost after commit',
+  };
+  assert.equal(dbStatusForUploadRow(lostUploadCheckpointResponse, { attempts: 1 }), 'pending');
+  assert.equal(lostUploadCheckpointResponse.retryExhausted, undefined);
+  const lostDeleteCheckpointResponse = {
+    status: 'failed',
+    deletionAttempted: true,
+    error: 'delete checkpoint response was lost after commit',
+  };
+  assert.equal(dbStatusForDeleteRow(lostDeleteCheckpointResponse, { attempts: 1 }), 'pending');
+  assert.equal(lostDeleteCheckpointResponse.retryExhausted, undefined);
+  const quarantinedLegacyDelete = {
+    status: 'needs-review',
+    sideEffectState: 'armed',
+    deletionAttempted: true,
+    error: 'legacy immutable identity is incomplete',
+  };
+  assert.equal(dbStatusForDeleteRow(quarantinedLegacyDelete), 'pending');
+  assert.equal(sideEffectOutcomeMayBeAmbiguous(quarantinedLegacyDelete), true);
+  assert.equal(dbStatusForDeleteRow({
+    status: 'stale-ledger-skip',
+    sideEffectState: 'armed',
+    deletionAttempted: true,
+  }), 'pending');
+  assert.equal(dbStatusForDeleteRow({ status: 'needs-review', error: 'unarmed validation failure' }), 'needs_review');
+  assert.equal(dbStatusForUploadRow({ status: 'failed', error: 'ordinary validation failure' }), 'failed');
+  assert.equal(dbStatusForDeleteRow({ status: 'failed', error: 'ordinary validation failure' }), 'failed');
   assert.equal(isRetryingPlatformRow(loginRow), false);
   assert.equal(taskRowsNeedingReview([loginRow], []).length, 1);
 
@@ -9560,6 +12098,42 @@ async function runNowModeSelfTest() {
   assert.equal(parsedLongResult.submissionConfirmed, false);
   assert.equal(parsedLongResult.resubmitBlocked, true);
   assert.equal(parsedLongResult.retryMode, 'verification-only');
+  const compactedDeleteProof = JSON.parse(taskResultTextForDb(JSON.stringify({
+    status: 'deleted',
+    taskId: 778,
+    taskType: 'delete',
+    bookingLedgerId: 9259,
+    sideEffectState: 'finalized',
+    mirrorTaskId: 777,
+    reservationNo: '1311471051',
+    deletionAttempted: true,
+    authoritativeAbsence: true,
+    preDeleteVerification: {
+      source: 'spacecloud-calendar-api',
+      apiStatus: 200,
+      identityCandidateCount: 1,
+      identityMatched: true,
+      candidates: Array.from({ length: 100 }, (_, index) => ({
+        source: 'spacecloud-calendar-api', scheduleId: index, reservationNo: '1311471051',
+      })),
+    },
+    postDeleteVerification: {
+      source: 'spacecloud-calendar-api',
+      apiStatus: 200,
+      identityCandidateCount: 0,
+      absenceConfirmed: true,
+      consecutiveAbsentReads: 2,
+      candidates: [],
+    },
+    error: 'x'.repeat(20_000),
+  }), 4000));
+  assert.equal(compactedDeleteProof.bookingLedgerId, 9259);
+  assert.equal(compactedDeleteProof.sideEffectState, 'finalized');
+  assert.equal(compactedDeleteProof.mirrorTaskId, 777);
+  assert.equal(compactedDeleteProof.deletionAttempted, true);
+  assert.equal(compactedDeleteProof.authoritativeAbsence, true);
+  assert.equal(compactedDeleteProof.postDeleteVerification.absenceConfirmed, true);
+  assert.equal(compactedDeleteProof.postDeleteVerification.identityCandidateCount, 0);
   const verboseNaverSlots = Array.from({ length: 24 }, (_, index) => ({
     date: '2026-09-17',
     startTime: `${String(index).padStart(2, '0')}:00`,
@@ -9682,6 +12256,13 @@ async function runNowModeSelfTest() {
   assert.match(smsAttention, /^🟡 예약 안내문자 후속처리 필요/m);
   assert.match(smsAttention, /예약 반영: DB 원장·상대 플랫폼 완료/);
   assert.match(smsAttention, /영향: 일정 동기화에는 없음/);
+  assert.match(
+    sendRemoteSms.toString(),
+    /parse_status<>'parsed'[\s\S]*processing_status IN \('received','failed','needs_review','parse_failed','awaiting_predecessor'\)/,
+    'the provider-call guard must wait for unresolved inbox lifecycle evidence',
+  );
+  assert.match(sendRemoteSms.toString(), /'status': 'deferred'/);
+  assert.equal(smsFailureShouldAlert({ sms: { status: 'deferred' } }), false);
   assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'login_required' }], 'naver'), true);
   assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'ready' }], 'naver'), false);
   assert.equal(sessionBlockedTaskResult('naver').attempted, 0);
@@ -9778,12 +12359,27 @@ async function runNowModeSelfTest() {
   assert.doesNotMatch(runWatch.toString(), /stopping after (?:db upload|delete|naver block|naver restore|naver cancel|spacecloud cancel) failure/);
   assert.match(fetchRemoteTasks.toString(), /FOR UPDATE/);
   assert.match(fetchRemoteTasks.toString(), /claim_token/);
+  assert.match(fetchRemoteTasks.toString(), /locked_at IS NULL OR locked_at <= NOW\(\)/);
   assert.match(fetchRemoteTaskTypes.toString(), /FOR UPDATE/);
   assert.match(fetchRemoteTaskTypes.toString(), /claim_token/);
-  assert.match(fetchRemoteTaskTypes.toString(), /WHEN status='pending' THEN 1/);
+  assert.match(fetchRemoteTaskTypes.toString(), /locked_at IS NULL OR locked_at <= NOW\(\)/);
+  assert.match(fetchRemoteTaskTypes.toString(), /WHEN status='pending' THEN 2/);
+  assert.match(fetchRemoteTaskTypes.toString(), /AS sourceEventOrderKey/);
+  assert.match(fetchRemoteTaskTypes.toString(), /SELECT event_order_key/);
+  assert.match(fetchRemoteTaskTypes.toString(), /COALESCE\(email_event_id, 0\) ASC/);
+  assert.match(fetchRemoteTaskTypes.toString(), /rows = prepare_task_claim_rows\(cur, rows, claim_token\)/);
+  assert.match(REMOTE_TASK_ENRICHMENT_PY, /legacy-delete-identity-quarantined/);
+  assert.match(REMOTE_TASK_ENRICHMENT_PY, /row\['legacyIdentityQuarantined'\] = not exact_generation/);
   assert.doesNotMatch(fetchRemoteTaskTypes.toString(), /google_pending/);
   assert.match(updateRemoteTask.toString(), /WHERE id=%s AND status='running' AND claim_token=%s/);
   assert.match(updateRemoteTask.toString(), /releaseClaim/);
+  assert.match(updateRemoteTask.toString(), /TIMESTAMPADD\(SECOND, %s, NOW\(\)\)/);
+  assert.match(updateRemoteTask.toString(), /source_task_type='upload' AND source_task_id=%s/);
+  assert.match(updateRemoteTask.toString(), /status IN \('pending','failed','phone_lookup_failed'\)/);
+  assert.match(finalizeRemoteCancellationSuccess.toString(), /automation_canceled_order_key/);
+  assert.match(finalizeRemoteManualCustomerCancellationSuccess.toString(), /automation_canceled_order_key/);
+  assert.match(assertRemoteDurableTaskSchema.toString(), /last_event_order_key/);
+  assert.match(assertRemoteDurableTaskSchema.toString(), /event_order_key/);
   assert.equal(safeTaskClaimLimit(1), 1);
   assert.equal(safeTaskClaimLimit(50), 1);
   assert.match(dailyReconcileMessage({}), /journalctl --user -u rhythmjoy-spacecloud-watch\.service/);
@@ -10625,6 +13221,7 @@ ${kstNowText()}
   }
 
   if (args.command === 'once') {
+    await assertRemoteDurableTaskSchema(args);
     const result = await withAutomationProcessLock(args, () => runCycle(args));
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else console.log(`cycle ${result.status}; candidates=${result.uploadCandidates}; attempted=${result.attempted || 0}; remaining=${result.remainingInPlan ?? 0}; uploadTasks=${result.uploadTasks?.attempted || 0}; naverCancelTasks=${result.naverCancelTasks?.attempted || 0}; deleteTasks=${result.deleteTasks?.attempted || 0}; naverBlockTasks=${result.naverBlockTasks?.attempted || 0}; naverRestoreTasks=${result.naverRestoreTasks?.attempted || 0}; spacecloudCancelTasks=${result.spacecloudCancelTasks?.attempted || 0}`);
@@ -10632,6 +13229,7 @@ ${kstNowText()}
   }
 
   if (args.command === 'watch') {
+    await assertRemoteDurableTaskSchema(args);
     await withAutomationProcessLock(args, () => runWatch(args));
     return;
   }

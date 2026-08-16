@@ -7,6 +7,7 @@ import {
   classifyDirectUploadVerification,
   directUploadRetryMode,
   directUploadVerificationTarget,
+  pollForSpacecloudCalendarAbsence,
   pollForSpacecloudCalendarIdentity,
   popupDeleteVerification,
   spacecloudReservationIdentityAccepted,
@@ -275,10 +276,14 @@ test('calendar API verifies the exact task, reservation, date, time, and masked 
     { date: '2026-11-27' },
     { startTime: '19:00' },
     { endTime: '23:00' },
-    { reserverName: '박*수님' },
   ]) {
     assert.equal(verifySpacecloudCalendarIdentity(calendar, { ...row, ...changed }).identityMatched, false);
   }
+  assert.equal(
+    verifySpacecloudCalendarIdentity(calendar, { ...row, reserverName: '표시형식 변경' }).identityMatched,
+    true,
+    'durable task/reservation identity must not be invalidated by a masked display-name change',
+  );
 });
 
 test('calendar API rejects two distinct schedules with the same exact memo identity', () => {
@@ -354,7 +359,51 @@ test('calendar API polling waits for the authoritative schedule instead of readi
   assert.equal(result.waitedMs, 20);
 });
 
+test('calendar API absence requires consecutive authoritative reads and never treats API failure as absence', async () => {
+  let clock = 0;
+  let reads = 0;
+  const row = {
+    taskId: 557,
+    requireTaskId: true,
+    date: '2026-11-26',
+    startTime: '20:00',
+    endTime: '22:00',
+    reservationNo: '1319633241',
+  };
+  const result = await pollForSpacecloudCalendarAbsence({
+    row,
+    readCalendar: async () => {
+      reads += 1;
+      if (reads === 1) return { ok: false, status: 503, error: 'calendar-api-http-503', days: [] };
+      return { ok: true, status: 200, productId: '108673', days: [] };
+    },
+    wait: async (delayMs) => { clock += delayMs; },
+    now: () => clock,
+    timeoutMs: 100,
+    intervalMs: 10,
+    requiredConsecutiveReads: 2,
+  });
+  assert.equal(result.absenceConfirmed, true);
+  assert.equal(result.candidateReadCount, 3);
+  assert.equal(result.consecutiveAbsentReads, 2);
+
+  const failed = await pollForSpacecloudCalendarAbsence({
+    row,
+    readCalendar: async () => ({ ok: false, status: 503, error: 'calendar-api-http-503', days: [] }),
+    wait: async (delayMs) => { clock += delayMs; },
+    now: () => clock,
+    timeoutMs: 20,
+    intervalMs: 10,
+  });
+  assert.equal(failed.absenceConfirmed, false);
+  assert.equal(failed.reason, 'calendar-api-read-failed');
+});
+
 test('ambiguous upload retries are verification-only and never auto-resubmit', () => {
+  assert.equal(directUploadRetryMode({ attempts: 4, sideEffectState: 'ready' }), 'safe-retry-before-submit');
+  assert.equal(directUploadRetryMode({ attempts: 1, sideEffectState: 'armed' }), 'verification-only');
+  assert.equal(directUploadRetryMode({ attempts: 1, sideEffectState: 'finalized' }), 'verification-only');
+  assert.equal(directUploadRetryMode({ attempts: 1, sideEffectState: 'skipped' }), 'verification-only');
   assert.equal(directUploadRetryMode({ attempts: 0 }), 'new-submit');
   assert.equal(directUploadRetryMode({
     attempts: 1,

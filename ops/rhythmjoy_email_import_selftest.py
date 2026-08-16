@@ -236,7 +236,11 @@ class EmailPipelineSelfTest(unittest.TestCase):
         config = {'db_enabled': True, 'naver_spacecloud_upload_enabled': True}
         with mock.patch.object(email_import, 'parse_reservation', return_value=event_data), \
                 mock.patch.object(email_import, 'build_reservation_email_record', return_value={}), \
-                mock.patch.object(email_import, 'upsert_email_event', return_value={'id': 7}), \
+                mock.patch.object(email_import, 'upsert_email_event', return_value={
+                    'id': 7,
+                    'event_order_key': 1786856475000,
+                    'event_order_trusted': 1,
+                }), \
                 mock.patch.object(email_import, 'db_connect', return_value=connection), \
                 mock.patch.object(email_import, 'lock_inbox_event', side_effect=record_lock), \
                 mock.patch.object(email_import, 'upsert_booking_ledger_confirmed', side_effect=record_ledger), \
@@ -273,7 +277,11 @@ class EmailPipelineSelfTest(unittest.TestCase):
 
         def save_record(_config, _logger, record):
             saved_records.append(dict(record))
-            return {'id': 7}
+            return {
+                'id': 7,
+                'event_order_key': 1786856475000,
+                'event_order_trusted': 1,
+            }
 
         message = EmailMessage()
         message['Subject'] = '입금대기 예약 테스트'
@@ -329,7 +337,11 @@ class EmailPipelineSelfTest(unittest.TestCase):
         config = {'db_enabled': True, 'naver_spacecloud_upload_enabled': True}
         with mock.patch.object(email_import, 'parse_reservation', return_value=event_data), \
                 mock.patch.object(email_import, 'build_reservation_email_record', return_value={}), \
-                mock.patch.object(email_import, 'upsert_email_event', return_value={'id': 7}), \
+                mock.patch.object(email_import, 'upsert_email_event', return_value={
+                    'id': 7,
+                    'event_order_key': 1786856475000,
+                    'event_order_trusted': 1,
+                }), \
                 mock.patch.object(email_import, 'db_connect', return_value=connection), \
                 mock.patch.object(email_import, 'lock_inbox_event', return_value={'id': 7}), \
                 mock.patch.object(email_import, 'upsert_booking_ledger_confirmed', return_value={'id': 8}), \

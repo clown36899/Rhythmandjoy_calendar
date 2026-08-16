@@ -303,11 +303,22 @@ function ensure_schema($pdo) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
     ensure_column($pdo, 'rhythmjoy_admin_sync_tasks', 'live_task_id', 'BIGINT UNSIGNED NULL AFTER reservation_id');
+    ensure_column($pdo, 'rhythmjoy_naver_email_events', 'event_order_key', 'BIGINT UNSIGNED NULL AFTER email_received_at');
+    ensure_column($pdo, 'rhythmjoy_naver_email_events', 'event_order_trusted', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER event_order_key');
+    ensure_column($pdo, 'rhythmjoy_spacecloud_tasks', 'booking_ledger_id', 'BIGINT UNSIGNED NULL AFTER email_event_id');
+    ensure_column($pdo, 'rhythmjoy_spacecloud_tasks', 'claim_token', "VARCHAR(64) NOT NULL DEFAULT '' AFTER locked_at");
+    ensure_column($pdo, 'rhythmjoy_spacecloud_tasks', 'side_effect_state', 'VARCHAR(24) NULL AFTER claim_token');
+    ensure_column($pdo, 'rhythmjoy_spacecloud_tasks', 'side_effect_token', "VARCHAR(64) NOT NULL DEFAULT '' AFTER side_effect_state");
+    ensure_column($pdo, 'rhythmjoy_spacecloud_tasks', 'side_effect_armed_at', 'DATETIME NULL AFTER side_effect_token');
+    ensure_column($pdo, 'rhythmjoy_spacecloud_tasks', 'side_effect_finalized_at', 'DATETIME NULL AFTER side_effect_armed_at');
     ensure_column($pdo, 'rhythmjoy_booking_ledger', 'gross_amount', 'INT UNSIGNED NULL AFTER price');
     ensure_column($pdo, 'rhythmjoy_booking_ledger', 'fee_amount', 'INT UNSIGNED NULL AFTER gross_amount');
     ensure_column($pdo, 'rhythmjoy_booking_ledger', 'net_amount', 'INT UNSIGNED NULL AFTER fee_amount');
     ensure_column($pdo, 'rhythmjoy_booking_ledger', 'amount_source', "VARCHAR(64) NOT NULL DEFAULT '' AFTER net_amount");
     ensure_column($pdo, 'rhythmjoy_booking_ledger', 'payment_method', "VARCHAR(64) NOT NULL DEFAULT '' AFTER amount_source");
+    ensure_column($pdo, 'rhythmjoy_booking_ledger', 'last_event_id', 'BIGINT UNSIGNED NULL AFTER last_event_at');
+    ensure_column($pdo, 'rhythmjoy_booking_ledger', 'last_event_order_key', 'BIGINT UNSIGNED NULL AFTER last_event_id');
+    ensure_column($pdo, 'rhythmjoy_booking_ledger', 'automation_canceled_order_key', 'BIGINT UNSIGNED NULL AFTER automation_canceled_at');
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS rhythmjoy_reflection_audits (
             audit_key VARCHAR(180) NOT NULL,
@@ -3405,55 +3416,38 @@ function booking_ledger_key_for_admin($source_platform, $event, $calendar_key) {
     return $source_platform . '|' . hash('sha256', $raw_key);
 }
 
-function upload_dedupe_key_for_admin($event, $room_key) {
-    $reservation_number = isset($event['reservation_number']) ? $event['reservation_number'] : '';
-    if ($reservation_number !== '') {
-        $raw_key = 'upload|reservation|' . $reservation_number;
-    } else {
-        $raw_key = implode('|', array(
-            'upload',
-            $room_key,
-            $event['date'],
-            $event['start_time'],
-            $event['end_time'],
-            $event['name'],
-        ));
+function admin_task_generation_for_event($event) {
+    $reservation_id = isset($event['admin_reservation_id']) ? intval($event['admin_reservation_id']) : 0;
+    if ($reservation_id < 1) {
+        throw new InvalidArgumentException('관리자 작업 생애주기 식별값이 없습니다.');
     }
-    return 'upload|' . hash('sha256', $raw_key);
+    return 'admin-reservation:' . $reservation_id;
 }
 
-function naver_block_dedupe_key_for_admin($event, $room_key) {
-    $raw_key = implode('|', array(
-        'naver_block',
-        $room_key,
-        $event['date'],
-        $event['start_time'],
-        $event['end_time'],
-        normalize_reserver_name_key($event['name']),
-    ));
-    return 'naver_block|' . hash('sha256', $raw_key);
+function admin_action_generation_for_task($task_type, $event) {
+    $phase = in_array($task_type, array('upload', 'naver_block'), true) ? 'registration' : 'cancellation';
+    return admin_task_generation_for_event($event) . ':' . $phase;
 }
 
 function live_task_dedupe_key_for_admin($task_type, $event, $room_key) {
-    if ($task_type === 'upload') {
-        return upload_dedupe_key_for_admin($event, $room_key);
-    }
-    if ($task_type === 'naver_block') {
-        return naver_block_dedupe_key_for_admin($event, $room_key);
-    }
     $raw_key = implode('|', array(
+        'admin-live-task-v2',
+        admin_action_generation_for_task($task_type, $event),
         $task_type,
-        $event['reservation_number'],
-        $room_key,
-        $event['date'],
-        $event['start_time'],
-        $event['end_time'],
-        normalize_reserver_name_key($event['name']),
     ));
     return $task_type . '|' . hash('sha256', $raw_key);
 }
 
+function upload_dedupe_key_for_admin($event, $room_key) {
+    return live_task_dedupe_key_for_admin('upload', $event, $room_key);
+}
+
+function naver_block_dedupe_key_for_admin($event, $room_key) {
+    return live_task_dedupe_key_for_admin('naver_block', $event, $room_key);
+}
+
 function insert_admin_ledger_anchor($pdo, $source_platform, $event, $calendar_key, $room_key) {
+    $ledger_key = booking_ledger_key_for_admin($source_platform, $event, $calendar_key);
     $stmt = $pdo->prepare("
         INSERT INTO rhythmjoy_booking_ledger (
             ledger_key, source_platform, source_mode, current_status,
@@ -3474,6 +3468,7 @@ function insert_admin_ledger_anchor($pdo, $source_platform, $event, $calendar_ke
             ?, NOW(), NOW()
         )
         ON DUPLICATE KEY UPDATE
+            id=LAST_INSERT_ID(id),
             current_status='confirmed',
             target_calendar=VALUES(target_calendar),
             room_key=VALUES(room_key),
@@ -3493,7 +3488,7 @@ function insert_admin_ledger_anchor($pdo, $source_platform, $event, $calendar_ke
     ");
     $payload_json = json_encode($event, JSON_UNESCAPED_UNICODE);
     $stmt->execute(array(
-        booking_ledger_key_for_admin($source_platform, $event, $calendar_key),
+        $ledger_key,
         $source_platform,
         $calendar_key,
         $room_key,
@@ -3506,6 +3501,20 @@ function insert_admin_ledger_anchor($pdo, $source_platform, $event, $calendar_ke
         $event['end_time'],
         $payload_json,
     ));
+    $ledger_id = intval($pdo->lastInsertId());
+    $select = $pdo->prepare("
+        SELECT id
+        FROM rhythmjoy_booking_ledger
+        WHERE ledger_key=? AND source_platform=? AND source_mode='admin-task-anchor'
+        LIMIT 1
+    ");
+    $select->execute(array($ledger_key, $source_platform));
+    $row = $select->fetch();
+    $exact_ledger_id = $row ? intval($row['id']) : 0;
+    if ($exact_ledger_id < 1 || ($ledger_id > 0 && $ledger_id !== $exact_ledger_id)) {
+        throw new RuntimeException('관리자 예약 원장 식별값을 확정하지 못했습니다.');
+    }
+    return $exact_ledger_id;
 }
 
 function admin_source_platform_for_task($task_type) {
@@ -3518,51 +3527,125 @@ function admin_source_platform_for_task($task_type) {
     return '';
 }
 
-function admin_live_task_payload($task_type, $event) {
+function admin_live_task_payload($task_type, $event, $booking_ledger_id) {
     $source_platform = admin_source_platform_for_task($task_type);
     if ($source_platform === '') {
         throw new InvalidArgumentException('지원하지 않는 관리자 동기화 작업입니다.');
+    }
+    $booking_ledger_id = intval($booking_ledger_id);
+    if ($booking_ledger_id < 1) {
+        throw new InvalidArgumentException('관리자 작업에 연결할 예약 원장 식별값이 없습니다.');
     }
     $payload = $event;
     $calendar_key = isset($event['calendar_key']) ? $event['calendar_key'] : '';
     $payload['ledger_key'] = booking_ledger_key_for_admin($source_platform, $event, $calendar_key);
     $payload['ledger_source_platform'] = $source_platform;
+    $payload['booking_ledger_id'] = $booking_ledger_id;
+    $payload['admin_action_generation'] = admin_action_generation_for_task($task_type, $event);
     return $payload;
 }
 
-function insert_live_spacecloud_task($pdo, $task_type, $event, $room_key) {
+function insert_live_spacecloud_task($pdo, $task_type, $event, $room_key, $booking_ledger_id) {
     if (!in_array($task_type, array('upload', 'delete', 'naver_block', 'naver_restore'), true)) {
         throw new InvalidArgumentException('지원하지 않는 관리자 동기화 작업입니다.');
     }
+    $booking_ledger_id = intval($booking_ledger_id);
+    if ($booking_ledger_id < 1) {
+        throw new InvalidArgumentException('관리자 동기화 작업 원장이 없습니다.');
+    }
+    $task_payload = admin_live_task_payload($task_type, $event, $booking_ledger_id);
+    $payload_json = json_encode($task_payload, JSON_UNESCAPED_UNICODE);
+    $existing = $pdo->prepare("
+        SELECT id, email_event_id, status, booking_ledger_id, side_effect_state, attempts, payload_json
+        FROM rhythmjoy_spacecloud_tasks
+        WHERE task_type=?
+          AND reservation_number=?
+          AND room_key=?
+          AND reservation_date=?
+          AND start_time=?
+          AND end_time=?
+        ORDER BY
+          CASE WHEN booking_ledger_id=? THEN 0 WHEN booking_ledger_id IS NULL THEN 1 ELSE 2 END,
+          id DESC
+        LIMIT 1
+        FOR UPDATE
+    ");
+    $existing->execute(array(
+        $task_type,
+        $event['reservation_number'],
+        $room_key,
+        $event['date'],
+        $event['start_time'],
+        $event['end_time'],
+        $booking_ledger_id,
+    ));
+    $existing_task = $existing->fetch();
+    if ($existing_task) {
+        $existing_payload = json_decode((string) $existing_task['payload_json'], true);
+        $exact_admin_task = is_array($existing_payload)
+            && (isset($existing_payload['source']) && $existing_payload['source'] === 'admin-panel'
+                || isset($existing_payload['source_mode']) && $existing_payload['source_mode'] === 'admin-panel')
+            && isset($existing_payload['admin_reservation_id'])
+            && intval($existing_payload['admin_reservation_id']) === intval($event['admin_reservation_id']);
+        if (!$exact_admin_task) {
+            throw new RuntimeException('기존 실행 작업이 현재 관리자 예약 생애주기와 일치하지 않습니다.');
+        }
+        $existing_ledger_id = $existing_task['booking_ledger_id'] !== null
+            ? intval($existing_task['booking_ledger_id'])
+            : 0;
+        if ($existing_ledger_id && $existing_ledger_id !== $booking_ledger_id) {
+            throw new RuntimeException('관리자 작업 생애주기에 서로 다른 예약 원장이 연결되었습니다.');
+        }
+        $safe_legacy_backfill = !$existing_ledger_id
+            && $existing_task['email_event_id'] === null
+            && (string) $existing_task['status'] === 'pending'
+            && intval($existing_task['attempts']) === 0
+            && $existing_task['side_effect_state'] === null;
+        if ($safe_legacy_backfill) {
+            $backfill = $pdo->prepare("
+                UPDATE rhythmjoy_spacecloud_tasks
+                SET booking_ledger_id=?,
+                    side_effect_state='ready',
+                    side_effect_token='',
+                    payload_json=?,
+                    updated_at=NOW()
+                WHERE id=?
+                  AND email_event_id IS NULL
+                  AND booking_ledger_id IS NULL
+                  AND status='pending'
+                  AND attempts=0
+                  AND side_effect_state IS NULL
+            ");
+            $backfill->execute(array($booking_ledger_id, $payload_json, intval($existing_task['id'])));
+            if (intval($backfill->rowCount()) !== 1) {
+                throw new RuntimeException('대기 중인 기존 관리자 작업을 안전 상태로 연결하지 못했습니다.');
+            }
+            $existing_task['booking_ledger_id'] = $booking_ledger_id;
+            $existing_task['side_effect_state'] = 'ready';
+            $existing_task['payload_json'] = $payload_json;
+        }
+        return $existing_task;
+    }
     $dedupe_key = live_task_dedupe_key_for_admin($task_type, $event, $room_key);
-    $payload_json = json_encode(admin_live_task_payload($task_type, $event), JSON_UNESCAPED_UNICODE);
     $stmt = $pdo->prepare("
         INSERT INTO rhythmjoy_spacecloud_tasks (
-            dedupe_key, email_event_id, task_type, status,
+            dedupe_key, email_event_id, booking_ledger_id, task_type, status, side_effect_state, side_effect_token,
             room_key, reservation_number, reserver_name, product,
             reservation_date, start_time, end_time, payload_json,
             created_at, updated_at
         )
         VALUES (
-            ?, NULL, ?, 'pending',
+            ?, NULL, ?, ?, 'pending', 'ready', '',
             ?, ?, ?, ?,
             ?, ?, ?, ?,
             NOW(), NOW()
         )
         ON DUPLICATE KEY UPDATE
-            room_key=VALUES(room_key),
-            reservation_number=VALUES(reservation_number),
-            reserver_name=VALUES(reserver_name),
-            product=VALUES(product),
-            reservation_date=VALUES(reservation_date),
-            start_time=VALUES(start_time),
-            end_time=VALUES(end_time),
-            payload_json=VALUES(payload_json),
-            status=IF(status IN ('done', 'already_gone', 'needs_review', 'google_pending'), status, 'pending'),
-            updated_at=NOW()
+            dedupe_key=VALUES(dedupe_key)
     ");
     $stmt->execute(array(
         $dedupe_key,
+        $booking_ledger_id,
         $task_type,
         $room_key,
         $event['reservation_number'],
@@ -3573,9 +3656,18 @@ function insert_live_spacecloud_task($pdo, $task_type, $event, $room_key) {
         $event['end_time'],
         $payload_json,
     ));
-    $select = $pdo->prepare("SELECT id, status FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=? LIMIT 1");
-    $select->execute(array($dedupe_key));
-    return $select->fetch();
+    $select = $pdo->prepare("
+        SELECT id, status, booking_ledger_id, side_effect_state
+        FROM rhythmjoy_spacecloud_tasks
+        WHERE dedupe_key=? AND task_type=?
+        LIMIT 1
+    ");
+    $select->execute(array($dedupe_key, $task_type));
+    $task = $select->fetch();
+    if (!$task || intval($task['booking_ledger_id']) !== $booking_ledger_id) {
+        throw new RuntimeException('관리자 동기화 작업과 예약 원장 연결이 일치하지 않습니다.');
+    }
+    return $task;
 }
 
 function admin_event_payload($reservation_id, $date, $room, $start, $end, $name, $memo, $phone_last4, $extra = array()) {
@@ -3609,6 +3701,32 @@ function admin_event_payload($reservation_id, $date, $room, $start, $end, $name,
 
 function insert_admin_sync_task($pdo, $reservation_id, $live_task, $action_type, $platform, $env) {
     $status = $live_task && isset($live_task['status']) ? $live_task['status'] : 'pending';
+    $live_task_id = $live_task ? intval($live_task['id']) : null;
+    $existing = $pdo->prepare("
+        SELECT id, live_task_id, status
+        FROM rhythmjoy_admin_sync_tasks
+        WHERE reservation_id=? AND action_type=? AND platform=?
+        ORDER BY id
+        LIMIT 1
+        FOR UPDATE
+    ");
+    $existing->execute(array($reservation_id, $action_type, $platform));
+    $existing_row = $existing->fetch();
+    if ($existing_row) {
+        $existing_live_task_id = $existing_row['live_task_id'] !== null ? intval($existing_row['live_task_id']) : 0;
+        if ($live_task_id && $existing_live_task_id && $existing_live_task_id !== $live_task_id) {
+            throw new RuntimeException('관리자 동기화 작업 생애주기에 서로 다른 실행 작업이 연결되었습니다.');
+        }
+        if ($live_task_id && !$existing_live_task_id) {
+            $update = $pdo->prepare("
+                UPDATE rhythmjoy_admin_sync_tasks
+                SET live_task_id=?, status=?, result_text='실행 큐 생성됨', updated_at=NOW()
+                WHERE id=? AND live_task_id IS NULL
+            ");
+            $update->execute(array($live_task_id, $status, intval($existing_row['id'])));
+        }
+        return intval($existing_row['id']);
+    }
     $stmt = $pdo->prepare("
         INSERT INTO rhythmjoy_admin_sync_tasks (
             reservation_id, live_task_id, action_type, platform, status, result_text, created_at, updated_at
@@ -3616,12 +3734,13 @@ function insert_admin_sync_task($pdo, $reservation_id, $live_task, $action_type,
     ");
     $stmt->execute(array(
         $reservation_id,
-        $live_task ? intval($live_task['id']) : null,
+        $live_task_id,
         $action_type,
         $platform,
         $status,
         sync_admin_live_enabled($env) ? '실행 큐 생성됨' : '관리자 패널에서 생성됨',
     ));
+    return intval($pdo->lastInsertId());
 }
 
 function queue_admin_registration($pdo, $event, $env) {
@@ -3630,16 +3749,40 @@ function queue_admin_registration($pdo, $event, $env) {
     $naver_task = null;
     $spacecloud_task = null;
     if (sync_admin_live_enabled($env)) {
-        insert_admin_ledger_anchor($pdo, 'naver', $event, $calendar_key, $room_key);
-        insert_admin_ledger_anchor($pdo, 'spacecloud', $event, $calendar_key, $room_key);
-        $naver_task = insert_live_spacecloud_task($pdo, 'naver_block', $event, $room_key);
-        $spacecloud_task = insert_live_spacecloud_task($pdo, 'upload', $event, $room_key);
+        $naver_ledger_id = insert_admin_ledger_anchor($pdo, 'naver', $event, $calendar_key, $room_key);
+        $spacecloud_ledger_id = insert_admin_ledger_anchor($pdo, 'spacecloud', $event, $calendar_key, $room_key);
+        $naver_task = insert_live_spacecloud_task($pdo, 'naver_block', $event, $room_key, $spacecloud_ledger_id);
+        $spacecloud_task = insert_live_spacecloud_task($pdo, 'upload', $event, $room_key, $naver_ledger_id);
     }
     insert_admin_sync_task($pdo, $event['admin_reservation_id'], $naver_task, 'block_naver_availability', 'naver', $env);
     insert_admin_sync_task($pdo, $event['admin_reservation_id'], $spacecloud_task, 'add_spacecloud_reservation', 'spacecloud', $env);
 }
 
-function update_admin_ledger_status($pdo, $event, $status) {
+function update_admin_ledger_status($pdo, $event, $status, $expected_ledger_ids = array()) {
+    $naver_key = booking_ledger_key_for_admin('naver', $event, $event['calendar_key']);
+    $spacecloud_key = booking_ledger_key_for_admin('spacecloud', $event, $event['calendar_key']);
+    $select = $pdo->prepare("
+        SELECT id, source_platform
+        FROM rhythmjoy_booking_ledger
+        WHERE ledger_key IN (?, ?)
+          AND source_mode='admin-task-anchor'
+        ORDER BY id
+        FOR UPDATE
+    ");
+    $select->execute(array($naver_key, $spacecloud_key));
+    $ledger_ids = array('naver' => 0, 'spacecloud' => 0);
+    while ($row = $select->fetch()) {
+        $source_platform = isset($row['source_platform']) ? (string) $row['source_platform'] : '';
+        if (isset($ledger_ids[$source_platform])) {
+            $ledger_ids[$source_platform] = intval($row['id']);
+        }
+    }
+    foreach (array('naver', 'spacecloud') as $source_platform) {
+        if (isset($expected_ledger_ids[$source_platform])
+            && intval($expected_ledger_ids[$source_platform]) !== $ledger_ids[$source_platform]) {
+            throw new RuntimeException('관리자 예약 원장 연결이 변경되어 취소 작업을 만들 수 없습니다.');
+        }
+    }
     $stmt = $pdo->prepare("
         UPDATE rhythmjoy_booking_ledger
         SET current_status=?, last_event_at=NOW(), updated_at=NOW()
@@ -3648,18 +3791,103 @@ function update_admin_ledger_status($pdo, $event, $status) {
     ");
     $stmt->execute(array(
         $status,
-        booking_ledger_key_for_admin('naver', $event, $event['calendar_key']),
-        booking_ledger_key_for_admin('spacecloud', $event, $event['calendar_key']),
+        $naver_key,
+        $spacecloud_key,
     ));
+    return $ledger_ids;
+}
+
+function skip_ready_admin_upload_task($pdo, $booking_ledger_id, $event) {
+    $booking_ledger_id = intval($booking_ledger_id);
+    if ($booking_ledger_id < 1) {
+        throw new InvalidArgumentException('취소 선점에 사용할 예약 원장 식별값이 없습니다.');
+    }
+    $select = $pdo->prepare("
+        SELECT id
+        FROM rhythmjoy_spacecloud_tasks
+        WHERE booking_ledger_id=?
+          AND task_type='upload'
+          AND side_effect_state='ready'
+        ORDER BY id
+        FOR UPDATE
+    ");
+    $select->execute(array($booking_ledger_id));
+    $task_ids = array();
+    while ($row = $select->fetch()) {
+        $task_ids[] = intval($row['id']);
+    }
+    if (!$task_ids) {
+        return array();
+    }
+    $result_text = json_encode(array(
+        'taskType' => 'upload',
+        'status' => 'stale-ledger-skip',
+        'bookingLedgerId' => $booking_ledger_id,
+        'adminReservationId' => intval($event['admin_reservation_id']),
+        'sideEffectState' => 'skipped',
+        'submissionAttempted' => false,
+        'mirrorMutationState' => 'not_created',
+        'reason' => 'admin cancellation fenced the upload before the remote side effect was armed',
+        'finishedAt' => gmdate('c'),
+    ), JSON_UNESCAPED_UNICODE);
+    $update = $pdo->prepare("
+        UPDATE rhythmjoy_spacecloud_tasks
+        SET side_effect_state='skipped',
+            side_effect_token='',
+            side_effect_armed_at=NULL,
+            side_effect_finalized_at=NOW(),
+            status='done',
+            processed_at=NOW(),
+            result_text=?,
+            confirmation_sms_required=0,
+            claim_token='',
+            locked_at=NULL,
+            updated_at=NOW()
+        WHERE booking_ledger_id=?
+          AND task_type='upload'
+          AND side_effect_state='ready'
+    ");
+    $update->execute(array($result_text, $booking_ledger_id));
+    if (intval($update->rowCount()) !== count($task_ids)) {
+        throw new RuntimeException('관리자 취소가 대기 중 업로드를 완전히 차단하지 못했습니다.');
+    }
+    $placeholders = implode(',', array_fill(0, count($task_ids), '?'));
+    if (admin_table_exists($pdo, 'rhythmjoy_sms_deliveries')) {
+        $delivery_update = $pdo->prepare("
+            UPDATE rhythmjoy_sms_deliveries
+            SET status='skipped',
+                error_text='booking canceled before SpaceCloud upload submit',
+                updated_at=NOW()
+            WHERE source_task_type='upload'
+              AND source_task_id IN ($placeholders)
+              AND status IN ('pending','failed','phone_lookup_failed')
+        ");
+        $delivery_update->execute($task_ids);
+    }
+    $admin_update = $pdo->prepare("
+        UPDATE rhythmjoy_admin_sync_tasks
+        SET status='done', result_text='취소가 먼저 확정되어 스페이스클라우드 등록 생략', updated_at=NOW()
+        WHERE live_task_id IN ($placeholders)
+    ");
+    $admin_update->execute($task_ids);
+    return $task_ids;
 }
 
 function queue_admin_cancellation($pdo, $event, $env) {
-    update_admin_ledger_status($pdo, $event, 'canceled');
     $delete_task = null;
     $restore_task = null;
     if (sync_admin_live_enabled($env)) {
-        $delete_task = insert_live_spacecloud_task($pdo, 'delete', $event, $event['room_key']);
-        $restore_task = insert_live_spacecloud_task($pdo, 'naver_restore', $event, $event['room_key']);
+        $naver_ledger_id = insert_admin_ledger_anchor($pdo, 'naver', $event, $event['calendar_key'], $event['room_key']);
+        $spacecloud_ledger_id = insert_admin_ledger_anchor($pdo, 'spacecloud', $event, $event['calendar_key'], $event['room_key']);
+        update_admin_ledger_status($pdo, $event, 'canceled', array(
+            'naver' => $naver_ledger_id,
+            'spacecloud' => $spacecloud_ledger_id,
+        ));
+        skip_ready_admin_upload_task($pdo, $naver_ledger_id, $event);
+        $delete_task = insert_live_spacecloud_task($pdo, 'delete', $event, $event['room_key'], $naver_ledger_id);
+        $restore_task = insert_live_spacecloud_task($pdo, 'naver_restore', $event, $event['room_key'], $spacecloud_ledger_id);
+    } else {
+        update_admin_ledger_status($pdo, $event, 'canceled');
     }
     insert_admin_sync_task($pdo, $event['admin_reservation_id'], $delete_task, 'delete_spacecloud_reservation', 'spacecloud', $env);
     insert_admin_sync_task($pdo, $event['admin_reservation_id'], $restore_task, 'restore_naver_availability', 'naver', $env);
@@ -4121,6 +4349,29 @@ function run_sync_admin_selftest() {
         !admin_single_request_matches($single_row, '2026-08-20', 'C', 14, 15, '관리자', hash('sha256', '01012345678'), '단건 테스트'),
         'single reservation retries reject a changed payload'
     );
+    $generation_event_a = admin_event_payload(701, '2026-08-20', 'C', 13, 15, '관리자', '', '5678');
+    $generation_event_b = admin_event_payload(702, '2026-08-20', 'C', 13, 15, '관리자', '', '5678');
+    sync_admin_selftest_assert(
+        live_task_dedupe_key_for_admin('naver_block', $generation_event_a, 'c')
+            === live_task_dedupe_key_for_admin('naver_block', $generation_event_a, 'c'),
+        'an admin action replay keeps the same live task identity'
+    );
+    sync_admin_selftest_assert(
+        live_task_dedupe_key_for_admin('naver_block', $generation_event_a, 'c')
+            !== live_task_dedupe_key_for_admin('naver_block', $generation_event_b, 'c'),
+        'a new admin reservation lifecycle can run again in the same slot'
+    );
+    sync_admin_selftest_assert(
+        live_task_dedupe_key_for_admin('upload', $generation_event_a, 'c')
+            !== live_task_dedupe_key_for_admin('delete', $generation_event_a, 'c'),
+        'registration and cancellation actions have distinct live task identities'
+    );
+    $generation_payload = admin_live_task_payload('upload', $generation_event_a, 9259);
+    sync_admin_selftest_assert(
+        intval($generation_payload['booking_ledger_id']) === 9259
+            && $generation_payload['admin_action_generation'] === 'admin-reservation:701:registration',
+        'admin live task payloads retain their exact ledger and action generation'
+    );
     sync_admin_selftest_assert(
         admin_reservation_operation_state(array(
             array('status' => 'pending'),
@@ -4202,7 +4453,7 @@ function run_sync_admin_selftest() {
         admin_reflection_audit_is_stale($audit_now - (40 * 60), $audit_now),
         'a missed reflection audit is marked stale after the grace period'
     );
-    echo "sync-admin self-test OK: single/recurring idempotency, customer cancellation identity, operation progress, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures, phone redaction and reflection-audit timing\n";
+    echo "sync-admin self-test OK: single/recurring idempotency, admin task generation and ledger identity, customer cancellation identity, operation progress, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures, phone redaction and reflection-audit timing\n";
 }
 
 if (PHP_SAPI === 'cli' && isset($argv[1]) && $argv[1] === 'self-test') {
