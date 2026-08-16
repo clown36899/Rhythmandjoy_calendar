@@ -1625,9 +1625,8 @@ def link_exact_legacy_trusted_cancellation(
             == expected['start_time']
             and clean_time_or_none(row.get(f'{prefix}_end_time'))
             == expected['end_time']
-            and normalize_reserver_name_for_match(
-                row.get(f'{prefix}_reserver_name')
-            ) == expected['reserver_name_key']
+            and mask_name(row.get(f'{prefix}_reserver_name'))
+            == mask_name(expected['reserver_name_key'])
         )
 
     if (
@@ -1641,7 +1640,6 @@ def link_exact_legacy_trusted_cancellation(
             or int(row.get('task_booking_ledger_id') or 0)
             not in (0, ledger_id)
             or int(row.get('task_attempts') or 0) < 1
-            or row.get('task_locked_at') is not None
             or str(row.get('task_claim_token') or '') != ''
             or str(row.get('task_side_effect_token') or '') != ''
             or not (terminal_task or inert_uncertain_task)
@@ -1679,7 +1677,7 @@ def link_exact_legacy_trusted_cancellation(
               AND reservation_date <=> %s
               AND start_time <=> %s
               AND end_time <=> %s
-              AND locked_at IS NULL
+              AND locked_at <=> %s
               AND claim_token=''
               AND side_effect_state <=> %s
               AND side_effect_token=''
@@ -1699,6 +1697,7 @@ def link_exact_legacy_trusted_cancellation(
                 expected['reservation_date'],
                 expected['start_time'],
                 expected['end_time'],
+                row.get('task_locked_at'),
                 side_effect_state,
                 row.get('task_side_effect_armed_at'),
                 expected['reserver_name_key'],

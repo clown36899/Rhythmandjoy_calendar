@@ -319,7 +319,9 @@ class EmailPipelineSelfTest(unittest.TestCase):
             'task_booking_ledger_id': None,
             'task_status': 'done',
             'task_attempts': 2,
-            'task_locked_at': None,
+            # The legacy producer kept its final claim timestamp after a
+            # terminal update; the empty claim token is the inactive proof.
+            'task_locked_at': '2026-08-17 21:01:00',
             'task_claim_token': '',
             'task_side_effect_state': None,
             'task_side_effect_token': '',
@@ -338,7 +340,7 @@ class EmailPipelineSelfTest(unittest.TestCase):
             'ledger_last_event_order_key': order_key,
             'ledger_room_key': 'b',
             'ledger_reservation_number': 'R-709',
-            'ledger_reserver_name': '최*우님',
+            'ledger_reserver_name': '최선우',
             'ledger_reservation_date': '2026-08-17',
             'ledger_start_time': '18:00:00',
             'ledger_end_time': '21:00:00',
