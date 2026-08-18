@@ -1442,6 +1442,13 @@ def lock_confirmation_generation(cur):
             task and task.get('status') == 'done'
             and result.get('status') in ('blocked', 'already-blocked')
         )
+    if same_generation and task and task.get('status') in ('pending', 'running'):
+        return {
+            'approved': False,
+            'retryable': True,
+            'reason': 'platform finalization is pending before confirmation SMS',
+            'ledgerId': ledger_id,
+        }
     return {
         'approved': bool(same_generation and platform_done),
         'reason': 'exact confirmed generation is eligible' if same_generation and platform_done else 'reservation is canceled, stale, or not platform-finalized',
@@ -1551,12 +1558,15 @@ try:
                         claim_cur.execute(
                             """
                             UPDATE rhythmjoy_sms_deliveries
-                            SET status='sending', error_text=NULL,
+                            SET status='sending',
+                                recipient_phone_hash=%s,
+                                recipient_phone_last4=%s,
+                                error_text=NULL,
                                 attempt_count=attempt_count+1,
                                 last_attempt_at=NOW(), next_retry_at=NULL, updated_at=NOW()
                             WHERE idempotency_key=%s AND status IN ('pending','failed','phone_lookup_failed')
                             """,
-                            (idempotency_key,),
+                            (phone_hash, phone[-4:], idempotency_key),
                         )
                         claimed = claim_cur.rowcount == 1
                 claim_conn.commit()
@@ -10826,15 +10836,13 @@ async function runNaverAvailabilityTasks(args, context = null) {
       }
 
       if (taskType !== 'naver_restore' && ['blocked', 'already-blocked'].includes(row.status)) {
-        try {
-          row.sms = await sendSpacecloudOriginConfirmationSms(args, activeContext, task);
-        } catch (smsError) {
-          row.sms = {
-            status: 'failed',
-            reason: 'sms-send-exception',
-            error: String(smsError?.message || smsError),
-          };
-        }
+        // The SMS generation guard accepts only a committed, verified task.
+        // Leave the durable intent pending here; runCycle processes the SMS
+        // outbox after updateRemoteTask has finalized this Naver block.
+        row.confirmationSms = isAdminPanelTask(task)
+          ? 'not-required'
+          : 'queued-after-platform-finalization';
+        row.finishedAt = new Date().toISOString();
       }
 
       Object.assign(row, adminTaskFields(task));
@@ -11985,6 +11993,21 @@ async function runNowModeSelfTest() {
   assert.equal(dbStatusForUploadRow(smsSentRow), 'done');
   assert.equal(smsSendOk('already_sent'), true);
   assert.equal(smsSendOk('delivery_in_progress'), false);
+  const naverAvailabilityRunnerSource = runNaverAvailabilityTasks.toString();
+  assert.doesNotMatch(
+    naverAvailabilityRunnerSource,
+    /await sendSpacecloudOriginConfirmationSms/,
+    'SpaceCloud-origin SMS must not run before the Naver block task is committed',
+  );
+  assert.match(naverAvailabilityRunnerSource, /queued-after-platform-finalization/);
+  assert.ok(
+    runCycle.toString().indexOf('runNaverAvailabilityTasks')
+      < runCycle.toString().indexOf('runSmsPhoneLookupFollowUps'),
+    'the SMS outbox must run after Naver availability work is finalized',
+  );
+  assert.match(sendRemoteSms.toString(), /recipient_phone_hash=%s/);
+  assert.match(sendRemoteSms.toString(), /recipient_phone_last4=%s/);
+  assert.match(sendRemoteSms.toString(), /platform finalization is pending before confirmation SMS/);
   assert.equal(redactPhoneText('recipient 010-4801-7180 failed'), 'recipient 010-****-7180 failed');
   assert.equal(redactPhoneText('01048017180'), '010-****-7180');
   const compactedLongResult = taskResultTextForDb(JSON.stringify({
