@@ -7615,10 +7615,14 @@ function deleteFailureReasonText(rowOrError) {
 
 function smsStatusText(status) {
   const map = {
+    pending: '발송 대기',
+    sending: '발송 중',
+    deferred: '선행 처리 대기',
     sent: '발송 성공',
     already_sent: '이미 발송됨',
     delivery_in_progress: '동일 문자 발송 진행 중',
     needs_review: '발송 결과 확인 필요',
+    uncertain: '발송 결과 확인 필요',
     skipped: '발송 생략',
     failed: '발송 실패',
     phone_lookup_failed: '전화번호 확인 대기',
@@ -7764,11 +7768,25 @@ function syncPlatformResultLine(row) {
 function syncSmsStatusText(row) {
   const sms = row.sms || null;
   if (!sms) return '';
-  const phone = sms.maskedPhone ? ` ${sms.maskedPhone}` : '';
-  const reason = ['failed', 'skipped', 'delivery_in_progress', 'needs_review'].includes(sms.status)
-    ? (sms.reason || sms.error || sms.providerCode || '')
-    : '';
-  return `문자 ${smsStatusText(sms.status)}${phone}${reason ? `: ${cleanTelegramText(reason, 60)}` : ''}`;
+  const status = String(sms.status || '');
+  const phone = sms.maskedPhone ? ` (${sms.maskedPhone})` : '';
+  const expectedNoSend = status === 'disabled' && [
+    'admin-panel-task',
+    'manual-recovery-no-sms',
+    'customer-request-cancellation-does-not-use-prior-booking-template',
+  ].includes(String(sms.reason || ''));
+  const statusLabel = ['sent', 'already_sent'].includes(status)
+    ? '발송 완료'
+    : (expectedNoSend ? '발송 대상 아님' : smsStatusText(status).replace(/^문자\s+/, ''));
+  const reason = [
+    'failed',
+    'skipped',
+    'delivery_in_progress',
+    'needs_review',
+    'uncertain',
+    'phone_lookup_failed',
+  ].includes(status) ? smsFailureReasonText(row) : '';
+  return `문자: ${statusLabel}${phone}${reason ? ` · ${cleanTelegramText(reason, 80)}` : ''}`;
 }
 
 function syncOriginText(row) {
@@ -7816,12 +7834,19 @@ function syncSuccessRowsFromCycle(row) {
 function syncSuccessMessage(row) {
   const taskType = row.taskType || row.task_type || '';
   const isCancellation = ['delete', 'naver_restore', 'spacecloud_cancel', 'naver_cancel'].includes(taskType);
+  const smsStatus = syncSmsStatusText(row);
+  const smsAttention = smsNeedsAttention(row);
+  const smsRetrying = smsAttention && !smsFailureShouldAlert(row);
+  const completedTitle = isCancellation ? '예약 취소 반영 완료' : '예약 반영 완료';
   return compactNotice(
-    isCancellation ? '✅ 예약 취소 반영 완료' : '✅ 예약 반영 완료',
+    smsAttention
+      ? `🟡 ${completedTitle} · 문자 ${smsRetrying ? '재시도 중' : '확인 필요'}`
+      : `✅ ${completedTitle}`,
     [
       syncReservationLine(row),
       'DB 원장: 정상',
       syncPlatformResultLine(row),
+      smsStatus,
     ],
   );
 }
@@ -8115,6 +8140,14 @@ function smsNotificationKey(row) {
   return `sms-delivery:${taskIdentityKey(row)}`;
 }
 
+function smsSuccessShouldNotify(row, previous = {}) {
+  const deliveryConfirmed = ['sent', 'already_sent'].includes(String(row?.sms?.status || ''));
+  return deliveryConfirmed && (
+    String(previous.stateSignature || '').startsWith('problem:')
+    || String(row?.status || '') === 'sms-follow-up'
+  );
+}
+
 async function notifySmsState(args, row) {
   const key = smsNotificationKey(row);
   if (smsNeedsAttention(row)) {
@@ -8129,7 +8162,7 @@ async function notifySmsState(args, row) {
   }
   const state = await readJsonObject(args.notifyState);
   const previous = state[key] || {};
-  if (!previous.lastSentAt || !String(previous.stateSignature || '').startsWith('problem:')) {
+  if (!smsSuccessShouldNotify(row, previous)) {
     return { sent: false, reason: 'no-prior-sms-alert' };
   }
   return notifyOnStateChange(args, key, 'healthy', smsSuccessMessage([row]));
@@ -9359,6 +9392,7 @@ function smsFailureShouldAlert(row) {
   const status = String(row?.sms?.status || '');
   if (status === 'deferred') return false;
   if (['needs_review', 'uncertain', 'delivery_in_progress'].includes(status)) return true;
+  if (['pending', 'sending'].includes(status)) return false;
   if (['phone_lookup_failed', 'failed', 'skipped'].includes(status)) {
     return Number(row?.sms?.attemptCount || 0) >= 3;
   }
@@ -12114,8 +12148,34 @@ async function runNowModeSelfTest() {
   assert.match(telegramSuccess, /^✅ 예약 반영 완료/m);
   assert.match(telegramSuccess, /DB 원장: 정상/);
   assert.match(telegramSuccess, /네이버: 예약불가 완료/);
+  assert.match(telegramSuccess, /문자: 발송 완료 \(010-\*\*\*\*-7180\)/);
   assert.doesNotMatch(telegramSuccess, /흐름:/);
-  assert.doesNotMatch(telegramSuccess, /문자|확인 필요/);
+  assert.doesNotMatch(telegramSuccess, /재시도 중|확인 필요/);
+  const telegramSmsRetry = syncSuccessMessage({
+    id: 514,
+    taskType: 'upload',
+    status: 'submitted',
+    date: '2026-08-13',
+    roomKey: 'a',
+    startTime: '10:00',
+    endTime: '12:00',
+    reserverName: '민수',
+    sms: {
+      status: 'phone_lookup_failed',
+      reason: 'naver-reservation-not-found',
+      attemptCount: 1,
+    },
+  });
+  assert.match(telegramSmsRetry, /^🟡 예약 반영 완료 · 문자 재시도 중/m);
+  assert.match(telegramSmsRetry, /문자: 전화번호 확인 대기/);
+  assert.match(telegramSmsRetry, /네이버 예약 상세를 찾지 못해 전화번호를 확인하지 못함/);
+  assert.equal(smsSuccessShouldNotify({ status: 'submitted', sms: { status: 'sent' } }, {}), false);
+  assert.equal(smsSuccessShouldNotify({ status: 'sms-follow-up', sms: { status: 'sent' } }, {}), true);
+  assert.equal(smsSuccessShouldNotify({ status: 'sms-follow-up', sms: { status: 'disabled' } }, {}), false);
+  assert.equal(smsSuccessShouldNotify(
+    { status: 'submitted', sms: { status: 'already_sent' } },
+    { stateSignature: 'problem:failed:provider-error' },
+  ), true);
   const smsAttention = smsFailureMessage([{
     id: 597,
     taskType: 'upload',
@@ -12318,7 +12378,7 @@ async function runNowModeSelfTest() {
       'crashed session pages reopen and recheck before any login warning',
       'ambiguous SpaceCloud submit is verified on retry',
       'task runners depend only on the DB queue and opposite booking platform',
-      'SMS delivery state stays separate from successful reservation synchronization and retries by idempotency key',
+      'Telegram reservation completion includes SMS status and follow-up recovery remains idempotent',
       'SMS errors redact full recipient phone numbers',
       'oversized task results remain valid JSON with status and reservation identity',
       'Telegram state writes are atomic and suppress only equivalent reservation states',
