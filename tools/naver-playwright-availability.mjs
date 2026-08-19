@@ -584,25 +584,47 @@ export function classifyNaverCancelPanelText(text, row, reservationNo) {
   };
 }
 
+export function selectNaverCancelPanelText(snapshot, reservationNo) {
+  const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const wanted = norm(reservationNo);
+  const longest = (values) => values
+    .map(norm)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)[0] || '';
+  const sideLayers = Array.isArray(snapshot?.sideLayers) ? snapshot.sideLayers : [];
+  const matchingSideLayers = sideLayers.filter((text) => norm(text).includes(wanted));
+  if (matchingSideLayers.length) return longest(matchingSideLayers);
+  if (sideLayers.length) return longest(sideLayers);
+
+  const reservationContainers = Array.isArray(snapshot?.reservationContainers)
+    ? snapshot.reservationContainers
+    : [];
+  const matchingContainers = reservationContainers.filter((text) => norm(text).includes(wanted));
+  if (matchingContainers.length) return longest(matchingContainers);
+  return norm(snapshot?.bodyText);
+}
+
 async function readNaverBookingPanelText(page, reservationNo) {
-  return page.evaluate((wantedReservationNo) => {
+  const snapshot = await page.evaluate((wantedReservationNo) => {
     const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-    const candidates = Array.from(document.querySelectorAll('div,section,article,aside,form'))
+    const visibleText = (selector) => Array.from(document.querySelectorAll(selector))
       .map((el) => {
         const rect = el.getBoundingClientRect();
-        const text = norm(el.innerText || el.textContent || '');
-        const className = String(el.className || '');
         return {
-          text,
-          className,
+          text: norm(el.innerText || el.textContent || ''),
           visible: rect.width > 0 && rect.height > 0,
-          area: rect.width * rect.height,
         };
       })
-      .filter((item) => item.visible && item.text.includes(wantedReservationNo))
-      .sort((a, b) => a.text.length - b.text.length);
-    return candidates[0]?.text || norm(document.body?.innerText || document.body?.textContent || '');
+      .filter((item) => item.visible && item.text)
+      .map((item) => item.text);
+    return {
+      sideLayers: visibleText('[class*="SideLayer__visible"]'),
+      reservationContainers: visibleText('div,section,article,aside,form')
+        .filter((text) => text.includes(wantedReservationNo)),
+      bodyText: norm(document.body?.innerText || document.body?.textContent || ''),
+    };
   }, String(reservationNo || '').trim());
+  return selectNaverCancelPanelText(snapshot, reservationNo);
 }
 
 export async function waitForNaverCancelPanelIdentity(page, row, reservationNo, {

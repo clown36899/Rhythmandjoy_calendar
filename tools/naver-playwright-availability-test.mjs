@@ -5,6 +5,7 @@ import {
   buildHourlySlotRows,
   classifyNaverCancelPanelText,
   partitionNaverActionableSlotRows,
+  selectNaverCancelPanelText,
   selectNaverScheduleEditorPanel,
   waitForNaverCancelPanelIdentity,
 } from './naver-playwright-availability.mjs';
@@ -80,6 +81,27 @@ const cancelTask = {
   endTime: '14:00',
 };
 
+test('selects the complete visible Naver side layer instead of its reservation-number node', () => {
+  const completePanel = '예약 취소 닫기 확정 예약번호 1327441965 C홀 이용일 2026. 8. 20. 오후 1:00 ~ 오후 2:00';
+  const selected = selectNaverCancelPanelText({
+    sideLayers: ['1327441965', completePanel],
+    reservationContainers: ['1327441965'],
+    bodyText: `예약 0건 ${completePanel}`,
+  }, '1327441965');
+
+  assert.equal(selected, completePanel);
+});
+
+test('selects a loading Naver side layer instead of unrelated booking-list body text', () => {
+  const selected = selectNaverCancelPanelText({
+    sideLayers: ['예약 취소 닫기 로딩중'],
+    reservationContainers: [],
+    bodyText: '예약 0건 조회된 예약내역이 없습니다',
+  }, '1327441965');
+
+  assert.equal(selected, '예약 취소 닫기 로딩중');
+});
+
 test('classifies a visible but still-loading Naver cancel panel as transient', () => {
   const result = classifyNaverCancelPanelText(
     '예약 취소 닫기 로딩중',
@@ -99,7 +121,11 @@ test('waits through Naver cancel-panel loading until the exact reservation is vi
   ];
   let readIndex = 0;
   const page = {
-    evaluate: async () => snapshots[Math.min(readIndex++, snapshots.length - 1)],
+    evaluate: async () => ({
+      sideLayers: [snapshots[Math.min(readIndex++, snapshots.length - 1)]],
+      reservationContainers: [],
+      bodyText: '예약 0건 조회된 예약내역이 없습니다',
+    }),
     waitForTimeout: async () => {},
   };
 
@@ -116,7 +142,11 @@ test('waits through Naver cancel-panel loading until the exact reservation is vi
 
 test('returns a retryable loading timeout before any cancel-panel identity is accepted', async () => {
   const page = {
-    evaluate: async () => '예약 취소 닫기 로딩중',
+    evaluate: async () => ({
+      sideLayers: ['예약 취소 닫기 로딩중'],
+      reservationContainers: [],
+      bodyText: '예약 0건 조회된 예약내역이 없습니다',
+    }),
     waitForTimeout: async () => {},
   };
 
@@ -131,7 +161,11 @@ test('returns a retryable loading timeout before any cancel-panel identity is ac
 
 test('keeps a fully loaded wrong Naver reservation as an identity mismatch', async () => {
   const page = {
-    evaluate: async () => '확정 예약번호 9999999999 A홀 이용일 2026. 8. 21. 오후 3:00 ~ 오후 4:00',
+    evaluate: async () => ({
+      sideLayers: ['확정 예약번호 9999999999 A홀 이용일 2026. 8. 21. 오후 3:00 ~ 오후 4:00'],
+      reservationContainers: [],
+      bodyText: '',
+    }),
     waitForTimeout: async () => {},
   };
 
