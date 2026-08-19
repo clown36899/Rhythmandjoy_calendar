@@ -12002,6 +12002,12 @@ async function runNowModeSelfTest() {
   assert.equal(dbStatusForNaverRestoreRow(closedContextRow), 'pending');
   assert.equal(dbStatusForNaverCancelRow(closedContextRow), 'pending');
   assert.equal(dbStatusForSpacecloudCancelRow(closedContextRow), 'pending');
+  const loadingCancelPanelRow = {
+    status: 'failed',
+    error: 'Naver cancel panel load Timeout 20000ms exceeded while still loading; no cancel click attempted',
+  };
+  assert.equal(isRetryablePlatformProblem(loadingCancelPanelRow.error), true);
+  assert.equal(dbStatusForNaverCancelRow(loadingCancelPanelRow, { attempts: 1 }), 'pending');
   const exhaustedTransientRow = {
     status: 'failed',
     error: 'page.goto: Timeout 20000ms exceeded while waiting until domcontentloaded',

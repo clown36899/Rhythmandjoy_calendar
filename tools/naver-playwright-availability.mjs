@@ -570,6 +570,20 @@ function verifyNaverReservationText(text, row, reservationNo) {
   return { ok: errors.length === 0, errors, textPreview: redactPhone(text).replace(/\s+/g, ' ').slice(0, 500) };
 }
 
+export function classifyNaverCancelPanelText(text, row, reservationNo) {
+  const verification = verifyNaverReservationText(text, row, reservationNo);
+  const compact = compactText(text);
+  const loading = /로딩(?:중)?|불러오는중|loading/i.test(compact);
+  const ready = verification.ok && !loading;
+  return {
+    ...verification,
+    identityOk: verification.ok,
+    ok: ready,
+    loading,
+    state: loading ? 'loading' : (ready ? 'ready' : 'mismatch'),
+  };
+}
+
 async function readNaverBookingPanelText(page, reservationNo) {
   return page.evaluate((wantedReservationNo) => {
     const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
@@ -589,6 +603,44 @@ async function readNaverBookingPanelText(page, reservationNo) {
       .sort((a, b) => a.text.length - b.text.length);
     return candidates[0]?.text || norm(document.body?.innerText || document.body?.textContent || '');
   }, String(reservationNo || '').trim());
+}
+
+export async function waitForNaverCancelPanelIdentity(page, row, reservationNo, {
+  timeoutMs = 20000,
+  pollMs = 300,
+} = {}) {
+  const started = Date.now();
+  let loadingObserved = false;
+  let panelText = '';
+  let verification = classifyNaverCancelPanelText(panelText, row, reservationNo);
+
+  while (true) {
+    panelText = await readNaverBookingPanelText(page, reservationNo);
+    verification = classifyNaverCancelPanelText(panelText, row, reservationNo);
+    loadingObserved = loadingObserved || verification.loading;
+    const waitedMs = Date.now() - started;
+    if (verification.ok) {
+      return {
+        panelText,
+        verification,
+        state: 'ready',
+        loadingObserved,
+        timedOut: false,
+        waitedMs,
+      };
+    }
+    if (waitedMs >= timeoutMs) {
+      return {
+        panelText,
+        verification,
+        state: verification.loading ? 'loading-timeout' : 'mismatch',
+        loadingObserved,
+        timedOut: true,
+        waitedMs,
+      };
+    }
+    await page.waitForTimeout(Math.min(pollMs, Math.max(1, timeoutMs - waitedMs)));
+  }
 }
 
 async function readNaverReservationStatusFromList(page, reservationNo) {
@@ -1145,13 +1197,23 @@ export async function cancelNaverConfirmedReservation(context, task, {
     if (!(await waitVisible(page, '[class*="SideLayer__visible"]', 20000))) {
       throw new Error('Naver cancel panel not visible; login may be required');
     }
-    await page.waitForTimeout(1200);
-
-    const panelText = await readNaverBookingPanelText(page, reservationNo);
-    row.cancelPanelVerification = verifyNaverReservationText(panelText, row, reservationNo);
+    const panelRead = await waitForNaverCancelPanelIdentity(page, row, reservationNo, { timeoutMs: 20000 });
+    const panelText = panelRead.panelText;
+    row.cancelPanelVerification = {
+      ...panelRead.verification,
+      state: panelRead.state,
+      loadingObserved: panelRead.loadingObserved,
+      timedOut: panelRead.timedOut,
+      waitedMs: panelRead.waitedMs,
+    };
     if (!row.cancelPanelVerification.ok) {
-      row.status = 'needs-review';
-      row.error = `Naver cancel panel verification failed: ${row.cancelPanelVerification.errors.join(', ')}`;
+      if (panelRead.state === 'loading-timeout') {
+        row.status = 'failed';
+        row.error = 'Naver cancel panel load Timeout 20000ms exceeded while still loading; no cancel click attempted';
+      } else {
+        row.status = 'needs-review';
+        row.error = `Naver cancel panel verification failed after loading completed: ${row.cancelPanelVerification.errors.join(', ')}`;
+      }
       row.finishedAt = new Date().toISOString();
       return row;
     }

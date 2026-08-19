@@ -3,8 +3,10 @@ import test from 'node:test';
 
 import {
   buildHourlySlotRows,
+  classifyNaverCancelPanelText,
   partitionNaverActionableSlotRows,
   selectNaverScheduleEditorPanel,
+  waitForNaverCancelPanelIdentity,
 } from './naver-playwright-availability.mjs';
 
 test('selects the full Naver schedule editor instead of the visible header shell', () => {
@@ -69,4 +71,75 @@ test('treats a slot as inactive exactly at its start time', () => {
 
   assert.equal(partition.inactiveStarted.length, 1);
   assert.equal(partition.actionable.length, 0);
+});
+
+const cancelTask = {
+  roomKey: 'c',
+  date: '2026-08-20',
+  startTime: '13:00',
+  endTime: '14:00',
+};
+
+test('classifies a visible but still-loading Naver cancel panel as transient', () => {
+  const result = classifyNaverCancelPanelText(
+    '예약 취소 닫기 로딩중',
+    cancelTask,
+    '1327441965',
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.loading, true);
+  assert.equal(result.state, 'loading');
+});
+
+test('waits through Naver cancel-panel loading until the exact reservation is visible', async () => {
+  const snapshots = [
+    '예약 취소 닫기 로딩중',
+    '확정 예약번호 1327441965 C홀 이용일 2026. 8. 20. 오후 1:00 ~ 오후 2:00',
+  ];
+  let readIndex = 0;
+  const page = {
+    evaluate: async () => snapshots[Math.min(readIndex++, snapshots.length - 1)],
+    waitForTimeout: async () => {},
+  };
+
+  const result = await waitForNaverCancelPanelIdentity(page, cancelTask, '1327441965', {
+    timeoutMs: 100,
+    pollMs: 1,
+  });
+
+  assert.equal(result.state, 'ready');
+  assert.equal(result.verification.ok, true);
+  assert.equal(result.loadingObserved, true);
+  assert.equal(readIndex, 2);
+});
+
+test('returns a retryable loading timeout before any cancel-panel identity is accepted', async () => {
+  const page = {
+    evaluate: async () => '예약 취소 닫기 로딩중',
+    waitForTimeout: async () => {},
+  };
+
+  const result = await waitForNaverCancelPanelIdentity(page, cancelTask, '1327441965', {
+    timeoutMs: 0,
+  });
+
+  assert.equal(result.state, 'loading-timeout');
+  assert.equal(result.verification.ok, false);
+  assert.equal(result.timedOut, true);
+});
+
+test('keeps a fully loaded wrong Naver reservation as an identity mismatch', async () => {
+  const page = {
+    evaluate: async () => '확정 예약번호 9999999999 A홀 이용일 2026. 8. 21. 오후 3:00 ~ 오후 4:00',
+    waitForTimeout: async () => {},
+  };
+
+  const result = await waitForNaverCancelPanelIdentity(page, cancelTask, '1327441965', {
+    timeoutMs: 0,
+  });
+
+  assert.equal(result.state, 'mismatch');
+  assert.equal(result.verification.ok, false);
+  assert.equal(result.verification.loading, false);
 });
