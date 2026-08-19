@@ -1933,40 +1933,54 @@ def enrich_task_row(cur, row):
     row['ledgerCanceledEventOrderKey'] = None
     row['ledgerConfirmedEventOrderTrusted'] = False
     row['ledgerCanceledEventOrderTrusted'] = False
+    ledger = None
+    losing_booking = payload.get('losingBooking') if isinstance(payload.get('losingBooking'), dict) else {}
+    try:
+        conflict_loser_ledger_id = int(losing_booking.get('id') or 0)
+    except (TypeError, ValueError):
+        conflict_loser_ledger_id = 0
+    durable_ledger_id = row.get('bookingLedgerId') or conflict_loser_ledger_id or None
+    if source_platform and durable_ledger_id:
+        # A conflict-cancellation task carries the immutable losing ledger id.
+        # Resolve it even when an older queued payload omitted calendarKey.
+        cur.execute(
+            """
+            SELECT id, ledger_key, source_platform, current_status,
+                   confirmed_email_event_id, canceled_email_event_id,
+                   CAST(confirmed_email_received_at AS CHAR) AS confirmed_email_received_at,
+                   CAST(canceled_email_received_at AS CHAR) AS canceled_email_received_at,
+                   CAST(last_event_at AS CHAR) AS last_event_at,
+                   last_event_order_key,
+                   (SELECT event_order_key FROM rhythmjoy_naver_email_events
+                    WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_key,
+                   (SELECT event_order_key FROM rhythmjoy_naver_email_events
+                    WHERE id=canceled_email_event_id LIMIT 1) AS canceled_event_order_key
+                  ,(SELECT event_order_trusted FROM rhythmjoy_naver_email_events
+                    WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_trusted
+                  ,(SELECT event_order_trusted FROM rhythmjoy_naver_email_events
+                    WHERE id=canceled_email_event_id LIMIT 1) AS canceled_event_order_trusted
+            FROM rhythmjoy_booking_ledger
+            WHERE id=%s
+            LIMIT 1
+            """,
+            (durable_ledger_id,),
+        )
+        ledger = cur.fetchone()
+        if ledger and ledger.get('source_platform') != source_platform:
+            ledger = None
+        if (
+            ledger
+            and task_type in ('spacecloud_cancel', 'naver_cancel')
+            and row.get('emailEventId')
+            and int(ledger.get('confirmed_email_event_id') or 0) != int(row.get('emailEventId') or 0)
+        ):
+            ledger = None
+        if ledger:
+            row['ledgerKey'] = ledger.get('ledger_key') or ''
     if source_platform and calendar_key:
         ledger_key = payload.get('ledger_key') or payload.get('ledgerKey') or importer.booking_ledger_key(source_platform, payload, calendar_key)
-        row['ledgerKey'] = ledger_key
-        durable_ledger_id = row.get('bookingLedgerId')
-        if durable_ledger_id:
-            cur.execute(
-                """
-                SELECT id, ledger_key, source_platform, current_status,
-                       confirmed_email_event_id, canceled_email_event_id,
-                       CAST(confirmed_email_received_at AS CHAR) AS confirmed_email_received_at,
-                       CAST(canceled_email_received_at AS CHAR) AS canceled_email_received_at,
-                       CAST(last_event_at AS CHAR) AS last_event_at,
-                       last_event_order_key,
-                       (SELECT event_order_key FROM rhythmjoy_naver_email_events
-                        WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_key,
-                       (SELECT event_order_key FROM rhythmjoy_naver_email_events
-                        WHERE id=canceled_email_event_id LIMIT 1) AS canceled_event_order_key
-                      ,(SELECT event_order_trusted FROM rhythmjoy_naver_email_events
-                        WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_trusted
-                      ,(SELECT event_order_trusted FROM rhythmjoy_naver_email_events
-                        WHERE id=canceled_email_event_id LIMIT 1) AS canceled_event_order_trusted
-                FROM rhythmjoy_booking_ledger
-                WHERE id=%s
-                LIMIT 1
-                """,
-                (durable_ledger_id,),
-            )
-            ledger = cur.fetchone()
-            if ledger and ledger.get('source_platform') != source_platform:
-                ledger = None
-            if ledger:
-                ledger_key = ledger.get('ledger_key') or ledger_key
-                row['ledgerKey'] = ledger_key
-        else:
+        if not ledger:
+            row['ledgerKey'] = ledger_key
             cur.execute(
                 """
                 SELECT id, ledger_key, source_platform, current_status,
@@ -1990,6 +2004,9 @@ def enrich_task_row(cur, row):
                 (ledger_key,),
             )
             ledger = cur.fetchone()
+        else:
+            ledger_key = ledger.get('ledger_key') or ledger_key
+            row['ledgerKey'] = ledger_key
         # Older admin tasks did not carry their canonical PHP-created ledger
         # key. PHP normalizes Latin letters with mb_strtolower while the email
         # importer intentionally preserves name case, so retry the admin-only
@@ -2025,19 +2042,19 @@ def enrich_task_row(cur, row):
                 if ledger:
                     ledger_key = compatibility_key
                     row['ledgerKey'] = compatibility_key
-        if ledger:
-            row['ledgerId'] = ledger.get('id')
-            row['ledgerStatus'] = ledger.get('current_status') or ''
-            row['ledgerLastEventAt'] = ledger.get('last_event_at') or ''
-            row['ledgerLastEventOrderKey'] = ledger.get('last_event_order_key')
-            row['ledgerConfirmedEmailEventId'] = ledger.get('confirmed_email_event_id')
-            row['ledgerCanceledEmailEventId'] = ledger.get('canceled_email_event_id')
-            row['ledgerConfirmedAt'] = ledger.get('confirmed_email_received_at') or ''
-            row['ledgerCanceledAt'] = ledger.get('canceled_email_received_at') or ''
-            row['ledgerConfirmedEventOrderKey'] = ledger.get('confirmed_event_order_key')
-            row['ledgerCanceledEventOrderKey'] = ledger.get('canceled_event_order_key')
-            row['ledgerConfirmedEventOrderTrusted'] = bool(ledger.get('confirmed_event_order_trusted'))
-            row['ledgerCanceledEventOrderTrusted'] = bool(ledger.get('canceled_event_order_trusted'))
+    if ledger:
+        row['ledgerId'] = ledger.get('id')
+        row['ledgerStatus'] = ledger.get('current_status') or ''
+        row['ledgerLastEventAt'] = ledger.get('last_event_at') or ''
+        row['ledgerLastEventOrderKey'] = ledger.get('last_event_order_key')
+        row['ledgerConfirmedEmailEventId'] = ledger.get('confirmed_email_event_id')
+        row['ledgerCanceledEmailEventId'] = ledger.get('canceled_email_event_id')
+        row['ledgerConfirmedAt'] = ledger.get('confirmed_email_received_at') or ''
+        row['ledgerCanceledAt'] = ledger.get('canceled_email_received_at') or ''
+        row['ledgerConfirmedEventOrderKey'] = ledger.get('confirmed_event_order_key')
+        row['ledgerCanceledEventOrderKey'] = ledger.get('canceled_event_order_key')
+        row['ledgerConfirmedEventOrderTrusted'] = bool(ledger.get('confirmed_event_order_trusted'))
+        row['ledgerCanceledEventOrderTrusted'] = bool(ledger.get('canceled_event_order_trusted'))
 
     if task_type == 'delete':
         row['priorUploadTaskId'] = None
@@ -2962,6 +2979,8 @@ async function createRemoteSpacecloudCancelTask(args, sourceTask, conflictRow) {
   if (!reservationId) throw new Error('SpaceCloud reservation id missing for cancellation queue');
   const payload = {
     ...sourcePayload,
+    bookingLedgerId: losingLedgerId,
+    ledgerId: losingLedgerId,
     sourceTaskId,
     sourceTaskType: sourceTask.taskType || sourceTask.task_type || 'naver_block',
     source: 'spacecloud-later-reservation-conflict',
@@ -2974,7 +2993,8 @@ async function createRemoteSpacecloudCancelTask(args, sourceTask, conflictRow) {
   };
   const insertPayload = Buffer.from(JSON.stringify({
     dedupeKey: `spacecloud_cancel|${sourceTaskId}|${losingLedgerId}|${reservationId}`.slice(0, 96),
-    emailEventId: sourceTask.emailEventId || sourceTask.email_event_id || null,
+    emailEventId: losing.confirmedEmailEventId || losing.confirmed_email_event_id || sourceTask.emailEventId || sourceTask.email_event_id || null,
+    bookingLedgerId: losingLedgerId,
     roomKey: sourceTask.roomKey || sourceTask.room_key || losing.roomKey || losing.room_key || '',
     reservationNumber: reservationId,
     reserverName: sourceTask.reserverName || sourceTask.reserver_name || losing.reserverName || losing.reserver_name || '',
@@ -3024,20 +3044,22 @@ try:
         cur.execute(
             """
             INSERT INTO rhythmjoy_spacecloud_tasks (
-                dedupe_key, email_event_id, task_type, status,
+                dedupe_key, email_event_id, booking_ledger_id, task_type, status,
                 room_key, reservation_number, reserver_name, product,
                 reservation_date, start_time, end_time, payload_json,
                 created_at, updated_at
             )
-            VALUES (%s,%s,'spacecloud_cancel','pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
+            VALUES (%s,%s,%s,'spacecloud_cancel','pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
             ON DUPLICATE KEY UPDATE
                 status=IF(status IN ('running', 'done', 'needs_review', 'failed'), status, 'pending'),
+                booking_ledger_id=COALESCE(booking_ledger_id, VALUES(booking_ledger_id)),
                 payload_json=IF(status='pending', VALUES(payload_json), payload_json),
                 updated_at=NOW()
             """,
             (
                 row.get('dedupeKey'),
                 row.get('emailEventId'),
+                row.get('bookingLedgerId'),
                 row.get('roomKey') or '',
                 row.get('reservationNumber') or '',
                 row.get('reserverName') or '',
@@ -3085,6 +3107,8 @@ async function createRemoteNaverCancelTask(args, sourceTask, conflictRow) {
   if (!reservationNo) throw new Error('Naver reservation number missing for cancellation queue');
   const payload = {
     ...sourcePayload,
+    bookingLedgerId: losingLedgerId,
+    ledgerId: losingLedgerId,
     sourceTaskId,
     sourceTaskType: sourceTask.taskType || sourceTask.task_type || 'upload',
     source: 'naver-later-reservation-conflict',
@@ -3096,7 +3120,8 @@ async function createRemoteNaverCancelTask(args, sourceTask, conflictRow) {
   };
   const insertPayload = Buffer.from(JSON.stringify({
     dedupeKey: `naver_cancel|${sourceTaskId}|${losingLedgerId}|${reservationNo}`.slice(0, 96),
-    emailEventId: sourceTask.emailEventId || sourceTask.email_event_id || null,
+    emailEventId: losing.confirmedEmailEventId || losing.confirmed_email_event_id || sourceTask.emailEventId || sourceTask.email_event_id || null,
+    bookingLedgerId: losingLedgerId,
     roomKey: sourceTask.roomKey || sourceTask.room_key || losing.roomKey || losing.room_key || '',
     reservationNumber: reservationNo,
     reserverName: sourceTask.reserverName || sourceTask.reserver_name || losing.reserverName || losing.reserver_name || '',
@@ -3146,20 +3171,22 @@ try:
         cur.execute(
             """
             INSERT INTO rhythmjoy_spacecloud_tasks (
-                dedupe_key, email_event_id, task_type, status,
+                dedupe_key, email_event_id, booking_ledger_id, task_type, status,
                 room_key, reservation_number, reserver_name, product,
                 reservation_date, start_time, end_time, payload_json,
                 created_at, updated_at
             )
-            VALUES (%s,%s,'naver_cancel','pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
+            VALUES (%s,%s,%s,'naver_cancel','pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
             ON DUPLICATE KEY UPDATE
                 status=IF(status IN ('running', 'done', 'needs_review', 'failed'), status, 'pending'),
+                booking_ledger_id=COALESCE(booking_ledger_id, VALUES(booking_ledger_id)),
                 payload_json=IF(status='pending', VALUES(payload_json), payload_json),
                 updated_at=NOW()
             """,
             (
                 row.get('dedupeKey'),
                 row.get('emailEventId'),
+                row.get('bookingLedgerId'),
                 row.get('roomKey') or '',
                 row.get('reservationNumber') or '',
                 row.get('reserverName') or '',
@@ -8730,6 +8757,29 @@ function sourceTaskForConflictBooking(booking) {
   } catch {
     sourcePayload = {};
   }
+  const calendarKey = String(
+    sourcePayload.calendarKey
+    || sourcePayload.calendar_key
+    || sourcePayload.target_calendar
+    || booking?.targetCalendar
+    || booking?.target_calendar
+    || ''
+  ).trim();
+  const ledgerKey = String(booking?.ledgerKey || booking?.ledger_key || '').trim();
+  if (calendarKey) {
+    sourcePayload.calendarKey = calendarKey;
+    sourcePayload.target_calendar = sourcePayload.target_calendar || calendarKey;
+  }
+  if (ledgerKey) {
+    sourcePayload.ledgerKey = ledgerKey;
+    sourcePayload.ledger_key = ledgerKey;
+  }
+  sourcePayload.bookingLedgerId = Number(booking?.id || sourcePayload.bookingLedgerId || 0) || null;
+  sourcePayload.emailEventId = booking?.confirmedEmailEventId
+    || booking?.confirmed_email_event_id
+    || sourcePayload.emailEventId
+    || null;
+  sourcePayload.source_platform = sourcePayload.source_platform || sourcePlatform;
   const reservationId = String(booking?.spacecloudReservationId || booking?.spacecloud_reservation_id || '').trim();
   if (sourcePlatform === 'spacecloud' && reservationId) {
     sourcePayload.spacecloud_reservation_id = reservationId;
@@ -8859,9 +8909,11 @@ try:
             """
             SELECT
                 id,
+                ledger_key AS ledgerKey,
                 source_platform AS sourcePlatform,
                 source_mode AS sourceMode,
                 current_status AS currentStatus,
+                target_calendar AS targetCalendar,
                 room_key AS roomKey,
                 CAST(reservation_date AS CHAR) AS date,
                 CONCAT(LPAD(HOUR(start_time), 2, '0'), ':', LPAD(MINUTE(start_time), 2, '0')) AS startTime,
@@ -8904,7 +8956,7 @@ try:
             source_task_type = 'upload' if booking.get('sourcePlatform') == 'naver' else 'naver_block'
             cur.execute(
                 """
-                SELECT id, task_type, status
+                SELECT id, task_type, status, payload_json AS sourceTaskPayloadJson
                 FROM rhythmjoy_spacecloud_tasks
                 WHERE email_event_id=%s AND task_type=%s
                 ORDER BY id ASC
@@ -8916,6 +8968,7 @@ try:
             booking['sourceTaskId'] = source_task.get('id')
             booking['sourceTaskType'] = source_task.get('task_type') or source_task_type
             booking['sourceTaskStatus'] = source_task.get('status') or ''
+            booking['sourceTaskPayloadJson'] = source_task.get('sourceTaskPayloadJson') or '{}'
             booking.pop('ledgerPayloadJson', None)
     print(json.dumps({
         'overlaps': overlaps,
@@ -11285,6 +11338,41 @@ async function runNowModeSelfTest() {
     /winning_lifecycle_event\.get\('event_type'\)[\s\S]*== current_upload_event\.get\('event_type'\)/,
     'same-source-millisecond opposing events remain quarantined instead of being ordered by DB id',
   );
+  assert.match(
+    REMOTE_TASK_ENRICHMENT_PY,
+    /conflict_loser_ledger_id[\s\S]*task_type in \('spacecloud_cancel', 'naver_cancel'\)[\s\S]*confirmed_email_event_id/,
+    'legacy conflict-cancellation payloads must recover the exact losing ledger without a calendar key',
+  );
+  const conflictCancellationSource = sourceTaskForConflictBooking({
+    id: 9892,
+    ledgerKey: 'naver|exact-losing-ledger',
+    targetCalendar: 'Chall',
+    sourcePlatform: 'naver',
+    sourceTaskId: 712,
+    sourceTaskType: 'upload',
+    sourceTaskStatus: 'running',
+    sourceTaskPayloadJson: JSON.stringify({
+      source: 'naver-email-reservation',
+      reservation_number: '1327441965',
+    }),
+    confirmedEmailEventId: 747,
+    roomKey: 'c',
+    reservationNumber: '1327441965',
+    reserverName: '신*환님',
+    product: 'C홀 4',
+    date: '2026-08-20',
+    startTime: '13:00',
+    endTime: '14:00',
+  });
+  const conflictCancellationPayload = payloadForTask(conflictCancellationSource);
+  assert.equal(conflictCancellationPayload.calendarKey, 'Chall');
+  assert.equal(conflictCancellationPayload.ledger_key, 'naver|exact-losing-ledger');
+  assert.equal(conflictCancellationPayload.bookingLedgerId, 9892);
+  assert.equal(conflictCancellationPayload.emailEventId, 747);
+  assert.equal(conflictCancellationPayload.source_platform, 'naver');
+  assert.match(classifyLaterReservationConflict.toString(), /payload_json AS sourceTaskPayloadJson/);
+  assert.match(createRemoteNaverCancelTask.toString(), /booking_ledger_id/);
+  assert.match(createRemoteSpacecloudCancelTask.toString(), /booking_ledger_id/);
   const manualCancellationPayload = {
     source: 'sync-admin-customer-request',
     source_mode: 'sync-admin-customer-request',
