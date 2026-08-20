@@ -1917,6 +1917,15 @@ def task_slot_datetimes(date_text, start_text, end_text):
 def enrich_task_row(cur, row):
     payload = parse_payload(row)
     task_type = row.get('taskType') or ''
+    manual_customer_mirror = bool(
+        payload.get('manualCustomerCancellation') is True
+        and (
+            payload.get('source') == 'sync-admin-customer-request'
+            or payload.get('source_mode') == 'sync-admin-customer-request'
+        )
+    )
+    row['manualCustomerCancellation'] = manual_customer_mirror
+    row['customerCancellationTaskId'] = payload.get('customerCancellationTaskId')
     row['sourceEventOrderTrusted'] = bool(row.get('sourceEventOrderTrusted'))
     source_platform = source_platform_for_task(task_type)
     calendar_key = payload.get('calendarKey') or payload.get('calendar_key') or payload.get('target_calendar') or ''
@@ -2095,7 +2104,8 @@ def enrich_task_row(cur, row):
                   AND upload.start_time=%s
                   AND upload.end_time=%s
                   AND (
-                        %s IS NULL
+                        %s=1
+                     OR %s IS NULL
                      OR (
                           upload.email_event_id IS NOT NULL
                           AND upload_event.event_type='reservation'
@@ -2138,6 +2148,7 @@ def enrich_task_row(cur, row):
                     row.get('date'),
                     row.get('startTime'),
                     row.get('endTime'),
+                    1 if manual_customer_mirror else 0,
                     cancellation_event_id,
                     cancellation_event_id,
                     cancellation_event_id,
@@ -2153,7 +2164,15 @@ def enrich_task_row(cur, row):
                 legacy_email_link = bool(
                     candidate.get('booking_ledger_id') is None
                     and candidate.get('email_event_id')
-                    and candidate_payload.get('source') == 'naver-email-reservation'
+                    and (
+                        candidate_payload.get('source') == 'naver-email-reservation'
+                        or (
+                            candidate_payload.get('source') == 'manual-live-platform-verification'
+                            and confirmed_event_id
+                            and int(candidate.get('email_event_id') or 0)
+                                == int(confirmed_event_id or 0)
+                        )
+                    )
                 )
                 admin_link = bool(
                     normalized_link
@@ -2163,7 +2182,23 @@ def enrich_task_row(cur, row):
                         or candidate_payload.get('source_mode') == 'admin-panel'
                     )
                 )
-                if normalized_link or legacy_email_link or admin_link:
+                manual_exact_link = bool(
+                    manual_customer_mirror
+                    and confirmed_event_id
+                    and int(candidate.get('email_event_id') or 0)
+                        == int(confirmed_event_id or 0)
+                    and (normalized_link or legacy_email_link)
+                    and candidate_payload.get('source') in (
+                        'naver-email-reservation',
+                        'manual-live-platform-verification',
+                    )
+                )
+                acceptable_link = (
+                    manual_exact_link
+                    if manual_customer_mirror
+                    else (normalized_link or legacy_email_link or admin_link)
+                )
+                if acceptable_link:
                     prior_upload = candidate
                     prior_identity_matched = True
                     break
@@ -4624,12 +4659,15 @@ PY
 
 async function checkpointRemoteDeleteSubmission(args, task, proof = {}) {
   const target = await loadCafe24Target(args);
+  const taskPayload = payloadForTask(task);
   const request = Buffer.from(JSON.stringify({
     taskId: Number(task.id || task.taskId || 0),
     claimToken: String(task.claimToken || task.claim_token || ''),
     ledgerId: Number(task.bookingLedgerId || task.booking_ledger_id || task.ledgerId || task.ledger_id || 0),
     emailEventId: Number(task.emailEventId || task.email_event_id || 0),
     adminPanelTask: isAdminPanelTask(task),
+    manualCustomerCancellation: isManualCustomerCancellationTask(task),
+    customerCancellationTaskId: Number(taskPayload.customerCancellationTaskId || 0),
     priorUploadTaskId: Number(task.priorUploadTaskId || task.prior_upload_task_id || 0),
     reservationNo: String(task.reservationNo || task.reservation_number || ''),
     roomKey: String(task.roomKey || task.room_key || ''),
@@ -4663,6 +4701,13 @@ def load_env(path):
         key, value = line.split('=', 1)
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
+def parse_json(value):
+    try:
+        parsed = json.loads(value or '{}')
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
 def event_order_before(left_key, left_id, right_key, right_id):
     if left_key is None or right_key is None:
         return False
@@ -4689,10 +4734,31 @@ try:
         task = cur.fetchone()
         if not task:
             raise RuntimeError('delete task claim lost before submit checkpoint')
+        task_payload = parse_json(task.get('payload_json'))
+        ledger_cancel_payload = parse_json(
+            ledger.get('cancel_payload_json') if ledger else '{}'
+        )
         prior_upload = None
         if int(request.get('priorUploadTaskId') or 0) > 0:
             cur.execute('SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s FOR UPDATE', (request.get('priorUploadTaskId'),))
             prior_upload = cur.fetchone()
+        prior_upload_payload = parse_json(
+            prior_upload.get('payload_json') if prior_upload else '{}'
+        )
+        manual_cancel_task = None
+        manual_cancel_payload = {}
+        customer_cancellation_task_id = int(
+            request.get('customerCancellationTaskId') or 0
+        )
+        if request.get('manualCustomerCancellation') and customer_cancellation_task_id > 0:
+            cur.execute(
+                'SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=%s FOR UPDATE',
+                (customer_cancellation_task_id,),
+            )
+            manual_cancel_task = cur.fetchone()
+            manual_cancel_payload = parse_json(
+                manual_cancel_task.get('payload_json') if manual_cancel_task else '{}'
+            )
 
         event_id = int(request.get('emailEventId') or 0)
         delete_event_at = None
@@ -4766,7 +4832,7 @@ try:
             prior_upload and ledger
             and int(prior_upload.get('booking_ledger_id') or 0) == int(ledger.get('id') or 0)
         )
-        legacy_prior_link = bool(
+        historical_legacy_prior_link = bool(
             prior_upload and ledger
             and prior_upload.get('booking_ledger_id') is None
             and prior_upload.get('email_event_id')
@@ -4784,9 +4850,92 @@ try:
                 event_id,
             )
         )
-        prior_identity_ok = bool(prior_exact_slot and (normalized_prior_link or legacy_prior_link))
+        manual_request = bool(request.get('manualCustomerCancellation'))
+        manual_legacy_prior_link = bool(
+            manual_request
+            and prior_upload and ledger
+            and prior_upload.get('booking_ledger_id') is None
+            and int(prior_upload.get('email_event_id') or 0)
+                == int(ledger.get('confirmed_email_event_id') or 0)
+            and prior_upload_payload.get('source') in (
+                'naver-email-reservation',
+                'manual-live-platform-verification',
+            )
+        )
+        historical_prior_identity_ok = bool(
+            prior_exact_slot
+            and (normalized_prior_link or historical_legacy_prior_link)
+        )
+        manual_prior_identity_ok = bool(
+            manual_request
+            and prior_exact_slot
+            and int(prior_upload.get('email_event_id') or 0)
+                == int(ledger.get('confirmed_email_event_id') or 0)
+            and (normalized_prior_link or manual_legacy_prior_link)
+            and prior_upload_payload.get('source') in (
+                'naver-email-reservation',
+                'manual-live-platform-verification',
+            )
+        ) if prior_upload and ledger else False
+        prior_identity_ok = (
+            manual_prior_identity_ok
+            if manual_request
+            else historical_prior_identity_ok
+        )
+        manual_delete_generation = bool(
+            manual_request
+            and not request.get('adminPanelTask')
+            and ledger and task and manual_cancel_task and prior_upload
+            and current_cancellation
+            and ledger.get('source_platform') == 'naver'
+            and int(ledger.get('automation_cancel_task_id') or 0)
+                == customer_cancellation_task_id
+            and ledger.get('automation_cancel_platform') == 'naver'
+            and ledger_cancel_payload.get('source')
+                == 'sync-admin-customer-request'
+            and ledger_cancel_payload.get('manualCustomerCancellation') is True
+            and int(ledger_cancel_payload.get('cancelTaskId') or 0)
+                == customer_cancellation_task_id
+            and task_payload.get('source') == 'sync-admin-customer-request'
+            and task_payload.get('source_mode') == 'sync-admin-customer-request'
+            and task_payload.get('action') == 'delete-spacecloud-mirror'
+            and task_payload.get('manualCustomerCancellation') is True
+            and int(task_payload.get('customerCancellationTaskId') or 0)
+                == customer_cancellation_task_id
+            and int(task_payload.get('sourceTaskId') or 0)
+                == customer_cancellation_task_id
+            and int(task_payload.get('ledgerId') or 0) == int(ledger.get('id') or 0)
+            and str(task_payload.get('ledger_key') or '')
+                == str(ledger.get('ledger_key') or '')
+            and int(task.get('email_event_id') or 0)
+                == int(ledger.get('confirmed_email_event_id') or 0)
+            and manual_cancel_task.get('task_type') == 'naver_cancel'
+            and manual_cancel_task.get('status') == 'done'
+            and int(manual_cancel_task.get('email_event_id') or 0)
+                == int(ledger.get('confirmed_email_event_id') or 0)
+            and manual_cancel_payload.get('source')
+                == 'sync-admin-customer-request'
+            and manual_cancel_payload.get('source_mode')
+                == 'sync-admin-customer-request'
+            and manual_cancel_payload.get('action')
+                == 'cancel-naver-confirmed-reservation'
+            and manual_cancel_payload.get('manualCustomerCancellation') is True
+            and int(manual_cancel_payload.get('ledgerId') or 0)
+                == int(ledger.get('id') or 0)
+            and str(manual_cancel_payload.get('ledger_key') or '')
+                == str(ledger.get('ledger_key') or '')
+            and manual_cancel_task.get('room_key') == ledger.get('room_key')
+            and manual_cancel_task.get('reservation_number')
+                == ledger.get('reservation_number')
+            and manual_cancel_task.get('reservation_date')
+                == ledger.get('reservation_date')
+            and manual_cancel_task.get('start_time') == ledger.get('start_time')
+            and manual_cancel_task.get('end_time') == ledger.get('end_time')
+            and manual_prior_identity_ok
+        )
         historical_delete_generation = bool(
             not request.get('adminPanelTask')
+            and not manual_request
             and event_id > 0
             and delete_event_at
             and delete_event_order_trusted
@@ -4805,7 +4954,9 @@ try:
             )
         )
         delete_generation_active = bool(
-            current_cancellation if request.get('adminPanelTask') else historical_delete_generation
+            current_cancellation
+            if request.get('adminPanelTask') or manual_request
+            else historical_delete_generation
         )
         prior_active = bool(
             prior_upload
@@ -4830,7 +4981,11 @@ try:
         )
         identity_ok = bool(
             task_request_identity_ok
-            and (current_ledger_identity_ok if request.get('adminPanelTask') else prior_identity_ok)
+            and (
+                current_ledger_identity_ok
+                if request.get('adminPanelTask') or manual_request
+                else prior_identity_ok
+            )
         )
         if request.get('adminPanelTask'):
             event_identity_ok = bool(
@@ -4839,6 +4994,8 @@ try:
                 and ledger.get('source_mode') == 'admin-task-anchor'
                 and task.get('email_event_id') is None
             )
+        elif manual_request:
+            event_identity_ok = bool(manual_delete_generation)
         else:
             event_identity_ok = bool(
                 event_id > 0
@@ -4942,6 +5099,9 @@ try:
             'priorUploadIdentityMatched': prior_identity_ok,
             'supersededCancellationCleanup': superseded_cleanup,
             'historicalDeleteGeneration': historical_delete_generation,
+            'manualCustomerCancellation': manual_request,
+            'manualDeleteGeneration': manual_delete_generation,
+            'customerCancellationTaskId': customer_cancellation_task_id or None,
             'exactProofAccepted': exact_proof_ok,
             'exactPresenceProofAccepted': exact_presence_proof_ok,
             'exactAbsenceProofAccepted': exact_absence_proof_ok,
@@ -5485,16 +5645,18 @@ try:
         cur.execute(
             """
             INSERT INTO rhythmjoy_spacecloud_tasks (
-                dedupe_key, email_event_id, task_type, status,
+                dedupe_key, email_event_id, booking_ledger_id,
+                task_type, status, side_effect_state,
                 room_key, reservation_number, reserver_name, product,
                 reservation_date, start_time, end_time, payload_json,
                 created_at, updated_at
-            ) VALUES (%s,%s,%s,'pending',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
+            ) VALUES (%s,%s,%s,%s,'pending','ready',%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
             ON DUPLICATE KEY UPDATE dedupe_key=VALUES(dedupe_key)
             """,
             (
                 dedupe_key,
                 child.get('email_event_id'),
+                ledger_id,
                 mirror_task_type,
                 ledger.get('room_key') or '',
                 ledger.get('reservation_number') or '',
@@ -11431,6 +11593,26 @@ async function runNowModeSelfTest() {
     ...manualGuardSnapshot,
     child: { ...manualGuardSnapshot.child, reservationNo: 'changed' },
   }).decision, 'manual-reservation-number-mismatch');
+  assert.match(
+    REMOTE_TASK_ENRICHMENT_PY,
+    /manual_customer_mirror[\s\S]*customerCancellationTaskId[\s\S]*manual_exact_link[\s\S]*confirmed_event_id/,
+    'manual customer mirror cleanup must link only the exact confirmed upload generation',
+  );
+  assert.match(
+    REMOTE_TASK_ENRICHMENT_PY,
+    /manual-live-platform-verification[\s\S]*confirmed_event_id/,
+    'legacy platform-verified uploads must remain tied to the ledger confirmation event',
+  );
+  assert.match(
+    finalizeRemoteManualCustomerCancellationSuccess.toString(),
+    /email_event_id, booking_ledger_id,[\s\S]*side_effect_state[\s\S]*'pending','ready'/,
+    'manual customer cancellation mirror tasks must be born ledger-linked and ready',
+  );
+  assert.match(
+    checkpointRemoteDeleteSubmission.toString(),
+    /manual_delete_generation[\s\S]*automation_cancel_task_id[\s\S]*customer_cancellation_task_id[\s\S]*manual_prior_identity_ok/,
+    'manual mirror delete checkpoint must prove the cancellation task, ledger, and prior upload generation',
+  );
   assert.match(
     REMOTE_TASK_ENRICHMENT_PY,
     /payload\.get\('ledger_key'\).*importer\.booking_ledger_key/,

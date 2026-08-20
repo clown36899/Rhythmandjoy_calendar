@@ -2637,6 +2637,18 @@ def canonical_parsed_identity(value):
     )
 
 
+def normalize_cancellation_product_for_match(value):
+    """Match Naver cancellation products by their trusted room identity."""
+    calendar_key = product_to_calendar_key(str(value or ''))
+    room_key = (
+        spacecloud_room_key_from_calendar(calendar_key)
+        or booking_room_key_from_calendar(calendar_key)
+    )
+    if room_key:
+        return f'room:{room_key}'
+    return re.sub(r'\s+', '', str(value or '')).lower()
+
+
 def parsed_email_replay_identity_matches(existing, incoming):
     """Compare durable parse identity without reinterpreting raw mail with new code."""
     try:
@@ -2654,6 +2666,7 @@ def parsed_email_replay_identity_matches(existing, incoming):
 
     normalizers = {
         'name': normalize_reserver_name_for_match,
+        'product': normalize_cancellation_product_for_match,
         'date': clean_date_or_none,
         'start_time': clean_time_or_none,
         'end_time': clean_time_or_none,
@@ -3635,12 +3648,19 @@ def enrich_naver_cancellation_from_prior_event(
         or prior_payload.get('calendar_key')
         or product_to_calendar_key(source_values.get('product') or '')
     )
+    current_room = (
+        calendar_to_spacecloud_room_key(calendar_key)
+        or booking_room_key_from_calendar(calendar_key)
+        or calendar_to_spacecloud_room_key(
+            product_to_calendar_key(enriched.get('product', ''))
+        )
+    )
+    prior_room = (
+        calendar_to_spacecloud_room_key(prior_calendar)
+        or booking_room_key_from_calendar(prior_calendar)
+    )
     comparisons = (
-        (
-            'name',
-            normalize_reserver_name_for_match,
-        ),
-        ('product', lambda value: re.sub(r'\s+', '', str(value or '')).lower()),
+        ('name', normalize_reserver_name_for_match),
         ('date', clean_date_or_none),
         ('start_time', clean_time_or_none),
         ('end_time', clean_time_or_none),
@@ -3653,17 +3673,22 @@ def enrich_naver_cancellation_from_prior_event(
                 'status': f'prior-{field}-mismatch',
                 'event_id': prior.get('id'),
             }
-    current_room = (
-        calendar_to_spacecloud_room_key(calendar_key)
-        or booking_room_key_from_calendar(calendar_key)
-        or calendar_to_spacecloud_room_key(
-            product_to_calendar_key(enriched.get('product', ''))
-        )
+    current_product = enriched.get('product')
+    prior_product = source_values.get('product')
+    same_room_proof = bool(
+        current_room and prior_room and current_room == prior_room
     )
-    prior_room = (
-        calendar_to_spacecloud_room_key(prior_calendar)
-        or booking_room_key_from_calendar(prior_calendar)
-    )
+    if (
+            current_product
+            and prior_product
+            and re.sub(r'\s+', '', str(current_product)).lower()
+                != re.sub(r'\s+', '', str(prior_product)).lower()
+            and not same_room_proof
+    ):
+        return enriched, calendar_key, {
+            'status': 'prior-product-mismatch',
+            'event_id': prior.get('id'),
+        }
     if current_room and prior_room and current_room != prior_room:
         return enriched, calendar_key, {
             'status': 'prior-room-mismatch',
@@ -3672,6 +3697,12 @@ def enrich_naver_cancellation_from_prior_event(
     for field, value in source_values.items():
         if not str(enriched.get(field) or '').strip() and value is not None:
             enriched[field] = str(value)
+    # Naver cancellation mail currently abbreviates the product to only the
+    # room name.  Once the immutable reservation number, full slot, customer,
+    # and room all prove the strict-earlier reservation generation, retain its
+    # canonical product so the durable event/task identity stays replay-safe.
+    if prior_product is not None and same_room_proof:
+        enriched['product'] = str(prior_product)
     enriched_calendar = (
         calendar_key
         or prior_calendar
@@ -4476,6 +4507,79 @@ def upsert_spacecloud_delete_task(
             )
             if existing_event_task:
                 assert_spacecloud_task_replay_identity(existing_event_task, row)
+                try:
+                    existing_payload = json.loads(
+                        existing_event_task.get('payload_json') or '{}'
+                    )
+                except (TypeError, ValueError):
+                    existing_payload = {}
+                try:
+                    existing_result = json.loads(
+                        existing_event_task.get('result_text') or '{}'
+                    )
+                except (TypeError, ValueError):
+                    existing_result = {}
+                recoverable_quarantine = bool(
+                    existing_event_task.get('status') == 'needs_review'
+                    and existing_event_task.get('side_effect_state') is None
+                    and int(existing_event_task.get('attempts') or 0) == 0
+                    and not existing_event_task.get('side_effect_armed_at')
+                    and existing_payload.get('source')
+                        == 'naver-email-cancellation-quarantine'
+                    and existing_result.get('submissionAttempted') is False
+                    and existing_result.get('mirrorMutationState') == 'not_created'
+                    and existing_result.get('deletionAttempted') is not True
+                    and (
+                        not existing_event_task.get('booking_ledger_id')
+                        or int(existing_event_task.get('booking_ledger_id') or 0)
+                            == int(ledger_id or 0)
+                    )
+                )
+                if recoverable_quarantine:
+                    recovered_result = json.dumps({
+                        'status': 'quarantine-recovered-before-submit',
+                        'reason': 'trusted strict-earlier reservation identity now complete',
+                        'submissionAttempted': False,
+                        'deletionAttempted': False,
+                        'mirrorMutationState': 'not_created',
+                        'sideEffectState': 'ready',
+                        'emailEventId': email_event_identity,
+                        'bookingLedgerId': ledger_id,
+                        'priorQuarantineReason': existing_result.get('reason') or '',
+                    }, ensure_ascii=False, separators=(',', ':'))
+                    cursor.execute(
+                        """
+                        UPDATE rhythmjoy_spacecloud_tasks
+                        SET booking_ledger_id=%s,
+                            status='pending', side_effect_state='ready',
+                            side_effect_token='', side_effect_armed_at=NULL,
+                            side_effect_finalized_at=NULL,
+                            room_key=%s, reservation_number=%s,
+                            reserver_name=%s, reserver_name_key=%s, product=%s,
+                            reservation_date=%s, start_time=%s, end_time=%s,
+                            confirmation_sms_required=0,
+                            payload_json=%s, result_text=%s,
+                            processed_at=NULL, locked_at=NULL, claim_token='',
+                            updated_at=NOW()
+                        WHERE id=%s AND status='needs_review'
+                          AND side_effect_state IS NULL AND attempts=0
+                          AND side_effect_armed_at IS NULL
+                        """,
+                        (
+                            ledger_id,
+                            row['room_key'], row['reservation_number'],
+                            row['reserver_name'],
+                            normalize_reserver_name_for_match(row['reserver_name']),
+                            row['product'], row['reservation_date'],
+                            row['start_time'], row['end_time'],
+                            row['payload_json'], recovered_result,
+                            existing_event_task.get('id'),
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise ConfigError(
+                            'Naver cancellation quarantine changed during safe recovery'
+                        )
             cursor.execute(
                 """
                 INSERT INTO rhythmjoy_spacecloud_tasks (
@@ -6245,6 +6349,242 @@ def backfill_booking_ledger(config, logger):
     return processed
 
 
+def recover_naver_cancellation_event(config, logger, email_event_id):
+    """Promote one proven no-side-effect cancellation quarantine to the queue."""
+    event_identity = spacecloud_task_event_identity(email_event_id)
+    if not event_identity:
+        raise ConfigError('A positive cancellation inbox event id is required')
+
+    recovered = None
+    with db_transaction(
+            config,
+            logger,
+            f'naver-cancellation-quarantine-recovery:{event_identity}',
+    ) as conn:
+        event = lock_inbox_event(config, logger, conn, event_identity)
+        if not (
+                event.get('event_type') == 'cancellation'
+                and event.get('parse_status') == 'parsed'
+                and int(event.get('event_order_trusted') or 0) == 1
+                and event.get('processing_status') == 'needs_review'
+                and event.get('error_text')
+                    == 'incomplete_cancellation_identity_no_side_effects'
+                and event.get('event_order_key') is not None
+        ):
+            raise ConfigError(
+                'Cancellation event is not an exact recoverable no-side-effect quarantine '
+                f'event_id={event_identity}'
+            )
+        deletion = load_event_payload(event)
+        calendar_key = (
+            event.get('target_calendar')
+            or deletion.get('target_calendar')
+            or deletion.get('calendar_key')
+            or product_to_calendar_key(deletion.get('product', ''))
+        )
+        with conn.cursor() as cursor:
+            deletion, calendar_key, prior_proof = (
+                enrich_naver_cancellation_from_prior_event(
+                    cursor,
+                    deletion,
+                    calendar_key,
+                    event.get('event_order_key'),
+                )
+            )
+            if (
+                    prior_proof.get('status') != 'ok'
+                    or not naver_cancellation_identity_complete(
+                        deletion,
+                        calendar_key,
+                    )
+            ):
+                raise ConfigError(
+                    'Cancellation quarantine still lacks trusted prior identity '
+                    f'event_id={event_identity} proof={prior_proof}'
+                )
+            ledger_key = booking_ledger_key('naver', deletion, calendar_key)
+            cursor.execute(
+                """
+                SELECT *
+                FROM rhythmjoy_booking_ledger
+                WHERE ledger_key=%s
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (ledger_key,),
+            )
+            ledger_before = cursor.fetchone()
+            if not (
+                    ledger_before
+                    and ledger_before.get('source_platform') == 'naver'
+                    and ledger_before.get('current_status') == 'confirmed'
+                    and int(ledger_before.get('confirmed_email_event_id') or 0)
+                        == int(prior_proof.get('event_id') or 0)
+                    and not ledger_before.get('canceled_email_event_id')
+                    and not ledger_before.get('automation_cancel_task_id')
+                    and not ledger_before.get('automation_cancel_platform')
+            ):
+                raise ConfigError(
+                    'Cancellation ledger was already changed or manually synchronized; '
+                    f'automatic quarantine recovery refused event_id={event_identity}'
+                )
+            cursor.execute(
+                """
+                SELECT *
+                FROM rhythmjoy_spacecloud_tasks
+                WHERE task_type='delete' AND email_event_id=%s
+                ORDER BY id ASC
+                FOR UPDATE
+                """,
+                (event_identity,),
+            )
+            event_tasks = cursor.fetchall()
+            if len(event_tasks) != 1:
+                raise ConfigError(
+                    'Cancellation quarantine does not have exactly one delete task '
+                    f'event_id={event_identity} count={len(event_tasks)}'
+                )
+            quarantine_task = event_tasks[0]
+            try:
+                quarantine_payload = json.loads(
+                    quarantine_task.get('payload_json') or '{}'
+                )
+            except (TypeError, ValueError):
+                quarantine_payload = {}
+            try:
+                quarantine_result = json.loads(
+                    quarantine_task.get('result_text') or '{}'
+                )
+            except (TypeError, ValueError):
+                quarantine_result = {}
+            if not (
+                    quarantine_task.get('status') == 'needs_review'
+                    and quarantine_task.get('side_effect_state') is None
+                    and int(quarantine_task.get('attempts') or 0) == 0
+                    and not quarantine_task.get('side_effect_armed_at')
+                    and int(quarantine_task.get('booking_ledger_id') or 0)
+                        == int(ledger_before.get('id') or 0)
+                    and quarantine_payload.get('source')
+                        == 'naver-email-cancellation-quarantine'
+                    and quarantine_result.get('submissionAttempted') is False
+                    and quarantine_result.get('deletionAttempted') is not True
+                    and quarantine_result.get('mirrorMutationState') == 'not_created'
+            ):
+                raise ConfigError(
+                    'Cancellation delete task has side-effect or identity evidence; '
+                    f'automatic quarantine recovery refused task_id={quarantine_task.get("id")}'
+                )
+            cursor.execute(
+                """
+                SELECT id
+                FROM rhythmjoy_spacecloud_tasks
+                WHERE task_type='delete'
+                  AND booking_ledger_id=%s
+                  AND id<>%s
+                  AND status IN ('pending','running','needs_review')
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (ledger_before.get('id'), quarantine_task.get('id')),
+            )
+            if cursor.fetchone():
+                raise ConfigError(
+                    'Another unresolved delete generation exists for the ledger; '
+                    f'automatic quarantine recovery refused event_id={event_identity}'
+                )
+            collision = lock_naver_ledger_and_find_opposing_collision(
+                cursor,
+                event_identity,
+                deletion,
+                calendar_key,
+                'cancellation',
+                event.get('event_order_key'),
+            )
+            if collision:
+                raise ConfigError(
+                    'Cancellation recovery found an opposing same-source-ms event '
+                    f'event_id={event_identity} opposing_id={collision.get("id")}'
+                )
+            persist_enriched_naver_cancellation_event(
+                cursor,
+                event_identity,
+                deletion,
+                calendar_key,
+            )
+
+        ledger = upsert_booking_ledger_canceled(
+            config,
+            logger,
+            event_identity,
+            deletion,
+            calendar_key,
+            event.get('email_received_at'),
+            'naver',
+            conn=conn,
+            event_order_key=event.get('event_order_key'),
+        )
+        require_handoff(
+            True,
+            ledger,
+            'Recovered Naver cancellation ledger handoff was not created',
+        )
+        with conn.cursor() as cursor:
+            supersede_waiting_naver_confirmations(
+                cursor,
+                deletion,
+                calendar_key,
+                event.get('event_order_key'),
+            )
+        task = upsert_spacecloud_delete_task(
+            config,
+            logger,
+            event_identity,
+            deletion,
+            calendar_key,
+            conn=conn,
+            booking_ledger_id=ledger.get('id'),
+        )
+        require_handoff(
+            True,
+            task,
+            'Recovered SpaceCloud delete task was not created',
+        )
+        if not (
+                task.get('status') == 'pending'
+                and task.get('side_effect_state') == 'ready'
+                and int(task.get('booking_ledger_id') or 0)
+                    == int(ledger.get('id') or 0)
+        ):
+            raise ConfigError(
+                'Recovered SpaceCloud delete task did not reach safe pending/ready state '
+                f'task_id={task.get("id")}'
+            )
+        update_email_processing(
+            config,
+            event_identity,
+            'spacecloud_delete_pending',
+            logger,
+            conn=conn,
+            error_text='platform_delete_after_spacecloud',
+        )
+        recovered = {
+            'event_id': event_identity,
+            'ledger_id': ledger.get('id'),
+            'task_id': task.get('id'),
+            'reservation_number': deletion.get('reservation_number') or '',
+            'calendar_key': calendar_key,
+            'status': task.get('status'),
+            'side_effect_state': task.get('side_effect_state'),
+        }
+    logger.info(
+        'Recovered Naver cancellation quarantine event=%s ledger=%s task=%s',
+        recovered.get('event_id'),
+        recovered.get('ledger_id'),
+        recovered.get('task_id'),
+    )
+    return recovered
+
+
 def verify_booking_event_total_order():
     """Regression-check same-second ordering without requiring a database."""
     class CaptureCursor:
@@ -6580,6 +6920,43 @@ def verify_booking_event_total_order():
     if proof.get('status') != 'prior-product-mismatch':
         raise ConfigError('Cancellation identity accepted conflicting generation evidence')
 
+    abbreviated_prior_payload = dict(
+        prior_payload,
+        product='B홀 (2~30평형)8.4*4.5m',
+    )
+    abbreviated_prior = dict(
+        prior_candidate,
+        id=504,
+        target_calendar='Bhall',
+        product=abbreviated_prior_payload['product'],
+        parsed_json=compact_json(abbreviated_prior_payload),
+    )
+    abbreviated, abbreviated_calendar, proof = (
+        enrich_naver_cancellation_from_prior_event(
+            PriorReservationCursor([abbreviated_prior]),
+            {
+                'reservation_number': 'prior-proof',
+                'name': '홍길동',
+                'product': 'B홀',
+                'date': '2026-08-16',
+                'start_time': '14:00',
+                'end_time': '15:00',
+            },
+            'Bhall',
+            source_ms,
+        )
+    )
+    if (
+            proof.get('status') != 'ok'
+            or proof.get('event_id') != 504
+            or abbreviated_calendar != 'Bhall'
+            or abbreviated.get('product') != abbreviated_prior_payload['product']
+    ):
+        raise ConfigError(
+            'Same-room abbreviated cancellation product was not canonicalized '
+            f'from the trusted prior generation: enriched={abbreviated} proof={proof}'
+        )
+
     class EmptyTaskAuditCursor:
         def __init__(self):
             self.queries = []
@@ -6632,6 +7009,51 @@ def verify_booking_event_total_order():
     }
     replay_incoming.pop('id')
     assert_email_event_replay_identity(replay_existing, replay_incoming)
+
+    cancellation_replay_existing = dict(
+        replay_existing,
+        event_type='cancellation',
+        parsed_json=compact_json({
+            'reservation_number': 'prior-proof',
+            'name': '홍길동',
+            'product': 'B홀 (2~30평형)8.4*4.5m',
+            'date': '2026-08-16',
+            'start_time': '14:00:00',
+            'end_time': '15:00:00',
+        }),
+    )
+    cancellation_replay_incoming = dict(
+        replay_incoming,
+        event_type='cancellation',
+        parsed_json=compact_json({
+            'reservation_number': 'prior-proof',
+            'name': '홍길동님',
+            'product': 'B홀',
+            'date': '2026-08-16',
+            'start_time': '14:00',
+            'end_time': '15:00',
+        }),
+    )
+    assert_email_event_replay_identity(
+        cancellation_replay_existing,
+        cancellation_replay_incoming,
+    )
+    conflicting_cancellation_replay = dict(
+        cancellation_replay_incoming,
+        parsed_json=compact_json({
+            **json.loads(cancellation_replay_incoming['parsed_json']),
+            'product': 'A홀',
+        }),
+    )
+    try:
+        assert_email_event_replay_identity(
+            cancellation_replay_existing,
+            conflicting_cancellation_replay,
+        )
+    except ConfigError:
+        pass
+    else:
+        raise ConfigError('Cancellation replay accepted a cross-room product mutation')
 
     class ImmutableReplayCursor:
         def __init__(self, row):
@@ -7713,6 +8135,17 @@ def main():
     parser.add_argument('--once', action='store_true', help='run one polling cycle and exit')
     parser.add_argument('--check-config', action='store_true', help='validate config and exit')
     parser.add_argument('--backfill-ledger', action='store_true', help='non-destructively upsert booking ledger rows from stored parsed email events and exit')
+    parser.add_argument(
+        '--recover-naver-cancellation-event',
+        action='append',
+        type=int,
+        default=[],
+        metavar='EVENT_ID',
+        help=(
+            'promote one exact trusted no-side-effect Naver cancellation '
+            'quarantine to the SpaceCloud delete queue and exit; repeatable'
+        ),
+    )
     parser.add_argument('--event-order-selftest', action='store_true', help='verify same-second booking email total ordering without a database')
     parser.add_argument('--transaction-selftest', action='store_true', help='fault-inject and verify Inbox/Outbox transaction rollback and commit')
     args = parser.parse_args()
@@ -7735,6 +8168,14 @@ def main():
     if args.backfill_ledger:
         processed = backfill_booking_ledger(config, logger)
         logger.info('Booking ledger backfill command finished processed=%s', processed)
+        return
+
+    if args.recover_naver_cancellation_event:
+        recovered = [
+            recover_naver_cancellation_event(config, logger, event_id)
+            for event_id in args.recover_naver_cancellation_event
+        ]
+        print(json.dumps({'recovered': recovered}, ensure_ascii=False))
         return
 
     if args.transaction_selftest:
