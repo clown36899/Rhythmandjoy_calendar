@@ -6989,7 +6989,11 @@ try:
                     l.current_status='confirmed'
                  OR (
                       l.current_status='canceled'
-                      AND l.canceled_email_received_at >= DATE_SUB(NOW(), INTERVAL ${cancellationLookbackDays} DAY)
+                      AND COALESCE(
+                            l.automation_canceled_at,
+                            l.canceled_email_received_at,
+                            l.last_event_at
+                          ) >= DATE_SUB(NOW(), INTERVAL ${cancellationLookbackDays} DAY)
                     )
                   )
               AND l.source_platform IN ('naver','spacecloud')
@@ -7411,8 +7415,16 @@ try:
                  OR (
                       l.current_status='canceled'
                       AND (
-                           l.canceled_email_received_at IS NULL
-                           OR l.canceled_email_received_at < DATE_SUB(NOW(), INTERVAL ${cancellationLookbackDays} DAY)
+                           COALESCE(
+                             l.automation_canceled_at,
+                             l.canceled_email_received_at,
+                             l.last_event_at
+                           ) IS NULL
+                           OR COALESCE(
+                                l.automation_canceled_at,
+                                l.canceled_email_received_at,
+                                l.last_event_at
+                              ) < DATE_SUB(NOW(), INTERVAL ${cancellationLookbackDays} DAY)
                           )
                     )
                  OR DATE_ADD(
@@ -12052,6 +12064,16 @@ async function runNowModeSelfTest() {
   const previousCancellationAuditLookback = process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS;
   delete process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS;
   assert.equal(customerCancellationAuditLookbackDays(), 10);
+  assert.match(
+    fetchRemoteCustomerPlatformAuditCandidates.toString(),
+    /COALESCE\([\s\S]*automation_canceled_at[\s\S]*canceled_email_received_at[\s\S]*last_event_at[\s\S]*DATE_SUB/,
+    'recent manual customer cancellations must remain in the actual-platform audit without a cancellation email timestamp',
+  );
+  assert.match(
+    persistRemoteCustomerPlatformAudits.toString(),
+    /COALESCE\([\s\S]*automation_canceled_at[\s\S]*canceled_email_received_at[\s\S]*last_event_at[\s\S]*DATE_SUB/,
+    'persisting audits must not resolve a recent manual cancellation merely because it has no cancellation email timestamp',
+  );
   if (previousCancellationAuditLookback === undefined) {
     delete process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS;
   } else {
