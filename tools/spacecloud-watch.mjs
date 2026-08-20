@@ -42,6 +42,7 @@ const DEFAULT_ENV_FILE = '/Users/inteyeo/.rhythmjoy-ingestion.env';
 const DEFAULT_CAFE24_TARGET_ENV = 'ops/cafe24-production-target.env';
 const DEFAULT_NOTIFY_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'notify-state.json');
 const DEFAULT_NOTIFY_COOLDOWN_SECONDS = 6 * 60 * 60;
+const DEFAULT_REMOTE_OUTAGE_ALERT_SECONDS = 60;
 const DEFAULT_DAILY_RECONCILE_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'daily-reconcile-state.json');
 const DEFAULT_REFLECTION_AUDIT_STATE_PATH = path.join(DEFAULT_WORK_DIR, 'reflection-audit-state.json');
 const DEFAULT_REFLECTION_AUDIT_INTERVAL_MINUTES = 30;
@@ -113,6 +114,8 @@ Options:
   --notify-state <path>     Defaults to ${DEFAULT_NOTIFY_STATE_PATH}.
   --notify-cooldown-seconds <n>
                             Defaults to ${DEFAULT_NOTIFY_COOLDOWN_SECONDS}.
+  --remote-outage-alert-seconds <n>
+                            Defaults to ${DEFAULT_REMOTE_OUTAGE_ALERT_SECONDS}. Brief SSH/network loss is logged without a false stop alert.
   --daily-reconcile-hour <0-23>
                             Defaults to 5. Sends one daily DB health summary.
   --daily-reconcile-state <path>
@@ -205,6 +208,7 @@ function parseArgs(argv) {
     cafe24TargetEnv: DEFAULT_CAFE24_TARGET_ENV,
     notifyState: DEFAULT_NOTIFY_STATE_PATH,
     notifyCooldownSeconds: DEFAULT_NOTIFY_COOLDOWN_SECONDS,
+    remoteOutageAlertSeconds: DEFAULT_REMOTE_OUTAGE_ALERT_SECONDS,
     dailyReconcileHour: 5,
     dailyReconcileState: DEFAULT_DAILY_RECONCILE_STATE_PATH,
     dailyReconcile: true,
@@ -307,6 +311,7 @@ function parseArgs(argv) {
       'naver-cancel-limit-per-cycle',
       'spacecloud-cancel-limit-per-cycle',
       'notify-cooldown-seconds',
+      'remote-outage-alert-seconds',
       'urgent-window-minutes',
       'urgent-interval-seconds',
       'urgent-cooldown-seconds',
@@ -964,6 +969,76 @@ async function loadCafe24Target(args) {
   return target;
 }
 
+class SshCommandError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = 'SshCommandError';
+    this.source = 'ssh';
+    this.kind = details.kind || 'unknown';
+    this.retryable = details.retryable === true;
+    this.exitStatus = Number.isInteger(details.exitStatus) ? details.exitStatus : null;
+    this.signal = details.signal || '';
+    this.processCode = details.processCode || '';
+  }
+}
+
+const SSH_NONRETRYABLE_CLIENT_ERROR = /Permission denied|Too many authentication failures|Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED|Bad (?:owner or permissions|configuration option)|no such identity|Identity file .* not accessible|Load key .*?(?:invalid format|Permission denied)|hostname contains invalid characters|Could not resolve hostname .* Name or service not known.*(?:invalid|malformed)/i;
+
+function sshFailureMessage(cp) {
+  const detail = String(cp?.stderr || cp?.stdout || '').trim();
+  if (cp?.error) {
+    return `ssh failed: ${cp.error.message}${detail ? `\n${detail}` : ''}`;
+  }
+  if (detail) return detail;
+  if (cp?.signal) return `ssh terminated by ${cp.signal}`;
+  return `ssh exited ${cp?.status ?? 'unknown'}`;
+}
+
+function classifySshProcessFailure(cp) {
+  const message = sshFailureMessage(cp);
+  const exitStatus = Number.isInteger(cp?.status) ? cp.status : null;
+  const signal = cp?.signal || '';
+  const processCode = cp?.error?.code || '';
+
+  if (cp?.error) {
+    const retryable = processCode === 'ETIMEDOUT' || Boolean(signal);
+    return {
+      message,
+      kind: retryable ? 'transport' : 'local-client',
+      retryable,
+      exitStatus,
+      signal,
+      processCode,
+    };
+  }
+
+  // OpenSSH reserves 255 for client/transport failure. Authentication and
+  // host-key/configuration failures require operator action; all other 255
+  // failures are treated as an unavailable route/endpoint and kept in-process.
+  if (exitStatus === 255 || (exitStatus === null && signal)) {
+    const retryable = !SSH_NONRETRYABLE_CLIENT_ERROR.test(message);
+    const authentication = /Permission denied|Too many authentication failures|no such identity|Identity file|Load key/i.test(message);
+    const hostKey = /Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(message);
+    return {
+      message,
+      kind: retryable ? 'transport' : (authentication ? 'authentication' : (hostKey ? 'host-key' : 'client-config')),
+      retryable,
+      exitStatus,
+      signal,
+      processCode,
+    };
+  }
+
+  return {
+    message,
+    kind: 'remote-command',
+    retryable: false,
+    exitStatus,
+    signal,
+    processCode,
+  };
+}
+
 function runSshScript(target, script) {
   const timeoutSeconds = Number.parseInt(process.env.SPACECLOUD_WATCH_SSH_TIMEOUT_SECONDS || '90', 10);
   const timeoutMs = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 90_000;
@@ -990,12 +1065,9 @@ function runSshScript(target, script) {
     timeout: timeoutMs,
     killSignal: 'SIGKILL',
   });
-  if (cp.error) {
-    const detail = (cp.stderr || cp.stdout || '').trim();
-    throw new Error(`ssh failed: ${cp.error.message}${detail ? `\n${detail}` : ''}`);
-  }
-  if (cp.status !== 0) {
-    throw new Error((cp.stderr || cp.stdout || `ssh exited ${cp.status}`).trim());
+  if (cp.error || cp.status !== 0) {
+    const failure = classifySshProcessFailure(cp);
+    throw new SshCommandError(failure.message, failure);
   }
   return cp.stdout;
 }
@@ -6210,7 +6282,12 @@ async function maybeSendDailyReconcile(args) {
     });
     if (result.sent) logLine('telegram sent: daily-reconcile');
   } catch (error) {
+    if (isRetryableRemoteProblem(error)) {
+      logLine(`daily reconcile deferred by remote transport loss: ${String(error?.message || error)}`);
+      return { infrastructureUnavailable: true, infrastructureError: error };
+    }
     logLine(`daily reconcile failed: ${String(error?.message || error)}`);
+    return { error: String(error?.message || error) };
   }
 }
 
@@ -6306,11 +6383,16 @@ async function maybeSendReflectionAudit(args) {
     }
     await writeJson(args.reflectionAuditState, nextState);
   } catch (error) {
+    if (isRetryableRemoteProblem(error)) {
+      logLine(`reflection audit deferred by remote transport loss: ${String(error?.message || error)}`);
+      return { infrastructureUnavailable: true, infrastructureError: error };
+    }
     await writeJson(args.reflectionAuditState, {
       checkedAt: new Date().toISOString(),
       error: String(error?.message || error),
     });
     logLine(`reflection audit failed: ${String(error?.message || error)}`);
+    return { error: String(error?.message || error) };
   }
 }
 
@@ -6819,6 +6901,10 @@ async function maybeRunAdminPlatformAudit(args, context, sessionStatuses = [], o
   } catch (error) {
     const errorText = String(error?.message || error);
     logLine(`admin platform audit failed: ${errorText}`);
+    if (isRetryableRemoteProblem(error)) {
+      logLine('admin platform audit deferred by remote transport circuit breaker');
+      return { error: errorText, infrastructureUnavailable: true, infrastructureError: error };
+    }
     if (options.deferBrowserFailure && isBrowserContextClosedProblem(errorText)) {
       logLine('admin platform audit browser failure deferred until immediate recovery check');
       return { error: errorText, recoveryRequired: true };
@@ -7565,6 +7651,10 @@ async function maybeRunCustomerPlatformAudit(args, context, sessionStatuses = []
   } catch (error) {
     const errorText = String(error?.message || error);
     logLine(`customer platform audit failed: ${errorText}`);
+    if (isRetryableRemoteProblem(error)) {
+      logLine('customer platform audit deferred by remote transport circuit breaker');
+      return { error: errorText, infrastructureUnavailable: true, infrastructureError: error };
+    }
     if (options.deferBrowserFailure && isBrowserContextClosedProblem(errorText)) {
       logLine('customer platform audit browser failure deferred until immediate recovery check');
       return { error: errorText, recoveryRequired: true };
@@ -7589,8 +7679,56 @@ function isLoginProblem(message) {
   return /login|logged out|add button not visible|로그인|세션|인증/i.test(String(message || ''));
 }
 
-function isTransientRemoteProblem(message) {
-  return /ssh failed|timed out|ETIMEDOUT|SIGKILL|Connection timed out|Connection reset|Connection closed by|Broken pipe/i.test(String(message || ''));
+function isRetryableRemoteProblem(error) {
+  return Boolean(error && typeof error === 'object' && error.source === 'ssh' && error.retryable === true);
+}
+
+function operationalErrorFields(error) {
+  if (!error || typeof error !== 'object') return {};
+  const fields = {};
+  if (error.source) fields.errorSource = error.source;
+  if (error.kind) fields.errorKind = error.kind;
+  if (typeof error.retryable === 'boolean') fields.retryable = error.retryable;
+  if (Number.isInteger(error.exitStatus)) fields.exitStatus = error.exitStatus;
+  if (error.signal) fields.signal = error.signal;
+  if (error.processCode) fields.processCode = error.processCode;
+  return fields;
+}
+
+function recordRemoteOutage(previous, error, nowMs = Date.now()) {
+  const firstFailureAtMs = Number(previous?.firstFailureAtMs);
+  return {
+    firstFailureAtMs: Number.isFinite(firstFailureAtMs) ? firstFailureAtMs : nowMs,
+    lastFailureAtMs: nowMs,
+    failureCount: Number(previous?.failureCount || 0) + 1,
+    alertSent: previous?.alertSent === true,
+    errorKind: error?.kind || 'transport',
+    lastError: String(error?.message || error || ''),
+  };
+}
+
+function remoteOutageDurationMs(outage, nowMs = outage?.lastFailureAtMs || Date.now()) {
+  if (!outage || !Number.isFinite(outage.firstFailureAtMs)) return 0;
+  return Math.max(0, nowMs - outage.firstFailureAtMs);
+}
+
+function remoteOutageExceededThreshold(outage, alertAfterSeconds, nowMs = outage?.lastFailureAtMs || Date.now()) {
+  return remoteOutageDurationMs(outage, nowMs) >= Math.max(1, Number(alertAfterSeconds || 0)) * 1000;
+}
+
+function remoteOutageShouldAlert(outage, alertAfterSeconds, nowMs = outage?.lastFailureAtMs || Date.now()) {
+  if (!outage || outage.alertSent) return false;
+  return remoteOutageExceededThreshold(outage, alertAfterSeconds, nowMs);
+}
+
+function classifyWatcherError(error) {
+  if (error && typeof error === 'object' && error.source === 'ssh') {
+    return error.retryable === true ? 'remote-transport' : 'fatal';
+  }
+  const message = String(error?.message || error || '');
+  if (isBrowserContextClosedProblem(message)) return 'browser-context';
+  if (isLoginProblem(message)) return 'platform-login';
+  return 'fatal';
 }
 
 function isBrowserContextClosedProblem(message) {
@@ -8395,10 +8533,32 @@ async function notifySmsState(args, row) {
   return notifyOnStateChange(args, key, 'healthy', smsSuccessMessage([row]));
 }
 
-function cycleErrorMessage(errorText, { transient = false } = {}) {
-  return compactNotice(transient ? '🟡 서버 연결 확인 중' : '🔴 자동화 감시 중지', [
-    `상태: ${transient ? '다음 주기 자동 재시도' : '자동 재시작 필요'}`,
+function remoteOutageMessage(errorText, outage) {
+  const durationSeconds = Math.max(1, Math.round(remoteOutageDurationMs(outage) / 1000));
+  return compactNotice('🟡 DB 서버 연결 장애', [
+    '상태: 감시기는 실행 중 · 미처리 작업은 DB 원장에 안전 대기',
+    `지속: 약 ${durationSeconds}초 · ${outage?.failureCount || 1}회 연속 실패`,
     `자동화 기록: ${cleanTelegramText(errorText || '-', 180)}`,
+    '복구: 연결이 돌아오면 원장 순서대로 자동 재개',
+    '짧은 순간 단절은 사용자 경고 없이 운영 로그에만 남깁니다.',
+  ]);
+}
+
+function unreportedRemoteOutageRecoveryMessage(outage, recoveredAtMs = Date.now()) {
+  const durationSeconds = Math.max(1, Math.round(remoteOutageDurationMs(outage, recoveredAtMs) / 1000));
+  return compactNotice('✅ DB 서버 연결 자동 복구', [
+    '상태: 감시 프로세스 유지 · DB 원장 작업 자동 재개',
+    `단절: 약 ${durationSeconds}초 · ${outage?.failureCount || 1}회 연결 실패`,
+    '단절 중에는 네트워크가 없어 경고를 전달하지 못했습니다.',
+    '예약 원장과 미처리 작업은 유실되지 않았습니다.',
+  ]);
+}
+
+function fatalCycleErrorMessage(errorText) {
+  return compactNotice('🔴 자동화 프로세스 오류', [
+    '상태: 현재 프로세스 종료 · 운영 서비스가 자동 재시작',
+    `자동화 기록: ${cleanTelegramText(errorText || '-', 180)}`,
+    'DB 원장과 미처리 작업은 보존됩니다.',
     '같은 상태는 다시 알리지 않습니다.',
   ]);
 }
@@ -11339,6 +11499,81 @@ async function runNowModeSelfTest() {
   assert.equal(parsed.customerPlatformAudit, true);
   assert.equal(parsed.customerPlatformAuditIntervalMinutes, 240);
   assert.equal(parsed.customerPlatformAuditLimit, 1);
+  assert.equal(parsed.remoteOutageAlertSeconds, DEFAULT_REMOTE_OUTAGE_ALERT_SECONDS);
+  assert.equal(parseArgs([
+    'node',
+    'tools/spacecloud-watch.mjs',
+    'watch',
+    '--remote-outage-alert-seconds',
+    '90',
+  ]).remoteOutageAlertSeconds, 90);
+  const noRouteFailure = classifySshProcessFailure({
+    status: 255,
+    signal: null,
+    stdout: '',
+    stderr: 'ssh: connect to host 1.234.23.64 port 22: No route to host',
+  });
+  assert.equal(noRouteFailure.kind, 'transport');
+  assert.equal(noRouteFailure.retryable, true);
+  const noRouteError = new SshCommandError(noRouteFailure.message, noRouteFailure);
+  assert.equal(isRetryableRemoteProblem(noRouteError), true);
+  assert.equal(classifyWatcherError(noRouteError), 'remote-transport');
+  assert.deepEqual(operationalErrorFields(noRouteError), {
+    errorSource: 'ssh',
+    errorKind: 'transport',
+    retryable: true,
+    exitStatus: 255,
+  });
+  for (const message of [
+    'ssh: connect to host example port 22: Network is unreachable',
+    'ssh: connect to host example port 22: Connection refused',
+    'kex_exchange_identification: Connection closed by remote host',
+    'ssh: Could not resolve hostname example: Temporary failure in name resolution',
+  ]) {
+    assert.equal(classifySshProcessFailure({ status: 255, stderr: message }).retryable, true, message);
+  }
+  assert.deepEqual(
+    {
+      kind: classifySshProcessFailure({ status: 255, stderr: 'root@example: Permission denied (publickey).' }).kind,
+      retryable: classifySshProcessFailure({ status: 255, stderr: 'root@example: Permission denied (publickey).' }).retryable,
+    },
+    { kind: 'authentication', retryable: false },
+  );
+  const authenticationFailure = classifySshProcessFailure({
+    status: 255,
+    stderr: 'root@example: Permission denied (publickey). Authentication failed.',
+  });
+  assert.equal(
+    classifyWatcherError(new SshCommandError(authenticationFailure.message, authenticationFailure)),
+    'fatal',
+    'SSH authentication must not be confused with a browser platform login',
+  );
+  assert.equal(classifyWatcherError(new Error('Target page, context or browser has been closed')), 'browser-context');
+  assert.equal(classifyWatcherError(new Error('platform login required')), 'platform-login');
+  assert.deepEqual(
+    {
+      kind: classifySshProcessFailure({ status: 1, stderr: 'remote database script failed' }).kind,
+      retryable: classifySshProcessFailure({ status: 1, stderr: 'remote database script failed' }).retryable,
+    },
+    { kind: 'remote-command', retryable: false },
+  );
+  assert.equal(classifySshProcessFailure({
+    status: null,
+    signal: 'SIGKILL',
+    error: { code: 'ETIMEDOUT', message: 'spawnSync ssh ETIMEDOUT' },
+  }).retryable, true);
+  let outage = recordRemoteOutage(null, noRouteError, 1_000);
+  outage = recordRemoteOutage(outage, noRouteError, 30_000);
+  assert.equal(outage.failureCount, 2);
+  assert.equal(remoteOutageShouldAlert(outage, 60, 60_999), false);
+  assert.equal(remoteOutageShouldAlert(outage, 60, 61_000), true);
+  assert.equal(remoteOutageExceededThreshold(outage, 60, 61_000), true);
+  outage.alertSent = true;
+  assert.equal(remoteOutageShouldAlert(outage, 60, 120_000), false);
+  assert.match(remoteOutageMessage(noRouteError.message, { ...outage, lastFailureAtMs: 61_000 }), /감시기는 실행 중/);
+  assert.doesNotMatch(remoteOutageMessage(noRouteError.message, outage), /재시작 필요|감시 중지/);
+  assert.match(unreportedRemoteOutageRecoveryMessage(outage, 121_000), /경고를 전달하지 못했습니다/);
+  assert.match(fatalCycleErrorMessage('unexpected failure'), /운영 서비스가 자동 재시작/);
   const bookingFetchArgs = bookingSyncFetchArgs(parsed);
   assert.equal(bookingFetchArgs.nowMode, false);
   assert.equal(parsed.nowMode, true, 'disabling booking-task urgency must not mutate the watcher args');
@@ -12581,6 +12816,9 @@ async function runNowModeSelfTest() {
   assert.match(runWatch.toString(), /session check repeated after browser recovery/);
   assert.match(runWatch.toString(), /browser page crash detected during admin platform audit/);
   assert.match(runWatch.toString(), /browser page crash detected during customer platform audit/);
+  assert.match(runWatch.toString(), /brief remote transport loss recorded/);
+  assert.match(runWatch.toString(), /remote-dependent audits skipped until the DB connection is healthy/);
+  assert.match(runWatch.toString(), /fatal cycle error; exiting for service-supervised restart/);
   const liveCookie = {
     primaryPresent: true,
     primaryFingerprint: 'cookie-a',
@@ -12733,6 +12971,10 @@ async function runNowModeSelfTest() {
       'platform page timeout becomes next-cycle retry',
       'closed browser context retries every task type',
       'crashed session pages reopen and recheck before any login warning',
+      'SSH failures carry typed transport/authentication/remote-command metadata',
+      'brief network loss keeps the watcher alive and sustained outages use a timed circuit breaker',
+      'remote-dependent audits pause while the DB route is unavailable',
+      'fatal process errors exit nonzero for the service supervisor instead of requesting manual restart',
       'ambiguous SpaceCloud submit is verified on retry',
       'task runners depend only on the DB queue and opposite booking platform',
       'Telegram reservation completion includes SMS status and follow-up recovery remains idempotent',
@@ -13215,18 +13457,57 @@ async function runWatch(args) {
   process.once('SIGTERM', stop);
   process.once('SIGHUP', stop);
   let urgentUntil = 0;
+  let remoteOutage = null;
 
   logLine(`watch started; interval=${args.intervalSeconds}s urgent=${args.nowMode ? `${args.urgentIntervalSeconds}s/${args.urgentCooldownSeconds}s` : 'off'} profile=${args.profileDir} mode=db-queue`);
   try {
     while (!stopping) {
       let watcherProblemThisCycle = false;
+      let cycleCompleted = false;
+      let remoteInfrastructureUnavailable = false;
       let cycleSessionStatuses = [];
       const reportWatcherProblem = async (stateSignature, text) => {
         watcherProblemThisCycle = true;
         return notifyWatcherProblem(args, stateSignature, text);
       };
+      const observeRemoteInfrastructureFailure = async (error, phase = 'cycle') => {
+        remoteInfrastructureUnavailable = true;
+        remoteOutage = recordRemoteOutage(remoteOutage, error);
+        if (phase !== 'cycle') {
+          await appendJsonl(path.join(args.workDir, 'runs.jsonl'), {
+            at: new Date().toISOString(),
+            status: 'infrastructure-unavailable',
+            phase,
+            error: String(error?.message || error),
+            ...operationalErrorFields(error),
+          });
+        }
+        if (remoteOutageShouldAlert(remoteOutage, args.remoteOutageAlertSeconds)) {
+          const alertResult = await reportWatcherProblem(
+            'problem:connection',
+            remoteOutageMessage(String(error?.message || error), remoteOutage),
+          );
+          remoteOutage.alertSent = Boolean(
+            alertResult?.sent
+            || ['state-unchanged', 'dry-run', 'disabled'].includes(String(alertResult?.reason || ''))
+          );
+          if (remoteOutage.alertSent) {
+            logLine(`remote outage alert recorded after ${remoteOutage.failureCount} consecutive failures`);
+          } else {
+            logLine(`remote outage alert delivery pending: ${alertResult?.reason || 'not-sent'}`);
+          }
+        } else {
+          logLine(`brief remote transport loss recorded (${remoteOutage.failureCount} consecutive); watcher remains active`);
+        }
+      };
+      const observeInfrastructureResult = async (result, phase) => {
+        if (!result?.infrastructureUnavailable || !result.infrastructureError) return false;
+        await observeRemoteInfrastructureFailure(result.infrastructureError, phase);
+        return true;
+      };
       try {
         const row = await runCycle(args, context);
+        cycleCompleted = true;
         cycleSessionStatuses = row.sessionStatus || [];
         if (browserSessionRecoveryNeeded(cycleSessionStatuses)) {
           cycleSessionStatuses = await recoverBrowserAndRecheckSessions('browser page crash detected during session check');
@@ -13329,7 +13610,7 @@ async function runWatch(args) {
         }
       } catch (error) {
         const errorText = String(error?.message || error);
-        if (/ssh exited (?:null|255)/i.test(errorText)) await sleep(250);
+        if (error?.source === 'ssh' && (error.exitStatus === null || error.exitStatus === 255)) await sleep(250);
         if (stopping || process.ppid !== watcherParentPid) {
           logLine('cycle interrupted by service shutdown; notification skipped');
           break;
@@ -13338,59 +13619,100 @@ async function runWatch(args) {
           at: new Date().toISOString(),
           status: 'error',
           error: errorText,
+          ...operationalErrorFields(error),
         };
         await appendJsonl(path.join(args.workDir, 'runs.jsonl'), errorRow);
         logLine(`cycle error: ${errorRow.error}`);
-        if (isBrowserContextClosedProblem(errorRow.error)) {
+        const errorClassification = classifyWatcherError(error);
+        if (errorClassification === 'browser-context') {
           await reopenBrowserContext();
           logLine('closed browser context recovered; will retry next cycle');
-        } else if (isLoginProblem(errorRow.error)) {
+        } else if (errorClassification === 'platform-login') {
           await reportWatcherProblem('problem:login-needed', loginNeededMessage(errorRow.error));
           logLine('login needed; waiting for manual login');
-        } else if (isTransientRemoteProblem(errorRow.error)) {
-          await reportWatcherProblem('problem:connection', cycleErrorMessage(errorRow.error, { transient: true }));
-          logLine('transient remote problem; will retry next cycle');
+        } else if (errorClassification === 'remote-transport') {
+          await observeRemoteInfrastructureFailure(error);
         } else {
-          await reportWatcherProblem('problem:stopped', cycleErrorMessage(errorRow.error));
-          break;
+          await reportWatcherProblem('problem:stopped', fatalCycleErrorMessage(errorRow.error));
+          logLine(`fatal cycle error; exiting for service-supervised restart (${error?.kind || error?.name || 'unknown'})`);
+          throw error;
         }
       }
 
-      if (!watcherProblemThisCycle) await notifyWatcherRecoveredIfNeeded(args);
-      let adminAuditResult = await maybeRunAdminPlatformAudit(
-        args,
-        context,
-        cycleSessionStatuses,
-        { deferBrowserFailure: true },
-      );
-      if (isBrowserContextClosedProblem(adminAuditResult?.error)) {
-        cycleSessionStatuses = await recoverBrowserAndRecheckSessions('browser page crash detected during admin platform audit');
-        await notifySessionStateChanges(args, cycleSessionStatuses);
-        adminAuditResult = await maybeRunAdminPlatformAudit(
+      if (remoteInfrastructureUnavailable) {
+        logLine('remote-dependent audits skipped until the DB connection is healthy');
+      } else {
+        let adminAuditResult = await maybeRunAdminPlatformAudit(
           args,
           context,
           cycleSessionStatuses,
-          { force: true },
+          { deferBrowserFailure: true },
         );
+        await observeInfrastructureResult(adminAuditResult, 'admin-platform-audit');
+        if (!remoteInfrastructureUnavailable && isBrowserContextClosedProblem(adminAuditResult?.error)) {
+          cycleSessionStatuses = await recoverBrowserAndRecheckSessions('browser page crash detected during admin platform audit');
+          await notifySessionStateChanges(args, cycleSessionStatuses);
+          adminAuditResult = await maybeRunAdminPlatformAudit(
+            args,
+            context,
+            cycleSessionStatuses,
+            { force: true },
+          );
+          await observeInfrastructureResult(adminAuditResult, 'admin-platform-audit-recheck');
+        }
+        if (!remoteInfrastructureUnavailable) {
+          let customerAuditResult = await maybeRunCustomerPlatformAudit(
+            args,
+            context,
+            cycleSessionStatuses,
+            { deferBrowserFailure: true },
+          );
+          await observeInfrastructureResult(customerAuditResult, 'customer-platform-audit');
+          if (!remoteInfrastructureUnavailable && isBrowserContextClosedProblem(customerAuditResult?.error)) {
+            cycleSessionStatuses = await recoverBrowserAndRecheckSessions('browser page crash detected during customer platform audit');
+            await notifySessionStateChanges(args, cycleSessionStatuses);
+            customerAuditResult = await maybeRunCustomerPlatformAudit(
+              args,
+              context,
+              cycleSessionStatuses,
+              { force: true },
+            );
+            await observeInfrastructureResult(customerAuditResult, 'customer-platform-audit-recheck');
+          }
+        }
+        if (!remoteInfrastructureUnavailable) {
+          const reflectionResult = await maybeSendReflectionAudit(args);
+          await observeInfrastructureResult(reflectionResult, 'reflection-audit');
+        }
+        if (!remoteInfrastructureUnavailable) {
+          const reconcileResult = await maybeSendDailyReconcile(args);
+          await observeInfrastructureResult(reconcileResult, 'daily-reconcile');
+        }
       }
-      let customerAuditResult = await maybeRunCustomerPlatformAudit(
-        args,
-        context,
-        cycleSessionStatuses,
-        { deferBrowserFailure: true },
-      );
-      if (isBrowserContextClosedProblem(customerAuditResult?.error)) {
-        cycleSessionStatuses = await recoverBrowserAndRecheckSessions('browser page crash detected during customer platform audit');
-        await notifySessionStateChanges(args, cycleSessionStatuses);
-        customerAuditResult = await maybeRunCustomerPlatformAudit(
-          args,
-          context,
-          cycleSessionStatuses,
-          { force: true },
-        );
+      if (cycleCompleted && !remoteInfrastructureUnavailable) {
+        let recoveredOutage = null;
+        if (remoteOutage) {
+          logLine(`remote connection recovered after ${remoteOutage.failureCount} failed operation(s)`);
+          recoveredOutage = remoteOutage;
+          remoteOutage = null;
+        }
+        if (!watcherProblemThisCycle) {
+          if (
+            recoveredOutage
+            && !recoveredOutage.alertSent
+            && remoteOutageExceededThreshold(recoveredOutage, args.remoteOutageAlertSeconds, Date.now())
+          ) {
+            await notifyOnStateChange(
+              args,
+              'system:watcher',
+              `healthy:remote-outage:${recoveredOutage.firstFailureAtMs}`,
+              unreportedRemoteOutageRecoveryMessage(recoveredOutage),
+            );
+          } else {
+            await notifyWatcherRecoveredIfNeeded(args);
+          }
+        }
       }
-      await maybeSendReflectionAudit(args);
-      await maybeSendDailyReconcile(args);
       const sleepSeconds = watchSleepSeconds(args, urgentUntil);
       if (args.nowMode && sleepSeconds !== args.intervalSeconds) {
         logLine(`urgent follow-up interval active; next cycle in ${sleepSeconds}s`);

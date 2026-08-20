@@ -119,9 +119,20 @@
       'background:rgba(0,0,0,0.92);color:#fff;font-family:monospace;font-size:11px;',
       'display:none;flex-direction:column;}',
       '#_dbgHeader{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;',
-      'background:#1a1a1a;border-bottom:1px solid #333;flex-shrink:0;}',
+      'background:#1a1a1a;border-bottom:1px solid #333;flex-shrink:0;gap:8px;}',
+      '#_dbgControls{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;}',
       '#_dbgHeader button{background:#333;color:#fff;border:1px solid #555;border-radius:4px;',
       'padding:4px 10px;font-size:12px;cursor:pointer;margin-left:6px;}',
+      '#_dbgVisitorRow{display:flex;justify-content:flex-end;align-items:center;min-height:32px;',
+      'padding:4px 10px;background:#111;border-bottom:1px solid #292929;flex-shrink:0;',
+      'pointer-events:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none;}',
+      '#_dbgVisitorStats{display:inline-flex;align-items:center;gap:7px;padding:4px 9px;',
+      'border:1px solid #355044;border-radius:12px;background:rgba(24,54,41,0.82);',
+      'color:#a8f0c5;font-family:monospace;font-size:11px;line-height:1.2;white-space:nowrap;',
+      'user-select:none;-webkit-user-select:none;-webkit-user-drag:none;}',
+      '#_dbgVisitorStats[data-state="loading"]{color:#bbb;border-color:#444;background:#202020;}',
+      '#_dbgVisitorStats[data-state="unavailable"]{color:#ffd166;border-color:#665629;background:#2a2518;}',
+      '#_dbgPanel,#_dbgPanel *{-webkit-user-drag:none;}',
       '#_dbgBody{flex:1;overflow-y:auto;padding:6px 10px;-webkit-overflow-scrolling:touch;}',
       '.dbg-entry{padding:3px 0;border-bottom:1px solid #222;word-break:break-all;white-space:pre-wrap;}',
       '.dbg-time{color:#888;margin-right:6px;}',
@@ -131,7 +142,11 @@
       '#_dbgMemory{color:#88ff88;font-size:11px;}',
       '#_dbgToast{position:fixed;bottom:50%;left:50%;transform:translateX(-50%);z-index:1000000;',
       'background:rgba(50,180,50,0.9);color:#fff;padding:8px 20px;border-radius:20px;',
-      'font-size:13px;pointer-events:none;opacity:0;transition:opacity 0.3s;}'
+      'font-size:13px;pointer-events:none;opacity:0;transition:opacity 0.3s;}',
+      '@media (max-width:480px){#_dbgHeader{align-items:flex-start;}',
+      '#_dbgControls{display:grid;grid-template-columns:repeat(3,auto);gap:4px 5px;}',
+      '#_dbgMemory{grid-column:1/-1;text-align:right;white-space:nowrap;}',
+      '#_dbgHeader button{margin-left:0;padding:4px 8px;}}'
     ].join('\n');
     document.head.appendChild(style);
 
@@ -156,6 +171,7 @@
     memSpan.id = '_dbgMemory';
 
     var btnGroup = document.createElement('div');
+    btnGroup.id = '_dbgControls';
 
     var copyBtn = document.createElement('button');
     copyBtn.textContent = '📋 복사';
@@ -193,12 +209,34 @@
     header.appendChild(title);
     header.appendChild(btnGroup);
 
+    var visitorRow = document.createElement('div');
+    visitorRow.id = '_dbgVisitorRow';
+    visitorRow.setAttribute('draggable', 'false');
+
+    var visitorStats = document.createElement('div');
+    visitorStats.id = '_dbgVisitorStats';
+    visitorStats.setAttribute('role', 'status');
+    visitorStats.setAttribute('aria-live', 'polite');
+    visitorStats.setAttribute('aria-atomic', 'true');
+    visitorStats.setAttribute('draggable', 'false');
+    visitorStats.setAttribute('data-state', 'loading');
+    visitorStats.textContent = '👥 순방문자 · 집계 중';
+    visitorRow.appendChild(visitorStats);
+
     var body = document.createElement('div');
     body.id = '_dbgBody';
 
     panel.appendChild(header);
+    panel.appendChild(visitorRow);
     panel.appendChild(body);
     document.body.appendChild(panel);
+
+    window.addEventListener('rhythmjoy:visitor-stats', function (event) {
+      updateVisitorStats(event && event.detail ? event.detail : null);
+    });
+    if (window.RhythmjoyVisitorStats && typeof window.RhythmjoyVisitorStats.getSnapshot === 'function') {
+      updateVisitorStats(window.RhythmjoyVisitorStats.getSnapshot());
+    }
   }
 
   function togglePanel() {
@@ -211,7 +249,51 @@
         updateBadge();
         renderLogs();
         updateMemory();
+        refreshVisitorStats();
       }
+    }
+  }
+
+  function formatVisitorCount(value) {
+    var count = Number(value);
+    if (!isFinite(count) || count < 0) return '—';
+    count = Math.floor(count);
+    try {
+      return count.toLocaleString('ko-KR');
+    } catch (e) {
+      return String(count);
+    }
+  }
+
+  function updateVisitorStats(snapshot) {
+    var element = document.getElementById('_dbgVisitorStats');
+    if (!element) return;
+    if (!snapshot || snapshot.status === 'loading') {
+      element.setAttribute('data-state', 'loading');
+      element.textContent = '👥 순방문자 · 집계 중';
+      element.title = 'KST 기준 오늘 및 누적 순방문 브라우저를 불러오는 중입니다.';
+      return;
+    }
+    if (snapshot.status !== 'ready') {
+      element.setAttribute('data-state', 'unavailable');
+      element.textContent = '👥 방문자 통계 · 연결 확인';
+      element.title = '방문자 통계 API 또는 DB 연결을 확인해 주세요.';
+      return;
+    }
+    element.setAttribute('data-state', 'ready');
+    element.textContent = '👥 순방문자  오늘 ' + formatVisitorCount(snapshot.today) +
+      ' · 누적 ' + formatVisitorCount(snapshot.total);
+    element.title = '봇·자동화 트래픽을 제외한 1st-party 브라우저 기준 고유 방문자' +
+      (snapshot.collectionStartedOn ? ' · 집계 시작 ' + snapshot.collectionStartedOn : '');
+  }
+
+  function refreshVisitorStats() {
+    if (!window.RhythmjoyVisitorStats) return;
+    if (typeof window.RhythmjoyVisitorStats.getSnapshot === 'function') {
+      updateVisitorStats(window.RhythmjoyVisitorStats.getSnapshot());
+    }
+    if (typeof window.RhythmjoyVisitorStats.refreshStats === 'function') {
+      window.RhythmjoyVisitorStats.refreshStats(false);
     }
   }
 

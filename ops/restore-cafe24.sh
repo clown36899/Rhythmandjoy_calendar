@@ -81,6 +81,10 @@ require_exact_targets() {
         echo "Unexpected APACHE_HTTPS_CONF: $APACHE_HTTPS_CONF" >&2
         exit 1
     }
+    [[ "$PHP_CLI_BIN" == "/usr/bin/php" ]] || {
+        echo "Unexpected PHP_CLI_BIN: $PHP_CLI_BIN" >&2
+        exit 1
+    }
 
     abort_for_forbidden_target "APP_ROOT" "$APP_ROOT"
     abort_for_forbidden_target "OPS_ROOT" "$OPS_ROOT"
@@ -173,7 +177,7 @@ install_apache_conf() {
     install -m 0644 "$source_path" "$APACHE_CONF_DIR/$filename"
 }
 
-for required in VPS_HOSTNAME APP_ROOT OPS_ROOT APACHE_CONF_DIR CACHE_SERVICE LEGACY_EMAIL_SERVICE APACHE_HTTP_CONF APACHE_HTTPS_CONF SERVER_ENV_FILE PYTHON_BIN; do
+for required in VPS_HOSTNAME APP_ROOT OPS_ROOT APACHE_CONF_DIR CACHE_SERVICE LEGACY_EMAIL_SERVICE APACHE_HTTP_CONF APACHE_HTTPS_CONF SERVER_ENV_FILE PYTHON_BIN PHP_CLI_BIN; do
     require_var "$required"
 done
 
@@ -188,6 +192,8 @@ require_exact_targets
 RHYTHMJOY_ENV_FILE="$SERVER_ENV_FILE" "$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_email_import_selftest.py"
 "$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_email_import.py" --event-order-selftest
 "$PYTHON_BIN" "$REPO_ROOT/ops/rhythmjoy_ledger_invariant_selftest.py"
+"$PHP_CLI_BIN" "$REPO_ROOT/www/calendar_set/calendar_v10/visitor-stats.php" self-test
+RHYTHMJOY_ENV_FILE="$SERVER_ENV_FILE" "$PHP_CLI_BIN" "$REPO_ROOT/ops/rhythmjoy_visitor_stats_db_selftest.php"
 
 # Fail closed during schema/code handoff. A running old importer must not
 # update timestamp-only ledger state while the new event-id ordering columns
@@ -301,5 +307,6 @@ cat <<EOF
 EOF
 cat <<'EOF'
 - NAVER_MAIL_PASSWORD and other private values from ops/env.example
+- RHYTHMJOY_VISITOR_STATS_SECRET (or a secure existing SECRET_KEY fallback)
 - Let's Encrypt certificates, or rerun certbot after DNS points here
 EOF

@@ -5,6 +5,7 @@ import logging
 import json
 import re
 import sys
+import tempfile
 import types
 import unittest
 from email.message import EmailMessage
@@ -19,6 +20,7 @@ except ImportError:
     sys.modules['pymysql'] = types.SimpleNamespace()
 
 import rhythmjoy_email_import as email_import
+import rhythmjoy_calendar_cache as calendar_cache
 import rhythmjoy_reflection_audit as reflection_audit
 
 
@@ -109,6 +111,87 @@ class FakeImap:
 
 
 class EmailPipelineSelfTest(unittest.TestCase):
+    def test_calendar_cache_uses_confirmed_db_ledger_as_source(self):
+        confirmed = {
+            'id': 9140,
+            'source_platform': 'naver',
+            'current_status': 'confirmed',
+            'reservation_number': '1317110201',
+            'reserver_name': '김*진님',
+            'room_key': 'c',
+            'reservation_date': '2026-08-09',
+            'start_time': '13:00:00',
+            'end_time': '17:00:00',
+            'updated_at': '2026-08-08 19:13:16',
+        }
+        events, meta = calendar_cache.build_db_calendar_events([confirmed])
+        self.assertEqual(meta['confirmedCount'], 1)
+        self.assertEqual(meta['publishedCount'], 1)
+        self.assertEqual(events[0]['id'], 'ledger:9140')
+        self.assertEqual(events[0]['extendedProps']['recordSource'], 'db-ledger')
+
+    def test_calendar_cache_suppresses_google_event_for_canceled_ledger(self):
+        canceled = {
+            'id': 1,
+            'source_platform': 'naver',
+            'current_status': 'canceled',
+            'reservation_number': '1310000001',
+            'room_key': 'b',
+            'reservation_date': '2026-08-09',
+            'start_time': '14:00:00',
+            'end_time': '16:00:00',
+        }
+        events, meta = calendar_cache.build_db_calendar_events([canceled])
+        self.assertEqual(events, [])
+        self.assertEqual(meta['publishedCount'], 0)
+
+    def test_reflection_audit_only_sends_when_issue_state_changes(self):
+        result = {
+            'checked': 10,
+            'okCount': 9,
+            'waitingCount': 0,
+            'issueCount': 1,
+            'duplicateCount': 0,
+            'calendarMismatchCount': 0,
+            'latestIssues': [{
+                'sourcePlatform': 'naver',
+                'targetPlatform': 'spacecloud',
+                'date': '2026-08-10',
+                'roomKey': 'E',
+                'startTime': '19:00',
+                'endTime': '20:00',
+                'taskType': 'upload',
+                'taskId': 515,
+                'reason': '반영 작업 needs_review',
+            }],
+        }
+        logger = logging.getLogger(__name__)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = str(Path(temp_dir) / 'reflection-audit-state.json')
+            with mock.patch.object(
+                reflection_audit, 'send_telegram', return_value={'sent': True, 'messageId': 1}
+            ) as send, mock.patch.dict(
+                reflection_audit.os.environ,
+                {'RHYTHMJOY_REFLECTION_AUDIT_NOTIFY_COOLDOWN_SECONDS': '3600'},
+            ):
+                with mock.patch.object(reflection_audit.time, 'time', return_value=1000):
+                    first = reflection_audit.notify_if_needed(result, state_path, logger)
+                with mock.patch.object(reflection_audit.time, 'time', return_value=1300):
+                    second = reflection_audit.notify_if_needed(result, state_path, logger)
+                with mock.patch.object(reflection_audit.time, 'time', return_value=1600):
+                    third = reflection_audit.notify_if_needed(result, state_path, logger)
+                with mock.patch.object(reflection_audit.time, 'time', return_value=4601):
+                    unchanged_later = reflection_audit.notify_if_needed(result, state_path, logger)
+
+            self.assertTrue(first['sent'])
+            self.assertEqual(second, {'sent': False, 'reason': 'state_unchanged'})
+            self.assertEqual(third, {'sent': False, 'reason': 'state_unchanged'})
+            self.assertEqual(unchanged_later, {'sent': False, 'reason': 'state_unchanged'})
+            self.assertEqual(send.call_count, 1)
+            state = json.loads(Path(state_path).read_text(encoding='utf-8'))
+            self.assertEqual(state['lastSentAtEpoch'], 1000)
+
     def test_imap_fetch_does_not_mark_email_seen(self):
         self.assertIn('BODY.PEEK[]', email_import.IMAP_FETCH_QUERY)
         self.assertNotIn('RFC822', email_import.IMAP_FETCH_QUERY)

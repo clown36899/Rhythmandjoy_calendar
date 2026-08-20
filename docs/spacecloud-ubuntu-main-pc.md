@@ -188,6 +188,31 @@ rhythmjoy-log-sync.timer
 rhythmjoy-log-sync.service
 ```
 
+## Network Reliability
+
+The production mini PC currently has no usable Ethernet link, so Wi-Fi is the
+only route to Cafe24. Disable NetworkManager Wi-Fi power saving on that active
+connection; the setting is persistent across reconnects and reboots:
+
+```bash
+bash ops/configure-ubuntu-wifi-reliability.sh --check
+sudo bash ops/configure-ubuntu-wifi-reliability.sh --apply
+```
+
+Run `--apply` from the Ubuntu desktop or with `sudo`, because an SSH session may
+not have PolicyKit authority to change the connection. The script uses
+`nmcli device reapply` and does not deliberately disconnect the only network
+path. If the driver cannot apply the live change, it saves the persistent
+profile setting and asks for one controlled local reconnect.
+
+The browser watcher classifies SSH failures at the SSH process boundary rather
+than matching arbitrary exception text. A short route loss keeps the watcher
+alive, leaves queued work in the DB ledger, and skips DB-dependent audits until
+the connection returns. Only an outage lasting at least 60 seconds sends a
+connection warning; recovery then resumes the queue in source order. A fatal
+process error exits nonzero so systemd performs the restart described by the
+notification.
+
 ## Logs And Monitoring
 
 The durable work state is on Cafe24:
