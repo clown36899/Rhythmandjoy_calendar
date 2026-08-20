@@ -538,9 +538,28 @@ def operator_customer_cancellation_payload(value):
         return False
     if not isinstance(payload, dict):
         return False
-    return payload.get('source') in (
+    if payload.get('source') in (
         'sync-admin-customer-request',
         'operator-manual-db-cancellation',
+    ):
+        return True
+    if payload.get('source') != 'automatic-later-booking-cancellation':
+        return False
+    try:
+        identity_ids = [
+            int(payload.get(key) or 0)
+            for key in (
+                'cancelTaskId',
+                'sourceTaskId',
+                'winnerLedgerId',
+                'loserLedgerId',
+            )
+        ]
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        all(value > 0 for value in identity_ids)
+        and payload.get('platformStatus') in ('canceled', 'already-canceled')
     )
 
 

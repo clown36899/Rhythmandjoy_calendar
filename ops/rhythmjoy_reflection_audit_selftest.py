@@ -45,6 +45,21 @@ def main():
     assert audit.operator_customer_cancellation_payload(json.dumps({
         'source': 'naver-email-cancellation',
     })) is False
+    automatic_cancellation = {
+        'source': 'automatic-later-booking-cancellation',
+        'cancelTaskId': 713,
+        'sourceTaskId': 712,
+        'winnerLedgerId': 9893,
+        'loserLedgerId': 9892,
+        'platformStatus': 'canceled',
+    }
+    assert audit.operator_customer_cancellation_payload(
+        json.dumps(automatic_cancellation)
+    ) is True
+    assert audit.operator_customer_cancellation_payload(json.dumps({
+        **automatic_cancellation,
+        'cancelTaskId': None,
+    })) is False
     assert audit.ingestion_gap_reason({
         'event_type': 'reservation',
         'parse_status': 'parsed',
@@ -55,6 +70,14 @@ def main():
             'reason': 'customer-request',
         }),
         'task_status': 'needs_review',
+    }, True, True, 30) == ''
+    assert audit.ingestion_gap_reason({
+        'event_type': 'reservation',
+        'parse_status': 'parsed',
+        'processing_status': 'spacecloud_upload_pending',
+        'ledger_status': 'canceled',
+        'ledger_cancel_payload_json': json.dumps(automatic_cancellation),
+        'task_status': 'done',
     }, True, True, 30) == ''
 
     overlap_rows = [
