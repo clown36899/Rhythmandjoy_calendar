@@ -204,6 +204,32 @@ test('post-submit identity requires both reservation number and task id', () => 
   assert.ok(wrongTask.errors.includes('task-id-mismatch:558'));
 });
 
+test('explicitly linked legacy mirrors use reservation, slot, room, and name when taskId is absent', () => {
+  const popup = '직접 추가한 예약 건입니다. B홀 16평형-외부신발금지 예약자명 : 황*연님 예약내용 : 2026.09.04(금), 20:00~22:00, 2시간 메모 : Rhythmjoy Google Calendar sync / room=B홀 / googleEventId=c64e81k7ask174v14vanc864n0 / naverReservationNo=1289402981';
+  const row = {
+    taskId: 332,
+    requireTaskId: true,
+    allowLegacyTasklessIdentity: true,
+    roomKey: 'b',
+    date: '2026-09-04',
+    startTime: '20:00',
+    endTime: '22:00',
+    reserverName: '황*연님',
+    reservationNo: '1289402981',
+  };
+
+  const exact = popupDeleteVerification(popup, row);
+  assert.equal(exact.ok, true);
+  assert.equal(exact.identity.mode, 'legacy-reservation-number-and-name');
+  assert.equal(exact.identity.legacyTasklessIdentityMatched, true);
+  assert.deepEqual(exact.identity.observedTaskIds, []);
+  assert.equal(popupDeleteVerification(popup, { ...row, allowLegacyTasklessIdentity: false }).ok, false);
+  assert.equal(popupDeleteVerification(popup, { ...row, reserverName: '김*연님' }).ok, false);
+  const conflictingTask = popupDeleteVerification(`${popup} / taskId=999`, row);
+  assert.equal(conflictingTask.ok, false);
+  assert.ok(conflictingTask.errors.includes('task-id-mismatch:332'));
+});
+
 test('delete verification reports the different reservation number occupying a rebooked slot', () => {
   const popup = '직접 추가한 예약 건입니다. A홀 20평형-외부신발금지 예약자명 : 이*지님 예약내용 : 2026.10.03(토), 12:00~14:00, 2시간 메모 : Rhythmjoy Naver email DB sync / taskId=649 / naverReservationNo=1323404722';
   const result = popupDeleteVerification(popup, {
@@ -315,6 +341,48 @@ test('calendar API rejects two distinct schedules with the same exact memo ident
   assert.ok(result.identityVerification.errors.includes('duplicate-exact-identity'));
 });
 
+test('calendar API accepts only explicitly linked legacy taskless mirror identity', () => {
+  const schedule = {
+    id: 9448534,
+    name: '황*연님',
+    symd: '20260904',
+    eymd: '20260904',
+    shour: 20,
+    ehour: 21,
+    memo: 'Rhythmjoy Google Calendar sync / room=B홀 / googleEventId=c64e81k7ask174v14vanc864n0 / naverReservationNo=1289402981',
+  };
+  const calendar = {
+    ok: true,
+    status: 200,
+    productId: '108674',
+    days: [{ ymd: '20260904', externalSchedules: [schedule] }],
+  };
+  const row = {
+    taskId: 332,
+    requireTaskId: true,
+    allowLegacyTasklessIdentity: true,
+    date: '2026-09-04',
+    startTime: '20:00',
+    endTime: '22:00',
+    reserverName: '황*연님',
+    reservationNo: '1289402981',
+  };
+
+  const exact = verifySpacecloudCalendarIdentity(calendar, row);
+  assert.equal(exact.identityMatched, true);
+  assert.equal(exact.identityVerification.scheduleId, '9448534');
+  assert.equal(exact.absenceBlockingCandidateCount, 1);
+  assert.equal(exact.differentReservationCandidateCount, 0);
+  assert.equal(verifySpacecloudCalendarIdentity(calendar, { ...row, allowLegacyTasklessIdentity: false }).identityMatched, false);
+  assert.equal(verifySpacecloudCalendarIdentity(calendar, { ...row, reservationNo: '1289402982' }).identityMatched, false);
+  assert.equal(verifySpacecloudCalendarIdentity(calendar, { ...row, reserverName: '김*연님' }).identityMatched, false);
+  const conflictingTaskCalendar = {
+    ...calendar,
+    days: [{ ymd: '20260904', externalSchedules: [{ ...schedule, memo: `${schedule.memo} / taskId=999` }] }],
+  };
+  assert.equal(verifySpacecloudCalendarIdentity(conflictingTaskCalendar, row).identityMatched, false);
+});
+
 test('calendar API polling waits for the authoritative schedule instead of reading stale DOM', async () => {
   let clock = 0;
   let reads = 0;
@@ -397,6 +465,95 @@ test('calendar API absence requires consecutive authoritative reads and never tr
   });
   assert.equal(failed.absenceConfirmed, false);
   assert.equal(failed.reason, 'calendar-api-read-failed');
+});
+
+test('calendar API never treats a same-reservation taskId mismatch as absence', async () => {
+  let clock = 0;
+  const row = {
+    taskId: 332,
+    requireTaskId: true,
+    date: '2026-09-04',
+    startTime: '20:00',
+    endTime: '22:00',
+    reserverName: '황*연님',
+    reservationNo: '1289402981',
+  };
+  const result = await pollForSpacecloudCalendarAbsence({
+    row,
+    readCalendar: async () => ({
+      ok: true,
+      status: 200,
+      productId: '108674',
+      days: [{
+        ymd: '20260904',
+        externalSchedules: [{
+          id: 9448534,
+          name: '황*연님',
+          symd: '20260904',
+          eymd: '20260904',
+          shour: 20,
+          ehour: 21,
+          memo: 'naverReservationNo=1289402981',
+        }],
+      }],
+    }),
+    wait: async (delayMs) => { clock += delayMs; },
+    now: () => clock,
+    timeoutMs: 20,
+    intervalMs: 10,
+    requiredConsecutiveReads: 2,
+  });
+
+  assert.equal(result.candidateCount, 1);
+  assert.equal(result.identityCandidateCount, 0);
+  assert.equal(result.absenceBlockingCandidateCount, 1);
+  assert.equal(result.differentReservationCandidateCount, 0);
+  assert.equal(result.absenceConfirmed, false);
+  assert.equal(result.consecutiveAbsentReads, 0);
+});
+
+test('calendar API absence preserves a proven different-reservation same-slot successor', async () => {
+  let clock = 0;
+  const result = await pollForSpacecloudCalendarAbsence({
+    row: {
+      taskId: 332,
+      requireTaskId: true,
+      date: '2026-09-04',
+      startTime: '20:00',
+      endTime: '22:00',
+      reserverName: '황*연님',
+      reservationNo: '1289402981',
+    },
+    readCalendar: async () => ({
+      ok: true,
+      status: 200,
+      productId: '108674',
+      days: [{
+        ymd: '20260904',
+        externalSchedules: [{
+          id: 9550001,
+          name: '김*희님',
+          symd: '20260904',
+          eymd: '20260904',
+          shour: 20,
+          ehour: 21,
+          memo: 'taskId=901 / naverReservationNo=1399999999',
+        }],
+      }],
+    }),
+    wait: async (delayMs) => { clock += delayMs; },
+    now: () => clock,
+    timeoutMs: 20,
+    intervalMs: 10,
+    requiredConsecutiveReads: 2,
+  });
+
+  assert.equal(result.candidateCount, 1);
+  assert.equal(result.identityCandidateCount, 0);
+  assert.equal(result.absenceBlockingCandidateCount, 0);
+  assert.equal(result.differentReservationCandidateCount, 1);
+  assert.equal(result.absenceConfirmed, true);
+  assert.equal(result.consecutiveAbsentReads, 2);
 });
 
 test('ambiguous upload retries are verification-only and never auto-resubmit', () => {

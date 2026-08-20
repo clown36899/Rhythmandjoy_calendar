@@ -467,6 +467,7 @@ export function verifySpacecloudCalendarIdentity(calendarResult, row) {
   const expectedTaskId = String(row.taskId || '').trim();
   const expectedReservationNo = String(row.reservationNo || '').trim();
   const expectedName = normalizeName(row.reserverName || '');
+  const allowLegacyTasklessIdentity = row.allowLegacyTasklessIdentity === true;
 
   if (!calendarResult?.ok) {
     return {
@@ -477,6 +478,8 @@ export function verifySpacecloudCalendarIdentity(calendarResult, row) {
       apiError: String(calendarResult?.error || 'calendar-api-read-failed'),
       productId: String(calendarResult?.productId || ''),
       candidateCount: 0,
+      absenceBlockingCandidateCount: 0,
+      differentReservationCandidateCount: 0,
       identityCandidateCount: 0,
       nameMatched: false,
       identityMatched: false,
@@ -508,18 +511,36 @@ export function verifySpacecloudCalendarIdentity(calendarResult, row) {
   const candidates = [...uniqueSchedules.values()];
   const evaluated = candidates.map((candidate) => {
     const errors = [];
+    const candidateName = normalizeName(candidate.name);
+    const legacyTasklessCandidate = Boolean(
+      allowLegacyTasklessIdentity
+      && expectedTaskId
+      && !candidate.taskId
+    );
     if (row.requireTaskId && !expectedTaskId) errors.push('expected-task-id-missing');
-    if (expectedTaskId && candidate.taskId !== expectedTaskId) errors.push('task-id-mismatch');
+    if (expectedTaskId && candidate.taskId !== expectedTaskId && !legacyTasklessCandidate) errors.push('task-id-mismatch');
     if (expectedReservationNo && candidate.reservationNo !== expectedReservationNo) errors.push('reservation-number-mismatch');
     // Reservation number (+ task id when available) is the durable mirror
     // identity. Display names are masked and can change formatting, so name is
-    // used only as a legacy fallback when no reservation number exists.
+    // normally used only as a legacy fallback when no reservation number
+    // exists. A specifically-authorized legacy upload has no taskId memo, so
+    // it must additionally match the reservation number and display name.
+    if (legacyTasklessCandidate && !expectedReservationNo) errors.push('legacy-reservation-number-required');
+    if (legacyTasklessCandidate && !expectedName) errors.push('legacy-reserver-name-required');
+    if (legacyTasklessCandidate && expectedName && candidateName !== expectedName) errors.push('reserver-name-mismatch');
     if (!expectedReservationNo && expectedName && normalizeName(candidate.name) !== expectedName) errors.push('reserver-name-mismatch');
     if (!expectedTaskId && !expectedReservationNo && !expectedName) errors.push('expected-identity-missing');
     return { candidate, errors };
   });
   const exactMatches = evaluated.filter((entry) => entry.errors.length === 0);
   const identityMatched = exactMatches.length === 1;
+  const differentReservationCandidates = candidates.filter((candidate) => Boolean(
+    expectedReservationNo
+    && candidate.reservationNo
+    && candidate.reservationNo !== expectedReservationNo
+    && (!expectedTaskId || candidate.taskId !== expectedTaskId)
+  ));
+  const absenceBlockingCandidateCount = candidates.length - differentReservationCandidates.length;
   const mismatchErrors = [...new Set(evaluated.flatMap((entry) => entry.errors))];
   if (exactMatches.length > 1) mismatchErrors.push('duplicate-exact-identity');
 
@@ -535,6 +556,8 @@ export function verifySpacecloudCalendarIdentity(calendarResult, row) {
     apiError: '',
     productId: String(calendarResult.productId || ''),
     candidateCount: candidates.length,
+    absenceBlockingCandidateCount,
+    differentReservationCandidateCount: differentReservationCandidates.length,
     identityCandidateCount: exactMatches.length,
     nameMatched: expectedName
       ? candidates.some((candidate) => normalizeName(candidate.name) === expectedName)
@@ -627,7 +650,11 @@ export async function pollForSpacecloudCalendarAbsence({
     }
     candidateReadCount += 1;
     latest = verifySpacecloudCalendarIdentity(calendarResult, row);
-    if (calendarResult?.ok && Number(latest.identityCandidateCount || 0) === 0) {
+    // A same-reservation or incomplete-identity candidate blocks absence. A
+    // candidate carrying a different durable reservation number (and not the
+    // target task id) is a proven same-slot successor, so it must survive while
+    // the canceled target is allowed to reconcile as absent.
+    if (calendarResult?.ok && Number(latest.absenceBlockingCandidateCount || 0) === 0) {
       consecutiveAbsentReads += 1;
       if (consecutiveAbsentReads >= Math.max(1, Number(requiredConsecutiveReads || 1))) break;
     } else {
@@ -1488,6 +1515,7 @@ export function popupDeleteVerification(popupText, row) {
   const maskedNameKey = normalizeName(displayReserverName(row.reserverName));
   const reservationNo = String(row.reservationNo || '').trim();
   const taskId = String(row.taskId || '').trim();
+  const allowLegacyTasklessIdentity = row.allowLegacyTasklessIdentity === true;
   const timePatterns = [
     `${startHour}:00~${endHour}:00`,
     `${String(startHour).padStart(2, '0')}:00~${String(endHour).padStart(2, '0')}:00`,
@@ -1521,8 +1549,25 @@ export function popupDeleteVerification(popupText, row) {
     taskId
     && new RegExp(`taskid=${escapedTaskId}(?!\\d)`, 'i').test(normalized)
   );
+  const observedTaskIds = [...new Set(
+    [...normalized.matchAll(/taskid=(\d+)(?!\d)/gi)]
+      .map((match) => String(match[1] || '').trim())
+      .filter(Boolean),
+  )];
+  const legacyTasklessIdentityMatched = Boolean(
+    allowLegacyTasklessIdentity
+    && row.requireTaskId
+    && taskId
+    && observedTaskIds.length === 0
+    && reservationNoMatched
+    && nameMatched
+  );
   const identityMode = reservationNo
-    ? row.requireTaskId && taskId ? 'reservation-number-and-task-id' : 'reservation-number'
+    ? row.requireTaskId && taskId
+      ? legacyTasklessIdentityMatched
+        ? 'legacy-reservation-number-and-name'
+        : 'reservation-number-and-task-id'
+      : 'reservation-number'
     : 'reserver-name-fallback';
   if (reservationNo) {
     if (!reservationNoMatched) errors.push(`reservation-number-mismatch:${reservationNo}`);
@@ -1531,7 +1576,7 @@ export function popupDeleteVerification(popupText, row) {
   } else {
     errors.push('identity-missing');
   }
-  if (row.requireTaskId && taskId && !taskIdMatched) {
+  if (row.requireTaskId && taskId && !taskIdMatched && !legacyTasklessIdentityMatched) {
     errors.push(`task-id-mismatch:${taskId}`);
   }
 
@@ -1548,6 +1593,8 @@ export function popupDeleteVerification(popupText, row) {
       reservationNo: reservationNo || '',
       observedReservationNos,
       taskId,
+      observedTaskIds,
+      legacyTasklessIdentityMatched,
     },
   };
 }
@@ -2260,6 +2307,10 @@ export async function deleteSpacecloudDirectReservation(context, task, {
     ...row,
     taskId: mirrorTaskId,
     requireTaskId: Boolean(mirrorTaskId),
+    allowLegacyTasklessIdentity: (
+      task.priorUploadLegacyTasklessIdentity
+      ?? task.prior_upload_legacy_taskless_identity
+    ) === true,
   };
   row.reservationCalendarUrl = task.reservationCalendarUrl || reservationCalendarUrl(row.roomKey);
   if (!row.reservationNo) {
@@ -2336,6 +2387,9 @@ export async function deleteSpacecloudDirectReservation(context, task, {
           scheduleId: '',
           verificationSource: row.preDeleteAbsenceVerification.source || '',
           apiStatus: Number(row.preDeleteAbsenceVerification.apiStatus || 0),
+          candidateCount: Number(row.preDeleteAbsenceVerification.candidateCount || 0),
+          absenceBlockingCandidateCount: Number(row.preDeleteAbsenceVerification.absenceBlockingCandidateCount || 0),
+          differentReservationCandidateCount: Number(row.preDeleteAbsenceVerification.differentReservationCandidateCount || 0),
           identityCandidateCount: Number(row.preDeleteAbsenceVerification.identityCandidateCount || 0),
           identityMatched: false,
           absenceConfirmed: true,
@@ -2430,6 +2484,9 @@ export async function deleteSpacecloudDirectReservation(context, task, {
         scheduleId: row.preDeleteVerification?.identityVerification?.scheduleId || '',
         verificationSource: row.preDeleteVerification?.source || '',
         apiStatus: Number(row.preDeleteVerification?.apiStatus || 0),
+        candidateCount: Number(row.preDeleteVerification?.candidateCount || 0),
+        absenceBlockingCandidateCount: Number(row.preDeleteVerification?.absenceBlockingCandidateCount || 0),
+        differentReservationCandidateCount: Number(row.preDeleteVerification?.differentReservationCandidateCount || 0),
         identityCandidateCount: Number(row.preDeleteVerification?.identityCandidateCount || 0),
         identityMatched: row.preDeleteVerification?.identityMatched === true,
       });

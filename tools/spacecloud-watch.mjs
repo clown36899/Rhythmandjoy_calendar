@@ -2075,6 +2075,8 @@ def enrich_task_row(cur, row):
         row['priorUploadAttempts'] = 0
         row['priorUploadSubmissionAttempted'] = None
         row['priorUploadIdentityMatched'] = False
+        row['priorUploadSource'] = ''
+        row['priorUploadLegacyTasklessIdentity'] = False
         confirmed_event_id = row.get('ledgerConfirmedEmailEventId')
         reservation_no = row.get('reservationNo') or ''
         ledger_key = row.get('ledgerKey') or payload.get('ledger_key') or payload.get('ledgerKey') or ''
@@ -2250,6 +2252,7 @@ def enrich_task_row(cur, row):
                     prior_identity_matched = True
                     break
         if prior_upload:
+            prior_upload_payload = parse_payload(prior_upload)
             try:
                 prior_result = json.loads(prior_upload.get('result_text') or '{}')
             except Exception:
@@ -2263,6 +2266,11 @@ def enrich_task_row(cur, row):
             row['priorUploadAttempts'] = int(prior_upload.get('attempts') or 0)
             row['priorUploadSubmissionAttempted'] = prior_result.get('submissionAttempted')
             row['priorUploadIdentityMatched'] = bool(prior_identity_matched)
+            row['priorUploadSource'] = prior_upload_payload.get('source') or ''
+            row['priorUploadLegacyTasklessIdentity'] = bool(
+                prior_identity_matched
+                and prior_upload_payload.get('source') == 'manual-live-platform-verification'
+            )
 
     if task_type == 'upload':
         row['priorDeleteTaskId'] = None
@@ -3675,6 +3683,8 @@ function compactDirectVerification(value) {
     absenceConfirmed: value.absenceConfirmed === true,
     consecutiveAbsentReads: value.consecutiveAbsentReads,
     candidateCount: value.candidateCount,
+    absenceBlockingCandidateCount: value.absenceBlockingCandidateCount,
+    differentReservationCandidateCount: value.differentReservationCandidateCount,
     identityCandidateCount: value.identityCandidateCount,
     nameMatched: Boolean(value.nameMatched),
     identityMatched: Boolean(value.identityMatched),
@@ -4675,6 +4685,9 @@ async function checkpointRemoteDeleteSubmission(args, task, proof = {}) {
       scheduleId: String(proof.scheduleId || ''),
       source: String(proof.verificationSource || ''),
       apiStatus: Number(proof.apiStatus || 0),
+      candidateCount: Number(proof.candidateCount || 0),
+      absenceBlockingCandidateCount: Number(proof.absenceBlockingCandidateCount || 0),
+      differentReservationCandidateCount: Number(proof.differentReservationCandidateCount || 0),
       identityCandidateCount: Number(proof.identityCandidateCount || 0),
       identityMatched: proof.identityMatched === true,
       absenceConfirmed: proof.absenceConfirmed === true,
@@ -5013,6 +5026,9 @@ try:
         exact_absence_proof_ok = bool(
             exact_proof.get('source') == 'spacecloud-calendar-api'
             and int(exact_proof.get('apiStatus') or 0) == 200
+            and int(exact_proof.get('absenceBlockingCandidateCount') or 0) == 0
+            and int(exact_proof.get('differentReservationCandidateCount') or 0)
+                == int(exact_proof.get('candidateCount') or 0)
             and int(exact_proof.get('identityCandidateCount') or 0) == 0
             and exact_proof.get('absenceConfirmed') is True
             and int(exact_proof.get('consecutiveAbsentReads') or 0) >= 2
@@ -8785,10 +8801,15 @@ function ledgerIssueRow(task, taskType, issue) {
 }
 
 function deleteAlreadyGoneAfterSkippedUploadRow(task) {
+  const legacyMirrorRequiresPlatformInspection = (
+    task.priorUploadLegacyTasklessIdentity
+    ?? task.prior_upload_legacy_taskless_identity
+  ) === true;
   const definitelySkippedBeforeSubmit = Boolean(
     String(task.ledgerStatus || task.ledger_status || '') === 'canceled'
     && (task.priorUploadIdentityMatched ?? task.prior_upload_identity_matched) === true
     && String(task.priorUploadSideEffectState || task.prior_upload_side_effect_state || '') === 'skipped'
+    && !legacyMirrorRequiresPlatformInspection
   );
   if (!definitelySkippedBeforeSubmit) return null;
 
@@ -11349,6 +11370,11 @@ async function runNowModeSelfTest() {
     ...quickCancellationDeleteTask,
     priorUploadIdentityMatched: false,
   }), null, 'a skipped state from a different generation must never close this delete');
+  assert.equal(deleteAlreadyGoneAfterSkippedUploadRow({
+    ...quickCancellationDeleteTask,
+    priorUploadSource: 'manual-live-platform-verification',
+    priorUploadLegacyTasklessIdentity: true,
+  }), null, 'a legacy platform-verified mirror must be inspected even if an older reconciliation marked it skipped');
   const historicalDeleteTask = {
     ...quickCancellationDeleteTask,
     bookingLedgerId: 9001,
@@ -11465,6 +11491,11 @@ async function runNowModeSelfTest() {
     priorDeleteIdentityMatched: true,
   }).status, 'upload-dependency-wait', 'legacy delete completion without absence proof must wait for exact reconciliation');
   assert.match(REMOTE_TASK_ENRICHMENT_PY, /priorUploadSideEffectState/);
+  assert.match(
+    REMOTE_TASK_ENRICHMENT_PY,
+    /priorUploadLegacyTasklessIdentity[\s\S]*manual-live-platform-verification/,
+    'only an exactly linked legacy platform-verification upload may enable taskless mirror identity',
+  );
   assert.match(REMOTE_TASK_ENRICHMENT_PY, /booking_ledger_id/);
   assert.match(REMOTE_TASK_ENRICHMENT_PY, /priorDeleteSideEffectState/);
   assert.match(
@@ -11612,6 +11643,11 @@ async function runNowModeSelfTest() {
     checkpointRemoteDeleteSubmission.toString(),
     /manual_delete_generation[\s\S]*automation_cancel_task_id[\s\S]*customer_cancellation_task_id[\s\S]*manual_prior_identity_ok/,
     'manual mirror delete checkpoint must prove the cancellation task, ledger, and prior upload generation',
+  );
+  assert.match(
+    checkpointRemoteDeleteSubmission.toString(),
+    /absenceBlockingCandidateCount[\s\S]*differentReservationCandidateCount[\s\S]*exact_absence_proof_ok[\s\S]*absenceBlockingCandidateCount[^\n]*== 0[\s\S]*differentReservationCandidateCount/,
+    'delete absence checkpoint must reject ambiguous occupants while preserving a proven different-reservation successor',
   );
   assert.match(
     REMOTE_TASK_ENRICHMENT_PY,
