@@ -3,12 +3,43 @@ import test from 'node:test';
 
 import {
   buildHourlySlotRows,
+  classifyNaverSessionCheck,
   classifyNaverCancelPanelText,
   partitionNaverActionableSlotRows,
   selectNaverCancelPanelText,
   selectNaverScheduleEditorPanel,
   waitForNaverCancelPanelIdentity,
 } from './naver-playwright-availability.mjs';
+
+test('distinguishes an explicit Naver login page from a transient calendar load failure', () => {
+  assert.deepEqual(classifyNaverSessionCheck({
+    url: 'https://nid.naver.com/nidlogin.login?mode=form',
+  }), {
+    ok: false,
+    status: 'login_required',
+    loginRequired: true,
+    reason: 'Naver authentication page is visible',
+  });
+
+  const delayed = classifyNaverSessionCheck({
+    url: 'https://partner.booking.naver.com/bizes/1257912/booking-calendar-view',
+    calendarVisible: false,
+  });
+  assert.equal(delayed.status, 'check_failed');
+  assert.equal(delayed.loginRequired, false);
+
+  const navigationTimeout = classifyNaverSessionCheck({
+    url: 'https://partner.spacecloud.kr/reservation-calendar',
+    navigationError: 'page.goto: Timeout 15000ms exceeded',
+  });
+  assert.equal(navigationTimeout.status, 'check_failed');
+  assert.match(navigationTimeout.reason, /navigation failed/);
+
+  assert.equal(classifyNaverSessionCheck({
+    url: 'https://partner.booking.naver.com/bizes/1257912/booking-calendar-view',
+    calendarVisible: true,
+  }).status, 'ready');
+});
 
 test('selects the full Naver schedule editor instead of the visible header shell', () => {
   const selected = selectNaverScheduleEditorPanel([

@@ -5,6 +5,7 @@ import {
   assessCalendarMonthGrid,
   calendarGridExpectation,
   classifyDirectUploadVerification,
+  classifySpacecloudSessionCheck,
   directUploadRetryMode,
   directUploadVerificationTarget,
   pollForSpacecloudCalendarAbsence,
@@ -16,6 +17,36 @@ import {
   verifySpacecloudCalendarIdentity,
   waitForDirectEventCandidates,
 } from './spacecloud-playwright-uploader.mjs';
+
+test('distinguishes an explicit SpaceCloud login page from a transient calendar load failure', () => {
+  assert.deepEqual(classifySpacecloudSessionCheck({
+    url: 'https://partner.spacecloud.kr/auth/login',
+  }), {
+    ok: false,
+    status: 'login_required',
+    loginRequired: true,
+    reason: 'SpaceCloud authentication page is visible',
+  });
+
+  const delayed = classifySpacecloudSessionCheck({
+    url: 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
+    addVisible: false,
+  });
+  assert.equal(delayed.status, 'check_failed');
+  assert.equal(delayed.loginRequired, false);
+
+  const navigationTimeout = classifySpacecloudSessionCheck({
+    url: 'https://partner.booking.naver.com/bizes/1257912/booking-calendar-view',
+    navigationError: 'page.goto: Timeout 15000ms exceeded',
+  });
+  assert.equal(navigationTimeout.status, 'check_failed');
+  assert.match(navigationTimeout.reason, /navigation failed/);
+
+  assert.equal(classifySpacecloudSessionCheck({
+    url: 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
+    addVisible: true,
+  }).status, 'ready');
+});
 
 function calendarSnapshot(year, month, cellCount) {
   const expected = calendarGridExpectation(year, month);

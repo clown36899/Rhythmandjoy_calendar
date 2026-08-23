@@ -12792,6 +12792,35 @@ async function runNowModeSelfTest() {
   assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'login_required' }], 'naver'), true);
   assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'ready' }], 'naver'), false);
   assert.equal(sessionBlockedTaskResult('naver').attempted, 0);
+  assert.equal(automationSessionCheckStatus({ ok: false, status: 'check_failed' }), 'check_failed');
+  assert.equal(automationSessionCheckStatus({ ok: false, status: 'login_required' }), 'login_required');
+  assert.equal(automationSessionCheckStatus({ ok: false, loginRequired: true }), 'login_required');
+  assert.equal(automationSessionCheckStatus({ ok: false }), 'check_failed');
+  const firstTransientSessionFailure = sessionFailureObservation(null, 'check_failed');
+  const repeatedTransientSessionFailure = sessionFailureObservation({
+    status: 'check_failed',
+    ...firstTransientSessionFailure,
+  }, 'check_failed');
+  assert.deepEqual(firstTransientSessionFailure, {
+    consecutiveFailureCount: 1,
+    notificationEligible: false,
+  });
+  assert.deepEqual(repeatedTransientSessionFailure, {
+    consecutiveFailureCount: 2,
+    notificationEligible: true,
+  });
+  assert.equal(sessionProblemNotificationEligible({
+    status: 'check_failed',
+    ...firstTransientSessionFailure,
+  }), false);
+  assert.equal(sessionProblemNotificationEligible({
+    status: 'check_failed',
+    ...repeatedTransientSessionFailure,
+  }), true);
+  assert.equal(sessionFailureObservation(null, 'login_required').notificationEligible, true);
+  assert.equal(sessionFailureObservation(repeatedTransientSessionFailure, 'ready').consecutiveFailureCount, 0);
+  assert.match(sessionRecoveryTitle('naver', 'problem:check_failed:browser_check_failed'), /화면 검사 복구/);
+  assert.match(sessionRecoveryTitle('naver', 'problem:login_required:server_rejected_unexpired_cookie'), /로그인 복구/);
   assert.match(sessionProblemMessage('naver', { status: 'login_required' }), /같은 세션 장애를 예약별로 반복 알리지 않습니다/);
   assert.doesNotMatch(sessionProblemMessage('naver', { status: 'login_required' }), /세션 만료/);
   const crashedSession = {
@@ -12994,6 +13023,7 @@ async function runNowModeSelfTest() {
       'admin platform audit results and audit failures persist to the DB-backed alert center before checkpointing independently of Telegram',
       'platform read failures stay distinct from mismatches and require a three-minute second pass before alerting',
       'platform session circuit breakers pause affected work and audits without consuming reservation attempts',
+      'explicit login pages alert immediately while transient session-page failures require two consecutive checks',
       'session diagnostics distinguish local cookie loss, scheduled expiry, and server rejection without storing cookie values',
       'customer DB reservations rotate through source and mirrored actual-platform inspection',
       'customer platform audit alerts persist to DB before the local interval checkpoint',
@@ -13019,7 +13049,9 @@ async function checkAutomationSessionStatuses(args, context) {
     }
     const after = await collectSessionCookieSnapshot(context, platform, salt);
     const runtime = await sessionRuntimeSnapshot(args, context, salt);
-    const status = error ? 'check_failed' : (result?.ok ? 'ready' : 'login_required');
+    const status = automationSessionCheckStatus(result, error);
+    const previous = previousStatuses.find((candidate) => candidate?.platform === platform) || null;
+    const failureObservation = sessionFailureObservation(previous, status);
     const diagnostic = buildSessionDiagnostic({
       platform,
       status,
@@ -13036,6 +13068,7 @@ async function checkAutomationSessionStatuses(args, context) {
         status,
         note: sanitizeSessionDiagnosticNote(error?.message || error),
         diagnostic,
+        ...failureObservation,
       });
       return;
     }
@@ -13047,6 +13080,7 @@ async function checkAutomationSessionStatuses(args, context) {
         : `${sessionDiagnosticLabel(diagnostic.failureCategory)} · ${result?.reason || 'login may be required'}`
       ),
       diagnostic,
+      ...failureObservation,
     });
   };
 
@@ -13079,6 +13113,28 @@ function sessionStatusForPlatform(statuses, platform) {
     .find((row) => row?.platform === platform) || null;
 }
 
+function automationSessionCheckStatus(result, error = null) {
+  if (error) return 'check_failed';
+  if (result?.ok || result?.status === 'ready') return 'ready';
+  if (result?.status === 'login_required' || result?.loginRequired === true) return 'login_required';
+  return 'check_failed';
+}
+
+function sessionFailureObservation(previous, status) {
+  if (status === 'ready') {
+    return { consecutiveFailureCount: 0, notificationEligible: false };
+  }
+  const previousCount = previous?.status === status
+    ? Math.max(1, Number(previous?.consecutiveFailureCount || 0))
+    : 0;
+  const consecutiveFailureCount = previousCount + 1;
+  return {
+    consecutiveFailureCount,
+    notificationEligible: status === 'login_required'
+      || (status === 'check_failed' && consecutiveFailureCount >= 2),
+  };
+}
+
 function platformSessionBlocked(statuses, platform) {
   const row = sessionStatusForPlatform(statuses, platform);
   return Boolean(row && ['login_required', 'check_failed'].includes(String(row.status || '')));
@@ -13105,9 +13161,9 @@ function sessionProblemMessage(platform, row) {
   }
   return compactNotice(`🟡 ${sessionPlatformLabel(platform)} 화면 검사 장애`, [
     '판정: 로그인 만료 확정 아님',
-    '상태: 자동 브라우저 재생성 후에도 실제 화면 확인 실패',
+    `상태: 실제 화면 확인 ${Math.max(2, Number(row?.consecutiveFailureCount || 0))}회 연속 실패`,
     `원인: ${cleanTelegramText(row?.note || diagnosticReason || '화면 확인 실패', 140)}`,
-    '조치: 다음 순환에서 다시 검사하며 같은 원인은 반복 발송하지 않습니다.',
+    '조치: 해당 작업은 안전하게 대기하며 다음 순환에서 자동 재검사합니다.',
   ]);
 }
 
@@ -13115,6 +13171,20 @@ function sessionProblemSignature(row) {
   const status = String(row?.status || 'check_failed');
   const category = String(row?.diagnostic?.failureCategory || 'unknown');
   return `problem:${status}:${category}`;
+}
+
+function sessionProblemNotificationEligible(row) {
+  if (row?.status === 'login_required') return true;
+  if (row?.status !== 'check_failed') return false;
+  return row?.notificationEligible === true
+    || Number(row?.consecutiveFailureCount || 0) >= 2;
+}
+
+function sessionRecoveryTitle(platform, previousSignature) {
+  const label = sessionPlatformLabel(platform);
+  return String(previousSignature || '').startsWith('problem:check_failed:')
+    ? `✅ ${label} 화면 검사 복구`
+    : `✅ ${label} 로그인 복구`;
 }
 
 function browserSessionRecoveryNeeded(statuses) {
@@ -13130,13 +13200,19 @@ async function notifySessionStateChanges(args, statuses) {
     if (!row || !['ready', 'login_required', 'check_failed'].includes(String(row.status || ''))) continue;
     const key = `system:session:${platform}`;
     if (row.status !== 'ready') {
+      if (!sessionProblemNotificationEligible(row)) {
+        if (!row.cached) {
+          logLine(`telegram deferred until repeated session check failure: ${platform} ${row.status} count=${row.consecutiveFailureCount || 1}`);
+        }
+        continue;
+      }
       await notifyOnStateChange(args, key, sessionProblemSignature(row), sessionProblemMessage(platform, row));
       continue;
     }
     const state = await readJsonObject(args.notifyState);
     const previous = state[key] || {};
     if (previous.lastSentAt && String(previous.stateSignature || '').startsWith('problem:')) {
-      await notifyOnStateChange(args, key, 'healthy', compactNotice(`✅ ${sessionPlatformLabel(platform)} 로그인 복구`, [
+      await notifyOnStateChange(args, key, 'healthy', compactNotice(sessionRecoveryTitle(platform, previous.stateSignature), [
         '상태: 자동 작업·실제 화면 검사 재개',
         '대기 작업은 DB 접수 순서대로 자동 처리합니다.',
       ]));
@@ -13145,11 +13221,16 @@ async function notifySessionStateChanges(args, statuses) {
 }
 
 async function maybeCheckAutomationSessionStatuses(args, context, workDir) {
+  const statePath = path.join(workDir, 'session-check-state.json');
   if (!args.nowMode || args.sessionCheckIntervalSeconds <= 0) {
-    return checkAutomationSessionStatuses(args, context);
+    const statuses = await checkAutomationSessionStatuses(args, context);
+    await writeJson(statePath, {
+      checkedAt: new Date().toISOString(),
+      statuses,
+    });
+    return statuses;
   }
 
-  const statePath = path.join(workDir, 'session-check-state.json');
   const state = await readJsonObject(statePath);
   const lastCheckedAt = state.checkedAt ? new Date(state.checkedAt).getTime() : 0;
   const now = Date.now();

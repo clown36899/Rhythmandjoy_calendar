@@ -1336,15 +1336,65 @@ export async function checkNaverSmartplaceLogin(context, {
   timeoutMs = 20000,
 } = {}) {
   const page = await pageForContext(context);
-  await page.goto(naverCalendarUrl(businessId), { waitUntil: 'domcontentloaded', timeout: timeoutMs }).catch(() => {});
-  const currentUrl = page.url();
-  const expectedUrl = /^https:\/\/partner\.booking\.naver\.com\/bizes\/[^/]+\/booking-calendar-view(?:[/?#]|$)/.test(currentUrl);
+  let navigationError = '';
+  try {
+    await page.goto(naverCalendarUrl(businessId), { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+  } catch (error) {
+    navigationError = String(error?.message || error).replace(/\s+/g, ' ').trim().slice(0, 240);
+  }
   const calendarVisible = await waitVisible(page, 'button[class*="Select__btn-selected"]', timeoutMs);
-  const ok = expectedUrl && calendarVisible;
+  const currentUrl = page.url();
+  const classification = classifyNaverSessionCheck({
+    url: currentUrl,
+    calendarVisible,
+    navigationError,
+  });
   return {
-    ok,
+    ...classification,
     url: currentUrl,
     title: await page.title().catch(() => ''),
-    reason: ok ? '' : 'Naver SmartPlace calendar URL or controls not visible; login may be required',
+    navigationError,
+  };
+}
+
+export function classifyNaverSessionCheck({
+  url,
+  calendarVisible = false,
+  navigationError = '',
+} = {}) {
+  const currentUrl = String(url || '');
+  let hostname = '';
+  try {
+    hostname = new URL(currentUrl).hostname.toLowerCase();
+  } catch {}
+  const loginRequired = hostname === 'nid.naver.com' || hostname.endsWith('.nid.naver.com');
+  if (loginRequired) {
+    return {
+      ok: false,
+      status: 'login_required',
+      loginRequired: true,
+      reason: 'Naver authentication page is visible',
+    };
+  }
+
+  const expectedUrl = /^https:\/\/partner\.booking\.naver\.com\/bizes\/[^/]+\/booking-calendar-view(?:[/?#]|$)/.test(currentUrl);
+  if (expectedUrl && calendarVisible) {
+    return { ok: true, status: 'ready', loginRequired: false, reason: '' };
+  }
+  if (navigationError) {
+    return {
+      ok: false,
+      status: 'check_failed',
+      loginRequired: false,
+      reason: `Naver SmartPlace navigation failed: ${navigationError}`,
+    };
+  }
+  return {
+    ok: false,
+    status: 'check_failed',
+    loginRequired: false,
+    reason: expectedUrl
+      ? 'Naver SmartPlace calendar controls were not visible before timeout'
+      : 'Naver SmartPlace navigation did not reach the expected calendar',
   };
 }

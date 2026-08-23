@@ -2555,15 +2555,70 @@ export async function checkSpacecloudLogin(context, {
   timeoutMs = 20000,
 } = {}) {
   const page = await pageForContext(context);
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs }).catch(() => {});
+  let navigationError = '';
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+  } catch (error) {
+    navigationError = String(error?.message || error).replace(/\s+/g, ' ').trim().slice(0, 240);
+  }
   const addVisible = await waitVisible(page, 'a._additionalReserveLayerOpen', timeoutMs);
   const currentUrl = page.url();
-  const expectedUrl = /^https:\/\/partner\.spacecloud\.kr\/reservation-calendar(?:[/?#]|$)/.test(currentUrl);
+  const classification = classifySpacecloudSessionCheck({
+    url: currentUrl,
+    addVisible,
+    navigationError,
+  });
   const title = await page.title().catch(() => '');
   return {
-    ok: expectedUrl && addVisible,
+    ...classification,
     url: currentUrl,
     title,
-    reason: expectedUrl && addVisible ? '' : 'reservation calendar URL or add button not visible; login may be required',
+    navigationError,
+  };
+}
+
+export function classifySpacecloudSessionCheck({
+  url,
+  addVisible = false,
+  navigationError = '',
+} = {}) {
+  const currentUrl = String(url || '');
+  let location = null;
+  try {
+    location = new URL(currentUrl);
+  } catch {}
+  const loginRequired = Boolean(
+    location
+    && location.hostname.toLowerCase() === 'partner.spacecloud.kr'
+    && /^\/auth(?:\/|$)/.test(location.pathname)
+  );
+  if (loginRequired) {
+    return {
+      ok: false,
+      status: 'login_required',
+      loginRequired: true,
+      reason: 'SpaceCloud authentication page is visible',
+    };
+  }
+
+  const expectedUrl = /^https:\/\/partner\.spacecloud\.kr\/reservation-calendar(?:[/?#]|$)/.test(currentUrl);
+  if (expectedUrl && addVisible) {
+    return { ok: true, status: 'ready', loginRequired: false, reason: '' };
+  }
+  if (navigationError) {
+    return {
+      ok: false,
+      status: 'check_failed',
+      loginRequired: false,
+      reason: `SpaceCloud calendar navigation failed: ${navigationError}`,
+    };
+  }
+  return {
+    ok: false,
+    status: 'check_failed',
+    loginRequired: false,
+    reason: expectedUrl
+      ? 'SpaceCloud calendar add control was not visible before timeout'
+      : 'SpaceCloud navigation did not reach the expected calendar',
   };
 }
