@@ -12819,6 +12819,8 @@ async function runNowModeSelfTest() {
   }), true);
   assert.equal(sessionFailureObservation(null, 'login_required').notificationEligible, true);
   assert.equal(sessionFailureObservation(repeatedTransientSessionFailure, 'ready').consecutiveFailureCount, 0);
+  assert.equal(sessionRecoveryShouldNotify('problem:check_failed:browser_check_failed'), false);
+  assert.equal(sessionRecoveryShouldNotify('problem:login_required:server_rejected_unexpired_cookie'), true);
   assert.match(sessionRecoveryTitle('naver', 'problem:check_failed:browser_check_failed'), /화면 검사 복구/);
   assert.match(sessionRecoveryTitle('naver', 'problem:login_required:server_rejected_unexpired_cookie'), /로그인 복구/);
   assert.match(sessionProblemMessage('naver', { status: 'login_required' }), /같은 세션 장애를 예약별로 반복 알리지 않습니다/);
@@ -13187,6 +13189,10 @@ function sessionRecoveryTitle(platform, previousSignature) {
     : `✅ ${label} 로그인 복구`;
 }
 
+function sessionRecoveryShouldNotify(previousSignature) {
+  return !String(previousSignature || '').startsWith('problem:check_failed:');
+}
+
 function browserSessionRecoveryNeeded(statuses) {
   return (Array.isArray(statuses) ? statuses : []).some((row) => (
     row?.status === 'check_failed'
@@ -13212,6 +13218,18 @@ async function notifySessionStateChanges(args, statuses) {
     const state = await readJsonObject(args.notifyState);
     const previous = state[key] || {};
     if (previous.lastSentAt && String(previous.stateSignature || '').startsWith('problem:')) {
+      if (!sessionRecoveryShouldNotify(previous.stateSignature)) {
+        state[key] = {
+          ...previous,
+          lastAttemptAt: new Date().toISOString(),
+          stateSignature: 'healthy',
+          result: { sent: false, reason: 'automatic-screen-recovery' },
+          textPreview: `${sessionPlatformLabel(platform)} 화면 검사 자동 복구 · Telegram 생략`,
+        };
+        await writeJson(args.notifyState, state);
+        logLine(`screen check recovery recorded without Telegram: ${platform}`);
+        continue;
+      }
       await notifyOnStateChange(args, key, 'healthy', compactNotice(sessionRecoveryTitle(platform, previous.stateSignature), [
         '상태: 자동 작업·실제 화면 검사 재개',
         '대기 작업은 DB 접수 순서대로 자동 처리합니다.',
