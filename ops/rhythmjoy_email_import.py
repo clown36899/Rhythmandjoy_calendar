@@ -2658,7 +2658,24 @@ def parsed_email_replay_identity_matches(existing, incoming):
         return False
     if not isinstance(durable_payload, dict) or not isinstance(incoming_payload, dict):
         return False
-    if str(existing.get('event_type') or '') != 'cancellation':
+    event_type = str(existing.get('event_type') or '')
+    if event_type == 'spacecloud_cancellation':
+        normalizers = {
+            'name': normalize_reserver_name_for_match,
+            'product': normalize_cancellation_product_for_match,
+            'date': clean_date_or_none,
+            'start_time': clean_time_or_none,
+            'end_time': clean_time_or_none,
+            'source_platform': lambda value: str(value or '').strip(),
+            'source_mode': lambda value: str(value or '').strip(),
+            'cancellation_status': lambda value: str(value or '').strip(),
+        }
+        return all(
+            normalizer(durable_payload.get(key))
+            == normalizer(incoming_payload.get(key))
+            for key, normalizer in normalizers.items()
+        )
+    if event_type != 'cancellation':
         return (
             canonical_parsed_identity(durable_payload)
             == canonical_parsed_identity(incoming_payload)
@@ -2894,9 +2911,78 @@ def booking_room_key_from_calendar(calendar_key):
     return spacecloud_room_key_from_calendar(calendar_key) or calendar_to_spacecloud_room_key(calendar_key)
 
 
-def booking_ledger_key(source_platform, event_data, calendar_key):
+def spacecloud_internal_reservation_id(event_data):
+    """Read the corroborating SpaceCloud id once at the ingestion boundary."""
+    if not isinstance(event_data, dict):
+        return ''
+    for key in (
+            'spacecloud_reservation_id',
+            'spacecloudReservationId'):
+        value = str(event_data.get(key) or '').strip()
+        if value:
+            return value
+    return ''
+
+
+def spacecloud_business_identity(event_data, calendar_key):
+    """Return the required SpaceCloud room/use-date/reserver identity."""
+    room_key = booking_room_key_from_calendar(calendar_key) or str(calendar_key or '').strip()
+    reservation_date = clean_date_or_none((event_data or {}).get('date'))
+    reserver_name_key = normalize_reserver_name_for_match((event_data or {}).get('name'))
+    if not room_key or not reservation_date or not reserver_name_key:
+        return None
+    return room_key, reservation_date, reserver_name_key
+
+
+def legacy_spacecloud_ledger_key(event_data, calendar_key):
+    """Keep the historical slot-natural key readable without making it a new generation."""
+    raw_key = '|'.join([
+        'spacecloud',
+        calendar_key or '',
+        normalize_date(event_data.get('date', '')) if event_data.get('date') else '',
+        event_data.get('start_time', ''),
+        event_data.get('end_time', ''),
+        normalize_reserver_name_for_match(event_data.get('name')),
+    ])
+    digest = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+    return f'spacecloud|{digest}'
+
+
+def booking_ledger_key(
+        source_platform, event_data, calendar_key, email_event_id=None,
+        preserve_legacy_spacecloud_identity=False):
     reservation_number = event_data.get('reservation_number') or ''
-    if source_platform != 'spacecloud' and reservation_number:
+    if source_platform == 'spacecloud':
+        matched_key = str(event_data.get('matched_booking_ledger_key') or '').strip()
+        if re.fullmatch(r'spacecloud\|[0-9a-f]{64}', matched_key):
+            return matched_key
+        business_identity = spacecloud_business_identity(event_data, calendar_key)
+        event_identity = spacecloud_task_event_identity(email_event_id)
+        internal_id = spacecloud_internal_reservation_id(event_data)
+        is_cancellation = bool(
+            event_data.get('cancellation_status')
+            or event_data.get('source_mode') == 'spacecloud_cancel_email'
+        )
+        generation_token = (
+            f'internal:{internal_id}'
+            if internal_id
+            else (f'email_event:{event_identity}' if event_identity else '')
+        )
+        if (
+                generation_token
+                and business_identity
+                and (not is_cancellation or bool(internal_id))
+                and not preserve_legacy_spacecloud_identity
+        ):
+            raw_key = '|'.join([
+                source_platform,
+                'generation',
+                generation_token,
+                *business_identity,
+            ])
+        else:
+            return legacy_spacecloud_ledger_key(event_data, calendar_key)
+    elif reservation_number:
         raw_key = f'{source_platform}|reservation|{reservation_number}'
     else:
         raw_key = '|'.join([
@@ -2913,11 +2999,18 @@ def booking_ledger_key(source_platform, event_data, calendar_key):
 
 def booking_ledger_row(
         source_platform, event_data, calendar_key, email_event_id,
-        email_received_at, event_order_key=None):
+        email_received_at, event_order_key=None,
+        preserve_legacy_spacecloud_identity=False):
     event_at = booking_event_at(email_received_at)
     reservation_number = '' if source_platform == 'spacecloud' else event_data.get('reservation_number') or ''
     row = {
-        'ledger_key': booking_ledger_key(source_platform, event_data, calendar_key),
+        'ledger_key': booking_ledger_key(
+            source_platform,
+            event_data,
+            calendar_key,
+            email_event_id=email_event_id,
+            preserve_legacy_spacecloud_identity=preserve_legacy_spacecloud_identity,
+        ),
         'source_platform': source_platform or '',
         'source_mode': event_data.get('source_mode') or '',
         'target_calendar': calendar_key or '',
@@ -2965,7 +3058,8 @@ def db_select_booking_ledger(config, ledger_key, conn=None):
 
 def upsert_booking_ledger_confirmed(
         config, logger, email_event_id, event_data, calendar_key,
-        email_received_at, source_platform, conn=None, event_order_key=None):
+        email_received_at, source_platform, conn=None, event_order_key=None,
+        preserve_legacy_spacecloud_identity=False):
     if not config['db_enabled'] or not event_data:
         return None
 
@@ -2976,6 +3070,7 @@ def upsert_booking_ledger_confirmed(
         email_event_id,
         email_received_at,
         event_order_key,
+        preserve_legacy_spacecloud_identity,
     )
     row.setdefault('event_order_key', normalized_event_order_key('', row.get('event_at')))
     confirmed_event_guard = """(
@@ -3131,7 +3226,8 @@ def upsert_booking_ledger_confirmed(
 
 def upsert_booking_ledger_canceled(
         config, logger, email_event_id, event_data, calendar_key,
-        email_received_at, source_platform, conn=None, event_order_key=None):
+        email_received_at, source_platform, conn=None, event_order_key=None,
+        preserve_legacy_spacecloud_identity=False):
     if not config['db_enabled'] or not event_data:
         return None
 
@@ -3142,6 +3238,7 @@ def upsert_booking_ledger_canceled(
         email_event_id,
         email_received_at,
         event_order_key,
+        preserve_legacy_spacecloud_identity,
     )
     row.setdefault('event_order_key', normalized_event_order_key('', row.get('event_at')))
     canceled_event_guard = """(
@@ -3302,62 +3399,6 @@ def upsert_booking_ledger_canceled(
                     )
                     logger.info('SpaceCloud cancellation marked matched ledger rows canceled ids=%s', matched_ids)
 
-                cursor.execute(
-                    """
-                    UPDATE rhythmjoy_booking_ledger
-                    SET current_status='canceled',
-                        canceled_email_event_id=%s,
-                        canceled_email_received_at=%s,
-                        last_event_id=%s,
-                        last_event_order_key=%s,
-                        last_event_at=%s,
-                        cancel_payload_json=%s,
-                        updated_at=NOW()
-                    WHERE current_status='confirmed'
-                      AND source_platform <> 'naver'
-                      AND id <> LAST_INSERT_ID()
-                      AND target_calendar=%s
-                      AND room_key=%s
-                      AND reservation_date=%s
-                      AND start_time=%s
-                      AND end_time=%s
-                      AND reserver_name_key=%s
-                      AND (
-                          %s > COALESCE(last_event_order_key, 0)
-                          OR (
-                              %s = COALESCE(last_event_order_key, 0)
-                              AND %s > COALESCE(last_event_id, 0)
-                          )
-                      )
-                    """,
-                    (
-                        email_event_id,
-                        row['event_at'],
-                        email_event_id,
-                        row['event_order_key'],
-                        row['event_at'],
-                        row['payload_json'],
-                        row['target_calendar'],
-                        row['room_key'],
-                        row['reservation_date'],
-                        row['start_time'],
-                        row['end_time'],
-                        row['reserver_name_key'],
-                        row['event_order_key'],
-                        row['event_order_key'],
-                        email_event_id,
-                    ),
-                )
-                if cursor.rowcount:
-                    logger.info(
-                        'SpaceCloud cancellation marked matching non-Naver ledger rows canceled count=%s calendar=%s date=%s time=%s-%s name_key=%s',
-                        cursor.rowcount,
-                        row['target_calendar'],
-                        row['reservation_date'],
-                        row['start_time'],
-                        row['end_time'],
-                        row['reserver_name_key'],
-                    )
             elif source_platform == 'naver' and row['reservation_number']:
                 cursor.execute(
                     """
@@ -3420,112 +3461,193 @@ def upsert_booking_ledger_canceled(
             conn.close()
 
 
-def enrich_spacecloud_cancellation_from_db(config, logger, event_data, calendar_key):
+def spacecloud_candidate_event_order(candidate):
+    if not spacecloud_task_event_identity(candidate.get('confirmed_email_event_id')):
+        return None
+    order_key = candidate.get('confirmed_event_order_key')
+    try:
+        if order_key is not None and int(order_key) > 0:
+            return int(order_key)
+    except (TypeError, ValueError):
+        pass
+    return normalized_event_order_key(
+        '',
+        candidate.get('confirmed_email_received_at'),
+    )
+
+
+def match_spacecloud_cancellation_generation(
+        cursor, event_data, calendar_key, cancellation_event_order_key,
+        cancellation_received_at=None):
+    """Select one prior active SpaceCloud generation or fail closed with evidence."""
+    enriched = dict(event_data or {})
+    business_identity = spacecloud_business_identity(enriched, calendar_key)
+    reservation_date = clean_date_or_none(enriched.get('date'))
+    start_time = clean_time_or_none(enriched.get('start_time'))
+    end_time = clean_time_or_none(enriched.get('end_time'))
+    cancellation_order = cancellation_event_order_key or normalized_event_order_key(
+        '',
+        cancellation_received_at,
+    )
+    enriched.update({
+        'spacecloud_match_status': 'identity-incomplete',
+        'spacecloud_match_candidate_count': 0,
+        'spacecloud_match_prior_candidate_count': 0,
+    })
+    if not business_identity or not reservation_date or not start_time or not end_time:
+        return enriched
+    if not cancellation_order:
+        enriched['spacecloud_match_status'] = 'cancellation-order-missing'
+        return enriched
+
+    room_key, _, reserver_name_key = business_identity
+    cursor.execute(
+        """
+        SELECT ledger.id, ledger.ledger_key,
+               ledger.confirmed_email_event_id,
+               ledger.confirmed_email_received_at,
+               ledger.last_event_at,
+               confirmed_event.event_order_key AS confirmed_event_order_key
+        FROM rhythmjoy_booking_ledger AS ledger
+        LEFT JOIN rhythmjoy_naver_email_events AS confirmed_event
+               ON confirmed_event.id=ledger.confirmed_email_event_id
+        WHERE ledger.source_platform='spacecloud'
+          AND ledger.current_status='confirmed'
+          AND ledger.room_key=%s
+          AND ledger.reservation_date=%s
+          AND ledger.start_time=%s
+          AND ledger.end_time=%s
+          AND ledger.reserver_name_key=%s
+        ORDER BY COALESCE(
+                     confirmed_event.event_order_key,
+                     UNIX_TIMESTAMP(ledger.confirmed_email_received_at) * 1000,
+                     UNIX_TIMESTAMP(ledger.last_event_at) * 1000,
+                     0
+                 ) DESC,
+                 ledger.id DESC
+        LIMIT 4
+        """,
+        (
+            room_key,
+            reservation_date,
+            start_time,
+            end_time,
+            reserver_name_key,
+        ),
+    )
+    candidates = cursor.fetchall()
+    enriched['spacecloud_match_candidate_count'] = len(candidates)
+    prior = []
+    same_order = []
+    unverifiable = []
+    for candidate in candidates:
+        candidate_order = spacecloud_candidate_event_order(candidate)
+        if not candidate_order:
+            unverifiable.append(candidate)
+        elif int(candidate_order) < int(cancellation_order):
+            prior.append(candidate)
+        elif int(candidate_order) == int(cancellation_order):
+            same_order.append(candidate)
+    enriched['spacecloud_match_prior_candidate_count'] = len(prior)
+    if same_order:
+        enriched['spacecloud_match_status'] = 'opposing-event-order-collision'
+        return enriched
+    if unverifiable:
+        enriched['spacecloud_match_status'] = 'candidate-order-unverifiable'
+        return enriched
+    if len(prior) > 1:
+        enriched['spacecloud_match_status'] = 'ambiguous-prior-generation'
+        return enriched
+    if len(prior) == 1:
+        matched = prior[0]
+        enriched.update({
+            'spacecloud_match_status': 'matched-active-generation',
+            'matched_booking_ledger_id': matched.get('id'),
+            'matched_booking_ledger_key': matched.get('ledger_key') or '',
+            'matched_reservation_email_event_id': matched.get('confirmed_email_event_id'),
+        })
+        return enriched
+
+    # Historical event evidence is retained for diagnosis, but without an
+    # active ledger generation it must not authorize a Naver availability change.
+    cursor.execute(
+        """
+        SELECT id, event_order_key, email_received_at, reserver_name
+        FROM rhythmjoy_naver_email_events
+        WHERE event_type='spacecloud_reservation'
+          AND spacecloud_room_key=%s
+          AND reservation_date=%s
+          AND start_time=%s
+          AND end_time=%s
+          AND event_order_key IS NOT NULL
+          AND event_order_key<%s
+        ORDER BY event_order_key DESC, id DESC
+        LIMIT 4
+        """,
+        (
+            room_key,
+            reservation_date,
+            start_time,
+            end_time,
+            cancellation_order,
+        ),
+    )
+    prior_events = [
+        candidate
+        for candidate in cursor.fetchall()
+        if normalize_reserver_name_for_match(candidate.get('reserver_name'))
+        == reserver_name_key
+    ]
+    if prior_events:
+        enriched['matched_reservation_email_event_id'] = prior_events[0].get('id')
+        enriched['spacecloud_match_status'] = 'prior-event-without-active-ledger'
+    else:
+        enriched['spacecloud_match_status'] = 'no-prior-active-generation'
+    return enriched
+
+
+def enrich_spacecloud_cancellation_from_db(
+        config, logger, event_data, calendar_key,
+        cancellation_event_order_key=None, cancellation_received_at=None,
+        conn=None):
     if not config['db_enabled'] or not event_data or not calendar_key:
         return event_data
 
-    reservation_date = clean_date_or_none(event_data.get('date'))
-    start_time = clean_time_or_none(event_data.get('start_time'))
-    end_time = clean_time_or_none(event_data.get('end_time'))
-    if not reservation_date or not start_time or not end_time:
-        return event_data
-    reserver_name_key = normalize_reserver_name_for_match(event_data.get('name'))
-
-    conn = None
+    owned_conn = conn is None
     try:
-        conn = db_connect(config)
+        if owned_conn:
+            conn = db_connect(config)
         with conn.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT id, reservation_number
-                FROM rhythmjoy_booking_ledger
-                WHERE source_platform='spacecloud'
-                  AND current_status='confirmed'
-                  AND target_calendar=%s
-                  AND reservation_date=%s
-                  AND start_time=%s
-                  AND end_time=%s
-                  AND reserver_name_key=%s
-                ORDER BY last_event_at DESC, id DESC
-                LIMIT 1
-                """,
-                (
-                    calendar_key,
-                    reservation_date,
-                    start_time,
-                    end_time,
-                    reserver_name_key,
-                ),
-            )
-            row = cursor.fetchone()
-            if row:
-                event_data = dict(event_data)
-                event_data['matched_booking_ledger_id'] = row.get('id')
-                logger.info(
-                    'SpaceCloud cancellation enriched from booking ledger id=%s calendar=%s name_key=%s time=%s %s-%s',
-                    row.get('id'),
-                    calendar_key,
-                    reserver_name_key,
-                    reservation_date,
-                    event_data.get('start_time'),
-                    event_data.get('end_time'),
-                )
-                return event_data
-
-            cursor.execute(
-                """
-                SELECT id, reservation_number, reserver_name
-                FROM rhythmjoy_naver_email_events
-                WHERE event_type='spacecloud_reservation'
-                  AND target_calendar=%s
-                  AND reservation_date=%s
-                  AND start_time=%s
-                  AND end_time=%s
-                ORDER BY email_received_at DESC, id DESC
-                """,
-                (
-                    calendar_key,
-                    reservation_date,
-                    start_time,
-                    end_time,
-                ),
-            )
-            candidates = cursor.fetchall()
-            row = next(
-                (
-                    candidate for candidate in candidates
-                    if normalize_reserver_name_for_match(candidate.get('reserver_name')) == reserver_name_key
-                ),
-                None,
-            )
-        if row:
-            event_data = dict(event_data)
-            event_data['matched_reservation_email_event_id'] = row.get('id')
-            logger.info(
-                'SpaceCloud cancellation enriched from reservation email id=%s calendar=%s name_key=%s time=%s %s-%s',
-                row.get('id'),
+            enriched = match_spacecloud_cancellation_generation(
+                cursor,
+                event_data,
                 calendar_key,
-                reserver_name_key,
-                reservation_date,
-                event_data.get('start_time'),
-                event_data.get('end_time'),
+                cancellation_event_order_key,
+                cancellation_received_at,
             )
-        else:
-            logger.warning(
-                'SpaceCloud cancellation has no matching reservation email calendar=%s name=%s name_key=%s time=%s %s-%s',
-                calendar_key,
-                event_data.get('name') or '',
-                reserver_name_key,
-                reservation_date,
-                event_data.get('start_time'),
-                event_data.get('end_time'),
-            )
-        return event_data
+        status = enriched.get('spacecloud_match_status') or 'unknown'
+        matched_id = enriched.get('matched_booking_ledger_id')
+        log = logger.info if status == 'matched-active-generation' else logger.warning
+        log(
+            'SpaceCloud cancellation generation match status=%s ledger_id=%s '
+            'calendar=%s date=%s time=%s-%s candidates=%s prior=%s',
+            status,
+            matched_id or '-',
+            calendar_key,
+            clean_date_or_none(enriched.get('date')) or '-',
+            enriched.get('start_time') or '-',
+            enriched.get('end_time') or '-',
+            enriched.get('spacecloud_match_candidate_count', 0),
+            enriched.get('spacecloud_match_prior_candidate_count', 0),
+        )
+        return enriched
     except Exception as error:
+        if not owned_conn:
+            raise
         disable_db_logging(config, logger, 'SpaceCloud cancellation enrichment failed', error)
         return event_data
     finally:
-        if conn is not None:
+        if owned_conn and conn is not None:
             conn.close()
 
 
@@ -4862,7 +4984,9 @@ def upsert_spacecloud_upload_task(
             conn.close()
 
 
-def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_data, calendar_key, conn=None):
+def upsert_spacecloud_naver_block_task(
+        config, logger, email_event_id, event_data, calendar_key, conn=None,
+        booking_ledger_id=None):
     if not config.get('spacecloud_naver_block_enabled'):
         return None
 
@@ -4872,17 +4996,20 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
             logger.info('Naver block task skipped: no room mapping for calendar=%s product=%s', calendar_key, event_data.get('product'))
         return None
 
+    ledger_id = spacecloud_task_event_identity(booking_ledger_id)
     dedupe_key = spacecloud_naver_block_dedupe_key(event_data, room_key, email_event_id)
     payload = {
         'source': 'spacecloud-email-reservation',
         'action': 'block-naver-availability',
         'calendarKey': calendar_key,
         'roomKey': room_key,
+        'bookingLedgerId': ledger_id,
         **event_data,
     }
     row = {
         'dedupe_key': dedupe_key,
         'email_event_id': email_event_id,
+        'booking_ledger_id': ledger_id,
         'task_type': 'naver_block',
         'room_key': room_key,
         'reservation_number': '',
@@ -4903,19 +5030,20 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
             cursor.execute(
                 """
                 INSERT INTO rhythmjoy_spacecloud_tasks (
-                    dedupe_key, email_event_id, task_type, status,
+                    dedupe_key, email_event_id, booking_ledger_id, task_type, status,
                     room_key, reservation_number, reserver_name, product,
                     reservation_date, start_time, end_time, confirmation_sms_required, payload_json,
                     created_at, updated_at
                 )
                 VALUES (
-                    %(dedupe_key)s, %(email_event_id)s, %(task_type)s, 'pending',
+                    %(dedupe_key)s, %(email_event_id)s, %(booking_ledger_id)s, %(task_type)s, 'pending',
                     %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
                     %(reservation_date)s, %(start_time)s, %(end_time)s, %(confirmation_sms_required)s, %(payload_json)s,
                     NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
                     email_event_id=VALUES(email_event_id),
+                    booking_ledger_id=COALESCE(booking_ledger_id, VALUES(booking_ledger_id)),
                     room_key=VALUES(room_key),
                     reservation_number=VALUES(reservation_number),
                     reserver_name=VALUES(reserver_name),
@@ -4957,7 +5085,9 @@ def upsert_spacecloud_naver_block_task(config, logger, email_event_id, event_dat
             conn.close()
 
 
-def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_data, calendar_key, conn=None):
+def upsert_spacecloud_naver_restore_task(
+        config, logger, email_event_id, event_data, calendar_key, conn=None,
+        booking_ledger_id=None):
     if not config.get('spacecloud_naver_block_enabled'):
         return None
 
@@ -4967,18 +5097,42 @@ def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_d
             logger.info('Naver restore task skipped: no room mapping for calendar=%s product=%s', calendar_key, event_data.get('product'))
         return None
 
+    matched_ledger_id = spacecloud_task_event_identity(
+        event_data.get('matched_booking_ledger_id')
+    )
+    ledger_id = matched_ledger_id or spacecloud_task_event_identity(booking_ledger_id)
+    match_status = str(event_data.get('spacecloud_match_status') or '').strip()
+    identity_ready = bool(
+        match_status == 'matched-active-generation'
+        and matched_ledger_id
+        and ledger_id == matched_ledger_id
+    )
     dedupe_key = spacecloud_naver_restore_dedupe_key(event_data, room_key, email_event_id)
     payload = {
         'source': 'spacecloud-email-cancellation',
         'action': 'restore-naver-availability',
         'calendarKey': calendar_key,
         'roomKey': room_key,
+        'bookingLedgerId': ledger_id,
+        'identityReady': identity_ready,
         **event_data,
     }
+    review_result = ''
+    if not identity_ready:
+        review_result = json.dumps({
+            'status': 'needs-review',
+            'reason': f'spacecloud-cancellation-{match_status or "identity-unverified"}',
+            'submissionAttempted': False,
+            'sideEffectState': 'not-armed',
+            'bookingLedgerId': ledger_id,
+            'emailEventId': email_event_id,
+        }, ensure_ascii=False, separators=(',', ':'))
     row = {
         'dedupe_key': dedupe_key,
         'email_event_id': email_event_id,
+        'booking_ledger_id': ledger_id,
         'task_type': 'naver_restore',
+        'initial_status': 'pending' if identity_ready else 'needs_review',
         'room_key': room_key,
         'reservation_number': '',
         'reserver_name': event_data.get('name') or '',
@@ -4987,6 +5141,7 @@ def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_d
         'start_time': clean_time_or_none(event_data.get('start_time')),
         'end_time': clean_time_or_none(event_data.get('end_time')),
         'payload_json': json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+        'result_text': review_result,
     }
 
     owned_conn = conn is None
@@ -4997,19 +5152,20 @@ def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_d
             cursor.execute(
                 """
                 INSERT INTO rhythmjoy_spacecloud_tasks (
-                    dedupe_key, email_event_id, task_type, status,
+                    dedupe_key, email_event_id, booking_ledger_id, task_type, status,
                     room_key, reservation_number, reserver_name, product,
-                    reservation_date, start_time, end_time, payload_json,
+                    reservation_date, start_time, end_time, payload_json, result_text,
                     created_at, updated_at
                 )
                 VALUES (
-                    %(dedupe_key)s, %(email_event_id)s, %(task_type)s, 'pending',
+                    %(dedupe_key)s, %(email_event_id)s, %(booking_ledger_id)s, %(task_type)s, %(initial_status)s,
                     %(room_key)s, %(reservation_number)s, %(reserver_name)s, %(product)s,
-                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(payload_json)s,
+                    %(reservation_date)s, %(start_time)s, %(end_time)s, %(payload_json)s, %(result_text)s,
                     NOW(), NOW()
                 )
                 ON DUPLICATE KEY UPDATE
                     email_event_id=VALUES(email_event_id),
+                    booking_ledger_id=COALESCE(booking_ledger_id, VALUES(booking_ledger_id)),
                     room_key=VALUES(room_key),
                     reservation_number=VALUES(reservation_number),
                     reserver_name=VALUES(reserver_name),
@@ -5018,7 +5174,8 @@ def upsert_spacecloud_naver_restore_task(config, logger, email_event_id, event_d
                     start_time=VALUES(start_time),
                     end_time=VALUES(end_time),
                     payload_json=VALUES(payload_json),
-                    status=IF(status IN ('running', 'done', 'needs_review', 'google_pending'), status, 'pending'),
+                    result_text=IF(status IN ('running', 'done', 'needs_review', 'google_pending'), result_text, VALUES(result_text)),
+                    status=IF(status IN ('running', 'done', 'needs_review', 'google_pending'), status, VALUES(status)),
                     updated_at=NOW()
                 """,
                 row,
@@ -5982,7 +6139,14 @@ def process_message(config, _unused_service_factory, imap_connection, mailbox, t
                 event_data = parse_spacecloud_cancellation(body, raw_message, subject)
                 calendar_key = product_to_calendar_key(event_data.get('product', '')) if event_data else None
                 if event_data and calendar_key:
-                    event_data = enrich_spacecloud_cancellation_from_db(config, logger, event_data, calendar_key)
+                    event_data = enrich_spacecloud_cancellation_from_db(
+                        config,
+                        logger,
+                        event_data,
+                        calendar_key,
+                        cancellation_event_order_key=event_order_key,
+                        cancellation_received_at=email_received_at,
+                    )
                 record = build_spacecloud_cancellation_email_record(
                     config,
                     mail_key,
@@ -6014,6 +6178,19 @@ def process_message(config, _unused_service_factory, imap_connection, mailbox, t
                 )
                 email_record_id = email_row.get('id') if email_row else None
                 event_order_key = (email_row or {}).get('event_order_key') or event_order_key
+                if (
+                        event_data
+                        and calendar_key
+                        and (email_row or {}).get('_immutable_replay')
+                ):
+                    event_data = enrich_spacecloud_cancellation_from_db(
+                        config,
+                        logger,
+                        event_data,
+                        calendar_key,
+                        cancellation_event_order_key=event_order_key,
+                        cancellation_received_at=email_received_at,
+                    )
                 if event_data and calendar_key:
                     event_data['calendar_key'] = calendar_key
                     event_data['target_calendar'] = calendar_key
@@ -6033,6 +6210,7 @@ def process_message(config, _unused_service_factory, imap_connection, mailbox, t
                                 event_data,
                                 calendar_key,
                                 conn=conn,
+                                booking_ledger_id=(ledger or {}).get('id'),
                             )
                             require_handoff(True, naver_restore_task, 'Required Naver restore task was not created')
                             task_status = naver_restore_task.get('status') or 'pending'
@@ -6172,6 +6350,7 @@ def process_message(config, _unused_service_factory, imap_connection, mailbox, t
                             event_data,
                             calendar_key,
                             conn=conn,
+                            booking_ledger_id=(ledger or {}).get('id'),
                         )
                         require_handoff(True, naver_block_task, 'Required Naver block task was not created')
                         task_status = naver_block_task.get('status') or 'pending'
@@ -6261,8 +6440,16 @@ def backfill_booking_ledger(config, logger):
                 SELECT id, event_type, email_received_at, event_order_key,
                        event_order_trusted,
                        processing_status, error_text,
-                       subject, target_calendar, parsed_json, raw_body
-                FROM rhythmjoy_naver_email_events
+                       subject, target_calendar, parsed_json, raw_body,
+                       (
+                           SELECT ledger.ledger_key
+                           FROM rhythmjoy_booking_ledger AS ledger
+                           WHERE ledger.confirmed_email_event_id=event_row.id
+                              OR ledger.canceled_email_event_id=event_row.id
+                           ORDER BY ledger.id DESC
+                           LIMIT 1
+                       ) AS projected_ledger_key
+                FROM rhythmjoy_naver_email_events AS event_row
                 WHERE (
                     event_type IN ('reservation', 'cancellation', 'spacecloud_reservation', 'spacecloud_cancellation')
                     AND parse_status='parsed'
@@ -6304,6 +6491,14 @@ def backfill_booking_ledger(config, logger):
             continue
         event_type = row.get('event_type')
         source_platform = 'spacecloud' if event_type.startswith('spacecloud_') else 'naver'
+        if source_platform == 'spacecloud' and row.get('projected_ledger_key'):
+            logger.info(
+                'Booking ledger backfill skipped already-projected SpaceCloud generation '
+                'row_id=%s ledger=%s',
+                row.get('id'),
+                row.get('projected_ledger_key'),
+            )
+            continue
         if source_platform == 'naver' and int(row.get('event_order_trusted') or 0) != 1:
             logger.warning(
                 'Booking ledger backfill skipped untrusted Naver event row_id=%s type=%s',
@@ -6329,11 +6524,21 @@ def backfill_booking_ledger(config, logger):
                 row.get('email_received_at'),
                 source_platform,
                 event_order_key=row.get('event_order_key'),
+                preserve_legacy_spacecloud_identity=(
+                    source_platform == 'spacecloud'
+                ),
             )
             processed += 1
         elif event_type in ('cancellation', 'spacecloud_cancellation', 'spacecloud_ignored'):
             if source_platform == 'spacecloud':
-                event_data = enrich_spacecloud_cancellation_from_db(config, logger, event_data, calendar_key)
+                event_data = enrich_spacecloud_cancellation_from_db(
+                    config,
+                    logger,
+                    event_data,
+                    calendar_key,
+                    cancellation_event_order_key=row.get('event_order_key'),
+                    cancellation_received_at=row.get('email_received_at'),
+                )
             upsert_booking_ledger_canceled(
                 config,
                 logger,
@@ -6343,6 +6548,9 @@ def backfill_booking_ledger(config, logger):
                 row.get('email_received_at'),
                 source_platform,
                 event_order_key=row.get('event_order_key'),
+                preserve_legacy_spacecloud_identity=(
+                    source_platform == 'spacecloud'
+                ),
             )
             processed += 1
     logger.info('Booking ledger non-destructive backfill finished processed=%s scanned=%s', processed, len(rows))

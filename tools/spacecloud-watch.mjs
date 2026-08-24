@@ -2518,20 +2518,27 @@ def enrich_task_row(cur, row):
         target_start_at, target_end_at = task_slot_datetimes(row.get('date'), row.get('startTime'), row.get('endTime'))
         cur.execute(
             """
-            SELECT id, status, reserver_name, result_text
+            SELECT id, status, booking_ledger_id, reserver_name, result_text
             FROM rhythmjoy_spacecloud_tasks
             WHERE task_type='naver_block'
               AND room_key=%s
               AND reservation_date=%s
               AND start_time=%s
               AND end_time=%s
-            ORDER BY id DESC
+            ORDER BY (booking_ledger_id=%s) DESC, id DESC
             LIMIT 10
             """,
-            (row.get('roomKey'), row.get('date'), row.get('startTime'), row.get('endTime')),
+            (
+                row.get('roomKey'), row.get('date'), row.get('startTime'),
+                row.get('endTime'), row.get('ledgerId') or 0,
+            ),
         )
         for candidate in cur.fetchall():
             if importer.normalize_reserver_name_for_match(candidate.get('reserver_name')) != wanted_name:
+                continue
+            candidate_ledger_id = int(candidate.get('booking_ledger_id') or 0)
+            wanted_ledger_id = int(row.get('ledgerId') or 0)
+            if candidate_ledger_id and wanted_ledger_id and candidate_ledger_id != wanted_ledger_id:
                 continue
             row['priorNaverBlockTaskId'] = candidate.get('id')
             result_text = candidate.get('result_text') or '{}'
@@ -11744,6 +11751,11 @@ async function runNowModeSelfTest() {
     'only an exactly linked legacy platform-verification upload may enable taskless mirror identity',
   );
   assert.match(REMOTE_TASK_ENRICHMENT_PY, /booking_ledger_id/);
+  assert.match(
+    REMOTE_TASK_ENRICHMENT_PY,
+    /ORDER BY \(booking_ledger_id=%s\) DESC[\s\S]*candidate_ledger_id != wanted_ledger_id/,
+    'SpaceCloud restore must prefer its exact block generation and reject a different linked generation',
+  );
   assert.match(REMOTE_TASK_ENRICHMENT_PY, /priorDeleteSideEffectState/);
   assert.match(
     REMOTE_TASK_ENRICHMENT_PY,

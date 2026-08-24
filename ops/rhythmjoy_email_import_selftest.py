@@ -111,6 +111,375 @@ class FakeImap:
 
 
 class EmailPipelineSelfTest(unittest.TestCase):
+    def test_platform_ledger_identity_keeps_naver_number_and_splits_spacecloud_generations(self):
+        naver = {
+            'reservation_number': '1289402981',
+            'name': '황*연님',
+            'date': '2026-09-04',
+            'start_time': '20:00',
+            'end_time': '22:00',
+        }
+        self.assertEqual(
+            email_import.booking_ledger_key('naver', naver, 'Bhall'),
+            email_import.booking_ledger_key(
+                'naver', naver, 'Bhall', email_event_id=901
+            ),
+        )
+
+        spacecloud_without_id = {
+            **naver,
+            'reservation_number': '',
+            'source_mode': 'spacecloud_email',
+        }
+        first_generation = email_import.booking_ledger_key(
+            'spacecloud', spacecloud_without_id, 'Bhall', email_event_id=901
+        )
+        second_generation = email_import.booking_ledger_key(
+            'spacecloud', spacecloud_without_id, 'Bhall', email_event_id=902
+        )
+        self.assertNotEqual(first_generation, second_generation)
+
+        with_internal_id = {
+            **spacecloud_without_id,
+            'spacecloud_reservation_id': 'SC-1289402981',
+        }
+        self.assertEqual(
+            email_import.booking_ledger_key(
+                'spacecloud', with_internal_id, 'Bhall', email_event_id=901
+            ),
+            email_import.booking_ledger_key(
+                'spacecloud', with_internal_id, 'Bhall', email_event_id=999
+            ),
+        )
+        self.assertEqual(
+            email_import.booking_ledger_key(
+                'spacecloud', with_internal_id, 'Bhall', email_event_id=901
+            ),
+            email_import.booking_ledger_key(
+                'spacecloud',
+                {**with_internal_id, 'start_time': '21:00', 'end_time': '23:00'},
+                'Bhall',
+                email_event_id=999,
+            ),
+        )
+        self.assertNotEqual(
+            email_import.booking_ledger_key(
+                'spacecloud', with_internal_id, 'Bhall', email_event_id=901
+            ),
+            email_import.booking_ledger_key(
+                'spacecloud', {**with_internal_id, 'name': '다른예약자님'},
+                'Bhall', email_event_id=901,
+            ),
+        )
+        self.assertNotEqual(
+            email_import.booking_ledger_key(
+                'spacecloud', with_internal_id, 'Bhall', email_event_id=901
+            ),
+            email_import.booking_ledger_key(
+                'spacecloud', {**with_internal_id, 'date': '2026-09-05'},
+                'Bhall', email_event_id=901,
+            ),
+        )
+        self.assertNotEqual(
+            email_import.booking_ledger_key(
+                'spacecloud', with_internal_id, 'Bhall', email_event_id=901
+            ),
+            email_import.booking_ledger_key(
+                'spacecloud', with_internal_id, 'Ahall', email_event_id=901
+            ),
+        )
+        self.assertEqual(
+            email_import.booking_ledger_key(
+                'spacecloud', spacecloud_without_id, 'Bhall',
+                email_event_id=901,
+                preserve_legacy_spacecloud_identity=True,
+            ),
+            email_import.legacy_spacecloud_ledger_key(
+                spacecloud_without_id, 'Bhall'
+            ),
+        )
+
+    def test_spacecloud_cancellation_uses_only_one_strict_prior_generation(self):
+        class MatchCursor:
+            def __init__(self, ledger_candidates, prior_events=None):
+                self.results = [ledger_candidates, prior_events or []]
+                self.queries = []
+
+            def execute(self, query, params=None):
+                self.queries.append((' '.join(str(query).split()), params))
+
+            def fetchall(self):
+                return self.results.pop(0)
+
+        cancellation = {
+            'source_platform': 'spacecloud',
+            'source_mode': 'spacecloud_cancel_email',
+            'cancellation_status': '취소완료',
+            'name': '황*연님',
+            'date': '2026-09-04',
+            'start_time': '20:00',
+            'end_time': '22:00',
+        }
+        candidate = {
+            'id': 77,
+            'ledger_key': 'spacecloud|' + ('a' * 64),
+            'confirmed_email_event_id': 701,
+            'confirmed_event_order_key': 1_000,
+            'confirmed_email_received_at': '2026-08-20 10:00:00',
+        }
+        matched = email_import.match_spacecloud_cancellation_generation(
+            MatchCursor([candidate]),
+            cancellation,
+            'Bhall',
+            2_000,
+        )
+        self.assertEqual(matched['spacecloud_match_status'], 'matched-active-generation')
+        self.assertEqual(matched['matched_booking_ledger_id'], 77)
+        self.assertEqual(matched['matched_reservation_email_event_id'], 701)
+
+        collision = email_import.match_spacecloud_cancellation_generation(
+            MatchCursor([{**candidate, 'confirmed_event_order_key': 2_000}]),
+            cancellation,
+            'Bhall',
+            2_000,
+        )
+        self.assertEqual(
+            collision['spacecloud_match_status'],
+            'opposing-event-order-collision',
+        )
+        self.assertNotIn('matched_booking_ledger_id', collision)
+
+        same_received_second = email_import.received_at_epoch_ms(
+            '2026-08-20 10:00:00'
+        )
+        fallback_collision = email_import.match_spacecloud_cancellation_generation(
+            MatchCursor([{
+                **candidate,
+                'confirmed_event_order_key': None,
+                'confirmed_email_received_at': '2026-08-20 10:00:00',
+            }]),
+            cancellation,
+            'Bhall',
+            same_received_second,
+        )
+        self.assertEqual(
+            fallback_collision['spacecloud_match_status'],
+            'opposing-event-order-collision',
+        )
+
+        unverifiable = email_import.match_spacecloud_cancellation_generation(
+            MatchCursor([{
+                **candidate,
+                'confirmed_email_event_id': None,
+                'confirmed_event_order_key': None,
+            }]),
+            cancellation,
+            'Bhall',
+            2_000,
+        )
+        self.assertEqual(
+            unverifiable['spacecloud_match_status'],
+            'candidate-order-unverifiable',
+        )
+        self.assertNotIn('matched_booking_ledger_id', unverifiable)
+
+        ambiguous = email_import.match_spacecloud_cancellation_generation(
+            MatchCursor([
+                candidate,
+                {
+                    **candidate,
+                    'id': 78,
+                    'ledger_key': 'spacecloud|' + ('b' * 64),
+                    'confirmed_email_event_id': 702,
+                    'confirmed_event_order_key': 1_500,
+                },
+            ]),
+            cancellation,
+            'Bhall',
+            2_000,
+        )
+        self.assertEqual(
+            ambiguous['spacecloud_match_status'],
+            'ambiguous-prior-generation',
+        )
+        self.assertNotIn('matched_booking_ledger_id', ambiguous)
+
+    def test_spacecloud_cancellation_without_active_ledger_is_diagnostic_only(self):
+        class EventOnlyCursor:
+            def __init__(self):
+                self.call = 0
+
+            def execute(self, query, params=None):
+                self.call += 1
+
+            def fetchall(self):
+                if self.call == 1:
+                    return []
+                return [{
+                    'id': 701,
+                    'event_order_key': 1_000,
+                    'email_received_at': '2026-08-20 10:00:00',
+                    'reserver_name': '황*연님',
+                }]
+
+        result = email_import.match_spacecloud_cancellation_generation(
+            EventOnlyCursor(),
+            {
+                'name': '황*연님',
+                'date': '2026-09-04',
+                'start_time': '20:00',
+                'end_time': '22:00',
+            },
+            'Bhall',
+            2_000,
+        )
+        self.assertEqual(
+            result['spacecloud_match_status'],
+            'prior-event-without-active-ledger',
+        )
+        self.assertEqual(result['matched_reservation_email_event_id'], 701)
+        self.assertNotIn('matched_booking_ledger_id', result)
+
+    def test_spacecloud_cancellation_upsert_has_no_second_broad_identity_update(self):
+        source = inspect.getsource(email_import.upsert_booking_ledger_canceled)
+        self.assertNotIn('id <> LAST_INSERT_ID()', source)
+        self.assertNotIn("AND target_calendar=%s\n                      AND room_key=%s", source)
+        self.assertIn("event_data.get('matched_booking_ledger_id')", source)
+
+    def test_spacecloud_cancellation_replay_ignores_only_db_match_evidence(self):
+        core = {
+            'source_platform': 'spacecloud',
+            'source_mode': 'spacecloud_cancel_email',
+            'cancellation_status': '취소완료',
+            'name': '황*연님',
+            'product': 'B홀',
+            'date': '2026-09-04',
+            'start_time': '20:00',
+            'end_time': '22:00',
+        }
+        existing = {
+            'event_type': 'spacecloud_cancellation',
+            'parsed_json': json.dumps({
+                **core,
+                'spacecloud_match_status': 'matched-active-generation',
+                'matched_booking_ledger_id': 77,
+            }),
+        }
+        incoming = {
+            'parsed_json': json.dumps({
+                **core,
+                'spacecloud_match_status': 'no-prior-active-generation',
+            }),
+        }
+        self.assertTrue(
+            email_import.parsed_email_replay_identity_matches(existing, incoming)
+        )
+        incoming['parsed_json'] = json.dumps({**core, 'date': '2026-09-05'})
+        self.assertFalse(
+            email_import.parsed_email_replay_identity_matches(existing, incoming)
+        )
+
+    def test_unmatched_spacecloud_restore_is_persisted_for_review_not_execution(self):
+        class TaskCursor:
+            def __init__(self):
+                self.insert = None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def execute(self, query, params=None):
+                if 'INSERT INTO rhythmjoy_spacecloud_tasks' in str(query):
+                    self.insert = dict(params)
+
+            def fetchone(self):
+                return {
+                    'id': 88,
+                    'status': self.insert['initial_status'],
+                    'booking_ledger_id': self.insert['booking_ledger_id'],
+                }
+
+        class TaskConnection:
+            def __init__(self):
+                self.capture = TaskCursor()
+
+            def cursor(self):
+                return self.capture
+
+        connection = TaskConnection()
+        task = email_import.upsert_spacecloud_naver_restore_task(
+            {
+                'db_enabled': True,
+                'spacecloud_naver_block_enabled': True,
+            },
+            logging.getLogger(__name__),
+            902,
+            {
+                'source_mode': 'spacecloud_cancel_email',
+                'spacecloud_match_status': 'ambiguous-prior-generation',
+                'name': '황*연님',
+                'product': 'B홀',
+                'date': '2026-09-04',
+                'start_time': '20:00',
+                'end_time': '22:00',
+            },
+            'Bhall',
+            conn=connection,
+            booking_ledger_id=99,
+        )
+        self.assertEqual(task['status'], 'needs_review')
+        self.assertEqual(connection.capture.insert['initial_status'], 'needs_review')
+        self.assertIn(
+            'spacecloud-cancellation-ambiguous-prior-generation',
+            connection.capture.insert['result_text'],
+        )
+
+        matched_connection = TaskConnection()
+        matched_task = email_import.upsert_spacecloud_naver_restore_task(
+            {
+                'db_enabled': True,
+                'spacecloud_naver_block_enabled': True,
+            },
+            logging.getLogger(__name__),
+            903,
+            {
+                'source_mode': 'spacecloud_cancel_email',
+                'spacecloud_match_status': 'matched-active-generation',
+                'matched_booking_ledger_id': 77,
+                'name': '황*연님',
+                'product': 'B홀',
+                'date': '2026-09-04',
+                'start_time': '20:00',
+                'end_time': '22:00',
+            },
+            'Bhall',
+            conn=matched_connection,
+            booking_ledger_id=77,
+        )
+        self.assertEqual(matched_task['status'], 'pending')
+        self.assertEqual(matched_connection.capture.insert['booking_ledger_id'], 77)
+        self.assertEqual(matched_connection.capture.insert['result_text'], '')
+
+        matched_key = 'spacecloud|' + ('c' * 64)
+        self.assertEqual(
+            email_import.booking_ledger_key(
+                'spacecloud',
+                {
+                    'source_mode': 'spacecloud_cancel_email',
+                    'matched_booking_ledger_key': matched_key,
+                    'name': '황*연님',
+                    'date': '2026-09-04',
+                    'start_time': '20:00',
+                    'end_time': '22:00',
+                },
+                'Bhall',
+                email_event_id=902,
+            ),
+            matched_key,
+        )
+
     def test_calendar_cache_uses_confirmed_db_ledger_as_source(self):
         confirmed = {
             'id': 9140,
