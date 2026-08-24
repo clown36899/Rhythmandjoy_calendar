@@ -1499,6 +1499,13 @@ input[readonly] {
   line-height: 1.1;
 }
 
+.year-summary-head small,
+.year-month-fee-excluded {
+  color: #476c64;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .year-summary-head p {
   margin: 0;
   text-align: right;
@@ -1541,6 +1548,12 @@ input[readonly] {
   color: #0b5f4e;
   font-size: 18px;
   font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.year-month-fee-excluded {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1686,6 +1699,17 @@ input[readonly] {
   font-size: 17px;
   font-weight: 900;
   line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.month-day-fee-excluded {
+  min-width: 0;
+  overflow: hidden;
+  color: #476c64;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4129,6 +4153,7 @@ body.alert-drawer-open {
     font-size: 13px;
   }
 
+  .month-day-fee-excluded,
   .month-day-meta,
   .month-room-list.empty {
     font-size: 10px;

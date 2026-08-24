@@ -824,6 +824,7 @@
         <div>
           <span>${escapeHtml(String(selectedYear))}년 총매출</span>
           <strong>${escapeHtml(formatRevenueStat(stats.yearTotal))}</strong>
+          <small>수수료 제외 금액 ${escapeHtml(formatRevenueStat(stats.yearNetTotal))}</small>
         </div>
         <p>확정 ${Number(stats.yearConfirmedCount || 0).toLocaleString()}건${Number(stats.yearMissingCount || 0) ? ` · 금액 미수집 ${Number(stats.yearMissingCount).toLocaleString()}건` : ""}</p>
       </header>
@@ -847,6 +848,7 @@
     const monthKey = String(month.month || "");
     const monthNumber = Number(monthKey.slice(-2));
     const total = Number(month.total || 0);
+    const netTotal = Number(month.netTotal || 0);
     const count = Number(month.confirmedCount || 0);
     const missing = Number(month.missingCount || 0);
     const width = Math.max(total > 0 ? 4 : 0, Math.round((total / maxTotal) * 100));
@@ -855,6 +857,7 @@
       <button type="button" class="year-month${current ? " selected" : ""}" data-year-month="${escapeHtml(monthKey)}" draggable="false">
         <span class="year-month-label">${monthNumber}월</span>
         <span class="year-month-value">${escapeHtml(formatRevenueStat(total))}</span>
+        <span class="year-month-fee-excluded">수수료 제외 금액 ${escapeHtml(formatRevenueStat(netTotal))}</span>
         <span class="year-month-meta">${count.toLocaleString()}건${missing ? ` · 미수집 ${missing.toLocaleString()}` : ""}</span>
         <i class="year-month-bar" aria-hidden="true"><b style="width:${width}%"></b></i>
       </button>
@@ -883,10 +886,11 @@
         <small>${escapeHtml(weekdayShortText(date))}</small>
       </span>
       <span class="month-day-revenue">${escapeHtml(formatRevenueStat(monthDayRevenue(day)))}</span>
+      <span class="month-day-fee-excluded">수수료 제외 ${escapeHtml(formatRevenueStat(monthDayNetRevenue(day)))}</span>
       <span class="month-day-meta">${monthDayCount(day)}건${monthDayMissing(day) ? ` · 미수집 ${monthDayMissing(day)}` : ""}</span>
       ${monthRoomSummaryHtml(day)}
     `;
-    button.title = `${date} ${monthDayCount(day)}건 / ${formatRevenueStat(monthDayRevenue(day))}`;
+    button.title = `${date} ${monthDayCount(day)}건 / 결제 ${formatRevenueStat(monthDayRevenue(day))} / 수수료 제외 ${formatRevenueStat(monthDayNetRevenue(day))}`;
     button.addEventListener("click", () => openDayScheduleModal(date));
     return button;
   }
@@ -897,6 +901,7 @@
       day: Number(date.slice(-2)),
       count: 0,
       revenue: 0,
+      netRevenue: 0,
       missingCount: 0,
       rooms: {},
     };
@@ -909,6 +914,11 @@
   function monthDayRevenue(day) {
     if (state.roomFilter === "all") return Number(day.revenue || 0);
     return Number(day.revenue || 0);
+  }
+
+  function monthDayNetRevenue(day) {
+    if (state.roomFilter === "all") return Number(day.netRevenue || 0);
+    return Number(day.netRevenue || 0);
   }
 
   function monthDayMissing(day) {
@@ -1633,24 +1643,22 @@
     el.todayCount.textContent = String(todays.length);
     const revenue = todays.reduce((total, item) => total + eventGrossAmount(item), 0);
     const netRevenue = todays.reduce((total, item) => total + eventNetAmount(item), 0);
-    const feeRevenue = todays.reduce((total, item) => total + eventFeeAmount(item), 0);
     const missing = todays.filter((item) => !eventGrossAmount(item)).length;
     el.dayRevenue.textContent = revenue > 0 ? `${revenue.toLocaleString()}원` : "-";
     if (el.dayRevenueNet) {
-      el.dayRevenueNet.textContent = amountBreakdownLine(netRevenue, feeRevenue, missing);
+      el.dayRevenueNet.textContent = amountBreakdownLine(netRevenue, missing);
     }
-    el.dayRevenue.title = amountSummaryTitle("예약매출", revenue, netRevenue, feeRevenue, missing);
+    el.dayRevenue.title = amountSummaryTitle("예약매출", revenue, netRevenue, missing);
     const selectedMonth = revenueSelectedMonth();
     el.monthRevenue.textContent = formatRevenueStat(selectedMonth?.total);
     if (el.monthRevenueNet) {
-      el.monthRevenueNet.textContent = amountBreakdownLine(selectedMonth?.netTotal, selectedMonth?.feeTotal, selectedMonth?.missingCount);
+      el.monthRevenueNet.textContent = amountBreakdownLine(selectedMonth?.netTotal, selectedMonth?.missingCount);
     }
     el.monthRevenue.title = selectedMonth
       ? amountSummaryTitle(
         `${selectedMonth.confirmedCount || 0}건`,
         selectedMonth.total,
         selectedMonth.netTotal,
-        selectedMonth.feeTotal,
         selectedMonth.missingCount,
       )
       : "선택월 원장 수익 합계";
@@ -1658,7 +1666,6 @@
     if (el.yearRevenueNet) {
       el.yearRevenueNet.textContent = amountBreakdownLine(
         state.revenueStats?.yearNetTotal,
-        state.revenueStats?.yearFeeTotal,
         state.revenueStats?.yearMissingCount,
       );
     }
@@ -1667,7 +1674,6 @@
         `${state.revenueStats.yearConfirmedCount || 0}건`,
         state.revenueStats.yearTotal,
         state.revenueStats.yearNetTotal,
-        state.revenueStats.yearFeeTotal,
         state.revenueStats.yearMissingCount,
       )
       : "선택연도 원장 수익 합계";
@@ -1898,8 +1904,8 @@
       ["예약번호", event.reservationNo || ""],
       ["상품", event.product || ""],
       ["예약매출", formatPayment(eventGrossAmount(event)) || ""],
-      ["정산입금", formatPayment(eventNetAmount(event)) || ""],
-      ["수수료", formatPayment(eventFeeAmount(event)) || ""],
+      ["수수료 제외 금액", formatPayment(eventNetAmount(event)) || ""],
+      ["예상 플랫폼 수수료", formatPayment(eventFeeAmount(event)) || ""],
       ["결제수단", event.paymentMethod || ""],
       ["금액출처", amountSourceText(event.amountSource) || ""],
       ["결제상태", event.paymentStatus || ""],
@@ -2268,10 +2274,9 @@
     return Number(event?.feeAmount || 0);
   }
 
-  function amountSummaryTitle(label, gross, net, fee, missing) {
+  function amountSummaryTitle(label, gross, net, missing) {
     const parts = [`${label} ${formatRevenueStat(gross)}`];
-    if (Number(net || 0) > 0) parts.push(`정산입금 ${formatRevenueStat(net)}`);
-    if (Number(fee || 0) > 0) parts.push(`수수료 ${formatRevenueStat(fee)}`);
+    if (Number(net || 0) > 0) parts.push(`수수료 제외 금액 ${formatRevenueStat(net)}`);
     if (Number(missing || 0) > 0) parts.push(`금액 미수집 ${Number(missing).toLocaleString()}건`);
     return parts.join(" / ");
   }
@@ -2430,7 +2435,7 @@
     const selectedMonthKey = String(state.activeDate || "").slice(0, 7);
     const year = String(state.activeDate || "").slice(0, 4);
     const months = stats?.months || [];
-    el.revenueModalSummary.textContent = `DB 원장 매출 기준 · ${comparison?.baseYear || 2025}년 / ${comparison?.compareYear || 2026}년 같은 기간 비교`;
+    el.revenueModalSummary.textContent = `총액은 DB 원장 결제액 · 보조값은 네이버 1.98%, 스페이스클라우드 10% 수수료 제외 금액 · ${comparison?.baseYear || 2025}년 / ${comparison?.compareYear || 2026}년 같은 기간 비교`;
     if (!months.length && !comparison) {
       el.revenueMonthList.innerHTML = '<p class="empty-note">표시할 수익 통계가 없습니다.</p>';
       return;
@@ -2638,7 +2643,7 @@
         <strong>${escapeHtml(formatRevenueStat(row.gross))}</strong>
         <small>${escapeHtml(compactDateRange(`${row.startDate || ""}~${row.endDate || ""}`))}</small>
         <small>${Number(row.count || 0).toLocaleString()}건 · ${escapeHtml(formatHours(row.hours))} · 시간당 ${escapeHtml(formatRevenueStat(row.hourAverage))}</small>
-        ${Number(row.net || 0) || Number(row.fee || 0) ? `<small>정산 ${escapeHtml(formatRevenueStat(row.net))} · 수수료 ${escapeHtml(formatRevenueStat(row.fee))}</small>` : ""}
+        ${Number(row.net || 0) ? `<small>수수료 제외 금액 ${escapeHtml(formatRevenueStat(row.net))}</small>` : ""}
       </article>
     `;
   }
@@ -2747,15 +2752,13 @@
   function amountBreakdownSmall(item) {
     if (!item) return "";
     const net = Number(item.netTotal || 0);
-    const fee = Number(item.feeTotal || 0);
-    if (!net && !fee) return "";
-    return `<small>정산 ${escapeHtml(formatRevenueStat(net))}${fee ? ` · 수수료 ${escapeHtml(formatRevenueStat(fee))}` : ""}</small>`;
+    if (!net) return "";
+    return `<small>수수료 제외 금액 ${escapeHtml(formatRevenueStat(net))}</small>`;
   }
 
-  function amountBreakdownLine(net, fee, missing = 0) {
+  function amountBreakdownLine(net, missing = 0) {
     const parts = [];
-    if (Number(net || 0) > 0) parts.push(`정산 ${formatRevenueStat(net)}`);
-    if (Number(fee || 0) > 0) parts.push(`수수료 ${formatRevenueStat(fee)}`);
+    if (Number(net || 0) > 0) parts.push(`수수료 제외 금액 ${formatRevenueStat(net)}`);
     if (Number(missing || 0) > 0) parts.push(`미수집 ${Number(missing).toLocaleString()}건`);
     return parts.join(" · ");
   }
@@ -2878,9 +2881,10 @@
     }
     state.dayModalEvents = events;
     const revenue = events.reduce((total, item) => total + eventGrossAmount(item), 0);
+    const netRevenue = events.reduce((total, item) => total + eventNetAmount(item), 0);
     const missing = events.filter((item) => !eventGrossAmount(item)).length;
     el.dayScheduleTitle.textContent = `${date} ${weekdayText(date)} 일간 일정`;
-    el.dayScheduleSummary.textContent = `${events.length}건 · ${revenue > 0 ? formatWon(revenue) : "금액 없음"}${missing ? ` · 금액 미수집 ${missing}건` : ""}`;
+    el.dayScheduleSummary.textContent = `${events.length}건 · ${revenue > 0 ? formatWon(revenue) : "금액 없음"}${netRevenue > 0 ? ` · 수수료 제외 ${formatWon(netRevenue)}` : ""}${missing ? ` · 금액 미수집 ${missing}건` : ""}`;
     renderScheduleGrid(el.dayScheduleGrid, date, events, visibleRooms, { slotMode: "view" });
     el.dayScheduleModal.hidden = false;
     document.body.classList.add("modal-open");

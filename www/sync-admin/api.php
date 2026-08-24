@@ -1153,7 +1153,8 @@ function month_summary($pdo, $date) {
     }
 
     $ledger = $pdo->prepare("
-        SELECT reservation_date, room_key, price, gross_amount, fee_amount, net_amount
+        SELECT reservation_date, room_key, source_platform,
+               price, gross_amount, fee_amount, net_amount
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN ? AND ?
           AND current_status <> 'canceled'
@@ -1221,12 +1222,30 @@ function ledger_gross_amount($row) {
     return $gross > 0 ? $gross : parse_price_amount(isset($row['price']) ? $row['price'] : '');
 }
 
-function ledger_net_amount($row) {
-    return isset($row['net_amount']) ? intval($row['net_amount']) : 0;
+function platform_fee_basis_points($source_platform) {
+    $source = strtolower(trim((string) $source_platform));
+    if ($source === 'naver') {
+        // Npay domestic booking, small-merchant tier: 1.80% + VAT = 1.98%.
+        return 198;
+    }
+    if ($source === 'spacecloud') {
+        // SpaceCloud host service fee plus PG fee: approximately 10% in total.
+        return 1000;
+    }
+    return 0;
 }
 
 function ledger_fee_amount($row) {
-    return isset($row['fee_amount']) ? intval($row['fee_amount']) : 0;
+    $gross = ledger_gross_amount($row);
+    $basis_points = platform_fee_basis_points(isset($row['source_platform']) ? $row['source_platform'] : '');
+    return $gross > 0 && $basis_points > 0
+        ? intval(round(($gross * $basis_points) / 10000))
+        : 0;
+}
+
+function ledger_net_amount($row) {
+    $gross = ledger_gross_amount($row);
+    return max(0, $gross - ledger_fee_amount($row));
 }
 
 function time_text_to_minutes($value, $is_end) {
@@ -1534,7 +1553,7 @@ function collect_be_weekday_day_metrics($pdo, $start_date, $end_date) {
         SELECT room_key,
                TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
                TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
-               price, gross_amount, fee_amount, net_amount
+               source_platform, price, gross_amount, fee_amount, net_amount
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN ? AND ?
           AND room_key IN ('b', 'e', 'B', 'E')
@@ -1645,7 +1664,7 @@ function collect_period_revenue($pdo, $start_date, $end_date) {
         SELECT room_key,
                TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
                TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
-               price, gross_amount, fee_amount, net_amount
+               source_platform, price, gross_amount, fee_amount, net_amount
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN ? AND ?
           AND current_status <> 'canceled'
@@ -1766,7 +1785,7 @@ function collect_month_revenue_for_year($pdo, $year) {
     $stmt = $pdo->prepare("
         SELECT DATE_FORMAT(reservation_date, '%Y-%m') AS month_key,
                DAYOFWEEK(reservation_date) AS day_of_week,
-               price, gross_amount, fee_amount, net_amount
+               source_platform, price, gross_amount, fee_amount, net_amount
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN ? AND ?
           AND current_status <> 'canceled'
@@ -1851,7 +1870,7 @@ function revenue_comparison_stats($pdo) {
                room_key,
                TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
                TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
-               price, gross_amount, fee_amount, net_amount
+               source_platform, price, gross_amount, fee_amount, net_amount
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN '2025-01-01' AND '2026-12-31'
           AND current_status <> 'canceled'
@@ -2007,7 +2026,7 @@ function revenue_stats($pdo, $date) {
     $stmt = $pdo->prepare("
         SELECT DATE_FORMAT(reservation_date, '%Y-%m') AS month_key,
                DAYOFWEEK(reservation_date) AS day_of_week,
-               price, gross_amount, fee_amount, net_amount
+               source_platform, price, gross_amount, fee_amount, net_amount
         FROM rhythmjoy_booking_ledger
         WHERE reservation_date BETWEEN ? AND ?
           AND current_status <> 'canceled'
@@ -4283,6 +4302,31 @@ function sync_admin_selftest_assert($condition, $message) {
 function run_sync_admin_selftest() {
     sync_admin_selftest_assert(clean_date_value('2026-02-29') === '', 'invalid calendar dates are rejected');
     sync_admin_selftest_assert(clean_date_value('2028-02-29') === '2028-02-29', 'valid leap dates are accepted');
+    $naver_amount = array(
+        'source_platform' => 'naver',
+        'gross_amount' => 100000,
+        'fee_amount' => 0,
+        'net_amount' => 100000,
+    );
+    sync_admin_selftest_assert(
+        ledger_fee_amount($naver_amount) === 1980 && ledger_net_amount($naver_amount) === 98020,
+        'Naver small-merchant booking revenue uses the 1.98% VAT-inclusive fee instead of stored settlement fields'
+    );
+    $spacecloud_amount = array(
+        'source_platform' => 'spacecloud',
+        'gross_amount' => 100000,
+        'fee_amount' => 1,
+        'net_amount' => 1,
+    );
+    sync_admin_selftest_assert(
+        ledger_fee_amount($spacecloud_amount) === 10000 && ledger_net_amount($spacecloud_amount) === 90000,
+        'SpaceCloud revenue uses the 10% combined host and PG fee instead of stored settlement fields'
+    );
+    $unknown_amount = array('source_platform' => 'google-backfill', 'gross_amount' => 100000);
+    sync_admin_selftest_assert(
+        ledger_fee_amount($unknown_amount) === 0 && ledger_net_amount($unknown_amount) === 100000,
+        'unknown and manually restored sources are not assigned an invented platform fee'
+    );
     list($rules, $included_rows) = generate_recurring_occurrences(
         '2026-08-01',
         '2026-08-31',
@@ -4453,7 +4497,7 @@ function run_sync_admin_selftest() {
         admin_reflection_audit_is_stale($audit_now - (40 * 60), $audit_now),
         'a missed reflection audit is marked stale after the grace period'
     );
-    echo "sync-admin self-test OK: single/recurring idempotency, admin task generation and ledger identity, customer cancellation identity, operation progress, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures, phone redaction and reflection-audit timing\n";
+    echo "sync-admin self-test OK: platform fee exclusion, single/recurring idempotency, admin task generation and ledger identity, customer cancellation identity, operation progress, weekdays, fifth-week exclusion, per-date override, one-year limit, admin alert signatures, phone redaction and reflection-audit timing\n";
 }
 
 if (PHP_SAPI === 'cli' && isset($argv[1]) && $argv[1] === 'self-test') {
