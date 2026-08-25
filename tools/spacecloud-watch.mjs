@@ -9607,21 +9607,40 @@ try:
         """)
         # Double-check the transactional outbox invariant. New reservation tasks
         # declare the obligation on the task row; if an outbox row is ever lost,
-        # the watcher recreates it before looking for work.
+        # the watcher recreates it before looking for work. Materialize the
+        # missing task identities with a non-locking consistent read before
+        # inserting delivery rows. An INSERT ... SELECT takes source-row locks
+        # after the SMS AUTO_INCREMENT lock, reversing the importer's
+        # task-then-delivery lock order and allowing a deadlock. The unique
+        # idempotency key absorbs concurrent producer inserts; the later exact
+        # generation guard rejects a task whose obligation changed after this
+        # consistent read.
         cur.execute("""
-            INSERT IGNORE INTO rhythmjoy_sms_deliveries (
-              idempotency_key, source_task_type, source_task_id, template_name,
-              recipient_phone_hash, recipient_phone_last4, status,
-              attempt_count, created_at, updated_at
-            )
-            SELECT
-              CONCAT('reservation-confirmed-v1|', t.task_type, '|', t.id),
-              t.task_type, t.id, 'reservation-confirmed-v1',
-              '', '', 'pending', 0, NOW(), NOW()
+            SELECT t.id AS taskId, t.task_type AS taskType
             FROM rhythmjoy_spacecloud_tasks t
+            LEFT JOIN rhythmjoy_sms_deliveries d
+              ON d.idempotency_key=CONCAT('reservation-confirmed-v1|', t.task_type, '|', t.id)
             WHERE t.confirmation_sms_required=1
               AND t.task_type IN ('upload','naver_block')
+              AND d.id IS NULL
+            ORDER BY t.id ASC
         """)
+        missing_sms_intents = cur.fetchall()
+        for task in missing_sms_intents:
+            task_id = int(task.get('taskId') or 0)
+            task_type = str(task.get('taskType') or '')
+            if task_id < 1 or task_type not in ('upload', 'naver_block'):
+                continue
+            cur.execute(
+                """
+                INSERT IGNORE INTO rhythmjoy_sms_deliveries (
+                  idempotency_key, source_task_type, source_task_id, template_name,
+                  recipient_phone_hash, recipient_phone_last4, status,
+                  attempt_count, created_at, updated_at
+                ) VALUES (%s,%s,%s,'reservation-confirmed-v1','','','pending',0,NOW(),NOW())
+                """,
+                (f'reservation-confirmed-v1|{task_type}|{task_id}', task_type, task_id),
+            )
         conn.commit()
         cur.execute("""
             SELECT
@@ -9701,6 +9720,12 @@ try:
                 if len(rows) >= 10:
                     break
                 continue
+            # Keep task -> delivery ordering consistent with the importer and
+            # the final SMS generation guard. Both changes commit together.
+            cur.execute(
+                'UPDATE rhythmjoy_spacecloud_tasks SET confirmation_sms_required=0, updated_at=NOW() WHERE id=%s',
+                (candidate.get('taskId'),),
+            )
             cur.execute(
                 """
                 UPDATE rhythmjoy_sms_deliveries
@@ -9709,10 +9734,6 @@ try:
                 WHERE id=%s AND status IN ('pending','phone_lookup_failed','failed')
                 """,
                 (candidate.get('deliveryId'),),
-            )
-            cur.execute(
-                'UPDATE rhythmjoy_spacecloud_tasks SET confirmation_sms_required=0, updated_at=NOW() WHERE id=%s',
-                (candidate.get('taskId'),),
             )
         conn.commit()
 finally:

@@ -114,11 +114,39 @@ class SmsOutboxInvariantTests(unittest.TestCase):
 
     def test_watcher_contains_independent_outbox_reconciliation(self):
         watcher = (Path(__file__).resolve().parents[1] / 'tools' / 'spacecloud-watch.mjs').read_text(encoding='utf-8')
-        self.assertIn("WHERE t.confirmation_sms_required=1", watcher)
-        self.assertIn("CONCAT('reservation-confirmed-v1|', t.task_type, '|', t.id)", watcher)
+        function_start = watcher.index('async function fetchRemoteSmsPhoneLookupFollowUps')
+        function_end = watcher.index('async function runSmsPhoneLookupFollowUps', function_start)
+        follow_up_source = watcher[function_start:function_end]
+        reconciliation_start = follow_up_source.index('# Double-check the transactional outbox invariant')
+        reconciliation_end = follow_up_source.index('conn.commit()', reconciliation_start)
+        reconciliation_source = follow_up_source[reconciliation_start:reconciliation_end]
+
+        self.assertIn("WHERE t.confirmation_sms_required=1", reconciliation_source)
+        self.assertIn("CONCAT('reservation-confirmed-v1|', t.task_type, '|', t.id)", reconciliation_source)
+        self.assertIn('missing_sms_intents = cur.fetchall()', reconciliation_source)
+        self.assertIn('for task in missing_sms_intents:', reconciliation_source)
+        self.assertLess(
+            reconciliation_source.index('SELECT t.id AS taskId'),
+            reconciliation_source.index('INSERT IGNORE INTO rhythmjoy_sms_deliveries'),
+        )
+        self.assertIn(
+            "VALUES (%s,%s,%s,'reservation-confirmed-v1'",
+            reconciliation_source,
+        )
+        self.assertNotIn(
+            "SELECT\n              CONCAT('reservation-confirmed-v1|'",
+            reconciliation_source,
+        )
+        task_clear = follow_up_source.index(
+            "UPDATE rhythmjoy_spacecloud_tasks SET confirmation_sms_required=0"
+        )
+        delivery_skip = follow_up_source.index(
+            "SET status='skipped', error_text='reservation no longer confirmed"
+        )
+        self.assertLess(task_clear, delivery_skip)
         self.assertIn(
             "d.status IN ('pending','phone_lookup_failed','failed','uncertain')",
-            watcher,
+            follow_up_source,
         )
         self.assertIn('provider-result-uncertain-no-auto-resend', watcher)
 
