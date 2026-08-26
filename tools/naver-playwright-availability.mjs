@@ -186,13 +186,19 @@ async function waitVisible(page, selector, timeoutMs = 15000) {
 }
 
 async function waitSidePanelClosed(page, timeoutMs = 10000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const open = await page.evaluate(() => !!document.querySelector('[class*="SideLayer__visible"]')).catch(() => false);
-    if (!open) return true;
-    await page.waitForTimeout(250);
+  try {
+    await page.waitForFunction(
+      () => !document.querySelector('[class*="SideLayer__visible"]'),
+      undefined,
+      { timeout: timeoutMs },
+    );
+    return true;
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || /Timeout\s+\d+ms exceeded/i.test(String(error?.message || error))) {
+      return false;
+    }
+    throw error;
   }
-  return false;
 }
 
 async function readSelectedView(page) {
@@ -394,6 +400,56 @@ async function verifySchedulePanel(page, row, expectedStatus) {
   };
 }
 
+export async function waitForNaverSchedulePanelIdentity(page, row, expectedStatus, {
+  timeoutMs = 10000,
+} = {}) {
+  const room = NAVER_ROOMS[row.roomKey];
+  if (!room) throw new Error(`unknown Naver room key: ${row.roomKey}`);
+  const date = normalizeDate(row.date);
+  const expected = {
+    roomName: room.name,
+    dateText: `${dateParts(date).year}.${dateParts(date).month}.${dateParts(date).day}`,
+    startTexts: timeLabelVariants(row.startTime),
+    endTexts: timeLabelVariants(row.endTime),
+    expectedStatus: String(expectedStatus || ''),
+  };
+  let timedOut = false;
+  try {
+    await page.waitForFunction((wanted) => {
+      const compact = (value) => String(value || '').replace(/\s+/g, '');
+      const includesAny = (text, values) => values.some((value) => text.includes(compact(value)));
+      return [...document.querySelectorAll('[class*="SideLayer__visible"]')]
+        .filter((side) => {
+          const rect = side.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        })
+        .filter((side) => side.querySelectorAll('.form-group').length >= 2)
+        .filter((side) => [...side.querySelectorAll('button')].filter((button) => (
+          String(button.innerText || button.textContent || '').replace(/\s+/g, ' ').trim() === '설정변경'
+        )).length === 1)
+        .some((side) => {
+          const text = compact(side.innerText || side.textContent || '');
+          return text.includes(compact(wanted.roomName))
+            && text.includes(compact(wanted.dateText))
+            && includesAny(text, wanted.startTexts)
+            && includesAny(text, wanted.endTexts)
+            && (!wanted.expectedStatus || text.includes(compact(wanted.expectedStatus)));
+        });
+    }, expected, { timeout: timeoutMs });
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || /Timeout\s+\d+ms exceeded/i.test(String(error?.message || error))) {
+      timedOut = true;
+    } else {
+      throw error;
+    }
+  }
+  return {
+    ...await verifySchedulePanel(page, row, expectedStatus),
+    timedOut,
+    waitMode: 'exact-editor-identity',
+  };
+}
+
 async function inspectScheduleEditorContext(page) {
   return page.evaluate(() => {
     const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
@@ -467,7 +523,9 @@ async function selectScheduleFormButton(page, groupLabel, buttonIndex, targetTex
   return { changed: true, value: selected };
 }
 
-async function saveSchedule(page) {
+export async function saveNaverSchedule(page, {
+  timeoutMs = 12000,
+} = {}) {
   const dialogTypes = [];
   const onDialog = async (dialog) => {
     dialogTypes.push(dialog.type());
@@ -480,9 +538,11 @@ async function saveSchedule(page) {
     const saveCount = await save.count();
     if (saveCount !== 1) throw new Error(`Naver save button count ${saveCount}`);
     await save.click({ timeout: 10000 });
-    await page.waitForTimeout(1200);
-    await waitSidePanelClosed(page, 12000);
-    return { dialogTypes };
+    const panelClosed = await waitSidePanelClosed(page, timeoutMs);
+    if (!panelClosed) {
+      throw new Error('Naver schedule editor did not close after save; modal still visible after submit');
+    }
+    return { dialogTypes, panelClosed };
   } finally {
     page.off('dialog', onDialog);
   }
@@ -943,9 +1003,8 @@ async function applyOneNaverAvailabilitySlot(page, slotRow, {
   const targetCount = await target.count();
   if (targetCount !== 1) throw new Error(`Naver target button count ${targetCount}`);
   await target.click({ timeout: 10000 });
-  await page.waitForTimeout(900);
 
-  const verification = await verifySchedulePanel(page, slotRow, meta.expectedPanelStatus);
+  const verification = await waitForNaverSchedulePanelIdentity(page, slotRow, meta.expectedPanelStatus);
   result.panelVerification = verification;
   if (!verification.ok) {
     result.status = 'needs-review';
@@ -956,7 +1015,7 @@ async function applyOneNaverAvailabilitySlot(page, slotRow, {
   await selectScheduleFormButton(page, '적용시간', 0, timeLabelVariants(slotRow.startTime));
   await selectScheduleFormButton(page, '적용시간', 1, timeLabelVariants(slotRow.endTime));
   await selectScheduleFormButton(page, '예약상태', 0, meta.formStatus);
-  result.save = await saveSchedule(page);
+  result.save = await saveNaverSchedule(page);
   await scrollCalendarToHour(page, parseHour(slotRow.startTime));
   slot = await findWeeklySlot(page, slotRow);
   result.afterSlot = compactSlot(slot);
@@ -1143,7 +1202,6 @@ export async function inspectNaverAvailabilityEditor(context, task, {
   const targetCount = await target.count();
   if (targetCount !== 1) throw new Error(`Naver target button count ${targetCount}`);
   await target.click({ timeout: 10000 });
-  await page.waitForTimeout(900);
   const expectedStatus = slot.status === 'suspended' ? '예약불가' : '예약가능';
   return {
     taskId: row.taskId,
@@ -1152,7 +1210,7 @@ export async function inspectNaverAvailabilityEditor(context, task, {
     startTime: slotRow.startTime,
     endTime: slotRow.endTime,
     slot: compactSlot(slot),
-    panelVerification: await verifySchedulePanel(page, slotRow, expectedStatus),
+    panelVerification: await waitForNaverSchedulePanelIdentity(page, slotRow, expectedStatus),
     editor: await inspectScheduleEditorContext(page),
   };
 }

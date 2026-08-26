@@ -9,9 +9,11 @@ import {
   fetchNaverReservationPhone,
   inspectNaverReservationStatus,
   partitionNaverActionableSlotRows,
+  saveNaverSchedule,
   selectNaverCancelPanelText,
   selectNaverScheduleEditorPanel,
   waitForNaverCancelPanelIdentity,
+  waitForNaverSchedulePanelIdentity,
 } from './naver-playwright-availability.mjs';
 
 test('distinguishes an explicit Naver login page from a transient calendar load failure', () => {
@@ -339,6 +341,121 @@ test('does not accept a header-only side layer as the schedule editor', () => {
     formGroupCount: 0,
     saveButtonCount: 0,
   }]), null);
+});
+
+test('waits for the exact Naver schedule editor identity instead of an elapsed delay', async () => {
+  const waitCalls = [];
+  const page = {
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden for the Naver schedule editor');
+    },
+    waitForFunction: async (predicate, expected, options) => {
+      waitCalls.push({ predicate, expected, options });
+    },
+    evaluate: async () => [{
+      visible: true,
+      text: 'A홀 2026.9.3 오후 1:00 오후 2:00 예약가능 설정변경',
+      formGroupCount: 2,
+      saveButtonCount: 1,
+    }],
+  };
+
+  const result = await waitForNaverSchedulePanelIdentity(page, {
+    roomKey: 'a',
+    date: '2026-09-03',
+    startTime: '13:00',
+    endTime: '14:00',
+  }, '예약가능', { timeoutMs: 4321 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.timedOut, false);
+  assert.equal(waitCalls.length, 1);
+  assert.equal(waitCalls[0].expected.roomName, 'A홀');
+  assert.equal(waitCalls[0].expected.dateText, '2026.9.3');
+  assert.deepEqual(waitCalls[0].expected.startTexts, ['오후 1:00']);
+  assert.deepEqual(waitCalls[0].expected.endTexts, ['오후 2:00']);
+  assert.equal(waitCalls[0].expected.expectedStatus, '예약가능');
+  assert.equal(waitCalls[0].options.timeout, 4321);
+});
+
+test('keeps a loaded wrong Naver schedule panel blocked after the identity wait cap', async () => {
+  const timeout = new Error('page.waitForFunction: Timeout 4321ms exceeded');
+  timeout.name = 'TimeoutError';
+  const page = {
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden for the Naver schedule editor');
+    },
+    waitForFunction: async () => {
+      throw timeout;
+    },
+    evaluate: async () => [{
+      visible: true,
+      text: 'B홀 2026.9.4 오후 3:00 오후 4:00 예약가능 설정변경',
+      formGroupCount: 2,
+      saveButtonCount: 1,
+    }],
+  };
+
+  const result = await waitForNaverSchedulePanelIdentity(page, {
+    roomKey: 'a',
+    date: '2026-09-03',
+    startTime: '13:00',
+    endTime: '14:00',
+  }, '예약가능', { timeoutMs: 4321 });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.timedOut, true);
+  assert.ok(result.errors.includes('room:A홀'));
+  assert.ok(result.errors.includes('date:2026.9.3'));
+});
+
+test('saves a Naver schedule once and waits for the editor to actually close', async () => {
+  let saveClicks = 0;
+  const waitCalls = [];
+  const save = {
+    count: async () => 1,
+    click: async () => { saveClicks += 1; },
+  };
+  const page = {
+    on: () => {},
+    off: () => {},
+    locator: () => ({ filter: () => save }),
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden after Naver schedule save');
+    },
+    waitForFunction: async (predicate, argument, options) => {
+      waitCalls.push({ predicate, argument, options });
+    },
+  };
+
+  const result = await saveNaverSchedule(page, { timeoutMs: 4321 });
+
+  assert.equal(saveClicks, 1);
+  assert.equal(result.panelClosed, true);
+  assert.equal(waitCalls.length, 1);
+  assert.equal(waitCalls[0].options.timeout, 4321);
+});
+
+test('never repeats a Naver save when the editor close result is uncertain', async () => {
+  let saveClicks = 0;
+  const timeout = new Error('page.waitForFunction: Timeout 4321ms exceeded');
+  timeout.name = 'TimeoutError';
+  const save = {
+    count: async () => 1,
+    click: async () => { saveClicks += 1; },
+  };
+  const page = {
+    on: () => {},
+    off: () => {},
+    locator: () => ({ filter: () => save }),
+    waitForFunction: async () => { throw timeout; },
+  };
+
+  await assert.rejects(
+    saveNaverSchedule(page, { timeoutMs: 4321 }),
+    /did not close after save/,
+  );
+  assert.equal(saveClicks, 1);
 });
 
 test('skips started Naver slots and keeps later slots actionable in Korea time', () => {
