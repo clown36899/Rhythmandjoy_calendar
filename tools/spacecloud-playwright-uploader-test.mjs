@@ -13,11 +13,14 @@ import {
   pollForSpacecloudCalendarAbsence,
   pollForSpacecloudCalendarIdentity,
   popupDeleteVerification,
+  setSpacecloudDate,
   spacecloudReservationIdentityAccepted,
   spacecloudUploadEventFromTask,
   summarizeDeleteCandidateIdentityEvidence,
   verifySpacecloudCalendarIdentity,
   waitForDirectEventCandidates,
+  waitForSpacecloudDateInput,
+  waitForSpacecloudDatePickerMonth,
   waitForSpacecloudReservationDetailIdentity,
 } from './spacecloud-playwright-uploader.mjs';
 
@@ -170,6 +173,117 @@ test('calendar grid supports compact February and rejects stale or malformed DOM
   const broken = assessCalendarMonthGrid(brokenSequence, { year: 2026, month: 9 });
   assert.equal(broken.ready, false);
   assert.match(broken.reason, /day sequence mismatch/);
+});
+
+test('SpaceCloud date selection waits for each exact month and final input value without blind delays', async () => {
+  const scenarios = [
+    {
+      initialMonth: 7,
+      monthSelector: '#_dpicker1 .btn_month_next',
+      expectedMonths: [{ year: 2026, month: 8 }, { year: 2026, month: 9 }],
+    },
+    {
+      initialMonth: 11,
+      monthSelector: '#_dpicker1 .btn_month_prev',
+      expectedMonths: [{ year: 2026, month: 10 }, { year: 2026, month: 9 }],
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    let pickerYm = { year: 2026, month: scenario.initialMonth };
+    let dateValue = `2026.${String(scenario.initialMonth).padStart(2, '0')}.01`;
+    const clicks = [];
+    const waits = [];
+    const page = {
+      evaluate: async (predicate, argument) => {
+        if (typeof argument === 'string' && argument.startsWith('#_dpicker1')) return true;
+        const source = String(predicate);
+        if (source.includes("document.querySelector('#start_day')?.value")) return dateValue;
+        if (source.includes("document.querySelector('#_dpicker1')")) {
+          return `${pickerYm.year}. ${pickerYm.month}`;
+        }
+        throw new Error(`unexpected page.evaluate call: ${source.slice(0, 80)}`);
+      },
+      waitForFunction: async (predicate, expected, options) => {
+        waits.push({ predicate, expected, options });
+        if (typeof expected === 'string') {
+          dateValue = '2026.09.03';
+        } else {
+          pickerYm = { year: expected.year, month: expected.month };
+        }
+      },
+      locator: (selector) => ({
+        filter: (options) => ({
+          count: async () => 1,
+          click: async () => {
+            clicks.push({ selector, options });
+          },
+        }),
+      }),
+      waitForTimeout: async () => {
+        throw new Error('SpaceCloud date selection must not use elapsed time as readiness');
+      },
+    };
+
+    const result = await setSpacecloudDate(page, '2026-09-03');
+
+    assert.deepEqual(result, {
+      method: 'datepicker',
+      current: '2026.09.03',
+      day: '03',
+      month: '2026-09',
+    });
+    assert.deepEqual(clicks.map((entry) => entry.selector), [
+      scenario.monthSelector,
+      scenario.monthSelector,
+      '#_dpicker1 a:not(.disable)',
+    ]);
+    assert.deepEqual(waits.map((entry) => entry.expected), [
+      ...scenario.expectedMonths,
+      '20260903',
+    ]);
+    assert.ok(waits.every((entry) => entry.options.timeout === 5000));
+  }
+});
+
+test('SpaceCloud date waits reject a final authoritative month or input mismatch', async () => {
+  const monthPage = {
+    waitForFunction: async () => {},
+    evaluate: async () => '2026. 8',
+    waitForTimeout: async () => {
+      throw new Error('blind wait forbidden');
+    },
+  };
+  await assert.rejects(
+    waitForSpacecloudDatePickerMonth(monthPage, { year: 2026, month: 9 }, { timeoutMs: 4321 }),
+    /datepicker month changed after readiness: 2026-8, expected=2026-9/,
+  );
+
+  const inputPage = {
+    waitForFunction: async () => {},
+    evaluate: async () => '2026.09.04',
+    waitForTimeout: async () => {
+      throw new Error('blind wait forbidden');
+    },
+  };
+  await assert.rejects(
+    waitForSpacecloudDateInput(inputPage, '2026-09-03', { timeoutMs: 4321 }),
+    /date changed after readiness: current=2026.09.04, expected=2026-09-03/,
+  );
+
+  const incompletePage = {
+    waitForFunction: async () => {
+      throw new Error('Timeout 4321ms exceeded');
+    },
+    evaluate: async () => '2026.09.04',
+    waitForTimeout: async () => {
+      throw new Error('blind wait forbidden');
+    },
+  };
+  await assert.rejects(
+    waitForSpacecloudDateInput(incompletePage, '2026-09-03', { timeoutMs: 4321 }),
+    /date did not update to 2026-09-03; current=2026.09.04/,
+  );
 });
 
 test('canceled detail accepts only the known post-cancel name omission', () => {

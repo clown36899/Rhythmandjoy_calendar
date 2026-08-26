@@ -1713,18 +1713,70 @@ async function pickerMonth(page) {
   return { year: Number(match[1]), month: Number(match[2]) };
 }
 
-async function setDate(page, targetDate) {
-  const targetCompact = compactDate(targetDate);
-  const isTarget = async () => {
-    const current = await page.evaluate(() => document.querySelector('#start_day')?.value || '');
-    return {
-      current,
-      ok: String(current).replace(/[^0-9]/g, '').slice(0, 8) === targetCompact,
-    };
-  };
+export async function waitForSpacecloudDatePickerMonth(page, expectedYm, {
+  timeoutMs = 5000,
+} = {}) {
+  let waitError = null;
+  try {
+    await page.waitForFunction((expected) => {
+      const root = document.querySelector('#_dpicker1');
+      const title = root?.querySelector('.calendar_tit strong') || root?.querySelector('.calendar_tit') || root;
+      const match = String(title?.textContent || '').match(/(\d{4})\s*\.\s*(\d{1,2})/);
+      return Number(match?.[1]) === Number(expected.year)
+        && Number(match?.[2]) === Number(expected.month);
+    }, expectedYm, { timeout: timeoutMs });
+  } catch (error) {
+    waitError = error;
+  }
 
-  const before = await isTarget();
-  if (before.ok) return { method: 'already-default', current: before.current };
+  const currentYm = await pickerMonth(page);
+  if (ymIndex(currentYm) !== ymIndex(expectedYm)) {
+    const error = new Error(
+      `datepicker month ${waitError ? 'did not update' : 'changed after readiness'}: `
+        + `${currentYm.year}-${currentYm.month}, expected=${expectedYm.year}-${expectedYm.month}`,
+    );
+    error.waitError = waitError;
+    throw error;
+  }
+  return currentYm;
+}
+
+async function spacecloudDateInput(page) {
+  return page.evaluate(() => document.querySelector('#start_day')?.value || '');
+}
+
+export async function waitForSpacecloudDateInput(page, targetDate, {
+  timeoutMs = 5000,
+} = {}) {
+  const targetCompact = compactDate(targetDate);
+  let waitError = null;
+  try {
+    await page.waitForFunction((expected) => {
+      const current = document.querySelector('#start_day')?.value || '';
+      return String(current).replace(/[^0-9]/g, '').slice(0, 8) === expected;
+    }, targetCompact, { timeout: timeoutMs });
+  } catch (error) {
+    waitError = error;
+  }
+
+  const current = await spacecloudDateInput(page);
+  if (String(current).replace(/[^0-9]/g, '').slice(0, 8) !== targetCompact) {
+    const error = new Error(waitError
+      ? `date did not update to ${targetDate}; current=${current}`
+      : `date changed after readiness: current=${current}, expected=${targetDate}`);
+    error.waitError = waitError;
+    throw error;
+  }
+  return { current, targetCompact };
+}
+
+export async function setSpacecloudDate(page, targetDate) {
+  const targetCompact = compactDate(targetDate);
+
+  const before = await spacecloudDateInput(page);
+  if (String(before).replace(/[^0-9]/g, '').slice(0, 8) === targetCompact) {
+    return { method: 'already-default', current: before };
+  }
 
   await openDatePicker(page);
 
@@ -1738,8 +1790,9 @@ async function setDate(page, targetDate) {
     const control = page.locator(selector).filter({ visible: true });
     const count = await control.count();
     if (count !== 1) throw new Error(`datepicker ${diff > 0 ? 'next' : 'prev'} count ${count}`);
+    const expectedYm = shiftYm(currentYm, diff > 0 ? 1 : -1);
     await control.click({ timeout: 5000 });
-    await page.waitForTimeout(250);
+    await waitForSpacecloudDatePickerMonth(page, expectedYm, { timeoutMs: 5000 });
   }
 
   const finalYm = await pickerMonth(page);
@@ -1753,17 +1806,8 @@ async function setDate(page, targetDate) {
   if (dayCount !== 1) throw new Error(`enabled datepicker day ${day} count ${dayCount}`);
   await dayLocator.click({ timeout: 5000 });
 
-  const started = Date.now();
-  while (Date.now() - started < 5000) {
-    const after = await isTarget();
-    if (after.ok) {
-      return { method: 'datepicker', current: after.current, day, month: targetDate.slice(0, 7) };
-    }
-    await page.waitForTimeout(200);
-  }
-
-  const finalState = await isTarget();
-  throw new Error(`date did not update to ${targetDate}; current=${finalState.current}`);
+  const after = await waitForSpacecloudDateInput(page, targetDate, { timeoutMs: 5000 });
+  return { method: 'datepicker', current: after.current, day, month: targetDate.slice(0, 7) };
 }
 
 async function writeJson(filePath, data) {
@@ -1871,7 +1915,7 @@ export async function uploadSpacecloudDirectReservation(context, event, {
     await add.click({ timeout: 10000 });
     if (!(await waitVisible(page, '#start_day', 12000))) throw new Error('add modal did not open');
 
-    row.dateSet = await setDate(page, ui.values.date);
+    row.dateSet = await setSpacecloudDate(page, ui.values.date);
     await page.locator('#shour').selectOption(ui.values.startHourSelectValue, { timeout: 10000 });
     await page.locator('#ehour').selectOption(ui.values.endHourSelectValue, { timeout: 10000 });
     await page.locator('#reserve_name').fill(ui.values.name, { timeout: 10000 });
