@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildHourlySlotRows,
+  checkNaverSmartplaceLogin,
   classifyNaverSessionCheck,
   classifyNaverCancelPanelText,
   partitionNaverActionableSlotRows,
@@ -39,6 +40,59 @@ test('distinguishes an explicit Naver login page from a transient calendar load 
     url: 'https://partner.booking.naver.com/bizes/1257912/booking-calendar-view',
     calendarVisible: true,
   }).status, 'ready');
+
+  assert.equal(classifyNaverSessionCheck({
+    url: 'https://partner.booking.naver.com/bizes/1257912/booking-calendar-view',
+    probeStatus: 200,
+  }).status, 'ready');
+
+  const redirected = classifyNaverSessionCheck({
+    url: 'https://partner.booking.naver.com/bizes/1257912/booking-calendar-view',
+    probeStatus: 302,
+    redirectLocation: 'https://nid.naver.com/nidlogin.login?url=redacted',
+  });
+  assert.equal(redirected.status, 'login_required');
+
+  const unavailable = classifyNaverSessionCheck({
+    url: 'https://partner.booking.naver.com/bizes/1257912/booking-calendar-view',
+    probeStatus: 503,
+    probeAttempted: true,
+  });
+  assert.equal(unavailable.status, 'needs_check');
+  assert.match(unavailable.reason, /HTTP 503/);
+
+  assert.equal(classifyNaverSessionCheck({
+    url: 'https://partner.booking.naver.com/bizes/1257912/booking-calendar-view',
+    navigationError: 'request timed out',
+    probeAttempted: true,
+  }).status, 'needs_check');
+});
+
+test('checks Naver authentication with a lightweight redirect probe', async () => {
+  const calls = [];
+  const context = {
+    request: {
+      fetch: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          status: () => 200,
+          headers: () => ({}),
+        };
+      },
+    },
+  };
+  const result = await checkNaverSmartplaceLogin(context, {
+    businessId: '1257912',
+    timeoutMs: 4321,
+  });
+
+  assert.equal(result.status, 'ready');
+  assert.equal(result.probe, 'head');
+  assert.equal(result.probeStatus, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.method, 'HEAD');
+  assert.equal(calls[0].options.maxRedirects, 0);
+  assert.equal(calls[0].options.timeout, 4321);
 });
 
 test('selects the full Naver schedule editor instead of the visible header shell', () => {

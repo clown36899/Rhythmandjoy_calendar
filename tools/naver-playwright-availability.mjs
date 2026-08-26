@@ -1335,25 +1335,42 @@ export async function checkNaverSmartplaceLogin(context, {
   businessId = NAVER_BOOKING_BUSINESS_ID,
   timeoutMs = 20000,
 } = {}) {
-  const page = await pageForContext(context);
+  const targetUrl = naverCalendarUrl(businessId);
   let navigationError = '';
+  let probeStatus = null;
+  let redirectLocation = '';
   try {
-    await page.goto(naverCalendarUrl(businessId), { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    const response = await context.request.fetch(targetUrl, {
+      method: 'HEAD',
+      timeout: timeoutMs,
+      maxRedirects: 0,
+      failOnStatusCode: false,
+    });
+    probeStatus = response.status();
+    redirectLocation = response.headers().location || '';
   } catch (error) {
     navigationError = String(error?.message || error).replace(/\s+/g, ' ').trim().slice(0, 240);
   }
-  const calendarVisible = await waitVisible(page, 'button[class*="Select__btn-selected"]', timeoutMs);
-  const currentUrl = page.url();
   const classification = classifyNaverSessionCheck({
-    url: currentUrl,
-    calendarVisible,
+    url: targetUrl,
     navigationError,
+    probeStatus,
+    redirectLocation,
+    probeAttempted: true,
   });
+  let finalUrl = targetUrl;
+  if (redirectLocation) {
+    try {
+      finalUrl = new URL(redirectLocation, targetUrl).toString();
+    } catch {}
+  }
   return {
     ...classification,
-    url: currentUrl,
-    title: await page.title().catch(() => ''),
+    url: finalUrl,
+    title: '',
     navigationError,
+    probe: 'head',
+    probeStatus,
   };
 }
 
@@ -1361,11 +1378,20 @@ export function classifyNaverSessionCheck({
   url,
   calendarVisible = false,
   navigationError = '',
+  probeStatus = null,
+  redirectLocation = '',
+  probeAttempted = false,
 } = {}) {
   const currentUrl = String(url || '');
+  let effectiveUrl = currentUrl;
+  if (redirectLocation) {
+    try {
+      effectiveUrl = new URL(String(redirectLocation), currentUrl).toString();
+    } catch {}
+  }
   let hostname = '';
   try {
-    hostname = new URL(currentUrl).hostname.toLowerCase();
+    hostname = new URL(effectiveUrl).hostname.toLowerCase();
   } catch {}
   const loginRequired = hostname === 'nid.naver.com' || hostname.endsWith('.nid.naver.com');
   if (loginRequired) {
@@ -1378,6 +1404,35 @@ export function classifyNaverSessionCheck({
   }
 
   const expectedUrl = /^https:\/\/partner\.booking\.naver\.com\/bizes\/[^/]+\/booking-calendar-view(?:[/?#]|$)/.test(currentUrl);
+  if ([401, 403].includes(Number(probeStatus))) {
+    return {
+      ok: false,
+      status: 'login_required',
+      loginRequired: true,
+      reason: `Naver SmartPlace session probe returned HTTP ${probeStatus}`,
+    };
+  }
+  if (probeStatus !== null) {
+    if (expectedUrl && Number(probeStatus) >= 200 && Number(probeStatus) < 300) {
+      return { ok: true, status: 'ready', loginRequired: false, reason: '' };
+    }
+    return {
+      ok: false,
+      status: probeAttempted ? 'needs_check' : 'check_failed',
+      loginRequired: false,
+      reason: `Naver SmartPlace session probe could not verify authentication: HTTP ${probeStatus}`,
+    };
+  }
+  if (probeAttempted) {
+    return {
+      ok: false,
+      status: 'needs_check',
+      loginRequired: false,
+      reason: navigationError
+        ? `Naver SmartPlace session probe unavailable: ${navigationError}`
+        : 'Naver SmartPlace session probe returned no authoritative response',
+    };
+  }
   if (expectedUrl && calendarVisible) {
     return { ok: true, status: 'ready', loginRequired: false, reason: '' };
   }

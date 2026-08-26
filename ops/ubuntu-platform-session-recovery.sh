@@ -23,8 +23,8 @@ node tools/spacecloud-watch.mjs login \
   --env-file "$ENV_FILE" \
   --no-telegram
 
-# Reopen the saved profile and verify both sites independently. A successful
-# login-page observation alone must never restart production automation.
+# Reopen the saved profile and verify both sites through authenticated platform
+# responses. A timeout or page observation alone must never prove readiness.
 node tools/spacecloud-watch.mjs check-sessions \
   --profile-dir "$PROFILE_DIR" \
   --work-dir "$WORK_DIR" \

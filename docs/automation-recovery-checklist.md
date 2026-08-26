@@ -150,8 +150,10 @@ If a session expires:
 4. Open the mini PC remote screen and log in manually.
 5. The watcher processes remaining work on the next cycle.
 
-Do not mark a session `ready` manually in the admin panel. Only the mini PC's
-successful read of the real Naver and SpaceCloud calendars can publish `ready`.
+Do not mark a session `ready` manually in the admin panel. Only an authenticated
+response from the real Naver calendar endpoint or SpaceCloud calendar API can
+publish `ready`. A timeout, network error, or 5xx response remains `needs_check`
+and does not prove either readiness or logout.
 For remote recovery, run this on the Mac:
 
 ```bash

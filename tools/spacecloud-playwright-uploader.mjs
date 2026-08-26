@@ -329,11 +329,21 @@ async function fetchSpacecloudReservationDetail(page, reservationId) {
   }, reservationId);
 }
 
-async function fetchSpacecloudCalendarMonth(page, roomKey, targetDate) {
-  const room = SPACECLOUD_ROOMS[roomKey];
-  if (!room) throw new Error(`unknown SpaceCloud room key: ${roomKey}`);
-  const { year, month } = ymFromDate(normalizeDate(targetDate));
-  return page.evaluate(async ({ endpoint, productId, year: targetYear, month: targetMonth }) => {
+async function fetchSpacecloudCalendarApi(page, {
+  productId,
+  year,
+  month,
+  timeoutMs = 0,
+  summaryOnly = false,
+}) {
+  return page.evaluate(async ({
+    endpoint,
+    productId: targetProductId,
+    year: targetYear,
+    month: targetMonth,
+    requestTimeoutMs,
+    returnSummaryOnly,
+  }) => {
     const rawUserInfo = window.localStorage.getItem('spacecloud__userInfo') || '{}';
     let accessToken = '';
     try {
@@ -345,9 +355,11 @@ async function fetchSpacecloudCalendarMonth(page, roomKey, targetDate) {
         ok: false,
         status: 0,
         error: 'spacecloud-access-token-missing',
-        productId,
+        tokenPresent: false,
+        productId: targetProductId,
         year: targetYear,
         month: targetMonth,
+        dayCount: 0,
         days: [],
       };
     }
@@ -355,7 +367,11 @@ async function fetchSpacecloudCalendarMonth(page, roomKey, targetDate) {
     const url = new URL(endpoint);
     url.searchParams.set('year', String(targetYear));
     url.searchParams.set('month', String(targetMonth).padStart(2, '0'));
-    url.searchParams.set('product_id', String(productId));
+    url.searchParams.set('product_id', String(targetProductId));
+    const controller = requestTimeoutMs > 0 ? new AbortController() : null;
+    const timeout = controller
+      ? window.setTimeout(() => controller.abort(), requestTimeoutMs)
+      : null;
     let response;
     try {
       response = await fetch(url.toString(), {
@@ -365,17 +381,22 @@ async function fetchSpacecloudCalendarMonth(page, roomKey, targetDate) {
         },
         credentials: 'include',
         cache: 'no-store',
+        signal: controller?.signal,
       });
     } catch (error) {
       return {
         ok: false,
         status: 0,
-        error: `calendar-api-fetch-failed:${error?.message || error}`,
-        productId,
+        error: `calendar-api-fetch-failed:${error?.name || error?.message || error}`,
+        tokenPresent: true,
+        productId: targetProductId,
         year: targetYear,
         month: targetMonth,
+        dayCount: 0,
         days: [],
       };
+    } finally {
+      if (timeout !== null) window.clearTimeout(timeout);
     }
 
     const text = await response.text();
@@ -393,9 +414,11 @@ async function fetchSpacecloudCalendarMonth(page, roomKey, targetDate) {
         ok: false,
         status: response.status,
         error: response.ok ? 'calendar-api-unexpected-response' : `calendar-api-http-${response.status}`,
-        productId,
+        tokenPresent: true,
+        productId: targetProductId,
         year: targetYear,
         month: targetMonth,
+        dayCount: 0,
         days: [],
       };
     }
@@ -417,13 +440,28 @@ async function fetchSpacecloudCalendarMonth(page, roomKey, targetDate) {
     return {
       ok: true,
       status: response.status,
-      productId,
+      tokenPresent: true,
+      productId: targetProductId,
       year: targetYear,
       month: targetMonth,
-      days,
+      dayCount: sourceDays.length,
+      days: returnSummaryOnly ? [] : days,
     };
   }, {
     endpoint: `https://api.spacecloud.kr${SPACECLOUD_CALENDAR_API_PATH}`,
+    productId,
+    year,
+    month,
+    requestTimeoutMs: Math.max(0, Number(timeoutMs) || 0),
+    returnSummaryOnly: summaryOnly === true,
+  });
+}
+
+async function fetchSpacecloudCalendarMonth(page, roomKey, targetDate) {
+  const room = SPACECLOUD_ROOMS[roomKey];
+  if (!room) throw new Error(`unknown SpaceCloud room key: ${roomKey}`);
+  const { year, month } = ymFromDate(normalizeDate(targetDate));
+  return fetchSpacecloudCalendarApi(page, {
     productId: room.productId,
     year,
     month,
@@ -2554,33 +2592,75 @@ export async function checkSpacecloudLogin(context, {
   url = 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
   timeoutMs = 20000,
 } = {}) {
-  const page = await pageForContext(context);
+  const page = await context.newPage();
   let navigationError = '';
+  let apiResult = null;
+  let currentUrl = '';
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    let productId = '108674';
+    try {
+      productId = new URL(url).searchParams.get('product') || productId;
+    } catch {}
+    await page.route('**/*', async (route) => {
+      const request = route.request();
+      if (
+        request.resourceType() === 'document'
+        || isSpacecloudCalendarApiUrl(request.url(), { productId })
+      ) {
+        await route.continue();
+        return;
+      }
+      await route.abort('blockedbyclient');
+    });
+    await page.goto(url, { waitUntil: 'commit', timeout: timeoutMs });
+    currentUrl = page.url();
+    const explicitLogin = classifySpacecloudSessionCheck({ url: currentUrl });
+    if (explicitLogin.status !== 'login_required') {
+      const nowKst = new Date(Date.now() + (9 * 60 * 60 * 1000));
+      apiResult = await fetchSpacecloudCalendarApi(page, {
+        productId,
+        year: nowKst.getUTCFullYear(),
+        month: nowKst.getUTCMonth() + 1,
+        timeoutMs,
+        summaryOnly: true,
+      });
+    }
   } catch (error) {
     navigationError = String(error?.message || error).replace(/\s+/g, ' ').trim().slice(0, 240);
+    currentUrl = page.url();
   }
-  const addVisible = await waitVisible(page, 'a._additionalReserveLayerOpen', timeoutMs);
-  const currentUrl = page.url();
-  const classification = classifySpacecloudSessionCheck({
-    url: currentUrl,
-    addVisible,
-    navigationError,
-  });
-  const title = await page.title().catch(() => '');
-  return {
-    ...classification,
-    url: currentUrl,
-    title,
-    navigationError,
-  };
+  try {
+    const classification = classifySpacecloudSessionCheck({
+      url: currentUrl || page.url(),
+      navigationError,
+      apiStatus: apiResult?.status ?? null,
+      apiReady: apiResult?.ok === true,
+      accessTokenPresent: apiResult?.tokenPresent ?? null,
+      apiError: apiResult?.error || '',
+      probeAttempted: true,
+    });
+    return {
+      ...classification,
+      url: currentUrl || page.url(),
+      title: await page.title().catch(() => ''),
+      navigationError,
+      probe: 'calendar-api',
+      apiStatus: apiResult?.status ?? null,
+    };
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
 export function classifySpacecloudSessionCheck({
   url,
   addVisible = false,
   navigationError = '',
+  apiStatus = null,
+  apiReady = false,
+  accessTokenPresent = null,
+  apiError = '',
+  probeAttempted = false,
 } = {}) {
   const currentUrl = String(url || '');
   let location = null;
@@ -2602,8 +2682,33 @@ export function classifySpacecloudSessionCheck({
   }
 
   const expectedUrl = /^https:\/\/partner\.spacecloud\.kr\/reservation-calendar(?:[/?#]|$)/.test(currentUrl);
+  if (accessTokenPresent === false || [401, 403].includes(Number(apiStatus))) {
+    return {
+      ok: false,
+      status: 'login_required',
+      loginRequired: true,
+      reason: accessTokenPresent === false
+        ? 'SpaceCloud access token is missing'
+        : `SpaceCloud calendar API rejected authentication with HTTP ${apiStatus}`,
+    };
+  }
+  if (expectedUrl && apiReady) {
+    return { ok: true, status: 'ready', loginRequired: false, reason: '' };
+  }
   if (expectedUrl && addVisible) {
     return { ok: true, status: 'ready', loginRequired: false, reason: '' };
+  }
+  if (probeAttempted) {
+    let reason = 'SpaceCloud calendar API returned no authoritative authentication response';
+    if (apiError) reason = `SpaceCloud calendar API probe unavailable: ${apiError}`;
+    else if (apiStatus !== null) reason = `SpaceCloud calendar API probe could not verify authentication: HTTP ${apiStatus}`;
+    else if (navigationError) reason = `SpaceCloud authentication probe unavailable: ${navigationError}`;
+    return {
+      ok: false,
+      status: 'needs_check',
+      loginRequired: false,
+      reason,
+    };
   }
   if (navigationError) {
     return {
@@ -2611,6 +2716,16 @@ export function classifySpacecloudSessionCheck({
       status: 'check_failed',
       loginRequired: false,
       reason: `SpaceCloud calendar navigation failed: ${navigationError}`,
+    };
+  }
+  if (apiStatus !== null || apiError) {
+    return {
+      ok: false,
+      status: 'check_failed',
+      loginRequired: false,
+      reason: apiError
+        ? `SpaceCloud calendar API check failed: ${apiError}`
+        : `SpaceCloud calendar API returned HTTP ${apiStatus}`,
     };
   }
   return {

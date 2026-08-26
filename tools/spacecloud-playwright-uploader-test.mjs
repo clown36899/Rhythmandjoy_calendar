@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   assessCalendarMonthGrid,
   calendarGridExpectation,
+  checkSpacecloudLogin,
   classifyDirectUploadVerification,
   classifySpacecloudSessionCheck,
   directUploadRetryMode,
@@ -46,6 +47,77 @@ test('distinguishes an explicit SpaceCloud login page from a transient calendar 
     url: 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
     addVisible: true,
   }).status, 'ready');
+
+  assert.equal(classifySpacecloudSessionCheck({
+    url: 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
+    apiStatus: 200,
+    apiReady: true,
+    accessTokenPresent: true,
+  }).status, 'ready');
+
+  assert.equal(classifySpacecloudSessionCheck({
+    url: 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
+    apiStatus: 0,
+    accessTokenPresent: false,
+    apiError: 'spacecloud-access-token-missing',
+  }).status, 'login_required');
+
+  const rejectedToken = classifySpacecloudSessionCheck({
+    url: 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
+    apiStatus: 401,
+    accessTokenPresent: true,
+  });
+  assert.equal(rejectedToken.status, 'login_required');
+  assert.match(rejectedToken.reason, /HTTP 401/);
+
+  const apiFailure = classifySpacecloudSessionCheck({
+    url: 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
+    apiStatus: 503,
+    accessTokenPresent: true,
+    probeAttempted: true,
+  });
+  assert.equal(apiFailure.status, 'needs_check');
+  assert.match(apiFailure.reason, /HTTP 503/);
+
+  assert.equal(classifySpacecloudSessionCheck({
+    url: 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
+    accessTokenPresent: true,
+    apiError: 'calendar-api-fetch-failed:AbortError',
+    probeAttempted: true,
+  }).status, 'needs_check');
+});
+
+test('checks SpaceCloud authentication through the calendar API without loading SPA assets', async () => {
+  const targetUrl = 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056';
+  const calls = [];
+  let closed = false;
+  const page = {
+    route: async (pattern, handler) => calls.push({ type: 'route', pattern, handler }),
+    goto: async (url, options) => calls.push({ type: 'goto', url, options }),
+    url: () => targetUrl,
+    evaluate: async (_callback, params) => {
+      calls.push({ type: 'evaluate', params });
+      return {
+        ok: true,
+        status: 200,
+        tokenPresent: true,
+        productId: params.productId,
+        dayCount: 0,
+        days: [],
+      };
+    },
+    title: async () => '스페이스클라우드 호스트',
+    close: async () => { closed = true; },
+  };
+  const result = await checkSpacecloudLogin({ newPage: async () => page }, { timeoutMs: 4321 });
+
+  assert.equal(result.status, 'ready');
+  assert.equal(result.probe, 'calendar-api');
+  assert.equal(result.apiStatus, 200);
+  assert.equal(closed, true);
+  assert.equal(calls.find((call) => call.type === 'goto').options.waitUntil, 'commit');
+  assert.equal(calls.find((call) => call.type === 'evaluate').params.requestTimeoutMs, 4321);
+  assert.equal(calls.some((call) => call.type === 'route'), true);
 });
 
 function calendarSnapshot(year, month, cellCount) {

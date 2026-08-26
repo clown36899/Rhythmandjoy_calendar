@@ -1730,6 +1730,7 @@
       server_rejected_unexpired_cookie: "만료 전 서버 인증 거부",
       server_rejected_cookie_validity_unknown: "서버 인증 거부 · 만료시각 기록 없음",
       cookie_observation_failed: "쿠키 관찰 실패",
+      session_probe_unavailable: "인증 판정 보류 · 플랫폼 응답 불확실",
       browser_check_failed: "브라우저 검사 실패",
       login_required_unknown: "로그인 해제 원인 미분류",
     }[String(category || "")] || "원인 분류 대기";
@@ -1761,6 +1762,7 @@
     if (["login_required", "needs_login", "auth_required", "expired"].includes(value)) return "login_required";
     if (["check_failed", "failed", "error"].includes(value)) return "check_failed";
     if (["checking", "running"].includes(value)) return "checking";
+    if (value === "needs_check") return "needs_check";
     return readyAt ? "ready" : "needs_check";
   }
 

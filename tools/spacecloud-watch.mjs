@@ -723,6 +723,7 @@ function sessionCookieIsExpired(snapshot, now = Date.now()) {
 }
 
 function classifySessionDiagnostic({ platform, status, before, after, previous, result, error }) {
+  if (status === 'needs_check') return 'session_probe_unavailable';
   if (status === 'check_failed' || error) return 'browser_check_failed';
   if (before?.captureError || after?.captureError) return 'cookie_observation_failed';
   const beforePrimary = Boolean(before?.primaryPresent);
@@ -788,10 +789,10 @@ function buildSessionDiagnostic({ platform, status, before, after, previous, res
       && previous.runtime.networkFingerprint !== runtime.networkFingerprint
     ),
   };
-  if (status !== 'ready' && runtimeChanges.profileChanged) {
+  if (!['ready', 'needs_check'].includes(status) && runtimeChanges.profileChanged) {
     failureCategory = 'profile_store_changed';
   } else if (
-    status !== 'ready'
+    !['ready', 'needs_check'].includes(status)
     && runtimeChanges.rebooted
     && previous?.cookieFingerprint
     && !before?.primaryPresent
@@ -860,6 +861,7 @@ function sessionDiagnosticLabel(category) {
     server_rejected_unexpired_cookie: '표시 만료 전 쿠키를 네이버 서버가 거부',
     server_rejected_cookie_validity_unknown: '네이버 서버가 쿠키를 거부 · 표시 만료시각 기록 없음',
     cookie_observation_failed: '인증 쿠키 상태를 읽지 못함',
+    session_probe_unavailable: '인증 판정 보류 · 플랫폼 응답 불확실',
     browser_check_failed: '브라우저 화면 검사 실패',
     login_required_unknown: '로그인 해제 · 기록만으로 원인 미분류',
   }[category] || '원인 분류 대기';
@@ -12824,11 +12826,15 @@ async function runNowModeSelfTest() {
   assert.equal(smsFailureShouldAlert({ sms: { status: 'deferred' } }), false);
   assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'login_required' }], 'naver'), true);
   assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'ready' }], 'naver'), false);
+  assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'needs_check' }], 'naver'), false);
   assert.equal(sessionBlockedTaskResult('naver').attempted, 0);
   assert.equal(automationSessionCheckStatus({ ok: false, status: 'check_failed' }), 'check_failed');
+  assert.equal(automationSessionCheckStatus({ ok: false, status: 'needs_check' }), 'needs_check');
   assert.equal(automationSessionCheckStatus({ ok: false, status: 'login_required' }), 'login_required');
   assert.equal(automationSessionCheckStatus({ ok: false, loginRequired: true }), 'login_required');
-  assert.equal(automationSessionCheckStatus({ ok: false }), 'check_failed');
+  assert.equal(automationSessionCheckStatus({ ok: false }), 'needs_check');
+  assert.equal(automationSessionCheckStatus(null, new Error('request timed out')), 'needs_check');
+  assert.equal(automationSessionCheckStatus(null, new Error('Page crashed')), 'check_failed');
   const firstTransientSessionFailure = sessionFailureObservation(null, 'check_failed');
   const repeatedTransientSessionFailure = sessionFailureObservation({
     status: 'check_failed',
@@ -12852,6 +12858,22 @@ async function runNowModeSelfTest() {
   }), true);
   assert.equal(sessionFailureObservation(null, 'login_required').notificationEligible, true);
   assert.equal(sessionFailureObservation(repeatedTransientSessionFailure, 'ready').consecutiveFailureCount, 0);
+  assert.deepEqual(sessionFailureObservation(repeatedTransientSessionFailure, 'needs_check'), {
+    consecutiveFailureCount: 0,
+    notificationEligible: false,
+  });
+  assert.equal(sessionProblemNotificationEligible({ status: 'needs_check' }), false);
+  assert.equal(classifySessionDiagnostic({ status: 'needs_check', error: new Error('request timed out') }), 'session_probe_unavailable');
+  assert.equal(buildSessionDiagnostic({
+    platform: 'spacecloud',
+    status: 'needs_check',
+    before: {},
+    after: {},
+    previous: { runtime: { profileFingerprint: 'old-profile' } },
+    result: { url: 'https://partner.spacecloud.kr/reservation-calendar' },
+    error: new Error('request timed out'),
+    runtime: { profileFingerprint: 'new-profile' },
+  }).failureCategory, 'session_probe_unavailable');
   assert.equal(sessionRecoveryShouldNotify('problem:check_failed:browser_check_failed'), false);
   assert.equal(sessionRecoveryShouldNotify('problem:login_required:server_rejected_unexpired_cookie'), true);
   assert.match(sessionRecoveryTitle('naver', 'problem:check_failed:browser_check_failed'), /화면 검사 복구/);
@@ -13058,7 +13080,7 @@ async function runNowModeSelfTest() {
       'admin platform audit results and audit failures persist to the DB-backed alert center before checkpointing independently of Telegram',
       'platform read failures stay distinct from mismatches and require a three-minute second pass before alerting',
       'platform session circuit breakers pause affected work and audits without consuming reservation attempts',
-      'explicit login pages alert immediately while transient session-page failures require two consecutive checks',
+      'explicit authentication rejection alerts immediately while unavailable probes remain neutral',
       'session diagnostics distinguish local cookie loss, scheduled expiry, and server rejection without storing cookie values',
       'customer DB reservations rotate through source and mirrored actual-platform inspection',
       'customer platform audit alerts persist to DB before the local interval checkpoint',
@@ -13149,14 +13171,19 @@ function sessionStatusForPlatform(statuses, platform) {
 }
 
 function automationSessionCheckStatus(result, error = null) {
-  if (error) return 'check_failed';
+  if (error) {
+    return isBrowserContextClosedProblem(error?.message || error)
+      ? 'check_failed'
+      : 'needs_check';
+  }
   if (result?.ok || result?.status === 'ready') return 'ready';
   if (result?.status === 'login_required' || result?.loginRequired === true) return 'login_required';
-  return 'check_failed';
+  if (result?.status === 'check_failed') return 'check_failed';
+  return 'needs_check';
 }
 
 function sessionFailureObservation(previous, status) {
-  if (status === 'ready') {
+  if (status === 'ready' || status === 'needs_check') {
     return { consecutiveFailureCount: 0, notificationEligible: false };
   }
   const previousCount = previous?.status === status
@@ -13879,7 +13906,9 @@ async function main() {
   if (args.command === 'check-login') {
     const result = await runCheckLogin(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
-    else console.log(result.ok ? 'SpaceCloud login OK' : `SpaceCloud login needed: ${result.reason}`);
+    else if (result.ok) console.log('SpaceCloud login OK');
+    else if (result.status === 'login_required') console.log(`SpaceCloud login needed: ${result.reason}`);
+    else console.log(`SpaceCloud authentication check inconclusive: ${result.reason}`);
     process.exitCode = result.ok ? 0 : 2;
     return;
   }
@@ -13887,7 +13916,9 @@ async function main() {
   if (args.command === 'check-sessions') {
     const result = await runCheckSessions(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
-    else console.log(result.ok ? 'SpaceCloud and Naver login OK' : 'One or more platform logins need attention');
+    else if (result.ok) console.log('SpaceCloud and Naver login OK');
+    else if (result.sessions.some((row) => row.status === 'login_required')) console.log('One or more platform logins need attention');
+    else console.log('One or more platform authentication checks are inconclusive');
     process.exitCode = result.ok ? 0 : 2;
     return;
   }
@@ -13895,7 +13926,9 @@ async function main() {
   if (args.command === 'check-naver-login') {
     const result = await runCheckNaverLogin(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
-    else console.log(result.ok ? 'Naver SmartPlace login OK' : `Naver SmartPlace login needed: ${result.reason}`);
+    else if (result.ok) console.log('Naver SmartPlace login OK');
+    else if (result.status === 'login_required') console.log(`Naver SmartPlace login needed: ${result.reason}`);
+    else console.log(`Naver SmartPlace authentication check inconclusive: ${result.reason}`);
     process.exitCode = result.ok ? 0 : 2;
     return;
   }
