@@ -564,21 +564,46 @@ async function inspectScheduleEditorContext(page) {
   });
 }
 
-async function selectScheduleFormButton(page, groupLabel, buttonIndex, targetText) {
+function readNaverScheduleFormButtonDom({
+  groupLabel,
+  buttonIndex,
+  marker = '',
+  expectedTexts = [],
+}) {
+  const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const waitingForValue = expectedTexts.length > 0;
+  if (marker) {
+    document.querySelectorAll('[data-rhythmjoy-form-target]')
+      .forEach((el) => el.removeAttribute('data-rhythmjoy-form-target'));
+  }
+  const groups = [...document.querySelectorAll('.form-group')];
+  const group = groups.find((el) => norm(el.innerText || el.textContent || '').includes(groupLabel));
+  if (!group) return waitingForValue ? false : { ok: false, reason: `form group not found: ${groupLabel}` };
+  const buttons = [...group.querySelectorAll('button.form-control')];
+  const button = buttons[buttonIndex];
+  if (!button) {
+    return waitingForValue ? false : {
+      ok: false,
+      reason: `button ${buttonIndex} not found in ${groupLabel}`,
+      buttonCount: buttons.length,
+    };
+  }
+  if (marker) button.setAttribute('data-rhythmjoy-form-target', marker);
+  const text = norm(button.innerText || button.textContent || '');
+  return waitingForValue ? expectedTexts.includes(text) : { ok: true, text };
+}
+
+export async function selectNaverScheduleFormButton(page, groupLabel, buttonIndex, targetText, {
+  timeoutMs = 10000,
+} = {}) {
   const targetTexts = Array.isArray(targetText) ? targetText : [targetText];
   const marker = `rhythmjoy-form-${Date.now()}-${buttonIndex}`;
-  const current = await page.evaluate(({ groupLabel: wantedGroup, buttonIndex: wantedIndex, marker: wantedMarker }) => {
-    const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-    document.querySelectorAll('[data-rhythmjoy-form-target]').forEach((el) => el.removeAttribute('data-rhythmjoy-form-target'));
-    const groups = [...document.querySelectorAll('.form-group')];
-    const group = groups.find((el) => norm(el.innerText || el.textContent || '').includes(wantedGroup));
-    if (!group) return { ok: false, reason: `form group not found: ${wantedGroup}` };
-    const buttons = [...group.querySelectorAll('button.form-control')];
-    const button = buttons[wantedIndex];
-    if (!button) return { ok: false, reason: `button ${wantedIndex} not found in ${wantedGroup}`, buttonCount: buttons.length };
-    button.setAttribute('data-rhythmjoy-form-target', wantedMarker);
-    return { ok: true, text: norm(button.innerText || button.textContent || '') };
-  }, { groupLabel, buttonIndex, marker });
+  const current = await page.evaluate(readNaverScheduleFormButtonDom, {
+    groupLabel,
+    buttonIndex,
+    marker,
+    expectedTexts: [],
+  });
 
   if (!current.ok) throw new Error(current.reason);
   if (targetTexts.includes(current.text)) return { changed: false, value: current.text };
@@ -587,11 +612,19 @@ async function selectScheduleFormButton(page, groupLabel, buttonIndex, targetTex
   const buttonCount = await button.count();
   if (buttonCount !== 1) throw new Error(`form target button count ${buttonCount}`);
   await button.click({ timeout: 8000 });
-  await page.waitForTimeout(300);
+  await page.waitForFunction((wantedTexts) => {
+    const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    return [...document.querySelectorAll('div.selectbox-list button.btn-select')]
+      .filter((option) => {
+        const rect = option.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      })
+      .some((option) => wantedTexts.includes(norm(option.innerText || option.textContent || '')));
+  }, targetTexts, { timeout: timeoutMs });
 
   let selected = null;
   for (const optionText of targetTexts) {
-    const option = page.locator('div.selectbox-list button.btn-select').filter({ hasText: optionText });
+    const option = page.locator('div.selectbox-list:visible button.btn-select').filter({ hasText: optionText });
     const optionCount = await option.count();
     if (optionCount === 1) {
       await option.click({ timeout: 8000 });
@@ -601,8 +634,22 @@ async function selectScheduleFormButton(page, groupLabel, buttonIndex, targetTex
     if (optionCount > 1) throw new Error(`select option count ${optionCount} for ${optionText}`);
   }
   if (!selected) throw new Error(`select option count 0 for ${targetTexts.join(' | ')}`);
-  await page.waitForTimeout(300);
-  return { changed: true, value: selected };
+  await page.waitForFunction(readNaverScheduleFormButtonDom, {
+    groupLabel,
+    buttonIndex,
+    marker: '',
+    expectedTexts: targetTexts,
+  }, { timeout: timeoutMs });
+  const after = await page.evaluate(readNaverScheduleFormButtonDom, {
+    groupLabel,
+    buttonIndex,
+    marker: '',
+    expectedTexts: [],
+  });
+  if (!after.ok || !targetTexts.includes(after.text)) {
+    throw new Error(`Naver form selection did not apply for ${groupLabel}[${buttonIndex}]: ${after.text || after.reason || ''}`);
+  }
+  return { changed: true, value: after.text };
 }
 
 export async function saveNaverSchedule(page, {
@@ -1094,9 +1141,9 @@ async function applyOneNaverAvailabilitySlot(page, slotRow, {
     return result;
   }
 
-  await selectScheduleFormButton(page, '적용시간', 0, timeLabelVariants(slotRow.startTime));
-  await selectScheduleFormButton(page, '적용시간', 1, timeLabelVariants(slotRow.endTime));
-  await selectScheduleFormButton(page, '예약상태', 0, meta.formStatus);
+  await selectNaverScheduleFormButton(page, '적용시간', 0, timeLabelVariants(slotRow.startTime));
+  await selectNaverScheduleFormButton(page, '적용시간', 1, timeLabelVariants(slotRow.endTime));
+  await selectNaverScheduleFormButton(page, '예약상태', 0, meta.formStatus);
   result.save = await saveNaverSchedule(page);
   await scrollNaverCalendarToHour(page, parseHour(slotRow.startTime));
   slot = await waitForNaverWeeklySlotStatus(page, slotRow, meta.desired);

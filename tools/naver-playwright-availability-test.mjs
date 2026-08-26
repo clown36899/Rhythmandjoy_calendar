@@ -15,6 +15,7 @@ import {
   scrollNaverCalendarToHour,
   selectNaverCancelPanelText,
   selectNaverRoom,
+  selectNaverScheduleFormButton,
   selectNaverScheduleEditorPanel,
   waitForNaverCancelPanelIdentity,
   waitForNaverSchedulePanelIdentity,
@@ -559,6 +560,103 @@ test('rejects a Naver slot status when the final authoritative read disagrees', 
       startTime: '13:00',
     }, 'suspended', { timeoutMs: 4321 }),
     /did not become suspended/,
+  );
+});
+
+test('selects a Naver schedule form value only after the option is visible and the field changes', async () => {
+  let currentText = '예약가능';
+  let fieldClicks = 0;
+  let optionClicks = 0;
+  const waitCalls = [];
+  const field = {
+    count: async () => 1,
+    click: async () => { fieldClicks += 1; },
+  };
+  const option = {
+    count: async () => 1,
+    click: async () => {
+      optionClicks += 1;
+      currentText = '예약불가';
+    },
+  };
+  const page = {
+    evaluate: async () => ({ ok: true, text: currentText }),
+    locator: (selector) => (selector.startsWith('button[data-rhythmjoy-form-target=')
+      ? field
+      : { filter: () => option }),
+    waitForFunction: async (predicate, expected, options) => {
+      waitCalls.push({ predicate, expected, options });
+    },
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while selecting a Naver schedule form value');
+    },
+  };
+
+  const result = await selectNaverScheduleFormButton(page, '예약상태', 0, '예약불가', { timeoutMs: 4321 });
+
+  assert.deepEqual(result, { changed: true, value: '예약불가' });
+  assert.equal(fieldClicks, 1);
+  assert.equal(optionClicks, 1);
+  assert.equal(waitCalls.length, 2);
+  assert.deepEqual(waitCalls[0].expected, ['예약불가']);
+  assert.equal(waitCalls[0].options.timeout, 4321);
+  assert.equal(waitCalls[1].expected.groupLabel, '예약상태');
+  assert.equal(waitCalls[1].expected.buttonIndex, 0);
+  assert.deepEqual(waitCalls[1].expected.expectedTexts, ['예약불가']);
+  assert.equal(waitCalls[1].options.timeout, 4321);
+});
+
+test('does not reopen a Naver schedule form field that already has an accepted variant', async () => {
+  let locatorCalls = 0;
+  let waitCalls = 0;
+  const page = {
+    evaluate: async () => ({ ok: true, text: '자정 12:00' }),
+    locator: () => {
+      locatorCalls += 1;
+      throw new Error('an already-selected form value must not be clicked');
+    },
+    waitForFunction: async () => { waitCalls += 1; },
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while selecting a Naver schedule form value');
+    },
+  };
+
+  const result = await selectNaverScheduleFormButton(
+    page,
+    '적용시간',
+    1,
+    ['오전 12:00', '자정 12:00'],
+    { timeoutMs: 4321 },
+  );
+
+  assert.deepEqual(result, { changed: false, value: '자정 12:00' });
+  assert.equal(locatorCalls, 0);
+  assert.equal(waitCalls, 0);
+});
+
+test('rejects a Naver form selection when the final field value did not change', async () => {
+  const field = {
+    count: async () => 1,
+    click: async () => {},
+  };
+  const option = {
+    count: async () => 1,
+    click: async () => {},
+  };
+  const page = {
+    evaluate: async () => ({ ok: true, text: '예약가능' }),
+    locator: (selector) => (selector.startsWith('button[data-rhythmjoy-form-target=')
+      ? field
+      : { filter: () => option }),
+    waitForFunction: async () => {},
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while selecting a Naver schedule form value');
+    },
+  };
+
+  await assert.rejects(
+    selectNaverScheduleFormButton(page, '예약상태', 0, '예약불가', { timeoutMs: 4321 }),
+    /did not apply/,
   );
 });
 
