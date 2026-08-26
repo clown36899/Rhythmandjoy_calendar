@@ -292,7 +292,9 @@ export async function gotoNaverWeekContainingDate(page, targetDate, {
   throw new Error(`Naver week navigation failed for ${target}`);
 }
 
-async function scrollCalendarToHour(page, hour) {
+export async function scrollNaverCalendarToHour(page, hour, {
+  timeoutMs = 10000,
+} = {}) {
   await page.evaluate((targetHour) => {
     const rowWrap = document.querySelector('[class*="Calendar__row-wrap"]');
     const colHeader = document.querySelector('[class*="Calendar__col-header"]');
@@ -307,67 +309,129 @@ async function scrollCalendarToHour(page, hour) {
       colHeader.dispatchEvent(new Event('scroll', { bubbles: true }));
     }
   }, hour);
-  await page.waitForTimeout(700);
+  await page.waitForFunction(({ targetHour }) => {
+    const rowWrap = document.querySelector('[class*="Calendar__row-wrap"]');
+    if (!rowWrap) return false;
+    const rows = [...rowWrap.children]
+      .filter((el) => String(el.className || '').includes('Calendar__week-row'));
+    const targetRow = rows[targetHour];
+    if (!targetRow) return false;
+    const wrapRect = rowWrap.getBoundingClientRect();
+    const rowRect = targetRow.getBoundingClientRect();
+    return rowRect.width > 0
+      && rowRect.height > 0
+      && rowRect.bottom > wrapRect.top
+      && rowRect.top < wrapRect.bottom;
+  }, { targetHour: hour }, { timeout: timeoutMs });
+}
+
+function readNaverWeeklySlotDom({
+  wantedDay,
+  wantedHour,
+  wantedMarker = '',
+  expectedStatus = '',
+}) {
+  const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  document.querySelectorAll('[data-rhythmjoy-target]').forEach((el) => el.removeAttribute('data-rhythmjoy-target'));
+  const rowWrap = document.querySelector('[class*="Calendar__row-wrap"]');
+  if (!rowWrap) {
+    return expectedStatus ? false : { status: 'not_found', reason: 'row-wrap-not-found', marker: wantedMarker };
+  }
+  const rows = [...rowWrap.children].filter((el) => String(el.className || '').includes('Calendar__week-row'));
+  const rowEl = rows[wantedHour];
+  if (!rowEl) {
+    return expectedStatus ? false : {
+      status: 'not_found', reason: 'hour-row-not-found', marker: wantedMarker, rowCount: rows.length,
+    };
+  }
+  const cells = [...rowEl.children].filter((el) => String(el.className || '').includes('Calendar__week-cell'));
+  const cell = cells[wantedDay];
+  if (!cell) {
+    return expectedStatus ? false : {
+      status: 'not_found', reason: 'day-cell-not-found', marker: wantedMarker, cellCount: cells.length,
+    };
+  }
+  const domButtons = [...cell.querySelectorAll('button[class*="calendar-btn"]')];
+  const buttons = domButtons.map((button, index) => {
+    const rect = button.getBoundingClientRect();
+    return {
+      index,
+      text: norm(button.innerText || button.textContent || ''),
+      title: button.getAttribute('title') || '',
+      className: String(button.className || ''),
+      visible: rect.width > 0
+        && rect.height > 0
+        && rect.bottom > 0
+        && rect.right > 0
+        && rect.top < innerHeight
+        && rect.left < innerWidth,
+    };
+  });
+  const suspendedIndex = buttons.findIndex((button) => button.title === '예약불가' || button.className.includes('suspended'));
+  const confirmedIndex = buttons.findIndex((button) => button.title === '확정' || button.className.includes('confirmed'));
+  const availableIndex = buttons.findIndex((button) => button.title === '예약가능' && button.className.includes('avail'));
+  const soldoutIndex = buttons.findIndex((button) => button.className.includes('soldout'));
+
+  let status = 'unknown';
+  let targetIndex = -1;
+  if (confirmedIndex >= 0) {
+    status = 'confirmed';
+    targetIndex = confirmedIndex;
+  } else if (soldoutIndex >= 0) {
+    status = 'soldout';
+    targetIndex = soldoutIndex;
+  } else if (suspendedIndex >= 0) {
+    status = 'suspended';
+    targetIndex = suspendedIndex;
+  } else if (availableIndex >= 0) {
+    status = 'available';
+    targetIndex = availableIndex;
+  }
+
+  if (expectedStatus) {
+    return status === expectedStatus && targetIndex >= 0 && buttons[targetIndex]?.visible === true;
+  }
+  if (targetIndex >= 0 && wantedMarker) {
+    domButtons[targetIndex].setAttribute('data-rhythmjoy-target', wantedMarker);
+  }
+  return {
+    status,
+    marker: wantedMarker,
+    cellText: norm(cell.innerText || cell.textContent || ''),
+    buttons,
+  };
 }
 
 async function findWeeklySlot(page, row) {
   const date = normalizeDate(row.date);
-  const startHour = parseHour(row.startTime);
-  const dayIndex = dayIndexForDate(date);
-  const marker = `rhythmjoy-target-${Date.now()}`;
-  return page.evaluate(({ dayIndex: wantedDay, startHour: wantedHour, marker: wantedMarker }) => {
-    const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-    document.querySelectorAll('[data-rhythmjoy-target]').forEach((el) => el.removeAttribute('data-rhythmjoy-target'));
-    const rowWrap = document.querySelector('[class*="Calendar__row-wrap"]');
-    if (!rowWrap) return { status: 'not_found', reason: 'row-wrap-not-found', marker: wantedMarker };
-    const rows = [...rowWrap.children].filter((el) => String(el.className || '').includes('Calendar__week-row'));
-    const rowEl = rows[wantedHour];
-    if (!rowEl) return { status: 'not_found', reason: 'hour-row-not-found', marker: wantedMarker, rowCount: rows.length };
-    const cells = [...rowEl.children].filter((el) => String(el.className || '').includes('Calendar__week-cell'));
-    const cell = cells[wantedDay];
-    if (!cell) return { status: 'not_found', reason: 'day-cell-not-found', marker: wantedMarker, cellCount: cells.length };
-    const buttons = [...cell.querySelectorAll('button[class*="calendar-btn"]')].map((button, index) => {
-      const rect = button.getBoundingClientRect();
-      return {
-        index,
-        text: norm(button.innerText || button.textContent || ''),
-        title: button.getAttribute('title') || '',
-        className: String(button.className || ''),
-        visible: rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth,
-      };
-    });
-    const suspendedIndex = buttons.findIndex((button) => button.title === '예약불가' || button.className.includes('suspended'));
-    const confirmedIndex = buttons.findIndex((button) => button.title === '확정' || button.className.includes('confirmed'));
-    const availableIndex = buttons.findIndex((button) => button.title === '예약가능' && button.className.includes('avail'));
-    const soldoutIndex = buttons.findIndex((button) => button.className.includes('soldout'));
+  const wantedHour = parseHour(row.startTime);
+  const wantedDay = dayIndexForDate(date);
+  const wantedMarker = `rhythmjoy-target-${Date.now()}`;
+  return page.evaluate(readNaverWeeklySlotDom, {
+    wantedDay,
+    wantedHour,
+    wantedMarker,
+    expectedStatus: '',
+  });
+}
 
-    let status = 'unknown';
-    let targetIndex = -1;
-    if (confirmedIndex >= 0) {
-      status = 'confirmed';
-      targetIndex = confirmedIndex;
-    } else if (soldoutIndex >= 0) {
-      status = 'soldout';
-      targetIndex = soldoutIndex;
-    } else if (suspendedIndex >= 0) {
-      status = 'suspended';
-      targetIndex = suspendedIndex;
-    } else if (availableIndex >= 0) {
-      status = 'available';
-      targetIndex = availableIndex;
-    }
-
-    if (targetIndex >= 0) {
-      const button = cell.querySelectorAll('button[class*="calendar-btn"]')[targetIndex];
-      button.setAttribute('data-rhythmjoy-target', wantedMarker);
-    }
-    return {
-      status,
-      marker: wantedMarker,
-      cellText: norm(cell.innerText || cell.textContent || ''),
-      buttons,
-    };
-  }, { dayIndex, startHour, marker });
+export async function waitForNaverWeeklySlotStatus(page, row, expectedStatus, {
+  timeoutMs = 12000,
+} = {}) {
+  const date = normalizeDate(row.date);
+  const wantedHour = parseHour(row.startTime);
+  const wantedDay = dayIndexForDate(date);
+  await page.waitForFunction(readNaverWeeklySlotDom, {
+    wantedDay,
+    wantedHour,
+    wantedMarker: '',
+    expectedStatus,
+  }, { timeout: timeoutMs });
+  const slot = await findWeeklySlot(page, row);
+  if (slot.status !== expectedStatus) {
+    throw new Error(`Naver slot did not become ${expectedStatus}: ${JSON.stringify(compactSlot(slot))}`);
+  }
+  return slot;
 }
 
 export function selectNaverScheduleEditorPanel(candidates) {
@@ -971,7 +1035,7 @@ async function prepareCalendar(page, row, { businessId = NAVER_BOOKING_BUSINESS_
   await ensureNaverWeeklyView(page);
   await selectNaverRoom(page, row.roomKey);
   await gotoNaverWeekContainingDate(page, row.date);
-  await scrollCalendarToHour(page, parseHour(row.startTime));
+  await scrollNaverCalendarToHour(page, parseHour(row.startTime));
 }
 
 async function applyOneNaverAvailabilitySlot(page, slotRow, {
@@ -1034,8 +1098,8 @@ async function applyOneNaverAvailabilitySlot(page, slotRow, {
   await selectScheduleFormButton(page, '적용시간', 1, timeLabelVariants(slotRow.endTime));
   await selectScheduleFormButton(page, '예약상태', 0, meta.formStatus);
   result.save = await saveNaverSchedule(page);
-  await scrollCalendarToHour(page, parseHour(slotRow.startTime));
-  slot = await findWeeklySlot(page, slotRow);
+  await scrollNaverCalendarToHour(page, parseHour(slotRow.startTime));
+  slot = await waitForNaverWeeklySlotStatus(page, slotRow, meta.desired);
   result.afterSlot = compactSlot(slot);
 
   if (slot.status !== meta.desired) {

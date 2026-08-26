@@ -12,11 +12,13 @@ import {
   inspectNaverReservationStatus,
   partitionNaverActionableSlotRows,
   saveNaverSchedule,
+  scrollNaverCalendarToHour,
   selectNaverCancelPanelText,
   selectNaverRoom,
   selectNaverScheduleEditorPanel,
   waitForNaverCancelPanelIdentity,
   waitForNaverSchedulePanelIdentity,
+  waitForNaverWeeklySlotStatus,
 } from './naver-playwright-availability.mjs';
 
 test('distinguishes an explicit Naver login page from a transient calendar load failure', () => {
@@ -480,6 +482,84 @@ test('never clicks the next Naver week again when the prior transition is uncert
     /Timeout 4321ms exceeded/,
   );
   assert.equal(clicks, 1);
+});
+
+test('waits for the requested Naver hour row to be visible after scrolling', async () => {
+  const evaluateCalls = [];
+  const waitCalls = [];
+  const page = {
+    evaluate: async (operation, argument) => {
+      evaluateCalls.push({ operation, argument });
+    },
+    waitForFunction: async (predicate, expected, options) => {
+      waitCalls.push({ predicate, expected, options });
+    },
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden after scrolling the Naver calendar');
+    },
+  };
+
+  await scrollNaverCalendarToHour(page, 13, { timeoutMs: 4321 });
+
+  assert.equal(evaluateCalls.length, 1);
+  assert.equal(evaluateCalls[0].argument, 13);
+  assert.equal(waitCalls.length, 1);
+  assert.deepEqual(waitCalls[0].expected, { targetHour: 13 });
+  assert.equal(waitCalls[0].options.timeout, 4321);
+});
+
+test('waits for the exact Naver weekly slot status and then re-reads it authoritatively', async () => {
+  const waitCalls = [];
+  const slot = {
+    status: 'suspended',
+    marker: 'rhythmjoy-target-test',
+    cellText: '예약불가',
+    buttons: [{ title: '예약불가', className: 'calendar-btn suspended', visible: true }],
+  };
+  const page = {
+    waitForFunction: async (predicate, expected, options) => {
+      waitCalls.push({ predicate, expected, options });
+    },
+    evaluate: async () => slot,
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while confirming a Naver slot status');
+    },
+  };
+
+  const result = await waitForNaverWeeklySlotStatus(page, {
+    date: '2026-09-03',
+    startTime: '13:00',
+  }, 'suspended', { timeoutMs: 4321 });
+
+  assert.equal(result, slot);
+  assert.equal(waitCalls.length, 1);
+  assert.equal(waitCalls[0].expected.wantedHour, 13);
+  assert.equal(waitCalls[0].expected.wantedDay, 4);
+  assert.equal(waitCalls[0].expected.expectedStatus, 'suspended');
+  assert.equal(waitCalls[0].options.timeout, 4321);
+});
+
+test('rejects a Naver slot status when the final authoritative read disagrees', async () => {
+  const page = {
+    waitForFunction: async () => {},
+    evaluate: async () => ({
+      status: 'available',
+      marker: 'rhythmjoy-target-test',
+      cellText: '예약가능',
+      buttons: [{ title: '예약가능', className: 'calendar-btn avail', visible: true }],
+    }),
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while confirming a Naver slot status');
+    },
+  };
+
+  await assert.rejects(
+    waitForNaverWeeklySlotStatus(page, {
+      date: '2026-09-03',
+      startTime: '13:00',
+    }, 'suspended', { timeoutMs: 4321 }),
+    /did not become suspended/,
+  );
 });
 
 test('selects the full Naver schedule editor instead of the visible header shell', () => {
