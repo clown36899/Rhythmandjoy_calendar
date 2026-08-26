@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildHourlySlotRows,
+  cancelNaverConfirmedReservation,
   checkNaverSmartplaceLogin,
   classifyNaverSessionCheck,
   classifyNaverCancelPanelText,
@@ -18,6 +19,7 @@ import {
   selectNaverScheduleFormButton,
   selectNaverScheduleEditorPanel,
   waitForNaverCancelPanelIdentity,
+  waitForNaverCancellationResult,
   waitForNaverSchedulePanelIdentity,
   waitForNaverWeeklySlotStatus,
 } from './naver-playwright-availability.mjs';
@@ -317,6 +319,147 @@ test('keeps Naver API identity, authentication, transport, and unknown-status fa
     assert.equal(result.reason, expected.reason);
     assert.notEqual(result.status, '취소', 'an uncertain read must never authorize canceled side effects');
   }
+});
+
+test('confirms a Naver cancellation from the exact booking API without waiting for SPA timers', async () => {
+  let uiReads = 0;
+  let locatorCalls = 0;
+  const context = {
+    request: {
+      fetch: async () => naverBookingApiResponse(200, {
+        bookingId: 9876543210,
+        businessId: 1257912,
+        startDate: '2026-09-01',
+        bookingStatusCode: 'RC04',
+      }),
+    },
+  };
+  const page = {
+    evaluate: async () => {
+      uiReads += 1;
+      return { state: 'waiting', confirmButtonCount: 0, sidePanelOpen: true };
+    },
+    locator: () => {
+      locatorCalls += 1;
+      throw new Error('a confirmed API cancellation must not click a DOM confirmation');
+    },
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden after a Naver cancel submit');
+    },
+  };
+
+  const result = await waitForNaverCancellationResult(context, page, phoneLookupTask, {
+    businessId: '1257912',
+    timeoutMs: 4321,
+    pollMs: 1,
+  });
+
+  assert.equal(result.confirmed, true);
+  assert.equal(result.afterStatus, '취소');
+  assert.equal(result.apiAttempts, 1);
+  assert.equal(result.modalConfirmClicked, false);
+  assert.equal(uiReads, 0);
+  assert.equal(locatorCalls, 0);
+});
+
+test('clicks one Naver DOM confirmation at most once while the exact API is still pending', async () => {
+  const statusCodes = ['RC03', 'RC03', 'RC04'];
+  let apiCalls = 0;
+  let modalClicks = 0;
+  let uiReads = 0;
+  const context = {
+    request: {
+      fetch: async () => {
+        const bookingStatusCode = statusCodes[Math.min(apiCalls, statusCodes.length - 1)];
+        apiCalls += 1;
+        return naverBookingApiResponse(200, {
+          bookingId: 9876543210,
+          businessId: 1257912,
+          startDate: '2026-09-01',
+          bookingStatusCode,
+        });
+      },
+    },
+  };
+  const modal = {
+    count: async () => 1,
+    first: () => modal,
+    click: async () => { modalClicks += 1; },
+  };
+  const page = {
+    evaluate: async () => {
+      uiReads += 1;
+      return { state: 'confirm-visible', confirmButtonCount: 1, sidePanelOpen: true };
+    },
+    locator: () => ({ filter: () => modal }),
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden after a Naver cancel submit');
+    },
+  };
+
+  const result = await waitForNaverCancellationResult(context, page, phoneLookupTask, {
+    businessId: '1257912',
+    timeoutMs: 100,
+    pollMs: 1,
+  });
+
+  assert.equal(result.confirmed, true);
+  assert.equal(result.apiAttempts, 3);
+  assert.equal(result.uiChecks, 2);
+  assert.equal(result.modalConfirmClicked, true);
+  assert.equal(modalClicks, 1);
+  assert.equal(uiReads, 2);
+});
+
+test('blocks an ambiguous Naver cancel confirmation without clicking either candidate', async () => {
+  let modalClicks = 0;
+  const context = {
+    request: {
+      fetch: async () => naverBookingApiResponse(200, {
+        bookingId: 9876543210,
+        businessId: 1257912,
+        startDate: '2026-09-01',
+        bookingStatusCode: 'RC03',
+      }),
+    },
+  };
+  const modal = {
+    count: async () => 2,
+    first: () => modal,
+    click: async () => { modalClicks += 1; },
+  };
+  const page = {
+    evaluate: async () => ({ state: 'ambiguous-confirm', confirmButtonCount: 2, sidePanelOpen: true }),
+    locator: () => ({ filter: () => modal }),
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden after a Naver cancel submit');
+    },
+  };
+
+  await assert.rejects(
+    waitForNaverCancellationResult(context, page, phoneLookupTask, {
+      businessId: '1257912',
+      timeoutMs: 4321,
+      pollMs: 1,
+    }),
+    /confirmation button count 2/,
+  );
+  assert.equal(modalClicks, 0);
+});
+
+test('keeps the Naver cancel checkpoint before one submit and verifies through the exact API helper', () => {
+  const source = cancelNaverConfirmedReservation.toString();
+  const guardIndex = source.indexOf("typeof beforeConfirm === 'function'");
+  const checkpointIndex = source.indexOf('row.submissionAttempted = true');
+  const submitIndex = source.indexOf('cancelButton.first().click');
+  const verifyIndex = source.indexOf('waitForNaverCancellationResult');
+
+  assert.ok(guardIndex >= 0 && guardIndex < checkpointIndex);
+  assert.ok(checkpointIndex < submitIndex);
+  assert.ok(submitIndex < verifyIndex);
+  assert.doesNotMatch(source, /waitForTimeout|naverBookingListUrl/);
+  assert.match(waitForNaverCancellationResult.toString(), /inspectNaverReservationStatus/);
+  assert.doesNotMatch(waitForNaverCancellationResult.toString(), /page\.goto|page\.waitForTimeout/);
 });
 
 test('selects the Naver weekly view by rendered state without blind elapsed waits', async () => {

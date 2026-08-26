@@ -17,22 +17,6 @@ function naverCalendarUrl(businessId = NAVER_BOOKING_BUSINESS_ID) {
   return `https://partner.booking.naver.com/bizes/${businessId}/booking-calendar-view`;
 }
 
-function naverBookingListUrl(businessId = NAVER_BOOKING_BUSINESS_ID, {
-  date,
-} = {}) {
-  const params = new URLSearchParams({
-    dateDropdownType: 'DIRECT',
-    startDateTime: normalizeDate(date),
-    endDateTime: normalizeDate(date),
-    dateFilter: 'USEDATE',
-    // Naver currently ignores or inconsistently applies a reservation-number
-    // query in this SPA. Load the one-day list and match the booking link
-    // ourselves so a false empty search can never hide a real reservation.
-    searchValueCode: 'USER_NAME',
-  });
-  return `https://partner.booking.naver.com/bizes/${businessId}/booking-list-view?${params}`;
-}
-
 function naverBookingDetailUrl(businessId = NAVER_BOOKING_BUSINESS_ID, reservationNo) {
   return `https://partner.booking.naver.com/bizes/${businessId}/booking-list-view/bookings/${encodeURIComponent(String(reservationNo || '').trim())}`;
 }
@@ -1053,6 +1037,119 @@ export async function inspectNaverReservationStatus(context, task, {
   };
 }
 
+const NAVER_CANCEL_CONFIRM_BUTTON_SELECTOR = [
+  '[role="dialog"] button',
+  '[class*="Modal"] button',
+  '[class*="modal"] button',
+  '[class*="Popup"] button',
+  '[class*="Alert"] button',
+].join(', ');
+
+function readNaverCancelSubmitUiDom({ confirmSelector }) {
+  const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const visible = (element) => {
+    const rect = element?.getBoundingClientRect?.();
+    return Boolean(rect && rect.width > 0 && rect.height > 0);
+  };
+  const confirmButtons = [...document.querySelectorAll(confirmSelector)]
+    .filter(visible)
+    .filter((button) => ['확인', '예약 취소'].includes(norm(button.innerText || button.textContent || '')));
+  const sidePanelOpen = [...document.querySelectorAll('[class*="SideLayer__visible"]')].some(visible);
+  let state = 'waiting';
+  if (confirmButtons.length > 1) state = 'ambiguous-confirm';
+  else if (confirmButtons.length === 1) state = 'confirm-visible';
+  else if (!sidePanelOpen) state = 'panel-closed';
+  return {
+    state,
+    confirmButtonCount: confirmButtons.length,
+    sidePanelOpen,
+  };
+}
+
+async function readNaverCancelSubmitUiState(page) {
+  return page.evaluate(readNaverCancelSubmitUiDom, {
+    confirmSelector: NAVER_CANCEL_CONFIRM_BUTTON_SELECTOR,
+  });
+}
+
+export async function waitForNaverCancellationResult(context, page, task, {
+  businessId = NAVER_BOOKING_BUSINESS_ID,
+  timeoutMs = 20000,
+  pollMs = 300,
+} = {}) {
+  const started = Date.now();
+  const safeTimeoutMs = Math.max(1, Number(timeoutMs) || 20000);
+  const safePollMs = Math.max(1, Number(pollMs) || 300);
+  let apiAttempts = 0;
+  let uiChecks = 0;
+  let modalConfirmClicked = false;
+  let lastInspection = null;
+  let lastUiState = null;
+
+  while (true) {
+    const elapsedBeforeRequest = Date.now() - started;
+    const requestTimeoutMs = Math.max(1, Math.min(5000, safeTimeoutMs - elapsedBeforeRequest));
+    apiAttempts += 1;
+    lastInspection = await inspectNaverReservationStatus(context, task, {
+      businessId,
+      timeoutMs: requestTimeoutMs,
+    });
+    if (lastInspection.status === '취소') {
+      return {
+        confirmed: true,
+        afterStatus: '취소',
+        apiAttempts,
+        uiChecks,
+        modalConfirmClicked,
+        lastInspection,
+        lastUiState,
+        waitedMs: Date.now() - started,
+      };
+    }
+
+    uiChecks += 1;
+    try {
+      lastUiState = await readNaverCancelSubmitUiState(page);
+    } catch (error) {
+      lastUiState = {
+        state: 'unavailable',
+        confirmButtonCount: 0,
+        sidePanelOpen: null,
+        error: `browser-ui-read-failed:${String(error?.name || 'Error')}`,
+      };
+    }
+
+    if (Number(lastUiState?.confirmButtonCount || 0) > 1) {
+      throw new Error(`Naver cancel confirmation button count ${lastUiState.confirmButtonCount}`);
+    }
+    if (Number(lastUiState?.confirmButtonCount || 0) === 1 && !modalConfirmClicked) {
+      const modalConfirm = page.locator(NAVER_CANCEL_CONFIRM_BUTTON_SELECTOR)
+        .filter({ hasText: /^(확인|예약 취소)$/ });
+      const modalCount = await modalConfirm.count();
+      if (modalCount !== 1) throw new Error(`Naver cancel confirmation button count ${modalCount}`);
+      await modalConfirm.first().click({ timeout: 5000 });
+      modalConfirmClicked = true;
+    }
+
+    const waitedMs = Date.now() - started;
+    if (waitedMs >= safeTimeoutMs) {
+      return {
+        confirmed: false,
+        afterStatus: lastInspection?.status || '',
+        apiAttempts,
+        uiChecks,
+        modalConfirmClicked,
+        lastInspection,
+        lastUiState,
+        waitedMs,
+      };
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, Math.min(safePollMs, safeTimeoutMs - waitedMs));
+    });
+  }
+}
+
 function successStatusesForTarget(targetStatus) {
   if (targetStatus === 'unavailable') return {
     desired: 'suspended',
@@ -1490,29 +1587,12 @@ export async function cancelNaverConfirmedReservation(context, task, {
       }
       row.submissionAttempted = true;
       await cancelButton.first().click({ timeout: 10000 });
-      await page.waitForTimeout(1500);
-
-      for (let attempt = 0; attempt < 10; attempt += 1) {
-        const modalConfirm = page.locator('[role="dialog"] button, [class*="Modal"] button, [class*="modal"] button, [class*="Popup"] button, [class*="Alert"] button')
-          .filter({ hasText: /확인|예약 취소/ });
-        const modalCount = await modalConfirm.count().catch(() => 0);
-        if (modalCount === 1) {
-          await modalConfirm.first().click({ timeout: 5000 });
-          await page.waitForTimeout(1000);
-        }
-        const status = await readNaverReservationStatusFromList(page, reservationNo).catch(() => null);
-        if (status?.status === '취소') {
-          row.afterStatus = '취소';
-          break;
-        }
-        await page.goto(naverBookingListUrl(businessId, { date: row.date, reservationNo }), { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
-        await page.waitForTimeout(800);
-        const refreshed = await readNaverReservationStatusFromList(page, reservationNo).catch(() => null);
-        if (refreshed?.status === '취소') {
-          row.afterStatus = '취소';
-          break;
-        }
-      }
+      row.cancelStatusVerification = await waitForNaverCancellationResult(context, page, task, {
+        businessId,
+        timeoutMs: 20000,
+      });
+      row.modalConfirmClicked = row.cancelStatusVerification.modalConfirmClicked === true;
+      if (row.cancelStatusVerification.confirmed) row.afterStatus = '취소';
     } finally {
       page.off('dialog', onDialog);
     }
