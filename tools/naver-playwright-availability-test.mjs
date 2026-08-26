@@ -6,6 +6,7 @@ import {
   checkNaverSmartplaceLogin,
   classifyNaverSessionCheck,
   classifyNaverCancelPanelText,
+  fetchNaverReservationPhone,
   partitionNaverActionableSlotRows,
   selectNaverCancelPanelText,
   selectNaverScheduleEditorPanel,
@@ -93,6 +94,127 @@ test('checks Naver authentication with a lightweight redirect probe', async () =
   assert.equal(calls[0].options.method, 'HEAD');
   assert.equal(calls[0].options.maxRedirects, 0);
   assert.equal(calls[0].options.timeout, 4321);
+});
+
+function naverBookingApiResponse(status, body = null, headers = {}) {
+  return {
+    status: () => status,
+    headers: () => headers,
+    json: async () => body,
+  };
+}
+
+const phoneLookupTask = {
+  id: 842,
+  roomKey: 'e',
+  date: '2026-09-01',
+  startTime: '13:00',
+  endTime: '15:00',
+  reservationNo: '9876543210',
+};
+
+test('reads an exact Naver booking phone through the authenticated detail API', async () => {
+  const calls = [];
+  const context = {
+    request: {
+      fetch: async (url, options) => {
+        calls.push({ url, options });
+        return naverBookingApiResponse(200, {
+          bookingId: 9876543210,
+          businessId: 1257912,
+          startDate: '2026-09-01T13:00:00+09:00',
+          phone: '010-1234-5678',
+        });
+      },
+    },
+  };
+
+  const result = await fetchNaverReservationPhone(context, phoneLookupTask, {
+    businessId: '1257912',
+    timeoutMs: 4321,
+  });
+
+  assert.deepEqual(result, {
+    status: 'found',
+    phone: '01012345678',
+    maskedPhone: '010-****-5678',
+    source: 'naver-booking-api',
+    reservationNo: '9876543210',
+    apiStatus: 200,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://partner.booking.naver.com/api/businesses/1257912/bookings/9876543210');
+  assert.equal(calls[0].options.method, 'GET');
+  assert.equal(calls[0].options.maxRedirects, 0);
+  assert.equal(calls[0].options.timeout, 4321);
+  assert.equal(calls[0].options.headers['X-Booking-Naver-Role'], 'OWNER');
+});
+
+test('never returns a phone when any Naver booking identity field does not exactly match', async () => {
+  for (const mismatch of [
+    { bookingId: '1111111111' },
+    { businessId: '9999999' },
+    { startDate: '2026-09-02' },
+  ]) {
+    const context = {
+      request: {
+        fetch: async () => naverBookingApiResponse(200, {
+          bookingId: '9876543210',
+          businessId: '1257912',
+          startDate: '2026-09-01',
+          phone: '010-9999-8888',
+          ...mismatch,
+        }),
+      },
+    };
+
+    const result = await fetchNaverReservationPhone(context, phoneLookupTask);
+
+    assert.equal(result.status, 'not_found');
+    assert.equal(result.reason, 'naver-booking-api-identity-mismatch');
+    assert.equal(result.phone, '');
+    assert.equal(result.maskedPhone, '');
+  }
+});
+
+test('classifies Naver booking API authentication and transient failures without rendering the SPA', async () => {
+  const loginContext = {
+    request: {
+      fetch: async () => naverBookingApiResponse(302, null, {
+        location: 'https://nid.naver.com/nidlogin.login?url=redacted',
+      }),
+    },
+  };
+  const unavailableContext = {
+    request: {
+      fetch: async () => naverBookingApiResponse(503),
+    },
+  };
+
+  const login = await fetchNaverReservationPhone(loginContext, phoneLookupTask);
+  const unavailable = await fetchNaverReservationPhone(unavailableContext, phoneLookupTask);
+
+  assert.equal(login.status, 'login_required');
+  assert.equal(login.reason, 'naver-login-required');
+  assert.equal(unavailable.status, 'unavailable');
+  assert.equal(unavailable.reason, 'naver-booking-api-http-503');
+  assert.equal(unavailable.phone, '');
+});
+
+test('returns a retryable Naver API result when the exact request cannot complete', async () => {
+  const context = {
+    request: {
+      fetch: async () => {
+        throw new Error('request failed before response');
+      },
+    },
+  };
+
+  const result = await fetchNaverReservationPhone(context, phoneLookupTask);
+
+  assert.equal(result.status, 'unavailable');
+  assert.match(result.reason, /^naver-booking-api-request-failed:/);
+  assert.equal(result.phone, '');
 });
 
 test('selects the full Naver schedule editor instead of the visible header shell', () => {
