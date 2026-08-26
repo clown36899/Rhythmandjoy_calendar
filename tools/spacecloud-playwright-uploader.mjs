@@ -809,6 +809,55 @@ export async function waitForSpacecloudReservationDetailIdentity(
   return { accepted, verification };
 }
 
+export async function waitForSpacecloudCancelModalIdentity(
+  page,
+  row,
+  reservationId,
+  { timeoutMs = 10000 } = {},
+) {
+  const expected = spacecloudReservationTextRequirements(row, reservationId);
+  let waitError = null;
+  try {
+    await page.waitForFunction((wanted) => {
+      const compact = (value) => String(value || '').replace(/\s+/g, '');
+      const visible = (element) => !!(
+        element
+        && (element.offsetWidth || element.offsetHeight || element.getClientRects().length)
+      );
+      const text = compact(document.body?.innerText || document.body?.textContent || '');
+      const reasonSelects = [...document.querySelectorAll('select#select')].filter(visible);
+      const confirmButtons = [...document.querySelectorAll('a.btn.btn_full.btn_default')]
+        .filter((element) => visible(element) && compact(element.textContent).includes('확인'));
+      return text.includes(compact(wanted.reservationIdText))
+        && (!wanted.name || text.includes(compact(wanted.name)))
+        && text.includes(compact(wanted.dateText))
+        && wanted.timeTexts.some((candidate) => text.includes(compact(candidate)))
+        && (!wanted.roomName || text.includes(compact(wanted.roomName)))
+        && reasonSelects.length === 1
+        && confirmButtons.length === 1;
+    }, expected, { timeout: timeoutMs });
+  } catch (error) {
+    waitError = error;
+  }
+
+  const bodyText = await page.locator('body').innerText({ timeout: timeoutMs });
+  const verification = verifySpacecloudReservationText(bodyText, row, reservationId);
+  if (!verification.ok) {
+    const error = new Error(`SpaceCloud cancel modal identity mismatch: ${verification.errors.join(',')}`);
+    error.code = 'spacecloud-cancel-modal-identity-mismatch';
+    error.verification = verification;
+    error.waitError = waitError;
+    throw error;
+  }
+  if (waitError) {
+    const error = new Error('SpaceCloud cancel modal controls did not become ready');
+    error.code = 'spacecloud-cancel-modal-controls-not-ready';
+    error.waitError = waitError;
+    throw error;
+  }
+  return { verification };
+}
+
 export function spacecloudUploadEventFromTask(task) {
   const payload = parseTaskPayload(task);
   const previousResult = parseTaskResult(task);
@@ -2289,10 +2338,25 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
     const cancelCount = await cancelButton.count();
     if (cancelCount !== 1) throw new Error(`visible SpaceCloud cancel button count ${cancelCount}`);
     await cancelButton.first().click({ timeout: 8000 });
-    await page.waitForTimeout(1000);
+
+    let modalIdentity = null;
+    let modalIdentityError = null;
+    try {
+      modalIdentity = await waitForSpacecloudCancelModalIdentity(
+        page,
+        row,
+        reservationId,
+        { timeoutMs: 10000 },
+      );
+    } catch (error) {
+      if (error?.code !== 'spacecloud-cancel-modal-identity-mismatch') throw error;
+      modalIdentityError = error;
+    }
 
     const modalText = await page.locator('body').innerText({ timeout: 10000 });
-    row.cancelModalVerification = verifySpacecloudReservationText(modalText, row, reservationId);
+    row.cancelModalVerification = modalIdentity?.verification
+      || modalIdentityError?.verification
+      || verifySpacecloudReservationText(modalText, row, reservationId);
     if (!row.cancelModalVerification.ok) {
       row.status = 'needs-review';
       row.error = `SpaceCloud cancel modal verification failed: ${row.cancelModalVerification.errors.join(', ')}`;

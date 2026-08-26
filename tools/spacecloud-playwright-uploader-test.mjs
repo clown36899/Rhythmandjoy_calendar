@@ -20,6 +20,7 @@ import {
   summarizeDeleteCandidateIdentityEvidence,
   verifySpacecloudCalendarIdentity,
   waitForDirectEventCandidates,
+  waitForSpacecloudCancelModalIdentity,
   waitForSpacecloudDateInput,
   waitForSpacecloudDatePickerMonth,
   waitForSpacecloudReservationDetailIdentity,
@@ -339,6 +340,57 @@ test('waits for the exact SpaceCloud reservation detail identity without a blind
   assert.equal(waitCalls[0].options.timeout, 4321);
 });
 
+test('waits for the exact SpaceCloud cancel modal identity and controls without a blind delay', async () => {
+  const waitCalls = [];
+  const page = {
+    waitForFunction: async (predicate, expected, options) => {
+      waitCalls.push({ predicate, expected, options });
+    },
+    locator: (selector) => {
+      assert.equal(selector, 'body');
+      return {
+        innerText: async () => '예약번호: SC-123 홍길동 2026.09.03 13시~15시 E홀',
+      };
+    },
+    waitForTimeout: async () => {
+      throw new Error('blind modal delay is forbidden before SpaceCloud cancel confirmation');
+    },
+  };
+
+  const result = await waitForSpacecloudCancelModalIdentity(page, {
+    roomKey: 'e', date: '2026-09-03', startTime: '13:00', endTime: '15:00', reserverName: '홍길동',
+  }, 'SC-123', { timeoutMs: 4321 });
+
+  assert.deepEqual(result.verification, { ok: true, errors: [] });
+  assert.equal(waitCalls.length, 1);
+  assert.equal(waitCalls[0].expected.reservationIdText, '예약번호:SC-123');
+  assert.equal(waitCalls[0].expected.name, '홍길동');
+  assert.equal(waitCalls[0].expected.dateText, '2026.09.03');
+  assert.deepEqual(waitCalls[0].expected.timeTexts, ['13시~15시']);
+  assert.equal(waitCalls[0].expected.roomName, 'E홀');
+  assert.equal(waitCalls[0].options.timeout, 4321);
+
+  page.waitForFunction = async () => {
+    throw new Error('Timeout 4321ms exceeded');
+  };
+  await assert.rejects(
+    waitForSpacecloudCancelModalIdentity(page, {
+      roomKey: 'e', date: '2026-09-03', startTime: '13:00', endTime: '15:00', reserverName: '홍길동',
+    }, 'SC-123', { timeoutMs: 4321 }),
+    /SpaceCloud cancel modal controls did not become ready/,
+  );
+
+  page.locator = () => ({
+    innerText: async () => '예약번호: SC-123 홍길동 2026.09.04 13시~15시 E홀',
+  });
+  await assert.rejects(
+    waitForSpacecloudCancelModalIdentity(page, {
+      roomKey: 'e', date: '2026-09-03', startTime: '13:00', endTime: '15:00', reserverName: '홍길동',
+    }, 'SC-123', { timeoutMs: 4321 }),
+    /SpaceCloud cancel modal identity mismatch: date/,
+  );
+});
+
 test('confirmed SpaceCloud inspection uses the exact detail identity wait instead of elapsed time', async () => {
   const navigationCalls = [];
   const page = {
@@ -451,6 +503,67 @@ test('SpaceCloud cancellation waits for exact detail identity before any cancel 
   const preCancelSource = source.slice(detailStart, cancelButton);
   assert.match(preCancelSource, /waitForSpacecloudReservationDetailIdentity/);
   assert.doesNotMatch(preCancelSource, /waitForTimeout/);
+});
+
+test('SpaceCloud cancellation waits for exact modal controls before the final guard', async () => {
+  let cancelModalClicks = 0;
+  let finalConfirmClicks = 0;
+  const selectedReasons = [];
+  const page = {
+    on: () => {},
+    off: () => {},
+    goto: async () => {},
+    evaluate: async () => ({
+      ok: true,
+      status: 200,
+      body: { RSV_STAT_CD: 'RSCMP', phone: '01012344853' },
+    }),
+    waitForFunction: async () => {},
+    waitForTimeout: async () => {
+      throw new Error('blind modal delay is forbidden before SpaceCloud cancel confirmation');
+    },
+    locator: (selector) => {
+      const locator = {
+        filter: () => locator,
+        first: () => locator,
+        count: async () => 1,
+        click: async () => {
+          if (selector.includes('a.btn_cancel.one_type')) cancelModalClicks += 1;
+          if (selector.includes('a.btn.btn_full.btn_default')) finalConfirmClicks += 1;
+        },
+        innerText: async () => '예약번호: SC-123 홍길동 2026.09.03 13시~15시 E홀',
+        selectOption: async (value) => {
+          selectedReasons.push(value);
+        },
+      };
+      return locator;
+    },
+  };
+
+  const result = await cancelSpacecloudConfirmedReservation({ pages: () => [page] }, {
+    id: 901,
+    roomKey: 'e',
+    date: '2026-09-03',
+    startTime: '13:00',
+    endTime: '15:00',
+    reserverName: '홍길동',
+    payload: { spacecloud_reservation_id: 'SC-123' },
+  }, {
+    beforeConfirm: async () => ({ approved: false, retryable: true, reason: 'test guard hold' }),
+  });
+
+  assert.equal(result.status, 'guard-retry-pending');
+  assert.equal(result.submissionAttempted, undefined);
+  assert.equal(cancelModalClicks, 1);
+  assert.equal(finalConfirmClicks, 0);
+  assert.deepEqual(selectedReasons, ['PRSCH']);
+
+  const source = cancelSpacecloudConfirmedReservation.toString();
+  const modalClick = source.indexOf('cancelButton.first().click');
+  const finalGuard = source.indexOf("typeof beforeConfirm === 'function'");
+  const preConfirmSource = source.slice(modalClick, finalGuard);
+  assert.match(preConfirmSource, /waitForSpacecloudCancelModalIdentity/);
+  assert.doesNotMatch(preConfirmSource, /waitForTimeout/);
 });
 
 test('SpaceCloud inspection preserves the non-destructive identity-mismatch hold result', async () => {
