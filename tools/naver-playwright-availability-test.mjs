@@ -6,11 +6,13 @@ import {
   checkNaverSmartplaceLogin,
   classifyNaverSessionCheck,
   classifyNaverCancelPanelText,
+  ensureNaverWeeklyView,
   fetchNaverReservationPhone,
   inspectNaverReservationStatus,
   partitionNaverActionableSlotRows,
   saveNaverSchedule,
   selectNaverCancelPanelText,
+  selectNaverRoom,
   selectNaverScheduleEditorPanel,
   waitForNaverCancelPanelIdentity,
   waitForNaverSchedulePanelIdentity,
@@ -311,6 +313,103 @@ test('keeps Naver API identity, authentication, transport, and unknown-status fa
     assert.equal(result.reason, expected.reason);
     assert.notEqual(result.status, '취소', 'an uncertain read must never authorize canceled side effects');
   }
+});
+
+test('selects the Naver weekly view by rendered state without blind elapsed waits', async () => {
+  let selectedView = '월간';
+  let viewClicks = 0;
+  let weeklyClicks = 0;
+  const waitCalls = [];
+  const weeklyOption = {
+    first: () => weeklyOption,
+    waitFor: async (options) => { waitCalls.push({ type: 'option', options }); },
+    count: async () => 1,
+    click: async () => {
+      weeklyClicks += 1;
+      selectedView = '주간';
+    },
+  };
+  const viewButton = {
+    count: async () => 1,
+    click: async () => { viewClicks += 1; },
+  };
+  const page = {
+    evaluate: async () => selectedView,
+    locator: (selector) => (selector === 'button[class*="Select__btn-selected"]'
+      ? viewButton
+      : { filter: () => weeklyOption }),
+    waitForFunction: async (predicate, expected, options) => {
+      waitCalls.push({ type: 'selected-view', predicate, expected, options });
+    },
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while selecting the Naver weekly view');
+    },
+  };
+
+  await ensureNaverWeeklyView(page, { timeoutMs: 4321 });
+
+  assert.equal(viewClicks, 1);
+  assert.equal(weeklyClicks, 1);
+  assert.equal(waitCalls.length, 2);
+  assert.deepEqual(waitCalls[0].options, { state: 'visible', timeout: 4321 });
+  assert.equal(waitCalls[1].expected, '주간');
+  assert.equal(waitCalls[1].options.timeout, 4321);
+});
+
+test('waits for the exact Naver room to become active without a fixed delay', async () => {
+  let activeRoom = 'B홀';
+  let roomClicks = 0;
+  const waitCalls = [];
+  const roomButton = {
+    count: async () => 1,
+    scrollIntoViewIfNeeded: async () => {},
+    getAttribute: async () => 'BizItemsTab__product',
+    click: async () => {
+      roomClicks += 1;
+      activeRoom = 'A홀';
+    },
+  };
+  const page = {
+    locator: () => ({ filter: () => roomButton }),
+    evaluate: async () => activeRoom,
+    waitForFunction: async (predicate, expected, options) => {
+      waitCalls.push({ predicate, expected, options });
+    },
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while selecting a Naver room');
+    },
+  };
+
+  await selectNaverRoom(page, 'a', { timeoutMs: 4321 });
+
+  assert.equal(roomClicks, 1);
+  assert.equal(waitCalls.length, 1);
+  assert.equal(waitCalls[0].expected, 'A홀');
+  assert.equal(waitCalls[0].options.timeout, 4321);
+});
+
+test('does not click or wait when the requested Naver room is already active', async () => {
+  let roomClicks = 0;
+  let waitCount = 0;
+  const roomButton = {
+    count: async () => 1,
+    scrollIntoViewIfNeeded: async () => {},
+    getAttribute: async () => 'BizItemsTab__product BizItemsTab__active',
+    click: async () => { roomClicks += 1; },
+  };
+  const page = {
+    locator: () => ({ filter: () => roomButton }),
+    evaluate: async () => 'A홀',
+    waitForFunction: async () => { waitCount += 1; },
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while selecting a Naver room');
+    },
+  };
+
+  await selectNaverRoom(page, 'a', { timeoutMs: 4321 });
+
+  assert.equal(roomClicks, 0);
+  assert.equal(waitCount, 0);
 });
 
 test('selects the full Naver schedule editor instead of the visible header shell', () => {

@@ -208,7 +208,9 @@ async function readSelectedView(page) {
   });
 }
 
-async function ensureWeeklyView(page) {
+export async function ensureNaverWeeklyView(page, {
+  timeoutMs = 10000,
+} = {}) {
   const selected = await readSelectedView(page);
   if (selected.includes('주간')) return;
 
@@ -216,19 +218,25 @@ async function ensureWeeklyView(page) {
   const viewCount = await viewButton.count();
   if (viewCount !== 1) throw new Error(`Naver view selector count ${viewCount}`);
   await viewButton.click({ timeout: 8000 });
-  await page.waitForTimeout(300);
 
   const weekly = page.locator('a.btn-option').filter({ hasText: '주간' });
+  await weekly.first().waitFor({ state: 'visible', timeout: timeoutMs });
   const weeklyCount = await weekly.count();
   if (weeklyCount !== 1) throw new Error(`Naver weekly option count ${weeklyCount}`);
   await weekly.click({ timeout: 8000 });
-  await page.waitForTimeout(1000);
+  await page.waitForFunction((expectedView) => {
+    const button = document.querySelector('button[class*="Select__btn-selected"]');
+    const text = (button?.innerText || button?.textContent || '').replace(/\s+/g, ' ').trim();
+    return text.includes(expectedView);
+  }, '주간', { timeout: timeoutMs });
 
   const after = await readSelectedView(page);
   if (!after.includes('주간')) throw new Error(`Naver weekly view did not apply: ${after}`);
 }
 
-async function selectRoom(page, roomKey) {
+export async function selectNaverRoom(page, roomKey, {
+  timeoutMs = 10000,
+} = {}) {
   const room = NAVER_ROOMS[roomKey];
   if (!room) throw new Error(`unknown Naver room key: ${roomKey}`);
   const roomButton = page.locator('button[class*="BizItemsTab__product"]').filter({ hasText: room.name });
@@ -238,7 +246,11 @@ async function selectRoom(page, roomKey) {
   const className = await roomButton.getAttribute('class', { timeout: 5000 }).catch(() => '');
   if (!String(className || '').includes('active')) {
     await roomButton.click({ timeout: 8000 });
-    await page.waitForTimeout(1000);
+    await page.waitForFunction((expectedRoom) => {
+      const active = document.querySelector('button[class*="BizItemsTab__active"]');
+      const text = (active?.innerText || active?.textContent || '').replace(/\s+/g, ' ').trim();
+      return text.includes(expectedRoom);
+    }, room.name, { timeout: timeoutMs });
   }
   const activeText = await page.evaluate(() => {
     const active = document.querySelector('button[class*="BizItemsTab__active"]');
@@ -950,8 +962,8 @@ async function prepareCalendar(page, row, { businessId = NAVER_BOOKING_BUSINESS_
   if (!(await waitVisible(page, 'button[class*="Select__btn-selected"]', 20000))) {
     throw new Error('Naver SmartPlace calendar not visible; login may be required');
   }
-  await ensureWeeklyView(page);
-  await selectRoom(page, row.roomKey);
+  await ensureNaverWeeklyView(page);
+  await selectNaverRoom(page, row.roomKey);
   await gotoWeekContainingDate(page, row.date);
   await scrollCalendarToHour(page, parseHour(row.startTime));
 }
