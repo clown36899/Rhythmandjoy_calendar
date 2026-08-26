@@ -7,6 +7,7 @@ import {
   classifyNaverSessionCheck,
   classifyNaverCancelPanelText,
   fetchNaverReservationPhone,
+  inspectNaverReservationStatus,
   partitionNaverActionableSlotRows,
   selectNaverCancelPanelText,
   selectNaverScheduleEditorPanel,
@@ -205,7 +206,7 @@ test('returns a retryable Naver API result when the exact request cannot complet
   const context = {
     request: {
       fetch: async () => {
-        throw new Error('request failed before response');
+        throw new Error('apiRequestContext.fetch: Timeout 15000ms exceeded.\n- cookie: NID_SES=must-not-leak');
       },
     },
   };
@@ -213,8 +214,101 @@ test('returns a retryable Naver API result when the exact request cannot complet
   const result = await fetchNaverReservationPhone(context, phoneLookupTask);
 
   assert.equal(result.status, 'unavailable');
-  assert.match(result.reason, /^naver-booking-api-request-failed:/);
+  assert.equal(result.reason, 'naver-booking-api-request-failed:Timeout 15000ms exceeded');
+  assert.doesNotMatch(result.reason, /cookie|NID_SES|must-not-leak/i);
   assert.equal(result.phone, '');
+});
+
+test('reads every supported Naver reservation status from the exact booking API without opening the SPA', async () => {
+  const expectedByCode = new Map([
+    ['RC02', { status: '신청', exists: true }],
+    ['RC03', { status: '확정', exists: true }],
+    ['RC04', { status: '취소', exists: false }],
+    ['RC05', { status: '노쇼', exists: true }],
+    ['RC06', { status: '취소', exists: false }],
+    ['RC08', { status: '완료', exists: true }],
+  ]);
+
+  for (const [bookingStatusCode, expected] of expectedByCode) {
+    const calls = [];
+    const context = {
+      pages: () => {
+        throw new Error('reservation status inspection must not open the Naver SPA');
+      },
+      request: {
+        fetch: async (url, options) => {
+          calls.push({ url, options });
+          return naverBookingApiResponse(200, {
+            bookingId: 9876543210,
+            businessId: 1257912,
+            startDate: '2026-09-01T13:00:00+09:00',
+            bookingStatusCode,
+          });
+        },
+      },
+    };
+
+    const result = await inspectNaverReservationStatus(context, phoneLookupTask, {
+      businessId: '1257912',
+      timeoutMs: 4321,
+    });
+
+    assert.equal(result.status, expected.status);
+    assert.equal(result.exists, expected.exists);
+    assert.equal(result.reason, '');
+    assert.equal(result.source, 'naver-booking-api');
+    assert.equal(result.bookingStatusCode, bookingStatusCode);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://partner.booking.naver.com/api/businesses/1257912/bookings/9876543210');
+    assert.equal(calls[0].options.timeout, 4321);
+  }
+});
+
+test('keeps Naver API identity, authentication, transport, and unknown-status failures non-destructive', async () => {
+  const cases = [
+    {
+      response: naverBookingApiResponse(200, {
+        bookingId: 1111111111,
+        businessId: 1257912,
+        startDate: '2026-09-01',
+        bookingStatusCode: 'RC04',
+      }),
+      expected: { status: 'not_found', exists: false, reason: 'naver-booking-api-identity-mismatch' },
+    },
+    {
+      response: naverBookingApiResponse(302, null, {
+        location: 'https://nid.naver.com/nidlogin.login?url=redacted',
+      }),
+      expected: { status: 'login_required', exists: false, reason: 'naver-login-required' },
+    },
+    {
+      response: naverBookingApiResponse(503),
+      expected: { status: 'unavailable', exists: false, reason: 'naver-booking-api-http-503' },
+    },
+    {
+      response: naverBookingApiResponse(200, {
+        bookingId: 9876543210,
+        businessId: 1257912,
+        startDate: '2026-09-01',
+        bookingStatusCode: 'RC99',
+      }),
+      expected: { status: 'needs_review', exists: true, reason: 'naver-booking-status-unsupported:RC99' },
+    },
+  ];
+
+  for (const { response, expected } of cases) {
+    const context = {
+      pages: () => {
+        throw new Error('reservation status failure handling must not open the Naver SPA');
+      },
+      request: { fetch: async () => response },
+    };
+    const result = await inspectNaverReservationStatus(context, phoneLookupTask);
+    assert.equal(result.status, expected.status);
+    assert.equal(result.exists, expected.exists);
+    assert.equal(result.reason, expected.reason);
+    assert.notEqual(result.status, '취소', 'an uncertain read must never authorize canceled side effects');
+  }
 });
 
 test('selects the full Naver schedule editor instead of the visible header shell', () => {

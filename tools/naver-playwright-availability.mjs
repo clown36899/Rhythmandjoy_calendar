@@ -157,6 +157,18 @@ function redactPhone(value) {
   return String(value || '').replace(/01[016789][-\s]?\d{3,4}[-\s]?\d{4}/g, (phone) => maskPhone(phone));
 }
 
+function naverBookingApiRequestFailureReason(error, timeoutMs) {
+  const message = String(error?.message || error || '');
+  const timeout = message.match(/Timeout\s+(\d+)ms exceeded/i);
+  if (timeout) return `naver-booking-api-request-failed:Timeout ${timeout[1]}ms exceeded`;
+  if (error?.name === 'TimeoutError') {
+    return `naver-booking-api-request-failed:Timeout ${timeoutMs}ms exceeded`;
+  }
+  const transport = message.match(/\b(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|ERR_[A-Z_]+)\b/i);
+  if (transport) return `naver-booking-api-request-failed:${transport[1].toUpperCase()}`;
+  return `naver-booking-api-request-failed:${String(error?.name || 'Error').replace(/[^A-Za-z0-9_-]/g, '') || 'Error'}`;
+}
+
 async function visible(page, selector) {
   return page.evaluate((sel) => {
     const elements = [...document.querySelectorAll(sel)];
@@ -693,74 +705,162 @@ async function readNaverReservationStatusFromList(page, reservationNo) {
   }, String(reservationNo || '').trim());
 }
 
-async function readNaverReservationStatusFromDetail(page, reservationNo) {
-  return page.evaluate((wantedReservationNo) => {
-    const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-    const bodyText = norm(document.body?.innerText || document.body?.textContent || '');
-    if (!bodyText.includes(String(wantedReservationNo || '').trim())) {
-      return { status: 'needs_review', reason: 'reservation-identity-not-visible' };
-    }
-    const labeled = bodyText.match(/(?:예약\s*상태|진행\s*상태)\s*[:：]?\s*(확정|취소|완료|신청|노쇼)/)?.[1] || '';
-    if (labeled) return { status: labeled, reason: '' };
-    const exactVisible = Array.from(document.querySelectorAll('span,strong,em,div,p,button'))
-      .filter((element) => {
-        const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-      })
-      .map((element) => norm(element.innerText || element.textContent || ''))
-      .filter((text) => /^(확정|취소|완료|신청|노쇼)$/.test(text));
-    const unique = [...new Set(exactVisible)];
-    return unique.length === 1
-      ? { status: unique[0], reason: '' }
-      : { status: 'needs_review', reason: unique.length ? `ambiguous-status:${unique.join(',')}` : 'status-not-visible' };
-  }, String(reservationNo || '').trim());
+// Naver's owner SPA defines these bookingStatusCode values. RC06 is a
+// cancellation caused by changing a booking and must keep the same destructive
+// side-effect guard as an ordinary cancellation (RC04).
+const NAVER_RESERVATION_STATUS_BY_CODE = Object.freeze({
+  RC02: '신청',
+  RC03: '확정',
+  RC04: '취소',
+  RC05: '노쇼',
+  RC06: '취소',
+  RC08: '완료',
+});
+
+async function fetchExactNaverBookingDetail(context, task, {
+  businessId = NAVER_BOOKING_BUSINESS_ID,
+  timeoutMs = 15000,
+} = {}) {
+  const row = taskRow(task);
+  const reservationNo = String(row.reservationNo || task.reservation_number || '').trim();
+  const normalizedBusinessId = String(businessId || '').trim();
+  const base = {
+    source: 'naver-booking-api',
+    reservationNo,
+  };
+  if (!reservationNo) {
+    return { ...base, status: 'not_found', reason: 'naver-reservation-number-missing' };
+  }
+  if (!row.date) {
+    return { ...base, status: 'not_found', reason: 'naver-reservation-date-missing' };
+  }
+  if (!normalizedBusinessId) {
+    return { ...base, status: 'not_found', reason: 'naver-business-id-missing' };
+  }
+
+  let response;
+  try {
+    response = await context.request.fetch(
+      naverBookingDetailApiUrl(normalizedBusinessId, reservationNo),
+      {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json; charset=UTF-8',
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Booking-Naver-Role': 'OWNER',
+        },
+        failOnStatusCode: false,
+        maxRedirects: 0,
+        timeout: timeoutMs,
+      },
+    );
+  } catch (error) {
+    return {
+      ...base,
+      status: 'unavailable',
+      reason: naverBookingApiRequestFailureReason(error, timeoutMs),
+    };
+  }
+
+  const apiStatus = response.status();
+  const redirectLocation = response.headers().location || '';
+  const finish = async (result) => {
+    if (typeof response.dispose === 'function') await response.dispose().catch(() => {});
+    return result;
+  };
+  if ([401, 403].includes(apiStatus)
+    || ([301, 302, 303, 307, 308].includes(apiStatus) && isNaverLoginUrl(redirectLocation))) {
+    return finish({
+      ...base,
+      status: 'login_required',
+      reason: 'naver-login-required',
+      source: 'naver-login',
+      apiStatus,
+    });
+  }
+  if (apiStatus === 404) {
+    return finish({
+      ...base,
+      status: 'not_found',
+      reason: 'naver-reservation-not-found',
+      apiStatus,
+    });
+  }
+  if (apiStatus < 200 || apiStatus >= 300) {
+    return finish({
+      ...base,
+      status: 'unavailable',
+      reason: `naver-booking-api-http-${apiStatus}`,
+      apiStatus,
+    });
+  }
+
+  let detail;
+  try {
+    detail = await response.json();
+  } catch {
+    return finish({
+      ...base,
+      status: 'unavailable',
+      reason: 'naver-booking-api-invalid-json',
+      apiStatus,
+    });
+  }
+
+  const detailReservationNo = String(detail?.bookingId || '').trim();
+  const detailBusinessId = String(detail?.businessId || '').trim();
+  const detailDate = String(detail?.startDate || '').trim().match(/^\d{4}-\d{2}-\d{2}/)?.[0] || '';
+  if (detailReservationNo !== reservationNo
+    || detailBusinessId !== normalizedBusinessId
+    || detailDate !== row.date) {
+    return finish({
+      ...base,
+      status: 'not_found',
+      reason: 'naver-booking-api-identity-mismatch',
+      apiStatus,
+    });
+  }
+
+  return finish({
+    ...base,
+    status: 'found',
+    reason: '',
+    apiStatus,
+    detail,
+  });
 }
 
 export async function inspectNaverReservationStatus(context, task, {
   businessId = NAVER_BOOKING_BUSINESS_ID,
   timeoutMs = 15000,
 } = {}) {
-  const page = await pageForContext(context);
-  const row = taskRow(task);
-  const reservationNo = row.reservationNo || task.reservation_number || '';
-  if (!reservationNo || !row.date) {
+  const booking = await fetchExactNaverBookingDetail(context, task, { businessId, timeoutMs });
+  if (booking.status !== 'found') {
     return {
-      status: 'not_found',
-      reason: !reservationNo ? 'reservation-number-missing' : 'reservation-date-missing',
-      reservationNo,
+      status: booking.status,
+      exists: false,
+      reservationNo: booking.reservationNo,
+      reason: booking.reason || '',
+      source: booking.source,
+      ...(booking.apiStatus ? { apiStatus: booking.apiStatus } : {}),
     };
   }
 
-  await page.goto(naverBookingListUrl(businessId, {
-    date: row.date,
-    reservationNo,
-  }), { waitUntil: 'domcontentloaded', timeout: timeoutMs });
-
-  let result = { status: 'not_found', text: '' };
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    result = await readNaverReservationStatusFromList(page, reservationNo);
-    if (result.status !== 'not_found') break;
-    await page.waitForTimeout(400);
-  }
-  let source = 'naver-booking-list';
-  let reason = '';
-  if (result.status === 'not_found') {
-    await page.goto(naverBookingDetailUrl(businessId, reservationNo), {
-      waitUntil: 'domcontentloaded',
-      timeout: timeoutMs,
-    });
-    await page.waitForTimeout(900);
-    result = await readNaverReservationStatusFromDetail(page, reservationNo);
-    source = 'naver-booking-detail';
-    reason = result.reason || '';
-  }
+  const bookingStatusCode = String(booking.detail?.bookingStatusCode || '').trim();
+  const status = NAVER_RESERVATION_STATUS_BY_CODE[bookingStatusCode] || 'needs_review';
+  const reason = status === 'needs_review'
+    ? (bookingStatusCode
+      ? `naver-booking-status-unsupported:${bookingStatusCode}`
+      : 'naver-booking-status-missing')
+    : '';
   return {
-    status: result.status,
-    exists: !['not_found', '취소'].includes(result.status),
-    reservationNo,
+    status,
+    exists: status !== '취소',
+    reservationNo: booking.reservationNo,
     reason,
-    source,
+    source: booking.source,
+    apiStatus: booking.apiStatus,
+    bookingStatusCode,
   };
 }
 
@@ -1061,139 +1161,39 @@ export async function fetchNaverReservationPhone(context, task, {
   businessId = NAVER_BOOKING_BUSINESS_ID,
   timeoutMs = 15000,
 } = {}) {
-  const row = taskRow(task);
-  const reservationNo = String(row.reservationNo || task.reservation_number || '').trim();
-  const normalizedBusinessId = String(businessId || '').trim();
-  if (!reservationNo) {
-    return { status: 'not_found', reason: 'naver-reservation-number-missing', phone: '', maskedPhone: '' };
-  }
-  if (!row.date) {
-    return { status: 'not_found', reason: 'naver-reservation-date-missing', phone: '', maskedPhone: '' };
-  }
-  if (!normalizedBusinessId) {
-    return { status: 'not_found', reason: 'naver-business-id-missing', phone: '', maskedPhone: '' };
-  }
-
-  let response;
-  try {
-    response = await context.request.fetch(
-      naverBookingDetailApiUrl(normalizedBusinessId, reservationNo),
-      {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json; charset=UTF-8',
-          'Content-Type': 'application/json; charset=UTF-8',
-          'X-Booking-Naver-Role': 'OWNER',
-        },
-        failOnStatusCode: false,
-        maxRedirects: 0,
-        timeout: timeoutMs,
-      },
-    );
-  } catch (error) {
+  const booking = await fetchExactNaverBookingDetail(context, task, { businessId, timeoutMs });
+  if (booking.status !== 'found') {
     return {
-      status: 'unavailable',
-      reason: `naver-booking-api-request-failed:${redactPhone(error?.message || error)}`,
+      status: booking.status,
+      reason: booking.reason || '',
       phone: '',
       maskedPhone: '',
-      source: 'naver-booking-api',
-      reservationNo,
+      source: booking.source,
+      reservationNo: booking.reservationNo,
+      ...(booking.apiStatus ? { apiStatus: booking.apiStatus } : {}),
     };
   }
 
-  const apiStatus = response.status();
-  const redirectLocation = response.headers().location || '';
-  const finish = async (result) => {
-    if (typeof response.dispose === 'function') await response.dispose().catch(() => {});
-    return result;
-  };
-  if ([401, 403].includes(apiStatus)
-    || ([301, 302, 303, 307, 308].includes(apiStatus) && isNaverLoginUrl(redirectLocation))) {
-    return finish({
-      status: 'login_required',
-      reason: 'naver-login-required',
-      phone: '',
-      maskedPhone: '',
-      source: 'naver-login',
-      reservationNo,
-      apiStatus,
-    });
-  }
-  if (apiStatus === 404) {
-    return finish({
-      status: 'not_found',
-      reason: 'naver-reservation-not-found',
-      phone: '',
-      maskedPhone: '',
-      source: 'naver-booking-api',
-      reservationNo,
-      apiStatus,
-    });
-  }
-  if (apiStatus < 200 || apiStatus >= 300) {
-    return finish({
-      status: 'unavailable',
-      reason: `naver-booking-api-http-${apiStatus}`,
-      phone: '',
-      maskedPhone: '',
-      source: 'naver-booking-api',
-      reservationNo,
-      apiStatus,
-    });
-  }
-
-  let detail;
-  try {
-    detail = await response.json();
-  } catch {
-    return finish({
-      status: 'unavailable',
-      reason: 'naver-booking-api-invalid-json',
-      phone: '',
-      maskedPhone: '',
-      source: 'naver-booking-api',
-      reservationNo,
-      apiStatus,
-    });
-  }
-
-  const detailReservationNo = String(detail?.bookingId || '').trim();
-  const detailBusinessId = String(detail?.businessId || '').trim();
-  const detailDate = String(detail?.startDate || '').trim().match(/^\d{4}-\d{2}-\d{2}/)?.[0] || '';
-  if (detailReservationNo !== reservationNo
-    || detailBusinessId !== normalizedBusinessId
-    || detailDate !== row.date) {
-    return finish({
-      status: 'not_found',
-      reason: 'naver-booking-api-identity-mismatch',
-      phone: '',
-      maskedPhone: '',
-      source: 'naver-booking-api',
-      reservationNo,
-      apiStatus,
-    });
-  }
-
-  const phone = normalizePhone(detail?.phone);
+  const phone = normalizePhone(booking.detail?.phone);
   if (/^01[016789]\d{7,8}$/.test(phone)) {
-    return finish({
+    return {
       status: 'found',
       phone,
       maskedPhone: maskPhone(phone),
-      source: 'naver-booking-api',
-      reservationNo,
-      apiStatus,
-    });
+      source: booking.source,
+      reservationNo: booking.reservationNo,
+      apiStatus: booking.apiStatus,
+    };
   }
-  return finish({
+  return {
     status: 'not_found',
     reason: 'naver-phone-not-visible',
     phone: '',
     maskedPhone: '',
-    source: 'naver-booking-api',
-    reservationNo,
-    apiStatus,
-  });
+    source: booking.source,
+    reservationNo: booking.reservationNo,
+    apiStatus: booking.apiStatus,
+  };
 }
 
 export async function cancelNaverConfirmedReservation(context, task, {

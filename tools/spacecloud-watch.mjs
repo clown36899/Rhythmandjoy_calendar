@@ -12102,7 +12102,8 @@ async function runNowModeSelfTest() {
     classifyCustomerPlatformInspection('naver_source', { status: '취소' }, naverCustomerTask).status,
     'mismatch',
   );
-  assert.match(inspectNaverReservationStatus.toString(), /naverBookingDetailUrl/);
+  assert.match(inspectNaverReservationStatus.toString(), /fetchExactNaverBookingDetail/);
+  assert.doesNotMatch(inspectNaverReservationStatus.toString(), /pageForContext|waitForTimeout|naverBookingDetailUrl/);
   assert.equal(
     classifyCustomerPlatformInspection('spacecloud_mirror', { status: 'needs_review' }, naverCustomerTask).status,
     'check_failed',
