@@ -2228,7 +2228,6 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
-    await page.waitForTimeout(1200);
     const detailBefore = await fetchSpacecloudReservationDetail(page, reservationId);
     row.beforeStatusCode = spacecloudReservationStatus(detailBefore);
     if (!detailBefore.ok) {
@@ -2236,6 +2235,21 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
       row.error = detailBefore.error || `spacecloud-detail-http-${detailBefore.status}`;
       row.finishedAt = new Date().toISOString();
       return row;
+    }
+
+    let detailIdentity = null;
+    let detailIdentityError = null;
+    try {
+      detailIdentity = await waitForSpacecloudReservationDetailIdentity(
+        page,
+        row,
+        reservationId,
+        row.beforeStatusCode,
+        { timeoutMs: 10000 },
+      );
+    } catch (error) {
+      if (error?.code !== 'spacecloud-detail-identity-mismatch') throw error;
+      detailIdentityError = error;
     }
 
     let phone = findPhoneInObject(detailBefore.body);
@@ -2260,7 +2274,9 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
       return row;
     }
 
-    row.detailVerification = verifySpacecloudReservationText(bodyText, row, reservationId);
+    row.detailVerification = detailIdentity?.verification
+      || detailIdentityError?.verification
+      || verifySpacecloudReservationText(bodyText, row, reservationId);
     if (!row.detailVerification.ok) {
       row.status = 'needs-review';
       row.error = `SpaceCloud detail verification failed: ${row.detailVerification.errors.join(', ')}`;

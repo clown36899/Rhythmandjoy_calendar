@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   assessCalendarMonthGrid,
   calendarGridExpectation,
+  cancelSpacecloudConfirmedReservation,
   checkSpacecloudLogin,
   classifyDirectUploadVerification,
   classifySpacecloudSessionCheck,
@@ -382,6 +383,74 @@ test('confirmed SpaceCloud inspection uses the exact detail identity wait instea
   });
   assert.equal(navigationCalls.length, 1);
   assert.match(navigationCalls[0].url, /\/reservation\/SC-123$/);
+});
+
+test('SpaceCloud cancellation waits for exact detail identity before any cancel click', async () => {
+  let cancelClicks = 0;
+  let detailBody = { RSV_STAT_CD: 'RSCMP' };
+  let detailText = '예약번호: SC-123 홍길동 2026.09.03 13시~15시 E홀';
+  let identityWaitError = null;
+  const page = {
+    on: () => {},
+    off: () => {},
+    goto: async () => {},
+    evaluate: async () => ({
+      ok: true,
+      status: 200,
+      body: detailBody,
+    }),
+    waitForFunction: async () => {
+      if (identityWaitError) throw identityWaitError;
+    },
+    waitForTimeout: async () => {
+      throw new Error('blind detail delay is forbidden before a SpaceCloud cancel click');
+    },
+    locator: (selector) => {
+      const locator = {
+        filter: () => locator,
+        first: () => locator,
+        count: async () => 1,
+        click: async () => {
+          if (selector.includes('a.btn_cancel.one_type')) cancelClicks += 1;
+        },
+        innerText: async () => detailText,
+      };
+      return locator;
+    },
+  };
+  const task = {
+    id: 901,
+    roomKey: 'e',
+    date: '2026-09-03',
+    startTime: '13:00',
+    endTime: '15:00',
+    reserverName: '홍길동',
+    payload: { spacecloud_reservation_id: 'SC-123' },
+  };
+
+  const result = await cancelSpacecloudConfirmedReservation({ pages: () => [page] }, task);
+
+  assert.equal(result.status, 'needs-review');
+  assert.equal(result.error, 'recipient phone missing; cancellation blocked before SpaceCloud cancel click');
+  assert.equal(result.submissionAttempted, undefined);
+  assert.equal(cancelClicks, 0);
+
+  detailBody = { RSV_STAT_CD: 'RSCMP', phone: '01012344853' };
+  detailText = '예약번호: SC-123 홍길동 2026.09.04 13시~15시 E홀';
+  identityWaitError = new Error('exact identity was not rendered before the safety cap');
+  const mismatch = await cancelSpacecloudConfirmedReservation({ pages: () => [page] }, task);
+  assert.equal(mismatch.status, 'needs-review');
+  assert.equal(mismatch.error, 'SpaceCloud detail verification failed: date');
+  assert.deepEqual(mismatch.detailVerification, { ok: false, errors: ['date'] });
+  assert.equal(mismatch.submissionAttempted, undefined);
+  assert.equal(cancelClicks, 0);
+
+  const source = cancelSpacecloudConfirmedReservation.toString();
+  const detailStart = source.indexOf('page.goto');
+  const cancelButton = source.indexOf("page.locator('a.btn_cancel.one_type')");
+  const preCancelSource = source.slice(detailStart, cancelButton);
+  assert.match(preCancelSource, /waitForSpacecloudReservationDetailIdentity/);
+  assert.doesNotMatch(preCancelSource, /waitForTimeout/);
 });
 
 test('SpaceCloud inspection preserves the non-destructive identity-mismatch hold result', async () => {
