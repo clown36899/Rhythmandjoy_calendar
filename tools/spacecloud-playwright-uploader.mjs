@@ -726,21 +726,33 @@ function displayHour(value) {
   return String(Number(time.slice(0, 2)));
 }
 
-function verifySpacecloudReservationText(text, row, reservationId) {
-  const compact = compactText(text);
-  const errors = [];
-  if (!compact.includes(`예약번호:${reservationId}`)) errors.push('reservation-id');
+function spacecloudReservationTextRequirements(row, reservationId) {
   const name = normalizeName(row.reserverName);
-  if (name && !compact.includes(name)) errors.push('reserver-name');
   const dateText = row.date.replace(/-/g, '.');
-  if (!compact.includes(dateText)) errors.push('date');
   const startHour = displayHour(row.startTime);
   const endHour = displayHour(row.endTime);
   const acceptedEndHours = row.endTime === '00:00' && row.startTime !== '00:00'
     ? ['0', '24']
     : [endHour];
-  if (!acceptedEndHours.some((candidate) => compact.includes(`${startHour}시~${candidate}시`))) errors.push('time');
   const roomName = SPACECLOUD_ROOMS[row.roomKey]?.name || '';
+  return {
+    reservationIdText: `예약번호:${reservationId}`,
+    name,
+    dateText,
+    timeTexts: acceptedEndHours.map((candidate) => `${startHour}시~${candidate}시`),
+    roomName,
+  };
+}
+
+function verifySpacecloudReservationText(text, row, reservationId) {
+  const compact = compactText(text);
+  const expected = spacecloudReservationTextRequirements(row, reservationId);
+  const errors = [];
+  if (!compact.includes(expected.reservationIdText)) errors.push('reservation-id');
+  if (expected.name && !compact.includes(expected.name)) errors.push('reserver-name');
+  if (!compact.includes(expected.dateText)) errors.push('date');
+  if (!expected.timeTexts.some((candidate) => compact.includes(candidate))) errors.push('time');
+  const roomName = expected.roomName;
   if (roomName && !compact.includes(roomName)) errors.push('room');
   return { ok: errors.length === 0, errors };
 }
@@ -755,6 +767,46 @@ export function spacecloudReservationIdentityAccepted(statusCode, verification) 
   return statusCode === 'RCCMP'
     && errors.length > 0
     && errors.every((error) => error === 'reserver-name');
+}
+
+export async function waitForSpacecloudReservationDetailIdentity(
+  page,
+  row,
+  reservationId,
+  statusCode,
+  { timeoutMs = 10000 } = {},
+) {
+  const expected = {
+    ...spacecloudReservationTextRequirements(row, reservationId),
+    requireName: Boolean(normalizeName(row.reserverName)) && statusCode !== 'RCCMP',
+  };
+  let waitError = null;
+  try {
+    await page.waitForFunction((wanted) => {
+      const compact = (value) => String(value || '').replace(/\s+/g, '');
+      const text = compact(document.body?.innerText || document.body?.textContent || '');
+      return text.includes(compact(wanted.reservationIdText))
+        && text.includes(compact(wanted.dateText))
+        && wanted.timeTexts.some((candidate) => text.includes(compact(candidate)))
+        && (!wanted.roomName || text.includes(compact(wanted.roomName)))
+        && (!wanted.requireName || text.includes(compact(wanted.name)));
+    }, expected, { timeout: timeoutMs });
+  } catch (error) {
+    waitError = error;
+  }
+
+  const bodyText = await page.locator('body').innerText({ timeout: timeoutMs });
+  const verification = verifySpacecloudReservationText(bodyText, row, reservationId);
+  const accepted = spacecloudReservationIdentityAccepted(statusCode, verification);
+  if (!accepted) {
+    const error = new Error(`SpaceCloud detail identity mismatch: ${verification.errors.join(',')}`);
+    error.code = 'spacecloud-detail-identity-mismatch';
+    error.verification = verification;
+    error.statusCode = statusCode;
+    error.waitError = waitError;
+    throw error;
+  }
+  return { accepted, verification };
 }
 
 export function spacecloudUploadEventFromTask(task) {
@@ -2041,7 +2093,6 @@ export async function inspectSpacecloudConfirmedReservation(context, task) {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
-    await page.waitForTimeout(700);
     const detail = await fetchSpacecloudReservationDetail(page, reservationId);
     if (!detail.ok) {
       return {
@@ -2052,19 +2103,14 @@ export async function inspectSpacecloudConfirmedReservation(context, task) {
       };
     }
     const statusCode = spacecloudReservationStatus(detail);
-    const bodyText = await page.locator('body').innerText({ timeout: 10000 });
-    const verification = verifySpacecloudReservationText(bodyText, row, reservationId);
-    const identityAccepted = spacecloudReservationIdentityAccepted(statusCode, verification);
-    if (!identityAccepted) {
-      return {
-        ...row,
-        status: 'needs-review',
-        confirmed: false,
-        statusCode,
-        verification,
-        reason: `spacecloud-winner-identity-mismatch:${verification.errors.join(',')}`,
-      };
-    }
+    const identity = await waitForSpacecloudReservationDetailIdentity(
+      page,
+      row,
+      reservationId,
+      statusCode,
+      { timeoutMs: 10000 },
+    );
+    const verification = identity.verification;
     return {
       ...row,
       status: statusCode === 'RSCMP' ? 'confirmed' : statusCode === 'RCCMP' ? 'canceled' : 'needs-review',
@@ -2077,6 +2123,16 @@ export async function inspectSpacecloudConfirmedReservation(context, task) {
       reason: statusCode === 'RSCMP' ? '' : `spacecloud-winner-status-${statusCode || 'unknown'}`,
     };
   } catch (error) {
+    if (error?.code === 'spacecloud-detail-identity-mismatch') {
+      return {
+        ...row,
+        status: 'needs-review',
+        confirmed: false,
+        statusCode: error.statusCode,
+        verification: error.verification,
+        reason: `spacecloud-winner-identity-mismatch:${error.verification?.errors?.join(',') || 'unknown'}`,
+      };
+    }
     return {
       ...row,
       status: 'needs-review',

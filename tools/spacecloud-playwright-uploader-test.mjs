@@ -9,6 +9,7 @@ import {
   classifySpacecloudSessionCheck,
   directUploadRetryMode,
   directUploadVerificationTarget,
+  inspectSpacecloudConfirmedReservation,
   pollForSpacecloudCalendarAbsence,
   pollForSpacecloudCalendarIdentity,
   popupDeleteVerification,
@@ -17,6 +18,7 @@ import {
   summarizeDeleteCandidateIdentityEvidence,
   verifySpacecloudCalendarIdentity,
   waitForDirectEventCandidates,
+  waitForSpacecloudReservationDetailIdentity,
 } from './spacecloud-playwright-uploader.mjs';
 
 test('distinguishes an explicit SpaceCloud login page from a transient calendar load failure', () => {
@@ -176,6 +178,175 @@ test('canceled detail accepts only the known post-cancel name omission', () => {
   assert.equal(spacecloudReservationIdentityAccepted('RSCMP', { ok: false, errors: ['reserver-name'] }), false);
   assert.equal(spacecloudReservationIdentityAccepted('RCCMP', { ok: false, errors: ['date'] }), false);
   assert.equal(spacecloudReservationIdentityAccepted('RCCMP', { ok: false, errors: ['reserver-name', 'time'] }), false);
+});
+
+test('waits for the exact SpaceCloud reservation detail identity without a blind delay', async () => {
+  const waitCalls = [];
+  const page = {
+    waitForFunction: async (predicate, expected, options) => {
+      waitCalls.push({ predicate, expected, options });
+    },
+    locator: (selector) => {
+      assert.equal(selector, 'body');
+      return {
+        innerText: async () => '예약번호: SC-123 홍길동 2026.09.03 13시~15시 E홀',
+      };
+    },
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while reading SpaceCloud reservation detail');
+    },
+  };
+  const row = {
+    roomKey: 'e',
+    date: '2026-09-03',
+    startTime: '13:00',
+    endTime: '15:00',
+    reserverName: '홍길동',
+  };
+
+  const result = await waitForSpacecloudReservationDetailIdentity(
+    page,
+    row,
+    'SC-123',
+    'RSCMP',
+    { timeoutMs: 4321 },
+  );
+
+  assert.equal(result.accepted, true);
+  assert.deepEqual(result.verification, { ok: true, errors: [] });
+  assert.equal(waitCalls.length, 1);
+  assert.equal(waitCalls[0].expected.reservationIdText, '예약번호:SC-123');
+  assert.equal(waitCalls[0].expected.dateText, '2026.09.03');
+  assert.deepEqual(waitCalls[0].expected.timeTexts, ['13시~15시']);
+  assert.equal(waitCalls[0].expected.roomName, 'E홀');
+  assert.equal(waitCalls[0].expected.name, '홍길동');
+  assert.equal(waitCalls[0].expected.requireName, true);
+  assert.equal(waitCalls[0].options.timeout, 4321);
+});
+
+test('confirmed SpaceCloud inspection uses the exact detail identity wait instead of elapsed time', async () => {
+  const navigationCalls = [];
+  const page = {
+    goto: async (url, options) => {
+      navigationCalls.push({ url, options });
+    },
+    evaluate: async () => ({
+      ok: true,
+      status: 200,
+      body: { RSV_STAT_CD: 'RSCMP' },
+    }),
+    waitForFunction: async () => {},
+    locator: (selector) => {
+      assert.equal(selector, 'body');
+      return {
+        innerText: async () => '예약번호: SC-123 홍길동 2026.09.03 13시~15시 E홀',
+      };
+    },
+    waitForTimeout: async () => {
+      throw new Error('confirmed inspection must not use a blind elapsed wait');
+    },
+  };
+
+  const result = await inspectSpacecloudConfirmedReservation({
+    pages: () => [page],
+  }, {
+    roomKey: 'e',
+    date: '2026-09-03',
+    startTime: '13:00',
+    endTime: '15:00',
+    reserverName: '홍길동',
+    payload: { spacecloud_reservation_id: 'SC-123' },
+  });
+
+  assert.equal(result.status, 'confirmed');
+  assert.equal(result.confirmed, true);
+  assert.equal(result.statusCode, 'RSCMP');
+  assert.deepEqual(result.verification, {
+    ok: true,
+    errors: [],
+    acceptedForCanceledStatus: false,
+  });
+  assert.equal(navigationCalls.length, 1);
+  assert.match(navigationCalls[0].url, /\/reservation\/SC-123$/);
+});
+
+test('SpaceCloud inspection preserves the non-destructive identity-mismatch hold result', async () => {
+  const page = {
+    goto: async () => {},
+    evaluate: async () => ({
+      ok: true,
+      status: 200,
+      body: { RSV_STAT_CD: 'RSCMP' },
+    }),
+    waitForFunction: async () => {
+      throw new Error('exact identity was not rendered before the safety cap');
+    },
+    locator: () => ({
+      innerText: async () => '예약번호: SC-123 홍길동 2026.09.04 13시~15시 E홀',
+    }),
+    waitForTimeout: async () => {
+      throw new Error('inspection must not fall back to a blind elapsed wait');
+    },
+  };
+
+  const result = await inspectSpacecloudConfirmedReservation({
+    pages: () => [page],
+  }, {
+    roomKey: 'e',
+    date: '2026-09-03',
+    startTime: '13:00',
+    endTime: '15:00',
+    reserverName: '홍길동',
+    payload: { spacecloud_reservation_id: 'SC-123' },
+  });
+
+  assert.equal(result.status, 'needs-review');
+  assert.equal(result.confirmed, false);
+  assert.equal(result.statusCode, 'RSCMP');
+  assert.deepEqual(result.verification, { ok: false, errors: ['date'] });
+  assert.equal(result.reason, 'spacecloud-winner-identity-mismatch:date');
+});
+
+test('allows only the known canceled SpaceCloud detail name omission while waiting', async () => {
+  const waitCalls = [];
+  const page = {
+    waitForFunction: async (predicate, expected, options) => {
+      waitCalls.push({ predicate, expected, options });
+    },
+    locator: () => ({
+      innerText: async () => '예약번호: SC-123 2026.09.03 13시~15시 E홀',
+    }),
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while reading SpaceCloud reservation detail');
+    },
+  };
+
+  const result = await waitForSpacecloudReservationDetailIdentity(page, {
+    roomKey: 'e', date: '2026-09-03', startTime: '13:00', endTime: '15:00', reserverName: '홍길동',
+  }, 'SC-123', 'RCCMP', { timeoutMs: 4321 });
+
+  assert.equal(result.accepted, true);
+  assert.deepEqual(result.verification.errors, ['reserver-name']);
+  assert.equal(waitCalls[0].expected.requireName, false);
+});
+
+test('rejects SpaceCloud detail when the final authoritative identity read disagrees', async () => {
+  const page = {
+    waitForFunction: async () => {},
+    locator: () => ({
+      innerText: async () => '예약번호: SC-123 홍길동 2026.09.04 13시~15시 E홀',
+    }),
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while reading SpaceCloud reservation detail');
+    },
+  };
+
+  await assert.rejects(
+    waitForSpacecloudReservationDetailIdentity(page, {
+      roomKey: 'e', date: '2026-09-03', startTime: '13:00', endTime: '15:00', reserverName: '홍길동',
+    }, 'SC-123', 'RSCMP', { timeoutMs: 4321 }),
+    /detail identity mismatch: date/,
+  );
 });
 
 test('UI candidate search can refresh before a delete inspection gives up', async () => {
