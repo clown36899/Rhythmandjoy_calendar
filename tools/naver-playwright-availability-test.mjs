@@ -8,6 +8,7 @@ import {
   classifyNaverCancelPanelText,
   ensureNaverWeeklyView,
   fetchNaverReservationPhone,
+  gotoNaverWeekContainingDate,
   inspectNaverReservationStatus,
   partitionNaverActionableSlotRows,
   saveNaverSchedule,
@@ -410,6 +411,75 @@ test('does not click or wait when the requested Naver room is already active', a
 
   assert.equal(roomClicks, 0);
   assert.equal(waitCount, 0);
+});
+
+test('moves Naver weeks only after each rendered period actually changes', async () => {
+  let periodText = '2026. 8. 23. ~ 2026. 8. 29.';
+  let clicks = 0;
+  const selectors = [];
+  const transitions = [
+    '2026. 8. 30. ~ 2026. 9. 5.',
+    '2026. 9. 6. ~ 2026. 9. 12.',
+  ];
+  const waitCalls = [];
+  const button = {
+    count: async () => 1,
+    click: async () => { clicks += 1; },
+  };
+  const page = {
+    evaluate: async () => periodText,
+    locator: (selector) => {
+      selectors.push(selector);
+      return button;
+    },
+    waitForFunction: async (predicate, previousText, options) => {
+      waitCalls.push({ predicate, previousText, options });
+      periodText = transitions[waitCalls.length - 1];
+    },
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while navigating Naver weeks');
+    },
+  };
+
+  const period = await gotoNaverWeekContainingDate(page, '2026-09-08', { timeoutMs: 4321 });
+
+  assert.deepEqual(period, {
+    start: '2026-09-06',
+    end: '2026-09-12',
+    text: '2026. 9. 6. ~ 2026. 9. 12.',
+  });
+  assert.equal(clicks, 2);
+  assert.equal(waitCalls.length, 2);
+  assert.deepEqual(waitCalls.map((call) => call.previousText), [
+    '2026. 8. 23. ~ 2026. 8. 29.',
+    '2026. 8. 30. ~ 2026. 9. 5.',
+  ]);
+  assert.ok(selectors.every((selector) => selector.includes('DatePeriodCalendar__next')));
+  assert.ok(waitCalls.every((call) => call.options.timeout === 4321));
+});
+
+test('never clicks the next Naver week again when the prior transition is uncertain', async () => {
+  let clicks = 0;
+  const timeout = new Error('page.waitForFunction: Timeout 4321ms exceeded');
+  timeout.name = 'TimeoutError';
+  const button = {
+    count: async () => 1,
+    click: async () => { clicks += 1; },
+  };
+  const page = {
+    evaluate: async () => '2026. 8. 23. ~ 2026. 8. 29.',
+    locator: () => button,
+    waitForFunction: async () => { throw timeout; },
+    waitForTimeout: async () => {
+      throw new Error('blind elapsed waits are forbidden while navigating Naver weeks');
+    },
+  };
+
+  await assert.rejects(
+    gotoNaverWeekContainingDate(page, '2026-09-01', { timeoutMs: 4321 }),
+    /Timeout 4321ms exceeded/,
+  );
+  assert.equal(clicks, 1);
 });
 
 test('selects the full Naver schedule editor instead of the visible header shell', () => {

@@ -264,10 +264,12 @@ async function readWeekPeriod(page) {
     const el = document.querySelector('[class*="DatePeriodCalendar__date-info"]');
     return (el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
   });
-  return parseWeekPeriod(text);
+  return { ...parseWeekPeriod(text), text };
 }
 
-async function gotoWeekContainingDate(page, targetDate) {
+export async function gotoNaverWeekContainingDate(page, targetDate, {
+  timeoutMs = 10000,
+} = {}) {
   const target = normalizeDate(targetDate);
   const targetIdx = dateIndex(target);
   for (let i = 0; i < 80; i += 1) {
@@ -281,7 +283,11 @@ async function gotoWeekContainingDate(page, targetDate) {
     const count = await button.count();
     if (count !== 1) throw new Error(`Naver week navigation button count ${count}: ${selector}`);
     await button.click({ timeout: 8000 });
-    await page.waitForTimeout(1000);
+    await page.waitForFunction((previousText) => {
+      const el = document.querySelector('[class*="DatePeriodCalendar__date-info"]');
+      const currentText = (el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+      return Boolean(currentText && currentText !== previousText);
+    }, period.text, { timeout: timeoutMs });
   }
   throw new Error(`Naver week navigation failed for ${target}`);
 }
@@ -964,7 +970,7 @@ async function prepareCalendar(page, row, { businessId = NAVER_BOOKING_BUSINESS_
   }
   await ensureNaverWeeklyView(page);
   await selectNaverRoom(page, row.roomKey);
-  await gotoWeekContainingDate(page, row.date);
+  await gotoNaverWeekContainingDate(page, row.date);
   await scrollCalendarToHour(page, parseHour(row.startTime));
 }
 
