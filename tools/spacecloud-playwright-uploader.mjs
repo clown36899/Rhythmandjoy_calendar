@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 const SPACECLOUD_PAGE_LOAD_TIMEOUT_MS = 20000;
 const CALENDAR_MONTH_READY_TIMEOUT_MS = 20000;
 const SPACECLOUD_CALENDAR_API_PATH = '/partner/reservations/calendar';
+const SPACECLOUD_TOKEN_REFRESH_API_PATH = '/partner/users/get_token';
 
 export const SPACECLOUD_ROOMS = {
   a: { spaceId: '66056', productId: '108673', name: 'A홀' },
@@ -127,6 +128,26 @@ function isSpacecloudCalendarApiUrl(value, {
     if (year !== null && Number(url.searchParams.get('year')) !== Number(year)) return false;
     if (month !== null && Number(url.searchParams.get('month')) !== Number(month)) return false;
     return true;
+  } catch {
+    return false;
+  }
+}
+
+function isSpacecloudTokenRefreshApiUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.origin === 'https://api.spacecloud.kr'
+      && url.pathname === SPACECLOUD_TOKEN_REFRESH_API_PATH;
+  } catch {
+    return false;
+  }
+}
+
+function isSpacecloudAuthenticationUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.hostname.toLowerCase() === 'partner.spacecloud.kr'
+      && /^\/auth(?:\/|$)/.test(url.pathname);
   } catch {
     return false;
   }
@@ -2768,6 +2789,98 @@ export async function deleteSpacecloudDirectReservation(context, task, {
   }
 }
 
+async function recoverSpacecloudSessionThroughSpa(page, {
+  url,
+  productId,
+  timeoutMs,
+}) {
+  await page.unroute('**/*');
+
+  const responseOutcome = page.waitForResponse((response) => {
+    const status = response.status();
+    return (
+      isSpacecloudCalendarApiUrl(response.url(), { productId })
+      && status === 200
+    ) || (
+      isSpacecloudTokenRefreshApiUrl(response.url())
+      && [401, 403].includes(status)
+    );
+  }, { timeout: timeoutMs }).then(async (response) => {
+    const status = response.status();
+    if (isSpacecloudTokenRefreshApiUrl(response.url())) {
+      return {
+        status: 'refresh-rejected',
+        apiStatus: status,
+        error: `SpaceCloud token refresh rejected authentication with HTTP ${status}`,
+      };
+    }
+
+    const networkError = await response.finished().catch((error) => error);
+    if (networkError) {
+      return {
+        status: 'inconclusive',
+        apiStatus: status,
+        error: `SpaceCloud refreshed calendar API network failure: ${networkError.message || networkError}`,
+      };
+    }
+    const body = await response.json().catch(() => null);
+    const days = Array.isArray(body)
+      ? body
+      : Array.isArray(body?.data)
+        ? body.data
+        : null;
+    if (!days) {
+      return {
+        status: 'inconclusive',
+        apiStatus: status,
+        error: 'SpaceCloud refreshed calendar API returned an unexpected response',
+      };
+    }
+    return {
+      status: 'ready',
+      apiStatus: status,
+      apiResult: {
+        ok: true,
+        status,
+        tokenPresent: true,
+        productId,
+        dayCount: days.length,
+        days: [],
+      },
+    };
+  }).catch((error) => ({
+    status: 'inconclusive',
+    apiStatus: 0,
+    error: `SpaceCloud automatic token refresh did not reach the calendar API: ${String(error?.message || error).replace(/\s+/g, ' ').slice(0, 200)}`,
+  }));
+
+  const authOutcome = page.waitForURL(
+    (candidate) => isSpacecloudAuthenticationUrl(candidate.toString()),
+    { timeout: timeoutMs },
+  ).then(() => ({
+    status: 'auth-page',
+    apiStatus: 401,
+    error: 'SpaceCloud authentication page is visible after token refresh',
+  })).catch(() => null);
+
+  let navigationError = '';
+  try {
+    await page.goto(url, { waitUntil: 'commit', timeout: timeoutMs });
+  } catch (error) {
+    navigationError = String(error?.message || error).replace(/\s+/g, ' ').trim().slice(0, 240);
+  }
+
+  const outcome = await Promise.race([responseOutcome, authOutcome]);
+  return {
+    ...(outcome || {
+      status: 'inconclusive',
+      apiStatus: 0,
+      error: 'SpaceCloud automatic token refresh produced no authoritative result',
+    }),
+    navigationError,
+  };
+}
+
 export async function checkSpacecloudLogin(context, {
   url = 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
   timeoutMs = 20000,
@@ -2776,6 +2889,7 @@ export async function checkSpacecloudLogin(context, {
   let navigationError = '';
   let apiResult = null;
   let currentUrl = '';
+  let refreshAttempt = null;
   try {
     let productId = '108674';
     try {
@@ -2804,6 +2918,40 @@ export async function checkSpacecloudLogin(context, {
         timeoutMs,
         summaryOnly: true,
       });
+      if (
+        apiResult?.tokenPresent === false
+        || [401, 403].includes(Number(apiResult?.status))
+      ) {
+        refreshAttempt = await recoverSpacecloudSessionThroughSpa(page, {
+          url,
+          productId,
+          timeoutMs,
+        });
+        currentUrl = page.url();
+        if (refreshAttempt.status === 'ready') {
+          apiResult = refreshAttempt.apiResult;
+        } else if (['auth-page', 'refresh-rejected'].includes(refreshAttempt.status)) {
+          apiResult = {
+            ok: false,
+            status: refreshAttempt.apiStatus || 401,
+            tokenPresent: true,
+            error: refreshAttempt.error,
+          };
+        } else {
+          // An expired access token is not proof of logout while the site's
+          // refresh flow is inconclusive. Exact UI/API guards on real work
+          // remain responsible for allowing or refusing any side effect.
+          apiResult = {
+            ok: false,
+            status: 0,
+            tokenPresent: null,
+            error: refreshAttempt.error || 'spacecloud-token-refresh-inconclusive',
+          };
+        }
+        if (!navigationError && refreshAttempt.navigationError) {
+          navigationError = refreshAttempt.navigationError;
+        }
+      }
     }
   } catch (error) {
     navigationError = String(error?.message || error).replace(/\s+/g, ' ').trim().slice(0, 240);
@@ -2824,8 +2972,10 @@ export async function checkSpacecloudLogin(context, {
       url: currentUrl || page.url(),
       title: await page.title().catch(() => ''),
       navigationError,
-      probe: 'calendar-api',
+      probe: refreshAttempt ? 'calendar-api+spa-refresh' : 'calendar-api',
       apiStatus: apiResult?.status ?? null,
+      refreshAttempted: Boolean(refreshAttempt),
+      refreshOutcome: refreshAttempt?.status || '',
     };
   } finally {
     await page.close().catch(() => {});
@@ -2847,11 +2997,7 @@ export function classifySpacecloudSessionCheck({
   try {
     location = new URL(currentUrl);
   } catch {}
-  const loginRequired = Boolean(
-    location
-    && location.hostname.toLowerCase() === 'partner.spacecloud.kr'
-    && /^\/auth(?:\/|$)/.test(location.pathname)
-  );
+  const loginRequired = Boolean(location && isSpacecloudAuthenticationUrl(location.toString()));
   if (loginRequired) {
     return {
       ok: false,
