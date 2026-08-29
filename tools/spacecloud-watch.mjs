@@ -2016,6 +2016,7 @@ def enrich_task_row(cur, row):
     row['ledgerCanceledEventOrderKey'] = None
     row['ledgerConfirmedEventOrderTrusted'] = False
     row['ledgerCanceledEventOrderTrusted'] = False
+    row['legacyPlatformExportCancellation'] = False
     ledger = None
     losing_booking = payload.get('losingBooking') if isinstance(payload.get('losingBooking'), dict) else {}
     try:
@@ -2028,12 +2029,21 @@ def enrich_task_row(cur, row):
         # Resolve it even when an older queued payload omitted calendarKey.
         cur.execute(
             """
-            SELECT id, ledger_key, source_platform, current_status,
+            SELECT id, ledger_key, source_platform, source_mode, current_status,
+                   target_calendar, room_key, reservation_number,
+                   reserver_name, reserver_name_key, product,
+                   CAST(reservation_date AS CHAR) AS reservation_date,
+                   CAST(start_time AS CHAR) AS start_time,
+                   CAST(end_time AS CHAR) AS end_time,
+                   amount_source, payload_json,
                    confirmed_email_event_id, canceled_email_event_id,
                    CAST(confirmed_email_received_at AS CHAR) AS confirmed_email_received_at,
                    CAST(canceled_email_received_at AS CHAR) AS canceled_email_received_at,
                    CAST(last_event_at AS CHAR) AS last_event_at,
-                   last_event_order_key,
+                   last_event_id, last_event_order_key,
+                   automation_cancel_task_id, automation_cancel_platform,
+                   CAST(automation_canceled_at AS CHAR) AS automation_canceled_at,
+                   automation_canceled_order_key,
                    (SELECT event_order_key FROM rhythmjoy_naver_email_events
                     WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_key,
                    (SELECT event_order_key FROM rhythmjoy_naver_email_events
@@ -2066,12 +2076,21 @@ def enrich_task_row(cur, row):
             row['ledgerKey'] = ledger_key
             cur.execute(
                 """
-                SELECT id, ledger_key, source_platform, current_status,
+                SELECT id, ledger_key, source_platform, source_mode, current_status,
+                       target_calendar, room_key, reservation_number,
+                       reserver_name, reserver_name_key, product,
+                       CAST(reservation_date AS CHAR) AS reservation_date,
+                       CAST(start_time AS CHAR) AS start_time,
+                       CAST(end_time AS CHAR) AS end_time,
+                       amount_source, payload_json,
                        confirmed_email_event_id, canceled_email_event_id,
                        CAST(confirmed_email_received_at AS CHAR) AS confirmed_email_received_at,
                        CAST(canceled_email_received_at AS CHAR) AS canceled_email_received_at,
                        CAST(last_event_at AS CHAR) AS last_event_at,
-                       last_event_order_key,
+                       last_event_id, last_event_order_key,
+                       automation_cancel_task_id, automation_cancel_platform,
+                       CAST(automation_canceled_at AS CHAR) AS automation_canceled_at,
+                       automation_canceled_order_key,
                        (SELECT event_order_key FROM rhythmjoy_naver_email_events
                         WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_key,
                        (SELECT event_order_key FROM rhythmjoy_naver_email_events
@@ -2101,12 +2120,21 @@ def enrich_task_row(cur, row):
             if compatibility_key != ledger_key:
                 cur.execute(
                     """
-                    SELECT id, current_status,
+                    SELECT id, ledger_key, source_platform, source_mode, current_status,
+                           target_calendar, room_key, reservation_number,
+                           reserver_name, reserver_name_key, product,
+                           CAST(reservation_date AS CHAR) AS reservation_date,
+                           CAST(start_time AS CHAR) AS start_time,
+                           CAST(end_time AS CHAR) AS end_time,
+                           amount_source, payload_json,
                            confirmed_email_event_id, canceled_email_event_id,
                            CAST(confirmed_email_received_at AS CHAR) AS confirmed_email_received_at,
                            CAST(canceled_email_received_at AS CHAR) AS canceled_email_received_at,
                            CAST(last_event_at AS CHAR) AS last_event_at,
-                           last_event_order_key,
+                           last_event_id, last_event_order_key,
+                           automation_cancel_task_id, automation_cancel_platform,
+                           CAST(automation_canceled_at AS CHAR) AS automation_canceled_at,
+                           automation_canceled_order_key,
                            (SELECT event_order_key FROM rhythmjoy_naver_email_events
                             WHERE id=confirmed_email_event_id LIMIT 1) AS confirmed_event_order_key,
                            (SELECT event_order_key FROM rhythmjoy_naver_email_events
@@ -2138,6 +2166,52 @@ def enrich_task_row(cur, row):
         row['ledgerCanceledEventOrderKey'] = ledger.get('canceled_event_order_key')
         row['ledgerConfirmedEventOrderTrusted'] = bool(ledger.get('confirmed_event_order_trusted'))
         row['ledgerCanceledEventOrderTrusted'] = bool(ledger.get('canceled_event_order_trusted'))
+
+        try:
+            ledger_payload = json.loads(ledger.get('payload_json') or '{}')
+        except Exception:
+            ledger_payload = {}
+        if not isinstance(ledger_payload, dict):
+            ledger_payload = {}
+        task_event_id = int(row.get('emailEventId') or 0)
+        task_ledger_id = int(row.get('bookingLedgerId') or 0)
+        ledger_id = int(ledger.get('id') or 0)
+        task_event_order_key = int(row.get('sourceEventOrderKey') or 0)
+        ledger_last_event_order_key = int(ledger.get('last_event_order_key') or 0)
+        row['legacyPlatformExportCancellation'] = bool(
+            task_type == 'delete'
+            and payload.get('source') == 'naver-email-cancellation'
+            and ledger.get('source_platform') == 'naver'
+            and ledger.get('source_mode') == 'platform-export'
+            and str(ledger.get('amount_source') or '').startswith('naver-platform-export')
+            and ledger_payload.get('source') in ('naver-export', 'visible-site-year-backfill')
+            and ledger.get('current_status') == 'canceled'
+            and not ledger.get('confirmed_email_event_id')
+            and int(ledger.get('canceled_email_event_id') or 0) == task_event_id
+            and int(ledger.get('last_event_id') or 0) == task_event_id
+            and ledger_last_event_order_key > 0
+            and ledger_last_event_order_key == task_event_order_key
+            and bool(row.get('sourceEventOrderTrusted'))
+            and bool(ledger.get('canceled_event_order_trusted'))
+            and task_event_id > 0
+            and task_ledger_id > 0
+            and task_ledger_id == ledger_id
+            and int(payload.get('bookingLedgerId') or 0) == ledger_id
+            and row.get('roomKey') == ledger.get('room_key')
+            and str(row.get('reservationNo') or '') == str(ledger.get('reservation_number') or '')
+            and importer.platform_export_reserver_name_matches(
+                row.get('reserverName'),
+                ledger.get('reserver_name'),
+            )
+            and str(row.get('product') or '') == str(ledger.get('product') or '')
+            and str(row.get('date') or '') == str(ledger.get('reservation_date') or '')
+            and task_time_value(row.get('startTime')) == task_time_value(ledger.get('start_time'))
+            and task_time_value(row.get('endTime')) == task_time_value(ledger.get('end_time'))
+            and not ledger.get('automation_cancel_task_id')
+            and not ledger.get('automation_cancel_platform')
+            and not ledger.get('automation_canceled_at')
+            and not ledger.get('automation_canceled_order_key')
+        )
 
     if task_type == 'delete':
         row['priorUploadTaskId'] = None
@@ -4771,6 +4845,10 @@ async function checkpointRemoteDeleteSubmission(args, task, proof = {}) {
       differentReservationCandidateCount: Number(proof.differentReservationCandidateCount || 0),
       identityCandidateCount: Number(proof.identityCandidateCount || 0),
       identityMatched: proof.identityMatched === true,
+      legacyTasklessIdentityMatched: proof.legacyTasklessIdentityMatched === true,
+      observedTaskId: String(proof.observedTaskId || ''),
+      reservationNoMatched: proof.reservationNoMatched === true,
+      nameMatched: proof.nameMatched === true,
       absenceConfirmed: proof.absenceConfirmed === true,
       consecutiveAbsentReads: Number(proof.consecutiveAbsentReads || 0),
       mode: String(proof.mode || ''),
@@ -4809,6 +4887,33 @@ def event_order_before(left_key, left_id, right_key, right_id):
     # only a storage tie-breaker and cannot authorize a delete click.
     return int(left_key) < int(right_key)
 
+def normalized_name(value):
+    text = ''.join(str(value or '').strip().split())
+    while text.endswith('님'):
+        text = text[:-1]
+    return text
+
+def normalized_time(value):
+    text = str(value or '').strip()
+    return text + ':00' if len(text) == 5 else text
+
+def masked_name(value):
+    text = normalized_name(value)
+    if len(text) >= 3:
+        return text[0] + ('*' * (len(text) - 2)) + text[-1]
+    if len(text) == 2:
+        return text[0] + '*'
+    return text
+
+def platform_export_name_matches(observed_value, export_value):
+    observed = normalized_name(observed_value)
+    exported = normalized_name(export_value)
+    return bool(
+        observed
+        and exported
+        and observed in (exported, masked_name(export_value))
+    )
+
 load_env(os.environ['RHYTHMJOY_ENV_FILE'])
 request = json.loads(base64.b64decode(os.environ['DELETE_CHECKPOINT_B64']).decode('utf-8'))
 conn = pymysql.connect(
@@ -4831,6 +4936,9 @@ try:
         task_payload = parse_json(task.get('payload_json'))
         ledger_cancel_payload = parse_json(
             ledger.get('cancel_payload_json') if ledger else '{}'
+        )
+        ledger_source_payload = parse_json(
+            ledger.get('payload_json') if ledger else '{}'
         )
         prior_upload = None
         if int(request.get('priorUploadTaskId') or 0) > 0:
@@ -4859,13 +4967,20 @@ try:
         delete_event_order_key = None
         delete_event_order_trusted = False
         delete_event_type = ''
+        delete_event = {}
         prior_upload_event_at = None
         prior_upload_event_order_key = None
         prior_upload_event_order_trusted = False
         prior_upload_event_type = ''
         if event_id > 0:
             cur.execute(
-                'SELECT email_received_at, event_type, event_order_key, event_order_trusted FROM rhythmjoy_naver_email_events WHERE id=%s LIMIT 1',
+                '''SELECT email_received_at, event_type, event_order_key,
+                          event_order_trusted, parse_status, processing_status,
+                          target_calendar, spacecloud_room_key,
+                          reservation_number, reserver_name, product,
+                          reservation_date, start_time, end_time
+                   FROM rhythmjoy_naver_email_events
+                   WHERE id=%s LIMIT 1''',
                 (event_id,),
             )
             delete_event = cur.fetchone() or {}
@@ -5027,6 +5142,88 @@ try:
             and manual_cancel_task.get('end_time') == ledger.get('end_time')
             and manual_prior_identity_ok
         )
+        platform_export_delete_generation = bool(
+            not request.get('adminPanelTask')
+            and not manual_request
+            and ledger and task
+            and event_id > 0
+            and delete_event_type == 'cancellation'
+            and delete_event.get('parse_status') == 'parsed'
+            and str(delete_event.get('processing_status') or '').startswith(
+                'spacecloud_delete_'
+            )
+            and delete_event_order_trusted
+            and delete_event_order_key is not None
+            and int(task.get('email_event_id') or 0) == event_id
+            and task_payload.get('source') == 'naver-email-cancellation'
+            and int(task_payload.get('emailEventId') or 0) == event_id
+            and int(task_payload.get('bookingLedgerId') or 0)
+                == int(ledger.get('id') or 0)
+            and str(task_payload.get('calendarKey') or '')
+                == str(ledger.get('target_calendar') or '')
+            and str(task_payload.get('roomKey') or '')
+                == str(ledger.get('room_key') or '')
+            and current_cancellation
+            and ledger.get('source_platform') == 'naver'
+            and ledger.get('source_mode') == 'platform-export'
+            and str(ledger.get('amount_source') or '').startswith(
+                'naver-platform-export'
+            )
+            and ledger_source_payload.get('source') in (
+                'naver-export',
+                'visible-site-year-backfill',
+            )
+            and not ledger.get('confirmed_email_event_id')
+            and int(ledger.get('canceled_email_event_id') or 0) == event_id
+            and int(ledger.get('last_event_id') or 0) == event_id
+            and int(ledger.get('last_event_order_key') or 0)
+                == int(delete_event_order_key or 0)
+            and ledger.get('confirmed_email_received_at')
+            and delete_event_at
+            and ledger.get('confirmed_email_received_at') < delete_event_at
+            and ledger.get('canceled_email_received_at') == delete_event_at
+            and not ledger.get('automation_cancel_task_id')
+            and not ledger.get('automation_cancel_platform')
+            and not ledger.get('automation_canceled_at')
+            and not ledger.get('automation_canceled_order_key')
+            and task.get('room_key') == ledger.get('room_key')
+            and task.get('reservation_number') == ledger.get('reservation_number')
+            and platform_export_name_matches(
+                task.get('reserver_name'),
+                ledger.get('reserver_name'),
+            )
+            and task.get('product') == ledger.get('product')
+            and task.get('reservation_date') == ledger.get('reservation_date')
+            and task.get('start_time') == ledger.get('start_time')
+            and task.get('end_time') == ledger.get('end_time')
+            and delete_event.get('target_calendar') == ledger.get('target_calendar')
+            and delete_event.get('spacecloud_room_key') == ledger.get('room_key')
+            and delete_event.get('reservation_number')
+                == ledger.get('reservation_number')
+            and platform_export_name_matches(
+                delete_event.get('reserver_name'),
+                ledger.get('reserver_name'),
+            )
+            and delete_event.get('product') == ledger.get('product')
+            and delete_event.get('reservation_date')
+                == ledger.get('reservation_date')
+            and delete_event.get('start_time') == ledger.get('start_time')
+            and delete_event.get('end_time') == ledger.get('end_time')
+            and str(ledger_cancel_payload.get('reservation_number') or '')
+                == str(ledger.get('reservation_number') or '')
+            and platform_export_name_matches(
+                ledger_cancel_payload.get('name'),
+                ledger.get('reserver_name'),
+            )
+            and str(ledger_cancel_payload.get('product') or '')
+                == str(ledger.get('product') or '')
+            and str(ledger_cancel_payload.get('date') or '')
+                == str(ledger.get('reservation_date') or '')
+            and normalized_time(ledger_cancel_payload.get('start_time'))
+                == normalized_time(ledger.get('start_time'))
+            and normalized_time(ledger_cancel_payload.get('end_time'))
+                == normalized_time(ledger.get('end_time'))
+        )
         historical_delete_generation = bool(
             not request.get('adminPanelTask')
             and not manual_request
@@ -5049,7 +5246,11 @@ try:
         )
         delete_generation_active = bool(
             current_cancellation
-            if request.get('adminPanelTask') or manual_request
+            if (
+                request.get('adminPanelTask')
+                or manual_request
+                or platform_export_delete_generation
+            )
             else historical_delete_generation
         )
         prior_active = bool(
@@ -5077,7 +5278,11 @@ try:
             task_request_identity_ok
             and (
                 current_ledger_identity_ok
-                if request.get('adminPanelTask') or manual_request
+                if (
+                    request.get('adminPanelTask')
+                    or manual_request
+                    or platform_export_delete_generation
+                )
                 else prior_identity_ok
             )
         )
@@ -5090,6 +5295,8 @@ try:
             )
         elif manual_request:
             event_identity_ok = bool(manual_delete_generation)
+        elif platform_export_delete_generation:
+            event_identity_ok = True
         else:
             event_identity_ok = bool(
                 event_id > 0
@@ -5116,6 +5323,19 @@ try:
             and exact_proof.get('mode') == 'ensure-absent'
         )
         exact_proof_ok = bool(exact_presence_proof_ok or exact_absence_proof_ok)
+        platform_export_live_proof_ok = bool(
+            platform_export_delete_generation
+            and (
+                exact_absence_proof_ok
+                or (
+                    exact_presence_proof_ok
+                    and exact_proof.get('legacyTasklessIdentityMatched') is True
+                    and not str(exact_proof.get('observedTaskId') or '')
+                    and exact_proof.get('reservationNoMatched') is True
+                    and exact_proof.get('nameMatched') is True
+                )
+            )
+        )
         legacy_prior_normalized = False
         if (
             identity_ok
@@ -5184,7 +5404,11 @@ try:
             and prior_upload.get('status') in ('done', 'already_gone')
             and prior_upload.get('side_effect_state') in ('finalized', 'skipped')
         )
-        dependency_ok = bool(prior_identity_ok and prior_terminal)
+        dependency_ok = bool(
+            platform_export_live_proof_ok
+            if platform_export_delete_generation
+            else (prior_identity_ok and prior_terminal)
+        )
         summary = {
             'taskId': task.get('id'),
             'ledgerId': ledger.get('id') if ledger else None,
@@ -5196,6 +5420,8 @@ try:
             'priorUploadIdentityMatched': prior_identity_ok,
             'supersededCancellationCleanup': superseded_cleanup,
             'historicalDeleteGeneration': historical_delete_generation,
+            'platformExportDeleteGeneration': platform_export_delete_generation,
+            'platformExportLiveProofAccepted': platform_export_live_proof_ok,
             'manualCustomerCancellation': manual_request,
             'manualDeleteGeneration': manual_delete_generation,
             'customerCancellationTaskId': customer_cancellation_task_id or None,
@@ -5208,9 +5434,11 @@ try:
             result = {'approved': False, 'stale': False, 'retryable': False, 'reason': 'delete task and booking ledger identity changed', 'summary': summary}
         elif not delete_generation_active:
             result = {'approved': False, 'stale': True, 'retryable': False, 'reason': 'booking is no longer canceled before the SpaceCloud delete click', 'summary': summary}
-        elif not prior_upload or not prior_identity_ok:
+        elif platform_export_delete_generation and not platform_export_live_proof_ok:
+            result = {'approved': False, 'stale': False, 'retryable': False, 'reason': 'platform-export cancellation lacks exact authenticated legacy mirror proof; automatic delete is blocked', 'summary': summary}
+        elif not platform_export_delete_generation and (not prior_upload or not prior_identity_ok):
             result = {'approved': False, 'stale': False, 'retryable': False, 'reason': 'exact prior upload generation is missing; automatic delete is blocked', 'summary': summary}
-        elif prior_active:
+        elif not platform_export_delete_generation and prior_active:
             result = {'approved': False, 'stale': False, 'retryable': True, 'reason': 'matching upload has not reached a durable terminal state', 'summary': summary}
         elif not dependency_ok:
             result = {'approved': False, 'stale': False, 'retryable': False, 'reason': 'matching upload stopped without terminal side-effect proof', 'summary': summary}
@@ -11773,6 +12001,11 @@ async function runNowModeSelfTest() {
     /priorUploadLegacyTasklessIdentity[\s\S]*manual-live-platform-verification/,
     'only an exactly linked legacy platform-verification upload may enable taskless mirror identity',
   );
+  assert.match(
+    REMOTE_TASK_ENRICHMENT_PY,
+    /legacyPlatformExportCancellation[\s\S]*source_mode'\) == 'platform-export'[\s\S]*canceled_email_event_id[\s\S]*platform_export_reserver_name_matches/,
+    'a platform-export delete may enable taskless identity only from the exact canceled ledger generation',
+  );
   assert.match(REMOTE_TASK_ENRICHMENT_PY, /booking_ledger_id/);
   assert.match(
     REMOTE_TASK_ENRICHMENT_PY,
@@ -11925,6 +12158,16 @@ async function runNowModeSelfTest() {
     checkpointRemoteDeleteSubmission.toString(),
     /manual_delete_generation[\s\S]*automation_cancel_task_id[\s\S]*customer_cancellation_task_id[\s\S]*manual_prior_identity_ok/,
     'manual mirror delete checkpoint must prove the cancellation task, ledger, and prior upload generation',
+  );
+  assert.match(
+    checkpointRemoteDeleteSubmission.toString(),
+    /platform_export_delete_generation[\s\S]*source_mode'\) == 'platform-export'[\s\S]*ledger_source_payload[\s\S]*platform_export_live_proof_ok/,
+    'platform-export cancellation must be recomputed from locked DB provenance before the final delete checkpoint',
+  );
+  assert.match(
+    checkpointRemoteDeleteSubmission.toString(),
+    /legacyTasklessIdentityMatched[\s\S]*observedTaskId[\s\S]*reservationNoMatched[\s\S]*nameMatched/,
+    'taskless platform-export presence proof must bind blank taskId, reservation number, and name',
   );
   assert.match(
     checkpointRemoteDeleteSubmission.toString(),

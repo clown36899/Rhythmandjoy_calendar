@@ -3685,9 +3685,167 @@ def spacecloud_delete_dedupe_key(deletion, room_key, email_event_id=None):
     return f'delete|{digest}'
 
 
+def platform_export_reserver_name_matches(observed_name, export_name):
+    observed_key = normalize_reserver_name_for_match(observed_name)
+    export_key = normalize_reserver_name_for_match(export_name)
+    return bool(
+        observed_key
+        and export_key
+        and observed_key in (
+            export_key,
+            normalize_reserver_name_for_match(mask_name(export_name)),
+        )
+    )
+
+
+def enrich_naver_cancellation_from_platform_export_ledger(
+        ledger, deletion, calendar_key, cancellation_event_order_key):
+    """Use one exact, earlier Naver platform-export row as legacy identity proof."""
+    enriched = dict(deletion or {})
+    missing = {'status': 'missing-prior-reservation'}
+    if not ledger:
+        return enriched, calendar_key, missing
+
+    try:
+        ledger_order_key = int(ledger.get('last_event_order_key') or 0)
+        cancellation_order_key = int(cancellation_event_order_key or 0)
+    except (TypeError, ValueError):
+        return enriched, calendar_key, {
+            'status': 'platform-export-order-missing',
+            'ledger_id': ledger.get('id'),
+        }
+    try:
+        ledger_payload = json.loads(ledger.get('payload_json') or '{}')
+    except (TypeError, ValueError):
+        ledger_payload = {}
+    if not isinstance(ledger_payload, dict):
+        ledger_payload = {}
+
+    reservation_number = str(enriched.get('reservation_number') or '').strip()
+    ledger_calendar = (
+        ledger.get('target_calendar')
+        or product_to_calendar_key(ledger.get('product') or '')
+    )
+    enriched_calendar = (
+        calendar_key
+        or ledger_calendar
+        or product_to_calendar_key(enriched.get('product') or '')
+    )
+    current_room = (
+        booking_room_key_from_calendar(enriched_calendar)
+        or calendar_to_spacecloud_room_key(
+            product_to_calendar_key(enriched.get('product') or '')
+        )
+    )
+    ledger_room = (
+        str(ledger.get('room_key') or '').strip()
+        or booking_room_key_from_calendar(ledger_calendar)
+    )
+    amount_source = str(ledger.get('amount_source') or '').strip()
+    payload_source = str(ledger_payload.get('source') or '').strip()
+    provenance_ok = bool(
+        ledger.get('source_platform') == 'naver'
+        and ledger.get('source_mode') == 'platform-export'
+        and amount_source.startswith('naver-platform-export')
+        and payload_source in ('naver-export', 'visible-site-year-backfill')
+    )
+    lifecycle_ok = bool(
+        ledger.get('current_status') == 'confirmed'
+        and not ledger.get('confirmed_email_event_id')
+        and not ledger.get('canceled_email_event_id')
+        and not ledger.get('last_event_id')
+        and not ledger.get('automation_cancel_task_id')
+        and not ledger.get('automation_cancel_platform')
+        and not ledger.get('automation_canceled_at')
+        and not ledger.get('automation_canceled_order_key')
+        and ledger.get('confirmed_email_received_at')
+        and ledger_order_key > 0
+        and cancellation_order_key > 0
+        and ledger_order_key < cancellation_order_key
+    )
+    immutable_identity_ok = bool(
+        reservation_number
+        and reservation_number == str(ledger.get('reservation_number') or '').strip()
+        and ledger.get('ledger_key')
+            == booking_ledger_key('naver', enriched, enriched_calendar)
+        and ledger_room
+        and current_room
+        and ledger_room == current_room
+    )
+    if not provenance_ok:
+        return enriched, calendar_key, {
+            'status': 'platform-export-provenance-mismatch',
+            'ledger_id': ledger.get('id'),
+        }
+    if not lifecycle_ok:
+        return enriched, calendar_key, {
+            'status': 'platform-export-lifecycle-mismatch',
+            'ledger_id': ledger.get('id'),
+        }
+    if not immutable_identity_ok:
+        return enriched, calendar_key, {
+            'status': 'platform-export-immutable-identity-mismatch',
+            'ledger_id': ledger.get('id'),
+        }
+
+    source_values = {
+        'name': ledger.get('reserver_name'),
+        'product': ledger.get('product'),
+        'date': clean_date_or_none(ledger.get('reservation_date')),
+        'start_time': clean_time_or_none(ledger.get('start_time')),
+        'end_time': clean_time_or_none(ledger.get('end_time')),
+    }
+    if not platform_export_reserver_name_matches(
+            enriched.get('name'),
+            source_values.get('name'),
+    ):
+        return enriched, calendar_key, {
+            'status': 'platform-export-name-mismatch',
+            'ledger_id': ledger.get('id'),
+        }
+    comparisons = (
+        ('date', clean_date_or_none),
+        ('start_time', clean_time_or_none),
+        ('end_time', clean_time_or_none),
+    )
+    for field, normalizer in comparisons:
+        current_value = enriched.get(field)
+        source_value = source_values.get(field)
+        if (
+                current_value
+                and source_value
+                and normalizer(current_value) != normalizer(source_value)
+        ):
+            return enriched, calendar_key, {
+                'status': f'platform-export-{field}-mismatch',
+                'ledger_id': ledger.get('id'),
+            }
+    if not all(str(value or '').strip() for value in source_values.values()):
+        return enriched, calendar_key, {
+            'status': 'platform-export-identity-incomplete',
+            'ledger_id': ledger.get('id'),
+        }
+
+    for field, value in source_values.items():
+        if not str(enriched.get(field) or '').strip():
+            enriched[field] = str(value)
+    # Naver cancellation mail abbreviates product names. The exact room and
+    # reservation number above allow the durable platform-export product to be
+    # retained without weakening the full slot/name comparison.
+    enriched['product'] = str(source_values['product'])
+    enriched['target_calendar'] = enriched_calendar
+    enriched['calendar_key'] = enriched_calendar
+    return enriched, enriched_calendar, {
+        'status': 'ok',
+        'source': 'platform-export-ledger',
+        'ledger_id': ledger.get('id'),
+        'event_order_key': ledger_order_key,
+    }
+
+
 def enrich_naver_cancellation_from_prior_event(
         cursor, deletion, calendar_key, cancellation_event_order_key):
-    """Use only the strict-earlier trusted reservation generation as identity proof."""
+    """Use a strict-earlier trusted email or exact platform snapshot as proof."""
     enriched = dict(deletion or {})
     reservation_number = str(enriched.get('reservation_number') or '').strip()
     if not reservation_number:
@@ -3695,7 +3853,14 @@ def enrich_naver_cancellation_from_prior_event(
     ledger_key = booking_ledger_key('naver', enriched, calendar_key)
     cursor.execute(
         """
-        SELECT id
+        SELECT id, ledger_key, source_platform, source_mode, current_status,
+               target_calendar, room_key, reservation_number, reserver_name,
+               product, reservation_date, start_time, end_time,
+               amount_source, confirmed_email_event_id,
+               confirmed_email_received_at, canceled_email_event_id,
+               last_event_id, last_event_order_key, payload_json,
+               automation_cancel_task_id, automation_cancel_platform,
+               automation_canceled_at, automation_canceled_order_key
         FROM rhythmjoy_booking_ledger
         WHERE ledger_key=%s
         LIMIT 1
@@ -3703,7 +3868,7 @@ def enrich_naver_cancellation_from_prior_event(
         """,
         (ledger_key,),
     )
-    cursor.fetchone()
+    platform_export_ledger = cursor.fetchone()
     cursor.execute(
         """
         SELECT id, event_type, event_order_key, event_order_trusted,
@@ -3725,7 +3890,12 @@ def enrich_naver_cancellation_from_prior_event(
     )
     candidates = cursor.fetchall()
     if not candidates:
-        return enriched, calendar_key, {'status': 'missing-prior-reservation'}
+        return enrich_naver_cancellation_from_platform_export_ledger(
+            platform_export_ledger,
+            enriched,
+            calendar_key,
+            cancellation_event_order_key,
+        )
     prior = candidates[0]
     if int(prior.get('event_order_trusted') or 0) != 1:
         return enriched, calendar_key, {
@@ -3835,6 +4005,7 @@ def enrich_naver_cancellation_from_prior_event(
         enriched['calendar_key'] = enriched_calendar
     return enriched, enriched_calendar, {
         'status': 'ok',
+        'source': 'reservation-email',
         'event_id': prior.get('id'),
         'event_order_key': prior.get('event_order_key'),
     }
@@ -4660,7 +4831,7 @@ def upsert_spacecloud_delete_task(
                 if recoverable_quarantine:
                     recovered_result = json.dumps({
                         'status': 'quarantine-recovered-before-submit',
-                        'reason': 'trusted strict-earlier reservation identity now complete',
+                        'reason': 'trusted reservation generation identity now complete',
                         'submissionAttempted': False,
                         'deletionAttempted': False,
                         'mirrorMutationState': 'not_created',
@@ -6622,12 +6793,35 @@ def recover_naver_cancellation_event(config, logger, email_event_id):
                 (ledger_key,),
             )
             ledger_before = cursor.fetchone()
+            _, _, locked_platform_export_proof = (
+                enrich_naver_cancellation_from_platform_export_ledger(
+                    ledger_before,
+                    deletion,
+                    calendar_key,
+                    event.get('event_order_key'),
+                )
+            )
+            prior_email_ledger_match = bool(
+                prior_proof.get('source') == 'reservation-email'
+                and int(ledger_before.get('confirmed_email_event_id') or 0)
+                    == int(prior_proof.get('event_id') or 0)
+            ) if ledger_before else False
+            platform_export_ledger_match = bool(
+                prior_proof.get('source') == 'platform-export-ledger'
+                and locked_platform_export_proof.get('status') == 'ok'
+                and int(locked_platform_export_proof.get('ledger_id') or 0)
+                    == int(ledger_before.get('id') or 0)
+                and int(prior_proof.get('ledger_id') or 0)
+                    == int(ledger_before.get('id') or 0)
+            ) if ledger_before else False
             if not (
                     ledger_before
                     and ledger_before.get('source_platform') == 'naver'
                     and ledger_before.get('current_status') == 'confirmed'
-                    and int(ledger_before.get('confirmed_email_event_id') or 0)
-                        == int(prior_proof.get('event_id') or 0)
+                    and (
+                        prior_email_ledger_match
+                        or platform_export_ledger_match
+                    )
                     and not ledger_before.get('canceled_email_event_id')
                     and not ledger_before.get('automation_cancel_task_id')
                     and not ledger_before.get('automation_cancel_platform')
@@ -6781,6 +6975,7 @@ def recover_naver_cancellation_event(config, logger, email_event_id):
             'task_id': task.get('id'),
             'reservation_number': deletion.get('reservation_number') or '',
             'calendar_key': calendar_key,
+            'identity_proof_source': prior_proof.get('source') or '',
             'status': task.get('status'),
             'side_effect_state': task.get('side_effect_state'),
         }

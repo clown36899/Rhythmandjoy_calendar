@@ -820,6 +820,129 @@ class EmailPipelineSelfTest(unittest.TestCase):
         self.assertEqual(calendar_key, 'Ahall')
         self.assertEqual(proof['status'], 'missing-prior-reservation')
 
+    def test_platform_export_ledger_can_prove_only_one_exact_earlier_cancellation_identity(self):
+        cancellation_order_key = 1788015087207
+        deletion = {
+            'reservation_number': '1337000337',
+            'name': '김*비님',
+            'product': 'A홀',
+            'date': '2026-09-03',
+            'start_time': '20:00',
+            'end_time': '22:00',
+        }
+        ledger = {
+            'id': 152,
+            'ledger_key': email_import.booking_ledger_key(
+                'naver', deletion, 'Ahall'
+            ),
+            'source_platform': 'naver',
+            'source_mode': 'platform-export',
+            'current_status': 'confirmed',
+            'target_calendar': 'Ahall',
+            'room_key': 'a',
+            'reservation_number': '1337000337',
+            'reserver_name': '김나비님',
+            'product': 'A홀 20평형-외부신발금지',
+            'reservation_date': '2026-09-03',
+            'start_time': '20:00:00',
+            'end_time': '22:00:00',
+            'amount_source': 'naver-platform-export-verified',
+            'confirmed_email_event_id': None,
+            'confirmed_email_received_at': '2026-08-01 19:02:08',
+            'canceled_email_event_id': None,
+            'last_event_id': None,
+            'last_event_order_key': 1785578528000,
+            'payload_json': json.dumps({
+                'source': 'visible-site-year-backfill',
+            }),
+            'automation_cancel_task_id': None,
+            'automation_cancel_platform': '',
+            'automation_canceled_at': None,
+            'automation_canceled_order_key': None,
+        }
+
+        enriched, calendar_key, proof = (
+            email_import.enrich_naver_cancellation_from_platform_export_ledger(
+                ledger,
+                deletion,
+                'Ahall',
+                cancellation_order_key,
+            )
+        )
+        self.assertEqual(proof['status'], 'ok')
+        self.assertEqual(proof['source'], 'platform-export-ledger')
+        self.assertEqual(proof['ledger_id'], 152)
+        self.assertEqual(calendar_key, 'Ahall')
+        self.assertEqual(enriched['product'], ledger['product'])
+        self.assertEqual(enriched['name'], deletion['name'])
+        self.assertTrue(email_import.platform_export_reserver_name_matches(
+            deletion['name'],
+            ledger['reserver_name'],
+        ))
+
+        class PlatformExportFallbackCursor:
+            def __init__(self):
+                self.fetchone_calls = 0
+
+            def execute(self, _query, _args=None):
+                return 1
+
+            def fetchone(self):
+                self.fetchone_calls += 1
+                return dict(ledger)
+
+            def fetchall(self):
+                return []
+
+        fallback_enriched, fallback_calendar, fallback_proof = (
+            email_import.enrich_naver_cancellation_from_prior_event(
+                PlatformExportFallbackCursor(),
+                deletion,
+                'Ahall',
+                cancellation_order_key,
+            )
+        )
+        self.assertEqual(fallback_proof['status'], 'ok')
+        self.assertEqual(fallback_proof['source'], 'platform-export-ledger')
+        self.assertEqual(fallback_enriched['product'], ledger['product'])
+        self.assertEqual(fallback_calendar, 'Ahall')
+
+        _, _, wrong_name = (
+            email_import.enrich_naver_cancellation_from_platform_export_ledger(
+                ledger,
+                {**deletion, 'name': '다*른님'},
+                'Ahall',
+                cancellation_order_key,
+            )
+        )
+        self.assertEqual(wrong_name['status'], 'platform-export-name-mismatch')
+
+        _, _, wrong_provenance = (
+            email_import.enrich_naver_cancellation_from_platform_export_ledger(
+                {**ledger, 'source_mode': 'email-ledger'},
+                deletion,
+                'Ahall',
+                cancellation_order_key,
+            )
+        )
+        self.assertEqual(
+            wrong_provenance['status'],
+            'platform-export-provenance-mismatch',
+        )
+
+        _, _, not_earlier = (
+            email_import.enrich_naver_cancellation_from_platform_export_ledger(
+                {**ledger, 'last_event_order_key': cancellation_order_key},
+                deletion,
+                'Ahall',
+                cancellation_order_key,
+            )
+        )
+        self.assertEqual(
+            not_earlier['status'],
+            'platform-export-lifecycle-mismatch',
+        )
+
     def test_db_transaction_commits_once(self):
         connection = FakeConnection()
         original_connect = email_import.db_connect

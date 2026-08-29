@@ -906,6 +906,30 @@ test('explicitly linked legacy mirrors use reservation, slot, room, and name whe
   assert.ok(conflictingTask.errors.includes('task-id-mismatch:332'));
 });
 
+test('platform-export legacy mirrors require a blank taskId plus reservation number and name', () => {
+  const popup = '직접 추가한 예약 건입니다. A홀 20평형-외부신발금지 예약자명 : 김*비님 예약내용 : 2026.09.03(목), 20:00~22:00, 2시간 메모 : Rhythmjoy Google Calendar sync / room=A홀 / naverReservationNo=1337000337';
+  const row = {
+    taskId: null,
+    requireTaskId: false,
+    allowLegacyTasklessIdentity: true,
+    roomKey: 'a',
+    date: '2026-09-03',
+    startTime: '20:00',
+    endTime: '22:00',
+    reserverName: '김나비님',
+    reservationNo: '1337000337',
+  };
+
+  const exact = popupDeleteVerification(popup, row);
+  assert.equal(exact.ok, true);
+  assert.equal(exact.identity.mode, 'legacy-reservation-number-and-name');
+  assert.equal(exact.identity.legacyTasklessIdentityMatched, true);
+  assert.equal(popupDeleteVerification(popup, { ...row, reserverName: '다*른님' }).ok, false);
+  const conflictingTask = popupDeleteVerification(`${popup} / taskId=998`, row);
+  assert.equal(conflictingTask.ok, false);
+  assert.ok(conflictingTask.errors.includes('task-id-mismatch:998'));
+});
+
 test('delete verification reports the different reservation number occupying a rebooked slot', () => {
   const popup = '직접 추가한 예약 건입니다. A홀 20평형-외부신발금지 예약자명 : 이*지님 예약내용 : 2026.10.03(토), 12:00~14:00, 2시간 메모 : Rhythmjoy Naver email DB sync / taskId=649 / naverReservationNo=1323404722';
   const result = popupDeleteVerification(popup, {
@@ -1055,6 +1079,47 @@ test('calendar API accepts only explicitly linked legacy taskless mirror identit
   const conflictingTaskCalendar = {
     ...calendar,
     days: [{ ymd: '20260904', externalSchedules: [{ ...schedule, memo: `${schedule.memo} / taskId=999` }] }],
+  };
+  assert.equal(verifySpacecloudCalendarIdentity(conflictingTaskCalendar, row).identityMatched, false);
+});
+
+test('calendar API accepts a taskless platform-export mirror only with exact reservation and name', () => {
+  const schedule = {
+    id: 9558834,
+    name: '김*비님',
+    symd: '20260903',
+    eymd: '20260903',
+    shour: 20,
+    ehour: 21,
+    memo: 'Rhythmjoy Google Calendar sync / room=A홀 / naverReservationNo=1337000337',
+  };
+  const calendar = {
+    ok: true,
+    status: 200,
+    productId: '108673',
+    days: [{ ymd: '20260903', externalSchedules: [schedule] }],
+  };
+  const row = {
+    taskId: null,
+    requireTaskId: false,
+    allowLegacyTasklessIdentity: true,
+    date: '2026-09-03',
+    startTime: '20:00',
+    endTime: '22:00',
+    reserverName: '김나비님',
+    reservationNo: '1337000337',
+  };
+
+  const exact = verifySpacecloudCalendarIdentity(calendar, row);
+  assert.equal(exact.identityMatched, true);
+  assert.equal(exact.identityVerification.legacyTasklessIdentityMatched, true);
+  assert.equal(exact.identityVerification.observedTaskId, '');
+  assert.equal(exact.identityVerification.reservationNoMatched, true);
+  assert.equal(exact.identityVerification.nameMatched, true);
+  assert.equal(verifySpacecloudCalendarIdentity(calendar, { ...row, reserverName: '다*른님' }).identityMatched, false);
+  const conflictingTaskCalendar = {
+    ...calendar,
+    days: [{ ymd: '20260903', externalSchedules: [{ ...schedule, memo: `${schedule.memo} / taskId=998` }] }],
   };
   assert.equal(verifySpacecloudCalendarIdentity(conflictingTaskCalendar, row).identityMatched, false);
 });

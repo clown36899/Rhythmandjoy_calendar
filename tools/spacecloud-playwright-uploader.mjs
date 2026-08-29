@@ -526,6 +526,7 @@ export function verifySpacecloudCalendarIdentity(calendarResult, row) {
   const expectedTaskId = String(row.taskId || '').trim();
   const expectedReservationNo = String(row.reservationNo || '').trim();
   const expectedName = normalizeName(row.reserverName || '');
+  const expectedMaskedName = normalizeName(displayReserverName(row.reserverName || ''));
   const allowLegacyTasklessIdentity = row.allowLegacyTasklessIdentity === true;
 
   if (!calendarResult?.ok) {
@@ -573,11 +574,23 @@ export function verifySpacecloudCalendarIdentity(calendarResult, row) {
     const candidateName = normalizeName(candidate.name);
     const legacyTasklessCandidate = Boolean(
       allowLegacyTasklessIdentity
-      && expectedTaskId
       && !candidate.taskId
+    );
+    const legacyUnexpectedTaskId = Boolean(
+      allowLegacyTasklessIdentity
+      && !expectedTaskId
+      && candidate.taskId
+    );
+    const legacyNameMatched = Boolean(
+      expectedName
+      && (
+        candidateName === expectedName
+        || (expectedMaskedName && candidateName === expectedMaskedName)
+      )
     );
     if (row.requireTaskId && !expectedTaskId) errors.push('expected-task-id-missing');
     if (expectedTaskId && candidate.taskId !== expectedTaskId && !legacyTasklessCandidate) errors.push('task-id-mismatch');
+    if (legacyUnexpectedTaskId) errors.push('task-id-mismatch');
     if (expectedReservationNo && candidate.reservationNo !== expectedReservationNo) errors.push('reservation-number-mismatch');
     // Reservation number (+ task id when available) is the durable mirror
     // identity. Display names are masked and can change formatting, so name is
@@ -586,10 +599,16 @@ export function verifySpacecloudCalendarIdentity(calendarResult, row) {
     // it must additionally match the reservation number and display name.
     if (legacyTasklessCandidate && !expectedReservationNo) errors.push('legacy-reservation-number-required');
     if (legacyTasklessCandidate && !expectedName) errors.push('legacy-reserver-name-required');
-    if (legacyTasklessCandidate && expectedName && candidateName !== expectedName) errors.push('reserver-name-mismatch');
+    if (legacyTasklessCandidate && expectedName && !legacyNameMatched) errors.push('reserver-name-mismatch');
     if (!expectedReservationNo && expectedName && normalizeName(candidate.name) !== expectedName) errors.push('reserver-name-mismatch');
     if (!expectedTaskId && !expectedReservationNo && !expectedName) errors.push('expected-identity-missing');
-    return { candidate, errors };
+    return {
+      candidate,
+      errors,
+      legacyTasklessCandidate,
+      candidateName,
+      legacyNameMatched,
+    };
   });
   const exactMatches = evaluated.filter((entry) => entry.errors.length === 0);
   const identityMatched = exactMatches.length === 1;
@@ -619,11 +638,28 @@ export function verifySpacecloudCalendarIdentity(calendarResult, row) {
     differentReservationCandidateCount: differentReservationCandidates.length,
     identityCandidateCount: exactMatches.length,
     nameMatched: expectedName
-      ? candidates.some((candidate) => normalizeName(candidate.name) === expectedName)
+      ? candidates.some((candidate) => {
+        const candidateName = normalizeName(candidate.name);
+        return candidateName === expectedName
+          || (expectedMaskedName && candidateName === expectedMaskedName);
+      })
       : false,
     identityMatched,
     identityVerification: identityMatched
-      ? { ok: true, scheduleId: exactMatches[0].candidate.scheduleId }
+      ? {
+        ok: true,
+        scheduleId: exactMatches[0].candidate.scheduleId,
+        legacyTasklessIdentityMatched: exactMatches[0].legacyTasklessCandidate,
+        observedTaskId: exactMatches[0].candidate.taskId || '',
+        reservationNoMatched: Boolean(
+          expectedReservationNo
+          && exactMatches[0].candidate.reservationNo === expectedReservationNo
+        ),
+        nameMatched: Boolean(
+          expectedName
+          && exactMatches[0].legacyNameMatched
+        ),
+      }
       : { ok: false, errors: mismatchErrors.length ? mismatchErrors : ['matching-slot-not-found'] },
     reservationNo: expectedReservationNo,
     candidates: candidates.slice(0, 8),
@@ -1716,18 +1752,16 @@ export function popupDeleteVerification(popupText, row) {
   )];
   const legacyTasklessIdentityMatched = Boolean(
     allowLegacyTasklessIdentity
-    && row.requireTaskId
-    && taskId
     && observedTaskIds.length === 0
     && reservationNoMatched
     && nameMatched
   );
   const identityMode = reservationNo
-    ? row.requireTaskId && taskId
-      ? legacyTasklessIdentityMatched
-        ? 'legacy-reservation-number-and-name'
-        : 'reservation-number-and-task-id'
-      : 'reservation-number'
+    ? legacyTasklessIdentityMatched
+      ? 'legacy-reservation-number-and-name'
+      : row.requireTaskId && taskId
+        ? 'reservation-number-and-task-id'
+        : 'reservation-number'
     : 'reserver-name-fallback';
   if (reservationNo) {
     if (!reservationNoMatched) errors.push(`reservation-number-mismatch:${reservationNo}`);
@@ -1738,6 +1772,22 @@ export function popupDeleteVerification(popupText, row) {
   }
   if (row.requireTaskId && taskId && !taskIdMatched && !legacyTasklessIdentityMatched) {
     errors.push(`task-id-mismatch:${taskId}`);
+  }
+  if (
+    allowLegacyTasklessIdentity
+    && !taskId
+    && observedTaskIds.length > 0
+  ) {
+    errors.push(`task-id-mismatch:${observedTaskIds.join(',')}`);
+  }
+  if (
+    allowLegacyTasklessIdentity
+    && !taskId
+    && !legacyTasklessIdentityMatched
+    && !errors.some((error) => error.startsWith('reservation-number-mismatch:'))
+  ) {
+    if (!nameKey) errors.push('legacy-reserver-name-required');
+    else if (!nameMatched) errors.push(`reserver-name-mismatch:${nameKey}`);
   }
 
   return {
@@ -2549,8 +2599,15 @@ export async function deleteSpacecloudDirectReservation(context, task, {
     allowLegacyTasklessIdentity: (
       task.priorUploadLegacyTasklessIdentity
       ?? task.prior_upload_legacy_taskless_identity
+    ) === true || (
+      task.legacyPlatformExportCancellation
+      ?? task.legacy_platform_export_cancellation
     ) === true,
   };
+  const legacyPlatformExportCancellation = (
+    task.legacyPlatformExportCancellation
+    ?? task.legacy_platform_export_cancellation
+  ) === true;
   row.reservationCalendarUrl = task.reservationCalendarUrl || reservationCalendarUrl(row.roomKey);
   if (!row.reservationNo) {
     row.status = 'needs-review';
@@ -2654,7 +2711,7 @@ export async function deleteSpacecloudDirectReservation(context, task, {
       row.finishedAt = new Date().toISOString();
       return row;
     }
-    if (!mirrorTaskId) {
+    if (!mirrorTaskId && !legacyPlatformExportCancellation) {
       row.status = 'needs-review';
       row.error = 'SpaceCloud candidate exists, but no exact prior upload task is linked; automatic delete is blocked';
       row.finishedAt = new Date().toISOString();
@@ -2728,6 +2785,10 @@ export async function deleteSpacecloudDirectReservation(context, task, {
         differentReservationCandidateCount: Number(row.preDeleteVerification?.differentReservationCandidateCount || 0),
         identityCandidateCount: Number(row.preDeleteVerification?.identityCandidateCount || 0),
         identityMatched: row.preDeleteVerification?.identityMatched === true,
+        legacyTasklessIdentityMatched: row.preDeleteVerification?.identityVerification?.legacyTasklessIdentityMatched === true,
+        observedTaskId: row.preDeleteVerification?.identityVerification?.observedTaskId || '',
+        reservationNoMatched: row.preDeleteVerification?.identityVerification?.reservationNoMatched === true,
+        nameMatched: row.preDeleteVerification?.identityVerification?.nameMatched === true,
       });
       row.deleteSubmissionGuard = guard?.summary || guard || {};
       if (guard?.approved !== true) {
