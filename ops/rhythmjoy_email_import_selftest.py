@@ -769,6 +769,25 @@ class EmailPipelineSelfTest(unittest.TestCase):
         self.assertNotIn('recover_reprojected_skipped_uploads(', source)
 
     def test_named_sql_patterns_are_valid_for_pymysql(self):
+        projection_sources = {
+            'force': inspect.getsource(
+                email_import.force_project_latest_trusted_naver_event
+            ),
+            'confirmed': inspect.getsource(
+                email_import.upsert_booking_ledger_confirmed
+            ),
+            'canceled': inspect.getsource(
+                email_import.upsert_booking_ledger_canceled
+            ),
+        }
+        expected_guards = {'force': 6, 'confirmed': 7, 'canceled': 6}
+        for name, source in projection_sources.items():
+            self.assertEqual(
+                source.count("LIKE '%%platform-export%%'"),
+                expected_guards[name],
+            )
+            self.assertNotIn("LIKE '%%platform-export'", source)
+
         original_connect = email_import.db_connect
         original_select = email_import.db_select_booking_ledger
         email_import.db_connect = lambda _config: FakeConnection()

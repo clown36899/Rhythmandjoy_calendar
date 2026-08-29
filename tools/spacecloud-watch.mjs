@@ -2183,7 +2183,6 @@ def enrich_task_row(cur, row):
             and payload.get('source') == 'naver-email-cancellation'
             and ledger.get('source_platform') == 'naver'
             and ledger.get('source_mode') == 'platform-export'
-            and str(ledger.get('amount_source') or '').startswith('naver-platform-export')
             and ledger_payload.get('source') in ('naver-export', 'visible-site-year-backfill')
             and ledger.get('current_status') == 'canceled'
             and not ledger.get('confirmed_email_event_id')
@@ -5166,9 +5165,6 @@ try:
             and current_cancellation
             and ledger.get('source_platform') == 'naver'
             and ledger.get('source_mode') == 'platform-export'
-            and str(ledger.get('amount_source') or '').startswith(
-                'naver-platform-export'
-            )
             and ledger_source_payload.get('source') in (
                 'naver-export',
                 'visible-site-year-backfill',
@@ -12006,6 +12002,15 @@ async function runNowModeSelfTest() {
     /legacyPlatformExportCancellation[\s\S]*source_mode'\) == 'platform-export'[\s\S]*canceled_email_event_id[\s\S]*platform_export_reserver_name_matches/,
     'a platform-export delete may enable taskless identity only from the exact canceled ledger generation',
   );
+  const platformExportEnrichmentGuard = REMOTE_TASK_ENRICHMENT_PY.match(
+    /row\['legacyPlatformExportCancellation'\] = bool\(\n([\s\S]*?)\n        \)\n/,
+  );
+  assert.ok(platformExportEnrichmentGuard);
+  assert.doesNotMatch(
+    platformExportEnrichmentGuard[1],
+    /amount_source/,
+    'post-cancellation identity must use durable platform-export origin instead of mutable amount projection provenance',
+  );
   assert.match(REMOTE_TASK_ENRICHMENT_PY, /booking_ledger_id/);
   assert.match(
     REMOTE_TASK_ENRICHMENT_PY,
@@ -12163,6 +12168,17 @@ async function runNowModeSelfTest() {
     checkpointRemoteDeleteSubmission.toString(),
     /platform_export_delete_generation[\s\S]*source_mode'\) == 'platform-export'[\s\S]*ledger_source_payload[\s\S]*platform_export_live_proof_ok/,
     'platform-export cancellation must be recomputed from locked DB provenance before the final delete checkpoint',
+  );
+  const platformExportCheckpointGuard = checkpointRemoteDeleteSubmission
+    .toString()
+    .match(
+      /platform_export_delete_generation = bool\(\n([\s\S]*?)\n        \)\n        historical_delete_generation/,
+    );
+  assert.ok(platformExportCheckpointGuard);
+  assert.doesNotMatch(
+    platformExportCheckpointGuard[1],
+    /amount_source/,
+    'the final delete checkpoint must not depend on mutable amount projection provenance',
   );
   assert.match(
     checkpointRemoteDeleteSubmission.toString(),
