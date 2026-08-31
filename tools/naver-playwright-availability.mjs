@@ -278,6 +278,7 @@ export async function gotoNaverWeekContainingDate(page, targetDate, {
 
 export async function scrollNaverCalendarToHour(page, hour, {
   timeoutMs = 10000,
+  targetDay = null,
 } = {}) {
   await page.evaluate((targetHour) => {
     const rowWrap = document.querySelector('[class*="Calendar__row-wrap"]');
@@ -307,6 +308,14 @@ export async function scrollNaverCalendarToHour(page, hour, {
       && rowRect.bottom > wrapRect.top
       && rowRect.top < wrapRect.bottom;
   }, { targetHour: hour }, { timeout: timeoutMs });
+  if (Number.isInteger(targetDay)) {
+    await page.waitForFunction(readNaverWeeklySlotDom, {
+      wantedDay: targetDay,
+      wantedHour: hour,
+      wantedMarker: '',
+      expectedStatus: '__rhythmjoy_slot_ready__',
+    }, { timeout: timeoutMs });
+  }
 }
 
 function readNaverWeeklySlotDom({
@@ -372,6 +381,9 @@ function readNaverWeeklySlotDom({
     targetIndex = availableIndex;
   }
 
+  if (expectedStatus === '__rhythmjoy_slot_ready__') {
+    return targetIndex >= 0 && buttons[targetIndex]?.visible === true;
+  }
   if (expectedStatus) {
     return status === expectedStatus && targetIndex >= 0 && buttons[targetIndex]?.visible === true;
   }
@@ -1179,7 +1191,9 @@ async function prepareCalendar(page, row, { businessId = NAVER_BOOKING_BUSINESS_
   await ensureNaverWeeklyView(page);
   await selectNaverRoom(page, row.roomKey);
   await gotoNaverWeekContainingDate(page, row.date);
-  await scrollNaverCalendarToHour(page, parseHour(row.startTime));
+  await scrollNaverCalendarToHour(page, parseHour(row.startTime), {
+    targetDay: dayIndexForDate(row.date),
+  });
 }
 
 async function applyOneNaverAvailabilitySlot(page, slotRow, {

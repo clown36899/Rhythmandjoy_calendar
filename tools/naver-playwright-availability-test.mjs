@@ -628,7 +628,7 @@ test('never clicks the next Naver week again when the prior transition is uncert
   assert.equal(clicks, 1);
 });
 
-test('waits for the requested Naver hour row to be visible after scrolling', async () => {
+test('waits for the requested Naver hour row and exact rendered day slot after scrolling', async () => {
   const evaluateCalls = [];
   const waitCalls = [];
   const page = {
@@ -643,13 +643,71 @@ test('waits for the requested Naver hour row to be visible after scrolling', asy
     },
   };
 
-  await scrollNaverCalendarToHour(page, 13, { timeoutMs: 4321 });
+  await scrollNaverCalendarToHour(page, 13, { timeoutMs: 4321, targetDay: 4 });
 
   assert.equal(evaluateCalls.length, 1);
   assert.equal(evaluateCalls[0].argument, 13);
-  assert.equal(waitCalls.length, 1);
+  assert.equal(waitCalls.length, 2);
   assert.deepEqual(waitCalls[0].expected, { targetHour: 13 });
   assert.equal(waitCalls[0].options.timeout, 4321);
+  assert.deepEqual(waitCalls[1].expected, {
+    wantedDay: 4,
+    wantedHour: 13,
+    wantedMarker: '',
+    expectedStatus: '__rhythmjoy_slot_ready__',
+  });
+  assert.equal(waitCalls[1].options.timeout, 4321);
+
+  const targetRow = { className: 'Calendar__week-row', children: [] };
+  const rowWrap = {
+    children: Array.from({ length: 24 }, (_, index) => (
+      index === 13 ? targetRow : { className: 'Calendar__week-row', children: [] }
+    )),
+  };
+  const buttonRect = {
+    width: 0, height: 0, top: 0, bottom: 0, left: 0, right: 0,
+  };
+  const button = {
+    className: 'calendar-btn avail',
+    innerText: '예약가능',
+    textContent: '예약가능',
+    getAttribute: (name) => (name === 'title' ? '예약가능' : ''),
+    getBoundingClientRect: () => buttonRect,
+  };
+  const cells = Array.from({ length: 7 }, () => ({
+    className: 'Calendar__week-cell',
+    innerText: '',
+    textContent: '',
+    querySelectorAll: () => [],
+  }));
+  const originalGlobals = {
+    document: globalThis.document,
+    innerHeight: globalThis.innerHeight,
+    innerWidth: globalThis.innerWidth,
+  };
+  try {
+    globalThis.document = {
+      querySelector: () => rowWrap,
+      querySelectorAll: () => [],
+    };
+    globalThis.innerHeight = 1000;
+    globalThis.innerWidth = 1000;
+    assert.equal(waitCalls[1].predicate(waitCalls[1].expected), false);
+
+    cells[4] = { ...cells[4], querySelectorAll: () => [button] };
+    targetRow.children = cells;
+    assert.equal(waitCalls[1].predicate(waitCalls[1].expected), false);
+
+    Object.assign(buttonRect, {
+      width: 100, height: 40, top: 100, bottom: 140, left: 100, right: 200,
+    });
+    assert.equal(waitCalls[1].predicate(waitCalls[1].expected), true);
+  } finally {
+    for (const [key, value] of Object.entries(originalGlobals)) {
+      if (value === undefined) delete globalThis[key];
+      else globalThis[key] = value;
+    }
+  }
 });
 
 test('waits for the exact Naver weekly slot status and then re-reads it authoritatively', async () => {
