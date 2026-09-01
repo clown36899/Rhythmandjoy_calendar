@@ -559,73 +559,169 @@ test('does not click or wait when the requested Naver room is already active', a
   assert.equal(waitCount, 0);
 });
 
-test('moves Naver weeks only after each rendered period actually changes', async () => {
-  let periodText = '2026. 8. 23. ~ 2026. 8. 29.';
-  let clicks = 0;
-  const selectors = [];
-  const transitions = [
-    '2026. 8. 30. ~ 2026. 9. 5.',
-    '2026. 9. 6. ~ 2026. 9. 12.',
-  ];
-  const waitCalls = [];
-  const button = {
-    count: async () => 1,
-    click: async () => { clicks += 1; },
-  };
-  const page = {
-    evaluate: async () => periodText,
-    locator: (selector) => {
-      selectors.push(selector);
-      return button;
-    },
-    waitForFunction: async (predicate, previousText, options) => {
-      waitCalls.push({ predicate, previousText, options });
-      periodText = transitions[waitCalls.length - 1];
-    },
-    waitForTimeout: async () => {
-      throw new Error('blind elapsed waits are forbidden while navigating Naver weeks');
-    },
+function buildNaverDatePickerPage({ failTargetPeriod = false } = {}) {
+  const state = {
+    periodText: '2026. 8. 23. 일 ~ 8. 29. 토',
+    layerOpen: false,
+    visibleMonths: [{ year: 2026, month: 8 }, { year: 2026, month: 9 }],
+    triggerClicks: 0,
+    monthNextClicks: 0,
+    monthPrevClicks: 0,
+    weeklyArrowClicks: 0,
+    dayClicks: 0,
+    applyClicks: 0,
+    cancelClicks: 0,
   };
 
-  const period = await gotoNaverWeekContainingDate(page, '2026-09-08', { timeoutMs: 4321 });
+  const locator = (path, patterns = [], nthIndex = null) => {
+    const api = {
+      locator: (selector) => locator(`${path} ${selector}`, patterns, nthIndex),
+      filter: ({ hasText }) => locator(path, [...patterns, hasText], nthIndex),
+      nth: (index) => locator(path, patterns, index),
+      first: () => api,
+      count: async () => {
+        if (path.includes('Calendar__btn-day')) return 31;
+        if (path.includes('DatePeriodCalendar__monthly') && !path.includes('Calendar__btn-day')) {
+          const pattern = patterns.at(-1);
+          return state.visibleMonths.filter(({ year, month }) => pattern.test(`${year}.${month} `)).length;
+        }
+        return 1;
+      },
+      isVisible: async () => {
+        if (path.includes('DatePeriodCalendar__layer-calendar') && !path.includes('button')) {
+          return state.layerOpen;
+        }
+        if (patterns.some((pattern) => pattern.test('취소'))) return state.layerOpen;
+        return true;
+      },
+      isEnabled: async () => true,
+      waitFor: async ({ state: wantedState }) => {
+        assert.equal(wantedState, 'visible');
+        if (path.includes('DatePeriodCalendar__layer-calendar') && !path.includes('button') && !state.layerOpen) {
+          throw new Error('date picker did not open');
+        }
+        if (path.includes('DatePeriodCalendar__monthly') && !path.includes('Calendar__btn-day')) {
+          const pattern = patterns.at(-1);
+          const found = state.visibleMonths.some(({ year, month }) => pattern.test(`${year}.${month} `));
+          if (!found) throw new Error('expected picker month did not render');
+        }
+        if (path.includes('DatePeriodCalendar__date-info') && patterns.length) {
+          if (failTargetPeriod || !patterns.at(-1).test(state.periodText)) {
+            const timeout = new Error('exact target period did not render');
+            timeout.name = 'TimeoutError';
+            throw timeout;
+          }
+        }
+      },
+      click: async () => {
+        if (path.includes('DatePeriodCalendar__date-info')) {
+          state.triggerClicks += 1;
+          state.layerOpen = true;
+          return;
+        }
+        if (path.includes('DatePeriodCalendar__btn-monthly') && path.includes('DatePeriodCalendar__next')) {
+          state.monthNextClicks += 1;
+          state.visibleMonths = state.visibleMonths.map(({ year, month }) => {
+            const index = (year * 12) + month;
+            return { year: Math.floor(index / 12), month: (index % 12) + 1 };
+          });
+          return;
+        }
+        if (path.includes('DatePeriodCalendar__btn-monthly') && path.includes('DatePeriodCalendar__prev')) {
+          state.monthPrevClicks += 1;
+          state.visibleMonths = state.visibleMonths.map(({ year, month }) => {
+            const index = (year * 12) + month - 2;
+            return { year: Math.floor(index / 12), month: (index % 12) + 1 };
+          });
+          return;
+        }
+        if (path.includes('DatePeriodCalendar__next') || path.includes('DatePeriodCalendar__prev')) {
+          state.weeklyArrowClicks += 1;
+          return;
+        }
+        if (path.includes('Calendar__btn-day')) {
+          assert.equal(nthIndex, 30);
+          state.dayClicks += 1;
+          return;
+        }
+        if (patterns.some((pattern) => pattern.test('적용'))) {
+          state.applyClicks += 1;
+          state.layerOpen = false;
+          if (!failTargetPeriod) state.periodText = '2026. 10. 25. 일 ~ 10. 31. 토';
+          return;
+        }
+        if (patterns.some((pattern) => pattern.test('취소'))) {
+          state.cancelClicks += 1;
+          state.layerOpen = false;
+        }
+      },
+    };
+    return api;
+  };
+
+  return {
+    state,
+    page: {
+      evaluate: async (operation) => (
+        String(operation).includes('DatePeriodCalendar__monthly')
+          ? state.visibleMonths
+          : state.periodText
+      ),
+      locator: (selector) => locator(selector),
+      waitForTimeout: async () => {
+        throw new Error('blind elapsed waits are forbidden while navigating Naver weeks');
+      },
+    },
+  };
+}
+
+test('selects the exact Naver date in one picker flow instead of repeated weekly arrows', async () => {
+  const { page, state } = buildNaverDatePickerPage();
+
+  const period = await gotoNaverWeekContainingDate(page, '2026-10-31', { timeoutMs: 4321 });
 
   assert.deepEqual(period, {
-    start: '2026-09-06',
-    end: '2026-09-12',
-    text: '2026. 9. 6. ~ 2026. 9. 12.',
+    start: '2026-10-25',
+    end: '2026-10-31',
+    text: '2026. 10. 25. 일 ~ 10. 31. 토',
   });
-  assert.equal(clicks, 2);
-  assert.equal(waitCalls.length, 2);
-  assert.deepEqual(waitCalls.map((call) => call.previousText), [
-    '2026. 8. 23. ~ 2026. 8. 29.',
-    '2026. 8. 30. ~ 2026. 9. 5.',
-  ]);
-  assert.ok(selectors.every((selector) => selector.includes('DatePeriodCalendar__next')));
-  assert.ok(waitCalls.every((call) => call.options.timeout === 4321));
+  assert.equal(state.triggerClicks, 1);
+  assert.equal(state.monthNextClicks, 1);
+  assert.equal(state.monthPrevClicks, 0);
+  assert.equal(state.weeklyArrowClicks, 0);
+  assert.equal(state.dayClicks, 1);
+  assert.equal(state.applyClicks, 1);
+  assert.equal(state.cancelClicks, 0);
 });
 
-test('never clicks the next Naver week again when the prior transition is uncertain', async () => {
-  let clicks = 0;
-  const timeout = new Error('page.waitForFunction: Timeout 4321ms exceeded');
-  timeout.name = 'TimeoutError';
-  const button = {
-    count: async () => 1,
-    click: async () => { clicks += 1; },
-  };
+test('never reapplies the Naver date picker when the exact target week is uncertain', async () => {
+  const { page, state } = buildNaverDatePickerPage({ failTargetPeriod: true });
+
+  await assert.rejects(
+    gotoNaverWeekContainingDate(page, '2026-10-31', { timeoutMs: 4321 }),
+    /target week was not confirmed: expected 2026-10-25~2026-10-31/,
+  );
+  assert.equal(state.weeklyArrowClicks, 0);
+  assert.equal(state.dayClicks, 1);
+  assert.equal(state.applyClicks, 1);
+  assert.equal(state.cancelClicks, 0);
+});
+
+test('does not open the Naver date picker when the target is already in the rendered week', async () => {
+  let locatorCalls = 0;
   const page = {
-    evaluate: async () => '2026. 8. 23. ~ 2026. 8. 29.',
-    locator: () => button,
-    waitForFunction: async () => { throw timeout; },
-    waitForTimeout: async () => {
-      throw new Error('blind elapsed waits are forbidden while navigating Naver weeks');
+    evaluate: async () => '2026. 8. 23. 일 ~ 8. 29. 토',
+    locator: () => {
+      locatorCalls += 1;
+      throw new Error('the date picker must stay closed for an already rendered week');
     },
   };
 
-  await assert.rejects(
-    gotoNaverWeekContainingDate(page, '2026-09-01', { timeoutMs: 4321 }),
-    /Timeout 4321ms exceeded/,
-  );
-  assert.equal(clicks, 1);
+  const period = await gotoNaverWeekContainingDate(page, '2026-08-27', { timeoutMs: 4321 });
+
+  assert.equal(period.start, '2026-08-23');
+  assert.equal(period.end, '2026-08-29');
+  assert.equal(locatorCalls, 0);
 });
 
 test('waits for the requested Naver hour row and exact rendered day slot after scrolling', async () => {

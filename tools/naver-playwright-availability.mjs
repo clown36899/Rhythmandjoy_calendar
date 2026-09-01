@@ -245,10 +245,63 @@ export async function selectNaverRoom(page, roomKey, {
 
 async function readWeekPeriod(page) {
   const text = await page.evaluate(() => {
-    const el = document.querySelector('[class*="DatePeriodCalendar__date-info"]');
+    const elements = [...document.querySelectorAll('[class*="DatePeriodCalendar__date-info"]')];
+    const el = elements.find((candidate) => (
+      (candidate.offsetWidth || candidate.offsetHeight || candidate.getClientRects().length)
+      && String(candidate.innerText || candidate.textContent || '').includes('~')
+    )) || elements.find((candidate) => String(candidate.innerText || candidate.textContent || '').includes('~'));
     return (el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
   });
   return { ...parseWeekPeriod(text), text };
+}
+
+function monthIndexFromParts(year, month) {
+  return (Number(year) * 12) + Number(month) - 1;
+}
+
+function monthPartsFromIndex(index) {
+  return {
+    year: Math.floor(index / 12),
+    month: (index % 12) + 1,
+  };
+}
+
+function pickerMonthPattern(year, month) {
+  return new RegExp(`^\\s*${year}\\.\\s*${month}(?!\\d)`);
+}
+
+function daysInMonth(year, month) {
+  return new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
+}
+
+function weekPeriodPattern(start, end) {
+  const startParts = dateParts(start);
+  const endParts = dateParts(end);
+  return new RegExp(
+    `^\\s*${startParts.year}\\.\\s*${startParts.month}\\.\\s*${startParts.day}\\D+~\\s*`
+      + `(?:${endParts.year}\\.\\s*)?${endParts.month}\\.\\s*${endParts.day}(?:\\D|$)`,
+  );
+}
+
+async function readVisiblePickerMonths(page) {
+  return page.evaluate(() => [...document.querySelectorAll('[class*="DatePeriodCalendar__monthly"]')]
+    .filter((element) => element.offsetWidth || element.offsetHeight || element.getClientRects().length)
+    .map((element) => {
+      const text = String(element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
+      const match = text.match(/^(\d{4})\.\s*(\d{1,2})(?:\s|$)/);
+      return match ? { year: Number(match[1]), month: Number(match[2]) } : null;
+    })
+    .filter(Boolean));
+}
+
+async function closeNaverDatePicker(page) {
+  const cancel = page
+    .locator('[class*="DatePeriodCalendar__layer-calendar"]')
+    .locator('button[class*="DatePeriodCalendar__btn"]')
+    .filter({ hasText: /^\s*취소\s*$/ });
+  if (await cancel.first().isVisible().catch(() => false)) {
+    await cancel.first().click({ timeout: 8000 }).catch(() => {});
+  }
 }
 
 export async function gotoNaverWeekContainingDate(page, targetDate, {
@@ -256,24 +309,111 @@ export async function gotoNaverWeekContainingDate(page, targetDate, {
 } = {}) {
   const target = normalizeDate(targetDate);
   const targetIdx = dateIndex(target);
-  for (let i = 0; i < 80; i += 1) {
-    const period = await readWeekPeriod(page);
-    if (dateIndex(period.start) <= targetIdx && targetIdx <= dateIndex(period.end)) return period;
-
-    const selector = targetIdx < dateIndex(period.start)
-      ? 'button[class*="DatePeriodCalendar__prev"]'
-      : 'button[class*="DatePeriodCalendar__next"]';
-    const button = page.locator(selector);
-    const count = await button.count();
-    if (count !== 1) throw new Error(`Naver week navigation button count ${count}: ${selector}`);
-    await button.click({ timeout: 8000 });
-    await page.waitForFunction((previousText) => {
-      const el = document.querySelector('[class*="DatePeriodCalendar__date-info"]');
-      const currentText = (el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
-      return Boolean(currentText && currentText !== previousText);
-    }, period.text, { timeout: timeoutMs });
+  const currentPeriod = await readWeekPeriod(page);
+  if (dateIndex(currentPeriod.start) <= targetIdx && targetIdx <= dateIndex(currentPeriod.end)) {
+    return currentPeriod;
   }
-  throw new Error(`Naver week navigation failed for ${target}`);
+
+  const targetParts = dateParts(target);
+  const targetMonthIndex = monthIndexFromParts(targetParts.year, targetParts.month);
+  const expectedStart = addDays(target, -dayIndexForDate(target));
+  const expectedEnd = addDays(expectedStart, 6);
+  const layer = page.locator('[class*="DatePeriodCalendar__layer-calendar"]');
+  let applyStarted = false;
+
+  try {
+    if (!(await layer.first().isVisible().catch(() => false))) {
+      const periodButton = page.locator('[class*="DatePeriodCalendar__date-info"]');
+      const periodButtonCount = await periodButton.count();
+      if (periodButtonCount !== 1) throw new Error(`Naver date picker trigger count ${periodButtonCount}`);
+      await periodButton.click({ timeout: 8000 });
+    }
+    await layer.first().waitFor({ state: 'visible', timeout: timeoutMs });
+
+    for (let i = 0; i < 120; i += 1) {
+      const visibleMonths = await readVisiblePickerMonths(page);
+      const visibleMonthIndexes = [...new Set(visibleMonths.map(({ year, month }) => monthIndexFromParts(year, month)))].sort((a, b) => a - b);
+      if (!visibleMonthIndexes.length) throw new Error('Naver date picker visible month not found');
+      if (visibleMonthIndexes.includes(targetMonthIndex)) break;
+
+      const movingBackward = targetMonthIndex < visibleMonthIndexes[0];
+      const edgeIndex = movingBackward
+        ? visibleMonthIndexes[0] - 1
+        : visibleMonthIndexes[visibleMonthIndexes.length - 1] + 1;
+      const edge = monthPartsFromIndex(edgeIndex);
+      const direction = movingBackward ? 'prev' : 'next';
+      const monthButton = layer.locator(
+        `button[class*="DatePeriodCalendar__btn-monthly"][class*="DatePeriodCalendar__${direction}"]`,
+      );
+      const monthButtonCount = await monthButton.count();
+      if (monthButtonCount !== 1) {
+        throw new Error(`Naver date picker ${direction} button count ${monthButtonCount}`);
+      }
+      await monthButton.click({ timeout: 8000 });
+
+      const expectedEdgeMonth = layer
+        .locator('[class*="DatePeriodCalendar__monthly"]')
+        .filter({ hasText: pickerMonthPattern(edge.year, edge.month) });
+      await expectedEdgeMonth.first().waitFor({ state: 'visible', timeout: timeoutMs });
+      const afterMonths = await readVisiblePickerMonths(page);
+      const afterIndexes = new Set(afterMonths.map(({ year, month }) => monthIndexFromParts(year, month)));
+      if (!afterIndexes.has(edgeIndex)) {
+        throw new Error(`Naver date picker ${direction} transition was not confirmed`);
+      }
+    }
+
+    const targetMonth = layer
+      .locator('[class*="DatePeriodCalendar__monthly"]')
+      .filter({ hasText: pickerMonthPattern(targetParts.year, targetParts.month) });
+    await targetMonth.first().waitFor({ state: 'visible', timeout: timeoutMs });
+    const targetMonthCount = await targetMonth.count();
+    if (targetMonthCount !== 1) {
+      throw new Error(`Naver date picker target month count ${targetMonthCount}: ${targetParts.year}-${targetParts.month}`);
+    }
+
+    const dayButtons = targetMonth.locator('button[class*="Calendar__btn-day"]');
+    const expectedDayCount = daysInMonth(targetParts.year, targetParts.month);
+    const dayButtonCount = await dayButtons.count();
+    if (dayButtonCount !== expectedDayCount) {
+      throw new Error(`Naver date picker day button count ${dayButtonCount}, expected ${expectedDayCount}: ${target}`);
+    }
+    const targetDay = dayButtons.nth(targetParts.day - 1);
+    await targetDay.waitFor({ state: 'visible', timeout: timeoutMs });
+    if (!(await targetDay.isEnabled())) {
+      throw new Error(`Naver date picker target day is disabled: ${target}`);
+    }
+    await targetDay.click({ timeout: 8000 });
+
+    const apply = layer
+      .locator('button[class*="DatePeriodCalendar__btn"]')
+      .filter({ hasText: /^\s*적용\s*$/ });
+    const applyCount = await apply.count();
+    if (applyCount !== 1) throw new Error(`Naver date picker apply button count ${applyCount}`);
+    applyStarted = true;
+    await apply.click({ timeout: 8000 });
+
+    const expectedPeriod = page
+      .locator('[class*="DatePeriodCalendar__date-info"]')
+      .filter({ hasText: weekPeriodPattern(expectedStart, expectedEnd) });
+    try {
+      await expectedPeriod.first().waitFor({ state: 'visible', timeout: timeoutMs });
+    } catch (error) {
+      const observed = await readWeekPeriod(page).catch(() => null);
+      throw new Error(
+        `Naver date picker target week was not confirmed: expected ${expectedStart}~${expectedEnd}, observed ${observed?.start || 'unknown'}~${observed?.end || 'unknown'}`,
+        { cause: error },
+      );
+    }
+
+    const period = await readWeekPeriod(page);
+    if (period.start !== expectedStart || period.end !== expectedEnd) {
+      throw new Error(`Naver date picker rendered unexpected week: ${period.start}~${period.end}`);
+    }
+    return period;
+  } catch (error) {
+    if (!applyStarted) await closeNaverDatePicker(page);
+    throw error;
+  }
 }
 
 export async function scrollNaverCalendarToHour(page, hour, {
