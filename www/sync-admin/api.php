@@ -3245,6 +3245,99 @@ function customer_cancellation_spacecloud_id($ledger_payload) {
     return '';
 }
 
+function customer_cancellation_json_object($value) {
+    $payload = json_decode((string) $value, true);
+    return is_array($payload) ? $payload : array();
+}
+
+function customer_cancellation_short_time($value) {
+    $value = trim((string) $value);
+    if (!preg_match('/^(\d{1,2}):(\d{2})/', $value, $matches)) {
+        return '';
+    }
+    return sprintf('%02d:%02d', intval($matches[1]), intval($matches[2]));
+}
+
+function customer_cancellation_export_room_key($value) {
+    $value = trim((string) $value);
+    if (!preg_match('/^([A-E])/i', $value, $matches)) {
+        return '';
+    }
+    return strtolower($matches[1]);
+}
+
+function customer_cancellation_export_time_matches($export_value, $ledger_value, $allow_midnight_end) {
+    $export_time = customer_cancellation_short_time($export_value);
+    $ledger_time = customer_cancellation_short_time($ledger_value);
+    if ($export_time === $ledger_time) {
+        return true;
+    }
+    return $allow_midnight_end && $export_time === '24:00' && $ledger_time === '00:00';
+}
+
+function customer_cancellation_platform_export_payload_matches($payload, $ledger) {
+    if (!is_array($payload) || !is_array($ledger)) {
+        return false;
+    }
+    if (!isset($payload['source']) || (string) $payload['source'] !== 'naver-export') {
+        return false;
+    }
+    $row = isset($payload['row']) && is_array($payload['row']) ? $payload['row'] : array();
+    $status = isset($row['status']) ? trim((string) $row['status']) : '';
+    $cancel_at = isset($row['cancel_at']) ? trim((string) $row['cancel_at']) : '';
+    $cancel_reason = isset($row['cancel_reason']) ? trim((string) $row['cancel_reason']) : '';
+    if (!preg_match('/확정|이용완료/u', $status) || $cancel_at !== '' || $cancel_reason !== '') {
+        return false;
+    }
+    return isset($row['reservation_number'], $row['date'], $row['start'], $row['end'], $row['room'], $row['name'])
+        && trim((string) $row['reservation_number']) === trim((string) $ledger['reservation_number'])
+        && trim((string) $row['date']) === (string) $ledger['reservation_date']
+        && customer_cancellation_export_time_matches($row['start'], $ledger['start_time_text'], false)
+        && customer_cancellation_export_time_matches($row['end'], $ledger['end_time_text'], true)
+        && customer_cancellation_export_room_key($row['room']) === strtolower((string) $ledger['room_key'])
+        && normalize_reserver_name_key($row['name']) === normalize_reserver_name_key($ledger['reserver_name']);
+}
+
+function customer_cancellation_identity_for_ledger($ledger) {
+    $email_event_id = intval(isset($ledger['confirmed_email_event_id']) ? $ledger['confirmed_email_event_id'] : 0);
+    if ($email_event_id > 0) {
+        return array(
+            'mode' => 'email-event',
+            'emailEventId' => $email_event_id,
+            'sourcePayload' => customer_cancellation_json_object(isset($ledger['payload_json']) ? $ledger['payload_json'] : ''),
+            'repairPayload' => false,
+        );
+    }
+    if (
+        (string) $ledger['source_platform'] !== 'naver'
+        || (string) $ledger['source_mode'] !== 'platform-export'
+        || !empty($ledger['canceled_email_event_id'])
+        || !empty($ledger['automation_cancel_task_id'])
+        || trim((string) $ledger['reservation_number']) === ''
+    ) {
+        return array();
+    }
+    $payload = customer_cancellation_json_object(isset($ledger['payload_json']) ? $ledger['payload_json'] : '');
+    if (customer_cancellation_platform_export_payload_matches($payload, $ledger)) {
+        return array(
+            'mode' => 'platform-export',
+            'emailEventId' => null,
+            'sourcePayload' => $payload,
+            'repairPayload' => false,
+        );
+    }
+    $legacy_payload = customer_cancellation_json_object(isset($ledger['cancel_payload_json']) ? $ledger['cancel_payload_json'] : '');
+    if (customer_cancellation_platform_export_payload_matches($legacy_payload, $ledger)) {
+        return array(
+            'mode' => 'platform-export',
+            'emailEventId' => null,
+            'sourcePayload' => $legacy_payload,
+            'repairPayload' => true,
+        );
+    }
+    return array();
+}
+
 function request_customer_cancellation($pdo, $payload, $env) {
     if (!sync_admin_live_enabled($env)) {
         throw new InvalidArgumentException('실제 플랫폼 작업 큐가 꺼져 있어 고객 예약을 안전하게 취소할 수 없습니다.');
@@ -3262,7 +3355,8 @@ function request_customer_cancellation($pdo, $payload, $env) {
                    reservation_date,
                    TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
                    TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
-                   confirmed_email_event_id, payload_json
+                   confirmed_email_event_id, canceled_email_event_id,
+                   automation_cancel_task_id, payload_json, cancel_payload_json
             FROM rhythmjoy_booking_ledger
             WHERE id=?
             LIMIT 1
@@ -3284,17 +3378,32 @@ function request_customer_cancellation($pdo, $payload, $env) {
         if ((string) $ledger['reservation_date'] < date('Y-m-d')) {
             throw new InvalidArgumentException('지난 고객 예약은 관리자 화면에서 취소할 수 없습니다.');
         }
-        $email_event_id = intval($ledger['confirmed_email_event_id']);
-        if ($email_event_id < 1) {
-            throw new InvalidArgumentException('원본 예약 메일 식별값이 없어 자동 취소를 안전하게 진행할 수 없습니다.');
+        $cancellation_identity = customer_cancellation_identity_for_ledger($ledger);
+        if (!$cancellation_identity) {
+            throw new InvalidArgumentException('원본 예약 또는 검증된 이관 기록이 없어 자동 취소를 안전하게 진행할 수 없습니다.');
         }
+        $email_event_id = $cancellation_identity['emailEventId'];
         if ($source_platform === 'naver' && trim((string) $ledger['reservation_number']) === '') {
             throw new InvalidArgumentException('네이버 예약번호가 없어 자동 취소를 안전하게 진행할 수 없습니다.');
         }
 
-        $ledger_payload = json_decode((string) $ledger['payload_json'], true);
-        if (!is_array($ledger_payload)) {
-            $ledger_payload = array();
+        $ledger_payload = $cancellation_identity['sourcePayload'];
+        if (!empty($cancellation_identity['repairPayload'])) {
+            $repair = $pdo->prepare("
+                UPDATE rhythmjoy_booking_ledger
+                SET payload_json=?, updated_at=NOW()
+                WHERE id=? AND current_status='confirmed'
+                  AND confirmed_email_event_id IS NULL
+                  AND source_platform='naver' AND source_mode='platform-export'
+                  AND (payload_json IS NULL OR payload_json='' OR payload_json='{}')
+            ");
+            $repair->execute(array(
+                json_encode($ledger_payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                $ledger_id,
+            ));
+            if ($repair->rowCount() !== 1) {
+                throw new RuntimeException('이관 예약 원본 기록을 안전하게 복구하지 못했습니다.');
+            }
         }
         $spacecloud_reservation_id = customer_cancellation_spacecloud_id($ledger_payload);
         if ($source_platform === 'spacecloud' && $spacecloud_reservation_id === '') {
@@ -3311,6 +3420,7 @@ function request_customer_cancellation($pdo, $payload, $env) {
                 : 'cancel-spacecloud-confirmed-reservation',
             'cancellationMode' => 'customer-request',
             'manualCustomerCancellation' => true,
+            'cancellationIdentityMode' => (string) $cancellation_identity['mode'],
             'ledgerId' => intval($ledger['id']),
             'ledger_key' => (string) $ledger['ledger_key'],
             'ledger_source_platform' => $source_platform,
@@ -3334,12 +3444,12 @@ function request_customer_cancellation($pdo, $payload, $env) {
         $dedupe_key = customer_cancellation_dedupe_key($ledger_id, $email_event_id, $source_platform);
         $stmt = $pdo->prepare("
             INSERT INTO rhythmjoy_spacecloud_tasks (
-                dedupe_key, email_event_id, task_type, status,
+                dedupe_key, email_event_id, booking_ledger_id, task_type, status, side_effect_state,
                 room_key, reservation_number, reserver_name, product,
                 reservation_date, start_time, end_time, payload_json,
                 created_at, updated_at
             ) VALUES (
-                ?, ?, ?, 'pending',
+                ?, ?, ?, ?, 'pending', 'ready',
                 ?, ?, ?, ?,
                 ?, ?, ?, ?,
                 NOW(), NOW()
@@ -3349,6 +3459,7 @@ function request_customer_cancellation($pdo, $payload, $env) {
         $stmt->execute(array(
             $dedupe_key,
             $email_event_id,
+            $ledger_id,
             $task_type,
             $room_key,
             (string) $ledger['reservation_number'],
@@ -4482,6 +4593,68 @@ function run_sync_admin_selftest() {
         customer_cancellation_dedupe_key(9259, 669, 'naver') === customer_cancellation_dedupe_key(9259, 669, 'naver')
             && customer_cancellation_dedupe_key(9259, 669, 'naver') !== customer_cancellation_dedupe_key(9258, 668, 'naver'),
         'customer cancellation request keys are deterministic and distinct'
+    );
+    $platform_export_snapshot = array(
+        'source' => 'naver-export',
+        'row' => array(
+            'status' => '확정',
+            'reservation_number' => 'N-20260905-1',
+            'date' => '2026-09-05',
+            'start' => '11:00',
+            'end' => '14:00',
+            'room' => 'A홀',
+            'name' => '이관 고객님',
+            'cancel_at' => '',
+            'cancel_reason' => '',
+        ),
+    );
+    $platform_export_ledger = array(
+        'source_platform' => 'naver',
+        'source_mode' => 'platform-export',
+        'reservation_number' => 'N-20260905-1',
+        'reservation_date' => '2026-09-05',
+        'start_time_text' => '11:00',
+        'end_time_text' => '14:00',
+        'room_key' => 'a',
+        'reserver_name' => '이관 고객',
+        'confirmed_email_event_id' => null,
+        'canceled_email_event_id' => null,
+        'automation_cancel_task_id' => null,
+        'payload_json' => '{}',
+        'cancel_payload_json' => json_encode($platform_export_snapshot, JSON_UNESCAPED_UNICODE),
+    );
+    $recovered_platform_export_identity = customer_cancellation_identity_for_ledger($platform_export_ledger);
+    sync_admin_selftest_assert(
+        isset($recovered_platform_export_identity['mode'])
+            && $recovered_platform_export_identity['mode'] === 'platform-export'
+            && $recovered_platform_export_identity['repairPayload'] === true,
+        'a confirmed legacy export snapshot can restore the misplaced source identity'
+    );
+    $platform_export_ledger['payload_json'] = json_encode($platform_export_snapshot, JSON_UNESCAPED_UNICODE);
+    $platform_export_ledger['cancel_payload_json'] = '{}';
+    $direct_platform_export_identity = customer_cancellation_identity_for_ledger($platform_export_ledger);
+    sync_admin_selftest_assert(
+        isset($direct_platform_export_identity['mode'])
+            && $direct_platform_export_identity['mode'] === 'platform-export'
+            && $direct_platform_export_identity['repairPayload'] === false,
+        'a verified platform export keeps its source identity without repair'
+    );
+    $mismatched_platform_export = $platform_export_snapshot;
+    $mismatched_platform_export['row']['reservation_number'] = 'N-DIFFERENT';
+    $platform_export_ledger['payload_json'] = json_encode($mismatched_platform_export, JSON_UNESCAPED_UNICODE);
+    sync_admin_selftest_assert(
+        customer_cancellation_identity_for_ledger($platform_export_ledger) === array(),
+        'a platform export with changed reservation identity is rejected'
+    );
+    $platform_export_ledger['payload_json'] = json_encode($platform_export_snapshot, JSON_UNESCAPED_UNICODE);
+    $platform_export_ledger['canceled_email_event_id'] = 771;
+    sync_admin_selftest_assert(
+        customer_cancellation_identity_for_ledger($platform_export_ledger) === array(),
+        'an imported booking with a later cancellation event cannot start a manual cancellation'
+    );
+    sync_admin_selftest_assert(
+        customer_cancellation_export_time_matches('24:00', '00:00', true),
+        'midnight-ending exports preserve their exact overnight booking boundary'
     );
     sync_admin_selftest_assert(
         task_action_label('naver_cancel', 'naver', 'naver_cancel', array('source' => 'sync-admin-customer-request'))

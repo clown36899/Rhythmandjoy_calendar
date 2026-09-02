@@ -2574,6 +2574,14 @@ export async function deleteSpacecloudDirectReservation(context, task, {
 } = {}) {
   const page = await pageForContext(context);
   const payload = parseTaskPayload(task);
+  const legacyPlatformExportCancellation = (
+    task.legacyPlatformExportCancellation
+    ?? task.legacy_platform_export_cancellation
+  ) === true;
+  const manualPlatformExportCancellation = (
+    task.manualPlatformExportCancellation
+    ?? task.manual_platform_export_cancellation
+  ) === true;
   const mirrorTaskId = task.priorUploadTaskId
     || task.prior_upload_task_id
     || task.mirrorTaskId
@@ -2599,15 +2607,8 @@ export async function deleteSpacecloudDirectReservation(context, task, {
     allowLegacyTasklessIdentity: (
       task.priorUploadLegacyTasklessIdentity
       ?? task.prior_upload_legacy_taskless_identity
-    ) === true || (
-      task.legacyPlatformExportCancellation
-      ?? task.legacy_platform_export_cancellation
-    ) === true,
+    ) === true || legacyPlatformExportCancellation || manualPlatformExportCancellation,
   };
-  const legacyPlatformExportCancellation = (
-    task.legacyPlatformExportCancellation
-    ?? task.legacy_platform_export_cancellation
-  ) === true;
   row.reservationCalendarUrl = task.reservationCalendarUrl || reservationCalendarUrl(row.roomKey);
   if (!row.reservationNo) {
     row.status = 'needs-review';
@@ -2711,7 +2712,7 @@ export async function deleteSpacecloudDirectReservation(context, task, {
       row.finishedAt = new Date().toISOString();
       return row;
     }
-    if (!mirrorTaskId && !legacyPlatformExportCancellation) {
+    if (!mirrorTaskId && !legacyPlatformExportCancellation && !manualPlatformExportCancellation) {
       row.status = 'needs-review';
       row.error = 'SpaceCloud candidate exists, but no exact prior upload task is linked; automatic delete is blocked';
       row.finishedAt = new Date().toISOString();

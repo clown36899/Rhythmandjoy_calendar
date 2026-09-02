@@ -26,6 +26,7 @@ if (!preg_match('/^[A-Za-z0-9_]+$/', $database)) {
 
 $tables = array(
     'rhythmjoy_booking_ledger',
+    'rhythmjoy_spacecloud_tasks',
     'rhythmjoy_admin_series',
     'rhythmjoy_admin_reservations',
     'rhythmjoy_admin_sync_tasks',
@@ -63,8 +64,8 @@ $uppercase_admin_event = admin_event_payload(
     '',
     ''
 );
-$admin_naver_payload = admin_live_task_payload('upload', $uppercase_admin_event);
-$admin_spacecloud_payload = admin_live_task_payload('naver_block', $uppercase_admin_event);
+$admin_naver_payload = admin_live_task_payload('upload', $uppercase_admin_event, 99001);
+$admin_spacecloud_payload = admin_live_task_payload('naver_block', $uppercase_admin_event, 99002);
 idempotency_test_assert(
     $admin_naver_payload['ledger_key'] === booking_ledger_key_for_admin('naver', $uppercase_admin_event, 'Ahall'),
     'admin Naver-source task carries the exact ledger key created by PHP'
@@ -159,4 +160,69 @@ $cancel_task_types = array_map(function($task) { return $task['taskType']; }, $c
 sort($cancel_task_types);
 idempotency_test_assert($cancel_task_types === array('delete', 'naver_restore'), 'cancellation tasks use canonical UI task types');
 
-echo "sync-admin MySQL idempotency self-test OK: retries, exact task cardinality, cancellation tracking, MEDIUMTEXT evidence migration\n";
+$platform_export_snapshot = json_encode(array(
+    'source' => 'naver-export',
+    'row' => array(
+        'status' => '확정',
+        'reservation_number' => 'N-SELFTEST-IMPORT',
+        'date' => '2098-03-07',
+        'start' => '11:00',
+        'end' => '14:00',
+        'room' => 'A홀',
+        'name' => '이관 자체검사님',
+        'cancel_at' => '',
+        'cancel_reason' => '',
+    ),
+), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$stmt = $pdo->prepare("
+    INSERT INTO rhythmjoy_booking_ledger (
+        ledger_key, source_platform, source_mode, current_status,
+        target_calendar, room_key, reservation_number, reserver_name, product,
+        reservation_date, start_time, end_time,
+        confirmed_email_event_id, canceled_email_event_id,
+        payload_json, cancel_payload_json, created_at, updated_at
+    ) VALUES (
+        'selftest|platform-export', 'naver', 'platform-export', 'confirmed',
+        'Ahall', 'a', 'N-SELFTEST-IMPORT', '이관 자체검사', 'A홀 자체검사',
+        '2098-03-07', '11:00:00', '14:00:00',
+        NULL, NULL, '{}', ?, NOW(), NOW()
+    )
+");
+$stmt->execute(array($platform_export_snapshot));
+$platform_export_ledger_id = intval($pdo->lastInsertId());
+$live_test_env = $test_env;
+$live_test_env['SYNC_ADMIN_ENQUEUE_LIVE_TASKS'] = '1';
+$platform_export_cancel = request_customer_cancellation($pdo, array(
+    'ledgerId' => $platform_export_ledger_id,
+), $live_test_env);
+$platform_export_cancel_retry = request_customer_cancellation($pdo, array(
+    'ledgerId' => $platform_export_ledger_id,
+), $live_test_env);
+idempotency_test_assert(
+    $platform_export_cancel['taskType'] === 'naver_cancel'
+        && $platform_export_cancel['duplicateRequest'] === false
+        && $platform_export_cancel_retry['duplicateRequest'] === true,
+    'an imported booking creates one canonical cancellation task and retries idempotently'
+);
+$stmt = $pdo->prepare('SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=?');
+$stmt->execute(array(intval($platform_export_cancel['taskId'])));
+$platform_export_task = $stmt->fetch(PDO::FETCH_ASSOC);
+$platform_export_task_payload = json_decode((string) $platform_export_task['payload_json'], true);
+idempotency_test_assert(
+    intval($platform_export_task['booking_ledger_id']) === $platform_export_ledger_id
+        && $platform_export_task['email_event_id'] === null
+        && $platform_export_task['side_effect_state'] === 'ready'
+        && $platform_export_task_payload['cancellationIdentityMode'] === 'platform-export',
+    'an imported cancellation is ledger-linked, null-email identified, and ready for the existing saga'
+);
+$stmt = $pdo->prepare('SELECT current_status, payload_json FROM rhythmjoy_booking_ledger WHERE id=?');
+$stmt->execute(array($platform_export_ledger_id));
+$platform_export_ledger = $stmt->fetch(PDO::FETCH_ASSOC);
+$repaired_payload = json_decode((string) $platform_export_ledger['payload_json'], true);
+idempotency_test_assert(
+    $platform_export_ledger['current_status'] === 'confirmed'
+        && $repaired_payload['source'] === 'naver-export',
+    'request acceptance restores exact import provenance without canceling the booking before the worker runs'
+);
+
+echo "sync-admin MySQL idempotency self-test OK: retries, exact task cardinality, cancellation tracking, imported cancellation linkage, MEDIUMTEXT evidence migration\n";
