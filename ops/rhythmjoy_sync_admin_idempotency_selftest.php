@@ -225,4 +225,102 @@ idempotency_test_assert(
     'request acceptance restores exact import provenance without canceling the booking before the worker runs'
 );
 
-echo "sync-admin MySQL idempotency self-test OK: retries, exact task cardinality, cancellation tracking, imported cancellation linkage, MEDIUMTEXT evidence migration\n";
+$customer_cancel_operation = customer_cancellation_operation_payload(
+    $pdo,
+    $platform_export_ledger_id,
+    intval($platform_export_cancel['taskId'])
+);
+idempotency_test_assert(
+    $customer_cancel_operation['operationType'] === 'customer-cancellation'
+        && $customer_cancel_operation['state'] === 'pending'
+        && $customer_cancel_operation['panelLocked'] === true
+        && count($customer_cancel_operation['tasks']) === 1,
+    'accepted customer cancellation exposes a pending panel-locking operation'
+);
+$active_panel_operation = active_customer_cancellation_operation($pdo);
+idempotency_test_assert(
+    intval($active_panel_operation['ledgerId']) === $platform_export_ledger_id
+        && intval($active_panel_operation['rootTaskId']) === intval($platform_export_cancel['taskId']),
+    'bootstrap can recover the active cancellation operation without browser-local state'
+);
+idempotency_test_assert(
+    panel_operation_lock_for_mutation($pdo, 'create_reservation', array()) !== null,
+    'another panel mutation is locked while customer cancellation is pending'
+);
+idempotency_test_assert(
+    panel_operation_lock_for_mutation($pdo, 'cancel_customer_reservation', array(
+        'ledgerId' => $platform_export_ledger_id,
+    )) === null,
+    'an idempotent retry for the same cancellation remains allowed'
+);
+
+$pdo->prepare("UPDATE rhythmjoy_spacecloud_tasks SET status='done', result_text=?, updated_at=NOW() WHERE id=?")
+    ->execute(array('{"status":"canceled"}', intval($platform_export_cancel['taskId'])));
+$pdo->prepare("UPDATE rhythmjoy_booking_ledger SET current_status='canceled', updated_at=NOW() WHERE id=?")
+    ->execute(array($platform_export_ledger_id));
+$mirror_payload = array(
+    'source' => 'sync-admin-customer-request',
+    'source_mode' => 'sync-admin-customer-request',
+    'action' => 'delete-spacecloud-mirror',
+    'cancellationMode' => 'customer-request',
+    'manualCustomerCancellation' => true,
+    'customerCancellationTaskId' => intval($platform_export_cancel['taskId']),
+    'ledgerId' => $platform_export_ledger_id,
+);
+$stmt = $pdo->prepare("
+    INSERT INTO rhythmjoy_spacecloud_tasks (
+        dedupe_key, email_event_id, booking_ledger_id, task_type, status, side_effect_state,
+        room_key, reservation_number, reserver_name, product,
+        reservation_date, start_time, end_time, payload_json,
+        created_at, updated_at
+    ) VALUES (
+        'selftest|customer-cancel-mirror', NULL, ?, 'delete', 'pending', 'ready',
+        'a', 'N-SELFTEST-IMPORT', '이관 자체검사', 'A홀 자체검사',
+        '2098-03-07', '11:00:00', '14:00:00', ?, NOW(), NOW()
+    )
+");
+$stmt->execute(array(
+    $platform_export_ledger_id,
+    json_encode($mirror_payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+));
+$mirror_task_id = intval($pdo->lastInsertId());
+$customer_cancel_operation = customer_cancellation_operation_payload(
+    $pdo,
+    $platform_export_ledger_id,
+    intval($platform_export_cancel['taskId'])
+);
+idempotency_test_assert(
+    $customer_cancel_operation['state'] === 'running'
+        && $customer_cancel_operation['panelLocked'] === true
+        && count($customer_cancel_operation['tasks']) === 2,
+    'source completion keeps the panel locked while the mirror task is pending'
+);
+
+$pdo->prepare("UPDATE rhythmjoy_spacecloud_tasks SET status='needs_review', result_text=?, updated_at=NOW() WHERE id=?")
+    ->execute(array('{"error":"self-test review"}', $mirror_task_id));
+$customer_cancel_operation = customer_cancellation_operation_payload(
+    $pdo,
+    $platform_export_ledger_id,
+    intval($platform_export_cancel['taskId'])
+);
+idempotency_test_assert(
+    $customer_cancel_operation['state'] === 'attention'
+        && $customer_cancel_operation['panelLocked'] === false
+        && active_customer_cancellation_operation($pdo) === null,
+    'a review boundary reports attention and releases the global input lock'
+);
+
+$pdo->prepare("UPDATE rhythmjoy_spacecloud_tasks SET status='done', result_text=?, updated_at=NOW() WHERE id=?")
+    ->execute(array('{"status":"deleted"}', $mirror_task_id));
+$customer_cancel_operation = customer_cancellation_operation_payload(
+    $pdo,
+    $platform_export_ledger_id,
+    intval($platform_export_cancel['taskId'])
+);
+idempotency_test_assert(
+    $customer_cancel_operation['state'] === 'done'
+        && $customer_cancel_operation['panelLocked'] === false,
+    'both terminal task results plus the canceled ledger complete and unlock the operation'
+);
+
+echo "sync-admin MySQL idempotency self-test OK: retries, exact task cardinality, cancellation tracking, imported cancellation linkage, customer cancellation panel lock lifecycle, MEDIUMTEXT evidence migration\n";

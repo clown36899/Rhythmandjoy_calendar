@@ -3191,6 +3191,7 @@ function bootstrap_payload($pdo, $date, $env) {
         'reservations' => reservation_rows($pdo, $date),
         'adminSeries' => admin_series_rows($pdo),
         'tasks' => recent_task_rows($pdo),
+        'activePanelOperation' => active_customer_cancellation_operation($pdo),
         'reflectionAudits' => reflection_audit_rows($pdo),
         'reflectionAuditSummary' => reflection_audit_summary($pdo),
         'revenueStats' => revenue_stats($pdo, $date),
@@ -3491,6 +3492,215 @@ function request_customer_cancellation($pdo, $payload, $env) {
         }
         throw $error;
     }
+}
+
+function customer_cancellation_operation_task($row, $ledger) {
+    $result = customer_cancellation_json_object(isset($row['result_text']) ? $row['result_text'] : '');
+    return array(
+        'id' => 'live-' . intval($row['id']),
+        'liveTaskId' => intval($row['id']),
+        'reservationId' => intval($ledger['id']),
+        'taskType' => (string) $row['task_type'],
+        'status' => (string) $row['status'],
+        'resultStatus' => isset($result['status']) ? (string) $result['status'] : '',
+        'error' => isset($result['error']) ? (string) $result['error'] : '',
+        'date' => (string) $ledger['reservation_date'],
+        'room' => strtoupper((string) $ledger['room_key']),
+        'startHour' => hour_from_time_value($ledger['start_time_text'], false),
+        'endHour' => hour_from_time_value($ledger['end_time_text'], true),
+        'name' => (string) $ledger['reserver_name'],
+        'reservationNo' => (string) $ledger['reservation_number'],
+        'product' => (string) $ledger['product'],
+        'createdAt' => (string) $row['created_at'],
+        'updatedAt' => (string) $row['updated_at'],
+    );
+}
+
+function customer_cancellation_operation_task_is_terminal($task) {
+    $status = isset($task['status']) ? (string) $task['status'] : '';
+    return in_array($status, array('done', 'synced', 'already_gone'), true);
+}
+
+function customer_cancellation_operation_state($root_task, $mirror_task, $ledger_status) {
+    foreach (array($root_task, $mirror_task) as $task) {
+        $status = isset($task['status']) ? (string) $task['status'] : '';
+        if (in_array($status, array('failed', 'needs_review', 'canceled'), true)) {
+            return 'attention';
+        }
+    }
+    if (
+        customer_cancellation_operation_task_is_terminal($root_task)
+        && $mirror_task
+        && customer_cancellation_operation_task_is_terminal($mirror_task)
+        && (string) $ledger_status === 'canceled'
+    ) {
+        return 'done';
+    }
+    $root_status = isset($root_task['status']) ? (string) $root_task['status'] : '';
+    $mirror_status = isset($mirror_task['status']) ? (string) $mirror_task['status'] : '';
+    if (
+        in_array($root_status, array('running', 'done', 'synced', 'already_gone'), true)
+        || $mirror_task
+        || $mirror_status === 'running'
+    ) {
+        return 'running';
+    }
+    return 'pending';
+}
+
+function customer_cancellation_operation_payload($pdo, $ledger_id, $root_task_id = 0) {
+    $stmt = $pdo->prepare("
+        SELECT id, source_platform, source_mode, current_status,
+               room_key, reservation_number, reserver_name, product, reservation_date,
+               TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
+               TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
+               DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
+               DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+        FROM rhythmjoy_booking_ledger
+        WHERE id=?
+        LIMIT 1
+    ");
+    $stmt->execute(array(intval($ledger_id)));
+    $ledger = $stmt->fetch();
+    if (!$ledger || !in_array((string) $ledger['source_platform'], array('naver', 'spacecloud'), true)) {
+        return null;
+    }
+
+    $task_stmt = $pdo->prepare("
+        SELECT id, booking_ledger_id, task_type, status, payload_json, result_text,
+               DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s+09:00') AS created_at,
+               DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s+09:00') AS updated_at
+        FROM rhythmjoy_spacecloud_tasks
+        WHERE booking_ledger_id=?
+        ORDER BY id DESC
+    ");
+    $task_stmt->execute(array(intval($ledger_id)));
+    $task_rows = $task_stmt->fetchAll();
+    $source_platform = (string) $ledger['source_platform'];
+    $expected_root_type = customer_cancellation_task_type_for_source($source_platform);
+    $expected_mirror_type = $source_platform === 'naver' ? 'delete' : 'naver_restore';
+    $root_row = null;
+    foreach ($task_rows as $row) {
+        $task_payload = customer_cancellation_task_payload($row['payload_json']);
+        if (
+            !$task_payload
+            || empty($task_payload['manualCustomerCancellation'])
+            || (string) $row['task_type'] !== $expected_root_type
+            || intval(isset($task_payload['ledgerId']) ? $task_payload['ledgerId'] : 0) !== intval($ledger_id)
+            || ($root_task_id > 0 && intval($row['id']) !== intval($root_task_id))
+        ) {
+            continue;
+        }
+        $root_row = $row;
+        break;
+    }
+    if (!$root_row) {
+        return null;
+    }
+
+    $root_task = customer_cancellation_operation_task($root_row, $ledger);
+    $mirror_task = null;
+    foreach ($task_rows as $row) {
+        $task_payload = customer_cancellation_task_payload($row['payload_json']);
+        if (
+            !$task_payload
+            || empty($task_payload['manualCustomerCancellation'])
+            || (string) $row['task_type'] !== $expected_mirror_type
+            || intval(isset($task_payload['ledgerId']) ? $task_payload['ledgerId'] : 0) !== intval($ledger_id)
+            || intval(isset($task_payload['customerCancellationTaskId']) ? $task_payload['customerCancellationTaskId'] : 0) !== intval($root_row['id'])
+        ) {
+            continue;
+        }
+        $mirror_task = customer_cancellation_operation_task($row, $ledger);
+        break;
+    }
+    $state = customer_cancellation_operation_state($root_task, $mirror_task, $ledger['current_status']);
+    $tasks = array($root_task);
+    if ($mirror_task) {
+        $tasks[] = $mirror_task;
+    }
+    $updated_at = (string) $ledger['updated_at'];
+    foreach ($tasks as $task) {
+        if ((string) $task['updatedAt'] > $updated_at) {
+            $updated_at = (string) $task['updatedAt'];
+        }
+    }
+    return array(
+        'entityType' => 'customer-ledger',
+        'ledgerId' => intval($ledger['id']),
+        'rootTaskId' => intval($root_row['id']),
+        'sourcePlatform' => $source_platform,
+        'reservation' => array(
+            'id' => intval($ledger['id']),
+            'date' => (string) $ledger['reservation_date'],
+            'room' => strtoupper((string) $ledger['room_key']),
+            'startHour' => hour_from_time_value($ledger['start_time_text'], false),
+            'endHour' => hour_from_time_value($ledger['end_time_text'], true),
+            'name' => (string) $ledger['reserver_name'],
+            'status' => (string) $ledger['current_status'],
+            'createdAt' => (string) $ledger['created_at'],
+            'updatedAt' => (string) $ledger['updated_at'],
+        ),
+        'tasks' => $tasks,
+        'operationType' => 'customer-cancellation',
+        'state' => $state,
+        'panelLocked' => in_array($state, array('pending', 'running'), true),
+        'updatedAt' => $updated_at,
+    );
+}
+
+function active_customer_cancellation_operation($pdo) {
+    if (!admin_table_exists($pdo, 'rhythmjoy_spacecloud_tasks')) {
+        return null;
+    }
+    $stmt = $pdo->query("
+        SELECT id, booking_ledger_id, task_type, payload_json
+        FROM rhythmjoy_spacecloud_tasks
+        WHERE status IN ('pending', 'running')
+          AND booking_ledger_id IS NOT NULL
+          AND task_type IN ('naver_cancel', 'spacecloud_cancel', 'delete', 'naver_restore')
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 100
+    ");
+    $candidates = array();
+    foreach ($stmt->fetchAll() as $row) {
+        $payload = customer_cancellation_task_payload($row['payload_json']);
+        if (!$payload || empty($payload['manualCustomerCancellation'])) {
+            continue;
+        }
+        $root_task_id = in_array((string) $row['task_type'], array('naver_cancel', 'spacecloud_cancel'), true)
+            ? intval($row['id'])
+            : intval(isset($payload['customerCancellationTaskId']) ? $payload['customerCancellationTaskId'] : 0);
+        $ledger_id = intval($row['booking_ledger_id']);
+        if ($root_task_id < 1 || $ledger_id < 1) {
+            continue;
+        }
+        $key = $ledger_id . ':' . $root_task_id;
+        if (!isset($candidates[$key])) {
+            $candidates[$key] = array($ledger_id, $root_task_id);
+        }
+    }
+    foreach ($candidates as $candidate) {
+        $operation = customer_cancellation_operation_payload($pdo, $candidate[0], $candidate[1]);
+        if ($operation && !empty($operation['panelLocked'])) {
+            return $operation;
+        }
+    }
+    return null;
+}
+
+function panel_operation_lock_for_mutation($pdo, $action, $payload) {
+    $operation = active_customer_cancellation_operation($pdo);
+    if (!$operation) {
+        return null;
+    }
+    if (
+        (string) $action === 'cancel_customer_reservation'
+        && intval(isset($payload['ledgerId']) ? $payload['ledgerId'] : 0) === intval($operation['ledgerId'])
+    ) {
+        return null;
+    }
+    return $operation;
 }
 
 function room_calendar_key($room) {
@@ -4706,6 +4916,25 @@ try {
         $date = date('Y-m-d');
     }
 
+    $panel_mutation_actions = array(
+        'create_reservation',
+        'create_recurring',
+        'cancel_admin_reservations',
+        'cancel_customer_reservation',
+        'clear_drafts',
+    );
+    if (in_array($action, $panel_mutation_actions, true)) {
+        $active_operation = panel_operation_lock_for_mutation($pdo, $action, $payload);
+        if ($active_operation) {
+            json_response(array(
+                'ok' => false,
+                'error' => 'panel_operation_locked',
+                'message' => '고객 예약 취소가 진행 중입니다. 두 플랫폼 확인이 끝난 뒤 다른 입력을 진행해주세요.',
+                'activePanelOperation' => $active_operation,
+            ), 409);
+        }
+    }
+
     if ($action === 'bootstrap') {
         json_response(bootstrap_payload($pdo, $date, $env));
     }
@@ -4763,6 +4992,28 @@ try {
         ));
     }
 
+    if ($action === 'customer_cancellation_status') {
+        $ledger_id = isset($payload['ledgerId']) ? intval($payload['ledgerId']) : 0;
+        $task_id = isset($payload['taskId']) ? intval($payload['taskId']) : 0;
+        if ($ledger_id < 1) {
+            throw new InvalidArgumentException('확인할 고객 예약 취소 작업을 선택해주세요.');
+        }
+        $operation = customer_cancellation_operation_payload($pdo, $ledger_id, $task_id);
+        if (!$operation) {
+            json_response(array(
+                'ok' => false,
+                'error' => 'customer_cancellation_not_found',
+                'message' => '고객 예약 취소 작업을 찾지 못했습니다.',
+            ), 404);
+        }
+        json_response(array(
+            'ok' => true,
+            'serverTime' => date('c'),
+            'customerCancellationOperation' => $operation,
+            'activePanelOperation' => !empty($operation['panelLocked']) ? $operation : null,
+        ));
+    }
+
     if ($action === 'preview_recurring') {
         json_response(recurring_preview_payload($pdo, $payload));
     }
@@ -4803,7 +5054,11 @@ try {
 
     if ($action === 'cancel_customer_reservation') {
         $result = request_customer_cancellation($pdo, $payload, $env);
-        json_response(array_merge(bootstrap_payload($pdo, $date, $env), array('customerCancelResult' => $result)));
+        $operation = customer_cancellation_operation_payload($pdo, $result['ledgerId'], $result['taskId']);
+        json_response(array_merge(bootstrap_payload($pdo, $date, $env), array(
+            'customerCancelResult' => $result,
+            'customerCancellationOperation' => $operation,
+        )));
     }
 
     if ($action === 'clear_drafts') {

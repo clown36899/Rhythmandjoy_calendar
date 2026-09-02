@@ -146,6 +146,15 @@ button {
   background: #1a5fd0;
 }
 
+.reservation-cta:disabled,
+.reservation-cta:disabled:hover {
+  cursor: not-allowed;
+  opacity: 0.5;
+  background: #52605d;
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: none;
+}
+
 .reservation-plus {
   flex: 0 0 auto;
   display: grid;
@@ -496,7 +505,9 @@ input[readonly] {
 }
 
 .reservation-operation.cancellation.pending,
-.reservation-operation.cancellation.running {
+.reservation-operation.cancellation.running,
+.reservation-operation.customer-cancellation.pending,
+.reservation-operation.customer-cancellation.running {
   --operation-color: #c35f0a;
   --operation-soft: #fff5e8;
   border-color: #e8bd88;
@@ -577,6 +588,21 @@ input[readonly] {
 
 .reservation-operation-description {
   margin-top: 12px;
+}
+
+.reservation-operation-lock {
+  margin: 12px 0 0;
+  border: 1px solid #e8bd88;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff8ed;
+  color: #75400e;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.reservation-operation-lock strong {
+  margin-right: 6px;
 }
 
 .reservation-operation-steps {
@@ -1234,6 +1260,14 @@ input[readonly] {
 
 .grid-cell.slot:hover {
   background: #f5fbf9;
+}
+
+body.panel-operation-locked .grid-cell.slot:not(.has-event) {
+  cursor: not-allowed;
+}
+
+body.panel-operation-locked .grid-cell.slot:not(.has-event):hover {
+  filter: saturate(0.35);
 }
 
 .grid-cell.slot.readonly-slot {

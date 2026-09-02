@@ -545,6 +545,7 @@
 
   async function createDraftTask(event) {
     event.preventDefault();
+    if (rejectInputWhilePanelOperationLocked()) return;
     if (createDraftTask.pending) return;
     clearReservationFeedback();
     const date = el.reservationDateInput.value || state.activeDate;
@@ -1095,6 +1096,29 @@
     const tasks = (operation.tasks || []).map((task) => (
       Object.prototype.hasOwnProperty.call(task, "start") ? task : taskItemFromApi(task)
     ));
+    if (operation.operationType === "customer-cancellation" || operation.entityType === "customer-ledger") {
+      const updatedAt = tasks.reduce((latest, task) => (
+        String(task.updatedAt || "") > String(latest || "") ? task.updatedAt : latest
+      ), operation.updatedAt || reservation.updatedAt || "");
+      return {
+        entityType: "customer-ledger",
+        reservationId,
+        ledgerId: Number(operation.ledgerId || reservationId),
+        rootTaskId: Number(operation.rootTaskId || 0),
+        sourcePlatform: String(operation.sourcePlatform || ""),
+        date: reservation.date || operation.date || "",
+        room: reservation.room || operation.room || "",
+        start: Number(reservation.startHour ?? reservation.start ?? operation.start),
+        end: Number(reservation.endHour ?? reservation.end ?? operation.end),
+        name: reservation.name || operation.name || "",
+        reservationStatus: reservation.status || operation.reservationStatus || "confirmed",
+        operationType: "customer-cancellation",
+        tasks,
+        createdAt: reservation.createdAt || operation.createdAt || "",
+        updatedAt,
+        pollError: operation.pollError || "",
+      };
+    }
     return operationFromTasks(reservationId, tasks, {
       date: reservation.date || operation.date || "",
       room: reservation.room || operation.room || "",
@@ -1111,7 +1135,7 @@
 
   function operationTaskPhase(task) {
     if (!task) return "pending";
-    if (task.status === "failed" || task.status === "needs_review") return "attention";
+    if (["failed", "needs_review", "canceled"].includes(task.status)) return "attention";
     if (isTaskDone(task)) return "done";
     if (task.status === "running") return "running";
     return "pending";
@@ -1119,6 +1143,16 @@
 
   function reservationOperationPhase(operation = state.reservationOperation) {
     if (!operation) return "hidden";
+    if (operation.operationType === "customer-cancellation") {
+      const sourceTaskType = operation.sourcePlatform === "spacecloud" ? "spacecloud_cancel" : "naver_cancel";
+      const mirrorTaskType = operation.sourcePlatform === "spacecloud" ? "naver_restore" : "delete";
+      const source = operationTaskPhase((operation.tasks || []).find((task) => canonicalOperationTaskType(task.taskType) === sourceTaskType));
+      const mirror = operationTaskPhase((operation.tasks || []).find((task) => canonicalOperationTaskType(task.taskType) === mirrorTaskType));
+      if (source === "attention" || mirror === "attention") return "attention";
+      if (source === "done" && mirror === "done" && operation.reservationStatus === "canceled") return "done";
+      if (source === "running" || source === "done" || mirror === "running" || mirror === "done") return "running";
+      return "pending";
+    }
     const operationType = operation.operationType === "cancellation" ? "cancellation" : "registration";
     const [naverTaskType, spacecloudTaskType] = operationType === "cancellation"
       ? ["naver_restore", "delete"]
@@ -1169,6 +1203,10 @@
 
     const current = normalizeReservationOperation(state.reservationOperation);
     if (current) {
+      if (current.operationType === "customer-cancellation") {
+        state.reservationOperation = current;
+        return;
+      }
       const relatedTasks = state.tasks.filter((task) => Number(task.reservationId) === current.reservationId);
       if (relatedTasks.length) {
         setReservationOperation(operationFromTasks(current.reservationId, relatedTasks, current));
@@ -1207,6 +1245,12 @@
   }
 
   function operationPhaseCopy(phase, operationType = "registration") {
+    if (operationType === "customer-cancellation") {
+      if (phase === "done") return { title: "고객 예약 취소 완료", description: "원천 플랫폼 취소와 반대 플랫폼 일정 정리를 모두 실제 화면에서 확인했습니다." };
+      if (phase === "attention") return { title: "고객 예약 취소 확인 필요", description: "추가 입력 잠금은 해제했습니다. 완료되지 않은 단계만 관련 오류에서 확인해주세요." };
+      if (phase === "running") return { title: "고객 예약 취소 처리 중", description: "미니PC가 원천 예약 취소와 반대 플랫폼 일정 정리를 순서대로 확인하고 있습니다." };
+      return { title: "고객 예약 취소 접수", description: "DB 작업 큐에 안전하게 저장됐으며 미니PC가 작업을 가져가기를 기다리고 있습니다." };
+    }
     if (operationType === "cancellation") {
       if (phase === "done") return { title: "일정 취소 완료", description: "스페이스클라우드 일정 삭제와 네이버 예약 가능 복구를 모두 확인했습니다. 일정표에서도 제거됐습니다." };
       if (phase === "attention") return { title: "취소 반영 확인 필요", description: "완료된 작업은 유지됩니다. 아래에서 확인이 필요한 플랫폼을 바로 확인해주세요." };
@@ -1243,6 +1287,79 @@
     return { phase, label, stateLabel, detail };
   }
 
+  function customerCancellationStepCopy(task, platform, role) {
+    const phase = operationTaskPhase(task);
+    const platformLabel = platform === "naver" ? "네이버" : "스페이스클라우드";
+    const label = role === "source"
+      ? `${platformLabel} 원천 예약 취소`
+      : (platform === "naver" ? "네이버 예약 가능 복구" : "스페이스클라우드 일정 삭제");
+    const stateLabel = phase === "done" ? "완료" : (phase === "attention" ? "확인 필요" : (phase === "running" ? "처리 중" : "대기"));
+    let detail = role === "source"
+      ? "정확한 예약 신원을 다시 확인한 뒤 취소합니다."
+      : "원천 취소가 확인된 다음 반대 플랫폼 일정을 정리합니다.";
+    if (phase === "running") {
+      detail = role === "source"
+        ? `${platformLabel}에서 정확한 예약을 확인하고 취소 처리 중입니다.`
+        : `${platformLabel}에서 연결된 시간만 정리하고 있습니다.`;
+    } else if (phase === "done") {
+      detail = role === "source"
+        ? `${platformLabel} 원천 예약의 취소 완료를 확인했습니다.`
+        : `${platformLabel} 반대 일정의 정리 완료를 확인했습니다.`;
+    } else if (phase === "attention") {
+      detail = humanTaskError(task?.error) || `${platformLabel} 자동 확인을 완료하지 못했습니다.`;
+    }
+    return { phase, label, stateLabel, detail };
+  }
+
+  function customerCancellationOperationSteps(operation) {
+    const sourcePlatform = operation.sourcePlatform === "spacecloud" ? "spacecloud" : "naver";
+    const mirrorPlatform = sourcePlatform === "naver" ? "spacecloud" : "naver";
+    const sourceTaskType = sourcePlatform === "naver" ? "naver_cancel" : "spacecloud_cancel";
+    const mirrorTaskType = sourcePlatform === "naver" ? "delete" : "naver_restore";
+    const sourceTask = (operation.tasks || []).find((task) => canonicalOperationTaskType(task.taskType) === sourceTaskType);
+    const mirrorTask = (operation.tasks || []).find((task) => canonicalOperationTaskType(task.taskType) === mirrorTaskType);
+    return [
+      customerCancellationStepCopy(sourceTask, sourcePlatform, "source"),
+      customerCancellationStepCopy(mirrorTask, mirrorPlatform, "mirror"),
+    ];
+  }
+
+  function panelOperationLocked(operation = state.reservationOperation) {
+    return operation?.operationType === "customer-cancellation"
+      && ["pending", "running"].includes(reservationOperationPhase(operation));
+  }
+
+  function syncPanelInputLock() {
+    const locked = panelOperationLocked();
+    document.body.classList.toggle("panel-operation-locked", locked);
+    document.querySelectorAll("[data-open-reservation-modal], [data-open-recurring-modal]").forEach((button) => {
+      button.disabled = locked;
+      button.setAttribute("aria-disabled", locked ? "true" : "false");
+    });
+    [el.form, el.recurringForm].forEach((form) => {
+      if (form) form.inert = locked;
+    });
+    if (el.clearDrafts) el.clearDrafts.disabled = locked;
+    if (locked) {
+      if (!el.reservationModal.hidden) closeReservationModal();
+      if (!el.recurringModal.hidden) closeRecurringModal();
+      if (!el.seriesModal.hidden) closeSeriesModal();
+      if (!el.eventCancelWarningModal.hidden && !confirmDetailedEventCancellation.pending) {
+        closeEventCancellationWarning({ force: true });
+      }
+      if (!el.eventDetailModal.hidden && !confirmDetailedEventCancellation.pending) {
+        closeEventDetailModal();
+      }
+    }
+  }
+
+  function rejectInputWhilePanelOperationLocked() {
+    if (!panelOperationLocked()) return false;
+    showToast("고객 예약 취소가 끝날 때까지 다른 입력은 잠겨 있습니다.");
+    el.reservationOperation?.scrollIntoView({ behavior: "smooth", block: "start" });
+    return true;
+  }
+
   function operationDateText(value) {
     const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
     return match ? `${match[1]}. ${match[2]}. ${match[3]}.` : String(value || "");
@@ -1254,20 +1371,32 @@
     if (!operation) {
       el.reservationOperation.hidden = true;
       el.reservationOperation.innerHTML = "";
+      syncPanelInputLock();
       return;
     }
     state.reservationOperation = operation;
     const phase = reservationOperationPhase(operation);
-    const operationType = operation.operationType === "cancellation" ? "cancellation" : "registration";
-    const [naverTaskType, spacecloudTaskType] = operationType === "cancellation"
-      ? ["naver_restore", "delete"]
-      : ["naver_block", "upload"];
+    const operationType = operation.operationType === "customer-cancellation"
+      ? "customer-cancellation"
+      : (operation.operationType === "cancellation" ? "cancellation" : "registration");
     const copy = operationPhaseCopy(phase, operationType);
-    const naver = operationPlatformCopy(operation.tasks.find((task) => canonicalOperationTaskType(task.taskType) === naverTaskType), "naver", operationType);
-    const spacecloud = operationPlatformCopy(operation.tasks.find((task) => canonicalOperationTaskType(task.taskType) === spacecloudTaskType), "spacecloud", operationType);
+    let steps;
+    if (operationType === "customer-cancellation") {
+      steps = customerCancellationOperationSteps(operation);
+    } else {
+      const [naverTaskType, spacecloudTaskType] = operationType === "cancellation"
+        ? ["naver_restore", "delete"]
+        : ["naver_block", "upload"];
+      steps = [
+        operationPlatformCopy(operation.tasks.find((task) => canonicalOperationTaskType(task.taskType) === naverTaskType), "naver", operationType),
+        operationPlatformCopy(operation.tasks.find((task) => canonicalOperationTaskType(task.taskType) === spacecloudTaskType), "spacecloud", operationType),
+      ];
+    }
     const slot = `${operationDateText(operation.date)} ${operation.room}홀 ${formatHour(operation.start)}-${formatHour(operation.end)}`;
     const lastChecked = operation.updatedAt ? `DB 확인 ${formatDateTime(operation.updatedAt)}` : "DB 상태 확인 중";
-    const operationLabel = operationType === "cancellation" ? "관리자 일정 취소" : "관리자 예약";
+    const operationLabel = operationType === "customer-cancellation"
+      ? "고객 예약 취소"
+      : (operationType === "cancellation" ? "관리자 일정 취소" : "관리자 예약");
     el.reservationOperation.className = `reservation-operation ${phase} ${operationType}`;
     el.reservationOperation.hidden = false;
     el.reservationOperation.innerHTML = `
@@ -1281,9 +1410,9 @@
         <span class="reservation-operation-badge">${escapeHtml(phase === "done" ? "완료" : (phase === "attention" ? "확인 필요" : (phase === "running" ? "처리 중" : "접수")))}</span>
       </div>
       <p class="reservation-operation-description">${escapeHtml(copy.description)}</p>
+      ${panelOperationLocked(operation) ? '<p class="reservation-operation-lock"><strong>다른 입력 잠금</strong> 완료 또는 확인 필요 상태가 될 때까지 새 예약·정기대관·다른 취소 입력을 막습니다.</p>' : ""}
       <div class="reservation-operation-steps">
-        ${operationStepHtml(naver)}
-        ${operationStepHtml(spacecloud)}
+        ${steps.map(operationStepHtml).join("")}
       </div>
       ${operation.pollError ? `<p class="reservation-operation-poll-error">${escapeHtml(operation.pollError)}</p>` : ""}
       <div class="reservation-operation-foot">
@@ -1295,6 +1424,7 @@
         </div>
       </div>
     `;
+    syncPanelInputLock();
     scheduleReservationOperationPoll();
   }
 
@@ -1328,22 +1458,34 @@
     state.reservationOperationPolling = true;
     renderReservationOperation();
     try {
-      const data = await apiRequest("reservation_status", { reservationId });
+      const customerCancellation = state.reservationOperation?.operationType === "customer-cancellation";
+      const data = customerCancellation
+        ? await apiRequest("customer_cancellation_status", {
+          ledgerId: Number(state.reservationOperation?.ledgerId || reservationId),
+          taskId: Number(state.reservationOperation?.rootTaskId || 0),
+        })
+        : await apiRequest("reservation_status", { reservationId });
       state.reservationOperationPollCount += 1;
-      const next = normalizeReservationOperation(data.reservationOperation);
+      const next = normalizeReservationOperation(
+        customerCancellation ? data.customerCancellationOperation : data.reservationOperation,
+      );
       if (!next) throw new Error("예약 작업 상태를 찾지 못했습니다.");
       state.reservationOperation = next;
       localStorage.setItem(reservationOperationKey, JSON.stringify(next));
       const nextPhase = reservationOperationPhase(next);
       if (nextPhase === "done" && previousPhase !== "done") {
-        showToast(next.operationType === "cancellation"
-          ? "일정 취소가 완료되어 일정표에서 제거했습니다."
-          : "예약 반영이 모두 완료됐습니다.");
+        showToast(next.operationType === "customer-cancellation"
+          ? "고객 예약 취소와 반대 플랫폼 정리가 모두 완료됐습니다."
+          : (next.operationType === "cancellation"
+            ? "일정 취소가 완료되어 일정표에서 제거했습니다."
+            : "예약 반영이 모두 완료됐습니다."));
         refreshFromApi({ silent: true });
       } else if (nextPhase === "attention" && previousPhase !== "attention") {
-        showToast(next.operationType === "cancellation"
-          ? "일정 취소 중 일부 플랫폼 확인이 필요합니다."
-          : "일부 플랫폼 반영에 확인이 필요합니다.");
+        showToast(next.operationType === "customer-cancellation"
+          ? "고객 예약 취소 중 일부 플랫폼 확인이 필요합니다. 다른 입력 잠금은 해제했습니다."
+          : (next.operationType === "cancellation"
+            ? "일정 취소 중 일부 플랫폼 확인이 필요합니다."
+            : "일부 플랫폼 반영에 확인이 필요합니다."));
         refreshFromApi({ silent: true });
       } else if (options.manual) {
         showToast("최신 작업 상태를 확인했습니다.");
@@ -1804,6 +1946,7 @@
   }
 
   async function clearDrafts() {
+    if (rejectInputWhilePanelOperationLocked()) return;
     if (adminToken()) {
       try {
         const data = await apiRequest("clear_drafts", { date: state.activeDate });
@@ -1823,6 +1966,7 @@
   }
 
   function selectSlot(room, hour) {
+    if (rejectInputWhilePanelOperationLocked()) return;
     el.roomInput.value = room;
     el.startInput.value = String(hour);
     el.endInput.value = String(Math.min(24, hour + 1));
@@ -2852,6 +2996,7 @@
   }
 
   function openReservationModal() {
+    if (rejectInputWhilePanelOperationLocked()) return;
     clearReservationFeedback();
     el.reservationDateInput.value = state.activeDate;
     updateModalSlotSummary();
@@ -2920,9 +3065,9 @@
     );
     const customerCancelStatus = String(event?.customerCancelTaskStatus || "");
     el.cancelAdminReservation.hidden = !adminCancelable;
-    el.cancelAdminReservation.disabled = false;
+    el.cancelAdminReservation.disabled = panelOperationLocked();
     el.cancelCustomerReservation.hidden = !customerCancelable;
-    el.cancelCustomerReservation.disabled = Boolean(customerCancelStatus);
+    el.cancelCustomerReservation.disabled = Boolean(customerCancelStatus) || panelOperationLocked();
     el.cancelCustomerReservation.textContent = customerCancelStatus
       ? customerCancellationStatusText(customerCancelStatus).replace(/^고객 요청 /, "")
       : "고객 요청 취소";
@@ -2946,6 +3091,7 @@
   }
 
   function openEventCancellationWarning(kind) {
+    if (rejectInputWhilePanelOperationLocked()) return;
     const event = state.eventDetailEvents.length === 1 ? state.eventDetailEvents[0] : null;
     const customerRequest = kind === "customer" && ["naver", "spacecloud"].includes(event?.source);
     const adminRequest = kind === "admin" && event?.source === "admin";
@@ -3150,6 +3296,7 @@
   }
 
   function openRecurringModal() {
+    if (rejectInputWhilePanelOperationLocked()) return;
     if (!el.recurringStartDate.value) initializeRecurringForm();
     el.recurringModal.hidden = false;
     document.body.classList.add("modal-open");
@@ -3384,6 +3531,7 @@
 
   async function createRecurringSchedule(event) {
     event.preventDefault();
+    if (rejectInputWhilePanelOperationLocked()) return;
     if (createRecurringSchedule.pending) return;
     const preview = state.recurringPreview;
     if (!preview || Number(preview.summary?.conflicts || 0) > 0) {
@@ -3447,6 +3595,7 @@
   }
 
   async function openSeriesModal(seriesId) {
+    if (rejectInputWhilePanelOperationLocked()) return;
     const series = state.adminSeries.find((item) => Number(item.id) === Number(seriesId));
     if (!series) return;
     try {
@@ -3517,6 +3666,7 @@
   }
 
   async function cancelSeriesOccurrences(scope) {
+    if (rejectInputWhilePanelOperationLocked()) return;
     if (!state.selectedSeries || cancelSeriesOccurrences.pending) return;
     const ids = scope === "selected" ? selectedSeriesOccurrenceIds() : [];
     const label = scope === "selected" ? `선택한 미래 일정 ${ids.length}건` : "오늘을 포함한 남은 일정 전부";
@@ -3548,6 +3698,7 @@
   }
 
   async function confirmDetailedEventCancellation() {
+    if (rejectInputWhilePanelOperationLocked()) return;
     if (confirmDetailedEventCancellation.pending) return;
     const intent = state.eventCancellationIntent;
     if (!intent?.event?.dbId) return;
@@ -3587,6 +3738,9 @@
     showToast(duplicate
       ? "이미 접수된 고객 요청 취소 작업을 확인했습니다."
       : "고객 요청 취소를 접수했습니다. 양 플랫폼 확인 후 일정에서 제거됩니다.");
+    window.requestAnimationFrame(() => {
+      el.reservationOperation?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   async function cancelDetailedAdminReservation(event) {
@@ -3689,7 +3843,12 @@
     state.reflectionAuditSummary = data.reflectionAuditSummary || null;
     applyAdminAlertData(data);
     state.tasks = annotateTaskRelations((data.tasks || []).map(taskItemFromApi));
-    syncReservationOperation(data.reservationOperation || null);
+    syncReservationOperation(
+      data.customerCancellationOperation
+      || data.activePanelOperation
+      || data.reservationOperation
+      || null,
+    );
   }
 
   async function apiRequest(action, payload) {
@@ -3704,6 +3863,10 @@
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) {
+      if (data.activePanelOperation) {
+        setReservationOperation(data.activePanelOperation, { force: true });
+        renderAll();
+      }
       const error = new Error(data.message || `API 오류 ${response.status}`);
       error.status = response.status;
       error.code = data.error || "";
