@@ -76,6 +76,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_DIAGNOSTIC_LOG_NAME = 'session-diagnostics.jsonl';
 const SESSION_DIAGNOSTIC_SALT_NAME = '.session-diagnostic-salt';
 const SESSION_DIAGNOSTIC_HEARTBEAT_MS = DAY_MS;
+const SESSION_EXPIRY_WARNING_DAYS = 5;
+const SESSION_EXPIRY_NOTIFY_RETRY_MS = 5 * 60 * 1000;
 // rhythmjoy_spacecloud_tasks.result_text is MySQL TEXT (65,535 bytes). Keep a
 // conservative margin for utf8mb4 and future schema changes, but do not throw
 // away verification evidence behind the old arbitrary 4,000-character limit.
@@ -377,8 +379,8 @@ function parseArgs(argv) {
   return args;
 }
 
-function kstToday() {
-  const shifted = new Date(Date.now() + KST_OFFSET_MS);
+function kstToday(now = Date.now()) {
+  const shifted = new Date(now + KST_OFFSET_MS);
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
 }
 
@@ -13386,6 +13388,111 @@ async function runNowModeSelfTest() {
   assert.match(sessionRecoveryTitle('naver', 'problem:login_required:server_rejected_unexpired_cookie'), /로그인 복구/);
   assert.match(sessionProblemMessage('naver', { status: 'login_required' }), /같은 세션 장애를 예약별로 반복 알리지 않습니다/);
   assert.doesNotMatch(sessionProblemMessage('naver', { status: 'login_required' }), /세션 만료/);
+  const expiryRow = (platform, expiresAt) => ({
+    platform,
+    status: 'ready',
+    diagnostic: {
+      after: { primaryPresent: true, primaryExpiresAt: expiresAt, captureError: '' },
+    },
+  });
+  const scheduledExpiry = expiryRow('spacecloud', '2026-09-11T10:44:34.230Z');
+  assert.equal(sessionExpiryWarning(scheduledExpiry, Date.parse('2026-09-05T14:59:59Z')), null);
+  assert.deepEqual(sessionExpiryWarning(scheduledExpiry, Date.parse('2026-09-05T15:00:00Z')), {
+    platform: 'spacecloud', expiryDate: '2026-09-11', daysRemaining: 5,
+  });
+  for (const daysRemaining of [4, 3, 2, 1, 0]) {
+    const now = Date.parse('2026-09-10T15:00:00Z') - daysRemaining * DAY_MS;
+    assert.equal(sessionExpiryWarning(scheduledExpiry, now).daysRemaining, daysRemaining);
+  }
+  assert.equal(sessionExpiryWarning(scheduledExpiry, Date.parse('2026-09-11T10:44:34.230Z')), null);
+  assert.equal(sessionExpiryWarning(scheduledExpiry, Date.parse('2026-09-12T00:00:00Z')), null);
+  const expiryTestNow = Date.parse('2026-09-06T00:00:00Z');
+  for (const status of ['login_required', 'check_failed', 'needs_check']) {
+    assert.equal(sessionExpiryWarning({ ...scheduledExpiry, status }, expiryTestNow), null);
+  }
+  for (const after of [
+    undefined,
+    { primaryPresent: false, primaryExpiresAt: scheduledExpiry.diagnostic.after.primaryExpiresAt },
+    { ...scheduledExpiry.diagnostic.after, captureError: 'cookie read failed' },
+    { primaryPresent: true, primaryExpiresAt: '' },
+    { primaryPresent: true, primaryExpiresAt: 'invalid' },
+  ]) {
+    assert.equal(sessionExpiryWarning({ ...scheduledExpiry, diagnostic: {
+      cookieExpiresAt: scheduledExpiry.diagnostic.after.primaryExpiresAt, after,
+    } }, expiryTestNow), null, 'legacy/fallback expiry must not forecast the current session');
+  }
+  assert.equal(sessionExpiryWarning(expiryRow('spacecloud', '2026-10-06T00:00:00Z'), expiryTestNow), null);
+
+  const expiryTestDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rhythmjoy-session-expiry-'));
+  const originalFetch = globalThis.fetch;
+  const telegramEnvNames = ['TELEGRAM_DRY_RUN', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'];
+  const savedTelegramEnv = Object.fromEntries(telegramEnvNames.map((name) => [name, process.env[name]]));
+  try {
+    const notifyArgs = { telegram: true, notifyState: path.join(expiryTestDir, 'notify-state.json') };
+    const now = Date.now();
+    const statuses = ['naver', 'spacecloud'].map((platform) => expiryRow(platform, new Date(now + 2 * DAY_MS).toISOString()));
+    const outageKey = 'system:session:naver';
+    const expiryKey = 'system:session-expiry';
+    const initialState = {
+      [outageKey]: { lastSentAt: new Date(now - DAY_MS).toISOString(), stateSignature: 'problem:check_failed:browser_check_failed' },
+      'reservation:fixture': { stateSignature: 'complete:done', lastSentAt: new Date(now - DAY_MS).toISOString() },
+    };
+    await writeJson(notifyArgs.notifyState, initialState);
+    const deliveries = [];
+    let rejectDelivery = true;
+    process.env.TELEGRAM_BOT_TOKEN = 'session-expiry-self-test';
+    process.env.TELEGRAM_CHAT_ID = 'session-expiry-self-test';
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, 'https://api.telegram.org/botsession-expiry-self-test/sendMessage');
+      deliveries.push(JSON.parse(options.body));
+      if (rejectDelivery) throw new Error('simulated Telegram outage');
+      return { ok: true, text: async () => JSON.stringify({ ok: true, result: { message_id: deliveries.length } }) };
+    };
+    assert.equal((await notifySessionExpiryReminder({ ...notifyArgs, telegram: false }, statuses)).reason, 'disabled');
+    process.env.TELEGRAM_DRY_RUN = '1';
+    assert.equal((await notifySessionExpiryReminder(notifyArgs, statuses)).reason, 'dry-run');
+    assert.deepEqual(await readJsonObject(notifyArgs.notifyState), initialState);
+    assert.equal(deliveries.length, 0);
+    delete process.env.TELEGRAM_DRY_RUN;
+
+    await notifySessionStateChanges(notifyArgs, statuses);
+    assert.equal(deliveries.length, 1);
+    let notifyState = await readJsonObject(notifyArgs.notifyState);
+    assert.equal(notifyState[expiryKey].lastSentAt, undefined);
+    assert.equal(notifyState[expiryKey].stateSignature, undefined);
+    assert.equal(notifyState[outageKey].stateSignature, 'healthy');
+    assert.equal((await notifySessionExpiryReminder(notifyArgs, statuses)).reason, 'retry-cooldown');
+    assert.equal(deliveries.length, 1);
+    notifyState[expiryKey].lastAttemptAt = new Date(now - SESSION_EXPIRY_NOTIFY_RETRY_MS).toISOString();
+    await writeJson(notifyArgs.notifyState, notifyState);
+    rejectDelivery = false;
+    await notifySessionStateChanges(notifyArgs, statuses);
+    assert.equal(deliveries.length, 2);
+    assert.match(deliveries[1].text, /네이버 스마트플레이스/);
+    assert.match(deliveries[1].text, /스페이스클라우드/);
+    assert.match(deliveries[1].text, /2일 남음/);
+    assert.match(deliveries[1].text, /기록된 만료일/);
+    assert.doesNotMatch(deliveries[1].text, /\d{2}:\d{2}/);
+    await notifySessionStateChanges(notifyArgs, statuses.map((row) => ({ ...row, cached: true })));
+    const rotatedStatuses = statuses.map((row) => expiryRow(row.platform, new Date(now + DAY_MS).toISOString()));
+    assert.equal((await notifySessionExpiryReminder(notifyArgs, rotatedStatuses)).reason, 'state-unchanged');
+    assert.equal(deliveries.length, 2, 'durable daily signature must survive repeated calls and cookie renewal');
+    assert.equal((await notifySessionExpiryReminder(notifyArgs, statuses, now + DAY_MS)).sent, true);
+    assert.equal(deliveries.length, 3, 'the next Korean date permits one combined reminder');
+    const renewedStatuses = statuses.map((row) => expiryRow(row.platform, new Date(now + 30 * DAY_MS).toISOString()));
+    assert.equal((await notifySessionExpiryReminder(notifyArgs, renewedStatuses, now + 2 * DAY_MS)).reason, 'no-upcoming-expiry');
+    assert.equal((await notifySessionExpiryReminder(notifyArgs, statuses, now + 2 * DAY_MS)).reason, 'no-upcoming-expiry');
+    assert.equal(deliveries.length, 3);
+    notifyState = await readJsonObject(notifyArgs.notifyState);
+    assert.deepEqual(notifyState['reservation:fixture'], initialState['reservation:fixture']);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const name of telegramEnvNames) {
+      if (savedTelegramEnv[name] === undefined) delete process.env[name];
+      else process.env[name] = savedTelegramEnv[name];
+    }
+    await fs.rm(expiryTestDir, { recursive: true, force: true });
+  }
   const crashedSession = {
     platform: 'naver',
     status: 'check_failed',
@@ -13414,7 +13521,7 @@ async function runNowModeSelfTest() {
   const liveCookie = {
     primaryPresent: true,
     primaryFingerprint: 'cookie-a',
-    primaryExpiresAt: '2026-09-11T10:47:59.000Z',
+    primaryExpiresAt: new Date(Date.now() + 30 * DAY_MS).toISOString(),
     captureError: '',
   };
   assert.equal(classifySessionDiagnostic({
@@ -13588,6 +13695,7 @@ async function runNowModeSelfTest() {
       'platform session circuit breakers pause affected work and audits without consuming reservation attempts',
       'explicit authentication rejection alerts immediately while unavailable probes remain neutral',
       'session diagnostics distinguish local cookie loss, scheduled expiry, and server rejection without storing cookie values',
+      'session expiry reminders combine platforms once per KST day from D-5 using current cookies, survive restarts, retry failures, and stop after renewal or expiry',
       'customer DB reservations rotate through source and mirrored actual-platform inspection',
       'customer platform audit alerts persist to DB before the local interval checkpoint',
       'reflection audit uses the single canonical Cafe24 implementation',
@@ -13766,6 +13874,51 @@ function browserSessionRecoveryNeeded(statuses) {
   ));
 }
 
+function sessionExpiryWarning(row, now = Date.now()) {
+  // The diagnostic's top-level expiry can belong to a previous cookie. Only
+  // forecast the currently observed cookie after a successful screen check.
+  const cookie = row?.diagnostic?.after;
+  if (row?.status !== 'ready' || !cookie?.primaryPresent || cookie.captureError) return null;
+  const expiresAt = Date.parse(cookie.primaryExpiresAt || '');
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) return null;
+  const expiryDate = kstToday(expiresAt);
+  const daysRemaining = Math.round((Date.parse(expiryDate) - Date.parse(kstToday(now))) / DAY_MS);
+  if (daysRemaining < 0 || daysRemaining > SESSION_EXPIRY_WARNING_DAYS) return null;
+  return { platform: row.platform, expiryDate, daysRemaining };
+}
+
+async function notifySessionExpiryReminder(args, statuses, now = Date.now()) {
+  if (!args.telegram) return { sent: false, reason: 'disabled' };
+  const warnings = ['naver', 'spacecloud']
+    .map((platform) => sessionExpiryWarning(sessionStatusForPlatform(statuses, platform), now))
+    .filter(Boolean);
+  if (!warnings.length) return { sent: false, reason: 'no-upcoming-expiry' };
+
+  // One combined reminder per Korean calendar date, even when another platform
+  // enters the window or a cookie rotates later that day. Keep outage/recovery
+  // signatures untouched in the same durable notification state file.
+  const key = 'system:session-expiry';
+  const signature = `expiry:${kstToday(now)}`;
+  const state = await readJsonObject(args.notifyState);
+  const previous = state[key] || {};
+  if (notificationSuppressedByState(previous, signature)) {
+    return { sent: false, reason: 'state-unchanged' };
+  }
+  const lastAttemptAt = Date.parse(previous.lastAttemptAt || '');
+  if (previous.result?.sent === false && now - lastAttemptAt < SESSION_EXPIRY_NOTIFY_RETRY_MS) {
+    return { sent: false, reason: 'retry-cooldown' };
+  }
+  const text = compactNotice('⚠️ 로그인 세션 만료 예정', [
+    ...warnings.map((warning) => `${sessionPlatformLabel(warning.platform)}: ${warning.expiryDate} · ${warning.daysRemaining === 0 ? '오늘 만료 예정' : `${warning.daysRemaining}일 남음`}`),
+    '기준: 현재 로그인 세션에 기록된 만료일',
+    '조치: 만료 전에 미니 PC 자동화 브라우저에서 재로그인해 주세요.',
+    '만료 5일 전부터 하루 한 번 알리며, 만료일이 연장되면 새 날짜를 따릅니다.',
+  ]);
+  // Previewing must not consume today's real delivery allowance.
+  if (process.env.TELEGRAM_DRY_RUN === '1') return sendTelegram(args, text);
+  return notifyOnStateChange(args, key, signature, text);
+}
+
 async function notifySessionStateChanges(args, statuses) {
   for (const platform of ['naver', 'spacecloud']) {
     const row = sessionStatusForPlatform(statuses, platform);
@@ -13802,6 +13955,7 @@ async function notifySessionStateChanges(args, statuses) {
       ]));
     }
   }
+  await notifySessionExpiryReminder(args, statuses);
 }
 
 async function maybeCheckAutomationSessionStatuses(args, context, workDir) {

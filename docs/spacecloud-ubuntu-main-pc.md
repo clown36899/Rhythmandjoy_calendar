@@ -74,6 +74,29 @@ Telegram state-change deduplication is stored durably at:
 
 The service installer copies the old repo-local state once when this file is missing. State updates use an atomic temporary-file rename, so a restart or deployment cannot leave a half-written JSON file that causes repeated messages.
 
+### Login expiry reminders
+
+From 2026-09-12, the existing watcher sends one combined Telegram reminder per
+Korean calendar date, beginning five dates before the recorded cookie expiry and
+continuing until the expiry instant. The first eligible watcher cycle sends it;
+there is no separate scheduler or Mac dependency. Both Naver and SpaceCloud are
+included when eligible. A platform entering the window after that day's message
+is included the next day.
+
+Only a `ready` screen check with a currently observed, readable primary cookie
+and explicit expiry qualifies. An old diagnostic expiry, unknown expiry, failed
+check or logged-out session cannot produce a forecast. Re-login/cookie renewal
+automatically moves the reminder window. Cookie expiry is a recorded estimate;
+server-side rejection may still happen earlier and uses the existing immediate
+login-required alert.
+
+The `system:session-expiry` entry in the existing durable notification file stores
+the successful KST-date signature. Repeated/cached checks and service restarts
+cannot resend that date. Failed delivery is retried no faster than every five
+minutes; preview and disabled Telegram runs do not consume the daily allowance.
+Outage/recovery state entries and reservation/SMS queues retain their existing
+ownership and behavior. See [the policy decision](decisions/2026-09-12-session-expiry-reminders.md).
+
 ## Validation Commands
 
 Run from the Ubuntu device:
