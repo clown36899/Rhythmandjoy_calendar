@@ -263,6 +263,24 @@ SPACE_CLOUD_WATCH_DAILY_RECONCILE_HOUR=5
 
 In NOW mode the watcher prioritizes already-queued later-booking cancellations, then Naver availability changes, then normal uploads. The normal loop stays at 30 seconds, but after real work or a pending urgent row it temporarily runs every 15 seconds for 5 minutes. Naver restore tasks wait briefly before reopening availability so a fast cancel-and-rebook sequence does not reopen a slot that has already been rebooked. The watcher also sends one daily DB health summary after the configured KST hour.
 
+## Administrator cancellation audits
+
+Administrator cancellation audits reuse the customer cancellation audit's active
+ledger overlap lookup and per-slot Naver restoration rules. A canceled reservation
+may overlap a later confirmed booking: only those overlapping slots may remain
+occupied, and an administrator/SpaceCloud block requires a completed
+`naver_block` task (`done` or `google_pending`). An administrator's SpaceCloud
+upload alone is not proof of a Naver block. Uncovered slots must be available;
+unknown or unread slots remain inconclusive rather than being marked healthy.
+Confirmed administrator bookings still require every Naver slot to be blocked.
+
+This connects the previously missing administrator path to the existing shared
+rules; it adds no queue, schema, or alert owner. The audit only reads platform
+state and persists its existing audit result. Run `admin-platform-audit` with the
+watcher's existing profile and audit state (stop the watcher first) to resolve a
+stale mismatch after verifying the actual platforms. Do not manually clear an
+alert or reopen protected slots to satisfy an old canceled reservation.
+
 ## Aligo SMS Sender
 
 Aligo SMS is the only confirmation SMS sender. Reservation-confirmed auto-SMS calls this module after the booking has been applied to the opposite platform.

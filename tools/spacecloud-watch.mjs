@@ -6936,6 +6936,7 @@ try:
               CONCAT(LPAD(r.end_hour, 2, '0'), ':00') AS endTime,
               r.reserver_name AS reserverName,
               t.id AS taskId,
+              t.booking_ledger_id AS bookingLedgerId,
               t.task_type AS taskType,
               t.status AS taskStatus,
               t.reservation_number AS reservationNo,
@@ -6975,6 +6976,7 @@ for row in raw:
         item['tasks'][task_type] = {
             'id': row['taskId'],
             'taskId': row['taskId'],
+            'bookingLedgerId': row.get('bookingLedgerId'),
             'taskType': task_type,
             'status': row['taskStatus'],
             'roomKey': (row.get('roomKey') or '').lower(),
@@ -7221,21 +7223,23 @@ function classifyAdminPlatformInspection(task, inspection) {
       ? { ok: true, status: 'ok', reason: '스페이스클라우드 삭제 확인' }
       : { ok: false, status: 'mismatch', reason: '취소한 스페이스클라우드 예약이 아직 보임' };
   }
-  if (taskType === 'naver_block' || taskType === 'naver_restore') {
+  if (taskType === 'naver_restore') {
+    return classifyCustomerPlatformInspection('naver_mirror_available', inspection, task);
+  }
+  if (taskType === 'naver_block') {
     const statuses = (inspection?.slots || []).map((slot) => slot.status);
     if (!statuses.length) return { ok: false, status: 'check_failed', reason: '네이버 시간칸을 읽지 못함' };
-    const expected = taskType === 'naver_block' ? 'suspended' : 'available';
-    if (statuses.every((status) => status === expected)) {
+    if (statuses.every((status) => status === 'suspended')) {
       return {
         ok: true,
         status: 'ok',
-        reason: taskType === 'naver_block' ? '네이버 예약 차단 확인' : '네이버 예약 가능 복원 확인',
+        reason: '네이버 예약 차단 확인',
       };
     }
     return {
       ok: false,
       status: 'mismatch',
-      reason: taskType === 'naver_block' ? '네이버 예약 차단이 실제 화면과 다름' : '네이버 예약 가능 복원이 실제 화면과 다름',
+      reason: '네이버 예약 차단이 실제 화면과 다름',
     };
   }
   return { ok: false, status: 'check_failed', reason: `지원하지 않는 작업: ${taskType}` };
@@ -7318,12 +7322,25 @@ async function runAdminPlatformAudit(args, context, { force = false } = {}) {
 
   const candidates = await fetchRemoteAdminPlatformAuditCandidates(args);
   const selected = selectAdminPlatformAuditReservations(candidates, state, args.adminPlatformAuditLimit);
+  // Admin restore tasks use SpaceCloud ledger anchors. Reuse the same active
+  // overlap evidence and per-slot rules as customer cancellation audits.
+  const overlapCandidates = selected.some((reservation) => (
+    reservation.reservationStatus === 'canceled' && reservation.tasks?.naver_restore
+  )) ? await fetchRemoteCustomerPlatformAuditCandidates(args) : [];
   const rows = [];
   const nextReservations = { ...(state.reservations || {}) };
   for (const reservation of selected) {
     const reservationRows = [];
     for (const taskType of expectedAdminAuditTaskTypes(reservation.reservationStatus)) {
       const task = reservation.tasks?.[taskType];
+      if (task && taskType === 'naver_restore') {
+        task.cancellationOverlapBookings = customerCancellationOverlapBookings({
+          ...task,
+          ledgerId: task.bookingLedgerId,
+          currentStatus: 'canceled',
+          sourcePlatform: 'spacecloud',
+        }, overlapCandidates);
+      }
       let inspection = { status: 'failed', error: 'DB 동기화 작업 기록 없음' };
       if (task) {
         try {
@@ -12934,6 +12951,45 @@ async function runNowModeSelfTest() {
     mirrorTaskType: 'naver_block',
     mirrorTaskStatus: 'done',
   }]).ok, true, 'only a completed admin Naver-block task may justify a protected slot');
+  const adminRestoreOverlapPool = overlapPool.map((booking) => ({
+    ...booking,
+    sourceMode: 'admin-task-anchor',
+  }));
+  const adminRestoreOverlapTask = {
+    ...canceledSpacecloudCandidate,
+    taskType: 'naver_restore',
+    cancellationOverlapBookings: customerCancellationOverlapBookings(
+      { ...canceledSpacecloudCandidate, sourceMode: 'admin-task-anchor' },
+      adminRestoreOverlapPool,
+    ),
+  };
+  for (const [label, inspection, task, expected] of [
+    ['partial replacement', partiallyProtectedInspection, adminRestoreOverlapTask, 'ok'],
+    ['fully restored', { slots: [{ ...adminSlot, status: 'available' }] }, adminRestoreOverlapTask, 'ok'],
+    ['active Naver source', { slots: [{ ...adminSlot, status: 'confirmed' }] }, naverOverlapTask, 'ok'],
+    ['unowned legacy block', { slots: [adminSlot] }, unownedSpacecloudBlockTask, 'mismatch'],
+    ['outside replacement', { slots: [{ ...adminSlot, startTime: '19:00', endTime: '20:00' }] }, adminRestoreOverlapTask, 'mismatch'],
+    ['no active replacement', { slots: [adminSlot] }, { cancellationOverlapBookings: [] }, 'mismatch'],
+    ['incomplete replacement task', { slots: [adminSlot] }, {
+      cancellationOverlapBookings: adminRestoreOverlapTask.cancellationOverlapBookings.map((booking) => ({ ...booking, mirrorTaskStatus: 'pending' })),
+    }, 'mismatch'],
+    ['wrong hall or canceled replacement', { slots: [adminSlot] }, {
+      cancellationOverlapBookings: customerCancellationOverlapBookings(canceledSpacecloudCandidate, [
+        { ...adminRestoreOverlapPool[1], roomKey: 'a' },
+        { ...adminRestoreOverlapPool[1], currentStatus: 'canceled' },
+      ]),
+    }, 'mismatch'],
+    ['read failure', { status: 'failed', error: 'test read failure' }, adminRestoreOverlapTask, 'check_failed'],
+    ['no slots read', { slots: [] }, adminRestoreOverlapTask, 'check_failed'],
+  ]) {
+    assert.equal(classifyAdminPlatformInspection({ ...task, taskType: 'naver_restore' }, inspection).status,
+      expected, `admin cancellation audit: ${label}`);
+    assert.equal(classifyCustomerPlatformInspection('naver_mirror_available', inspection, task).status,
+      expected, `customer cancellation audit: ${label}`);
+  }
+  assert.equal(classifyAdminPlatformInspection({ taskType: 'naver_block' }, partiallyProtectedInspection).status,
+    'mismatch', 'a confirmed admin booking must still require every slot to be blocked');
+  assert.equal(classifyAdminPlatformInspection({ taskType: 'naver_block' }, { slots: [adminSlot] }).status, 'ok');
   const previousCancellationAuditLookback = process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS;
   delete process.env.RHYTHMJOY_CUSTOMER_CANCELLATION_AUDIT_LOOKBACK_DAYS;
   assert.equal(customerCancellationAuditLookbackDays(), 10);
