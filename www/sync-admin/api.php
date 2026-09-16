@@ -303,6 +303,8 @@ function ensure_schema($pdo) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
     ensure_column($pdo, 'rhythmjoy_admin_sync_tasks', 'live_task_id', 'BIGINT UNSIGNED NULL AFTER reservation_id');
+    ensure_column($pdo, 'rhythmjoy_sms_deliveries', 'recipient_phone', "VARCHAR(20) NOT NULL DEFAULT '' AFTER recipient_phone_last4");
+    ensure_column($pdo, 'rhythmjoy_spacecloud_tasks', 'confirmation_sms_required', 'TINYINT(1) NOT NULL DEFAULT 0');
     ensure_column($pdo, 'rhythmjoy_naver_email_events', 'event_order_key', 'BIGINT UNSIGNED NULL AFTER email_received_at');
     ensure_column($pdo, 'rhythmjoy_naver_email_events', 'event_order_trusted', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER event_order_key');
     ensure_column($pdo, 'rhythmjoy_spacecloud_tasks', 'booking_ledger_id', 'BIGINT UNSIGNED NULL AFTER email_event_id');
@@ -4083,7 +4085,7 @@ function insert_admin_sync_task($pdo, $reservation_id, $live_task, $action_type,
     return intval($pdo->lastInsertId());
 }
 
-function queue_admin_registration($pdo, $event, $env) {
+function queue_admin_registration($pdo, $event, $env, $phone = '') {
     $room_key = $event['room_key'];
     $calendar_key = $event['calendar_key'];
     $naver_task = null;
@@ -4096,6 +4098,31 @@ function queue_admin_registration($pdo, $event, $env) {
     }
     insert_admin_sync_task($pdo, $event['admin_reservation_id'], $naver_task, 'block_naver_availability', 'naver', $env);
     insert_admin_sync_task($pdo, $event['admin_reservation_id'], $spacecloud_task, 'add_spacecloud_reservation', 'spacecloud', $env);
+    // The upload owns the one confirmation intent for both platform tasks.
+    // Keep the recipient out of ledger/task payloads and public API responses.
+    $sms_enabled = !isset($env['RHYTHMJOY_CONFIRMATION_SMS_ENABLED'])
+        || !in_array(strtolower(trim($env['RHYTHMJOY_CONFIRMATION_SMS_ENABLED'])), array('0', 'false', 'off', 'no'), true);
+    if ($spacecloud_task && $phone !== '' && $sms_enabled
+        && empty($event['suppress_confirmation_sms'])
+        && strtotime($event['date'] . ' ' . $event['end_time']) > time()) {
+        if (!preg_match('/^01[016789][0-9]{7,8}$/D', $phone)) {
+            throw new InvalidArgumentException('확정 문자를 받을 휴대전화 전체 번호를 입력해주세요.');
+        }
+        $task_id = intval($spacecloud_task['id']);
+        $stmt = $pdo->prepare('UPDATE rhythmjoy_spacecloud_tasks SET confirmation_sms_required=1 WHERE id=?');
+        $stmt->execute(array($task_id));
+        $stmt = $pdo->prepare("
+            INSERT IGNORE INTO rhythmjoy_sms_deliveries (
+                idempotency_key, source_task_type, source_task_id, template_name,
+                recipient_phone_hash, recipient_phone_last4, recipient_phone,
+                status, attempt_count, created_at, updated_at
+            ) VALUES (?, 'upload', ?, 'reservation-confirmed-v1', ?, ?, ?, 'pending', 0, NOW(), NOW())
+        ");
+        $stmt->execute(array(
+            'reservation-confirmed-v1|upload|' . $task_id, $task_id,
+            hash('sha256', $phone), substr($phone, -4), $phone,
+        ));
+    }
 }
 
 function update_admin_ledger_status($pdo, $event, $status, $expected_ledger_ids = array()) {
@@ -4226,6 +4253,18 @@ function queue_admin_cancellation($pdo, $event, $env) {
         skip_ready_admin_upload_task($pdo, $naver_ledger_id, $event);
         $delete_task = insert_live_spacecloud_task($pdo, 'delete', $event, $event['room_key'], $naver_ledger_id);
         $restore_task = insert_live_spacecloud_task($pdo, 'naver_restore', $event, $event['room_key'], $spacecloud_ledger_id);
+        $stmt = $pdo->prepare("UPDATE rhythmjoy_spacecloud_tasks SET confirmation_sms_required=0 WHERE booking_ledger_id=? AND task_type='upload'");
+        $stmt->execute(array($naver_ledger_id));
+        $stmt = $pdo->prepare("
+            UPDATE rhythmjoy_sms_deliveries d
+            JOIN rhythmjoy_spacecloud_tasks t ON t.id=d.source_task_id AND t.task_type=d.source_task_type
+            SET d.recipient_phone='',
+                d.status=IF(d.status IN ('pending','failed','phone_lookup_failed'), 'skipped', d.status),
+                d.next_retry_at=NULL, d.updated_at=NOW()
+            WHERE t.booking_ledger_id=? AND t.task_type='upload'
+              AND d.template_name='reservation-confirmed-v1'
+        ");
+        $stmt->execute(array($naver_ledger_id));
     } else {
         update_admin_ledger_status($pdo, $event, 'canceled');
     }
@@ -4272,6 +4311,9 @@ function create_reservation($pdo, $payload, $env) {
     $memo = trim((string) (isset($payload['memo']) ? $payload['memo'] : ''));
     $phone = clean_phone(isset($payload['phone']) ? $payload['phone'] : '');
     $request_id = clean_request_id(isset($payload['requestId']) ? $payload['requestId'] : '', '단건 예약');
+    if ($phone !== '' && !preg_match('/^01[016789][0-9]{7,8}$/D', $phone)) {
+        throw new InvalidArgumentException('확정 문자를 받을 휴대전화 전체 번호를 입력해주세요. 연락처 없이 등록하려면 비워두세요.');
+    }
 
     if ($date === '' || $room === '' || $start < 0 || $end < 0 || $start >= $end) {
         json_response(array('ok' => false, 'error' => 'invalid_input', 'message' => '예약 날짜, 방, 시간이 올바르지 않습니다.'), 400);
@@ -4356,7 +4398,7 @@ function create_reservation($pdo, $payload, $env) {
         ));
         $reservation_id = intval($pdo->lastInsertId());
         $event = admin_event_payload($reservation_id, $date, $room, $start, $end, $name, $memo, $phone_last4);
-        queue_admin_registration($pdo, $event, $env);
+        queue_admin_registration($pdo, $event, $env, $phone);
         $pdo->commit();
         return array(
             'reservationId' => $reservation_id,

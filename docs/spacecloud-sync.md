@@ -267,6 +267,36 @@ In NOW mode the watcher prioritizes already-queued later-booking cancellations, 
 
 Aligo SMS is the only confirmation SMS sender. Reservation-confirmed auto-SMS calls this module after the booking has been applied to the opposite platform.
 
+Administrator **single reservations** also create one confirmation SMS intent when a
+complete Korean mobile number is entered, live synchronization and confirmation
+SMS are enabled, and the reservation has not ended. Blank contact fields remain
+valid and do not create an SMS; partial numbers are rejected. Recurring/bulk
+registration retains its existing no-SMS behavior.
+
+The existing upload task owns `confirmation_sms_required` and the existing
+`reservation-confirmed-v1|upload|<id>` delivery key. Registration, both platform
+tasks, and the SMS intent commit together. The final sender locks the administrator
+reservation against cancellation and checks both exact platform task links,
+current ledger identities, verified platform results, and the recipient hash.
+No customer-platform phone lookup is attempted for an `ADMIN-*` reservation.
+
+The optional `rhythmjoy_sms_deliveries.recipient_phone` column is the sole owner
+of the complete recipient needed for an administrator SMS. A hash cannot recover
+the destination after the registration request ends. The column is never copied
+into task/ledger payloads, browser-runner results, or public schedule responses.
+Successful sends, cancellation/skips, and uncertain outcomes erase the number;
+known failures retain it for the existing retry schedule. A durable `sending` or
+`uncertain` row is never automatically resent. Administrator messages use numeric
+24-hour times and the existing `/info` instructions link.
+
+Migration is additive: install the optional column before enabling the new API
+producer, and install the compatible watcher before accepting new SMS intents.
+Existing rows default to an empty destination and existing administrator bookings
+are not backfilled. For rollback, stop new administrator SMS intake first, drain
+or retain outstanding administrator intents with the compatible sender, then
+restore the previous code; do not drop the destination column or run the old
+email-only generation checker over pending administrator deliveries.
+
 Required production secrets in `/home/clown313python/myapp/.env`:
 
 ```bash

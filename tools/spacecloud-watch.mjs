@@ -1179,7 +1179,9 @@ function confirmationSmsMessage(task = {}, source = '') {
     return process.env.RHYTHMJOY_CONFIRMATION_SMS_MESSAGE;
   }
   const room = String(task.roomKey || task.room_key || '-').trim().toUpperCase();
-  const time = confirmationSmsTimeText(task).replace(/시$/, '');
+  const time = source === 'admin-panel'
+    ? `${confirmationSmsClockText(confirmationSmsClock(task.startTime || task.start_time))}-${confirmationSmsClockText(confirmationSmsClock(task.endTime || task.end_time))}`
+    : confirmationSmsTimeText(task).replace(/시$/, '');
   const detail = `${confirmationSmsDateText(task)} ${room}홀 ${time}`;
   const message = `리듬앤조이 확정문자\n${detail}\n비번 정보\n${confirmationInfoUrl(source)}`;
   if (legacySmsByteLength(message) > 90) {
@@ -1285,7 +1287,8 @@ async function sendRemoteSms(args, {
     return { status: 'disabled', reason: 'sms-disabled', maskedPhone: '' };
   }
   const to = normalizePhone(phone);
-  if (!/^01[016789]\d{7,8}$/.test(to)) {
+  const adminConfirmation = templateName === CONFIRMATION_SMS_TEMPLATE_NAME && isAdminPanelTask(task);
+  if (!adminConfirmation && !/^01[016789]\d{7,8}$/.test(to)) {
     return { status: 'skipped', reason: 'recipient-phone-missing', maskedPhone: '' };
   }
 
@@ -1311,7 +1314,9 @@ import base64
 import hashlib
 import json
 import os
+import re
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pymysql
@@ -1370,6 +1375,7 @@ def ensure_table(cur):
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """)
     for column, definition in (
+        ('recipient_phone', "VARCHAR(20) NOT NULL DEFAULT ''"),
         ('attempt_count', 'INT UNSIGNED NOT NULL DEFAULT 0'),
         ('first_failed_at', 'DATETIME NULL'),
         ('last_attempt_at', 'DATETIME NULL'),
@@ -1395,7 +1401,7 @@ def lock_confirmation_generation(cur):
     cur.execute(
         """
         SELECT id, task_type, status, email_event_id, booking_ledger_id,
-               side_effect_state, result_text, reservation_number, room_key
+               side_effect_state, result_text, reservation_number, room_key, payload_json
         FROM rhythmjoy_spacecloud_tasks
         WHERE id=%s AND task_type=%s
         LIMIT 1
@@ -1405,6 +1411,71 @@ def lock_confirmation_generation(cur):
     snapshot = cur.fetchone()
     if not snapshot:
         return {'approved': False, 'reason': 'source task missing before confirmation SMS'}
+    source_payload = parse_result(snapshot.get('payload_json'))
+    if source_payload.get('source') == 'admin-panel' or source_payload.get('source_mode') == 'admin-panel':
+        # Administrator cancellation takes this row first. Hold it through the
+        # durable send checkpoint and provider call, using that same lock order.
+        admin_id = int(source_payload.get('admin_reservation_id') or 0)
+        cur.execute("""
+            SELECT *, TIMESTAMP(reservation_date, MAKETIME(end_hour,0,0)) > NOW() AS not_ended
+            FROM rhythmjoy_admin_reservations WHERE id=%s FOR UPDATE
+        """, (admin_id,))
+        reservation = cur.fetchone()
+        if task_type != 'upload' or not reservation or reservation.get('status') in ('canceling','canceled') or not reservation.get('not_ended'):
+            return {'approved': False, 'reason': 'admin reservation canceled, ended, or missing'}
+        if source_payload.get('suppress_confirmation_sms'):
+            return {'approved': False, 'reason': 'admin reservation explicitly suppresses confirmation SMS'}
+        if reservation.get('status') != 'confirmed':
+            return {'approved': False, 'retryable': True, 'reason': 'both admin platforms must finish before confirmation SMS'}
+        # A confirmed admin row is written only after platform transactions
+        # finish. Do not lock their task rows while finalization is in progress.
+        cur.execute("""
+            SELECT t.*, l.current_status AS ledger_status, l.source_mode AS ledger_mode
+            FROM rhythmjoy_admin_sync_tasks a
+            JOIN rhythmjoy_spacecloud_tasks t ON t.id=a.live_task_id
+            JOIN rhythmjoy_booking_ledger l ON l.id=t.booking_ledger_id
+            WHERE a.reservation_id=%s
+              AND a.action_type IN ('block_naver_availability','add_spacecloud_reservation')
+            ORDER BY t.id
+        """, (admin_id,))
+        linked = cur.fetchall()
+        if len(linked) != 2 or {t.get('task_type') for t in linked} != {'upload','naver_block'}:
+            return {'approved': False, 'retryable': True, 'reason': 'admin platform task links are incomplete'}
+        for linked_task in linked:
+            linked_payload = parse_result(linked_task.get('payload_json'))
+            if not (
+                linked_payload.get('source') == 'admin-panel'
+                and int(linked_payload.get('admin_reservation_id') or 0) == admin_id
+                and linked_payload.get('admin_action_generation') == f'admin-reservation:{admin_id}:registration'
+                and str(linked_task.get('reservation_number') or '') == f'ADMIN-{admin_id}'
+                and str(linked_task.get('reservation_date')) == str(reservation.get('reservation_date'))
+                and str(linked_task.get('room_key') or '').lower() == str(reservation.get('room_key') or '').lower()
+                and str(linked_task.get('start_time')) == str(timedelta(hours=int(reservation['start_hour'])))
+                and str(linked_task.get('end_time')) == str(timedelta(hours=int(reservation['end_hour'])))
+                and linked_task.get('ledger_status') == 'confirmed'
+                and linked_task.get('ledger_mode') == 'admin-task-anchor'
+            ):
+                return {'approved': False, 'reason': 'admin reservation generation identity mismatch'}
+            proof = parse_result(linked_task.get('result_text'))
+            done = linked_task.get('status') == 'done' and (
+                linked_task.get('task_type') == 'upload'
+                and int(linked_task.get('id') or 0) == task_id
+                and linked_task.get('side_effect_state') == 'finalized'
+                and proof.get('status') == 'submitted'
+                or linked_task.get('task_type') == 'naver_block'
+                and proof.get('status') in ('blocked','already-blocked')
+            )
+            if not done:
+                return {'approved': False, 'retryable': True, 'reason': 'both admin platforms must finish before confirmation SMS'}
+        cur.execute('SELECT recipient_phone, recipient_phone_hash, recipient_phone_last4, status FROM rhythmjoy_sms_deliveries WHERE idempotency_key=%s', (idempotency_key,))
+        delivery = cur.fetchone() or {}
+        recipient = str(delivery.get('recipient_phone') or '')
+        if delivery.get('status') not in ('sent','sending','uncertain') and not (
+            re.fullmatch(r'01[016789][0-9]{7,8}', recipient)
+            and hashlib.sha256(recipient.encode('utf-8')).hexdigest() == reservation.get('phone_hash') == delivery.get('recipient_phone_hash')
+        ):
+            return {'approved': False, 'retryable': True, 'reason': 'admin SMS recipient is missing or does not match the reservation'}
+        return {'approved': True, 'reason': 'both exact admin platforms finalized', 'recipientPhone': recipient}
     ledger_id = int(snapshot.get('booking_ledger_id') or 0)
     if ledger_id < 1 and snapshot.get('email_event_id'):
         cur.execute(
@@ -1585,6 +1656,7 @@ try:
                 ) VALUES (%s,%s,%s,%s,%s,%s,'skipped',%s,0,NOW(),NOW())
                 ON DUPLICATE KEY UPDATE
                     status=IF(status IN ('sent','uncertain','sending'),status,'skipped'),
+                    recipient_phone='',
                     error_text=IF(status IN ('sent','uncertain','sending'),error_text,VALUES(error_text)),
                     next_retry_at=NULL,
                     updated_at=NOW()
@@ -1606,6 +1678,10 @@ try:
                 'reason': confirmation_guard.get('reason') or 'confirmation SMS suppressed',
             }, ensure_ascii=False))
             raise SystemExit(0)
+        if 'recipientPhone' in confirmation_guard:
+            phone = confirmation_guard['recipientPhone']
+            phone_hash = hashlib.sha256(phone.encode('utf-8')).hexdigest() if phone else ''
+            masked = mask_phone(phone)
         # Claim the provider call through a second transaction while this
         # transaction keeps the exact ledger generation locked.  The sending
         # checkpoint is therefore durable before the external call (no crash
@@ -1696,6 +1772,7 @@ try:
                 """
                 UPDATE rhythmjoy_sms_deliveries
                 SET status=%s,
+                    recipient_phone=IF(%s='sent','',recipient_phone),
                     provider_code=%s,
                     provider_remaining=%s,
                     provider_raw=%s,
@@ -1713,7 +1790,7 @@ try:
                 WHERE idempotency_key=%s AND status='sending'
                 """,
                 (
-                    status, result.get('code') or '', result.get('remaining'),
+                    status, status, result.get('code') or '', result.get('remaining'),
                     str(result.get('raw') or '')[:255], error_text,
                     status, status, status, idempotency_key,
                 ),
@@ -1742,7 +1819,7 @@ try:
             cur.execute(
                 """
                 UPDATE rhythmjoy_sms_deliveries
-                SET status='uncertain', error_text=%s,
+                SET status='uncertain', recipient_phone='', error_text=%s,
                     first_failed_at=IF(first_failed_at IS NULL,NOW(),first_failed_at),
                     next_retry_at=NULL, updated_at=NOW()
                 WHERE idempotency_key=%s AND status='sending'
@@ -9912,7 +9989,9 @@ function hasBlockingFailures(result) {
 }
 
 async function sendNaverOriginConfirmationSms(args, context, task) {
-  if (isAdminPanelTask(task)) return adminPanelSmsSkipped(task, 'admin-panel');
+  if (isAdminPanelTask(task)) {
+    return sendRemoteConfirmationSms(args, { task, phone: '', source: 'admin-panel' });
+  }
   if (payloadForTask(task).suppress_confirmation_sms === true) {
     return {
       status: 'disabled',
@@ -9991,6 +10070,7 @@ conn = pymysql.connect(
 try:
     with conn.cursor() as cur:
         for column, definition in (
+            ('recipient_phone', "VARCHAR(20) NOT NULL DEFAULT ''"),
             ('attempt_count', 'INT UNSIGNED NOT NULL DEFAULT 0'),
             ('first_failed_at', 'DATETIME NULL'),
             ('last_attempt_at', 'DATETIME NULL'),
@@ -10010,7 +10090,7 @@ try:
         # within ten minutes, surface it as uncertain for operator review.
         cur.execute("""
             UPDATE rhythmjoy_sms_deliveries
-            SET status='uncertain',
+            SET status='uncertain', recipient_phone='',
                 error_text=IF(error_text IS NULL OR error_text='',
                               'sender stopped after durable provider-call checkpoint',
                               error_text),
@@ -10018,6 +10098,10 @@ try:
                 updated_at=NOW()
             WHERE status='sending'
               AND updated_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+        """)
+        cur.execute("""
+            UPDATE rhythmjoy_sms_deliveries SET recipient_phone=''
+            WHERE recipient_phone<>'' AND status IN ('sent','skipped','uncertain')
         """)
         # Double-check the transactional outbox invariant. New reservation tasks
         # declare the obligation on the task row; if an outbox row is ever lost,
@@ -10112,6 +10196,17 @@ try:
                 if len(rows) >= 10:
                     break
                 continue
+            source_payload = parse_result(candidate.get('payloadJson'))
+            if candidate.get('taskType') == 'upload' and (
+                source_payload.get('source') == 'admin-panel' or source_payload.get('source_mode') == 'admin-panel'
+            ):
+                # No email generation or browser phone lookup exists for admin
+                # bookings. The final guard locks the admin row and verifies
+                # both exact platform links plus the outbox-owned recipient.
+                rows.append(candidate)
+                if len(rows) >= 10:
+                    break
+                continue
             result = parse_result(candidate.get('resultText'))
             same_generation = bool(
                 candidate.get('ledgerStatus') == 'confirmed'
@@ -10143,7 +10238,7 @@ try:
             cur.execute(
                 """
                 UPDATE rhythmjoy_sms_deliveries
-                SET status='skipped', error_text='reservation no longer confirmed for this exact platform generation',
+                SET status='skipped', recipient_phone='', error_text='reservation no longer confirmed for this exact platform generation',
                     next_retry_at=NULL, updated_at=NOW()
                 WHERE id=%s AND status IN ('pending','phone_lookup_failed','failed')
                 """,
@@ -10165,7 +10260,7 @@ async function runSmsPhoneLookupFollowUps(args, context, sessionStatuses = []) {
     };
   }
   const candidates = await fetchRemoteSmsPhoneLookupFollowUps(args);
-  const task = candidates.find((row) => !platformSessionBlocked(
+  const task = candidates.find((row) => isAdminPanelTask(row) || !platformSessionBlocked(
     sessionStatuses,
     row.taskType === 'upload' ? 'naver' : 'spacecloud',
   ));
@@ -12911,6 +13006,15 @@ async function runNowModeSelfTest() {
       const byteLength = legacySmsByteLength(message);
       maximumConfirmationBytes = Math.max(maximumConfirmationBytes, byteLength);
       assert.ok(byteLength <= 90);
+      if (startHour < endHour) {
+        const adminMessage = confirmationSmsMessage({
+          date: '2026-12-31', roomKey: 'b',
+          startTime: `${String(startHour).padStart(2, '0')}:00`,
+          endTime: `${String(endHour).padStart(2, '0')}:00`,
+        }, 'admin-panel');
+        assert.ok(legacySmsByteLength(adminMessage) <= 90);
+        assert.match(adminMessage, /\.com\/info$/);
+      }
     }
   }
   assert.equal(maximumConfirmationBytes, 90);

@@ -2460,6 +2460,7 @@ def ensure_db_tables(config, logger):
                     template_name VARCHAR(64) NOT NULL DEFAULT '',
                     recipient_phone_hash CHAR(64) NOT NULL DEFAULT '',
                     recipient_phone_last4 VARCHAR(4) NOT NULL DEFAULT '',
+                    recipient_phone VARCHAR(20) NOT NULL DEFAULT '',
                     status VARCHAR(32) NOT NULL DEFAULT 'pending',
                     provider_code VARCHAR(64) NOT NULL DEFAULT '',
                     provider_remaining INT NULL,
@@ -2533,6 +2534,7 @@ def ensure_db_tables(config, logger):
                 "VARCHAR(64) NOT NULL DEFAULT ''",
             )
             ensure_db_column(cursor, 'rhythmjoy_sms_deliveries', 'attempt_count', 'INT UNSIGNED NOT NULL DEFAULT 0 AFTER error_text')
+            ensure_db_column(cursor, 'rhythmjoy_sms_deliveries', 'recipient_phone', "VARCHAR(20) NOT NULL DEFAULT '' AFTER recipient_phone_last4")
             ensure_db_column(cursor, 'rhythmjoy_sms_deliveries', 'first_failed_at', 'DATETIME NULL AFTER attempt_count')
             ensure_db_column(cursor, 'rhythmjoy_sms_deliveries', 'last_attempt_at', 'DATETIME NULL AFTER first_failed_at')
             ensure_db_column(cursor, 'rhythmjoy_sms_deliveries', 'next_retry_at', 'DATETIME NULL AFTER last_attempt_at')
