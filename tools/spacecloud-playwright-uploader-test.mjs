@@ -874,10 +874,19 @@ test('post-submit identity requires both reservation number and task id', () => 
     reservationNo: '1319633241',
   };
 
-  assert.equal(popupDeleteVerification(popup, row).ok, true);
-  const wrongTask = popupDeleteVerification(popup, { ...row, taskId: 558 });
-  assert.equal(wrongTask.ok, false);
-  assert.ok(wrongTask.errors.includes('task-id-mismatch:558'));
+  for (const reservationNo of ['1319633241', 'ADMIN-10', 'ADMIN-701']) {
+    const detail = popup.replace('1319633241', reservationNo);
+    const expected = { ...row, reservationNo };
+    assert.equal(popupDeleteVerification(detail, expected).ok, true);
+    const wrongTask = popupDeleteVerification(detail, { ...expected, taskId: 558 });
+    assert.equal(wrongTask.ok, false);
+    assert.ok(wrongTask.errors.includes('task-id-mismatch:558'));
+    for (const suffix of ['0', 'X', '-old', '_old']) {
+      assert.equal(popupDeleteVerification(detail.replace(reservationNo, reservationNo + suffix), expected).ok, false);
+    }
+    assert.equal(popupDeleteVerification(detail.replace('taskId=557', ''), expected).ok, false);
+    assert.equal(popupDeleteVerification(detail, { ...expected, endTime: '23:00' }).ok, false);
+  }
 });
 
 test('explicitly linked legacy mirrors use reservation, slot, room, and name when taskId is absent', () => {

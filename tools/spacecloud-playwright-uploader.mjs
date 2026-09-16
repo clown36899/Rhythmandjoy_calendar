@@ -1732,7 +1732,7 @@ export function popupDeleteVerification(popupText, row) {
     || (maskedNameKey && normalized.includes(maskedNameKey))
   );
   const observedReservationNos = [...new Set(
-    [...normalized.matchAll(/(?:naverreservationno=|예약번호[:：]?)(\d{6,})(?!\d)/gi)]
+    [...normalized.matchAll(/(?:naverreservationno=|예약번호[:：]?)(ADMIN-[1-9]\d*|\d{6,})(?![A-Za-z0-9_-])/gi)]
       .map((match) => String(match[1] || '').trim())
       .filter(Boolean),
   )];
