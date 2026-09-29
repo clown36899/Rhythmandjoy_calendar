@@ -2089,18 +2089,23 @@
       el.priceReference.innerHTML = "";
       return;
     }
+    const currentPolicies = {};
+    for (const policy of state.revenueComparison?.pricePolicy?.history || []) {
+      if (policy.effectiveDate <= today()) currentPolicies[policy.room] = policy;
+    }
     const visibleRooms = state.roomFilter === "all" ? rooms : [state.roomFilter];
     const rows = visibleRooms
       .map((room) => {
         const config = pricing[room.toLowerCase()];
         if (!config) return "";
+        const policy = currentPolicies[room.toLowerCase()];
         return `
           <tr>
             <th>${escapeHtml(room)}홀</th>
-            <td>${pricePairHtml(config.dawnHourly)}</td>
-            <td>${pricePairHtml(config.before16)}</td>
-            <td>${pricePairHtml(config.after16)}</td>
-            <td>${pricePairHtml(config.overnight)}</td>
+            <td>${pricePairHtml(policy?.dawnHourly ?? config.dawnHourly)}</td>
+            <td>${pricePairHtml(policy?.weekdayDay ?? config.before16)}</td>
+            <td>${pricePairHtml(policy?.afterHourly ?? config.after16)}</td>
+            <td>${pricePairHtml(policy?.overnight ?? config.overnight)}</td>
           </tr>
         `;
       })
@@ -2112,7 +2117,7 @@
         <span><i class="band-swatch band-before"></i>06-16 평일 낮</span>
         <span><i class="band-swatch band-after"></i>16-24 / 주말·공휴일</span>
       </div>
-      <div class="price-reference-note">가격은 사이트 안내표 기준 참고값입니다. 예약 카드의 금액은 DB에 수집된 실제 결제금액이 있을 때만 표시합니다.</div>
+      <div class="price-reference-note">가격은 신규 접수 예약의 현재 기준가입니다. 기존 접수 예약은 이용일과 관계없이 기존 결제금액을 유지하며, 예약 카드와 매출은 DB에 수집된 실제 결제금액으로 집계합니다. 금액 미수집 예약은 이 표로 자동 재계산하지 않습니다.</div>
       <div class="price-table-wrap">
         <table class="price-table">
           <thead>
