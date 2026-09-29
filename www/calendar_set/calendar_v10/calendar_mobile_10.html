@@ -156,7 +156,7 @@
         </div>
         <button type="button" class="info-page-close" data-info-close aria-label="예약 정보 닫기">×</button>
       </div>
-      <iframe id="infoPageFrame" class="info-page-frame" title="리듬앤조이 예약 정보" src="./home_infopage/homepage-section_mobile.html?v=booking-guide-tone-20260612"></iframe>
+      <iframe id="infoPageFrame" class="info-page-frame" title="리듬앤조이 예약 정보" src="./home_infopage/homepage-section_mobile.html?v=a-day-10000-20260930"></iframe>
     </section>
   </div>
 
@@ -269,7 +269,7 @@
             <span class="top-booking-label">네이버</span>
           </a>
           <button type="button" class="top-booking-link top-booking-link-price"
-            onclick="openPopup('home_infopage/popup_night.html?v=mobile-price-sheet-20260719')" draggable="false"
+            onclick="openPopup('home_infopage/popup_night.html?v=a-day-10000-20260930')" draggable="false"
             aria-label="가격표 보기" title="가격표">
             <span class="top-booking-icon top-booking-icon-price" aria-hidden="true">₩</span>
           </button>
@@ -409,7 +409,7 @@
 
   <script>
     window.addEventListener('DOMContentLoaded', () => {
-      fetch('home_infopage/homepage-section.html?v=detail-menu-combined-v2-20260612')
+      fetch('home_infopage/homepage-section.html?v=a-day-10000-20260930')
         .then(response => response.text())
         .then(html => {
           document.querySelector('.offcanvas-body-1000').innerHTML = html;
