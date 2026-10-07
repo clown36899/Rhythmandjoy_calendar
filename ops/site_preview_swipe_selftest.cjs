@@ -7,6 +7,7 @@ const source = fs.readFileSync(path.join(root, 'site.js'), 'utf8');
 const routes = ['', 'spaces', 'pricing', 'location', 'guide', 'schedule'];
 let checks = 0;
 const ready = () => new Promise(resolve => setImmediate(resolve));
+const structuredText = html => html.match(/<script id="site-structured-data" type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1] || '[]';
 
 function element() {
   const classes = new Set(), attrs = new Map();
@@ -30,6 +31,7 @@ function page(route, options = {}) {
   const listeners = new Map(), windows = new Map(), timers = new Map(), navigated = [];
   const surface = element(), viewport = element(), body = {};
   const fetched = [], decoded = [];
+  const structured = options.public ? { textContent: structuredText(html) } : null;
   const location = { href: base + (route ? route + "/" : ""), assign: url => navigated.push(url) };
   const history = { state: {}, replaceState(state) { this.state = state; }, pushState(state, _, url) { this.state = state; location.href = url; navigated.push(url); } };
   let neighbor, timerId = 0, fetchFails = options.fetchFails;
@@ -37,7 +39,7 @@ function page(route, options = {}) {
   const target = { closest: () => null, parentElement: body, scrollWidth: 100, clientWidth: 100 };
   const document = {
     body, title: route, importNode: node => node, querySelectorAll: () => links,
-    querySelector: s => s === '.page-surface' ? surface : s === '.page-viewport' ? viewport : null,
+    querySelector: s => s === '.page-surface' ? surface : s === '.page-viewport' ? viewport : s === '#site-structured-data' ? structured : null,
     addEventListener: (name, cb) => listeners.set(name, [...(listeners.get(name) || []), cb]),
   };
   vm.runInNewContext(source, {
@@ -55,7 +57,7 @@ function page(route, options = {}) {
       const node = element();
       const imgs = [...html.matchAll(/<img[^>]*src="([^"]+)"/g)].map(([, src]) => ({ loading: 'lazy', decode: async () => { decoded.push(src); } }));
       node.querySelectorAll = s => s === 'img' ? imgs : [];
-      return { title: route, querySelector: s => s === '.page-surface' ? node : s.startsWith('.header') && active ? {href:new URL(active[1].match(/href="([^"]+)"/)[1],base).href} : null };
+      return { title: route, querySelector: s => s === '.page-surface' ? node : s === '#site-structured-data' ? {textContent:structuredText(html)} : s.startsWith('.header') && active ? {href:new URL(active[1].match(/href="([^"]+)"/)[1],base).href} : null };
     } },
     setTimeout: (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
     clearTimeout: id => timers.delete(id),
@@ -75,7 +77,7 @@ function page(route, options = {}) {
     for (const [id, timer] of [...timers]) if (timer.ms < 1000) { timers.delete(id); timer.fn(); }
     await ready();
   }
-  return { links, fetched, decoded, location, history, navigated, surface, viewport, windows, target, point, fire, settle,
+  return { links, fetched, decoded, location, history, navigated, surface, viewport, windows, target, point, fire, settle, structured,
     neighbor: () => neighbor, allowFetch: () => { fetchFails = false; } };
 }
 async function swipe(route, from, to, options = {}) {
@@ -219,8 +221,27 @@ async function swipe(route, from, to, options = {}) {
     assert.doesNotMatch(html,/noindex|class="brand"|홈페이지 미리보기/);
     assert.ok(html.includes('rel="canonical"'));
     assert.ok(html.includes('naver-site-verification'));
+    const data = JSON.parse(structuredText(html));
+    const canonical = html.match(/rel="canonical" href="([^"]+)"/)[1];
+    if (!route) {
+      assert.equal(data.find(item => item['@type'] === 'WebSite').url, canonical);
+      assert.equal(data.find(item => item['@type'] === 'LocalBusiness').url, canonical);
+    } else {
+      const trail = data.find(item => item['@type'] === 'BreadcrumbList').itemListElement;
+      assert.equal(trail.at(-1).item, canonical);
+      assert.deepEqual(trail.map(item=>item.position), trail.map((_,i)=>i+1));
+      assert.equal(trail.length,route.startsWith('spaces/') ? 3 : 2);
+    }
+    const targetRoute = p.navigated.length ? new URL(p.location.href).pathname : '/' + route;
+    const targetHTML = fs.readFileSync(path.resolve(root,'../site',targetRoute.replace(/^\//,''),'index.html'),'utf8');
+    assert.equal(p.structured.textContent,structuredText(targetHTML), 'Navigation metadata must match the visible destination, not the first page');
     checks++;
   }
+  const sitemap = fs.readFileSync(path.resolve(root,'../site/sitemap.xml'),'utf8');
+  assert.equal((sitemap.match(/<loc>/g)||[]).length,11);
+  assert.equal((sitemap.match(/<lastmod>2026-10-08<\/lastmod>/g)||[]).length,11);
+  assert.doesNotMatch(sitemap,/site-preview|calendar_10|\/structure\//);
+  checks++;
   const visitorSource = fs.readFileSync(path.resolve(root,'../visitor-stats.js'),'utf8');
   for (const pathname of ['/','/spaces/a/','/schedule/','/calendar_set/calendar_v10/calendar_10.html','/calendar_set/calendar_v10/calendar_mobile_10.html']) {
     const requests=[];

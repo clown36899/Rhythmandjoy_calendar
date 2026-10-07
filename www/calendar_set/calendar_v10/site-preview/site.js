@@ -9,7 +9,8 @@ if (menuIndex >= 0 && surface && viewport) {
   const previews = new Map();
   const activePage = { surface, title: document.title, index: menuIndex,
     description: document.querySelector('meta[name="description"]')?.content || '',
-    canonical: document.querySelector('link[rel="canonical"]')?.href };
+    canonical: document.querySelector('link[rel="canonical"]')?.href,
+    structured: document.querySelector('#site-structured-data')?.textContent || '[]' };
   let navigationId = 0;
   let currentURL = location.href;
   let currentScroll = scrollY;
@@ -51,6 +52,7 @@ if (menuIndex >= 0 && surface && viewport) {
           const entry = { surface: page, title: doc.title,
             description: doc.querySelector('meta[name="description"]')?.content || '',
             canonical: doc.querySelector('link[rel="canonical"]')?.href,
+            structured: doc.querySelector('#site-structured-data')?.textContent || '[]',
             index: menuLinks.findIndex(link => new URL(link.href).pathname ===
               new URL(doc.querySelector('.header [aria-current="page"]')?.href || key, key).pathname) };
           // Decode the first screen's photos before it is exposed. Later photos stay lazy.
@@ -113,6 +115,8 @@ if (menuIndex >= 0 && surface && viewport) {
     if (description) description.content = entry.description;
     const canonical = document.querySelector('link[rel="canonical"]');
     if (canonical && entry.canonical) canonical.href = entry.canonical;
+    const structured = document.querySelector('#site-structured-data');
+    if (structured) structured.textContent = entry.structured;
     for (const [property, content] of Object.entries({ 'og:title': entry.title,
       'og:description': entry.description, 'og:url': entry.canonical })) {
       const meta = document.querySelector(`meta[property="${property}"]`);
