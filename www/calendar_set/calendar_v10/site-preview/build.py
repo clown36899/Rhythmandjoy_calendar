@@ -57,7 +57,6 @@ def shell(title, desc, body, active='home', crumb=None):
 <title>{html.escape(title)}</title><meta name="description" content="{html.escape(desc)}"><meta name="robots" content="noindex,nofollow">
 <link rel="stylesheet" href="/preview-assets/style.css"><script src="/preview-assets/site.js" defer></script>
 </head><body><a class="skip" href="#main">본문 바로가기</a>
-<div class="preview-strip"><span><i></i> 홈페이지 구조 미리보기</span></div>
 <header class="header"><a class="brand" href="/" aria-label="리듬앤조이 홈" draggable="false"><span class="brand-mark">r<span>j</span><i>•</i></span><span>리듬앤조이<small>RHYTHM & JOY</small></span></a>
 <nav class="nav" aria-label="주 메뉴">{nav}</nav><a href="/schedule/" class="header-book" {"aria-current=page" if active=="schedule" else ""} draggable="false">예약하기 <span>↗</span></a></header>
 <main id="main">{breadcrumb}{body}</main>
@@ -90,17 +89,26 @@ write('spaces','공간 안내 | 사당연습실 리듬앤조이','리듬앤조�
 
 for room,(tagline,description,cover,gallery,feature) in rooms.items():
     rates=prices[room]['rates']
-    rate_labels=['평일 낮','16시 이후 · 주말/공휴일','새벽','새벽 통대관 · 6시간']
+    rate_labels=['평일 낮<small>06:00~16:00</small>',
+                 '평일 저녁 · 주말/공휴일<small>평일 16:00~24:00<br>주말·공휴일 06:00~24:00</small>',
+                 '새벽<small>매일 00:00~06:00</small>',
+                 '새벽 통대관<small>00:00~06:00 · 6시간 전체</small>']
     write(f'spaces/{room.lower()}',f'{room}홀 {prices[room]["area"]} | 사당연습실 리듬앤조이',f'사당 리듬앤조이 {room}홀 {dimensions[room]} 공간의 사진과 이용요금을 확인하세요.',f'''
 <section class="room-detail-hero"><div><span class="eyebrow coral">RHYTHM & JOY / {room} HALL</span><h1>{room}홀<span>{prices[room]['area']}</span></h1><h2>{tagline}</h2><p>{description}</p><div class="specs"><span>{dimensions[room]}</span><span>24시간 운영</span><span>{feature}</span></div></div>{img(room,cover,'detail-cover',True)}</section>
 <section class="section"><div class="section-heading"><div><span class="eyebrow coral">TAKE A CLOSER LOOK</span><h2>{room}홀 둘러보기</h2></div><span class="subtle">리듬앤조이 실제 시설 사진</span></div><div class="gallery">{''.join(img(room,n) for n in gallery)}</div></section>
 <section class="room-rate-section"><div><span class="eyebrow coral">HOURLY RATE</span><h2>{room}홀 이용요금</h2><p>시간당 요금 · 통대관은 6시간 기준</p></div><dl class="rate-list">{''.join(f'<div><dt>{label}</dt><dd>{price}<small>원</small></dd></div>' for label,price in zip(rate_labels,rates))}</dl></section>
 ''','spaces',f'<a href="/spaces/">공간 안내</a><span>/</span>{room}홀')
 
-rows=''.join(f'<tr><th scope="row"><a href="/spaces/{r.lower()}/">{r}홀 <span>{prices[r]["area"]}</span></a></th>'+''.join(f'<td>{p}<small>원</small></td>' for p in prices[r]['rates'])+'</tr>' for r in 'ABCDE')
+rows=''.join(f'<tr><th scope="row"><a href="/spaces/{r.lower()}/" draggable="false">{r}홀 <span>{prices[r]["area"]}</span></a></th>'+''.join(f'<td>{p}</td>' for p in prices[r]['rates'])+'</tr>' for r in 'ABCDE')
 write('pricing','이용요금 | 사당연습실 리듬앤조이','A–E홀 평일 낮, 저녁·주말, 새벽 요금과 새벽 통대관 요금을 확인하세요.',f'''
-<section class="page-heading"><span class="eyebrow coral">SIMPLE & CLEAR</span><h1>내 연습에 맞는<br>시간과 요금.</h1><p>룸과 시간대에 따라 비교하세요. 시간당 요금이며, 새벽 통대관은 6시간 기준입니다.</p></section>
-<section class="section price-section"><div class="section-heading"><h2>룸별 이용요금</h2><span class="subtle">단위: 원</span></div><p class="table-hint">좌우로 넘겨 새벽 통대관 요금까지 확인하세요. ↔</p><div class="table-scroll" tabindex="0" role="region" aria-label="룸별 이용요금표"><table class="price-table"><thead><tr><th>공간</th><th>평일 낮</th><th>16시 이후<br><small>주말 · 공휴일</small></th><th>새벽</th><th>새벽 통대관<br><small>6시간</small></th></tr></thead><tbody>{rows}</tbody></table></div><div class="price-footnotes"><p>네이버와 스페이스클라우드는 동일한 기준 가격으로 운영됩니다.</p><p>기준 인원 초과에 따른 인원 추가 비용은 없습니다.</p><p>시간대의 정확한 구분과 최종 결제 금액은 예약 화면에서 확인해주세요.</p></div></section>
+<section class="page-heading compact"><span class="eyebrow coral">SIMPLE & CLEAR</span><h1>이용요금</h1><p>룸별 요금을 한눈에 비교하세요.<br>시간당 요금이며, 새벽 통대관은 00:00~06:00 전체 요금입니다.</p></section>
+<section class="section price-section"><div class="section-heading"><h2>룸별 이용요금</h2><span class="subtle">단위: 원</span></div>
+<table class="price-table" aria-label="룸별 이용요금표">
+<colgroup><col class="room-column"><col span="4"></colgroup>
+<thead><tr><th scope="col">공간</th><th scope="col">평일 낮<small>06~16시</small></th><th scope="col">평일 저녁<br>주말·공휴일</th><th scope="col">새벽<small>00~06시</small></th><th scope="col">새벽<br>통대관<small>00~06시</small></th></tr></thead>
+<tbody>{rows}</tbody></table>
+<div class="price-periods"><p><strong>평일 낮</strong> 06:00~16:00</p><p><strong>평일 저녁</strong> 16:00~24:00 · <strong>주말·공휴일</strong> 06:00~24:00</p><p><strong>새벽</strong> 매일 00:00~06:00 · <strong>통대관</strong> 같은 시간대 6시간 전체</p></div>
+<div class="price-footnotes"><p>네이버와 스페이스클라우드는 동일한 기준 가격으로 운영됩니다.</p><p>기준 인원 초과에 따른 인원 추가 비용은 없습니다.</p></div></section>
 ''','pricing','이용요금')
 
 write('location','오시는 길 | 사당역 7번 출구 리듬앤조이','서울 동작구 남부순환로 2077 지하 2층. 사당역 7번 출구에서 리듬앤조이까지 찾아오는 길과 주차 안내.',f'''
