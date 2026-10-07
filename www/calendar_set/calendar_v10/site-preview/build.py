@@ -60,7 +60,7 @@ def shell(title, desc, body, active='home', crumb=None):
 <title>{html.escape(title)}</title><meta name="description" content="{html.escape(desc)}"><meta name="robots" content="noindex,nofollow">
 <link rel="stylesheet" href="/preview-assets/style.css"><script src="/preview-assets/site.js" defer></script>
 </head><body><a class="skip" href="#main">본문 바로가기</a>
-<div class="preview-strip"><span><i></i> 홈페이지 구조 미리보기</span><a href="/structure/">전체 페이지 구조 <b>↗</b></a></div>
+<div class="preview-strip"><span><i></i> 홈페이지 구조 미리보기</span></div>
 <header class="header"><a class="brand" href="/" aria-label="리듬앤조이 홈" draggable="false"><span class="brand-mark">r<span>j</span><i>•</i></span><span>리듬앤조이<small>RHYTHM & JOY</small></span></a>
 <nav class="nav" aria-label="주 메뉴">{nav}</nav><a href="/schedule/" class="header-book" draggable="false">예약현황 <span>↗</span></a></header>
 <main id="main">{breadcrumb}{body}</main>
