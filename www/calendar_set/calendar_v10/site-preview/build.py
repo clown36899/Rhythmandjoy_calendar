@@ -126,8 +126,14 @@ write('schedule','예약하기 | 리듬앤조이','리듬앤조이 A–E홀의 �
 <section class="booking-panel" aria-label="예약 바로가기"><div><span class="eyebrow coral">BOOK YOUR SPACE</span><h2>연습할 시간을 골랐나요?</h2><p>아래 일정표를 확인한 뒤 예약을 진행해주세요.</p></div>{booking_links()}</section>
 <div class="sample-notice"><span class="tiny-dot"></span><strong>실제 예약현황</strong><span>운영 중인 예약 일정이 그대로 반영됩니다.</span></div>
 <section class="calendar-shell"><iframe title="리듬앤조이 예약현황" src="{PREVIEW_PATH}calendar-v11/index.html" class="calendar-frame"></iframe></section>
-<section class="section"><div class="section-heading"><h2>예약은 이렇게 진행해요.</h2></div><div class="steps"><article><span>01</span><h3>공간과 일정 확인</h3><p>위 일정표에서 원하는 홀과 시간을 확인하세요.</p></article><article><span>02</span><h3>예약 채널 선택</h3><p>네이버 또는 스페이스클라우드에서 날짜와 시간을 선택해 예약하세요.</p></article><article><span>03</span><h3>예약정보 확인</h3><p>예약한 플랫폼에서 입실 정보와 취소 내역을 확인하세요. 네이버 예약은 MY 메뉴에서 확인할 수 있습니다.</p><a href="https://m.place.naver.com/my" target="_blank" rel="noopener">MY 예약 확인 ↗</a></article></div></section>
-<section class="night-banner"><div><span class="eyebrow">AFTER HOURS</span><h2>새벽을 온전히 쓰고 싶다면.</h2><p>새벽 통대관은 일정표와 요금을 확인한 뒤 문자로 문의해주세요.<br>가능 여부 확인 → 승인 → 입금 → 이용정보 수신 순서로 진행됩니다.</p></div>{button('010-4801-7180 문자 문의','sms:01048017180')}</section>''','schedule','예약하기')
+<section class="section"><div class="section-heading"><h2>예약은 이렇게 진행해요.</h2></div><div class="steps">
+<article><span>01</span><h3>공간과 일정 확인</h3><p>위 일정표에서 원하는 홀과 시간을 확인하세요.</p></article>
+<article><span>02</span><h3>예약 채널 선택</h3><p>네이버 또는 스페이스클라우드에서 날짜와 시간을 선택해 예약하세요.</p></article>
+<article><span>03</span><h3>예약문자 도착 확인</h3><p>예약 안내 문자가 도착했는지 확인해주세요. 문자에 안내된 홀과 날짜·시간, 이용정보를 확인하면 끝입니다.</p></article></div></section>
+<section class="night-banner"><div><span class="eyebrow">AFTER HOURS</span><h2>새벽 통대관 예약</h2>
+<p>매일 00:00~06:00, 6시간 전체 대관입니다.<br>문자 문의 또는 스페이스클라우드에서 예약할 수 있습니다.</p>
+<p>문자 예약: 가능 여부 확인 → 승인 → 입금 → 예약문자 확인</p></div>
+<div class="actions">{button('010-4801-7180 문자 문의','sms:01048017180')}{button('스페이스클라우드 예약',SPACECLOUD_BOOKING)}</div></section>''','schedule','예약하기')
 
 write('structure','사이트 구조 미리보기 | 리듬앤조이','독립 주소로 연결된 연습실 소개, 공간, 요금, 위치, 예약현황 구조를 확인하세요.',f'''
 <section class="page-heading"><span class="eyebrow coral">SITE PREVIEW / 01</span><h1>내용마다 주소 하나.<br>예약은 익숙한 그대로.</h1><p>각 항목을 누르면 실제 샘플 페이지로 이동합니다.<br>검색으로 처음 들어온 사람도 공간을 이해하고, 예약현황 확인과 예약으로 이어지도록 구성했습니다.</p></section>
