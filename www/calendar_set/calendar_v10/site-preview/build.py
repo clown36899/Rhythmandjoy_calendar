@@ -8,6 +8,8 @@ HERE = Path(__file__).resolve().parent
 V10 = HERE.parent
 PREVIEW_PATH = '/calendar_set/calendar_v10/site-preview/'
 ASSETS = '/calendar_set/calendar_v10/home_infopage/images'
+NAVER_BOOKING = 'https://booking.naver.com/booking/10/bizes/1257912'
+SPACECLOUD_BOOKING = 'https://www.spacecloud.kr/space/66056'
 guide = (V10 / 'home_infopage/homepage-section_mobile.html').read_text()
 price_section = guide.split('id="pricelist"', 1)[1].split('<!-- 환불규정 -->', 1)[0]
 prices = {}
@@ -36,13 +38,18 @@ def img(room, number=None, cls='', eager=False):
 def button(label, url, primary=False):
     return f'<a class="button {"primary" if primary else "secondary"}" href="{url}" draggable="false">{label}<span aria-hidden="true">↗</span></a>'
 
+def booking_links():
+    return f'''<div class="booking-links" aria-label="예약 채널">
+    <a class="booking-link naver-book" href="{NAVER_BOOKING}" target="_blank" rel="noopener" draggable="false"><span class="booking-symbol" aria-hidden="true">N</span><span>네이버 예약</span><span aria-hidden="true">↗</span></a>
+    <a class="booking-link spacecloud-book" href="{SPACECLOUD_BOOKING}" target="_blank" rel="noopener" draggable="false"><img src="/calendar_set/calendar_v10/img/spacecloud-icon.png" alt="" draggable="false"><span>스페이스클라우드 예약</span><span aria-hidden="true">↗</span></a></div>'''
+
 def card(room):
     return f'''<a class="room-card" href="/spaces/{room.lower()}/" draggable="false">
       <div class="room-photo">{img(room)}<span class="room-letter">{room}</span><span class="photo-link" aria-hidden="true">↗</span></div>
       <div class="room-meta"><h3>{room}홀 <small>{prices[room]['area']} · {dimensions[room]}</small></h3><p>평일 낮 <strong>{prices[room]['rates'][0]}원</strong><span> / 시간</span></p></div></a>'''
 
 def cta():
-    return f'''<section class="cta"><div><span class="eyebrow">YOUR NEXT PRACTICE</span><h2>다음 연습, 여기서 시작해요.</h2><p>공간을 골랐다면 예약 가능한 시간을 확인하세요.</p></div>{button('예약현황 보기', '/schedule/', True)}</section>'''
+    return f'''<section class="cta"><div><span class="eyebrow">YOUR NEXT PRACTICE</span><h2>다음 연습, 여기서 시작해요.</h2><p>공간과 시간을 골랐다면 원하는 채널에서 예약하세요.</p><a class="cta-schedule" href="/schedule/">예약현황 확인 ↗</a></div>{booking_links()}</section>'''
 
 def shell(title, desc, body, active='home', crumb=None):
     links=[('home','소개','/'),('spaces','공간 안내','/spaces/'),('pricing','이용요금','/pricing/'),('location','오시는 길','/location/'),('guide','이용 안내','/guide/')]
@@ -68,14 +75,12 @@ def write(path, title, desc, body, active='home', crumb=None):
     # One route owner for local and deployed previews; existing facility assets stay shared.
     source = re.sub(r'href="(/(?:spaces|pricing|location|guide|schedule|structure)/[^" ]*|/)"',
                     lambda m: 'href="' + PREVIEW_PATH + m[1].lstrip('/') + '"', source)
-    source = source.replace('/calendar_set/calendar_v10/calendar_10.html?sample=1',
-                            PREVIEW_PATH + 'calendar.html')
     source = source.replace('로컬 검토용 샘플입니다. 검색 노출은 비활성화되어 있으며 운영 사이트에는 반영되지 않았습니다.',
                             '별도 주소로 공개한 검토용 샘플입니다. 검색 노출은 비활성화되어 있습니다.')
     (folder/'index.html').write_text(source)
 
 write('', '사당연습실 리듬앤조이 | 공간·요금·예약 안내', '사당역 7번 출구 도보 1분. 사당 연습실 리듬앤조이의 A–E홀 사진, 이용요금, 위치와 예약현황을 확인하세요.', f'''
-<section class="hero"><div class="hero-copy"><span class="eyebrow coral">SADANG · RHYTHM & JOY</span><p class="hero-location"><span class="tiny-dot"></span>사당역 7번 출구, 걸어서 1분</p><h1><span>사당연습실</span><br>리듬앤조이<span class="title-dot">.</span></h1><p class="hero-lead">오늘의 연습이<br>내일의 무대가 되는 곳.</p><p class="hero-desc">혼자 몰입하는 순간부터 함께 맞추는 안무까지.<br>4평부터 20평까지, 나에게 맞는 공간에서 연습하세요.</p><div class="actions">{button('공간 둘러보기','/spaces/',True)}{button('예약현황 보기','/schedule/')}</div><div class="hero-stats"><span><strong>5</strong>개의 연습룸</span><span><strong>24</strong>시간 운영</span><span><strong>1</strong>분 역세권</span></div></div>
+<section class="hero"><div class="hero-copy"><span class="eyebrow coral">SADANG · RHYTHM & JOY</span><p class="hero-location"><span class="tiny-dot"></span>사당역 7번 출구, 걸어서 1분</p><h1><span>사당연습실</span><br>리듬앤조이<span class="title-dot">.</span></h1><p class="hero-lead">오늘의 연습이<br>내일의 무대가 되는 곳.</p><p class="hero-desc">혼자 몰입하는 순간부터 함께 맞추는 안무까지.<br>4평부터 20평까지, 나에게 맞는 공간에서 연습하세요.</p><div class="actions">{button('공간 둘러보기','/spaces/',True)}{button('예약현황 보기','/schedule/')}</div>{booking_links()}<div class="hero-stats"><span><strong>5</strong>개의 연습룸</span><span><strong>24</strong>시간 운영</span><span><strong>1</strong>분 역세권</span></div></div>
 <div class="hero-visual">{img('A','2',eager=True)}<div class="image-caption"><span><b>A HALL</b>20평 · 10 × 6m</span><a href="/spaces/a/" aria-label="A홀 상세 보기">↗</a></div><div class="photo-tag">공간은 비워두고,<br>가능성은 채워두고.</div></div></section>
 <section class="intro-line"><span class="eyebrow">SPACE FOR YOUR RHYTHM</span><p><strong>연습에 필요한 것만, 가까운 곳에.</strong><br>리듬앤조이는 서울 동작구 사당역 인근의 사당 연습실입니다.<br>전 룸 쿠션바닥과 거울을 갖춘 A–E홀에서 나만의 리듬을 찾아보세요.</p></section>
 <section class="section"><div class="section-heading"><div><span class="eyebrow coral">OUR SPACES</span><h2>어떤 공간을 찾고 있나요?</h2></div><a class="text-link" href="/spaces/">5개 공간 모두 보기 <span>↗</span></a></div><div class="room-grid">{''.join(card(x) for x in ['A','B','E'])}</div><div class="small-space-note"><span>작은 공간에서 집중하고 싶다면?</span><a href="/spaces/c/">C홀 · 5평 ↗</a><a href="/spaces/d/">D홀 · 4평 ↗</a></div></section>
@@ -109,24 +114,19 @@ write('location','오시는 길 | 사당역 7번 출구 리듬앤조이','서울
 
 write('guide','예약·이용 안내 | 리듬앤조이 연습실','리듬앤조이 예약 방법, 입실 확인, 이용 수칙과 취소·환불 안내.',f'''
 <section class="page-heading"><span class="eyebrow coral">BEFORE YOUR PRACTICE</span><h1>처음 방문해도,<br>편안하게.</h1><p>예약부터 이용까지, 필요한 내용을 한곳에 모았습니다.</p></section>
-<section class="section"><div class="section-heading"><h2>예약은 이렇게 진행해요.</h2></div><div class="steps"><article><span>01</span><h3>공간과 일정 확인</h3><p>룸 사진과 크기를 보고 예약현황에서 원하는 시간을 확인하세요.</p><a href="/schedule/">예약현황 확인 ↗</a></article><article><span>02</span><h3>네이버에서 예약</h3><p>날짜와 시간을 선택하면 승인 없이 바로 확정됩니다. 네이버 로그인이 필요합니다.</p><a href="https://booking.naver.com/booking/10/bizes/1257912" target="_blank" rel="noopener">실제 네이버 예약 열기 ↗</a></article><article><span>03</span><h3>MY 예약정보 확인</h3><p>네이버 MY 메뉴에서 입실 정보와 비밀번호, 취소 내역을 확인하세요.</p><a href="https://m.place.naver.com/my" target="_blank" rel="noopener">MY 예약 확인 ↗</a></article></div></section>
+<section class="section"><div class="section-heading"><h2>예약은 이렇게 진행해요.</h2></div><div class="steps"><article><span>01</span><h3>공간과 일정 확인</h3><p>룸 사진과 크기를 보고 예약현황에서 원하는 시간을 확인하세요.</p><a href="/schedule/">예약현황 확인 ↗</a></article><article><span>02</span><h3>예약 채널 선택</h3><p>네이버 또는 스페이스클라우드에서 날짜와 시간을 선택해 예약하세요.</p>{booking_links()}</article><article><span>03</span><h3>예약정보 확인</h3><p>예약한 플랫폼에서 입실 정보와 취소 내역을 확인하세요. 네이버 예약은 MY 메뉴에서 확인할 수 있습니다.</p><a href="https://m.place.naver.com/my" target="_blank" rel="noopener">MY 예약 확인 ↗</a></article></div></section>
 <section class="guide-columns"><article><span class="eyebrow coral">HOUSE RULES</span><h2>함께 지키는 이용 수칙</h2><ul><li>외부 신발은 사용할 수 없습니다.</li><li>연습을 위한 이용은 10분이라도 대관이 필요합니다.</li><li>징·장구·타악기는 사용할 수 없으며, 탭댄스는 탭판 위에서만 가능합니다.</li><li>국물 음식과 냄새가 심한 음식은 반입하지 마세요.</li><li>물품 파손 시 관리자에게 알려주세요.</li></ul></article><article><span class="eyebrow coral">CANCELLATION</span><h2>변경·환불 안내</h2><p>예약 변경은 취소 후 재예약으로 진행됩니다.</p><dl class="refund"><div><dt>예약 후 2시간 안 변심 취소</dt><dd>무료</dd></div><div><dt>방문 3일 전</dt><dd>70%</dd></div><div><dt>방문 2일 전</dt><dd>50%</dd></div><div><dt>방문 1일 전 · 당일</dt><dd>0%</dd></div></dl><p class="subtle">실제 예약에 표시된 환불 규정을 확인해주세요.</p></article></section>{cta()}''','guide','이용 안내')
 
-write('schedule','예약현황 샘플 | 리듬앤조이','기존 리듬앤조이 예약 달력과 소개 페이지를 연결한 샘플입니다.',f'''
-<section class="page-heading compact"><span class="eyebrow coral">PLAN YOUR PRACTICE</span><h1>예약현황</h1><p>원하는 공간과 시간을 확인하세요.</p></section><div class="sample-notice"><span class="tiny-dot"></span><strong>실제 예약현황</strong><span>운영 중인 예약 일정이 그대로 반영됩니다.</span></div>
-<section class="calendar-shell"><iframe title="리듬앤조이 실제 예약 달력" src="/calendar_set/calendar_v10/calendar_10.html?sample=1" class="calendar-frame"></iframe></section><section class="schedule-bottom"><p>네이버 또는 스페이스클라우드에서 원하는 일정으로 예약하세요.</p><div class="actions">{button('기존 예약 캘린더 열기','https://xn--xy1b23ggrmm5bfb82ees967e.com/')}{button('공간 다시 둘러보기','/spaces/')}</div></section>''','schedule','예약현황')
+write('schedule','예약현황·예약하기 | 리듬앤조이','리듬앤조이 A–E홀의 예약현황을 확인하고 네이버 또는 스페이스클라우드에서 예약하세요.',f'''
+<section class="page-heading compact"><span class="eyebrow coral">PLAN YOUR PRACTICE</span><h1>예약현황</h1><p>원하는 공간과 시간을 확인하고, 편한 채널에서 예약하세요.</p></section>
+<section class="booking-panel" aria-label="예약 바로가기"><div><span class="eyebrow coral">BOOK YOUR SPACE</span><h2>연습할 시간을 골랐나요?</h2><p>아래 일정표를 확인한 뒤 예약을 진행해주세요.</p></div>{booking_links()}</section>
+<div class="sample-notice"><span class="tiny-dot"></span><strong>실제 예약현황</strong><span>운영 중인 예약 일정이 그대로 반영됩니다.</span></div>
+<section class="calendar-shell"><iframe title="리듬앤조이 예약현황" src="{PREVIEW_PATH}calendar-v11/index.html" class="calendar-frame"></iframe></section>
+<section class="schedule-bottom"><p>예약은 위의 네이버·스페이스클라우드 버튼으로 진행할 수 있습니다.</p><a class="text-link" href="/spaces/">공간 다시 둘러보기 ↗</a></section>''','schedule','예약현황')
 
 write('structure','사이트 구조 미리보기 | 리듬앤조이','독립 주소로 연결된 연습실 소개, 공간, 요금, 위치, 예약현황 구조를 확인하세요.',f'''
-<section class="page-heading"><span class="eyebrow coral">SITE PREVIEW / 01</span><h1>내용마다 주소 하나.<br>예약은 익숙한 그대로.</h1><p>각 항목을 누르면 실제 샘플 페이지로 이동합니다.<br>검색으로 처음 들어온 사람도 공간을 이해하고, 기존 예약 달력으로 이어지도록 구성했습니다.</p></section>
-<section class="site-tree"><a class="tree-root" href="/"><span>HOME /</span><h2>사당연습실 리듬앤조이</h2><p>위치·공간 소개 + 주요 안내의 출발점</p><b>소개 페이지 열기 ↗</b></a><div class="tree-branches"><article><a href="/spaces/"><span>/spaces/</span><h3>공간 안내 ↗</h3></a><div class="tree-rooms">{''.join(f'<a href="/spaces/{r.lower()}/">{r}홀 <small>{prices[r]["area"]}</small> ↗</a>' for r in 'ABCDE')}</div></article><a href="/pricing/"><span>/pricing/</span><h3>이용요금 ↗</h3><p>룸별·시간대별 요금<br>새벽 통대관 안내</p></a><a href="/location/"><span>/location/</span><h3>오시는 길 ↗</h3><p>주소·지하철·주차<br>네이버 지도 연결</p></a><a href="/guide/"><span>/guide/</span><h3>이용 안내 ↗</h3><p>예약 방법·이용 수칙<br>변경·환불 안내</p></a><a href="/schedule/"><span>/schedule/</span><h3>예약현황 ↗</h3><p>기존 달력 재사용<br>실제 예약 데이터 연결</p></a></div></section>
-<section class="structure-notes"><h2>이 샘플에서 달라진 점</h2><div><article><b>검색 후 바로 읽는 소개</b><p>제목뿐 아니라 첫 HTML 본문에 위치, 시설, 이용 목적을 담았습니다.</p></article><article><b>보내고 다시 찾을 수 있는 주소</b><p>A홀 사진이나 이용요금 페이지를 각각 직접 열고 공유할 수 있습니다.</p></article><article><b>기존 예약 흐름 유지</b><p>예약 달력과 예약 채널을 재사용합니다. 새 예약 시스템을 만들지 않습니다.</p></article></div><p class="subtle">로컬 검토용 샘플입니다. 검색 노출은 비활성화되어 있으며 운영 사이트에는 반영되지 않았습니다.</p></section>''','structure','전체 페이지 구조')
-# Adapt only generated preview output. The original calendar runtime remains the owner.
-calendar_source = (V10 / 'calendar_10.html').read_text()
-calendar_source = re.sub(r'<!-- Google tag \(gtag.js\) -->.*?<!-- End Google Tag Manager -->', '', calendar_source, flags=re.S)
-calendar_source = re.sub(r'<!-- Google Tag Manager \(noscript\) -->.*?<!-- End Google Tag Manager \(noscript\) -->', '', calendar_source, flags=re.S)
-calendar_source = re.sub(r'<script src="(?:debug-logger|visitor-stats)\.js[^" ]*"></script>', '', calendar_source)
-calendar_source = re.sub(r'<link rel="(?:canonical|alternate)"[^>]*>', '', calendar_source)
-calendar_source = calendar_source.replace('name="robots" content="index,follow"', 'name="robots" content="noindex,nofollow"')
-calendar_source = calendar_source.replace('</head>', f'<script src="{PREVIEW_PATH}site.js" defer></script></head>')
-(HERE / 'calendar.html').write_text('\n'.join(line.rstrip() for line in calendar_source.splitlines()) + '\n')
-print(f'Built {len(list(HERE.rglob("index.html")))} preview pages; calendar uses the existing live public cache.')
+<section class="page-heading"><span class="eyebrow coral">SITE PREVIEW / 01</span><h1>내용마다 주소 하나.<br>예약은 익숙한 그대로.</h1><p>각 항목을 누르면 실제 샘플 페이지로 이동합니다.<br>검색으로 처음 들어온 사람도 공간을 이해하고, 예약현황 확인과 예약으로 이어지도록 구성했습니다.</p></section>
+<section class="site-tree"><a class="tree-root" href="/"><span>HOME /</span><h2>사당연습실 리듬앤조이</h2><p>위치·공간 소개 + 주요 안내의 출발점</p><b>소개 페이지 열기 ↗</b></a><div class="tree-branches"><article><a href="/spaces/"><span>/spaces/</span><h3>공간 안내 ↗</h3></a><div class="tree-rooms">{''.join(f'<a href="/spaces/{r.lower()}/">{r}홀 <small>{prices[r]["area"]}</small> ↗</a>' for r in 'ABCDE')}</div></article><a href="/pricing/"><span>/pricing/</span><h3>이용요금 ↗</h3><p>룸별·시간대별 요금<br>새벽 통대관 안내</p></a><a href="/location/"><span>/location/</span><h3>오시는 길 ↗</h3><p>주소·지하철·주차<br>네이버 지도 연결</p></a><a href="/guide/"><span>/guide/</span><h3>이용 안내 ↗</h3><p>예약 방법·이용 수칙<br>변경·환불 안내</p></a><a href="/schedule/"><span>/schedule/</span><h3>예약현황 ↗</h3><p>홈페이지 전용 일정표<br>네이버·스페이스클라우드 예약</p></a></div></section>
+<section class="structure-notes"><h2>이 샘플에서 달라진 점</h2><div><article><b>검색 후 바로 읽는 소개</b><p>제목뿐 아니라 첫 HTML 본문에 위치, 시설, 이용 목적을 담았습니다.</p></article><article><b>보내고 다시 찾을 수 있는 주소</b><p>A홀 사진이나 이용요금 페이지를 각각 직접 열고 공유할 수 있습니다.</p></article><article><b>일정 확인에서 예약까지</b><p>일정표는 예약현황을 보여주고, 네이버·스페이스클라우드 버튼이 예약으로 연결합니다.</p></article></div><p class="subtle">로컬 검토용 샘플입니다. 검색 노출은 비활성화되어 있으며 운영 사이트에는 반영되지 않았습니다.</p></section>''','structure','전체 페이지 구조')
+# calendar-v11 is an independent snapshot; rebuilding pages never overwrites it.
+print('Built 12 website pages; independent calendar-v11 is preserved.')
