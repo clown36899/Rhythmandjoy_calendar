@@ -3,10 +3,20 @@
 from pathlib import Path
 import html
 import re
+import json
+import shutil
 
 HERE = Path(__file__).resolve().parent
 V10 = HERE.parent
 PREVIEW_PATH = '/calendar_set/calendar_v10/site-preview/'
+SITE_PATH = '/calendar_set/calendar_v10/site/'
+SITE = V10 / 'site'
+public_routes = []
+legacy_home = (V10 / 'calendar_10.html').read_text()
+ORIGIN = re.search(r'<link rel="canonical" href="([^"]+)"', legacy_home).group(1).rstrip('/')
+verification = re.search(r'<meta name="naver-site-verification"[^>]+>', legacy_home).group(0)
+tracking = legacy_home.split('<!-- Google tag (gtag.js) -->', 1)[1].split('<!-- End Google Tag Manager -->', 1)[0]
+business = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', legacy_home, re.S).group(1))
 ASSETS = '/calendar_set/calendar_v10/home_infopage/images'
 NAVER_BOOKING = 'https://booking.naver.com/booking/10/bizes/1257912'
 SPACECLOUD_BOOKING = 'https://www.spacecloud.kr/space/66056'
@@ -57,7 +67,7 @@ def shell(title, desc, body, active='home', crumb=None):
 <title>{html.escape(title)}</title><meta name="description" content="{html.escape(desc)}"><meta name="robots" content="noindex,nofollow">
 <link rel="stylesheet" href="/preview-assets/style.css"><script src="/preview-assets/site.js" defer></script>
 </head><body><a class="skip" href="#main">본문 바로가기</a>
-<div class="site-header"><header class="header"><a class="brand" href="/" aria-label="리듬앤조이 홈" draggable="false"><span class="brand-mark">r<span>j</span><i>•</i></span><span>리듬앤조이<small>RHYTHM & JOY</small></span></a>
+<div class="site-header"><header class="header">
 <nav class="nav" aria-label="주 메뉴">{nav}</nav><a href="/schedule/" class="header-book" {"aria-current=page" if active=="schedule" else ""} draggable="false">예약하기 <span>↗</span></a></header></div>
 <div class="page-viewport"><div class="page-surface">
 <main id="main" tabindex="-1">{breadcrumb}{body}</main>
@@ -76,6 +86,31 @@ def write(path, title, desc, body, active='home', crumb=None):
     source = source.replace('로컬 검토용 샘플입니다. 검색 노출은 비활성화되어 있으며 운영 사이트에는 반영되지 않았습니다.',
                             '별도 주소로 공개한 검토용 샘플입니다. 검색 노출은 비활성화되어 있습니다.')
     (folder/'index.html').write_text(source)
+
+    if path != 'structure':
+        # The same source produces public pages; the preview remains independently unindexed.
+        public = shell(title, desc, body, active, crumb)
+        public = public.replace('/preview-assets/', SITE_PATH)
+        public = public.replace('noindex,nofollow', 'index,follow')
+        public = public.replace('홈페이지 미리보기 · 실제 예약현황 연결', '사당역 연습실 · 24시간 운영')
+        canonical = ORIGIN + '/' + (path + '/' if path else '')
+        meta = (f'<link rel="canonical" href="{canonical}">\n'
+                f'<meta property="og:type" content="website">\n'
+                f'<meta property="og:site_name" content="리듬앤조이 연습실">\n'
+                f'<meta property="og:title" content="{html.escape(title)}">\n'
+                f'<meta property="og:description" content="{html.escape(desc)}">\n'
+                f'<meta property="og:url" content="{canonical}">\n'
+                f'<meta property="og:image" content="{ORIGIN}{ASSETS}/roomA/image2.webp">\n'
+                f'{verification}\n{tracking}\n'
+                '<script src="/calendar_set/calendar_v10/visitor-stats.js?v=public-site-20261008" defer></script>\n')
+        if not path:
+            business['image'] = ORIGIN + ASSETS + '/roomA/image2.webp'
+            meta += '<script type="application/ld+json">' + json.dumps(business, ensure_ascii=False) + '</script>\n'
+        public = public.replace('</head>', meta + '</head>')
+        target = SITE / path
+        target.mkdir(parents=True, exist_ok=True)
+        (target / 'index.html').write_text(public)
+        public_routes.append(canonical)
 
 write('', '사당연습실 리듬앤조이 | 공간·요금·예약 안내', '사당역 7번 출구 도보 1분. 사당 연습실 리듬앤조이의 A–E홀 사진, 이용요금, 위치와 예약현황을 확인하세요.', f'''
 <section class="hero"><div class="hero-copy"><span class="eyebrow coral">SADANG · RHYTHM & JOY</span><p class="hero-location"><span class="tiny-dot"></span>사당역 7번 출구, 걸어서 1분</p><h1><span>사당연습실</span><br>리듬앤조이<span class="title-dot">.</span></h1><p class="hero-lead">오늘의 연습이<br>내일의 무대가 되는 곳.</p><p class="hero-desc">혼자 몰입하는 순간부터 함께 맞추는 안무까지.<br>4평부터 20평까지, 나에게 맞는 공간에서 연습하세요.</p><div class="actions">{button('공간 둘러보기','/spaces/',True)}</div><div class="hero-stats"><span><strong>5</strong>개의 연습룸</span><span><strong>24</strong>시간 운영</span><span><strong>1</strong>분 역세권</span></div></div>
@@ -143,4 +178,12 @@ write('structure','사이트 구조 미리보기 | 리듬앤조이','독립 주�
 <section class="site-tree"><a class="tree-root" href="/"><span>HOME /</span><h2>사당연습실 리듬앤조이</h2><p>위치·공간 소개 + 주요 안내의 출발점</p><b>소개 페이지 열기 ↗</b></a><div class="tree-branches"><article><a href="/spaces/"><span>/spaces/</span><h3>공간 안내 ↗</h3></a><div class="tree-rooms">{''.join(f'<a href="/spaces/{r.lower()}/">{r}홀 <small>{prices[r]["area"]}</small> ↗</a>' for r in 'ABCDE')}</div></article><a href="/pricing/"><span>/pricing/</span><h3>이용요금 ↗</h3><p>룸별·시간대별 요금<br>새벽 통대관 안내</p></a><a href="/location/"><span>/location/</span><h3>오시는 길 ↗</h3><p>주소·지하철·주차<br>네이버 지도 연결</p></a><a href="/guide/"><span>/guide/</span><h3>이용 안내 ↗</h3><p>이용 수칙<br>변경·환불 안내</p></a><a href="/schedule/"><span>/schedule/</span><h3>예약하기 ↗</h3><p>일정표·예약 채널<br>예약 방법·새벽 대관 문의</p></a></div></section>
 <section class="structure-notes"><h2>이 샘플에서 달라진 점</h2><div><article><b>검색 후 바로 읽는 소개</b><p>제목뿐 아니라 첫 HTML 본문에 위치, 시설, 이용 목적을 담았습니다.</p></article><article><b>보내고 다시 찾을 수 있는 주소</b><p>A홀 사진이나 이용요금 페이지를 각각 직접 열고 공유할 수 있습니다.</p></article><article><b>일정 확인에서 예약까지</b><p>일정표는 예약현황을 보여주고, 네이버·스페이스클라우드 버튼이 예약으로 연결합니다.</p></article></div><p class="subtle">로컬 검토용 샘플입니다. 검색 노출은 비활성화되어 있으며 운영 사이트에는 반영되지 않았습니다.</p></section>''','structure','전체 페이지 구조')
 # calendar-v11 is an independent snapshot; rebuilding pages never overwrites it.
-print('Built 12 website pages; independent calendar-v11 is preserved.')
+SITE.mkdir(parents=True, exist_ok=True)
+for asset in ('style.css', 'site.js'):
+    shutil.copyfile(HERE / asset, SITE / asset)
+(SITE / 'sitemap.xml').write_text(
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+    ''.join(f'  <url><loc>{url}</loc></url>\n' for url in public_routes) + '</urlset>\n')
+(SITE / 'robots.txt').write_text(f'User-agent: *\nAllow: /\n\nSitemap: {ORIGIN}/sitemap.xml\n')
+print(f'Built 12 preview and {len(public_routes)} public pages; independent calendar-v11 is preserved.')

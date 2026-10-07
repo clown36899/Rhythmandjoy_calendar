@@ -350,6 +350,8 @@ function visitor_ip_is_excluded($ip, $env) {
 function visitor_valid_page_path($path) {
     $allowed = array(
         '/',
+        '/spaces/', '/spaces/a/', '/spaces/b/', '/spaces/c/', '/spaces/d/', '/spaces/e/',
+        '/pricing/', '/location/', '/guide/', '/schedule/',
         '/calendar_set/calendar_v10/calendar_10.html',
         '/calendar_set/calendar_v10/calendar_mobile_10.html',
     );
@@ -745,6 +747,11 @@ function visitor_run_selftest() {
     visitor_selftest_assert(!visitor_ip_in_cidr('203.0.114.27', '203.0.113.0/24'), 'IPv4 CIDR mismatch is rejected');
     visitor_selftest_assert(visitor_ip_in_cidr('2001:db8::27', '2001:db8::/48'), 'IPv6 CIDR matches');
     visitor_selftest_assert(visitor_valid_page_path('/'), 'canonical root path is accepted');
+    foreach (array('/spaces/', '/spaces/a/', '/spaces/b/', '/spaces/c/', '/spaces/d/', '/spaces/e/', '/pricing/', '/location/', '/guide/', '/schedule/', '/calendar_set/calendar_v10/calendar_10.html', '/calendar_set/calendar_v10/calendar_mobile_10.html') as $path) {
+        visitor_selftest_assert(visitor_valid_page_path($path), 'public and legacy page is accepted: ' . $path);
+    }
+    visitor_selftest_assert(!visitor_valid_page_path('/calendar_set/calendar_v10/site-preview/'), 'preview stays excluded');
+    visitor_selftest_assert(!visitor_valid_page_path('/spaces/admin/'), 'unpublished child stays excluded');
     visitor_selftest_assert(!visitor_valid_page_path('/sync-admin/'), 'unrelated paths cannot be counted');
     $cross_origin_server = $server;
     $cross_origin_server['HTTP_REFERER'] = 'https://attacker.example/';

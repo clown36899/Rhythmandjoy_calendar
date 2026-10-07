@@ -21,8 +21,9 @@ function element() {
   };
 }
 function page(route, options = {}) {
-  const base = 'http://localhost/calendar_set/calendar_v10/site-preview/';
-  const html = fs.readFileSync(path.join(root, route, 'index.html'), 'utf8');
+  const contentRoot = options.public ? path.resolve(root, '../site') : root;
+  const base = options.public ? 'http://localhost/' : 'http://localhost/calendar_set/calendar_v10/site-preview/';
+  const html = fs.readFileSync(path.join(contentRoot, route, 'index.html'), 'utf8');
   const header = html.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)[1];
   const links = [...header.matchAll(/<a\b([^>]*)>/g)].filter(([, a]) => !a.includes('aria-label='))
     .map(([, a]) => Object.assign(element(), { href: new URL(a.match(/href="([^"]+)"/)[1], base).href, getAttribute: key => key === 'aria-current' && a.includes('aria-current=page') ? 'page' : null }));
@@ -48,7 +49,7 @@ function page(route, options = {}) {
     fetch: async url => { fetched.push(url); if (fetchFails) throw new Error('offline'); return { ok: true, text: async () => url }; },
     DOMParser: class { parseFromString(url) {
       const route = new URL(url).pathname.replace(new URL(base).pathname, '').replace(/\/$/, '');
-      const html = fs.readFileSync(path.join(root, route, 'index.html'), 'utf8');
+      const html = fs.readFileSync(path.join(contentRoot, route, 'index.html'), 'utf8');
       const header = html.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)[1];
       const active = [...header.matchAll(/<a\b([^>]*)>/g)].find(([, a]) => a.includes('aria-current=page'));
       const node = element();
@@ -207,5 +208,27 @@ async function swipe(route, from, to, options = {}) {
     assert.deepEqual(input.navigated,[],cancel); checks++;
   }
   assert.match(fs.readFileSync(path.join(root,'style.css'),'utf8'),/touch-action:pan-y pinch-zoom/); checks++;
+  for (const route of [...routes, ...[...'abcde'].map(r=>`spaces/${r}`)]) {
+    const p = page(route,{public:true,modern:true}); await ready();
+    p.fire('pointerdown',260,300,{pointerType:'touch'});
+    p.fire('pointermove',80,300,{pointerType:'touch'}); await ready();
+    p.fire('pointerup',80,300,{pointerType:'touch'}); await p.settle();
+    const index = route.startsWith('spaces/') ? 1 : routes.indexOf(route);
+    assert.deepEqual(p.navigated, p.links[index+1] ? [p.links[index+1].href] : []);
+    const html = fs.readFileSync(path.resolve(root,'../site',route,'index.html'),'utf8');
+    assert.doesNotMatch(html,/noindex|class="brand"|홈페이지 미리보기/);
+    assert.ok(html.includes('rel="canonical"'));
+    assert.ok(html.includes('naver-site-verification'));
+    checks++;
+  }
+  const visitorSource = fs.readFileSync(path.resolve(root,'../visitor-stats.js'),'utf8');
+  for (const pathname of ['/','/spaces/a/','/schedule/','/calendar_set/calendar_v10/calendar_10.html','/calendar_set/calendar_v10/calendar_mobile_10.html']) {
+    const requests=[];
+    const document={currentScript:{src:'https://example.com/calendar_set/calendar_v10/visitor-stats.js?v=1'},readyState:'complete',visibilityState:'visible',addEventListener(){}};
+    vm.runInNewContext(visitorSource,{document,window:{location:{pathname},performance:{now:()=>100}},URL,XMLHttpRequest:class{open(method,url){requests.push(url)}setRequestHeader(){}send(){}},Date});
+    assert.equal(new URL(requests[0]).pathname,'/calendar_set/calendar_v10/visitor-stats.php');
+    assert.equal(new URL(requests[0]).searchParams.get('page_path'),pathname);
+    checks++;
+  }
   console.log(`PASS: ${checks} route, visual movement, release, retry and gesture-protection checks.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

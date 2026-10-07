@@ -8,7 +8,8 @@
 (function () {
   'use strict';
 
-  var API_URL = 'visitor-stats.php';
+  // Resolve from this shared script, including when the website lives at / or /spaces/.
+  var API_URL = new URL('visitor-stats.php', document.currentScript.src).href;
   var EVENT_NAME = 'rhythmjoy:visitor-stats';
   var DEFAULT_VISIBLE_MS = 2500;
   var _snapshot = {
