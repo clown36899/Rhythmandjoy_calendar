@@ -24,3 +24,12 @@
 .price-periods strong{color:var(--ink);font-weight:600}
 .price-periods p+p{margin-top:5px}
 @media(max-width:560px){.price-periods{font-size:11px;padding:15px 0}.price-table thead small{font-size:10px}.rate-list dt small{font-size:10px}}
+
+.page-viewport{position:relative;overflow:clip;background:var(--paper)}
+.page-surface{position:relative;background:var(--paper);min-height:100vh}
+.page-viewport.is-swiping{user-select:none;cursor:grabbing}
+.is-swiping>.page-surface{will-change:transform;pointer-events:none}
+.swipe-neighbor{position:absolute;left:0;width:100%;pointer-events:none;box-shadow:0 0 24px #252b2814}
+.sms-example{margin-top:20px;padding:18px 20px;border:1px solid var(--line);border-radius:8px;background:var(--pale)}
+.sms-example strong{font-size:13px}.sms-example p{margin-top:8px;color:var(--ink)}
+.sms-example small{display:block;font-size:11px;color:var(--muted);line-height:1.7;margin-top:8px}

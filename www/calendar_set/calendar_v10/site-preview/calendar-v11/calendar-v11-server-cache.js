@@ -14,12 +14,16 @@ const roomKeys = ['a', 'b', 'c', 'd', 'e'];
 const DESKTOP_ROOM_DETAIL_MIN_WIDTH = 1000;
 
 const roomConfigs = {
-  a: { name: "A홀", color: "#F6BF26" },
-  b: { name: "B홀", color: "rgb(87, 150, 200)" },
-  c: { name: "C홀", color: "rgb(129, 180, 186)" },
-  d: { name: "D홀", color: "rgb(125, 157, 106)" },
-  e: { name: "E홀", color: "#4c4c4c" }
+  a: { name: "A홀", color: "#e6b0a3" },
+  b: { name: "B홀", color: "#acc8c1" },
+  c: { name: "C홀", color: "#b7c9dc" },
+  d: { name: "D홀", color: "#d7c498" },
+  e: { name: "E홀", color: "#c6bdd4" }
 };
+
+Object.entries(roomConfigs).forEach(([key, room]) => {
+  document.documentElement.style.setProperty(`--room-${key}`, room.color);
+});
 
 const calendarSyncFactory = window.RhythmjoyServerCalendarSync;
 const calendarSync = calendarSyncFactory
@@ -175,16 +179,16 @@ function getRoomEventHtml(info) {
   if (info.view.type === 'dayGridMonth') {
     return `
       <div class="custom-event-box" style="color: black; display: flex; overflow: hidden; white-space: nowrap; align-items: center;">
-        <div class="custom-time" style="white-space: nowrap;">${fmt(start)}~${fmt(end)}</div>
+        <div class="custom-room"><span>${roomName.slice(0,1)}</span><span class="room-suffix">${roomName.slice(1)}</span></div><div class="custom-time" style="white-space: nowrap;">${fmt(start)}~${fmt(end)}</div>
       </div>
     `;
   }
 
   return `
     <div class="custom-event-box">
-      <div class="custom-time">${fmt(start)} ~ ${fmt(end)}</div>
+      <div class="custom-time"><span>${fmt(start)}</span><span>~${fmt(end)}</span></div>
       <div class="custom-title">${title}</div>
-      <div class="custom-room">${roomName}</div>
+      <div class="custom-room"><span>${roomName.slice(0,1)}</span><span class="room-suffix">${roomName.slice(1)}</span></div>
       <div class="custom-info">${예약정보}</div>
     </div>
   `;
@@ -296,11 +300,12 @@ function updateRoomVisibility() {
 
   if (layoutChanged) {
     requestAnimationFrame(() => {
+      // The embedded detail panel changes the available width; resize existing instances.
+      calendar?._swiper?.update();
       getSwipeCalendarInstances().forEach(calInst => {
-        if (calInst && typeof calInst.render === 'function') {
-          calInst.render();
-        }
+        calInst.updateSize?.();
       });
+      singleRoomCalendar?.updateSize();
       if (typeof applyMonthViewWidth === 'function') {
         applyMonthViewWidth();
       }
@@ -659,48 +664,7 @@ function initCalendar() {
         return false; // Tells FullCalendar to ignore this event in layout and DOM
       }
 
-      const viewType = info.view.type;  // 'timeGridWeek', 'dayGridMonth' 등
-
-
-      const ev = info.event;
-      const title = ev.title;
-      const start = ev.start;
-      const end = ev.end;
-      const roomName = ev.extendedProps.roomName || '';
-      const desc = ev.extendedProps.description || '';
-      const fmt = (d) => d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
-
-      // ⭐ [최적화] 화면에 표시되지 않는 불필요한 필드 추출(데드 코드) 제거 및 사전 컴파일된 정규식 사용
-      const matchNum = desc.match(REGEX_RESERVATION_NUM);
-      const 예약번호 = matchNum ? matchNum[1].trim() : '';
-
-      let 예약정보 = 예약번호
-        ? `네이버예약: ${예약번호}`
-        : "스페이스클라우드예약";
-
-      let html = '';
-      if (viewType === 'dayGridMonth') {
-        // [Modified] Monthly View: Show only Time and Room Name, Color Black
-        html = `
-          <div class="custom-event-box" style="color: black; display: flex; overflow: hidden; white-space: nowrap; align-items: center;">
-            <div class="custom-room" style="font-weight:bold; margin-right:3px; flex-shrink: 0;">${(roomName || '').replace('홀', '')}</div>
-            <div class="custom-time" style="white-space: nowrap;">${fmt(start)}~${fmt(end)}</div>
-          </div>
-        `;
-      } else {
-        // Default (Weekly View): Show Full Info
-        html = `
-          <div class="custom-event-box">
-            <div class="custom-time">${fmt(start)} ~ ${fmt(end)}</div>
-            <div class="custom-title">${title}</div>
-            <div class="custom-room">${roomName}</div>
-
-            <div class="custom-info"> ${예약정보}</div>
-          </div>
-        `;
-      }
-
-      info.el.innerHTML = html;
+      info.el.innerHTML = getRoomEventHtml(info);
     },
 
     eventLimitClick: function (cellInfo) {

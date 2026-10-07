@@ -3130,3 +3130,79 @@ body.hide-room-b .fc-event.b { display: none !important; }
 body.hide-room-c .fc-event.c { display: none !important; }
 body.hide-room-d .fc-event.d { display: none !important; }
 body.hide-room-e .fc-event.e { display: none !important; }
+
+/* v11 website theme. Room colors come from the existing roomConfigs palette. */
+:root{--paper:#f8f7f3;--ink:#252b28;--muted:#737a73;--line:#dfe2d9;--accent:#df583d;--green:#324a3e}
+html,body{font-family:Pretendard,Arial,sans-serif!important;font-size:14px!important;background:var(--paper)!important;color:var(--ink)!important}
+#calendarWrapper,#calendarAll,#singleRoomCalendar,.fc,.fc-view,.fc-view>table,
+#calendarAll .fc-view,#calendarAll .fc-view>table,#singleRoomCalendar .fc-view,#singleRoomCalendar .fc-view>table,
+#calendarAll .fc-scroller,#singleRoomCalendar .fc-scroller,.fc-scroller,.fc-bg,.fc-body{background:var(--paper)!important}
+#calendarAll .fc-toolbar,#singleRoomCalendar .fc-toolbar,.fc-toolbar,
+#calendarAll .fc-head,#calendarAll .fc th,#singleRoomCalendar .fc-head,#singleRoomCalendar .fc th,
+.fc-day-header,.fc-head,.fc-widget-header,.fc-axis{background:#edece5!important;color:var(--ink)!important;border-image:none!important;border-color:var(--line)!important}
+#calendarAll .fc-time-grid .fc-slats td,#calendarAll .fc-unthemed td,#singleRoomCalendar .fc-time-grid .fc-slats td,
+#singleRoomCalendar .fc-unthemed td,.fc-time-grid .fc-slats td,.fc-unthemed td,.fc td,.fc th{border-color:var(--line)!important;border-image:none!important}
+#calendarAll .fc-unthemed td.fc-today,#singleRoomCalendar .fc-unthemed td.fc-today,.fc-unthemed td.fc-today{background:#f4e9e1!important}
+.fc-center,.fc-toolbar-view-title{color:var(--ink)!important;font-size:24px!important;font-weight:700!important;line-height:1.4!important}
+.column-header-week,.column-header-week.column-month{font-size:10px!important;top:0!important;margin:0!important;color:var(--muted)!important}
+.column-header-day,.column-header-day.today{font-size:15px!important;line-height:1.2!important;top:0!important;gap:1px!important;color:var(--ink)!important}
+.today-badge{font-size:8px!important;height:12px!important;padding:0 2px!important;background:var(--accent)!important;box-shadow:none!important}
+.custom-triangle{border-top-color:var(--accent);border-top-width:7px;border-right-width:7px}
+.fc .fc-axis{font-size:9px!important;width:37px!important;color:var(--muted)!important}
+.textcolorA{background:var(--paper)!important;color:var(--muted)!important;font-size:9px!important}
+#fixed-top,#fixed-top.navbar-dark,#fixed-top .container-fluid,.bottomtop,#bottom,#bottom.show,#bar_btn,.logobackground{background:var(--paper)!important;color:var(--ink)!important;border-color:var(--line)!important;box-shadow:none!important}
+.bottomtop{border-top:1px solid var(--line)}
+#fixed-top .navbar-brand,.titlerhy{color:var(--ink)!important;font-size:13px!important;font-weight:650}
+#bar_btn:before,#bar_btn:after{background:#b8bbae!important}
+.fc .fc-button-primary,.jo-right .fc-button{background:#edece5!important;color:var(--ink)!important;border:1px solid var(--line)!important;box-shadow:none!important;font-size:11px!important;border-radius:6px!important}
+.fc .fc-button-primary:hover,.jo-right .fc-button:hover{background:#dfe3d8!important}
+.fc-button-active,#monthview.active,#weekview.active{background:var(--green)!important;color:#fff!important}
+.room-btn{font-size:11px!important;color:var(--ink)!important;box-shadow:none!important;border:1px solid transparent!important;border-radius:5px!important}
+.room-btn.active{outline:2px solid var(--ink);outline-offset:1px}
+#Abtn_pick_oneroom{background:var(--room-a)!important}#Bbtn_pick_oneroom{background:var(--room-b)!important}
+#Cbtn_pick_oneroom{background:var(--room-c)!important}#Dbtn_pick_oneroom{background:var(--room-d)!important}
+#Ebtn_pick_oneroom{background:var(--room-e)!important}#ALLbtn_pick_oneroom{background:#e1e4d9!important}
+.fc-event.a{background:var(--room-a)!important;border-color:var(--room-a)!important}
+.fc-event.b{background:var(--room-b)!important;border-color:var(--room-b)!important}
+.fc-event.c{background:var(--room-c)!important;border-color:var(--room-c)!important}
+.fc-event.d{background:var(--room-d)!important;border-color:var(--room-d)!important}
+.fc-event.e{background:var(--room-e)!important;border-color:var(--room-e)!important}
+.fc-event{box-shadow:none!important;border-radius:3px!important;color:var(--ink)!important;overflow:hidden!important}
+#calendarAll .custom-event-box,#singleRoomCalendar .custom-event-box{display:flex;flex-direction:column;align-items:stretch!important;box-sizing:border-box;height:100%;min-width:0;padding:2px;gap:1px;font-size:10px!important;line-height:1.25!important;overflow:hidden;word-break:normal!important;color:var(--ink)!important}
+#calendarAll .custom-event-box>div,#singleRoomCalendar .custom-event-box>div{min-width:0;max-width:100%;white-space:nowrap!important;overflow:hidden;text-overflow:ellipsis;font-size:inherit!important}
+.custom-time{font-variant-numeric:tabular-nums;font-weight:600}.custom-time>span{display:block;white-space:nowrap}
+#calendarAll .fc-dayGridMonth-view .custom-event-box,#singleRoomCalendar .fc-dayGridMonth-view .custom-event-box{flex-direction:row;gap:3px;font-size:9px!important}
+.fc-more-popover{background:var(--paper)!important;border:1px solid var(--line)!important;color:var(--ink)!important;box-shadow:0 8px 30px #252b2826!important}
+.fc-more-popover>div:first-child{background:#edece5!important;color:var(--ink)!important;border-color:var(--line)!important}
+.fc-more-popover button{background:var(--green)!important;color:#fff!important}
+.event-clone{background:#edece5!important;color:var(--ink)!important;border:1px solid var(--line)!important}
+.event-clone .custom-event-box{font-size:12px!important;line-height:1.6;overflow:hidden}
+.event-clone .custom-time{display:flex;gap:4px;font-size:12px!important}
+@media(max-width:600px){
+  #calendarAll .fc-timeGrid-view .custom-event-box{font-size:10px!important;padding:1px!important;gap:0}
+  body.view-all #calendarAll .fc-timeGrid-view .custom-event-box{padding:0!important}
+  body.view-all #calendarAll .fc-timeGrid-view .custom-time,
+  body.view-all #calendarAll .fc-timeGrid-view .custom-title,
+  body.view-all #calendarAll .fc-timeGrid-view .custom-info{display:none!important}
+  body.view-all #calendarAll .fc-timeGrid-view .custom-room{font-size:8px!important;line-height:12px;white-space:nowrap!important;text-overflow:clip;text-align:left;font-weight:600}
+}
+
+@media(max-width:600px){body.view-all #calendarAll .fc-timeGrid-view .custom-room .room-suffix{display:none}}
+/* Month cells and their compact event rows use the same light theme. */
+#calendarAll .fc-day,#singleRoomCalendar .fc-day{background:var(--paper)!important;color:var(--ink)!important}
+#calendarAll td.fc-day.fc-today,#singleRoomCalendar td.fc-day.fc-today{background:#f4e9e1!important}
+#calendarAll .fc-day-number,#singleRoomCalendar .fc-day-number{color:var(--ink)!important;font-size:11px!important}
+.month-header-weekday{color:var(--ink)!important;font-size:11px!important;height:26px!important;line-height:26px!important;padding:0!important}
+.month-header-weekday.sunday,.fc-sun .fc-day-number{color:var(--accent)!important}
+#calendarAll .fc-day-grid-event,#singleRoomCalendar .fc-day-grid-event{height:16px!important;min-height:16px!important;line-height:14px!important;margin-top:2px!important;margin-bottom:2px!important}
+#calendarAll .fc-dayGridMonth-view .custom-event-box,#singleRoomCalendar .fc-dayGridMonth-view .custom-event-box{padding:0 2px!important;align-items:center!important;line-height:14px!important;height:14px!important}
+
+#calendarAll .fc-more,#singleRoomCalendar .fc-more{color:var(--green)!important;font-size:10px!important;font-weight:650}
+/* The copied v10 sidebar is absent in this embed; give its space to the calendars. */
+@media(min-width:1000px){
+  #calendarAll,.bottomtop{left:0;width:100%}
+  body.desktop-room-detail-open #calendarAll,body.desktop-room-detail-open .bottomtop{left:40%;width:60%}
+  #singleRoomCalendarPanel{left:0;width:40%;background:var(--paper);border-color:var(--line)}
+  body.desktop-room-detail-open #calendarAll .fc-timeGrid-view .custom-title,
+  body.desktop-room-detail-open #calendarAll .fc-timeGrid-view .custom-info{display:none}
+}
