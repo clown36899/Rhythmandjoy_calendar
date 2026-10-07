@@ -3206,3 +3206,10 @@ html,body{font-family:Pretendard,Arial,sans-serif!important;font-size:14px!impor
   body.desktop-room-detail-open #calendarAll .fc-timeGrid-view .custom-title,
   body.desktop-room-detail-open #calendarAll .fc-timeGrid-view .custom-info{display:none}
 }
+@media(max-width:600px){
+  #roombtnn{margin-right:6px!important}
+  #roombtnn>div{width:24px;flex:0 0 24px;align-items:center}
+  #roombtnn .room-btn{width:22px;min-width:22px;max-width:22px;padding:6px 0;font-size:10px!important;margin:0 1px}
+  #roombtnn .toggle-switch-vertical{max-width:20px}
+  .jo-right .fc-button{white-space:nowrap;padding:5px 4px!important;font-size:10px!important}
+}
