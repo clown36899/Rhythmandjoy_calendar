@@ -57,10 +57,10 @@ def shell(title, desc, body, active='home', crumb=None):
 <title>{html.escape(title)}</title><meta name="description" content="{html.escape(desc)}"><meta name="robots" content="noindex,nofollow">
 <link rel="stylesheet" href="/preview-assets/style.css"><script src="/preview-assets/site.js" defer></script>
 </head><body><a class="skip" href="#main">본문 바로가기</a>
+<div class="site-header"><header class="header"><a class="brand" href="/" aria-label="리듬앤조이 홈" draggable="false"><span class="brand-mark">r<span>j</span><i>•</i></span><span>리듬앤조이<small>RHYTHM & JOY</small></span></a>
+<nav class="nav" aria-label="주 메뉴">{nav}</nav><a href="/schedule/" class="header-book" {"aria-current=page" if active=="schedule" else ""} draggable="false">예약하기 <span>↗</span></a></header></div>
 <div class="page-viewport"><div class="page-surface">
-<header class="header"><a class="brand" href="/" aria-label="리듬앤조이 홈" draggable="false"><span class="brand-mark">r<span>j</span><i>•</i></span><span>리듬앤조이<small>RHYTHM & JOY</small></span></a>
-<nav class="nav" aria-label="주 메뉴">{nav}</nav><a href="/schedule/" class="header-book" {"aria-current=page" if active=="schedule" else ""} draggable="false">예약하기 <span>↗</span></a></header>
-<main id="main">{breadcrumb}{body}</main>
+<main id="main" tabindex="-1">{breadcrumb}{body}</main>
 <footer><div class="footer-top"><a href="/" class="footer-brand">리듬앤조이<span>RHYTHM & JOY STUDIO</span></a><p>서울 동작구 남부순환로 2077 지하 2층<br>사당역 7번 출구 도보 1분 · <a href="tel:01048017180">010-4801-7180</a></p></div><div class="footer-bottom"><span>© RHYTHM & JOY</span><span>홈페이지 미리보기 · 실제 예약현황 연결</span></div></footer>
 </div></div>
 </body></html>'''
@@ -135,7 +135,7 @@ write('schedule','예약하기 | 리듬앤조이','리듬앤조이 A–E홀의 �
 <section class="night-banner"><div><span class="eyebrow">AFTER HOURS</span><h2>새벽 통대관 예약</h2>
 <p>매일 00:00~06:00, 6시간 전체 대관입니다.<br>문자 문의 또는 스페이스클라우드에서 예약할 수 있습니다.</p>
 <p>문자 예약: 가능 여부 확인 → 승인 → 입금 → 예약문자 확인</p>
-<div class="sms-example"><strong>문자 보내실 때</strong><p>“○월 ○일 00:00~06:00, ○홀 새벽 통대관 가능한가요?”</p><small>자정이 지난 실제 이용 날짜와 원하는 홀을 적어주세요.<br>예: 10월 12일 밤을 지나 이용하면 10월 13일 00:00~06:00</small></div></div>
+<div class="sms-example"><strong>문자 보내실 때</strong><p>“12~13일로 넘어가는 새벽 A홀 통대관 가능한가요?”</p></div></div>
 <div class="actions">{button('010-4801-7180 문자 문의','sms:01048017180')}{button('스페이스클라우드 예약',SPACECLOUD_BOOKING)}</div></section>''','schedule','예약하기')
 
 write('structure','사이트 구조 미리보기 | 리듬앤조이','독립 주소로 연결된 연습실 소개, 공간, 요금, 위치, 예약현황 구조를 확인하세요.',f'''

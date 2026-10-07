@@ -9,37 +9,53 @@ let checks = 0;
 const ready = () => new Promise(resolve => setImmediate(resolve));
 
 function element() {
-  const classes = new Set();
+  const classes = new Set(), attrs = new Map();
   return {
-    style: {}, inert: false, removed: false,
+    setPointerCapture(id) { this.captured = id; }, hasPointerCapture(id) { return this.captured === id; }, releasePointerCapture() { this.captured = null; },
+    style: {}, dataset: {}, inert: false, removed: false,
     classList: { add: (...xs) => xs.forEach(x => classes.add(x)), remove: (...xs) => xs.forEach(x => classes.delete(x)), contains: x => classes.has(x) },
-    querySelectorAll: () => [], setAttribute() {}, removeAttribute() {},
+    querySelectorAll: () => [], querySelector: () => null, closest: () => null, focus() {},
+    setAttribute(k, v) { attrs.set(k, v); }, getAttribute: k => attrs.get(k),
+    removeAttribute(k) { attrs.delete(k); }, hasAttribute: k => attrs.has(k),
     remove() { this.removed = true; }, cloneNode: () => element(),
   };
 }
 function page(route, options = {}) {
+  const base = 'http://localhost/calendar_set/calendar_v10/site-preview/';
   const html = fs.readFileSync(path.join(root, route, 'index.html'), 'utf8');
   const header = html.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)[1];
   const links = [...header.matchAll(/<a\b([^>]*)>/g)].filter(([, a]) => !a.includes('aria-label='))
-    .map(([, a]) => ({ href: a.match(/href="([^"]+)"/)[1], getAttribute: key => key === 'aria-current' && a.includes('aria-current=page') ? 'page' : null }));
+    .map(([, a]) => Object.assign(element(), { href: new URL(a.match(/href="([^"]+)"/)[1], base).href, getAttribute: key => key === 'aria-current' && a.includes('aria-current=page') ? 'page' : null }));
   const listeners = new Map(), windows = new Map(), timers = new Map(), navigated = [];
   const surface = element(), viewport = element(), body = {};
+  const fetched = [], decoded = [];
+  const location = { href: base + (route ? route + "/" : ""), assign: url => navigated.push(url) };
+  const history = { state: {}, replaceState(state) { this.state = state; }, pushState(state, _, url) { this.state = state; location.href = url; navigated.push(url); } };
   let neighbor, timerId = 0, fetchFails = options.fetchFails;
   viewport.append = e => { neighbor = e; };
   const target = { closest: () => null, parentElement: body, scrollWidth: 100, clientWidth: 100 };
   const document = {
-    body, querySelectorAll: () => links,
+    body, title: route, importNode: node => node, querySelectorAll: () => links,
     querySelector: s => s === '.page-surface' ? surface : s === '.page-viewport' ? viewport : null,
-    addEventListener: (name, cb) => listeners.set(name, cb),
+    addEventListener: (name, cb) => listeners.set(name, [...(listeners.get(name) || []), cb]),
   };
   vm.runInNewContext(source, {
-    document, innerWidth: 390, scrollY: 0, AbortController,
+    document, PointerEvent: options.modern ? function PointerEvent() {} : undefined, innerWidth: 390, scrollY: 0, AbortController, URL, history, clearInterval, navigator: {connection:{saveData:!!options.saveData}},
     matchMedia: () => ({ matches: !!options.reduced }),
-    window: { addEventListener: (name, cb) => windows.set(name, cb) },
+    window: { scrollTo: o => { viewport.scrolledTo = o.top; }, addEventListener: (name, cb) => windows.set(name, cb) },
     getComputedStyle: e => ({ overflowX: e.overflowX || 'visible' }),
-    location: { assign: url => navigated.push(url) },
-    fetch: async () => { if (fetchFails) throw new Error('offline'); return { ok: true, text: async () => '<html></html>' }; },
-    DOMParser: class { parseFromString() { return { querySelector: () => element() }; } },
+    location,
+    fetch: async url => { fetched.push(url); if (fetchFails) throw new Error('offline'); return { ok: true, text: async () => url }; },
+    DOMParser: class { parseFromString(url) {
+      const route = new URL(url).pathname.replace(new URL(base).pathname, '').replace(/\/$/, '');
+      const html = fs.readFileSync(path.join(root, route, 'index.html'), 'utf8');
+      const header = html.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)[1];
+      const active = [...header.matchAll(/<a\b([^>]*)>/g)].find(([, a]) => a.includes('aria-current=page'));
+      const node = element();
+      const imgs = [...html.matchAll(/<img[^>]*src="([^"]+)"/g)].map(([, src]) => ({ loading: 'lazy', decode: async () => { decoded.push(src); } }));
+      node.querySelectorAll = s => s === 'img' ? imgs : [];
+      return { title: route, querySelector: s => s === '.page-surface' ? node : s.startsWith('.header') && active ? {href:new URL(active[1].match(/href="([^"]+)"/)[1],base).href} : null };
+    } },
     setTimeout: (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
     clearTimeout: id => timers.delete(id),
   });
@@ -50,20 +66,21 @@ function page(route, options = {}) {
       type, target, cancelable: true, timeStamp: type.endsWith('start') || type === 'pointerdown' ? 0 : 200,
       ...touch, pointerType: 'mouse', pointerId: 1, button: 0,
       touches: type === 'touchend' ? [] : [touch], changedTouches: [touch],
-      prevented: false, preventDefault() { this.prevented = true; }, stopImmediatePropagation() {}, ...extra,
+      prevented: false, preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...extra,
     };
-    listeners.get(type)?.(e); return e;
+    for (const cb of listeners.get(type) || []) { cb(e); if (e.stopped) break; } return e;
   }
-  function settle() {
+  async function settle() {
     for (const [id, timer] of [...timers]) if (timer.ms < 1000) { timers.delete(id); timer.fn(); }
+    await ready();
   }
-  return { links, navigated, surface, viewport, windows, target, point, fire, settle,
+  return { links, fetched, decoded, location, history, navigated, surface, viewport, windows, target, point, fire, settle,
     neighbor: () => neighbor, allowFetch: () => { fetchFails = false; } };
 }
 async function swipe(route, from, to, options = {}) {
   const p = page(route, options); await ready();
   p.fire('touchstart', from); p.fire('touchmove', to); await ready();
-  p.fire('touchend', to); p.settle(); return p;
+  p.fire('touchend', to); await p.settle(); return p;
 }
 (async () => {
   for (let i = 0; i < routes.length; i++) for (const direction of [-1, 1]) {
@@ -92,39 +109,103 @@ async function swipe(route, from, to, options = {}) {
     horizontalScroller: p => { p.target.scrollWidth = 500; p.target.overflowX = 'auto'; p.fire('touchstart'); p.fire('touchend', 80); },
   };
   for (const [name, exercise] of Object.entries(guards)) {
-    const p = page('pricing'); await ready(); exercise(p); p.settle();
+    const p = page('pricing'); await ready(); exercise(p); await p.settle();
     assert.deepEqual(p.navigated, [], name);
     assert.equal(p.surface.style.transform || '', '', `${name}: restored`);
     p.target.closest = () => null; p.target.scrollWidth = 100;
-    p.fire('touchstart', 240); p.fire('touchmove', 80); await ready(); p.fire('touchend', 80); p.settle();
+    p.fire('touchstart', 240); p.fire('touchmove', 80); await ready(); p.fire('touchend', 80); await p.settle();
     assert.deepEqual(p.navigated, [p.links[3].href], `${name}: retry`); checks++;
   }
   const p = page('pricing'); await ready();
-  p.fire('touchstart', 250); p.fire('touchmove', 170); await ready();
-  assert.equal(p.surface.style.transform, 'translate3d(-80px,0,0)');
-  assert.equal(p.neighbor().style.transform, 'translate3d(310px,0,0)');
+  p.fire('touchstart', 250); p.fire('touchmove', 190); await ready();
+  assert.equal(p.surface.style.transform, 'translate3d(-60px,0,0)');
+  assert.equal(p.neighbor().style.transform, 'translate3d(330px,0,0)');
   assert.equal(p.neighbor().inert, true); checks++;
-  p.fire('touchend', 170, 300, { timeStamp: 400 }); p.settle();
+  p.fire('touchend', 190, 300, { timeStamp: 400 }); await p.settle();
   assert.equal(p.surface.style.transform, ''); assert.equal(p.neighbor().removed, true); checks++;
   p.fire('touchstart', 250); p.fire('touchmove', 80, 300, { timeStamp: 1100 }); await ready();
-  p.fire('touchend', 80, 300, { timeStamp: 1500 }); p.settle();
+  p.fire('touchend', 80, 300, { timeStamp: 1500 }); await p.settle();
   assert.deepEqual(p.navigated, [p.links[3].href]); checks++;
   p.windows.get('pageshow')(); assert.equal(p.surface.style.transform, ''); checks++;
   const fastRetry = page('pricing'); await ready();
   fastRetry.fire('touchstart', 250); fastRetry.fire('touchmove', 220); fastRetry.fire('touchend', 220);
   fastRetry.fire('touchstart', 250); fastRetry.fire('touchmove', 80); await ready();
-  fastRetry.fire('touchend', 80); fastRetry.settle();
+  fastRetry.fire('touchend', 80); await fastRetry.settle();
   assert.deepEqual(fastRetry.navigated, [fastRetry.links[3].href]); checks++;
   const mouse = page('pricing'); await ready();
-  mouse.fire('pointerdown', 250); mouse.fire('pointermove', 80); await ready(); mouse.fire('pointerup', 80); mouse.settle();
+  mouse.fire('pointerdown', 250); mouse.fire('pointermove', 80); await ready(); mouse.fire('pointerup', 80); await mouse.settle();
   assert.deepEqual(mouse.navigated, [mouse.links[3].href]);
   assert.equal(mouse.fire('click').prevented, true); checks++;
   const offline = await swipe('pricing', 250, 80, { fetchFails: true });
   assert.deepEqual(offline.navigated, [offline.links[3].href]); checks++;
   const reduced = await swipe('pricing', 250, 80, { reduced: true });
-  assert.match(reduced.surface.style.transition, /0ms/); checks++;
+  assert.equal(reduced.navigated.length, 1); checks++;
   const noMenu = await swipe('structure', 250, 90);
   assert.deepEqual(noMenu.navigated, []);
   assert.equal(noMenu.fire('dragstart').prevented, true); checks++;
+  const reuse = page('pricing'); await ready();
+  assert.ok(reuse.decoded.length >= 2, 'neighbor photos decoded before input'); checks++;
+  const photosBefore = reuse.decoded.length;
+  reuse.target.closest = selector => selector === 'a[href]' ? reuse.links[1] : null;
+  reuse.fire('click'); await ready();
+  assert.equal(reuse.location.href, reuse.links[1].href);
+  assert.equal(reuse.fetched.filter(url => url === reuse.links[1].href).length, 1);
+  const backURL = reuse.links[2].href;
+  reuse.location.href = backURL;
+  reuse.windows.get('popstate')({ state: { previewScroll: 460 } }); await ready();
+  assert.equal(reuse.viewport.scrolledTo, 460);
+  reuse.target.closest = selector => selector === 'a[href]' ? reuse.links[1] : null;
+  reuse.fire('click'); await ready();
+  assert.equal(reuse.fetched.filter(url => url === reuse.links[1].href).length, 1, 'revisit keeps loaded DOM');
+  assert.ok(reuse.decoded.length >= photosBefore); checks++;
+  const rapid = page('pricing'); await ready();
+  rapid.target.closest = selector => selector === 'a[href]' ? rapid.links[3] : null;
+  rapid.fire('click');
+  rapid.target.closest = selector => selector === 'a[href]' ? rapid.links[4] : null;
+  rapid.fire('click'); await ready();
+  assert.deepEqual(rapid.navigated, [rapid.links[4].href], 'last requested page wins'); checks++;
+  const saver = page('pricing', {saveData:true}); await ready();
+  assert.equal(saver.fetched.length, 0, 'no speculative downloads with save-data'); checks++;
+  const native = page('pricing'); await ready();
+  native.target.closest = selector => selector === 'a[href]' ? native.links[3] : null;
+  assert.equal(native.fire('click', 220, 300, {ctrlKey:true}).prevented, false);
+  assert.deepEqual(native.navigated, []); checks++;
+  const modifiedHTML = fs.readFileSync(path.join(root,'schedule/index.html'),'utf8');
+  assert.ok(modifiedHTML.indexOf('</header>') < modifiedHTML.indexOf('class="page-surface"'));
+  assert.match(modifiedHTML, /12~13일로 넘어가는 새벽 A홀 통대관 가능한가요/);
+  const calendarHTML = fs.readFileSync(path.join(root,'calendar-v11/index.html'),'utf8');
+  assert.doesNotMatch(calendarHTML, /room-toggle|bar_btn|close_bottom|show-toggle/);
+  for (const key of ['A','B','C','D','E','ALL']) assert.ok(calendarHTML.includes(`${key}btn_pick_oneroom`));
+  checks++;
+  for (const pointerType of ['touch','pen','mouse']) {
+    const input = page('pricing', {modern:true}); await ready();
+    const extra = {pointerType,isPrimary:true};
+    input.fire('pointerdown',260,300,extra);
+    input.fire('pointermove',120,320,extra); await ready();
+    assert.equal(input.viewport.captured,1);
+    input.windows.get('resize')(); // Address-bar height changes must not cancel a horizontal gesture.
+    assert.equal(input.surface.style.transform,'translate3d(-140px,0,0)');
+    input.fire('pointerup',120,320,extra); await input.settle();
+    assert.deepEqual(input.navigated,[input.links[3].href]); checks++;
+  }
+  const ambiguous = page('pricing',{modern:true}); await ready();
+  ambiguous.fire('pointerdown',260,300,{pointerType:'touch'});
+  ambiguous.fire('pointermove',251,310,{pointerType:'touch'});
+  ambiguous.fire('pointermove',160,325,{pointerType:'touch'}); await ready();
+  ambiguous.fire('pointerup',160,325,{pointerType:'touch'}); await ambiguous.settle();
+  assert.deepEqual(ambiguous.navigated,[ambiguous.links[3].href]); checks++;
+  for (const cancel of ['pointercancel','vertical','secondPointer']) {
+    const input = page('pricing',{modern:true}); await ready();
+    input.fire('pointerdown',260,300,{pointerType:'touch'});
+    if (cancel === 'vertical') input.fire('pointermove',250,410,{pointerType:'touch'});
+    else {
+      input.fire('pointermove',210,300,{pointerType:'touch'});
+      if(cancel==='secondPointer') input.fire('pointerdown',200,300,{pointerType:'touch',isPrimary:false,pointerId:2});
+      else input.fire('pointercancel',210,300,{pointerType:'touch'});
+    }
+    input.fire('pointerup',100,300,{pointerType:'touch'}); await input.settle();
+    assert.deepEqual(input.navigated,[],cancel); checks++;
+  }
+  assert.match(fs.readFileSync(path.join(root,'style.css'),'utf8'),/touch-action:pan-y pinch-zoom/); checks++;
   console.log(`PASS: ${checks} route, visual movement, release, retry and gesture-protection checks.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

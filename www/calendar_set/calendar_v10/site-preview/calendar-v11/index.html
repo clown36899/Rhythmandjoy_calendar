@@ -125,271 +125,30 @@
 
       </div>
     </nav>
-    <div id="loading_bar_base_a">
-      <div id="bar_btn">
-        <div class="bar-line"></div>
-        <div class="bar-line"></div>
+    <div id="bottom">
+      <div id="roombtnn" role="group" aria-label="룸 선택">
+<button type="button" class="room-btn" id="Abtn_pick_oneroom" aria-pressed="false">A</button>
+<button type="button" class="room-btn" id="Bbtn_pick_oneroom" aria-pressed="false">B</button>
+<button type="button" class="room-btn" id="Cbtn_pick_oneroom" aria-pressed="false">C</button>
+<button type="button" class="room-btn" id="Dbtn_pick_oneroom" aria-pressed="false">D</button>
+<button type="button" class="room-btn" id="Ebtn_pick_oneroom" aria-pressed="false">E</button>
+<button type="button" class="room-btn" id="ALLbtn_pick_oneroom" aria-pressed="true">전체</button>
       </div>
-      <div id="bottom">
-
-
-        <div style="display: flex;justify-content: space-around;">
-          <div id="roombtnn" style="display: flex;align-items: flex-end;margin: 0 25px 0 0;">
-            <!-- ✅ 룸 버튼들 -->
-
-            <div style="display: flex;flex-direction: column;align-items: center;">
-              <label class="toggle-switch-vertical">
-                <input type="checkbox" class="room-toggle" value="a" checked>
-                <span class="slider"></span>
-              </label>
-              <button class="room-btn" id="Abtn_pick_oneroom">A</button>
-            </div>
-
-            <div style="display: flex;flex-direction: column;align-items: center;">
-              <label class="toggle-switch-vertical">
-                <input type="checkbox" class="room-toggle" value="b" checked>
-                <span class="slider"></span>
-              </label>
-              <button class="room-btn" id="Bbtn_pick_oneroom">B</button>
-            </div>
-            <div style="display: flex;flex-direction: column;align-items: center;">
-              <label class="toggle-switch-vertical">
-                <input type="checkbox" class="room-toggle" value="c" checked>
-                <span class="slider"></span>
-              </label>
-              <button class="room-btn" id="Cbtn_pick_oneroom">C</button>
-            </div>
-            <div style="display: flex;flex-direction: column;align-items: center;">
-              <label class="toggle-switch-vertical">
-                <input type="checkbox" class="room-toggle" value="d" checked>
-                <span class="slider"></span>
-              </label>
-              <button class="room-btn" id="Dbtn_pick_oneroom">D</button>
-            </div>
-            <div style="display: flex;flex-direction: column;align-items: center;">
-              <label class="toggle-switch-vertical">
-                <input type="checkbox" class="room-toggle" value="e" checked>
-                <span class="slider"></span>
-              </label>
-              <button class="room-btn" id="Ebtn_pick_oneroom">E</button>
-            </div>
-            <div style="display: flex;flex-direction: column;align-items: center;">
-              <label style="visibility: hidden;" class="toggle-switch-vertical">
-                <input type="checkbox" class="room-toggle" value="e" checked>
-                <span class="slider"></span>
-              </label>
-              <button class="room-btn" id="ALLbtn_pick_oneroom">ALL</button>
-            </div>
-
-
-          </div>
-
-          <div class="jo-right">
-
-
-            <div class="fc-button-group">
-              <button type="button" id="monthview" class="fc-prev-button fc-button fc-button-primary fc-corner-left"
-                aria-label="월간 보기">
-                <span>월</span>
-              </button>
-
-              <button type="button" id="weekview" class="fc-prev-button fc-button fc-button-primary fc-corner-left"
-                aria-label="주간 보기">
-                <span>주</span>
-              </button>
-            </div>
-
-            <div class="fc-button-group" style="display: flex;
-                      flex-direction: column;
-                      flex-wrap: wrap;
-                      height: 4.5rem;
-                      align-items: flex-end;
-                      bottom: 0px;
-                      justify-content: space-between;">
-              <div>
-                <!-- <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas"
-                  data-bs-target="#offcanvasDarkNavbar" aria-controls="offcanvasDarkNavbar">
-                  <span class="navbar-toggler-icon">예약</span>
-                </button> -->
-              </div>
-              <div class="fc-button-group">
-                <button type="button" id="prev" class="fc-prev-button fc-button fc-button-primary fc-corner-left"
-                  aria-label="이전달">
-                  <span class="fc-icon fc-icon-chevron-left"></span>
-                </button>
-                <button type="button" id="todaybtn"
-                  class="fc-today-button fc-button fc-button-primary fc-state-disabled">
-                  <span>오늘</span>
-                </button>
-                <button type="button" id="nextbtn" class="fc-next-button fc-button fc-button-primary fc-corner-right"
-                  aria-label="다음달">
-                  <span class="fc-icon fc-icon-chevron-right"></span>
-                </button>
-              </div>
-            </div>
-
-
-          </div>
+      <div class="jo-right">
+        <div class="fc-button-group" role="group" aria-label="보기 방식">
+          <button type="button" id="monthview" class="fc-button" aria-label="월간 보기">월</button>
+          <button type="button" id="weekview" class="fc-button" aria-label="주간 보기">주</button>
         </div>
-
-        <!-- ✅ 슬라이드 외부 회색 배경 -->
-
-
-        <!-- ✅ 달력 영역 -->
-        <!-- <div id="calendarAll"></div> -->
+        <div class="fc-button-group" role="group" aria-label="날짜 이동">
+          <button type="button" id="prev" class="fc-button" aria-label="이전 기간">‹</button>
+          <button type="button" id="todaybtn" class="fc-button">오늘</button>
+          <button type="button" id="nextbtn" class="fc-button" aria-label="다음 기간">›</button>
+        </div>
       </div>
     </div>
-
   </div>
-
-  <!-- <div id="back_gray" class="back_gray"></div> -->
-  </div>
-
 
   <div id="popupBackdrop" class="popup-backdrop hidden"></div>
-
-
-  <script>
-
-    // const slideMenu = document.getElementById("roomSlideMenu");
-    const bottom = document.getElementById("bottom");
-    const loading_bar_base_a = document.getElementById("loading_bar_base_a");
-
-    const backGray = document.getElementById("back_gray");
-    const calendarArea = document.getElementById("calendarAll");
-
-    let isOpen = false;
-
-    // ✅ 버튼 클릭 시 메뉴 열기
-
-
-    const barBtn = document.getElementById("bar_btn");
-    const fc_buttons = document.querySelectorAll(".fc-button");
-
-
-    let isBottomOpen = false; // 상태 추적
-
-    loading_bar_base_a.addEventListener("click", (e) => {
-      // 만약 fc-button이 클릭된 경우엔 무시
-      if ([...fc_buttons].some(btn => btn.contains(e.target))) {
-        return;
-      }
-
-      if (isBottomOpen) {
-        bottom.classList.remove("show");
-
-        // ❌ 닫힐 때: 토글 스위치 숨기기
-        document.querySelectorAll(".toggle-switch-vertical").forEach(label => {
-          label.classList.remove("show-toggle");
-        });
-
-      } else {
-        bottom.classList.add("show");
-
-        // ✅ 열릴 때: 토글 스위치 보이기
-        document.querySelectorAll(".toggle-switch-vertical").forEach(label => {
-          label.classList.add("show-toggle");
-        });
-      }
-
-      isBottomOpen = !isBottomOpen; // 상태 반전
-    });
-
-
-    document.querySelectorAll(".room-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        bottom.classList.add("show");
-
-        // slideMenu.classList.add("show");
-
-        // backGray.classList.add("show");
-
-        document.querySelectorAll(".toggle-switch-vertical").forEach(label => {
-          label.classList.add("show-toggle");
-        });
-
-        isBottomOpen = true;
-      });
-    });
-
-    function close_bottom() {
-      bottom.classList.remove("show");
-      // slideMenu.classList.remove("show");
-      // backGray.classList.remove("show");
-      // 먼저 모든 토글 숨기고
-      document.querySelectorAll(".toggle-switch-vertical").forEach(el => {
-        el.classList.remove("show-toggle");
-      });
-      isBottomOpen = false;
-
-    }
-
-    let startX = 0;
-    let endX = 0;
-    // 모바일용
-    calendarArea.addEventListener("touchstart", function (e) {
-      startX = e.touches[0].clientX;
-    });
-    calendarArea.addEventListener("touchend", function (e) {
-      endX = e.changedTouches[0].clientX;
-      handleSwipe(endX - startX);
-    });
-
-    // 데스크탑용
-    calendarArea.addEventListener("mousedown", function (e) {
-      startX = e.clientX;
-    });
-    calendarArea.addEventListener("mouseup", function (e) {
-      endX = e.clientX;
-      handleSwipe(endX - startX);
-    });
-
-    function handleSwipe(diffX) {
-      if (Math.abs(diffX) > 30) {
-        console.log(diffX > 0 ? "➡️ 오른쪽 스와이프" : "⬅️ 왼쪽 스와이프");
-
-        document.querySelectorAll(".toggle-switch-vertical").forEach(el => {
-          el.classList.remove("show-toggle");
-        });
-        bottom.classList.remove("show");
-        isBottomOpen = false;
-      }
-    }
-    // // // // ✅ 회색 배경 클릭 시 닫기
-    // backGray.addEventListener("click", () => {
-
-    //   bottom.classList.remove("show");
-    //   // slideMenu.classList.remove("show");
-    //   backGray.classList.remove("show");
-    //   // 먼저 모든 토글 숨기고
-    //   document.querySelectorAll(".toggle-switch-vertical").forEach(el => {
-    //   el.classList.remove("show-toggle");
-    // });
-    //   isOpen = false;
-    // });
-    document.querySelectorAll(".room-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        // 다른 버튼 active 제거
-        document.querySelectorAll(".room-btn").forEach(b => b.classList.remove("active"));
-
-        // 현재 버튼에 active 부여
-        btn.classList.add("active");
-      });
-    });
-
-    document.querySelectorAll(".room-toggle").forEach(input => {
-      input.addEventListener("change", () => {
-        const roomKey = input.value.toUpperCase(); // 예: 'A', 'B'
-        const btn = document.getElementById(`${roomKey}btn_pick_oneroom`);
-        if (input.checked) {
-          btn.classList.add("active");
-        } else {
-          btn.classList.remove("active");
-        }
-      });
-    });
-
-  </script>
 
 
   <script>
@@ -438,30 +197,22 @@
     document.getElementById("prev").addEventListener("click", function () {
       calendar.prev();
 
-      close_bottom()
+
     });
     document.getElementById("todaybtn").addEventListener("click", function () {
       calendar.today();
       console.log(Object.getOwnPropertyNames(Object.getPrototypeOf(calendar)));
 
-      close_bottom()
+
     });
     document.getElementById("nextbtn").addEventListener("click", function () {
       calendar.next();
-      close_bottom()
+
 
 
     });
 
 
-    function closeRoomMenu() {
-      const slideMenu = document.getElementById("roomSlideMenu");
-      const toggleBtn = document.getElementById("roomToggleBtn");
-
-      // slideMenu.classList.remove("show");
-      toggleBtn.innerHTML = "룸 선택 ▼";
-      isOpen = false;
-    }
   </script>
 
   <!-- <div id='loading'>loading...</div> -->

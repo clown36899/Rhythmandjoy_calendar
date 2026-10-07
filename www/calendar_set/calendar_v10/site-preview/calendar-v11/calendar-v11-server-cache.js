@@ -334,10 +334,10 @@ function select_room_btn_function(aroom_name_key) {
     console.warn("존재하지 않는 룸:", aroom_name_key);
   }
 
-  // 🔁 체크박스 상태 업데이트
-  const checkboxes = document.querySelectorAll('.room-toggle');
-  checkboxes.forEach(checkbox => {
-    checkbox.checked = currentRoomSelections[checkbox.value];
+  document.querySelectorAll('.room-btn').forEach(button => {
+    const active = button.id === `${aroom_name_key.toUpperCase()}btn_pick_oneroom`;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
   });
 
   updateRoomVisibility();
@@ -819,15 +819,6 @@ document.addEventListener("DOMContentLoaded", () => {
   updateRoomVisibility(); // 최초 로드 시 클래스 적용
   initCalendar();
   initHoverTimeGuides();
-  document.querySelectorAll(".room-toggle").forEach(cb => {
-    const key = cb.value;
-    cb.checked = currentRoomSelections[key];
-    cb.addEventListener("change", e => {
-      currentRoomSelections[key] = e.target.checked;
-      updateRoomVisibility();
-    });
-  });
-
   ['click', 'touchstart', 'keydown'].forEach(e => {
     document.addEventListener(e, () => lastInteraction = Date.now());
   });

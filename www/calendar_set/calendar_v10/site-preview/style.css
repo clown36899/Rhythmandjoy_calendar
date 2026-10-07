@@ -26,10 +26,20 @@
 @media(max-width:560px){.price-periods{font-size:11px;padding:15px 0}.price-table thead small{font-size:10px}.rate-list dt small{font-size:10px}}
 
 .page-viewport{position:relative;overflow:clip;background:var(--paper)}
-.page-surface{position:relative;background:var(--paper);min-height:100vh}
+.page-surface{touch-action:pan-y pinch-zoom;position:relative;background:var(--paper);min-height:100vh}
 .page-viewport.is-swiping{user-select:none;cursor:grabbing}
 .is-swiping>.page-surface{will-change:transform;pointer-events:none}
 .swipe-neighbor{position:absolute;left:0;width:100%;pointer-events:none;box-shadow:0 0 24px #252b2814}
 .sms-example{margin-top:20px;padding:18px 20px;border:1px solid var(--line);border-radius:8px;background:var(--pale)}
 .sms-example strong{font-size:13px}.sms-example p{margin-top:8px;color:var(--ink)}
 .sms-example small{display:block;font-size:11px;color:var(--muted);line-height:1.7;margin-top:8px}
+
+/* The menu stays outside the translated page, including on mobile. */
+.site-header{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line);box-shadow:0 3px 16px #252b2808}
+main{scroll-margin-top:140px;outline:none}
+.page-surface{min-height:calc(100vh - 118px)}
+.page-viewport[aria-busy=true]{cursor:progress}
+.page-viewport[aria-busy=true]:before{content:"";position:fixed;top:0;left:0;right:0;height:3px;background:var(--accent);z-index:60;animation:page-loading 1s ease-in-out infinite alternate}
+@keyframes page-loading{from{opacity:.25}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.page-viewport[aria-busy=true]:before{animation:none}}
+@media(max-width:800px){.header{min-height:100px;padding-top:10px;padding-bottom:8px}.nav{padding-top:0}}
