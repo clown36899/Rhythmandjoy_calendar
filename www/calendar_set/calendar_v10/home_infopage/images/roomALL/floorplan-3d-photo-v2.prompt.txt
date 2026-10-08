@@ -1,0 +1,19 @@
+Mode: Built-in image_gen / precise-object-edit
+Edit target: floorplan-3d-v1.png
+Photo references: roomA/image5.webp, roomB/image6.webp, roomC/image1.webp, roomE/image2.webp
+Additional visual inspection: roomD/image1.webp
+Generated asset: floorplan-3d-photo-v2.png
+
+Use case: precise-object-edit / reference-guided material customization.
+Image 1 is the EDIT TARGET: the existing dollhouse studio floor plan. Images 2–5 are actual facility photos, respectively A, B, C, E rooms. D was separately visually inspected and its material specification is below.
+Change only material appearance and add the minimal photo-confirmed fixtures below. Preserve the camera, framing, model base, wall positions, all five room footprints, corridor, support rooms, mirrors, door openings, all letters and all dimensions EXACTLY from image 1. Do not redesign the floor plan.
+
+Use real room photos as visual truth:
+A (image 2): pale whitewashed cream wood floor, medium-light cool gray walls, full-length mirror along its RIGHT wall in plan. One black TV on the upper entrance wall to the LEFT of the room entrance, above a small pale wood tabletop with slim white frame. A white standing air conditioner and white pedestal fan near that TV corner. TV is 55-inch, but do not add a new text label.
+B (image 3): warm varied natural narrow oak strips, off-white walls, mirror along its LEFT wall in plan. One larger black 65-inch TV and a small pale tabletop on the upper entrance wall LEFT of the entrance. White standing AC and pedestal fan near the TV corner. Do not duplicate TVs; a mirror reflection is not a second physical TV.
+C (image 4): warm varied golden/natural wood strip floor, very pale cool-gray walls, mirror RIGHT wall. A small pale tabletop with white legs near the upper wall, small wall speaker if it does not clutter. No TV.
+D (visually verified description): natural warm wood strip floor, pale cool gray walls, mirror LEFT wall. Keep small empty dance area, no TV.
+E (image 5): pale ash/whitewashed wood floor with subtle gray grain, distinct dark charcoal-gray walls, mirror LEFT wall. One small white pedestal fan tucked into a corner, no TV.
+All five practice room doors: black frames and dark translucent glazed panels like the photos, instead of tan wooden doors in the first rendering. Keep their openings and swing orientation unchanged.
+Do not add ceiling or furniture unrelated to photos. Keep floor space spacious and room-letter overlays readable. There should be no humans, no plants, no beds, no sofas, no residential kitchen. Fixtures should be small in correct scale and never cover room labels. Mirrors should have realistic subtle reflection/light strips matching photos.
+Keep warm ivory model base/background and soft refined architectural rendering. Add NO new text; every existing Korean label and the large A B C D E and exact dimensions must remain unchanged. C 4.5m × 3.5m, D 4.5m × 2.8m; never exchange these. This is a studio depiction, not a residential apartment interior.
