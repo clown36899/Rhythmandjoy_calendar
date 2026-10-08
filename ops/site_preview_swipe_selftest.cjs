@@ -225,6 +225,15 @@ async function swipe(route, from, to, options = {}) {
     assert.ok(html.includes('rel="canonical"'));
     assert.ok(html.includes('naver-site-verification'));
     const data = JSON.parse(structuredText(html));
+    if (route === 'guide') {
+      const faq = data.find(item => item['@type'] === 'FAQPage');
+      const visible = [...html.matchAll(/<details class="faq-item"[^>]*><summary[^>]*>(.*?)<\/summary><p>(.*?)<\/p><\/details>/gs)].map(([,name,text])=>({name,text}));
+      assert.deepEqual(visible, faq.mainEntity.map(item=>({name:item.name,text:item.acceptedAnswer.text})), 'Visible Q&A and search data must share their existing source');
+      assert.equal(visible.length,10);
+      assert.doesNotMatch(JSON.stringify(faq), /도보 약 1분/);
+    } else {
+      assert.ok(!data.some(item=>item['@type'] === 'FAQPage'), 'Q&A metadata belongs only to the page displaying its answers');
+    }
     const canonical = html.match(/rel="canonical" href="([^"]+)"/)[1];
     assert.equal(new URL(canonical).pathname, '/' + (route ? route + '/' : ''), 'Public origin must not inherit the legacy calendar document path');
     for (const [, attributes] of html.matchAll(/<img\b([^>]*site-responsive[^>]*)>/g)) {

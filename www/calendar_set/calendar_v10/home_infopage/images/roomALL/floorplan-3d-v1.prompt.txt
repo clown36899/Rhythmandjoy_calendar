@@ -1,0 +1,20 @@
+Mode: Built-in image_gen / sketch-to-render
+Geometry source: roomALL/image1.webp (preserved)
+Material references: roomA/image2.webp, roomB/image2.webp, roomE/image2.webp
+Generated asset: floorplan-3d-v1.png
+
+Use case: sketch-to-render.
+Asset type: official Korean dance studio website floor-plan illustration.
+Primary request: Turn the attached flat plan into a beautiful premium architectural scale model / apartment dollhouse rendering. This is a reference-guided visualization of the SAME existing venue, not a new design.
+
+Inputs: Image 1 is the ORIGINAL black-and-white plan and geometry authority. Image 2 is its clean diagram for legible labels. Images 3, 4, 5 are actual A, B, E studio interiors for floor/gray wall material reference only, NOT layout changes.
+Composition: landscape 3:2, high oblique orthographic top-down camera (about 65 degrees), roof completely removed, low cutaway exterior and interior walls that reveal ALL five rooms and central corridor. Keep plan orientation: A bottom-left, B middle-bottom, C bottom-right-left, D bottom-right-right, E upper-right. Entire model on a thin ivory architectural presentation base with beautiful soft ambient-occlusion shadows on warm off-white studio background. No title, no watermark. Minimal realistic materials, restrained and elegant, not cartoon.
+
+STRICT geometry: Trace original walls and corridor. A has large lower-left footprint. B is beside A, with corridor ABOVE B and at its right. C and D lie below that corridor. E occupies upper right, including narrow lower-right leg, exactly per plan. Shared toilet, changing room 1, storage form upper middle row. Changing room 2 is a small room at inner lower-right corner of E beside waiting area. Far lower-right gray fire-equipment room. Preserve all door opening positions from ORIGINAL, including the D/fire-room boundary where drawn. Do NOT invent additional rooms, furniture, kitchen, plants or beds. Only five practice rooms. Mirrors: A's right wall, B's left wall, C's right wall, D's left wall, E's left wall. Use blue-silver reflective mirror panels as clearly visible slim surfaces, not windows.
+
+Materials: A and E pale cream ash wood planks, B/C/D natural medium oak wood planks. Gray studio walls as actual photos. Central L-shaped circulation light warm-gray stone-look floor. Keep all rooms EMPTY open dance floor, no invented furnishings. Cutaway walls low enough not to hide labels or doors.
+
+Typography: Superimpose sharp upright flat labels over the model so they remain perfectly readable (not perspective-distorted). Large charcoal A, B, C, D, E centered in each room, modest softly tinted coral/sage/blue/sand/lilac circular room markers if useful.
+Exact smaller dimensions under room letters: A '10m × 6m'; B '8.4m × 4.5m'; C '4.5m × 3.5m'; D '4.5m × 2.8m'; E '6.5m × 6m'.
+Other Korean labels only: '출구' with left arrow in upper-left passage, '공용 화장실', '탈의실 1', '창고', '대기실', '탈의실 2', '화재제어장치'. Small support-room labels may use discreet leader lines if needed. No other measurements, no 평형, no text paragraphs, no logo.
+Prioritize faithful topology, refined realistic model rendering and large readable room labels. The result should look like a professionally rendered residential apartment floor-plan model, but with empty dance practice rooms.
