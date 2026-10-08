@@ -100,6 +100,22 @@ def shell(title, desc, body, active='home', crumb=None):
 </div></div>
 </body></html>'''
 
+VISITOR_PANEL = '''
+<div class="visitor-summary"><button type="button" id="visitor-open" class="visitor-open" aria-haspopup="dialog" aria-controls="visitor-dialog" draggable="false">
+<span>총 <strong data-visitor-total>—</strong></span><span class="visitor-divider" aria-hidden="true">·</span><span>오늘 <strong data-visitor-today>—</strong></span><span class="visitor-open-label">방문 통계 <span aria-hidden="true">↗</span></span></button></div>
+<dialog id="visitor-dialog" class="visitor-dialog" aria-labelledby="visitor-title">
+<div class="visitor-dialog-heading"><div><span class="visitor-eyebrow">RHYTHM &amp; JOY</span><h2 id="visitor-title">방문 통계</h2></div><button type="button" class="visitor-close" aria-label="방문 통계 닫기">×</button></div>
+<div class="visitor-dialog-body"><p class="visitor-caption">한국시간 기준 · 중복을 제외한 방문 브라우저 수</p>
+<div class="visitor-totals"><div><span>총 방문자</span><strong data-visitor-total>—</strong></div><div><span>오늘 방문자</span><strong data-visitor-today>—</strong></div></div>
+<div class="visitor-toolbar"><div class="visitor-periods" role="group" aria-label="조회 기간"><button type="button" data-visitor-days="7" aria-pressed="false">7일</button><button type="button" data-visitor-days="30" aria-pressed="true">30일</button><button type="button" data-visitor-days="90" aria-pressed="false">90일</button></div><button type="button" id="visitor-refresh">새로고침</button></div>
+<p id="visitor-status" class="visitor-status" role="status" aria-live="polite"></p>
+<div id="visitor-report" hidden><p id="visitor-range" class="visitor-range"></p><div id="visitor-chart" class="visitor-chart" aria-hidden="true"></div><div class="visitor-chart-labels" aria-hidden="true"><span id="visitor-chart-start"></span><span id="visitor-chart-end"></span></div>
+<p id="visitor-period-summary" class="visitor-period-summary"></p>
+<details class="visitor-daily"><summary>날짜별 상세 보기</summary><table><caption class="visitor-sr-only">날짜별 방문자 수와 조회 수</caption><thead><tr><th scope="col">날짜</th><th scope="col">방문자</th><th scope="col">조회 수</th></tr></thead><tbody id="visitor-daily-rows"></tbody></table></details></div>
+<p id="visitor-as-of" class="visitor-caption"></p><p id="visitor-collection" class="visitor-caption"></p>
+<p class="visitor-note">같은 브라우저의 재방문은 총 방문자에 중복 합산하지 않습니다. 쿠키 삭제·다른 기기 사용 시 별도 방문자로 집계될 수 있습니다. 조회 수는 집계 조건을 충족한 페이지 열기 횟수이며, 메뉴 이동 횟수와는 다릅니다.<br>공식 홈페이지와 기존 예약 일정표의 방문 기록을 함께 표시합니다.</p></div></dialog>
+'''
+
 def write(path, title, desc, body, active='home', crumb=None):
     folder=HERE/path
     folder.mkdir(parents=True,exist_ok=True)
@@ -130,7 +146,7 @@ def write(path, title, desc, body, active='home', crumb=None):
                 f'<meta property="og:image" content="{share_image}">\n'
                 f'<meta property="og:image:alt" content="리듬앤조이 {html.escape(photo_descriptions[image_room][rooms[image_room][2]])}">\n'
                 f'{verification}\n{tracking}\n'
-                '<script src="/calendar_set/calendar_v10/visitor-stats.js?v=public-site-20261008" defer></script>\n')
+                '<script src="/calendar_set/calendar_v10/visitor-stats.js?v=public-stats-20261008" defer></script>\n')
         structured = []
         if not path:
             business['image'] = ORIGIN + ASSETS + '/roomA/image2.webp'
@@ -152,6 +168,10 @@ def write(path, title, desc, body, active='home', crumb=None):
                                'itemListElement': trail})
         meta += '<script id="site-structured-data" type="application/ld+json">' + json.dumps(structured, ensure_ascii=False) + '</script>\n'
         public = public.replace('</head>', meta + '</head>')
+        # Persistent outside the sliding page surface: one dialog and counter per tab.
+        public = public.replace('</body>', VISITOR_PANEL + '</body>')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=public-stats-20261008')
+        public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=public-stats-20261008')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)
         (target / 'index.html').write_text(public)

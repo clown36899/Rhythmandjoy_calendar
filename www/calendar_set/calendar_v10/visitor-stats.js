@@ -240,13 +240,116 @@
     refreshStats: refreshStats
   };
 
+  function initStatsUI() {
+    var dialog = document.getElementById('visitor-dialog');
+    var opener = document.getElementById('visitor-open');
+    if (!dialog || !opener) return; // Legacy calendar keeps its existing display.
+    var selectedDays = 30;
+    var requestId = 0;
+    var previousFocus = null;
+    var status = document.getElementById('visitor-status');
+    var report = document.getElementById('visitor-report');
+    var number = function (value) { return value.toLocaleString('ko-KR'); };
+    var countText = function (value) { return value === null ? '집계 전' : number(value); };
+
+    function updateCounters() {
+      ['total', 'today'].forEach(function (key) {
+        Array.prototype.forEach.call(document.querySelectorAll('[data-visitor-' + key + ']'), function (node) {
+          node.textContent = _snapshot.status === 'ready' ? number(_snapshot[key]) : '—';
+        });
+      });
+      opener.title = _snapshot.status === 'unavailable' ? '연결을 확인하려면 방문 통계를 열어주세요.' : '날짜별 방문 통계 보기';
+    }
+
+    function renderHistory(history) {
+      publishStats(history.stats);
+      var max = Math.max.apply(null, history.daily.map(function (row) { return row.visitors || 0; }).concat([1]));
+      document.getElementById('visitor-chart').innerHTML = history.daily.map(function (row) {
+        var height = row.visitors ? Math.max(2, row.visitors / max * 100) : 0;
+        return '<div class="visitor-chart-column' + (row.date === history.endDate ? ' is-today' : '') + '" title="' +
+          row.date + ' · ' + countText(row.visitors) + '"><span style="height:' + height + '%"></span></div>';
+      }).join('');
+      document.getElementById('visitor-chart-start').textContent = history.startDate;
+      document.getElementById('visitor-chart-end').textContent = history.endDate + ' 오늘';
+      document.getElementById('visitor-range').textContent = '최근 ' + history.days + '일 · 일별 방문자';
+      document.getElementById('visitor-period-summary').textContent = '기간 내 방문자 ' + number(history.visitors) +
+        ' · 조회 수 ' + number(history.pageViews) + ' (오늘 포함)';
+      document.getElementById('visitor-daily-rows').innerHTML = history.daily.slice().reverse().map(function (row) {
+        return '<tr' + (row.date === history.endDate ? ' class="is-today"' : '') + '><th scope="row">' +
+          row.date + (row.date === history.endDate ? ' · 오늘' : '') + '</th><td>' +
+          countText(row.visitors) + '</td><td>' + countText(row.pageViews) + '</td></tr>';
+      }).join('');
+      document.getElementById('visitor-as-of').textContent = '업데이트 ' + history.stats.asOf.slice(0, 19).replace('T', ' ') + ' (한국시간)';
+      document.getElementById('visitor-collection').textContent = history.stats.collectionStartedOn ?
+        '집계 시작 ' + history.stats.collectionStartedOn + ' · 시작 전 기록은 포함하지 않습니다.' : '아직 집계된 방문 기록이 없습니다.';
+      status.textContent = history.visitors ? '' : '선택한 기간에 집계된 방문 기록이 없습니다.';
+      report.hidden = false;
+    }
+
+    function validHistory(history) {
+      function validCount(value) { return typeof value === 'number' && isFinite(value) && value >= 0 && Math.floor(value) === value; }
+      function validDate(value) { return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value); }
+      return history && history.days === selectedDays && validDate(history.startDate) && validDate(history.endDate) &&
+        validCount(history.visitors) && validCount(history.pageViews) && history.stats &&
+        validCount(history.stats.total) && validCount(history.stats.today) && typeof history.stats.asOf === 'string' &&
+        (history.stats.collectionStartedOn === null || validDate(history.stats.collectionStartedOn)) &&
+        Array.isArray(history.daily) && history.daily.length === selectedDays && history.daily.every(function (row) {
+          return validDate(row.date) && (row.visitors === null || validCount(row.visitors)) &&
+            (row.pageViews === null || validCount(row.pageViews));
+        });
+    }
+
+    function loadHistory() {
+      var thisRequest = ++requestId;
+      status.textContent = '방문 통계를 불러오는 중입니다…';
+      report.hidden = true;
+      report.setAttribute('aria-busy', 'true');
+      document.getElementById('visitor-as-of').textContent = '';
+      requestJson('GET', API_URL + '?action=history&days=' + selectedDays, null, function (error, response) {
+        if (thisRequest !== requestId || !dialog.open) return;
+        report.setAttribute('aria-busy', 'false');
+        if (error || !validHistory(response.history)) {
+          status.textContent = '통계를 불러오지 못했습니다. 잠시 후 새로고침을 눌러주세요.';
+          return;
+        }
+        renderHistory(response.history);
+      });
+    }
+
+    opener.addEventListener('click', function () {
+      previousFocus = document.activeElement;
+      dialog.showModal();
+      document.body.classList.add('visitor-dialog-open');
+      loadHistory();
+    });
+    dialog.querySelector('.visitor-close').addEventListener('click', function () { dialog.close(); });
+    dialog.addEventListener('close', function () {
+      requestId += 1;
+      document.body.classList.remove('visitor-dialog-open');
+      if (previousFocus && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
+    });
+    Array.prototype.forEach.call(dialog.querySelectorAll('[data-visitor-days]'), function (button) {
+      button.addEventListener('click', function () {
+        selectedDays = Number(button.getAttribute('data-visitor-days'));
+        Array.prototype.forEach.call(dialog.querySelectorAll('[data-visitor-days]'), function (item) {
+          item.setAttribute('aria-pressed', item === button ? 'true' : 'false');
+        });
+        loadHistory();
+      });
+    });
+    document.getElementById('visitor-refresh').addEventListener('click', loadHistory);
+    window.addEventListener(EVENT_NAME, updateCounters);
+    updateCounters();
+  }
+
   document.addEventListener('visibilitychange', function () {
     updateVisibleClock();
   });
 
+  function start() { initStatsUI(); beginChallenge(); }
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', beginChallenge);
+    document.addEventListener('DOMContentLoaded', start);
   } else {
-    beginChallenge();
+    start();
   }
 })();

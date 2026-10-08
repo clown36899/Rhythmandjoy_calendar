@@ -260,7 +260,7 @@ async function swipe(route, from, to, options = {}) {
   const visitorSource = fs.readFileSync(path.resolve(root,'../visitor-stats.js'),'utf8');
   for (const pathname of ['/','/spaces/a/','/schedule/','/calendar_set/calendar_v10/calendar_10.html','/calendar_set/calendar_v10/calendar_mobile_10.html']) {
     const requests=[];
-    const document={currentScript:{src:'https://example.com/calendar_set/calendar_v10/visitor-stats.js?v=1'},readyState:'complete',visibilityState:'visible',addEventListener(){}};
+    const document={currentScript:{src:'https://example.com/calendar_set/calendar_v10/visitor-stats.js?v=1'},readyState:'complete',visibilityState:'visible',addEventListener(){},getElementById(){return null}};
     vm.runInNewContext(visitorSource,{document,window:{location:{pathname},performance:{now:()=>100}},URL,XMLHttpRequest:class{open(method,url){requests.push(url)}setRequestHeader(){}send(){}},Date});
     assert.equal(new URL(requests[0]).pathname,'/calendar_set/calendar_v10/visitor-stats.php');
     assert.equal(new URL(requests[0]).searchParams.get('page_path'),pathname);

@@ -25,6 +25,10 @@ foreach ($schema_statements as $statement) {
     $pdo->exec($statement);
 }
 
+$empty_history = visitor_read_history($pdo, '2098-08-14', 7);
+visitor_db_selftest_assert($empty_history['visitors'] === 0 && $empty_history['pageViews'] === 0, 'empty report is zero without invented history');
+visitor_db_selftest_assert(count($empty_history['daily']) === 7 && $empty_history['daily'][6]['visitors'] === null, 'before collection is unknown, not a historical zero');
+
 $server = array(
     'HTTP_USER_AGENT' => 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126.0.0.0 Mobile Safari/537.36',
     'REMOTE_ADDR' => '203.0.113.27',
@@ -61,6 +65,21 @@ visitor_db_selftest_assert($next_stats['today'] === 1 && $next_stats['total'] ==
 $network_statement = $pdo->query('SELECT COUNT(DISTINCT network_day_hash) FROM rhythmjoy_site_daily_visitors');
 visitor_db_selftest_assert(intval($network_statement->fetchColumn()) === 2, 'network abuse key rotates by KST day');
 
+$history = visitor_read_history($pdo, '2098-08-16', 7);
+visitor_db_selftest_assert($history['visitors'] === 1 && $history['pageViews'] === 3, 'period uniques are deduplicated across dates, reloads remain page views');
+visitor_db_selftest_assert($history['daily'][3]['visitors'] === null, 'uncollected dates are not fabricated');
+visitor_db_selftest_assert($history['daily'][4]['visitors'] === 1 && $history['daily'][4]['pageViews'] === 2, 'daily grouped counts match original ledger');
+visitor_db_selftest_assert($history['daily'][6]['visitors'] === 0, 'collected date without visits is filled with zero');
+visitor_db_selftest_assert(array_keys($history['daily'][4]) === array('date', 'visitors', 'pageViews'), 'public history exposes aggregate fields only');
+foreach (array(7, 30, 90) as $days) {
+    $report = visitor_read_history($pdo, $tomorrow, $days);
+    visitor_db_selftest_assert(count($report['daily']) === $days && $report['endDate'] === $tomorrow, 'bounded period includes requested KST date');
+}
+$invalid_rejected = false;
+try { visitor_read_history($pdo, $tomorrow, 365); } catch (InvalidArgumentException $error) { $invalid_rejected = true; }
+visitor_db_selftest_assert($invalid_rejected, 'unbounded period is rejected');
+visitor_db_selftest_assert(intval($pdo->query('SELECT SUM(page_views) FROM rhythmjoy_site_daily_visitors')->fetchColumn()) === 3, 'repeated report reads never record visits');
+
 $limited_env = $env;
 $limited_env['RHYTHMJOY_VISITOR_NEW_IDS_PER_IP_DAY'] = '10';
 for ($index = 0; $index < 9; $index += 1) {
@@ -81,4 +100,4 @@ $limit_statement = $pdo->prepare(
 $limit_statement->execute(array($today));
 visitor_db_selftest_assert(intval($limit_statement->fetchColumn()) === 10, 'transactional network counter stops at its configured cap');
 
-echo "visitor-stats MySQL self-test OK: exact daily/total uniqueness, reload upsert, KST rollover, rotating network HMAC, transactional inflation cap\n";
+echo "visitor-stats MySQL self-test OK: uniqueness, reload, KST rollover, network cap, public history deduplication, gaps, empty/read-only/period boundaries\n";

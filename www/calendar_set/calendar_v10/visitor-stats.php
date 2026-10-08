@@ -250,6 +250,51 @@ function visitor_request_json() {
     return is_array($payload) ? $payload : array();
 }
 
+// Public aggregates only. The existing daily ledger remains the sole owner;
+// opening the report never records a visit or exposes per-browser identifiers.
+function visitor_read_history($pdo, $visit_date, $days) {
+    if (!in_array($days, array(7, 30, 90), true)) {
+        throw new InvalidArgumentException('Unsupported statistics period.');
+    }
+    $stats = visitor_read_stats($pdo, $visit_date);
+    $start = new DateTime($visit_date, new DateTimeZone('Asia/Seoul'));
+    $start->modify('-' . ($days - 1) . ' days');
+    $start_date = $start->format('Y-m-d');
+    $statement = $pdo->prepare(
+        'SELECT visit_date, COUNT(*) AS visitors, SUM(page_views) AS page_views ' .
+        'FROM rhythmjoy_site_daily_visitors WHERE visit_date BETWEEN ? AND ? ' .
+        'GROUP BY visit_date ORDER BY visit_date'
+    );
+    $statement->execute(array($start_date, $visit_date));
+    $by_date = array();
+    foreach ($statement->fetchAll() as $row) {
+        $by_date[$row['visit_date']] = $row;
+    }
+    $summary = $pdo->prepare(
+        'SELECT COUNT(DISTINCT visitor_hash) AS visitors, COALESCE(SUM(page_views), 0) AS page_views ' .
+        'FROM rhythmjoy_site_daily_visitors WHERE visit_date BETWEEN ? AND ?'
+    );
+    $summary->execute(array($start_date, $visit_date));
+    $period = $summary->fetch();
+    $daily = array();
+    for ($i = 0; $i < $days; $i += 1) {
+        $date = $start->format('Y-m-d');
+        $collected = $stats['collectionStartedOn'] !== null && $date >= $stats['collectionStartedOn'];
+        $row = isset($by_date[$date]) ? $by_date[$date] : null;
+        $daily[] = array(
+            'date' => $date,
+            'visitors' => $row ? intval($row['visitors']) : ($collected ? 0 : null),
+            'pageViews' => $row ? intval($row['page_views']) : ($collected ? 0 : null),
+        );
+        $start->modify('+1 day');
+    }
+    return array(
+        'stats' => $stats, 'days' => $days, 'startDate' => $start_date, 'endDate' => $visit_date,
+        'visitors' => intval($period['visitors']), 'pageViews' => intval($period['page_views']),
+        'daily' => $daily,
+    );
+}
+
 function visitor_server_host($server) {
     $raw_host = isset($server['HTTP_HOST']) ? trim((string) $server['HTTP_HOST']) : '';
     if ($raw_host === '') {
@@ -787,6 +832,11 @@ if (($method !== 'GET' && $method !== 'POST') || !visitor_request_envelope_is_va
     visitor_json_response(array('ok' => false, 'error' => 'request_rejected'), 403);
 }
 
+$history_days = isset($_GET['days']) ? $_GET['days'] : '30';
+if ($action === 'history' && ($method !== 'GET' || !in_array($history_days, array('7', '30', '90'), true))) {
+    visitor_json_response(array('ok' => false, 'error' => 'invalid_period'), 400);
+}
+
 $env_path = isset($_SERVER['RHYTHMJOY_ENV_FILE'])
     ? (string) $_SERVER['RHYTHMJOY_ENV_FILE']
     : dirname(dirname(dirname(__FILE__))) . '/.env';
@@ -808,6 +858,9 @@ try {
         }
         if ($method === 'GET' && $action === 'stats') {
             visitor_json_response(array('ok' => true, 'stats' => null), 200);
+        }
+        if ($method === 'GET' && $action === 'history') {
+            visitor_json_response(array('ok' => true, 'history' => null), 200);
         }
         if ($method === 'POST' && $action === 'confirm') {
             visitor_json_response(array('ok' => true, 'accepted' => false, 'stats' => null), 200);
@@ -842,6 +895,9 @@ try {
     }
 
     $pdo = visitor_db_connect($env);
+    if ($method === 'GET' && $action === 'history') {
+        visitor_json_response(array('ok' => true, 'history' => visitor_read_history($pdo, $visit_date, intval($history_days))), 200);
+    }
     $stats = visitor_read_stats($pdo, $visit_date);
 
     if ($method === 'GET' && $action === 'stats') {

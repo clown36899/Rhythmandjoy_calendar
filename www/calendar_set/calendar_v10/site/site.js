@@ -182,7 +182,7 @@ if (menuIndex >= 0 && surface && viewport) {
     if (!point || menuIndex < 0 || settling === 'leaving') return;
     if (settling === 'returning') reset();
     if (point.clientX < 20 || point.clientX > innerWidth - 20 ||
-        event.target.closest('.site-header, button, input, textarea, select, iframe, video, audio, [contenteditable], [role="slider"], .calendar-shell')) return;
+        event.target.closest('.site-header, dialog, button, input, textarea, select, iframe, video, audio, [contenteditable], [role="slider"], .calendar-shell')) return;
     for (let node = event.target; node && node !== document.body; node = node.parentElement) {
       if (node.scrollWidth > node.clientWidth + 1 && /^(auto|scroll)$/.test(getComputedStyle(node).overflowX)) return;
     }
