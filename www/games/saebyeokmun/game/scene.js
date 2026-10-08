@@ -1,4 +1,4 @@
-import {ROAD,START,MOTION,motionFrame,AREAS,areaIndex,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS} from './data.js';
+import {ROAD,START,MOTION,motionFrame,AREAS,areaIndex,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS} from './data.js?v=13';
 const P=window.Phaser;
 // The painted road occupies y=510–518 in the 620-high background.
 const GROUND=514;
@@ -11,6 +11,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.load.image('haetaeMotion','./assets/haetae-motion-v10.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
    this.load.image('companionWalk','./assets/companions-walk-v11.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
    for(const area of AREAS)this.load.image(area.texture,'./assets/'+area.file);
+   this.load.image('roadScenery','./assets/road-scenery-v13.png');
    this.load.image('livingScenery','./assets/living-scenery-v11.png');
    this.load.image('enemyAttacks','./assets/enemy-attacks-v11.png');
    for(const [key,file] of Object.entries({keeperWalk:'doryeong-stone-v12',keeperBrushWalk:'doryeong-brush-v12',cowWalk:'ox-guard-v12',scholarWalk:'scholar-motion-v12',mountWalk:'mounted-haetae-v12'}))this.load.image(key,'./assets/'+file+'.png');
@@ -51,6 +52,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('livingScenery',['pine','mist','dragon','grass'],2);
    this.sliceAtlas('enemyAttacks',['skirt','horse','reaper','boss'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Strike'+i)),4,4,4);
    for(const area of AREAS){const texture=this.textures.get(area.texture),src=texture.getSourceImage();texture.add('far',0,0,0,src.width,Math.floor(src.height/2));texture.add('middle',0,0,Math.floor(src.height/2),src.width,Math.floor(src.height/2));}
+   // Unequal atlas cells retain the wide painted path; only runtime texture frames are cropped.
+   const roadTexture=this.textures.get('roadScenery'),roadSource=roadTexture.getSourceImage();
+   for(const [name,x,y,w,h] of [['path',.02,.276,.66,.195],['cairn',.725,.155,.26,.31],['mile',.10,.55,.32,.37],['flowers',.475,.555,.495,.365]])roadTexture.add(name,0,Math.round(x*roadSource.width),Math.round(y*roadSource.height),Math.round(w*roadSource.width),Math.round(h*roadSource.height));
    this.root=this.add.container(0,0);
    this.sky=this.add.graphics();this.root.add(this.sky);
    this.depths={};
@@ -59,6 +63,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.dragon=this.add.image(0,0,'dragon').setAlpha(.25);this.root.add(this.dragon);
    this.pines=[0,1,2,3].map(()=>this.add.image(0,0,'pine').setOrigin(.5,1).setAlpha(.6));this.root.add(this.pines);
    this.road=this.add.graphics();this.root.add(this.road);
+   this.pathTiles=Array.from({length:8},()=>this.add.image(0,0,'roadScenery','path').setOrigin(0,0));this.root.add(this.pathTiles);
+   this.pathProps=Array.from({length:9},(_,i)=>this.add.image(0,0,'roadScenery',['cairn','mile','flowers'][i%3]).setOrigin(.5,1));this.root.add(this.pathProps);
    this.decor=this.add.graphics();this.root.add(this.decor);
    this.shadows=this.add.graphics();this.root.add(this.shadows);
    this.hero=this.add.image(0,0,'haetae').setOrigin(.5,1);this.girl=this.add.image(0,0,'girl').setOrigin(.5,1);
@@ -70,6 +76,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.exitLabel=this.add.text(0,0,'새벽문',{fontFamily:'AppleMyungjo,serif',fontSize:'22px',color:'#776850'}).setOrigin(.5);
    this.root.add(this.exitLabel);
    this.ready=true;this.resize();this.scale.on('resize',()=>this.resize());
+   // Browser toolbar movement changes the stage without always resizing the layout viewport.
+   this.stageObserver=new ResizeObserver(()=>this.resize());this.stageObserver.observe(document.getElementById('game'));
+   this.events.once('shutdown',()=>this.stageObserver.disconnect());
    this.input.keyboard?.on('keydown',e=>{if(['ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();});
    onReady(null,this);
   }
@@ -80,22 +89,39 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(width<=0||height<=0)return;
    // FIT owns the input/display transform; CSS pixels do not set drawing resolution.
    if(this.scale.gameSize.width!==width||this.scale.gameSize.height!==height)this.scale.setGameSize(width,height);
-   this.unit=height/620;this.vw=width/this.unit;this.root.setScale(this.unit);
+   const phone=window.matchMedia('(max-width:1000px) and (orientation:landscape)').matches;
+   const viewHeight=phone?Math.max(440,Math.min(620,620*2.35/(bounds.width/bounds.height))):620;
+   this.unit=height/viewHeight;this.vw=width/this.unit;this.root.setScale(this.unit);this.root.y=(viewHeight-620)*this.unit;
+   this.game.canvas.dataset.viewHeight=String(Math.round(viewHeight));
    this.game.canvas.dataset.renderDensity=String(density);
   }
   drawLandscape(region,blend,t){
    const vw=this.vw,g=this.sky;g.clear();
-   g.fillStyle(region===1?0xf0e5d5:region===2?0xe7e9df:0xede8db,1);g.fillRect(0,0,vw,620);
-   const phase=t/95*Math.PI,sunX=vw*.72+Math.cos(phase)*vw*.12,sunY=470-Math.sin(phase+.65)*320;
-   g.fillStyle(0xd8a07e,.035);g.fillCircle(sunX,sunY,80);g.fillStyle(0xcc9a72,.12);g.fillCircle(sunX,sunY,37);
+   const progress=model.status==='ready'?[.12,.39,.73][region]:model.progress();
+   const smooth=n=>{n=Math.max(0,Math.min(1,n));return n*n*(3-2*n);};
+   const night=smooth((progress-.24)/.29)*(1-smooth((progress-.88)/.12));
+   const dusk=Math.sin(smooth((progress-.23)/.29)*Math.PI);
+   const mix=(a,b,v)=>P.Display.Color.Interpolate.ColorWithColor(P.Display.Color.ValueToColor(a),P.Display.Color.ValueToColor(b),1,v);
+   const color=(a,b,v)=>{const c=mix(a,b,v);return P.Display.Color.GetColor(c.r,c.g,c.b);};
+   const sky=color(color(0xede8db,0xe5ae86,dusk*.5),0x34495d,night*.92);
+   g.fillStyle(sky,1);g.fillRect(0,0,vw,620);
+   for(let i=0;i<12;i++){g.fillStyle(0xeec293,dusk*.04);g.fillRect(0,410+i*9,vw,12);}
+   const sunProgress=progress>.88?(progress-.88)/.12:1-smooth(progress/.5);
+   const sunX=vw*(progress>.88?.67:.76),sunY=510-sunProgress*265;
+   g.fillStyle(0xe9b46c,(1-night)*.10);g.fillCircle(sunX,sunY,76);g.fillStyle(0xdfa062,(1-night)*.6);g.fillCircle(sunX,sunY,32);
+   if(night>.02){
+    for(let i=0;i<25;i++){const x=(i*197+43)%Math.max(1,vw),y=210+(i*79)%180;g.fillStyle(0xf4e9c9,night*(.22+.3*(.5+.5*Math.sin(t*.65+i))));g.fillCircle(x,y,i%4===0?1.5:1);}
+    g.fillStyle(0xdbe9d4,night*.07);g.fillCircle(vw*.67,255,60);g.fillStyle(0xf4eed5,night*.85);g.fillCircle(vw*.67,255,22);g.fillStyle(sky,night);g.fillCircle(vw*.67+10,248,20);
+   }
+   const mountainTint=color(0xffffff,0x7fabbc,night*.65),groundTint=color(0xffffff,0x9fafb4,night*.6);
    for(const depth of ['far','middle']){
     const w=depth==='far'?1580:1280,h=depth==='far'?420:270,y=depth==='far'?465:515,shift=this.offset*PARALLAX[depth]%(2*w);
-    this.depths[depth].forEach((layer,n)=>layer.forEach((im,i)=>im.setTexture(AREAS[n?region:Math.max(0,region-1)].texture,depth).setDisplaySize(w,h).setPosition(i*w-shift-w,y).setAlpha((n?blend:1)*(depth==='far'?.55:.75))));
+    this.depths[depth].forEach((layer,n)=>layer.forEach((im,i)=>im.setTexture(AREAS[n?region:Math.max(0,region-1)].texture,depth).setDisplaySize(w,h).setPosition(i*w-shift-w,y).setTint(mountainTint).setAlpha((n?blend:1)*(depth==='far'?.55:.75))));
    }
    this.mists.forEach((im,i)=>{const w=280+i*110,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(5+i*2)-this.offset*.07)%(vw+650)+vw+650)%(vw+650)-300,140+i*72).setAlpha(.16+i*.025);});
    const fly=(t+8)%75,ds=this.dragon.texture.getSourceImage();this.dragon.setVisible(fly<18).setDisplaySize(140,140*ds.height/ds.width).setPosition(-170+(vw+340)*fly/18,168+Math.sin(fly*.55)*14).setAngle(Math.sin(fly*.8)*3);
    this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=148+(i%2)*28;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*810-(this.offset*.48)%1620-190,505).setAngle(Math.sin(t*.75+i*2)*1.7);});
-   const road=this.road;road.clear();road.fillStyle(0xe8dfcb,.92);road.fillRect(0,GROUND, vw,620-GROUND);
+   const road=this.road;road.clear();road.fillStyle(color(0xe8dfcb,0x77868a,night*.65),1);road.fillRect(0,GROUND, vw,620-GROUND);
    road.lineStyle(1,0xa79777,.35);road.lineBetween(0,GROUND,vw,GROUND);
    // Every ground mark shares the exact world-to-camera transform of the feet.
    for(let i=Math.floor(this.offset/51)-1;i<(this.offset+vw)/51+1;i++){
@@ -103,6 +129,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
     road.lineStyle(1,0xa48b63,.1+(i%3)*.025);road.lineBetween(x,y,x+8+(i%5)*2,y-1);
     if(i%7===0){road.fillStyle(0xab9876,.12);road.fillEllipse(x+15,GROUND+3,27,3);}
    }
+   this.pathTiles.forEach((im,i)=>im.setPosition(i*530-(this.offset%530)-530,GROUND-3).setDisplaySize(540,102).setTint(groundTint));
+   this.pathProps.forEach((im,i)=>{const key=['cairn','mile','flowers'][i%3],frame=im.frame,h=key==='cairn'?72:key==='mile'?80:39,x=i*550-(this.offset*.98)%1650-220;im.setPosition(x,GROUND+3).setDisplaySize(h*frame.width/frame.height,h).setAlpha(.78).setTint(groundTint);});
+   if(night>.1)for(let i=0;i<10;i++){const x=((i*181+t*9)%Math.max(1,vw)),y=GROUND-30+Math.sin(t*.8+i)*17;road.fillStyle(0xc0e7ae,night*(.2+.3*Math.sin(t*2+i)**2));road.fillCircle(x,y,2);}
    this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=53+(i%2)*18;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*460-(this.offset*PARALLAX.near)%920-100,600+(i%2)*18).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
   }
   resetPresentation(){
@@ -130,7 +159,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(e.type==='vanish'){
      const ghost=this.add.image(0,0,MODEL_MAP[e.kind]).setOrigin(.5,this.grounding.get(MODEL_MAP[e.kind])??1);
      const src=ghost.texture.getSourceImage(),h=BODY_HEIGHT[e.kind];ghost.setDisplaySize(h*src.width/src.height,h);this.root.add(ghost);
-     this.effects.push({...e,type:'depart',sprite:ghost,t:0,duration:e.kind==='reaper'?1.8:e.kind==='boss'?2.1:1.35});
+     this.effects.push({...e,type:'depart',sprite:ghost,t:0,duration:e.kind==='reaper'?2.6:e.kind==='boss'?2.1:1.35});
      if(e.kind==='horse'){
       const hat=this.add.image(0,0,'horse').setOrigin(.5,0),src=hat.texture.getSourceImage(),h=BODY_HEIGHT.horse;
       hat.setCrop(0,0,src.width,Math.floor(src.height*.16)).setDisplaySize(h*src.width/src.height,h);this.root.add(hat);this.effects.push({...e,type:'hat',sprite:hat,t:0,duration:1.75});
@@ -153,7 +182,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(!image){image=this.add.image(0,0,MODEL_MAP[type]||type).setOrigin(.5,1);this.root.add(image);this.sprites.set(key,image);}
    if(type==='skirt')image.setTexture(Math.floor(walk*5)%2?'skirt1':'skirt0');
    if(enemy&&(type!=='skirt'||action))image.setTexture(type+'Strike'+(action?enemyAttackFrame(action.elapsed):0));
-   if(!enemy&&UNITS[type])image.setTexture((type==='keeper'&&model.keeperRank?'keeperBrush':type)+motionFrame(type,walk,moving,action)).setFlipX(moving<0&&!action);
+   const waiting=type==='cow'&&!enemy&&!moving&&!action&&model.allies.some(a=>a.type==='cow'&&'a'+a.id!==key&&a.hp>0&&a.x>x&&a.x-x<UNITS.cow.spacing+12);
+   if(!enemy&&UNITS[type])image.setTexture((type==='keeper'&&model.keeperRank?'keeperBrush':type)+(waiting?4:motionFrame(type,walk,moving,action))).setFlipX(moving<0&&!action);
    const height=BODY_HEIGHT[type]||130;
    this.placeOnGround(image,x-this.offset,height);
    if(enemy&&action){
@@ -231,10 +261,21 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(e.type==='depart'){
      const x=e.x-this.offset,h=BODY_HEIGHT[e.kind],sprite=e.sprite;
      if(e.kind==='reaper'){
-      const rise=Math.max(0,(p-.2)/.8);sprite.setPosition(x,GROUND-150*rise*rise).setAlpha(p<.2?1:1-rise).setTint(0xf4e5ac);
-      const ey=GROUND-h*.81-150*rise*rise;
-      if(p<.62){g.fillStyle(0xeacb80,Math.sin(Math.min(1,p/.25)*Math.PI/2)*fade*.2);g.fillCircle(x-8,ey,17);g.fillStyle(0xfff7ce,fade);g.fillCircle(x-11,ey,2.6);g.fillCircle(x-5,ey,2.1);}
-      for(let i=0;i<7;i++){g.lineStyle(1,0xd7bd7d,fade*.6);const xx=x-24+i*8,yy=GROUND-h*.35-(p*150+i*15)%210;g.lineBetween(xx,yy,xx,yy-13-15*p);}
+      // Hold the face for the eye flash, release a distinct spirit, then erase it into light.
+      const release=Math.max(0,Math.min(1,(p-.22)/.64)),dissolve=Math.max(0,(p-.66)/.34),rise=245*release*release;
+      sprite.setPosition(x,GROUND-10*release).setAlpha(Math.max(0,1-release*2.2));
+      const eyeX=x-sprite.displayWidth*.15,eyeY=GROUND-h*.79;
+      if(p<.48){const glow=Math.min(1,p/.1)*(1-Math.max(0,(p-.25)/.23));
+       for(const dx of [-4,3]){g.fillStyle(0x7ededb,.13*glow);g.fillCircle(eyeX+dx,eyeY,16);g.fillStyle(0xa4fff0,.5*glow);g.fillCircle(eyeX+dx,eyeY,6);g.fillStyle(0xfffce1,glow);g.fillEllipse(eyeX+dx,eyeY,4.5,3);}
+       g.lineStyle(1.5,0xc0fff0,glow*.6);g.lineBetween(eyeX-22,eyeY,eyeX+20,eyeY);
+      }
+      if(p>.17){const spiritAlpha=Math.min(1,(p-.17)/.1)*(1-dissolve),sx=x+Math.sin(release*4)*10,sy=GROUND-h*.52-rise;
+       g.fillStyle(0x8bddd2,spiritAlpha*.07);g.fillEllipse(sx,sy-10,110,150);
+       g.fillStyle(0xbdece0,spiritAlpha*.7);g.beginPath();g.moveTo(sx-21,sy);g.lineTo(sx-14,sy-25);g.lineTo(sx,sy-34);g.lineTo(sx+17,sy-22);g.lineTo(sx+23,sy+4);g.lineTo(sx+8,sy+30+35*release);g.lineTo(sx+2,sy+16);g.lineTo(sx-10,sy+38+45*release);g.lineTo(sx-12,sy+13);g.closePath();g.fillPath();
+       g.fillStyle(0xfffde7,spiritAlpha*.95);g.fillEllipse(sx,sy-10,23,28);g.fillStyle(0x669b91,spiritAlpha);g.fillCircle(sx-4,sy-12,1.7);g.fillCircle(sx+4,sy-12,1.7);
+       for(let i=0;i<12;i++){const spread=15+55*dissolve,xx=sx+Math.sin(i*2.4+release)*spread,yy=sy+35+i*5-85*dissolve;g.fillStyle(i%2?0xffedb0:0x9adbd1,spiritAlpha*.7);g.fillCircle(xx,yy,(2+i%3)*(1-dissolve));}
+       g.lineStyle(1,0x9cdfd4,spiritAlpha*.3);g.strokeEllipse(x,GROUND-1,35+65*release,7);
+      }
      }else if(e.kind==='skirt'){
       sprite.setPosition(x+20*p,GROUND-30*p).setAlpha(fade*fade).setAngle(p*24);
       for(let i=0;i<9;i++){const xx=x+(i-4)*15*p+40*p,yy=GROUND-35-i*6-95*p;g.lineStyle(3, i%2?0xfaf4df:0xbeb39e,fade);g.lineBetween(xx,yy,xx+Math.sin(p*9+i)*12,yy-15);}

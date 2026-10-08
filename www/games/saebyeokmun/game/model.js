@@ -1,4 +1,4 @@
-import {ROAD,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats} from './data.js';
+import {ROAD,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats} from './data.js?v=13';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -15,7 +15,9 @@ export class Journey {
  drainEvents(){const events=this.events;this.events=[];return events;}
  pause(){if(this.status==='playing'){this.status='paused';this.direction=0;}else if(this.status==='paused')this.status='playing';}
  progress(){return clamp((this.furthest-START)/(ROAD-START),0,1);}
- addAlly(type,x=this.x-65){const s=UNITS[type];const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
+ addAlly(type,x){const s=UNITS[type];
+  // Summons join their own line from the tail, never inside a fighting formation.
+  if(x===undefined){const line=this.allies.filter(a=>a.hp>0&&a.type===type);x=Math.min(this.x-65,...line.map(a=>a.x-s.spacing));}const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
  spawn(type,x){const s=ENEMIES[type];const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,stun:0,hit:0,windup:0,action:null,ability:type==='boss'?3:type==='horse'?4.5:5,walk:0};this.enemies.push(a);if(type==='boss')this.bossSpawned=true;return a;}
  reject(message){this.emit('notice',{message});return false;}
  summon(type){
@@ -24,7 +26,7 @@ export class Journey {
   if(this.allies.filter(a=>a.hp>0).length>=7)return this.reject('동료는 일곱까지 함께 걸을 수 있어요.');
   if(this.coins<UNITS[type].cost)return this.reject('엽전이 조금 더 필요해요.');
   this.coins-=UNITS[type].cost;this.cooldowns[type]=UNITS[type].cooldown;
-  this.addAlly(type);this.summons++;this.emit('summon',{kind:type,x:this.x-65});return true;
+  const ally=this.addAlly(type);this.summons++;this.emit('summon',{kind:type,x:ally.x});return true;
  }
  upgradeKeeper(){
   if(this.status!=='playing')return false;
@@ -132,14 +134,16 @@ export class Journey {
    if(this.enemies.length<8&&this.wave>0&&this.wave<6)this.spawn(this.wave>2&&this.nextId%3===0?'horse':'skirt',this.x+900);
   }
   if(this.action?.kind!=='rush'&&this.heroAttack<=0&&front&&front.type!=='skirt'&&front.x-this.x<200){this.hurtEnemy(front,10);this.heroAttack=1.35;this.emit('projectile',{actor:'girl',sourceKind:'girl',targetKind:front.type,from:this.x-60,to:front.x,high:true,hit:true});}
-  for(const a of [...this.allies].sort((a,b)=>b.x-a.x||a.id-b.id)){
+  for(const a of [...this.allies].sort((a,b)=>a.id-b.id)){
    if(a.hp<=0)continue;
-   const s=unitStats(a.type,this.keeperRank);a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;this.advanceAction(a,dt);
-   if(a.action)continue;
-   const rank=this.allies.filter(other=>other.hp>0&&other.type===a.type&&other.id<a.id).length;
-   const formation=this.x+s.formation-rank*s.spacing;
-   const mate=this.allies.filter(other=>other.hp>0&&other.type===a.type&&other!==a&&(other.x>a.x||other.x===a.x&&other.id<a.id)).sort((b,c)=>b.x-c.x)[0];
-   const limit=mate?mate.x-(s.spacing-6):Infinity,oldAX=a.x;
+   const s=unitStats(a.type,this.keeperRank),oldAX=a.x;
+   const preceding=this.allies.filter(other=>other.hp>0&&other.type===a.type&&other.id<a.id).sort((b,c)=>c.id-b.id);
+   const formation=this.x+s.formation-preceding.length*s.spacing;
+   const limit=preceding.length?preceding[0].x-s.spacing:Infinity;
+   // The same ordered line owns joining, walking, retreat, and active attacks.
+   a.x=Math.min(a.x,limit);
+   a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;this.advanceAction(a,dt);
+   if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
    const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55).sort((b,c)=>b.x-c.x);
    const target=(a.type==='scholar'?ahead.find(e=>e.type==='reaper'&&e.x-a.x<=s.range):null)||(['rabbit','scholar'].includes(a.type)?ahead.find(e=>e.type!=='skirt'&&e.x-a.x<=s.range):null)||ahead[0];
    if(target&&target.x-a.x<=s.range){

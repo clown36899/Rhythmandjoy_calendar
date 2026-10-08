@@ -1,10 +1,11 @@
-import {Journey} from './game/model.js';
-import {makeGame} from './game/scene.js';
-import {Soundscape} from './game/audio.js';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,areaIndex,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout} from './game/data.js';
+import {Journey} from './game/model.js?v=13';
+import {makeGame} from './game/scene.js?v=13';
+import {Soundscape} from './game/audio.js?v=13';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,areaIndex,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout} from './game/data.js?v=13';
 const $=id=>document.getElementById(id);
 const model=new Journey();
-let scene,ready=false,lastStatus='',lastHint=0,noticeUntil=0,lastFrame=0,codexPaused=false,coinAnimation,lastKeeperRank=-1;
+let installPrompt=null;
+let scene,ready=false,lastStatus='',lastHint=0,noticeUntil=0,lastFrame=0,infoPaused=false,coinAnimation,lastKeeperRank=-1;
 const keys=new Set();
 const motionPreviews=[];
 const startButton=$('start');startButton.disabled=true;
@@ -14,7 +15,7 @@ try{best=Number(localStorage.getItem('saebyeokmun-best')||0)||0;}catch{}
 $('best').textContent=best?best+'%':'아직 걷지 않은 길';
 const soundscape=new Soundscape({onState:state=>{
  $('sound').dataset.audioState=state;
- $('audio-status').textContent=state==='loading'?'밤길의 소리를 준비하고 있어요.':state==='partial'?'일부 소리를 불러오지 못했어요. 새로고침하면 다시 준비합니다.':'흙 밟기 · 대나무 사격 · 종이 부적 · 잔잔한 밤길 선율';
+ $('audio-status').textContent=state==='locked'?'소리 버튼을 눌러 공격음을 켜 주세요.':state==='loading'?'밤길의 소리를 준비하고 있어요.':state==='partial'?'일부 소리를 불러오지 못했어요. 새로고침하면 다시 준비합니다.':'소의 뿔 · 돌팔매 · 먹붓 · 씨앗탄 · 선비의 봉인 · 승천';
 }});
 function unlockSound(){return soundscape.unlock().catch(()=>{showNotice('소리를 시작하지 못했어요. 소리 버튼을 다시 눌러 주세요.');});}
 function updateSound(){
@@ -43,7 +44,7 @@ $('actions').addEventListener('click',e=>{const b=e.target.closest('[data-action
 $('upgrade').addEventListener('click',()=>model.upgradeKeeper());
 document.addEventListener('dragstart',e=>e.preventDefault());
 document.addEventListener('keydown',e=>{
- if($('codex').open||$('loadout').open)return;
+ if($('codex').open||$('loadout').open||$('app-help').open)return;
  const k=e.key.toLowerCase();
  if(['arrowleft','arrowright',' ','a','d','q','e','r','1','2','3','4'].includes(k))e.preventDefault();
  if(k===' '){if(!e.repeat)pause();return;}
@@ -63,14 +64,23 @@ document.querySelectorAll('[data-sound]').forEach(button=>button.addEventListene
  soundscape.setEnabled(true);updateSound();await unlockSound();soundscape.play(button.dataset.sound,{allowIdle:true});
 }));
 $('fullscreen').addEventListener('click',async()=>{
- try{if(document.fullscreenElement)await document.exitFullscreen();else await $('game-shell').requestFullscreen();}catch{showNotice('이 브라우저에서는 가로 화면으로 돌려 사용해 주세요.');}
+ try{if(document.fullscreenElement){await document.exitFullscreen();}else{await document.querySelector('.phone-screen').requestFullscreen();try{await screen.orientation?.lock?.('landscape');}catch{}}}catch{openInfo($('app-help'));}
 });
+document.addEventListener('fullscreenchange',()=>{$('fullscreen').setAttribute('aria-label',document.fullscreenElement?'전체 화면 나가기':'전체 화면');});
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;$('install-confirm').hidden=false;});
+window.addEventListener('appinstalled',()=>{installPrompt=null;$('install-confirm').hidden=true;$('app-help').close();});
+$('install').addEventListener('click',()=>openInfo($('app-help')));
+$('app-help').querySelector('.dialog-close').addEventListener('click',()=>$('app-help').close());
+$('install-confirm').addEventListener('click',async()=>{if(!installPrompt)return;const prompt=installPrompt;installPrompt=null;$('install-confirm').hidden=true;await prompt.prompt();await prompt.userChoice;});
+// Every combat gesture can recover mobile audio after an OS interruption.
+document.addEventListener('pointerdown',()=>{if(soundscape.enabled&&soundscape.context?.state!=='running')unlockSound();},{passive:true});
 function showNotice(message){$('callout').textContent=message;$('callout').hidden=false;noticeUntil=performance.now()+2400;}
-function openCodex(){codexPaused=model.status==='playing';if(codexPaused)model.pause();soundscape.setPlaying(false);$('codex').showModal();}
+function openInfo(dialog){infoPaused=model.status==='playing';if(infoPaused)model.pause();soundscape.setPlaying(false);dialog.showModal();}
+function openCodex(){openInfo($('codex'));}
 $('codex-open').addEventListener('click',openCodex);$('result-codex').addEventListener('click',openCodex);$('sources-open').addEventListener('click',openCodex);
 $('codex').querySelector('.dialog-close').addEventListener('click',()=>$('codex').close());
 $('codex').addEventListener('click',e=>{if(e.target===$('codex')){const r=$('codex').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)$('codex').close();}});
-$('codex').addEventListener('close',()=>{soundscape.stopVoices();if(codexPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');codexPaused=false;});
+for(const dialog of [$('codex'),$('app-help')])dialog.addEventListener('close',()=>{soundscape.stopVoices();if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;});
 function renderSkillSlots(){
  $('skill-slots').innerHTML=loadout.map((key,i)=>{const s=SKILLS[key];return `<button class="action" id="action-${key}" data-action="${key}"><span class="action-role magic">${s.role}</span><kbd>${['Q','E','R'][i]}</kbd><span class="action-art"><img data-icon="${s.icon}" alt="" draggable="false"></span><strong>${key==='rush'?'해태 돌진':key==='stomp'?'발구름':s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
  if(scene)$('skill-slots').querySelectorAll('[data-icon]').forEach(img=>{img.src=scene.previewTexture(img.dataset.icon);});
@@ -156,7 +166,7 @@ function onFrame(m,s){
   else badge?.remove();
  }
  const boss=m.enemies.find(e=>e.type==='boss');$('boss-bar').hidden=!boss||m.status!=='playing';if(boss)$('boss-fill').style.width=(boss.hp/boss.maxHp*100)+'%';
- $('pause-overlay').hidden=m.status!=='paused'||$('codex').open;
+ $('pause-overlay').hidden=m.status!=='paused'||$('codex').open||$('app-help').open;
  if(m.status!==lastStatus){
   lastStatus=m.status;
   if(['won','lost'].includes(m.status)){

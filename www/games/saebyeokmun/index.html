@@ -3,12 +3,16 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<meta name="theme-color" content="#eee7d8">
+<meta name="theme-color" content="#34463e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./assets/app-icon.svg" type="image/svg+xml">
 <meta name="description" content="해태와 동료들을 이끌고 귀물의 밤을 지나 새벽문까지. 손그림 횡스크롤 전진 방어 게임.">
 <title>새벽문 — 길 끝까지 함께</title>
-<link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./style.css?v=13">
 <script defer src="./game/phaser.min.js"></script>
-<script type="module" src="./app.js"></script>
+<script type="module" src="./app.js?v=13"></script>
 </head>
 <body>
 <div class="portrait-guide" role="status"><div class="rotate-device" aria-hidden="true">↻</div><strong>가로로 펼치면, 길이 열려요.</strong><p>휴대폰을 가로로 돌려 주세요.<br>왼손은 이동, 오른손은 동료와 기술.</p></div>
@@ -21,6 +25,7 @@
 <button id="loadout-open" class="quiet">필살기 편성</button>
 <button id="codex-open" class="quiet">동작과 도감 <span>↗</span></button>
 <button id="sound" class="sound-toggle" aria-label="소리 끄기" aria-pressed="true"><img data-icon="iconSound" alt="" draggable="false"><span id="sound-state">소리 켬</span></button>
+<button id="install" class="install-button" aria-label="홈 화면에 추가 안내">홈 화면에</button>
 <button id="fullscreen" class="icon-button" aria-label="전체 화면">⤢</button>
 </nav>
 </header>
@@ -36,7 +41,7 @@
 <div class="callout" id="callout" role="status" hidden></div>
 <div class="boss-bar" id="boss-bar" hidden><span>강철 <small>먹구름 아래의 짐승</small></span><div><i id="boss-fill"></i></div></div>
 <div class="intro" id="intro">
-<div class="intro-copy"><div class="eyebrow">A JOURNEY THROUGH THE INK</div><h1>밤을 지나,<br>새벽문까지.</h1><p>해태와 작은 동료들을 이끌고<br>오른쪽 길 끝까지 나아가세요.</p><button id="start" class="primary"><span id="start-label">길 떠나기</span><span>→</span></button><div class="intro-note">약 3분의 여정 <span>·</span> 터치와 키보드 지원</div><div id="loading" role="status">그림을 불러오는 중…</div></div>
+<div class="intro-copy"><div class="eyebrow">A JOURNEY THROUGH THE INK</div><h1>밤을 지나,<br>새벽문까지.</h1><p>해태와 작은 동료들을 이끌고<br>오른쪽 길 끝까지 나아가세요.</p><button id="start" class="primary"><span id="start-label">길 떠나기</span><span>→</span></button><p class="install-hint">주소창 없이: 위의 ⤢ 또는 홈 화면에 추가</p><div class="intro-note">약 3분의 여정 <span>·</span> 터치와 키보드 지원</div><div id="loading" role="status">그림을 불러오는 중…</div></div>
 <div class="intro-caption"><span>첫 번째 길</span><strong>인왕산</strong><i></i></div>
 </div>
 <div class="modal-overlay" id="pause-overlay" hidden><div class="paper-dialog"><span class="eyebrow">A MOMENT TO BREATHE</span><h2>잠깐, 숨을 고르며.</h2><p>행렬은 여기서 기다리고 있어요.</p><button id="resume" class="primary">계속 걷기 <span>→</span></button><button id="restart-pause" class="text-button">처음부터 다시</button></div></div>
@@ -74,5 +79,6 @@
 <footer><span>새벽문 <i>·</i> 산수화 속으로 걷는 길</span><span>원화의 결을 따라 걷는 작은 실험</span><button id="sources-open">그림과 이야기의 출처</button></footer>
 </div>
 <dialog id="loadout" aria-labelledby="loadout-title"><div class="dialog-head"><div><span class="eyebrow">PREPARE YOUR JOURNEY</span><h2 id="loadout-title">이번 길에 챙길 필살기.</h2></div><button class="dialog-close" aria-label="편성 닫기">×</button></div><p class="loadout-help">세 가지를 골라 순서대로 배치하세요. 장착한 기술을 누르면 해제됩니다.</p><div id="loadout-slots" class="loadout-slots" aria-label="필살기 세 자리"></div><div id="loadout-choices" class="loadout-choices"></div><div class="loadout-footer"><span id="loadout-count" role="status"></span><button id="loadout-save" class="primary">편성 저장 <span>→</span></button></div></dialog>
-<dialog id="codex"><div class="dialog-head"><div><span class="eyebrow">FIELD NOTES</span><h2>함께 걷고, 다르게 싸우고.</h2></div><button class="dialog-close" aria-label="도감 닫기">×</button></div><p class="codex-intro">동료마다 다른 이동·공격과 귀물의 공격 동작을 시험해 보세요. 도감을 보는 동안 전투는 멈춥니다.</p><h3 class="roster-heading">함께 걷는 동료 <small>소 · 도령 · 달토끼 · 선비</small></h3><div id="companions-grid"></div><section class="sound-lab" aria-label="소리 시험"><div><h3 class="roster-heading">밤길의 소리</h3><p id="audio-status" role="status">길을 떠나거나 아래 버튼을 누르면 소리가 시작됩니다.</p></div><div class="sound-settings"><label for="sound-volume">음량 <output id="volume-value">55%</output></label><input type="range" id="sound-volume" min="0" max="100" value="55"><div class="sound-tests"><button data-sound="step-heavy">발걸음 듣기</button><button data-sound="charm">부적 듣기</button><button data-sound="stomp">발구름 듣기</button></div></div></section><h3 class="roster-heading">길을 막는 귀물</h3><div id="codex-grid"></div><p class="source-note">지하지인과 강철은 곽재식 작가의 강연을 참고했습니다. 외형의 세부 조합과 전투 능력은 게임용 창작입니다. 그림은 사용자 원화를 바탕으로 생성한 시안입니다. 인왕산·남한산성·금강산은 지형과 옛 그림을 참고한 상상 속 여정이며 실제 지리 순서는 아닙니다.</p><a class="source-link" href="https://www.youtube.com/watch?v=fK2mzliPjcQ" target="_blank" rel="noreferrer">곽재식 작가 강연 보기 ↗</a><div class="landscape-sources"><a href="https://www.museum.go.kr/MUSEUM/contents/M0501000000.do?relicRecommendId=962060&amp;schM=view" target="_blank" rel="noreferrer">인왕제색도 · 국립중앙박물관 ↗</a><a href="https://web1.gg.go.kr/namhansansung-2/contents/contents.do?ciIdx=1276&amp;menuId=3489" target="_blank" rel="noreferrer">남한산성 · 경기도 ↗</a><a href="https://heritage.go.kr/heri/cul/culSelectDetail.do?ccbaAsno=02170000&amp;ccbaCtcd=11&amp;ccbaKdcd=11&amp;pageNo=1_1_1_0" target="_blank" rel="noreferrer">정선 필 금강전도 · 국가유산포털 ↗</a></div></dialog>
+<dialog id="codex"><div class="dialog-head"><div><span class="eyebrow">FIELD NOTES</span><h2>함께 걷고, 다르게 싸우고.</h2></div><button class="dialog-close" aria-label="도감 닫기">×</button></div><p class="codex-intro">동료마다 다른 이동·공격과 귀물의 공격 동작을 시험해 보세요. 도감을 보는 동안 전투는 멈춥니다.</p><h3 class="roster-heading">함께 걷는 동료 <small>소 · 도령 · 달토끼 · 선비</small></h3><div id="companions-grid"></div><section class="sound-lab" aria-label="소리 시험"><div><h3 class="roster-heading">밤길의 소리</h3><p id="audio-status" role="status">길을 떠나거나 아래 버튼을 누르면 소리가 시작됩니다.</p></div><div class="sound-settings"><label for="sound-volume">음량 <output id="volume-value">55%</output></label><input type="range" id="sound-volume" min="0" max="100" value="55"><div class="sound-tests"><button data-sound="horn">소 뿔치기</button><button data-sound="stone">도령 돌팔매</button><button data-sound="ink">먹붓</button><button data-sound="seed">토끼 씨앗탄</button><button data-sound="seal">선비 봉인</button><button data-sound="ascend">승천</button></div></div></section><h3 class="roster-heading">길을 막는 귀물</h3><div id="codex-grid"></div><p class="source-note">지하지인과 강철은 곽재식 작가의 강연을 참고했습니다. 외형의 세부 조합과 전투 능력은 게임용 창작입니다. 그림은 사용자 원화를 바탕으로 생성한 시안입니다. 인왕산·남한산성·금강산은 지형과 옛 그림을 참고한 상상 속 여정이며 실제 지리 순서는 아닙니다.</p><a class="source-link" href="https://www.youtube.com/watch?v=fK2mzliPjcQ" target="_blank" rel="noreferrer">곽재식 작가 강연 보기 ↗</a><div class="landscape-sources"><a href="https://www.museum.go.kr/MUSEUM/contents/M0501000000.do?relicRecommendId=962060&amp;schM=view" target="_blank" rel="noreferrer">인왕제색도 · 국립중앙박물관 ↗</a><a href="https://web1.gg.go.kr/namhansansung-2/contents/contents.do?ciIdx=1276&amp;menuId=3489" target="_blank" rel="noreferrer">남한산성 · 경기도 ↗</a><a href="https://heritage.go.kr/heri/cul/culSelectDetail.do?ccbaAsno=02170000&amp;ccbaCtcd=11&amp;ccbaKdcd=11&amp;pageNo=1_1_1_0" target="_blank" rel="noreferrer">정선 필 금강전도 · 국가유산포털 ↗</a></div></dialog>
+<dialog id="app-help" class="app-help" aria-labelledby="app-help-title"><div class="dialog-head"><h2 id="app-help-title">주소창 없이 걷는 길.</h2><button class="dialog-close" aria-label="설치 안내 닫기">×</button></div><p id="install-help-copy">Android Chrome에서는 메뉴 ⋮ → 앱 설치 또는 홈 화면에 추가를 선택하세요. 설치한 아이콘으로 열면 주소창 없이 실행됩니다.</p><p>iPhone에서는 공유 → 홈 화면에 추가 → 웹 앱으로 열기를 사용하세요. 인터넷 연결이 필요합니다.</p><button id="install-confirm" class="primary" hidden>홈 화면에 설치 <span>↓</span></button></dialog>
 </body></html>
