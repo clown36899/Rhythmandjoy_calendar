@@ -226,6 +226,19 @@ async function swipe(route, from, to, options = {}) {
     assert.ok(html.includes('naver-site-verification'));
     const data = JSON.parse(structuredText(html));
     const canonical = html.match(/rel="canonical" href="([^"]+)"/)[1];
+    assert.equal(new URL(canonical).pathname, '/' + (route ? route + '/' : ''), 'Public origin must not inherit the legacy calendar document path');
+    for (const [, attributes] of html.matchAll(/<img\b([^>]*site-responsive[^>]*)>/g)) {
+      assert.match(attributes, /width="\d+" height="\d+"/);
+      assert.match(attributes, /sizes="[^\"]+"/);
+      assert.match(attributes, /draggable="false"/);
+      const candidates = attributes.match(/srcset="([^\"]+)"/)[1].split(', ');
+      assert.ok(candidates.length >= 3);
+      for (const candidate of candidates) {
+        const [url, width] = candidate.split(' ');
+        assert.match(width, /^\d+w$/);
+        assert.ok(fs.statSync(path.resolve(root, '../../..', url.replace(/^\//,''))).size > 0, 'Every advertised image size must exist');
+      }
+    }
     if (!route) {
       assert.equal(data.find(item => item['@type'] === 'WebSite').url, canonical);
       assert.equal(data.find(item => item['@type'] === 'LocalBusiness').url, canonical);
@@ -257,6 +270,17 @@ async function swipe(route, from, to, options = {}) {
   assert.equal((sitemap.match(/<lastmod>2026-10-08<\/lastmod>/g)||[]).length,11);
   assert.doesNotMatch(sitemap,/site-preview|calendar_10|\/structure\//);
   checks++;
+  const origin = new URL([...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)][0][1]).origin;
+  const legacyCanonical = origin + '/calendar_set/calendar_v10/calendar_10.html';
+  for (const filename of ['calendar_10.html','calendar_mobile_10.html']) {
+    const legacy = fs.readFileSync(path.resolve(root, '..', filename), 'utf8');
+    assert.equal(legacy.match(/rel="canonical" href="([^\"]+)"/)[1], legacyCanonical);
+    assert.equal(metaElements(legacy)['meta[property="og:url"]'].content, legacyCanonical);
+    assert.doesNotMatch(legacy, /7번 출구 도보 1분/);
+    assert.ok(legacy.includes(`href="${origin}/" target="_blank" rel="noopener" draggable="false">공식 홈페이지</a>`));
+    if (filename === 'calendar_10.html') assert.match(legacy, /rel="alternate"[^>]+calendar_mobile_10\.html/);
+    checks++;
+  }
   const visitorSource = fs.readFileSync(path.resolve(root,'../visitor-stats.js'),'utf8');
   // Cached pre-baseline HTML must still initialize collection with the new JS.
   {

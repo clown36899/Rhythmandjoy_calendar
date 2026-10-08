@@ -6,6 +6,9 @@ import html
 import re
 import json
 import shutil
+import hashlib
+from functools import lru_cache
+from PIL import Image, ImageOps
 
 HERE = Path(__file__).resolve().parent
 V10 = HERE.parent
@@ -18,10 +21,11 @@ CONTENT_UPDATED = '2026-10-08'
 INDEXNOW_KEY = 'e88c4a3764564b24a5afccb136387b70'
 public_routes = []
 legacy_home = (V10 / 'calendar_10.html').read_text()
-ORIGIN = re.search(r'<link rel="canonical" href="([^"]+)"', legacy_home).group(1).rstrip('/')
 verification = re.search(r'<meta name="naver-site-verification"[^>]+>', legacy_home).group(0)
 tracking = legacy_home.split('<!-- Google tag (gtag.js) -->', 1)[1].split('<!-- End Google Tag Manager -->', 1)[0]
 business = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', legacy_home, re.S).group(1))
+# The business owns the official origin; a calendar's canonical owns that document.
+ORIGIN = business['url'].rstrip('/')
 ASSETS = '/calendar_set/calendar_v10/home_infopage/images'
 NAVER_BOOKING = 'https://booking.naver.com/booking/10/bizes/1257912'
 SPACECLOUD_BOOKING = 'https://www.spacecloud.kr/space/66056'
@@ -39,11 +43,11 @@ dimensions = dict(re.findall(r'([ABCDE])홀\s+([\d.]+×[\d.]+m)', facility))
 assert set(dimensions) == set('ABCDE')
 
 rooms = {
-    'A': ('단체 안무와 넓은 동선 연습.', f'{dimensions["A"]}의 연습 공간입니다. 댄스 전용 쿠션 마루이며, 틈이 없는 마루로 마감되어 있습니다. 여러 사람이 대형을 바꾸는 안무나 이동 동선이 있는 댄스 연습에 활용해 보세요. 전면 거울로 동작을 확인하고, 55인치 TV로 참고 영상을 보며 연습할 수 있습니다.', '2', ['5','2','3'], '55인치 TV'),
-    'B': ('영상을 보며 맞추는 안무 연습.', f'{dimensions["B"]} 공간에 전면 거울과 65인치 TV가 마련되어 있습니다. 바닥은 댄스 전용 쿠션 마루입니다. 동작을 반복해서 익히거나 함께 안무를 맞출 때 참고 영상을 띄워보세요. HDMI·C타입·8핀 커넥터를 제공합니다.', '4', ['6','4','2'], '65인치 TV'),
-    'C': ('개인·소규모 동작 연습.', f'{dimensions["C"]}의 소형 연습룸입니다. 바닥은 댄스 전용 쿠션 마루입니다. 거울을 보며 자세와 동작을 점검하거나 개인 안무를 반복해서 연습할 때 이용해 보세요. 이동이 큰 안무는 사진과 공간 크기를 함께 확인해 주세요.', '2', ['2','1'], '댄스 전용 쿠션 마루'),
-    'D': ('혼자 집중하는 개인 연습.', f'{dimensions["D"]}로, 다섯 개 룸 중 가장 작은 공간입니다. 바닥은 댄스 전용 쿠션 마루입니다. 개인 동작과 기본기를 반복하는 연습에 활용해 보세요. 폭이 좁은 편이므로 동선을 넓게 쓰는 연습은 다른 룸의 크기와 비교해 주세요.', '2', ['2','1','3'], '댄스 전용 쿠션 마루'),
-    'E': ('거울 앞에서 함께 맞추는 동선.', f'{dimensions["E"]} 공간에서 안무와 이동 동선을 확인할 수 있습니다. 댄스 전용 쿠션 마루이며, 틈이 없는 마루로 마감되어 있습니다. 거울을 보며 서로의 위치와 동작을 맞추는 댄스 연습에 활용해 보세요. A·B홀과 함께 사진과 크기를 비교해 공간을 선택하세요.', '3', ['3','2','4'], '댄스 전용 쿠션 마루'),
+    'A': ('단체 안무와 넓은 동선 연습.', f'{dimensions["A"]}의 연습 공간입니다. 댄스 전용 쿠션 마루이며, 장선 구조 위에 틈이 없는 강화마루로 마감되어 있습니다. 여러 사람이 대형을 바꾸는 안무나 이동 동선이 있는 댄스 연습에 활용해 보세요. 전면 거울로 동작을 확인하고, 55인치 TV로 참고 영상을 보며 연습할 수 있습니다.', '2', ['5','2','3'], '55인치 TV'),
+    'B': ('영상을 보며 맞추는 안무 연습.', f'{dimensions["B"]} 공간에 전면 거울과 65인치 TV가 마련되어 있습니다. 바닥은 나무 마루 아래에 장선을 둔 댄스 전용 쿠션 마루입니다. 동작을 반복해서 익히거나 함께 안무를 맞출 때 참고 영상을 띄워보세요. HDMI·C타입·8핀 커넥터를 제공합니다.', '4', ['6','4','2'], '65인치 TV'),
+    'C': ('개인·소규모 동작 연습.', f'{dimensions["C"]}의 소형 연습룸입니다. 바닥은 나무 마루 아래에 장선을 둔 댄스 전용 쿠션 마루입니다. 거울을 보며 자세와 동작을 점검하거나 개인 안무를 반복해서 연습할 때 이용해 보세요. 이동이 큰 안무는 사진과 공간 크기를 함께 확인해 주세요.', '2', ['2','1'], '댄스 전용 쿠션 마루'),
+    'D': ('혼자 집중하는 개인 연습.', f'{dimensions["D"]}로, 다섯 개 룸 중 가장 작은 공간입니다. 바닥은 나무 마루 아래에 장선을 둔 댄스 전용 쿠션 마루입니다. 개인 동작과 기본기를 반복하는 연습에 활용해 보세요. 폭이 좁은 편이므로 동선을 넓게 쓰는 연습은 다른 룸의 크기와 비교해 주세요.', '2', ['2','1','3'], '댄스 전용 쿠션 마루'),
+    'E': ('거울 앞에서 함께 맞추는 동선.', f'{dimensions["E"]} 공간에서 안무와 이동 동선을 확인할 수 있습니다. 댄스 전용 쿠션 마루이며, 장선 구조 위에 틈이 없는 강화마루로 마감되어 있습니다. 거울을 보며 서로의 위치와 동작을 맞추는 댄스 연습에 활용해 보세요. A·B홀과 함께 사진과 크기를 비교해 공간을 선택하세요.', '3', ['3','2','4'], '댄스 전용 쿠션 마루'),
 }
 
 # Descriptions verified against the existing facility photos; shared by alt and captions.
@@ -66,9 +70,40 @@ photo_descriptions = {
           '4': '거울 쪽에서 바라본 E홀 바닥과 반대편 벽'},
 }
 
-def img(room, number=None, cls='', eager=False):
+@lru_cache(maxsize=None)
+def responsive_image(relative_path):
+    """Derive display sizes without replacing original facility photos or calendar assets."""
+    source = V10 / 'home_infopage/images' / relative_path
+    target_dir = V10 / 'home_infopage/images/site-responsive'
+    target_dir.mkdir(exist_ok=True)
+    with Image.open(source) as original:
+        original = ImageOps.exif_transpose(original).convert('RGB')
+        width, height = original.size
+        name = relative_path.replace('/', '-').rsplit('.', 1)[0]
+        revision = hashlib.sha256(source.read_bytes()).hexdigest()[:10]
+        variants = []
+        for size in sorted({min(width, size) for size in (640, 960, 1600, 2560)}):
+            target = target_dir / f'{name}-{size}-{revision}-v1.webp'
+            if not target.exists():
+                resized = original.resize((size, round(height * size / width)), Image.Resampling.LANCZOS)
+                resized.save(target, 'WEBP', quality=84, method=6)
+            variants.append((size, f'{ASSETS}/site-responsive/{target.name}'))
+    return width, height, variants
+
+def img(room, number=None, cls='', eager=False, layout='card'):
     number = number or rooms[room][2]
-    return f'<img class="{cls}" src="{ASSETS}/room{room}/image{number}.webp" alt="리듬앤조이 {html.escape(photo_descriptions[room][number])}" draggable="false" loading="{"eager" if eager else "lazy"}" decoding="async">'
+    width, height, variants = responsive_image(f'room{room}/image{number}.webp')
+    # Match existing card/detail/gallery breakpoints; the browser also accounts for device density.
+    sizes = {
+        'card': '(max-width:560px) calc(100vw - 42px), (max-width:900px) calc((100vw - 89px) / 2), (max-width:1360px) calc((100vw - 178px) / 3), 394px',
+        'detail': '(max-width:900px) calc(100vw - 42px), (max-width:1360px) calc((100vw - 183px) * .55), 643px',
+        'hero': '(max-width:900px) calc(100vw - 42px), (max-width:1360px) calc((100vw - 184px) * .51), 600px',
+        'wide': '(max-width:560px) calc(100vw - 42px), (max-width:900px) calc(100vw - 64px), (max-width:1360px) calc(100vw - 128px), 1232px',
+        'gallery': '(max-width:560px) calc((100vw - 53px) / 2), (max-width:900px) calc((100vw - 80px) / 2), (max-width:1360px) calc((100vw - 144px) / 2), 608px',
+    }[layout]
+    src = next(url for size, url in variants if size >= min(width, 960))
+    srcset = ', '.join(f'{url} {size}w' for size, url in variants)
+    return f'<img class="{cls}" src="{src}" srcset="{srcset}" sizes="{sizes}" width="{width}" height="{height}" alt="리듬앤조이 {html.escape(photo_descriptions[room][number])}" draggable="false" loading="{"eager" if eager else "lazy"}" decoding="async">'
 
 def button(label, url, primary=False):
     return f'<a class="button {"primary" if primary else "secondary"}" href="{url}" draggable="false">{label}<span aria-hidden="true">↗</span></a>'
@@ -172,7 +207,7 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=booking-entry-20261008')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=facility-details-20261008')
         public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=text-brand-20261008')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)
@@ -180,17 +215,20 @@ def write(path, title, desc, body, active='home', crumb=None):
         public_routes.append(canonical)
 
 write('', '사당연습실 리듬앤조이 | 24시간 댄스 연습실', '사당연습실 리듬앤조이. 사당역 7번 출구 대로변 도보 3분, 24시간 A–E홀. 전 홀 댄스 전용 쿠션 마루·인원 추가금 없음.', f'''
-<section class="hero"><div class="hero-copy"><span class="eyebrow coral">SADANG · RHYTHM & JOY</span><p class="hero-location"><span class="tiny-dot"></span>사당역 7번 출구, 대로변 도보 3분</p><h1><span>사당연습실</span><br>리듬앤조이<span class="title-dot">.</span></h1><p class="hero-lead">오늘의 연습이<br> 내일의 무대가 되는 곳.</p><p class="hero-desc">혼자 몰입하는 순간부터 함께 맞추는 안무까지.<br> 4평부터 25평까지, 나에게 맞는 공간에서 연습하세요.</p><div class="actions">{button('공간 둘러보기','/spaces/',True)}</div><div class="hero-stats"><span><strong>5</strong>개의 연습룸</span><span><strong>24</strong>시간 운영</span><span><strong>3</strong>분 도보 거리</span></div></div>
-<div class="hero-visual">{img('A','2',eager=True)}<div class="image-caption"><span><b>A HALL</b>20평 · 10 × 6m</span><a href="/spaces/a/" aria-label="A홀 상세 보기">↗</a></div><div class="photo-tag">공간은 비워두고,<br>가능성은 채워두고.</div></div></section>
+<section class="hero"><div class="hero-copy"><span class="eyebrow coral">SADANG · RHYTHM & JOY</span><p class="hero-location"><span class="tiny-dot"></span>사당역 7번 출구, 대로변 도보 3분</p><h1><span>사당연습실</span><br>리듬앤조이<span class="title-dot">.</span></h1><p class="hero-lead">오늘의 연습이<br> 내일의 무대가 되는 곳.</p><p class="hero-desc">혼자 몰입하는 순간부터 함께 맞추는 안무까지.<br> 4평형부터 25평형까지, 나에게 맞는 공간에서 연습하세요.</p><div class="actions">{button('공간 둘러보기','/spaces/',True)}</div><div class="hero-stats"><span><strong>5</strong>개의 연습룸</span><span><strong>24</strong>시간 운영</span><span><strong>3</strong>분 도보 거리</span></div></div>
+<div class="hero-visual">{img('A','2',eager=True,layout='hero')}<div class="image-caption"><span><b>A HALL</b>{prices['A']['area']} · {dimensions['A']}</span><a href="/spaces/a/" aria-label="A홀 상세 보기">↗</a></div><div class="photo-tag">공간은 비워두고,<br>가능성은 채워두고.</div></div></section>
 <section class="intro-line"><span class="eyebrow">SPACE FOR YOUR RHYTHM</span><p><strong>사당역 7번 출구, 24시간 연습실.</strong><br> 리듬앤조이는 서울 동작구 사당역 인근의 사당 연습실입니다.<br> 전 홀 댄스 전용 쿠션 마루와 거울을 갖춘 A–E홀에서 개인 연습과 단체 안무를 준비하세요.</p></section>
-<section class="section"><div class="section-heading"><div><span class="eyebrow coral">OUR SPACES</span><h2>사당연습실 리듬앤조이 A–E홀 둘러보기</h2></div><a class="text-link" href="/spaces/">5개 공간 모두 보기 <span>↗</span></a></div><div class="room-grid">{''.join(card(x) for x in ['A','B','E'])}</div><div class="small-space-note"><span>작은 공간에서 집중하고 싶다면?</span><a href="/spaces/c/">C홀 · 5평 ↗</a><a href="/spaces/d/">D홀 · 4평 ↗</a></div></section>
+<section class="section"><div class="section-heading"><div><span class="eyebrow coral">OUR SPACES</span><h2>사당연습실 리듬앤조이 A–E홀 둘러보기</h2></div><a class="text-link" href="/spaces/">5개 공간 모두 보기 <span>↗</span></a></div><div class="room-grid">{''.join(card(x) for x in ['A','B','E'])}</div><div class="small-space-note"><span>작은 공간에서 집중하고 싶다면?</span><a href="/spaces/c/">C홀 · {prices['C']['area']} ↗</a><a href="/spaces/d/">D홀 · {prices['D']['area']} ↗</a></div></section>
 ''')
 
+floor_width, floor_height, floor_variants = responsive_image('dance-floor-structure-v1.png')
+floor_srcset = ', '.join(f'{url} {width}w' for width, url in floor_variants)
 write('spaces','사당연습실 리듬앤조이 | 공간 안내·룸 사진','사당연습실 리듬앤조이 A–E홀 사진과 크기 비교. 전 홀 댄스 전용 쿠션 마루, A·B홀 TV와 개인·단체 연습 공간을 안내합니다.',f'''
-<section class="page-heading"><span class="eyebrow coral">OUR SPACES</span><h1>공간 안내</h1><p>리듬앤조이의 개인 연습룸부터 단체 안무 공간까지.<br>4평부터 25평까지. 사진과 크기를 비교해 연습에 맞는 룸을 골라보세요.</p></section>
+<section class="page-heading"><span class="eyebrow coral">OUR SPACES</span><h1>공간 안내</h1><p>리듬앤조이의 개인 연습룸부터 단체 안무 공간까지.<br>4평형부터 25평형까지. 사진과 크기를 비교해 연습에 맞는 룸을 골라보세요.</p><p>평형은 공간 안내용 표기이며, 실제 크기는 각 홀의 m 치수를 기준으로 확인해주세요.</p></section>
 <section class="section rooms-section"><div class="room-grid all-rooms">{''.join(card(x) for x in ['A','B','E','C','D'])}</div></section>
-<section class="facilities"><span class="eyebrow">IN EVERY ROOM</span><h2>연습에 집중할 수 있도록.</h2><div><article><b>댄스 전용 쿠션 마루</b><p>전 홀에 적용 · A·E홀은 틈이 없는 마루</p></article><article><b>전면 거울</b><p>동작과 동선을 바로 확인</p></article><article><b>A·B홀 TV</b><p>HDMI·C타입·8핀 커넥터 제공</p></article></div>
-<figure class="floor-figure"><img src="{ASSETS}/dance-floor-structure-v1.png" width="1536" height="1024" alt="외줄장선식 쿠션 마루 구조: 위에서부터 원목마루, 합판, 장선목, 방진고무, 쐐기로 구성" loading="lazy" decoding="async" draggable="false"><figcaption>외줄장선식 쿠션 마루 구조도 · 원목마루, 합판, 장선목, 방진고무, 쐐기</figcaption></figure></section>''','spaces','공간 안내')
+<section class="facilities"><span class="eyebrow">IN EVERY ROOM</span><h2>연습에 집중할 수 있도록.</h2><div><article><b>댄스 전용 쿠션 마루</b><p>전 홀에 적용 · A·E홀은 틈이 없는 강화마루</p></article><article><b>전면 거울</b><p>동작과 동선을 바로 확인</p></article><article><b>A·B홀 TV</b><p>A홀 55인치 · B홀 65인치<br>HDMI·C타입·8핀 커넥터 제공</p></article></div>
+<figure class="floor-figure"><img src="{floor_variants[-1][1]}" srcset="{floor_srcset}" sizes="(max-width:560px) calc(100vw - 42px), (max-width:1088px) calc(100vw - 128px), 960px" width="{floor_width}" height="{floor_height}" alt="외줄장선식 쿠션 마루 구조: 마루 아래 합판, 장선목, 방진고무, 쐐기가 있는 구조 설명" loading="lazy" decoding="async" draggable="false"><figcaption>외줄장선식 쿠션 마루의 구조를 설명한 이미지입니다. 홀별 표면 마감은 아래 안내를 확인해주세요.</figcaption></figure>
+<div><article><b>마루 아래의 쿠션 구조</b><p>장선은 마루 아래를 받치는 목재입니다. 마루와 합판 아래에 장선목과 방진고무 등을 배치하는 구조로, 일반 댄스홀처럼 쿠션감이 있는 마루에서 연습할 수 있습니다.</p></article><article><b>A·E홀: 틈 없는 강화마루</b><p>장선 구조 위에 틈이 없는 강화마루로 표면을 마감했습니다. 사진에서 바닥의 마감과 연습 공간을 함께 확인해보세요.</p></article><article><b>B·C·D홀: 장선마루</b><p>나무 마루 표면 아래에 장선 구조가 있는 댄스 전용 쿠션 마루입니다. 모든 홀에서 개인 실내 연습화를 사용해주세요.</p></article></div></section>''','spaces','공간 안내')
 
 for room,(tagline,description,cover,gallery,feature) in rooms.items():
     rates=prices[room]['rates']
@@ -199,8 +237,9 @@ for room,(tagline,description,cover,gallery,feature) in rooms.items():
                  '새벽<small>매일 00:00~06:00</small>',
                  '새벽 통대관<small>00:00~06:00 · 6시간 전체</small>']
     write(f'spaces/{room.lower()}',f'{room}홀 {prices[room]["area"]} | 사당연습실 리듬앤조이',f'사당연습실 리듬앤조이 {room}홀 {prices[room]["area"]}, {dimensions[room]}. {tagline} {feature}, 사진과 시간대별 요금을 확인하세요.',f'''
-<section class="room-detail-hero"><div><span class="eyebrow coral">RHYTHM & JOY / {room} HALL</span><h1>{room}홀<span>{prices[room]['area']}</span></h1><h2>{tagline}</h2><p>사당연습실 리듬앤조이 {room}홀입니다. {description}</p><div class="specs"><span>{dimensions[room]}</span><span>24시간 운영</span><span>{feature}</span></div></div>{img(room,cover,'detail-cover',True)}</section>
-<section class="section"><div class="section-heading"><div><span class="eyebrow coral">TAKE A CLOSER LOOK</span><h2>{room}홀 둘러보기</h2></div><span class="subtle">리듬앤조이 실제 시설 사진</span></div><div class="gallery">{''.join(f'<figure>{img(room,n)}<figcaption>{photo_descriptions[room][n]}</figcaption></figure>' for n in gallery)}</div></section>
+<section class="room-detail-hero"><div><span class="eyebrow coral">RHYTHM & JOY / {room} HALL</span><h1>{room}홀<span>{prices[room]['area']}</span></h1><h2>{tagline}</h2><p>사당연습실 리듬앤조이 {room}홀입니다. {description}</p><div class="specs"><span>{dimensions[room]}</span><span>24시간 운영</span><span>{feature}</span></div></div>{img(room,cover,'detail-cover',True,layout='detail')}</section>
+<section class="section"><div class="section-heading"><div><span class="eyebrow coral">TAKE A CLOSER LOOK</span><h2>{room}홀 둘러보기</h2></div><span class="subtle">리듬앤조이 실제 시설 사진</span></div><div class="gallery">{''.join(f'<figure>{img(room,n,layout="wide" if i == 0 else "gallery")}<figcaption>{photo_descriptions[room][n]}</figcaption></figure>' for i,n in enumerate(gallery))}</div></section>
+<p class="subtle area-note">평형은 공간 안내용 표기입니다. 실제 크기는 위의 m 치수를 기준으로 확인해주세요.</p>
 <section class="room-rate-section"><div><span class="eyebrow coral">HOURLY RATE</span><h2>{room}홀 이용요금</h2><p>시간당 요금 · 통대관은 6시간 기준<br><strong>인원 추가금 없음</strong></p></div><dl class="rate-list">{''.join(f'<div><dt>{label}</dt><dd>{price}<small>원</small></dd></div>' for label,price in zip(rate_labels,rates))}</dl></section>
 ''','spaces',f'<a href="/spaces/">공간 안내</a><span>/</span>{room}홀')
 
@@ -224,6 +263,7 @@ write('location','사당연습실 리듬앤조이 | 사당역 7번 출구 오시
 write('guide','사당연습실 리듬앤조이 | 이용 안내·환불 규정','사당연습실 리듬앤조이 방문 전 개인 실내 연습화, 시설 이용 수칙과 예약 변경·환불 기준을 확인하세요.',f'''
 <section class="page-heading"><span class="eyebrow coral">BEFORE YOUR PRACTICE</span><h1>이용 안내</h1><p>사당연습실 리듬앤조이 방문 전 이용 수칙과 변경·환불 기준을 확인해주세요.</p></section>
 
+<section class="guide-columns"><article><span class="eyebrow coral">SCREEN PRACTICE</span><h2>TV로 영상을 보며 연습하기</h2><p>A홀에는 55인치, B홀에는 65인치 TV가 있으며 대관 중 무료로 이용할 수 있습니다. HDMI·C타입·8핀 커넥터를 제공합니다.</p><p>연습할 영상을 준비하고 기기의 영상 출력 지원 여부와 연결 단자를 확인해주세요. 같은 C타입 단자라도 기기에 따라 영상 출력 지원이 다를 수 있습니다.</p></article><article><span class="eyebrow coral">BEFORE YOU ARRIVE</span><h2>방문 전에 준비해주세요.</h2><ul><li>예약문자에 안내된 홀, 날짜와 이용시간을 확인해주세요.</li><li>바닥은 전 홀 댄스 전용 쿠션 마루입니다. 외부에서 신던 신발 대신 개인 실내 연습화를 준비해주세요.</li><li>TV 영상을 보며 연습한다면 A·B홀인지 확인해주세요.</li><li>연습 준비를 포함해 공간을 사용하는 시간은 대관이 필요합니다.</li></ul></article></section>
 <section class="guide-columns"><article><span class="eyebrow coral">HOUSE RULES</span><h2>함께 지키는 이용 수칙</h2><ul><li>외부 신발 착용 불가 (개인 실내 연습화 사용)</li><li>연습을 위한 이용은 10분이라도 대관이 필요합니다.</li><li>징·장구·타악기는 사용할 수 없으며, 탭댄스는 탭판 위에서만 가능합니다.</li><li>국물 음식과 냄새가 심한 음식은 반입하지 마세요.</li><li>물품 파손 시 관리자에게 알려주세요.</li></ul></article><article><span class="eyebrow coral">CANCELLATION</span><h2>변경·환불 안내</h2><p>예약 변경은 취소 후 재예약으로 진행됩니다.</p><dl class="refund"><div><dt>예약 후 2시간 안 변심 취소</dt><dd>무료</dd></div><div><dt>방문 3일 전</dt><dd>70%</dd></div><div><dt>방문 2일 전</dt><dd>50%</dd></div><div><dt>방문 1일 전 · 당일</dt><dd>0%</dd></div></dl><p class="subtle">실제 예약에 표시된 환불 규정을 확인해주세요.</p></article></section>''','guide','이용 안내')
 
 write('schedule','사당연습실 리듬앤조이 | 예약·새벽 통대관','사당연습실 리듬앤조이 예약현황과 네이버·스페이스클라우드 예약 안내. 00~06시 새벽 통대관은 문자와 스페이스클라우드로 가능합니다.',f'''

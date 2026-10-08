@@ -19,6 +19,7 @@
 
 .header-book[aria-current=page]{background:var(--ink);color:white}
 .room-rate-section{margin-bottom:70px}
+.area-note{font-size:12px;line-height:1.7;color:var(--muted);margin:0 0 18px;word-break:keep-all}
 @media(max-width:560px){.room-rate-section{margin-bottom:40px}}
 
 .rate-list dt small{display:block;margin:5px 0 0;font-size:11px;line-height:1.6;color:var(--muted)}
