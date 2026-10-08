@@ -51,7 +51,12 @@ assert set(dimensions) == set('ABCDE')
 usage_guide = (V10.parents[1] / 'info/index.html').read_text()
 tap_rule = html.unescape(re.search(r'<p>(쇠징이 달린 탭신발은.*?)</p>', usage_guide).group(1))
 tap_count = re.search(r'구비된 탭판 (\d+)개', tap_rule).group(1)
-practice_equipment = f'''<article><b>파란색 구르기 매트</b><p>크기 1,200 × 2,400mm<br>두께 60mm</p></article><article><b>탭판 {tap_count}개</b><p>{html.escape(tap_rule)}</p></article>'''
+# Reuse the FAQ answers for shared availability and per-room equipment as well.
+practice_equipment = ''.join(
+    f'<article><b>{title}</b><p>{html.escape(next(item["acceptedAnswer"]["text"] for item in faq["mainEntity"] if item["name"] == question))}</p></article>'
+    for title, question in [('파란색 구르기 매트 · 공용 1개', '구르기 매트는 각 홀에 있나요?'),
+                            ('홀마다 준비된 삼각대', '촬영용 삼각대가 있나요?')])
+practice_equipment += f'<article><b>탭판 {tap_count}개</b><p>{html.escape(tap_rule)}</p></article>'
 
 rooms = {
     'A': ('단체 안무와 넓은 동선 연습.', f'{dimensions["A"]}의 연습 공간입니다. 댄스 전용 쿠션 마루이며, 장선 구조 위에 틈이 없는 강화마루로 마감되어 있습니다. 여러 사람이 대형을 바꾸는 안무나 이동 동선이 있는 댄스 연습에 활용해 보세요. 전면 거울로 동작을 확인하고, 55인치 TV로 참고 영상을 보며 연습할 수 있습니다.', '2', ['5','2','3'], '55인치 TV'),
@@ -127,7 +132,7 @@ def booking_links():
 def card(room):
     return f'''<a class="room-card" href="/spaces/{room.lower()}/" draggable="false">
       <div class="room-photo">{img(room)}<span class="room-letter">{room}</span><span class="photo-link" aria-hidden="true">↗</span></div>
-      <div class="room-meta"><h3>{room}홀 <small>{prices[room]['area']} · {dimensions[room]}</small></h3><p>평일 낮 <strong>{prices[room]['rates'][0]}원</strong><span> / 시간</span></p></div></a>'''
+      <div class="room-meta"><h3>{room}홀 <small>{prices[room]['area']} · {dimensions[room]}</small></h3><p class="room-purpose">{rooms[room][0]}</p><p class="room-feature">{rooms[room][4]}</p><p>평일 낮 <strong>{prices[room]['rates'][0]}원</strong><span> / 시간</span></p></div></a>'''
 
 def shell(title, desc, body, active='home', crumb=None):
     links=[('home','소개','/'),('spaces','공간 안내','/spaces/'),('pricing','이용요금','/pricing/'),('location','오시는 길','/location/'),('guide','이용 안내','/guide/')]
@@ -220,7 +225,7 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=facility-compact-20261008')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=equipment-usage-20261008')
         public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=text-brand-20261008')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)

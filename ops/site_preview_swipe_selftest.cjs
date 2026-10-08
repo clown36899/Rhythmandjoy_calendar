@@ -229,7 +229,14 @@ async function swipe(route, from, to, options = {}) {
       const faq = data.find(item => item['@type'] === 'FAQPage');
       const visible = [...html.matchAll(/<details class="faq-item"[^>]*><summary[^>]*>(.*?)<\/summary><p>(.*?)<\/p><\/details>/gs)].map(([,name,text])=>({name,text}));
       assert.deepEqual(visible, faq.mainEntity.map(item=>({name:item.name,text:item.acceptedAnswer.text})), 'Visible Q&A and search data must share their existing source');
-      assert.equal(visible.length,10);
+      assert.equal(visible.length,12);
+      for (const name of ['구르기 매트는 각 홀에 있나요?', '촬영용 삼각대가 있나요?']) {
+        const answer = faq.mainEntity.find(item=>item.name === name).acceptedAnswer.text;
+        for (const equipmentRoute of ['spaces', 'guide']) {
+          const equipmentPage = fs.readFileSync(path.resolve(root,'../site',equipmentRoute,'index.html'),'utf8');
+          assert.ok(equipmentPage.includes(`<p>${answer}</p></article>`), 'Shared equipment availability must reuse the FAQ owner');
+        }
+      }
       assert.doesNotMatch(JSON.stringify(faq), /도보 약 1분/);
     } else {
       assert.ok(!data.some(item=>item['@type'] === 'FAQPage'), 'Q&A metadata belongs only to the page displaying its answers');
