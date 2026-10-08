@@ -266,5 +266,38 @@ async function swipe(route, from, to, options = {}) {
     assert.equal(new URL(requests[0]).searchParams.get('page_path'),pathname);
     checks++;
   }
-  console.log(`PASS: ${checks} route, visual movement, release, retry and gesture-protection checks.`);
+  // Exercise the embed's lifecycle independently from calendar data fetching:
+  // view changes, repeated renders, resize feedback, and CSS-height restoration.
+  const embedSource = fs.readFileSync(path.join(root,'calendar-v11/embed.js'),'utf8');
+  let monthHeight = 429.5, controlsHeight = 96, heightWrites = 0;
+  let frameHeight = '', scheduled = [], mutationCallback;
+  const embedEvents = new Map();
+  const embedFrame = { matches: () => true, style: {
+    get height() { return frameHeight; },
+    set height(value) { frameHeight = value; heightWrites++; },
+    removeProperty() { frameHeight = ''; },
+  } };
+  const embedRoot = {};
+  vm.runInNewContext(embedSource, {
+    window: {frameElement:embedFrame,addEventListener:(name,fn)=>embedEvents.set(name,fn)},
+    document: {addEventListener(){},getElementById:()=>embedRoot,
+      querySelector: selector => selector.includes('swiper-slide-active')
+        ? (monthHeight ? {offsetHeight:monthHeight,getBoundingClientRect:()=>({height:monthHeight})} : null)
+        : {getBoundingClientRect:()=>({height:selector==='.bottomtop'?controlsHeight:34})}},
+    MutationObserver: class {constructor(fn){mutationCallback=fn}observe(target){assert.equal(target,embedRoot)}},
+    requestAnimationFrame: fn => {scheduled.push(fn);return scheduled.length},
+  });
+  const flushEmbed = () => {const jobs=scheduled;scheduled=[];jobs.forEach(fn=>fn())};
+  flushEmbed();assert.equal(frameHeight,'562px');checks++;
+  for(let i=0;i<20;i++) mutationCallback();
+  assert.equal(scheduled.length,1,'coalesce calendar render mutations');flushEmbed();
+  embedEvents.get('resize')();flushEmbed();
+  assert.equal(heightWrites,1,'resizing the frame must not create a resize-write loop');checks++;
+  monthHeight=509.5;mutationCallback();flushEmbed();assert.equal(frameHeight,'642px');checks++;
+  monthHeight=349.5;mutationCallback();flushEmbed();assert.equal(frameHeight,'482px');checks++;
+  controlsHeight=54;embedEvents.get('resize')();flushEmbed();assert.equal(frameHeight,'440px');checks++;
+  monthHeight=0;mutationCallback();flushEmbed();assert.equal(frameHeight,'','week restores stylesheet height');checks++;
+  monthHeight=429.5;mutationCallback();flushEmbed();assert.equal(frameHeight,'520px');checks++;
+  vm.runInNewContext(embedSource,{window:{frameElement:null},document:{addEventListener(){}}});checks++;
+  console.log(`PASS: ${checks} route, visual movement, release, retry, gesture-protection and calendar sizing checks.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

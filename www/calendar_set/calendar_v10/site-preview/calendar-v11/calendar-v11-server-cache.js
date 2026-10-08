@@ -236,12 +236,13 @@ function initSingleRoomCalendar() {
         columnHeaderFormat: { weekday: "short", day: "numeric" }
       },
       dayGridMonth: {
+        fixedWeekCount: false,
         columnHeaderHtml: (date) => {
           const days = ["일", "월", "화", "수", "목", "금", "토"];
           const isSunday = date.getDay() === 0;
           return `<span class='month-header-weekday${isSunday ? ' sunday' : ''}'>${days[date.getDay()]}</span>`;
         },
-        eventLimit: true,
+        eventLimit: 2,
         eventLimitText: function (n) {
           return '+' + n;
         }
@@ -545,13 +546,14 @@ function initCalendar() {
       },
 
       dayGridMonth: {
+        fixedWeekCount: false,
 
         columnHeaderHtml: (date) => {
           const days = ["일", "월", "화", "수", "목", "금", "토"];
           const isSunday = date.getDay() === 0;
           return `<span class='month-header-weekday${isSunday ? ' sunday' : ''}'>${days[date.getDay()]}</span>`;
         },
-        eventLimit: true,
+        eventLimit: 2,
 
         eventLimitText: function (n) {
           return '+' + n; // "+15" 형식

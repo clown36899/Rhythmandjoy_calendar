@@ -3198,6 +3198,15 @@ html,body{font-family:Pretendard,Arial,sans-serif!important;font-size:14px!impor
 #calendarAll .fc-dayGridMonth-view .fc-day-top.fc-today .fc-day-number,
 #singleRoomCalendar .fc-dayGridMonth-view .fc-day-top.fc-today .fc-day-number{display:inline-flex;align-items:center;justify-content:center;gap:2px;padding:1px 2px;margin:2px;max-width:calc(100% - 4px);border-radius:4px;background:var(--green);color:#fff!important;font-size:10px!important;font-weight:800;line-height:18px;white-space:nowrap}
 .fc-dayGridMonth-view .fc-day-top.fc-today .fc-day-number::before{content:"오늘";font-size:9px;font-weight:700}
+/* Month layout owns its natural height; the embed follows it instead of nesting
+   a scroll area inside the page. Weekly hour rows keep their existing sizing. */
+#calendarAll .fc-dayGridMonth-view,#singleRoomCalendar .fc-dayGridMonth-view,
+#calendarAll .fc-dayGridMonth-view>table,#singleRoomCalendar .fc-dayGridMonth-view>table{height:auto!important}
+#calendarAll .fc-dayGridMonth-view .fc-head,#singleRoomCalendar .fc-dayGridMonth-view .fc-head{position:static;display:table-header-group}
+.fc-dayGridMonth-view .fc-head .fc-row .fc-widget-header{height:28px!important;min-height:0!important}
+#calendarAll .fc-dayGridMonth-view .fc-body,#singleRoomCalendar .fc-dayGridMonth-view .fc-body{position:static;top:auto!important}
+#calendarAll .fc-dayGridMonth-view .fc-scroller,#singleRoomCalendar .fc-dayGridMonth-view .fc-scroller{height:auto!important;overflow:clip!important}
+.fc-dayGridMonth-view .fc-day-grid>.fc-row{height:80px!important;min-height:80px!important}
 .month-header-weekday{color:var(--ink)!important;font-size:11px!important;height:26px!important;line-height:26px!important;padding:0!important}
 .month-header-weekday.sunday,.fc-sun .fc-day-number{color:var(--accent)!important}
 #calendarAll .fc-day-grid-event,#singleRoomCalendar .fc-day-grid-event{height:16px!important;min-height:16px!important;line-height:14px!important;margin-top:2px!important;margin-bottom:2px!important}
