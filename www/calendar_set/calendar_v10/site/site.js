@@ -9,6 +9,8 @@ if (menuIndex >= 0 && surface && viewport) {
   const previews = new Map();
   const activePage = { surface, title: document.title, index: menuIndex,
     description: document.querySelector('meta[name="description"]')?.content || '',
+    image: document.querySelector('meta[property="og:image"]')?.content || '',
+    imageAlt: document.querySelector('meta[property="og:image:alt"]')?.content || '',
     canonical: document.querySelector('link[rel="canonical"]')?.href,
     structured: document.querySelector('#site-structured-data')?.textContent || '[]' };
   let navigationId = 0;
@@ -51,6 +53,8 @@ if (menuIndex >= 0 && surface && viewport) {
           const page = document.importNode(parsed, true);
           const entry = { surface: page, title: doc.title,
             description: doc.querySelector('meta[name="description"]')?.content || '',
+            image: doc.querySelector('meta[property="og:image"]')?.content || '',
+            imageAlt: doc.querySelector('meta[property="og:image:alt"]')?.content || '',
             canonical: doc.querySelector('link[rel="canonical"]')?.href,
             structured: doc.querySelector('#site-structured-data')?.textContent || '[]',
             index: menuLinks.findIndex(link => new URL(link.href).pathname ===
@@ -118,7 +122,8 @@ if (menuIndex >= 0 && surface && viewport) {
     const structured = document.querySelector('#site-structured-data');
     if (structured) structured.textContent = entry.structured;
     for (const [property, content] of Object.entries({ 'og:title': entry.title,
-      'og:description': entry.description, 'og:url': entry.canonical })) {
+      'og:description': entry.description, 'og:url': entry.canonical,
+      'og:image': entry.image, 'og:image:alt': entry.imageAlt })) {
       const meta = document.querySelector(`meta[property="${property}"]`);
       if (meta && content) meta.content = content;
     }

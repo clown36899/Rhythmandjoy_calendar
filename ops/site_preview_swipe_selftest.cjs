@@ -8,6 +8,7 @@ const routes = ['', 'spaces', 'pricing', 'location', 'guide', 'schedule'];
 let checks = 0;
 const ready = () => new Promise(resolve => setImmediate(resolve));
 const structuredText = html => html.match(/<script id="site-structured-data" type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1] || '[]';
+const metaElements = html => Object.fromEntries([...html.matchAll(/<meta (name|property)="([^"]+)" content="([^"]*)"/g)].map(([, attr, key, content]) => [`meta[${attr}="${key}"]`, {content}]));
 
 function element() {
   const classes = new Set(), attrs = new Map();
@@ -32,6 +33,7 @@ function page(route, options = {}) {
   const surface = element(), viewport = element(), body = {};
   const fetched = [], decoded = [];
   const structured = options.public ? { textContent: structuredText(html) } : null;
+  const metas = metaElements(html);
   const location = { href: base + (route ? route + "/" : ""), assign: url => navigated.push(url) };
   const history = { state: {}, replaceState(state) { this.state = state; }, pushState(state, _, url) { this.state = state; location.href = url; navigated.push(url); } };
   let neighbor, timerId = 0, fetchFails = options.fetchFails;
@@ -39,7 +41,7 @@ function page(route, options = {}) {
   const target = { closest: () => null, parentElement: body, scrollWidth: 100, clientWidth: 100 };
   const document = {
     body, title: route, importNode: node => node, querySelectorAll: () => links,
-    querySelector: s => s === '.page-surface' ? surface : s === '.page-viewport' ? viewport : s === '#site-structured-data' ? structured : null,
+    querySelector: s => s === '.page-surface' ? surface : s === '.page-viewport' ? viewport : s === '#site-structured-data' ? structured : metas[s] || null,
     addEventListener: (name, cb) => listeners.set(name, [...(listeners.get(name) || []), cb]),
   };
   vm.runInNewContext(source, {
@@ -52,12 +54,13 @@ function page(route, options = {}) {
     DOMParser: class { parseFromString(url) {
       const route = new URL(url).pathname.replace(new URL(base).pathname, '').replace(/\/$/, '');
       const html = fs.readFileSync(path.join(contentRoot, route, 'index.html'), 'utf8');
+      const parsedMetas = metaElements(html);
       const header = html.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)[1];
       const active = [...header.matchAll(/<a\b([^>]*)>/g)].find(([, a]) => a.includes('aria-current=page'));
       const node = element();
       const imgs = [...html.matchAll(/<img[^>]*src="([^"]+)"/g)].map(([, src]) => ({ loading: 'lazy', decode: async () => { decoded.push(src); } }));
       node.querySelectorAll = s => s === 'img' ? imgs : [];
-      return { title: route, querySelector: s => s === '.page-surface' ? node : s === '#site-structured-data' ? {textContent:structuredText(html)} : s.startsWith('.header') && active ? {href:new URL(active[1].match(/href="([^"]+)"/)[1],base).href} : null };
+      return { title: route, querySelector: s => s === '.page-surface' ? node : s === '#site-structured-data' ? {textContent:structuredText(html)} : s.startsWith('.header') && active ? {href:new URL(active[1].match(/href="([^"]+)"/)[1],base).href} : parsedMetas[s] || null };
     } },
     setTimeout: (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
     clearTimeout: id => timers.delete(id),
@@ -77,7 +80,7 @@ function page(route, options = {}) {
     for (const [id, timer] of [...timers]) if (timer.ms < 1000) { timers.delete(id); timer.fn(); }
     await ready();
   }
-  return { links, fetched, decoded, location, history, navigated, surface, viewport, windows, target, point, fire, settle, structured,
+  return { links, fetched, decoded, location, history, navigated, surface, viewport, windows, target, point, fire, settle, structured, metas,
     neighbor: () => neighbor, allowFetch: () => { fetchFails = false; } };
 }
 async function swipe(route, from, to, options = {}) {
@@ -235,6 +238,17 @@ async function swipe(route, from, to, options = {}) {
     const targetRoute = p.navigated.length ? new URL(p.location.href).pathname : '/' + route;
     const targetHTML = fs.readFileSync(path.resolve(root,'../site',targetRoute.replace(/^\//,''),'index.html'),'utf8');
     assert.equal(p.structured.textContent,structuredText(targetHTML), 'Navigation metadata must match the visible destination, not the first page');
+    for (const property of ['og:image','og:image:alt']) {
+      assert.equal(p.metas[`meta[property="${property}"]`].content, metaElements(targetHTML)[`meta[property="${property}"]`].content, 'Sharing image must follow navigation');
+    }
+    if (route.startsWith('spaces/')) {
+      const gallery = html.match(/<div class="gallery">([\s\S]*?)<\/div>/)[1];
+      const alts = [...gallery.matchAll(/alt="([^"]+)"/g)].map(([, alt])=>alt);
+      assert.equal(new Set(alts).size, alts.length, 'Different gallery photos need distinct descriptions');
+      assert.equal((gallery.match(/<figcaption>/g)||[]).length, alts.length);
+      assert.equal((gallery.match(/draggable="false"/g)||[]).length, alts.length);
+      assert.match(metaElements(html)['meta[property="og:image"]'].content, new RegExp(`/room${route.at(-1).toUpperCase()}/`));
+    }
     checks++;
   }
   const sitemap = fs.readFileSync(path.resolve(root,'../site/sitemap.xml'),'utf8');
