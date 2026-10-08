@@ -49,3 +49,4 @@ PC에서는 제거된 v10 사이드바의 빈 폭을 캘린더에 돌려주고, 
 - 기존 selftest에 4/5/6주 크기 변경, resize 반복 시 같은 높이 중복 쓰기 방지, 주간 전환/월간 복귀, 별도 창 표시의 경계를 확장했다. 총 79개 통과. 기존 24개 시간 행·날짜 표시 검사도 통과했다. 원본 v10, 원장/공개 캐시 구조, 예약 처리 및 외부 플랫폼 쓰기는 변경 밖이라 쓰기 회귀검사에서 제외한다.
 - 라이브러리 기준: [FullCalendar v4 높이](https://legacy.fullcalendar.io/v4/height), [월별 실제 주 수](https://legacy.fullcalendar.io/v4/fixedWeekCount). 기존 CSS가 라이브러리 높이를 덮고 있으므로 단순 `overflow:hidden`만으로 마지막 주를 잘라 숨기는 방식은 사용하지 않았다.
 - 배포/롤백 경계: v11 `index.html`, `style.css`, `embed.js`, `calendar-v11-server-cache.js` 4개만 함께 배포/복원한다. 부모 사이트 및 원본 v10은 변경하지 않는다.
+- 운영 반영: `ceabdcc` 커밋·푸시 후 4개 파일만 반영했다. HTTP 200 응답과 커밋 파일 바이트 일치, 원본 v10/부모 site.js/동기화 로더 등 보호 파일 6개 SHA-256 동일. 실제 운영 모바일 월간 5주/35일, 높이 562px, 내부 scrollHeight/clientHeight 400px 동일, 마지막 주 끝 463.5px < 하단 시작 466px로 전체 노출 확인. 증빙 `output/calendar-month-fit-live-20261008.png`. 백업 `/home/clown313python/rhythmjoy_ops/deploy-backups/calendar-month-ceabdcc/content-before.tgz`.
