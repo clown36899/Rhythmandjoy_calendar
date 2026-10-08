@@ -100,4 +100,22 @@ $limit_statement = $pdo->prepare(
 $limit_statement->execute(array($today));
 visitor_db_selftest_assert(intval($limit_statement->fetchColumn()) === 10, 'transactional network counter stops at its configured cap');
 
-echo "visitor-stats MySQL self-test OK: uniqueness, reload, KST rollover, network cap, public history deduplication, gaps, empty/read-only/period boundaries\n";
+$baseline = visitor_historical_baseline();
+visitor_db_selftest_assert($baseline['pageViews'] === 195065, 'audited source rows reconcile to the imported total');
+$_COOKIE[RHYTHMJOY_VISITOR_COOKIE_NAME] = visitor_issue_cookie_token($identity, $secret);
+foreach (array($baseline['through'] => 3, $baseline['cutover'] => 2, '2026-10-09' => 1) as $day => $count) {
+    for ($i = 0; $i < $count; $i++) visitor_record_visit($pdo, $server, $payload, $env, $secret, $day);
+}
+$before_cutover = visitor_read_stats($pdo, $baseline['through']);
+visitor_db_selftest_assert($before_cutover['pageViews']['total'] === null, 'cannot apply a future historical baseline to an earlier report');
+$cutover_stats = visitor_read_stats($pdo, $baseline['cutover']);
+visitor_db_selftest_assert($cutover_stats['pageViews']['total'] === 195067, 'old overlapping ledger dates and future dates are excluded');
+visitor_db_selftest_assert($cutover_stats['pageViews']['today'] === 2 && $cutover_stats['today'] === 1, 'reloads add views but preserve browser deduplication');
+$after_cutover = visitor_read_stats($pdo, '2026-10-09');
+visitor_db_selftest_assert($after_cutover['pageViews']['total'] === 195068 && $after_cutover['pageViews']['sinceCutover'] === 3, 'next KST day continues cumulatively from the same baseline');
+$before_read = intval($pdo->query('SELECT SUM(page_views) FROM rhythmjoy_site_daily_visitors')->fetchColumn());
+visitor_read_history($pdo, $baseline['cutover'], 30);
+visitor_read_stats($pdo, $baseline['cutover']);
+visitor_db_selftest_assert(intval($pdo->query('SELECT SUM(page_views) FROM rhythmjoy_site_daily_visitors')->fetchColumn()) === $before_read, 'baseline/report reads never write or reimport old counts');
+
+echo "visitor-stats MySQL self-test OK: uniqueness, reload, KST rollover, network cap, public history, historical cutoff/no overlap/no future dates/read-only\n";

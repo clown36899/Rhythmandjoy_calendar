@@ -1,0 +1,119 @@
+{
+  "source": "Google Analytics",
+  "propertyId": "485488969",
+  "metric": "screenPageViews",
+  "timezone": "Asia/Seoul",
+  "queryStart": "2019-01-01",
+  "through": "2026-10-07",
+  "cutover": "2026-10-08",
+  "capturedOn": "2026-10-08",
+  "pageViews": 195065,
+  "scope": "Official root and www hostnames; test, sample and settlement pages excluded. Query start is not a claim of complete data since 2019.",
+  "rows": [
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_set/full_ver7/calendar_7.html",
+      "pageViews": 190410
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/",
+      "pageViews": 2708
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_set/calendar_v9/calendar_9.html",
+      "pageViews": 1105
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_set/full_ver7/calendar_9.html",
+      "pageViews": 380
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_set/calendar_v9/calendar_mobile.html",
+      "pageViews": 264
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_set/calendar_v10/calendar_10.html",
+      "pageViews": 82
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/index.html",
+      "pageViews": 60
+    },
+    {
+      "host": "www.리듬앤조이일정표.com",
+      "path": "/",
+      "pageViews": 14
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_set/calendar_v10/calendar_mobile_10.html",
+      "pageViews": 12
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_7.html",
+      "pageViews": 10
+    },
+    {
+      "host": "www.리듬앤조이일정표.com",
+      "path": "/calendar_set/full_ver7/calendar_7.html",
+      "pageViews": 5
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_set/full_ver7/info.html",
+      "pageViews": 4
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_7",
+      "pageViews": 3
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/homepage-section_mobile.html",
+      "pageViews": 3
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_set/calendar_v8/index.html",
+      "pageViews": 1
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_set/calendar_v9/",
+      "pageViews": 1
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/homepage-section",
+      "pageViews": 1
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/homepage-section_mobile",
+      "pageViews": 1
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/howto",
+      "pageViews": 1
+    },
+    {
+      "host": "www.리듬앤조이일정표.com",
+      "path": "/calendar_set/calendar_v10/home_infopage/homepage-section_mobile.html",
+      "pageViews": 0
+    },
+    {
+      "host": "리듬앤조이일정표.com",
+      "path": "/calendar_set/calendar_v10/home_infopage/homepage-section_mobile.html",
+      "pageViews": 0
+    }
+  ]
+}

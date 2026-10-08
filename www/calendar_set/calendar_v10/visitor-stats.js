@@ -16,6 +16,7 @@
     status: 'loading',
     today: null,
     total: null,
+    pageViews: null,
     collectionStartedOn: null,
     asOf: null
   };
@@ -38,6 +39,7 @@
       status: _snapshot.status,
       today: _snapshot.today,
       total: _snapshot.total,
+      pageViews: _snapshot.pageViews ? Object.assign({}, _snapshot.pageViews) : null,
       collectionStartedOn: _snapshot.collectionStartedOn,
       asOf: _snapshot.asOf
     };
@@ -64,6 +66,7 @@
       status: 'ready',
       today: Math.max(0, Math.floor(stats.today)),
       total: Math.max(0, Math.floor(stats.total)),
+      pageViews: validPageViews(stats.pageViews) ? stats.pageViews : null,
       collectionStartedOn: stats.collectionStartedOn || null,
       asOf: stats.asOf || null
     };
@@ -153,13 +156,13 @@
     return Math.floor(total);
   }
 
-  function clientSignals(challenge) {
+  function clientSignals(challenge, pagePath) {
     var screenWidth = window.screen && window.screen.width ? window.screen.width : window.innerWidth;
     var screenHeight = window.screen && window.screen.height ? window.screen.height : window.innerHeight;
     return {
       action: 'confirm',
       challenge: challenge,
-      page_path: window.location.pathname,
+      page_path: pagePath,
       visible_ms: visibleDurationMs(),
       screen_width: Math.round(screenWidth || 0),
       screen_height: Math.round(screenHeight || 0),
@@ -168,7 +171,7 @@
     };
   }
 
-  function confirmVisit(challenge, minimumVisibleMs) {
+  function confirmVisit(challenge, minimumVisibleMs, pagePath) {
     var remaining;
     if (_confirmStarted) return;
     updateVisibleClock();
@@ -176,13 +179,13 @@
     if (remaining > 0 || document.visibilityState === 'hidden') {
       clearTimeout(_visibilityTimer);
       _visibilityTimer = setTimeout(function () {
-        confirmVisit(challenge, minimumVisibleMs);
+        confirmVisit(challenge, minimumVisibleMs, pagePath);
       }, Math.max(150, Math.min(remaining > 0 ? remaining + 60 : 250, 1000)));
       return;
     }
 
     _confirmStarted = true;
-    requestJson('POST', API_URL + '?action=confirm', clientSignals(challenge), function (error, response) {
+    requestJson('POST', API_URL + '?action=confirm', clientSignals(challenge, pagePath), function (error, response) {
       if (error) {
         publishUnavailable();
         return;
@@ -214,7 +217,7 @@
           minimumVisibleMs = DEFAULT_VISIBLE_MS;
         }
         resetVisibleClock();
-        confirmVisit(response.challenge, minimumVisibleMs);
+        confirmVisit(response.challenge, minimumVisibleMs, pagePath);
       }
     );
   }
@@ -240,6 +243,13 @@
     refreshStats: refreshStats
   };
 
+  function validPageViews(views) {
+    function count(n) { return typeof n === 'number' && isFinite(n) && n >= 0 && Math.floor(n) === n; }
+    return views && count(views.total) && count(views.today) && count(views.baseline) && count(views.sinceCutover) &&
+      views.total === views.baseline + views.sinceCutover &&
+      /^\d{4}-\d{2}-\d{2}$/.test(views.baselineThrough) && /^\d{4}-\d{2}-\d{2}$/.test(views.cutover);
+  }
+
   function initStatsUI() {
     var dialog = document.getElementById('visitor-dialog');
     var opener = document.getElementById('visitor-open');
@@ -258,6 +268,14 @@
           node.textContent = _snapshot.status === 'ready' ? number(_snapshot[key]) : '—';
         });
       });
+      var views = _snapshot.pageViews;
+      Array.prototype.forEach.call(document.querySelectorAll('[data-visitor-views]'), function (node) {
+        node.textContent = views ? number(views.total) : '—';
+      });
+      var baselineLabel = document.getElementById('visitor-baseline');
+      if (baselineLabel) baselineLabel.textContent = views ?
+        views.baselineThrough + '까지 과거 조회 ' + number(views.baseline) + '회 + ' +
+        views.cutover + '부터 조회 ' + number(views.sinceCutover) + '회 · 오늘 조회 ' + number(views.today) + '회' : '';
       opener.title = _snapshot.status === 'unavailable' ? '연결을 확인하려면 방문 통계를 열어주세요.' : '날짜별 방문 통계 보기';
     }
 
@@ -281,7 +299,7 @@
       }).join('');
       document.getElementById('visitor-as-of').textContent = '업데이트 ' + history.stats.asOf.slice(0, 19).replace('T', ' ') + ' (한국시간)';
       document.getElementById('visitor-collection').textContent = history.stats.collectionStartedOn ?
-        '집계 시작 ' + history.stats.collectionStartedOn + ' · 시작 전 기록은 포함하지 않습니다.' : '아직 집계된 방문 기록이 없습니다.';
+        '일별 방문자 기록은 ' + history.stats.collectionStartedOn + '부터입니다. 과거 조회수는 위 누적 합계에 포함됩니다.' : '아직 집계된 방문 기록이 없습니다.';
       status.textContent = history.visitors ? '' : '선택한 기간에 집계된 방문 기록이 없습니다.';
       report.hidden = false;
     }
@@ -291,7 +309,7 @@
       function validDate(value) { return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value); }
       return history && history.days === selectedDays && validDate(history.startDate) && validDate(history.endDate) &&
         validCount(history.visitors) && validCount(history.pageViews) && history.stats &&
-        validCount(history.stats.total) && validCount(history.stats.today) && typeof history.stats.asOf === 'string' &&
+        validCount(history.stats.total) && validCount(history.stats.today) && validPageViews(history.stats.pageViews) && typeof history.stats.asOf === 'string' &&
         (history.stats.collectionStartedOn === null || validDate(history.stats.collectionStartedOn)) &&
         Array.isArray(history.daily) && history.daily.length === selectedDays && history.daily.every(function (row) {
           return validDate(row.date) && (row.visitors === null || validCount(row.visitors)) &&

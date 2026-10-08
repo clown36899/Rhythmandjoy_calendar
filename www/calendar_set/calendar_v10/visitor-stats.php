@@ -6,6 +6,7 @@
  * Metric contract:
  * - today: distinct accepted first-party browser IDs seen on the KST date
  * - total: distinct accepted first-party browser IDs since collection began
+ * - pageViews: audited GA baseline plus accepted views after its date boundary
  *
  * No raw IP address, full user-agent, or full referrer URL is stored. A signed
  * first-party cookie provides deduplication. The daily network key is an HMAC
@@ -215,20 +216,68 @@ function visitor_is_missing_table_exception($error) {
     return isset($error->errorInfo[1]) && intval($error->errorInfo[1]) === 1146;
 }
 
+// An audited import snapshot, not a second live ledger or invented visitors.
+// Keep source rows/cutover in one versioned file; never insert historical people.
+function visitor_historical_baseline() {
+    static $baseline = null;
+    if ($baseline !== null) return $baseline;
+    $path = dirname(__FILE__) . '/visitor-stats-baseline.json';
+    $data = is_readable($path) ? json_decode(file_get_contents($path), true) : null;
+    if (!is_array($data) || !isset($data['through'], $data['cutover'], $data['pageViews'], $data['rows']) ||
+        !preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['through']) ||
+        !preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['cutover']) ||
+        date('Y-m-d', strtotime($data['through'] . ' +1 day')) !== $data['cutover'] ||
+        !is_int($data['pageViews']) || $data['pageViews'] < 0 || !is_array($data['rows'])) {
+        throw new RuntimeException('Historical statistics baseline is unavailable or invalid.');
+    }
+    $sum = 0;
+    $seen = array();
+    foreach ($data['rows'] as $row) {
+        if (!isset($row['host'], $row['path'], $row['pageViews']) ||
+            !is_int($row['pageViews']) || $row['pageViews'] < 0) {
+            throw new RuntimeException('Invalid historical statistics source row.');
+        }
+        $key = $row['host'] . '\n' . $row['path'];
+        if (isset($seen[$key])) throw new RuntimeException('Duplicate historical statistics source row.');
+        $seen[$key] = true;
+        $sum += $row['pageViews'];
+    }
+    if ($sum !== $data['pageViews']) throw new RuntimeException('Historical statistics total does not match source rows.');
+    $baseline = $data;
+    return $baseline;
+}
+
 function visitor_read_stats_raw($pdo, $visit_date) {
-    $today_statement = $pdo->prepare('SELECT COUNT(*) FROM rhythmjoy_site_daily_visitors WHERE visit_date = ?');
+    $today_statement = $pdo->prepare('SELECT COUNT(*) AS visitors, COALESCE(SUM(page_views), 0) AS page_views FROM rhythmjoy_site_daily_visitors WHERE visit_date = ?');
     $today_statement->execute(array($visit_date));
+    $today_row = $today_statement->fetch();
     $visitor_statement = $pdo->query(
         'SELECT COUNT(*) AS total_count, MIN(first_seen_date) AS collection_started_on FROM rhythmjoy_site_visitors'
     );
     $visitor_row = $visitor_statement->fetch();
+    $baseline = visitor_historical_baseline();
+    $views_statement = $pdo->prepare(
+        'SELECT COALESCE(SUM(page_views), 0) FROM rhythmjoy_site_daily_visitors WHERE visit_date BETWEEN ? AND ?'
+    );
+    $views_statement->execute(array($baseline['cutover'], $visit_date));
+    $current_views = intval($views_statement->fetchColumn());
     return array(
-        'today' => intval($today_statement->fetchColumn()),
+        'today' => intval($today_row['visitors']),
         'total' => intval($visitor_row['total_count']),
         'collectionStartedOn' => $visitor_row['collection_started_on'] ? (string) $visitor_row['collection_started_on'] : null,
         'asOf' => date('c'),
         'timezone' => 'Asia/Seoul',
         'definition' => 'unique_first_party_browsers',
+        // Existing today/total retain their unique-browser meaning for legacy callers.
+        'pageViews' => array(
+            'total' => $visit_date >= $baseline['cutover'] ? $baseline['pageViews'] + $current_views : null,
+            'today' => intval($today_row['page_views']),
+            'sinceCutover' => $current_views,
+            'baseline' => $baseline['pageViews'],
+            'baselineThrough' => $baseline['through'],
+            'cutover' => $baseline['cutover'],
+            'source' => $baseline['source'],
+        ),
     );
 }
 

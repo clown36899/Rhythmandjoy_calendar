@@ -258,12 +258,41 @@ async function swipe(route, from, to, options = {}) {
   assert.doesNotMatch(sitemap,/site-preview|calendar_10|\/structure\//);
   checks++;
   const visitorSource = fs.readFileSync(path.resolve(root,'../visitor-stats.js'),'utf8');
+  // Cached pre-baseline HTML must still initialize collection with the new JS.
+  {
+    const requests = [];
+    const node = {addEventListener(){},querySelector(){return this},querySelectorAll(){return []}};
+    const document = {currentScript:{src:'https://example.com/calendar_set/calendar_v10/visitor-stats.js'},readyState:'complete',visibilityState:'visible',addEventListener(){},querySelectorAll(){return []},getElementById(id){return id==='visitor-baseline' ? null : node}};
+    vm.runInNewContext(visitorSource,{document,window:{location:{pathname:'/'},performance:{now:()=>100},addEventListener(){}},URL,Date,XMLHttpRequest:class{open(method,url){requests.push(url)}setRequestHeader(){}send(){}}});
+    assert.equal(new URL(requests[0]).searchParams.get('action'),'challenge');
+    checks++;
+  }
   for (const pathname of ['/','/spaces/a/','/schedule/','/calendar_set/calendar_v10/calendar_10.html','/calendar_set/calendar_v10/calendar_mobile_10.html']) {
     const requests=[];
     const document={currentScript:{src:'https://example.com/calendar_set/calendar_v10/visitor-stats.js?v=1'},readyState:'complete',visibilityState:'visible',addEventListener(){},getElementById(){return null}};
     vm.runInNewContext(visitorSource,{document,window:{location:{pathname},performance:{now:()=>100}},URL,XMLHttpRequest:class{open(method,url){requests.push(url)}setRequestHeader(){}send(){}},Date});
     assert.equal(new URL(requests[0]).pathname,'/calendar_set/calendar_v10/visitor-stats.php');
     assert.equal(new URL(requests[0]).searchParams.get('page_path'),pathname);
+    checks++;
+  }
+  // A soft navigation during the dwell timer must keep the signed entry path.
+  {
+    let clock = 100;
+    const timers = [], posts = [];
+    const window = {location:{pathname:'/'},performance:{now:()=>clock},dispatchEvent(){},innerWidth:390,innerHeight:844};
+    const document = {currentScript:{src:'https://example.com/calendar_set/calendar_v10/visitor-stats.js'},readyState:'complete',visibilityState:'visible',addEventListener(){},getElementById(){return null}};
+    vm.runInNewContext(visitorSource, {document,window,URL,Date,navigator:{webdriver:false},CustomEvent:class{},clearTimeout(){},setTimeout(fn){timers.push(fn)},XMLHttpRequest:class{
+      open(method){this.method=method}setRequestHeader(){}
+      send(body){
+        if(this.method==='POST'){posts.push(JSON.parse(body));return;}
+        this.readyState=4;this.status=200;this.responseText=JSON.stringify({ok:true,eligible:true,challenge:'signed-entry',minimumVisibleMs:2500,stats:{today:1,total:1}});this.onreadystatechange();
+      }
+    }});
+    window.location.pathname='/pricing/';clock=2700;timers.shift()();
+    assert.equal(posts.length,1);
+    assert.equal(posts[0].page_path,'/');
+    assert.equal(posts[0].challenge,'signed-entry');
+    assert.ok(posts[0].visible_ms>=2500);
     checks++;
   }
   // Exercise the embed's lifecycle independently from calendar data fetching:

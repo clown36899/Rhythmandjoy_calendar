@@ -47,8 +47,9 @@ const server = http.createServer((req, res) => {
       page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', route => route.request().url().startsWith(base) ? route.continue() : route.abort());
       await page.goto(base, {waitUntil:'networkidle'});
-      await page.locator('#visitor-open [data-visitor-total]').getByText(stats.total.toLocaleString('ko-KR'), {exact:true}).waitFor();
+      await page.locator('#visitor-open [data-visitor-views]').getByText(stats.pageViews.total.toLocaleString('ko-KR'), {exact:true}).waitFor();
       assert.equal(await page.locator('#visitor-open [data-visitor-today]').innerText(), stats.today.toLocaleString('ko-KR')); checks++;
+      assert.match(await page.locator('#visitor-baseline').textContent(), /195,065/); checks++;
       await page.locator('#visitor-open').scrollIntoViewIfNeeded();
       await page.locator('img').evaluateAll(images => Promise.all(images.filter(img => {
         const rect = img.getBoundingClientRect(); return rect.bottom > 0 && rect.top < innerHeight;
