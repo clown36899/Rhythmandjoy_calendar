@@ -47,6 +47,11 @@ assert set(prices) == set('ABCDE'), 'Existing guide price table changed; review 
 facility = (V10 / 'home_infopage/popup_info.html').read_text()
 dimensions = dict(re.findall(r'([ABCDE])홀\s+([\d.]+×[\d.]+m)', facility))
 assert set(dimensions) == set('ABCDE')
+# Reuse the detailed usage guide's existing tap-board restriction and quantity.
+usage_guide = (V10.parents[1] / 'info/index.html').read_text()
+tap_rule = html.unescape(re.search(r'<p>(쇠징이 달린 탭신발은.*?)</p>', usage_guide).group(1))
+tap_count = re.search(r'구비된 탭판 (\d+)개', tap_rule).group(1)
+practice_equipment = f'''<article><b>파란색 구르기 매트</b><p>크기 1,200 × 2,400mm<br>두께 60mm</p></article><article><b>탭판 {tap_count}개</b><p>{html.escape(tap_rule)}</p></article>'''
 
 rooms = {
     'A': ('단체 안무와 넓은 동선 연습.', f'{dimensions["A"]}의 연습 공간입니다. 댄스 전용 쿠션 마루이며, 장선 구조 위에 틈이 없는 강화마루로 마감되어 있습니다. 여러 사람이 대형을 바꾸는 안무나 이동 동선이 있는 댄스 연습에 활용해 보세요. 전면 거울로 동작을 확인하고, 55인치 TV로 참고 영상을 보며 연습할 수 있습니다.', '2', ['5','2','3'], '55인치 TV'),
@@ -215,7 +220,7 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=facility-faq-3d-20261008')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=facility-compact-20261008')
         public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=text-brand-20261008')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)
@@ -231,17 +236,18 @@ write('', '사당연습실 리듬앤조이 | 24시간 댄스 연습실', '사당
 
 floor_width, floor_height, floor_variants = responsive_image('dance-floor-structure-v1.png')
 floor_srcset = ', '.join(f'{url} {width}w' for width, url in floor_variants)
-plan_width, plan_height, plan_variants = responsive_image('roomALL/floorplan-3d-detail-v4.png')
+plan_width, plan_height, plan_variants = responsive_image('roomALL/floorplan-3d-final-v5.png')
 plan_srcset = ', '.join(f'{url} {width}w' for width, url in plan_variants)
 write('spaces','사당연습실 리듬앤조이 | 공간 안내·룸 사진','사당연습실 리듬앤조이 A–E홀 사진과 크기 비교. 전 홀 댄스 전용 쿠션 마루, A·B홀 TV와 개인·단체 연습 공간을 안내합니다.',f'''
 <section class="page-heading"><span class="eyebrow coral">OUR SPACES</span><h1>공간 안내</h1><p>리듬앤조이의 개인 연습룸부터 단체 안무 공간까지.<br>4평형부터 25평형까지. 사진과 크기를 비교해 연습에 맞는 룸을 골라보세요.</p><p>평형은 공간 안내용 표기이며, 실제 크기는 각 홀의 m 치수를 기준으로 확인해주세요.</p></section>
 <section class="section rooms-section"><div class="room-grid all-rooms">{''.join(card(x) for x in ['A','B','E','C','D'])}</div></section>
 <section class="section floorplan-section" aria-labelledby="floorplan-title"><div class="section-heading"><div><span class="eyebrow coral">STUDIO LAYOUT</span><h2 id="floorplan-title">우리 공간을 한눈에.</h2></div><a class="text-link" href="{plan_variants[-1][1]}" target="_blank" rel="noopener" draggable="false">도면 크게 보기 <span aria-hidden="true">↗</span></a></div>
-<figure class="floorplan-figure"><a href="{plan_variants[-1][1]}" target="_blank" rel="noopener" draggable="false" aria-label="연습실 입체 도면 크게 보기 (새 창)"><img src="{plan_variants[-1][1]}" srcset="{plan_srcset}" sizes="(max-width:560px) calc(100vw - 42px), (max-width:900px) calc(100vw - 64px), (max-width:1360px) calc(100vw - 128px), 1232px" width="{plan_width}" height="{plan_height}" alt="기존 평면도와 실제 홀 사진을 참고한 입체 배치도. 왼쪽 A홀, 중앙 B홀, 오른쪽 아래 C·D홀, 오른쪽 위 E홀. 복도 왼쪽 끝과 D홀 옆에는 계단이 있고, 출구 표기 위쪽은 엘리베이터입니다. 거울은 A·C홀 오른쪽 벽, B·D·E홀 왼쪽 벽에 있으며 E홀 오른쪽 끝에는 에어컨이 있습니다." loading="lazy" decoding="async" draggable="false"></a><figcaption>기존 평면도와 실제 홀 사진을 참고한 공간 안내용 입체 이미지입니다. 마감·높이·비품 위치는 실제와 차이가 있을 수 있으며, 크기는 각 홀의 m 치수를 확인해주세요.</figcaption></figure>
+<figure class="floorplan-figure"><a href="{plan_variants[-1][1]}" target="_blank" rel="noopener" draggable="false" aria-label="연습실 입체 도면 크게 보기 (새 창)"><img src="{plan_variants[-1][1]}" srcset="{plan_srcset}" sizes="(max-width:560px) calc(100vw - 42px), (max-width:900px) calc(100vw - 64px), min(840px, max(480px, calc(150vh - 420px)))" width="{plan_width}" height="{plan_height}" alt="기존 평면도와 실제 홀 사진을 참고한 입체 배치도. 왼쪽 A홀, 중앙 B홀, 오른쪽 아래 C·D홀, 오른쪽 위 E홀. 복도 왼쪽 끝과 D홀 옆에는 계단이 있고, 출구 표기 위쪽은 엘리베이터입니다. 거울은 A·C홀 오른쪽 벽, B·D·E홀 왼쪽 벽에 수직으로 밀착되어 있으며 E홀 오른쪽 아래 끝에는 에어컨이 있습니다." loading="lazy" decoding="async" draggable="false"></a><figcaption>기존 평면도와 실제 홀 사진을 참고한 공간 안내용 입체 이미지입니다. 마감·높이·비품 위치는 실제와 차이가 있을 수 있으며, 크기는 각 홀의 m 치수를 확인해주세요.</figcaption></figure>
 <div class="plan-notes"><p><strong>5개의 독립 연습룸</strong><span>A·B·E홀부터 개인 연습에 맞는 C·D홀까지.</span></p><p><strong>함께 쓰는 편의시설</strong><span>탈의실 2곳 · 내부 공용 화장실 · 엘리베이터</span></p></div></section>
-<section class="facilities"><span class="eyebrow">IN EVERY ROOM</span><h2>연습에 집중할 수 있도록.</h2><div><article><b>댄스 전용 쿠션 마루</b><p>전 홀에 적용 · A·E홀은 틈이 없는 강화마루</p></article><article><b>전면 거울</b><p>동작과 동선을 바로 확인</p></article><article><b>A·B홀 TV</b><p>A홀 55인치 · B홀 65인치<br>HDMI·C타입·8핀 커넥터 제공</p></article></div>
+<section class="facilities"><span class="eyebrow">STUDIO FACILITIES</span><h2>연습에 집중할 수 있도록.</h2><div><article><b>댄스 전용 쿠션 마루</b><p>전 홀에 적용 · A·E홀은 틈이 없는 강화마루</p></article><article><b>전면 거울</b><p>동작과 동선을 바로 확인</p></article><article><b>A·B홀 TV</b><p>A홀 55인치 · B홀 65인치<br>HDMI·C타입·8핀 커넥터 제공</p></article></div>
 <div class="facility-extra"><article><b>음악과 영상 준비</b><p>블루투스 스피커와 Wi-Fi를 이용할 수 있습니다. TV가 필요한 연습은 A·B홀을 선택해주세요.</p></article><article><b>사계절 연습 공간</b><p>냉난방 시설을 갖추고 있습니다. 전 홀 24시간 운영하며, 인원 추가금 없이 룸 단위로 대관합니다.</p></article><article><b>공용 편의시설</b><p>탈의실 2곳, 내부 공용 화장실과 정수기를 이용할 수 있습니다. 시설 안전을 위해 CCTV를 운영합니다.</p></article></div>
-<figure class="floor-figure"><img src="{floor_variants[-1][1]}" srcset="{floor_srcset}" sizes="(max-width:560px) calc(100vw - 42px), (max-width:1088px) calc(100vw - 128px), 960px" width="{floor_width}" height="{floor_height}" alt="외줄장선식 쿠션 마루 구조: 마루 아래 합판, 장선목, 방진고무, 쐐기가 있는 구조 설명" loading="lazy" decoding="async" draggable="false"><figcaption>외줄장선식 쿠션 마루의 구조를 설명한 이미지입니다. 홀별 표면 마감은 아래 안내를 확인해주세요.</figcaption></figure>
+<div class="practice-equipment">{practice_equipment}</div>
+<figure class="floor-figure"><img src="{floor_variants[-1][1]}" srcset="{floor_srcset}" sizes="(max-width:560px) calc(100vw - 42px), (max-width:900px) calc(100vw - 64px), min(720px, max(480px, calc(150vh - 420px)))" width="{floor_width}" height="{floor_height}" alt="외줄장선식 쿠션 마루 구조: 마루 아래 합판, 장선목, 방진고무, 쐐기가 있는 구조 설명" loading="lazy" decoding="async" draggable="false"><figcaption>외줄장선식 쿠션 마루의 구조를 설명한 이미지입니다. 홀별 표면 마감은 아래 안내를 확인해주세요.</figcaption></figure>
 <div><article><b>마루 아래의 쿠션 구조</b><p>장선은 마루 아래를 받치는 목재입니다. 마루와 합판 아래에 장선목과 방진고무 등을 배치하는 구조로, 일반 댄스홀처럼 쿠션감이 있는 마루에서 연습할 수 있습니다.</p></article><article><b>A·E홀: 틈 없는 강화마루</b><p>장선 구조 위에 틈이 없는 강화마루로 표면을 마감했습니다. 사진에서 바닥의 마감과 연습 공간을 함께 확인해보세요.</p></article><article><b>B·C·D홀: 장선마루</b><p>나무 마루 표면 아래에 장선 구조가 있는 댄스 전용 쿠션 마루입니다. 모든 홀에서 개인 실내 연습화를 사용해주세요.</p></article></div></section>''','spaces','공간 안내')
 
 for room,(tagline,description,cover,gallery,feature) in rooms.items():
@@ -278,6 +284,7 @@ write('guide','사당연습실 리듬앤조이 | 이용 안내·자주 묻는 �
 <section class="page-heading"><span class="eyebrow coral">BEFORE YOUR PRACTICE</span><h1>이용 안내</h1><p>사당연습실 리듬앤조이 방문 전 이용 수칙과 변경·환불 기준을 확인해주세요.</p></section>
 
 <section class="faq-section" aria-labelledby="faq-title"><div class="section-heading"><div><span class="eyebrow coral">Q &amp; A</span><h2 id="faq-title">자주 묻는 질문</h2></div></div><div class="faq-list">{faq_html}</div></section>
+<section class="equipment-section" aria-labelledby="equipment-title"><span class="eyebrow coral">PRACTICE EQUIPMENT</span><h2 id="equipment-title">준비된 연습 도구</h2><div class="practice-equipment">{practice_equipment}</div></section>
 <section class="guide-columns"><article><span class="eyebrow coral">SCREEN PRACTICE</span><h2>TV로 영상을 보며 연습하기</h2><p>A홀에는 55인치, B홀에는 65인치 TV가 있으며 대관 중 무료로 이용할 수 있습니다. HDMI·C타입·8핀 커넥터를 제공합니다.</p><p>연습할 영상을 준비하고 기기의 영상 출력 지원 여부와 연결 단자를 확인해주세요. 같은 C타입 단자라도 기기에 따라 영상 출력 지원이 다를 수 있습니다.</p></article><article><span class="eyebrow coral">BEFORE YOU ARRIVE</span><h2>방문 전에 준비해주세요.</h2><ul><li>예약문자에 안내된 홀, 날짜와 이용시간을 확인해주세요.</li><li>바닥은 전 홀 댄스 전용 쿠션 마루입니다. 외부에서 신던 신발 대신 개인 실내 연습화를 준비해주세요.</li><li>TV 영상을 보며 연습한다면 A·B홀인지 확인해주세요.</li><li>연습 준비를 포함해 공간을 사용하는 시간은 대관이 필요합니다.</li></ul></article></section>
 <section class="guide-columns"><article><span class="eyebrow coral">HOUSE RULES</span><h2>함께 지키는 이용 수칙</h2><ul><li>외부 신발 착용 불가 (개인 실내 연습화 사용)</li><li>연습을 위한 이용은 10분이라도 대관이 필요합니다.</li><li>징·장구·타악기는 사용할 수 없으며, 탭댄스는 탭판 위에서만 가능합니다.</li><li>국물 음식과 냄새가 심한 음식은 반입하지 마세요.</li><li>물품 파손 시 관리자에게 알려주세요.</li></ul></article><article><span class="eyebrow coral">CANCELLATION</span><h2>변경·환불 안내</h2><p>예약 변경은 취소 후 재예약으로 진행됩니다.</p><dl class="refund"><div><dt>예약 후 2시간 안 변심 취소</dt><dd>무료</dd></div><div><dt>방문 3일 전</dt><dd>70%</dd></div><div><dt>방문 2일 전</dt><dd>50%</dd></div><div><dt>방문 1일 전 · 당일</dt><dd>0%</dd></div></dl><p class="subtle">실제 예약에 표시된 환불 규정을 확인해주세요.</p></article></section>''','guide','이용 안내')
 

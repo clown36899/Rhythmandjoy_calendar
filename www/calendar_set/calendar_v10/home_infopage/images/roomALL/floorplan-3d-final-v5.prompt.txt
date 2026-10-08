@@ -1,0 +1,15 @@
+Use case: precise-object-edit.
+Make only TWO exact corrections to this attached existing studio scale-model image.
+
+1. MOVE E HALL AIR CONDITIONER:
+Remove the tall white standing air conditioner from E hall's UPPER-RIGHT corner near the fan.
+Place that exact same appliance at E hall's LOWER-RIGHT CORNER inside E's narrow downward leg: against the right outer wall, immediately ABOVE the horizontal wall separating E from the lower-right stairwell. In the attached image this means from about x=1360,y=108 to about x=1380,y=400 (1536x1024 canvas). It must stand on E's pale floor in the bottom end of the L-shaped E footprint, to the right of "탈의실 2", NOT in the stairwell, NOT in D hall, NOT left of E's entrance. There should be exactly ONE AC unit in E, none left at the old upper-right location. Keep the small fan at its current upper-right position.
+
+2. WALL-FLUSH VERTICAL MIRRORS:
+The five mirror panels currently look LEANING or like detached angled boards. Correct them to architectural WALL-MOUNTED MIRRORS adhered FLAT AND VERTICAL to the pre-existing wall faces. Think reflective finish applied directly onto a wall, NOT a separate propped-up pane.
+First eliminate every projecting/wedge-shaped mirror board and any triangular side gap, support foot, tilted base or protruding floor edge. Do not add new wall thickness.
+Then render a thin mirror surface exactly coplanar with each existing inward wall face: A right wall, B left wall, C right wall, D left wall, E left wall. These are permanent dance mirrors with their back fully touching the wall from top to bottom and angle exactly 90 degrees to the room floor. Their base line must coincide with the wall-floor junction. Their top edge must remain directly above that base in real 3D, not lean inward or outward. No diagonal glass fins, no freestanding glass dividers, no angled corners projecting into rooms. Preserve wall geometry; make its room-facing surface mildly silver reflective, with subtle reflections of the opposite wall, not an exaggerated floor reflection that suggests tilt.
+Retain the five "거울" text labels with leader lines pointing to the corrected flush wall surfaces.
+
+EVERYTHING ELSE MUST STAY THE SAME: entire building footprint, all A/B/C/D/E labels and dimensions, all room doors and support rooms, open-top elevator, two staircases, fixtures in A/B, floor colors, E dark walls, camera, framing, cream model base. Keep the central corridor free of the deleted "대기실" label. Do not add that text back. No additional furniture or objects. Preserve legible Korean typography.
+
