@@ -51,12 +51,6 @@ assert set(dimensions) == set('ABCDE')
 usage_guide = (V10.parents[1] / 'info/index.html').read_text()
 tap_rule = html.unescape(re.search(r'<p>(쇠징이 달린 탭신발은.*?)</p>', usage_guide).group(1))
 tap_count = re.search(r'구비된 탭판 (\d+)개', tap_rule).group(1)
-# Reuse the FAQ answers for shared availability and per-room equipment as well.
-practice_equipment = ''.join(
-    f'<article><b>{title}</b><p>{html.escape(next(item["acceptedAnswer"]["text"] for item in faq["mainEntity"] if item["name"] == question))}</p></article>'
-    for title, question in [('파란색 구르기 매트 · 공용 1개', '구르기 매트는 각 홀에 있나요?'),
-                            ('홀마다 준비된 삼각대', '촬영용 삼각대가 있나요?')])
-practice_equipment += f'<article><b>탭판 {tap_count}개</b><p>{html.escape(tap_rule)}</p></article>'
 
 rooms = {
     'A': ('단체 안무와 넓은 동선 연습.', f'{dimensions["A"]}의 연습 공간입니다. 댄스 전용 쿠션 마루이며, 장선 구조 위에 틈이 없는 강화마루로 마감되어 있습니다. 여러 사람이 대형을 바꾸는 안무나 이동 동선이 있는 댄스 연습에 활용해 보세요. 전면 거울로 동작을 확인하고, 55인치 TV로 참고 영상을 보며 연습할 수 있습니다.', '2', ['5','2','3'], '55인치 TV'),
@@ -120,6 +114,24 @@ def img(room, number=None, cls='', eager=False, layout='card'):
     src = next(url for size, url in variants if size >= min(width, 960))
     srcset = ', '.join(f'{url} {size}w' for size, url in variants)
     return f'<img class="{cls}" src="{src}" srcset="{srcset}" sizes="{sizes}" width="{width}" height="{height}" alt="리듬앤조이 {html.escape(photo_descriptions[room][number])}" draggable="false" loading="{"eager" if eager else "lazy"}" decoding="async">'
+
+
+# Keep one equipment fragment for both pages; reuse existing image derivation and FAQ text.
+practice_equipment = ''
+for title, question, filename, alt, caption in [
+    ('파란색 구르기 매트 · 공용 1개', '구르기 매트는 각 홀에 있나요?',
+     'blue-rolling-mat-reference-v1.jpg', '파란색 구르기 매트의 형태를 보여주는 동일 규격 제품 참고 사진',
+     '동일 규격 참고 사진 · <a href="https://sunsports.kr/product/체조매트-0010/465/" target="_blank" rel="noopener" draggable="false">출처: 태양스포츠</a>'),
+    ('홀마다 준비된 삼각대', '촬영용 삼각대가 있나요?',
+     'tripod-illustration-v1.png', '세 다리를 펼친 검은색 촬영용 삼각대 안내 이미지',
+     '삼각대 형태 안내를 위한 연출 이미지')]:
+    width, height, variants = responsive_image('equipment/' + filename)
+    srcset = ', '.join(f'{url} {size}w' for size, url in variants)
+    image = f'<figure class="equipment-photo"><img src="{variants[0][1]}" srcset="{srcset}" sizes="(max-width:560px) calc(100vw - 82px), (max-width:900px) calc((100vw - 180px) / 2), (max-width:1360px) calc((100vw - 244px) / 2), 558px" width="{width}" height="{height}" alt="{alt}" draggable="false" loading="lazy" decoding="async"><figcaption>{caption}</figcaption></figure>'
+    answer = next(item['acceptedAnswer']['text'] for item in faq['mainEntity'] if item['name'] == question)
+    practice_equipment += f'<article>{image}<b>{title}</b><p>{html.escape(answer)}</p></article>'
+# Tap boards intentionally remain text-only, including the existing floor-protection rule.
+practice_equipment += f'<article class="equipment-text-only"><b>탭판 {tap_count}개</b><p>{html.escape(tap_rule)}</p></article>'
 
 def button(label, url, primary=False):
     return f'<a class="button {"primary" if primary else "secondary"}" href="{url}" draggable="false">{label}<span aria-hidden="true">↗</span></a>'
@@ -225,7 +237,7 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=equipment-usage-20261008')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=equipment-photos-20261008')
         public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=text-brand-20261008')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,14 @@
+2026-10-08
+
+blue-rolling-mat-reference-v1.jpg
+Downloaded product reference photo, not a photograph of the studio's own equipment.
+Source page: https://sunsports.kr/product/체조매트-0010/465/
+Original image: https://sunsports.kr/web/product/big/202208/313128917c8ad09a5c21135450a8fca7.jpg
+Source: 태양스포츠. The product page states 240×120×6cm.
+Downloaded unchanged; manufacturer markings are retained. Not claimed to be our photograph or our equipment brand.
+
+tripod-illustration-v1.png
+Generated with built-in image_gen. Generic unbranded illustrative tripod, not a photograph of a verified studio model.
+Prompt: tripod-illustration-v1.prompt.txt
+
+Tap board: no image requested; text only.

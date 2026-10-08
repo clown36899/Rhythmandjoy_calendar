@@ -235,6 +235,7 @@ async function swipe(route, from, to, options = {}) {
         for (const equipmentRoute of ['spaces', 'guide']) {
           const equipmentPage = fs.readFileSync(path.resolve(root,'../site',equipmentRoute,'index.html'),'utf8');
           assert.ok(equipmentPage.includes(`<p>${answer}</p></article>`), 'Shared equipment availability must reuse the FAQ owner');
+          assert.doesNotMatch(equipmentPage.match(/<article class="equipment-text-only">(.*?)<\/article>/s)[1], /<img\b/, 'Tap-board guidance must stay text-only');
         }
       }
       assert.doesNotMatch(JSON.stringify(faq), /도보 약 1분/);
@@ -248,10 +249,15 @@ async function swipe(route, from, to, options = {}) {
       assert.match(attributes, /sizes="[^\"]+"/);
       assert.match(attributes, /draggable="false"/);
       const candidates = attributes.match(/srcset="([^\"]+)"/)[1].split(', ');
-      assert.ok(candidates.length >= 3);
+      // Small reference photos must not be upscaled merely to create more candidates.
+      assert.ok(candidates.length >= 1);
+      const intrinsicWidth = Number(attributes.match(/\bwidth="(\d+)"/)[1]);
+      let previousWidth = 0;
       for (const candidate of candidates) {
         const [url, width] = candidate.split(' ');
         assert.match(width, /^\d+w$/);
+        assert.ok(parseInt(width) > previousWidth && parseInt(width) <= intrinsicWidth);
+        previousWidth = parseInt(width);
         assert.ok(fs.statSync(path.resolve(root, '../../..', url.replace(/^\//,''))).size > 0, 'Every advertised image size must exist');
       }
     }
