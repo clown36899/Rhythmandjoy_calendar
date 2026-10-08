@@ -144,7 +144,7 @@ for i, item in enumerate(faq['mainEntity']):
         answer = ''.join(f'<p>{html.escape(part)}</p>' for part in paragraphs)
     answer = f'<div class="faq-answer">{answer}</div>'
     if name == '연습화는 따로 준비해야 하나요?':
-        illustration = f'''<figure class="shoe-rule-image"><img src="{shoe_variants[0][1]}" srcset="{shoe_srcset}" sizes="(max-width:560px) calc(100vw - 82px), 260px" width="{shoe_width}" height="{shoe_height}" alt="탭신발 밑창의 앞부분과 뒤꿈치에 달린 금속 징을 보여주는 안내 이미지" draggable="false" loading="lazy" decoding="async"><figcaption>금속 징이 달린 탭신발 예시 · 연출 이미지</figcaption><strong class="shoe-floor-warning"><span aria-hidden="true">×</span> 마루에서 직접 사용 불가</strong><span class="shoe-board-rule">탭판·개인 탭보드 위에서 사용</span></figure>'''
+        illustration = f'''<figure class="shoe-rule-image"><img src="{shoe_variants[0][1]}" srcset="{shoe_srcset}" sizes="(max-width:560px) calc(100vw - 82px), 260px" width="{shoe_width}" height="{shoe_height}" alt="탭신발 밑창의 앞부분과 뒤꿈치에 달린 금속 징을 보여주는 안내 이미지" draggable="false" loading="lazy" decoding="async"><figcaption>금속 징이 달린 탭신발 예시 · 연출 이미지</figcaption><strong class="shoe-floor-warning"><span aria-hidden="true">×</span> 마루에서 직접 사용 불가</strong><span class="shoe-board-rule">탭판·개인 탭보드 위에서 사용<br>탭판 {tap_count}개 비치 · 선착순 사용 가능</span></figure>'''
         answer = f'<div class="faq-shoe-rule">{illustration}{answer}</div>'
     if name in ('리듬앤조이 연습실 예약은 어디서 하나요?', '새벽 통대관은 어떻게 예약하나요?'):
         answer += '<a class="faq-menu-guide" href="#booking-menu" data-guide-menu="booking-menu" draggable="false">상단 예약하기 위치 보기 <span aria-hidden="true">↑</span></a>'
