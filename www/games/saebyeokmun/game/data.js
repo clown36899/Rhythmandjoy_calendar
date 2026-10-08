@@ -11,14 +11,16 @@ export const ENEMY_STRIKE={duration:.6,impact:.28};
 export function enemyAttackFrame(elapsed){return elapsed<.14?0:elapsed<ENEMY_STRIKE.impact?1:elapsed<.44?2:3;}
 
 export const UNITS={
- cow:{name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:65,range:73,damage:12,period:1.35,cost:30,cooldown:4,formation:460,spacing:190,guard:.6,weapon:'horn'},
+ cow:{name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:73,damage:12,period:1.35,cost:30,cooldown:4,formation:460,spacing:190,guard:.6,weapon:'horn'},
  keeper:{name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:235,damage:17,period:1.15,cost:18,cooldown:3.5,formation:245,spacing:70,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:275,weapon:'ink'}}},
  rabbit:{name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:310,damage:24,period:1.35,cost:24,cooldown:4,formation:140,spacing:62,guard:0,weapon:'seed'},
  scholar:{name:'선비',role:'지원 · 술법 봉인',hp:56,speed:68,range:405,damage:16,period:2.1,cost:34,cooldown:5,formation:-65,spacing:70,guard:0,weapon:'seal'}
 };
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
 // Atlas frame counts belong here; the simulation still owns the original impact clock.
-export const MOTION={haetae:{duration:.64,impact:.32,walkFps:84,walkFrames:48,attackFrames:8,idleFrame:56},rabbit:{duration:.64,impact:.32,walkFps:7},girl:{walkFps:84,walkFrames:48,idleFrame:48},keeper:{duration:.64,impact:.32,walkFps:7},cow:{duration:.72,impact:.36,walkFps:72,walkFrames:48,attackFrames:8,idleFrame:56},scholar:{duration:.8,impact:.4,walkFps:6}};
+// The imported ox's supporting hooves travel ~74 world units per cycle at height 141.
+// Journey already measures actual distance / unit speed; this cadence preserves that stride.
+export const MOTION={haetae:{duration:.64,impact:.32,walkFps:84,walkFrames:48,attackFrames:8,idleFrame:56},rabbit:{duration:.64,impact:.32,walkFps:7},girl:{walkFps:84,walkFrames:48,idleFrame:48},keeper:{duration:.64,impact:.32,walkFps:7},cow:{duration:.72,impact:.36,walkFps:48*UNITS.cow.speed/(74*BODY_HEIGHT.cow/141),walkFrames:48,attackFrames:8,idleFrame:56},scholar:{duration:.8,impact:.4,walkFps:6}};
 export function motionFrame(kind,walk,moving,action){
  const s=MOTION[kind],walkFrames=s.walkFrames||4,attackFrames=s.attackFrames||4;
  return action?walkFrames+Math.min(attackFrames-1,Math.floor(action.elapsed/s.duration*attackFrames)):moving?Math.floor(walk*s.walkFps)%walkFrames:(s.idleFrame??1);

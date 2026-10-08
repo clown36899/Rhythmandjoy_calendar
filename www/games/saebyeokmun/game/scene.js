@@ -1,4 +1,4 @@
-import {ROAD,START,MOTION,motionFrame,walkPose,AREAS,areaIndex,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS} from './data.js?v=14';
+import {ROAD,START,MOTION,motionFrame,walkPose,AREAS,areaIndex,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS} from './data.js?v=16';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const ROAD_EDGE=514,GROUND=542;
@@ -9,12 +9,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
   preload(){
    this.load.image('allies','./assets/allies.png');this.load.image('enemies','./assets/enemies.png');
    this.load.image('haetaeMotion','./assets/haetae-motion-v14.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
-   for(const kind of ['girl','cow','haetae'])this.load.image(kind+'Rig','./assets/'+kind+'-rig-v14b.png');this.load.image('reaperDeparture','./assets/reaper-departure-v14.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
+   for(const kind of ['girl','haetae'])this.load.image(kind+'Rig','./assets/'+kind+'-rig-v14b.png');this.load.image('reaperDeparture','./assets/reaper-departure-v14.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
    for(const area of AREAS)this.load.image(area.texture,'./assets/'+area.file);
    this.load.image('roadScenery','./assets/road-scenery-v13.png');
    this.load.image('livingScenery','./assets/living-scenery-v11.png');
    this.load.image('enemyAttacks','./assets/enemy-attacks-v11.png');
-   for(const [key,file] of Object.entries({keeperWalk:'doryeong-stone-v12',keeperBrushWalk:'doryeong-brush-v12',cowWalk:'ox-motion-v14',scholarWalk:'scholar-motion-v12',mountWalk:'mounted-haetae-v12'}))this.load.image(key,'./assets/'+file+'.png');
+   for(const [key,file] of Object.entries({keeperWalk:'doryeong-stone-v12',keeperBrushWalk:'doryeong-brush-v12',cowWalk:'cow-walk-gif-v16',cowAttack:'ox-motion-v14',scholarWalk:'scholar-motion-v12',mountWalk:'mounted-haetae-v12'}))this.load.image(key,'./assets/'+file+'.png');
    this.load.on('loaderror',()=>onReady(new Error('그림을 불러오지 못했어요. 새로고침해 주세요.')));
   }
   sliceAtlas(sheet,names,columns=3,sharedBounds=false,rows=2,layout=null){
@@ -96,19 +96,25 @@ export function makeGame(model,onReady,onFrame,onEvents){
    };
    for(let i=0;i<spec.walkFrames;i++)paint(kind+i,i/spec.walkFrames);
    paint(kind+spec.idleFrame,0,true);
-   if(kind!=='girl')for(let i=0;i<8;i++){
-    const from=kind+'Source'+(8+i),source=this.textures.get(from).getSourceImage(),name=kind+(spec.walkFrames+i);
-    const texture=this.textures.createCanvas(name,source.width,source.height);texture.getContext().drawImage(source,0,0);texture.refresh();this.grounding.set(name,this.grounding.get(from));
-   }
-   if(kind!=='girl')for(let i=0;i<16;i++)this.textures.remove(kind+'Source'+i);
   }
   create(){
    this.sliceAtlas('allies',['girl','haetae','rabbit','keeper','haetaeStomp','girlCast']);
    this.sliceAtlas('enemies',['skirt0','skirt1','horse','reaper','boss','cloud']);
    this.sliceAtlas('haetaeMotion',Array.from({length:16},(_,i)=>'haetaeSource'+i),4,true,4);
    this.sliceAtlas('rabbitMotion',Array.from({length:8},(_,i)=>'rabbit'+i),4,true);
-   this.sliceAtlas('cowWalk',Array.from({length:16},(_,i)=>'cowSource'+i),4,true,4);
-   for(const kind of ['girl','cow','haetae']){this.sliceAtlas(kind+'Rig',['Body','Upper','Lower','Foot'].map(part=>kind+part),2,false,2,{x:[0,.65,1],y:[0,.62,1]});this.bakeWalk(kind);}
+   this.sliceAtlas('cowAttack',Array.from({length:16},(_,i)=>'cowSource'+i),4,true,4);
+   // Extracted video cels use an exact grid and one shared crop/scale. Their
+   // original full-body drawings replace only the ox's procedural walk.
+   const cowRows=Math.ceil(MOTION.cow.walkFrames/4);
+   this.sliceAtlas('cowWalk',Array.from({length:MOTION.cow.walkFrames},(_,i)=>'cow'+i),4,true,cowRows,{x:[0,.25,.5,.75,1],y:Array.from({length:cowRows+1},(_,i)=>i/cowRows)});
+   for(const kind of ['girl','haetae']){this.sliceAtlas(kind+'Rig',['Body','Upper','Lower','Foot'].map(part=>kind+part),2,false,2,{x:[0,.65,1],y:[0,.62,1]});this.bakeWalk(kind);}
+   // Keep the existing attack art and impact clock for both walk sources.
+   const copies=[['cow'+MOTION.cow.idleFrame,'cow10'],...['cow','haetae'].flatMap(kind=>Array.from({length:MOTION[kind].attackFrames},(_,i)=>[kind+(MOTION[kind].walkFrames+i),kind+'Source'+(8+i)]))];
+   for(const [name,from] of copies){
+    const source=this.textures.get(from).getSourceImage(),texture=this.textures.createCanvas(name,source.width,source.height);
+    texture.getContext().drawImage(source,0,0);texture.refresh();this.grounding.set(name,this.grounding.get(from));
+   }
+   for(const kind of ['cow','haetae'])for(let i=0;i<16;i++)this.textures.remove(kind+'Source'+i);
    this.sliceAtlas('reaperDeparture',Array.from({length:8},(_,i)=>'reaperDepart'+i),4,true);
    for(const kind of ['keeper','keeperBrush','scholar','mount'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
    this.sliceAtlas('actionIcons',['iconKeeper','iconRabbit','iconCharm','iconStomp','iconShelter','iconSound']);
