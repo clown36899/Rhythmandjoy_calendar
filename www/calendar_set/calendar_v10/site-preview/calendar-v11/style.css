@@ -3207,7 +3207,7 @@ html,body{font-family:Pretendard,Arial,sans-serif!important;font-size:14px!impor
   body.desktop-room-detail-open #calendarAll .fc-timeGrid-view .custom-info{display:none}
 }
 /* A stable toolbar: room selection and date controls have separate aligned rows. */
-:root{--calendar-controls-height:128px}
+:root{--calendar-controls-height:128px;--calendar-title-height:34px}
 .bottomtop{height:var(--calendar-controls-height)!important;padding:0 10px 8px;box-sizing:border-box;gap:4px;justify-content:flex-start}
 #fixed-top{margin:0!important;position:static!important;min-height:28px!important;height:28px!important;padding:0!important;width:100%}
 #fixed-top .container-fluid{height:28px;padding:0!important;justify-content:flex-start;gap:7px}
@@ -3223,7 +3223,9 @@ html,body{font-family:Pretendard,Arial,sans-serif!important;font-size:14px!impor
 .jo-right .fc-button-group{position:static!important;display:flex!important;align-items:center!important;gap:4px!important;height:36px!important;float:none!important}
 .jo-right .fc-button{display:flex;align-items:center;justify-content:center;width:40px!important;height:36px!important;margin:0!important;padding:0 8px!important;font-size:12px!important;line-height:1!important;white-space:nowrap}
 #todaybtn{width:54px!important}
-#calendarAll .swiper-container{height:calc(100% - var(--calendar-controls-height))!important;top:0!important}
+/* Reserve the month toolbar before the existing weekday/date row in every slide. */
+#calendarAll>.swc-toolbar{height:var(--calendar-title-height);min-height:var(--calendar-title-height);margin:0;box-sizing:border-box}
+#calendarAll .swiper-container{height:calc(100% - var(--calendar-controls-height) - var(--calendar-title-height))!important;top:var(--calendar-title-height)!important}
 #singleRoomCalendarPanel{height:calc(100% - var(--calendar-controls-height))!important;bottom:var(--calendar-controls-height)!important}
 @media(min-width:700px){
   :root{--calendar-controls-height:86px}
