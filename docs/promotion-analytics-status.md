@@ -362,3 +362,14 @@ Apache 후보 설정 `httpd -t` 통과. 네이버 스마트플레이스 부가�
   예약 저장/문자/수집기/DB는 수정 경계 밖이므로 운영 예약 생성이나 발송 검사에서 제외했다.
 - 보고용 감사 결과: `output/site-preview-20261008/seo-content-audit.json`.
   기존 4회 주간 비교 작업을 그대로 이용하고 중복 자동화는 만들지 않는다.
+- 운영 결과: `448b16e` 커밋/푸시 후 공개·미리보기 정적 HTML 22개만 반영했다.
+  백업: `/home/clown313python/rhythmjoy_ops/deploy-backups/seo-topics-448b16e/content-before.tgz`.
+  보호 대상 v10 PC/모바일·동기화 JS·v11·공용 .htaccess 해시 모두 불변.
+- 공개 11개 HTML이 빌드와 바이트 단위 일치하고 HTTP 200 및 noindex 헤더 없음 확인.
+  robots.txt와 sitemap.xml은 기존 정상 내용을 유지한다. 미리보기는 의도대로 HTTP 헤더와
+  HTML 양쪽의 noindex가 유지됨을 별도로 확인했다.
+- 변경된 11개 공개 URL의 네이버 IndexNow 통지는 HTTP 200 접수.
+  `indexnow-seo-topics-result.json`에 기록했으며 색인 갱신/순위 상승 결과와 구분한다.
+- 실제 운영 공간 안내의 새 제목과 룸 목록을 화면에서 확인했다.
+  증거: `output/site-preview-20261008/live-seo-spaces-heading.png`.
+  단기 반복 검색 결과를 성과로 해석하지 않고 기존 주간 비교에서 집계된 노출/클릭 변화를 확인한다.
