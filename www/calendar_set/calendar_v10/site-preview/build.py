@@ -121,7 +121,7 @@ for title, question, filename, alt, caption in [
     ('파란색 구르기 매트 · 공용 1개', '구르기 매트는 각 홀에 있나요?',
      'blue-rolling-mat-reference-v1.jpg', '파란색 구르기 매트의 형태를 보여주는 동일 규격 제품 참고 사진',
      '동일 규격 참고 사진 · <a href="https://sunsports.kr/product/체조매트-0010/465/" target="_blank" rel="noopener" draggable="false">출처: 태양스포츠</a>'),
-    ('홀마다 준비된 삼각대', '촬영용 삼각대가 있나요?',
+    ('홀마다 삼각대 1개', '촬영용 삼각대가 있나요?',
      'tripod-illustration-v1.png', '세 다리를 펼친 검은색 촬영용 삼각대 안내 이미지',
      '삼각대 형태 안내를 위한 연출 이미지')]:
     width, height, variants = responsive_image('equipment/' + filename)
@@ -284,7 +284,7 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=faq-details-20261008')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=faq-tv-size-20261008')
         public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=faq-details-20261008')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)
@@ -327,7 +327,7 @@ for room,(tagline,description,cover,gallery,feature) in rooms.items():
 <section class="room-rate-section"><div><span class="eyebrow coral">HOURLY RATE</span><h2>{room}홀 이용요금</h2><p>시간당 요금 · 통대관은 6시간 기준<br><strong>인원 추가금 없음</strong></p></div><dl class="rate-list">{''.join(f'<div><dt>{label}</dt><dd>{price}<small>원</small></dd></div>' for label,price in zip(rate_labels,rates))}</dl></section>
 ''','spaces',f'<a href="/spaces/">공간 안내</a><span>/</span>{room}홀')
 
-rows=''.join(f'<tr><th scope="row"><a href="/spaces/{r.lower()}/" draggable="false">{r}홀 <span>{prices[r]["area"]}</span></a></th>'+''.join(f'<td>{p}</td>' for p in prices[r]['rates'])+'</tr>' for r in 'ABCDE')
+rows=''.join(f'<tr><th scope="row"><a href="/spaces/{r.lower()}/" draggable="false">{r}홀 <span>{prices[r]["area"]}</span></a><span class="room-size">{dimensions[r]}</span></th>'+''.join(f'<td>{p}</td>' for p in prices[r]['rates'])+'</tr>' for r in 'ABCDE')
 write('pricing','사당연습실 리듬앤조이 | 이용요금·새벽 통대관','사당연습실 리듬앤조이 A–E홀의 평일·주말·새벽 시간당 요금과 00:00~06:00 통대관 요금. 인원 추가금 없이 이용할 수 있습니다.',f'''
 <section class="page-heading compact"><span class="eyebrow coral">SIMPLE & CLEAR</span><h1>이용요금</h1><p>리듬앤조이 A–E홀의 시간대별 요금을 한눈에 비교하세요.<br>시간당 요금이며, 새벽 통대관은 00:00~06:00 전체 요금입니다.<br><strong>인원 추가금 없음</strong></p></section>
 <section class="section price-section" id="rates"><div class="section-heading"><h2>룸별 이용요금</h2><span class="subtle">단위: 원</span></div>
@@ -336,7 +336,7 @@ write('pricing','사당연습실 리듬앤조이 | 이용요금·새벽 통대�
 <thead><tr><th scope="col">공간</th><th scope="col">평일 낮<small>06~16시</small></th><th scope="col">평일 저녁<br>주말·공휴일</th><th scope="col">새벽<small>00~06시</small></th><th scope="col">새벽<br>통대관<small>00~06시</small></th></tr></thead>
 <tbody>{rows}</tbody></table>
 <div class="price-periods"><p><strong>평일 낮</strong> 06:00~16:00</p><p><strong>평일 저녁</strong> 16:00~24:00 · <strong>주말·공휴일</strong> 06:00~24:00</p><p><strong>새벽</strong> 매일 00:00~06:00 · <strong>통대관</strong> 같은 시간대 6시간 전체</p></div>
-<div class="price-footnotes"><p>네이버와 스페이스클라우드는 동일한 기준 가격으로 운영됩니다.</p></div></section>
+<div class="price-footnotes"><p>네이버와 스페이스클라우드는 동일한 기준 가격으로 운영됩니다.</p><p>평형은 공간 안내용 표기이며, 실제 크기는 각 홀의 m 치수를 기준으로 확인해주세요.</p></div></section>
 ''','pricing','이용요금')
 
 write('location','사당연습실 리듬앤조이 | 사당역 7번 출구 오시는 길','사당연습실 리듬앤조이 오시는 길. 사당역 7번 출구 대로변 도보 3분, 서울 동작구 남부순환로 2077 지하 2층. 주차 안내 확인.',f'''
@@ -349,7 +349,7 @@ write('guide','사당연습실 리듬앤조이 | 이용 안내·자주 묻는 �
 
 <section class="faq-section" aria-labelledby="faq-title"><div class="section-heading"><div><span class="eyebrow coral">Q &amp; A</span><h2 id="faq-title">자주 묻는 질문</h2></div></div><div class="faq-list">{faq_html}</div></section>{FAQ_DIALOG}
 <section class="equipment-section" aria-labelledby="equipment-title"><span class="eyebrow coral">PRACTICE EQUIPMENT</span><h2 id="equipment-title">준비된 연습 도구</h2><div class="practice-equipment">{practice_equipment}</div></section>
-<section class="guide-columns"><article id="tv-guide"><span class="eyebrow coral">SCREEN PRACTICE</span><h2>TV로 영상을 보며 연습하기</h2><p>A홀에는 55인치, B홀에는 65인치 TV가 있으며 대관 중 무료로 이용할 수 있습니다. HDMI·C타입·8핀 커넥터를 제공합니다.</p><p>연습할 영상을 준비하고 기기의 영상 출력 지원 여부와 연결 단자를 확인해주세요. 같은 C타입 단자라도 기기에 따라 영상 출력 지원이 다를 수 있습니다.</p></article><article><span class="eyebrow coral">BEFORE YOU ARRIVE</span><h2>방문 전에 준비해주세요.</h2><ul><li>예약문자에 안내된 홀, 날짜와 이용시간을 확인해주세요.</li><li>바닥은 전 홀 댄스 전용 쿠션 마루입니다. 외부에서 신던 신발 대신 개인 실내 연습화를 준비해주세요.</li><li>TV 영상을 보며 연습한다면 A·B홀인지 확인해주세요.</li><li>연습 준비를 포함해 공간을 사용하는 시간은 대관이 필요합니다.</li></ul></article></section>
+<section class="guide-columns"><article id="tv-guide"><span class="eyebrow coral">SCREEN PRACTICE</span><h2>TV로 영상을 보며 연습하기</h2><p>A홀에는 55인치, B홀에는 65인치 TV가 있으며 대관 중 무료로 이용할 수 있습니다. HDMI·C타입·8핀 커넥터를 제공합니다.</p><p>기기에 따라 연결되지 않을 수 있습니다.</p></article><article><span class="eyebrow coral">BEFORE YOU ARRIVE</span><h2>방문 전에 준비해주세요.</h2><ul><li>예약문자에 안내된 홀, 날짜와 이용시간을 확인해주세요.</li><li>바닥은 전 홀 댄스 전용 쿠션 마루입니다. 외부에서 신던 신발 대신 개인 실내 연습화를 준비해주세요.</li><li>TV 영상을 보며 연습한다면 A·B홀인지 확인해주세요.</li><li>연습 준비를 포함해 공간을 사용하는 시간은 대관이 필요합니다.</li></ul></article></section>
 <section class="guide-columns"><article id="house-rules"><span class="eyebrow coral">HOUSE RULES</span><h2>함께 지키는 이용 수칙</h2><ul><li>외부 신발 착용 불가 (개인 실내 연습화 사용)</li><li>연습을 위한 이용은 10분이라도 대관이 필요합니다.</li><li>징·장구·타악기는 사용할 수 없으며, 탭댄스는 탭판 위에서만 가능합니다.</li><li>국물 음식과 냄새가 심한 음식은 반입하지 마세요.</li><li>물품 파손 시 관리자에게 알려주세요.</li></ul></article><article id="refund-policy"><span class="eyebrow coral">CANCELLATION</span><h2>변경·환불 안내</h2><p>예약 변경은 취소 후 재예약으로 진행됩니다.</p><dl class="refund"><div><dt>예약 후 2시간 안 변심 취소</dt><dd>무료</dd></div><div><dt>방문 3일 전</dt><dd>70%</dd></div><div><dt>방문 2일 전</dt><dd>50%</dd></div><div><dt>방문 1일 전 · 당일</dt><dd>0%</dd></div></dl><p class="subtle">실제 예약에 표시된 환불 규정을 확인해주세요.</p></article></section>''','guide','이용 안내')
 
 write('schedule','사당연습실 리듬앤조이 | 예약·새벽 통대관','사당연습실 리듬앤조이 예약현황과 네이버·스페이스클라우드 예약 안내. 00~06시 새벽 통대관은 문자와 스페이스클라우드로 가능합니다.',f'''
