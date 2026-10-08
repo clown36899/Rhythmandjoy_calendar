@@ -294,3 +294,13 @@ Apache 후보 설정 `httpd -t` 통과. 네이버 스마트플레이스 부가�
 - 실제 390px 브라우저 결과: ‘오늘의 연습이 내일의 무대가 되는 곳.’으로 표시되며,
   소개 문장 경계의 공백도 정상이다. 홈·요금·구조도에 가로 넘침이 없고 구조도는 348×232px로
   원래 비율을 유지했다. viewport 복원 후 1422px에서 원래 제목 줄바꿈(inline br)이 유지됨을 확인했다.
+- 운영 반영 완료: `0f3d638` 본문/CSS와 `98150f3` 최종 이미지 커밋을 모두 푸시한 뒤
+  정적 파일 21개를 배포했다. 저장소의 일반 PNG 제외 규칙 때문에 최종 공개 자산 한 파일만
+  명시적으로 추적했다. 다른 출력/스크린샷은 포함하지 않았다.
+- 백업: `/home/clown313python/rhythmjoy_ops/deploy-backups/studio-content-98150f3/content-before.tgz`.
+  v10 PC/모바일, 동기화 JS, 독립 v11, 공용 .htaccess의 SHA-256 불변 확인.
+- 공개 HTML 11개와 CSS, 최종 구조도 및 A/B 기존 TV 사진이 운영 응답과 바이트 단위 일치했다.
+  기존 미리보기 noindex도 유지되었다. 변경된 공개 URL 9개만 네이버 IndexNow에 알렸고 HTTP 200 접수.
+- 운영 브라우저에서 A/B 갤러리 TV 사진 로딩, 요금 상단 ‘인원 추가금 없음’, 신발 이용수칙,
+  상표 없는 ‘외줄장선식’ 구조도를 확인했다. 최종 회귀검사 71개 통과.
+  증거: `live-a-tv.png`, `live-b-tv.png`, `live-pricing-no-extra-fee.png`, `live-floor-structure.png`.
