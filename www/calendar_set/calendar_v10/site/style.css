@@ -88,6 +88,4 @@ main{scroll-margin-top:85px}
 .visitor-dialog button:focus-visible,.visitor-open:focus-visible,.visitor-daily summary:focus-visible{outline:3px solid #bd6b53;outline-offset:3px}
 @media(max-width:560px){.visitor-summary{padding:8px 21px 26px;justify-content:center}.visitor-open{width:100%;justify-content:center;gap:10px;padding:13px 12px}.visitor-open-label{margin-left:8px}.visitor-dialog{border-radius:20px}.visitor-dialog-heading{padding:19px 20px 14px}.visitor-dialog-body{padding:16px 20px 22px}.visitor-totals>div{padding:17px}.visitor-totals strong{font-size:34px}.visitor-periods button{padding:10px 13px}.visitor-chart{gap:2px;height:120px}}
 
-/* Keep the complete studio name readable above each menu heading. */
-.page-heading h1 .page-brand{font-size:clamp(24px,6.6vw,40px);letter-spacing:-.045em}
 .visitor-totals [data-visitor-views]{font-size:clamp(22px,6vw,44px);letter-spacing:-.05em}

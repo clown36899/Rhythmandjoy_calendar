@@ -187,7 +187,7 @@ write('', '사당연습실 리듬앤조이 | 24시간 댄스 연습실', '사당
 ''')
 
 write('spaces','사당연습실 리듬앤조이 | 공간 안내·룸 사진','사당연습실 리듬앤조이 A–E홀 사진과 크기 비교. 전 홀 댄스 전용 쿠션 마루, A·B홀 TV와 개인·단체 연습 공간을 안내합니다.',f'''
-<section class="page-heading"><span class="eyebrow coral">OUR SPACES</span><h1><span class="page-brand">사당연습실 리듬앤조이</span><br>공간 안내</h1><p>리듬앤조이의 개인 연습룸부터 단체 안무 공간까지.<br>4평부터 25평까지. 사진과 크기를 비교해 연습에 맞는 룸을 골라보세요.</p></section>
+<section class="page-heading"><span class="eyebrow coral">OUR SPACES</span><h1>공간 안내</h1><p>리듬앤조이의 개인 연습룸부터 단체 안무 공간까지.<br>4평부터 25평까지. 사진과 크기를 비교해 연습에 맞는 룸을 골라보세요.</p></section>
 <section class="section rooms-section"><div class="room-grid all-rooms">{''.join(card(x) for x in ['A','B','E','C','D'])}</div></section>
 <section class="facilities"><span class="eyebrow">IN EVERY ROOM</span><h2>연습에 집중할 수 있도록.</h2><div><article><b>댄스 전용 쿠션 마루</b><p>전 홀에 적용 · A·E홀은 틈이 없는 마루</p></article><article><b>전면 거울</b><p>동작과 동선을 바로 확인</p></article><article><b>A·B홀 TV</b><p>HDMI·C타입·8핀 커넥터 제공</p></article></div>
 <figure class="floor-figure"><img src="{ASSETS}/dance-floor-structure-v1.png" width="1536" height="1024" alt="외줄장선식 쿠션 마루 구조: 위에서부터 원목마루, 합판, 장선목, 방진고무, 쐐기로 구성" loading="lazy" decoding="async" draggable="false"><figcaption>외줄장선식 쿠션 마루 구조도 · 원목마루, 합판, 장선목, 방진고무, 쐐기</figcaption></figure></section>''','spaces','공간 안내')
@@ -206,7 +206,7 @@ for room,(tagline,description,cover,gallery,feature) in rooms.items():
 
 rows=''.join(f'<tr><th scope="row"><a href="/spaces/{r.lower()}/" draggable="false">{r}홀 <span>{prices[r]["area"]}</span></a></th>'+''.join(f'<td>{p}</td>' for p in prices[r]['rates'])+'</tr>' for r in 'ABCDE')
 write('pricing','사당연습실 리듬앤조이 | 이용요금·새벽 통대관','사당연습실 리듬앤조이 A–E홀의 평일·주말·새벽 시간당 요금과 00:00~06:00 통대관 요금. 인원 추가금 없이 이용할 수 있습니다.',f'''
-<section class="page-heading compact"><span class="eyebrow coral">SIMPLE & CLEAR</span><h1><span class="page-brand">사당연습실 리듬앤조이</span><br>이용요금</h1><p>리듬앤조이 A–E홀의 시간대별 요금을 한눈에 비교하세요.<br>시간당 요금이며, 새벽 통대관은 00:00~06:00 전체 요금입니다.<br><strong>인원 추가금 없음</strong></p></section>
+<section class="page-heading compact"><span class="eyebrow coral">SIMPLE & CLEAR</span><h1>이용요금</h1><p>리듬앤조이 A–E홀의 시간대별 요금을 한눈에 비교하세요.<br>시간당 요금이며, 새벽 통대관은 00:00~06:00 전체 요금입니다.<br><strong>인원 추가금 없음</strong></p></section>
 <section class="section price-section"><div class="section-heading"><h2>룸별 이용요금</h2><span class="subtle">단위: 원</span></div>
 <table class="price-table" aria-label="룸별 이용요금표">
 <colgroup><col class="room-column"><col span="4"></colgroup>
@@ -217,17 +217,17 @@ write('pricing','사당연습실 리듬앤조이 | 이용요금·새벽 통대�
 ''','pricing','이용요금')
 
 write('location','사당연습실 리듬앤조이 | 사당역 7번 출구 오시는 길','사당연습실 리듬앤조이 오시는 길. 사당역 7번 출구 대로변 도보 3분, 서울 동작구 남부순환로 2077 지하 2층. 주차 안내 확인.',f'''
-<section class="page-heading"><span class="eyebrow coral">CLOSER THAN YOU THINK</span><h1><span class="page-brand">사당연습실 리듬앤조이</span><br>오시는 길</h1><p>사당연습실 리듬앤조이는 7번 출구에서 대로변을 따라 도보 3분 거리입니다.<br>드림디포 문구점 건물 지하 2층으로 오세요.</p></section>
+<section class="page-heading"><span class="eyebrow coral">CLOSER THAN YOU THINK</span><h1>오시는 길</h1><p>사당연습실 리듬앤조이는 7번 출구에서 대로변을 따라 도보 3분 거리입니다.<br>드림디포 문구점 건물 지하 2층으로 오세요.</p></section>
 <section class="location-layout"><div class="address-panel"><span class="eyebrow coral">FIND US</span><h2>리듬앤조이 연습실</h2><address>서울 동작구 남부순환로 2077<br><strong>지하 2층</strong></address><p>사당역 7번 출구, 대로변 도보 3분 거리<br>드림디포 문구점 건물</p><div class="actions">{button('네이버 지도 열기','https://naver.me/59vo9MDk',True)}<button class="button secondary" type="button" data-copy-address>주소 복사 <span aria-hidden="true">↗</span></button></div><p class="copy-result" role="status"></p></div><div class="wayfinding"><span class="eyebrow">HOW TO GET HERE</span><ol><li><span>01</span><div><h3>사당역 7번 출구</h3><p>7번 출구로 나와 대로변을 따라 약 3분 이동해 주세요.</p></div></li><li><span>02</span><div><h3>드림디포 문구점 건물</h3><p>주소: 남부순환로 2077</p></div></li><li><span>03</span><div><h3>지하 2층, 리듬앤조이</h3><p>예약한 홀과 이용시간을 확인하고 입장하세요.</p></div></li></ol></div></section>
 <section class="parking"><span class="eyebrow coral">PARKING</span><h2>주차는 공영주차장을 권장합니다.</h2><p>건물 주차는 기본적으로 불가합니다. 문구점 폐점 후 문구점 앞 공간만 제한적으로 이용할 수 있습니다.<br>카리프트 앞, 지정주차라인, 지하주차 리프트는 사용할 수 없습니다.</p></section>''','location','오시는 길')
 
 write('guide','사당연습실 리듬앤조이 | 이용 안내·환불 규정','사당연습실 리듬앤조이 방문 전 개인 실내 연습화, 시설 이용 수칙과 예약 변경·환불 기준을 확인하세요.',f'''
-<section class="page-heading"><span class="eyebrow coral">BEFORE YOUR PRACTICE</span><h1><span class="page-brand">사당연습실 리듬앤조이</span><br>이용 안내</h1><p>사당연습실 리듬앤조이 방문 전 이용 수칙과 변경·환불 기준을 확인해주세요.</p></section>
+<section class="page-heading"><span class="eyebrow coral">BEFORE YOUR PRACTICE</span><h1>이용 안내</h1><p>사당연습실 리듬앤조이 방문 전 이용 수칙과 변경·환불 기준을 확인해주세요.</p></section>
 
 <section class="guide-columns"><article><span class="eyebrow coral">HOUSE RULES</span><h2>함께 지키는 이용 수칙</h2><ul><li>외부 신발 착용 불가 (개인 실내 연습화 사용)</li><li>연습을 위한 이용은 10분이라도 대관이 필요합니다.</li><li>징·장구·타악기는 사용할 수 없으며, 탭댄스는 탭판 위에서만 가능합니다.</li><li>국물 음식과 냄새가 심한 음식은 반입하지 마세요.</li><li>물품 파손 시 관리자에게 알려주세요.</li></ul></article><article><span class="eyebrow coral">CANCELLATION</span><h2>변경·환불 안내</h2><p>예약 변경은 취소 후 재예약으로 진행됩니다.</p><dl class="refund"><div><dt>예약 후 2시간 안 변심 취소</dt><dd>무료</dd></div><div><dt>방문 3일 전</dt><dd>70%</dd></div><div><dt>방문 2일 전</dt><dd>50%</dd></div><div><dt>방문 1일 전 · 당일</dt><dd>0%</dd></div></dl><p class="subtle">실제 예약에 표시된 환불 규정을 확인해주세요.</p></article></section>''','guide','이용 안내')
 
 write('schedule','사당연습실 리듬앤조이 | 예약·새벽 통대관','사당연습실 리듬앤조이 예약현황과 네이버·스페이스클라우드 예약 안내. 00~06시 새벽 통대관은 문자와 스페이스클라우드로 가능합니다.',f'''
-<section class="page-heading compact"><span class="eyebrow coral">PLAN YOUR PRACTICE</span><h1><span class="page-brand">사당연습실 리듬앤조이</span><br>예약하기</h1><p>리듬앤조이 A–E홀 일정 확인부터 예약, 새벽 대관 문의까지 한곳에서.</p></section>
+<section class="page-heading compact"><span class="eyebrow coral">PLAN YOUR PRACTICE</span><h1>예약하기</h1><p>리듬앤조이 A–E홀 일정 확인부터 예약, 새벽 대관 문의까지 한곳에서.</p></section>
 <section class="booking-panel" aria-label="예약 바로가기"><div class="booking-panel-copy"><span class="eyebrow coral">예약 바로가기</span><h2>원하는 곳에서 <br>바로 예약하세요.</h2><p>아래 일정표에서 빈 시간을 확인한 뒤 <br>예약 채널을 선택해주세요.</p></div>{booking_links()}</section>
 <div class="sample-notice"><span class="tiny-dot"></span><strong>실제 예약현황</strong><span>룸을 선택하거나 예약 색상을 누르면 상세 시간을 확인할 수 있습니다.</span></div>
 <section class="calendar-shell"><iframe title="리듬앤조이 예약현황" src="{PREVIEW_PATH}calendar-v11/index.html" class="calendar-frame"></iframe></section>
