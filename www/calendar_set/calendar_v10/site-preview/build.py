@@ -75,8 +75,8 @@ def button(label, url, primary=False):
 
 def booking_links():
     return f'''<div class="booking-links" aria-label="예약 채널">
-    <a class="booking-link naver-book" href="{NAVER_BOOKING}" target="_blank" rel="noopener" draggable="false"><span class="booking-symbol" aria-hidden="true">N</span><span>네이버 예약</span><span aria-hidden="true">↗</span></a>
-    <a class="booking-link spacecloud-book" href="{SPACECLOUD_BOOKING}" target="_blank" rel="noopener" draggable="false"><img src="/calendar_set/calendar_v10/img/spacecloud-icon.png" alt="" draggable="false"><span>스페이스클라우드 예약</span><span aria-hidden="true">↗</span></a></div>'''
+    <a class="booking-link naver-book" href="{NAVER_BOOKING}" target="_blank" rel="noopener" draggable="false" aria-label="네이버 예약하러 가기 (새 창)"><span class="booking-symbol" aria-hidden="true">N</span><span class="booking-link-copy"><strong>네이버</strong><span>예약하러 가기</span></span><span class="booking-arrow" aria-hidden="true">↗</span></a>
+    <a class="booking-link spacecloud-book" href="{SPACECLOUD_BOOKING}" target="_blank" rel="noopener" draggable="false" aria-label="스페이스클라우드 예약하러 가기 (새 창)"><span class="booking-symbol" aria-hidden="true"><img src="/calendar_set/calendar_v10/img/spacecloud-icon.png" alt="" draggable="false" loading="eager"></span><span class="booking-link-copy"><strong>스페이스클라우드</strong><span>예약하러 가기</span></span><span class="booking-arrow" aria-hidden="true">↗</span></a></div>'''
 
 def card(room):
     return f'''<a class="room-card" href="/spaces/{room.lower()}/" draggable="false">
@@ -172,7 +172,7 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=text-brand-20261008')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=booking-entry-20261008')
         public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=text-brand-20261008')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)
@@ -228,7 +228,7 @@ write('guide','사당연습실 리듬앤조이 | 이용 안내·환불 규정','
 
 write('schedule','사당연습실 리듬앤조이 | 예약·새벽 통대관','사당연습실 리듬앤조이 예약현황과 네이버·스페이스클라우드 예약 안내. 00~06시 새벽 통대관은 문자와 스페이스클라우드로 가능합니다.',f'''
 <section class="page-heading compact"><span class="eyebrow coral">PLAN YOUR PRACTICE</span><h1><span class="page-brand">사당연습실 리듬앤조이</span><br>예약하기</h1><p>리듬앤조이 A–E홀 일정 확인부터 예약, 새벽 대관 문의까지 한곳에서.</p></section>
-<section class="booking-panel" aria-label="예약 바로가기"><div><span class="eyebrow coral">BOOK YOUR SPACE</span><h2>연습할 시간을 골랐나요?</h2><p>아래 일정표를 확인한 뒤 예약을 진행해주세요.</p></div>{booking_links()}</section>
+<section class="booking-panel" aria-label="예약 바로가기"><div class="booking-panel-copy"><span class="eyebrow coral">예약 바로가기</span><h2>원하는 곳에서 <br>바로 예약하세요.</h2><p>아래 일정표에서 빈 시간을 확인한 뒤 <br>예약 채널을 선택해주세요.</p></div>{booking_links()}</section>
 <div class="sample-notice"><span class="tiny-dot"></span><strong>실제 예약현황</strong><span>룸을 선택하거나 예약 색상을 누르면 상세 시간을 확인할 수 있습니다.</span></div>
 <section class="calendar-shell"><iframe title="리듬앤조이 예약현황" src="{PREVIEW_PATH}calendar-v11/index.html" class="calendar-frame"></iframe></section>
 <section class="section"><div class="section-heading"><h2>예약은 이렇게 진행해요.</h2></div><div class="steps">
