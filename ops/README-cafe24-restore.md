@@ -1,6 +1,6 @@
 # Cafe24 VPS deploy, backup, and restore
 
-This repository is only for `리듬앤조이일정표.com` (`xn--xy1b23ggrmm5bfb82ees967e.com`). It stores the deployable Rhythmjoy calendar site, Cafe24 Apache configuration, systemd loop service, certbot renewal hook, and sanitized Naver email import code.
+This repository owns `리듬앤조이일정표.com` (`xn--xy1b23ggrmm5bfb82ees967e.com`) and its alias `사당연습실.com` (`xn--ok1bu3xyqbnfk8l.com`). It stores the deployable Rhythmjoy calendar site, Cafe24 Apache configuration, systemd loop service, certbot renewal hook, and sanitized Naver email import code.
 
 The Cafe24 VPS is shared with a separate `swingenjoy.com` project, but this repository must never manage that project. Do not use `/opt/swingenjoy`, `swingenjoy.service`, `127.0.0.1:3001`, `swingenjoy-http.conf`, or `swingenjoy-http-le-ssl.conf` here.
 
@@ -76,7 +76,7 @@ The restore script also installs `/etc/cron.d/rhythmjoy-db-backup`, which runs t
 bash ops/restore-cafe24.sh
 ```
 
-6. If TLS files are missing, point DNS to the VPS and run certbot for `xn--xy1b23ggrmm5bfb82ees967e.com`.
+6. If TLS files are missing, point DNS to the VPS and issue the existing certificate name `xn--xy1b23ggrmm5bfb82ees967e.com` with all four names: both domains above and their `www` names. Use the existing webroot `/home/clown313python/myapp`.
 7. Verify:
 
 ```bash
@@ -144,3 +144,13 @@ Run this after restoring a DB backup or deploying the ledger for the first time:
 ```bash
 /home/clown313python/.pyenv/versions/3.8.12/envs/enve/bin/python3.8 /home/clown313python/rhythmjoy_ops/rhythmjoy_email_import.py --backfill-ledger
 ```
+
+## Additional domain — 2026-10-08
+
+- Existing implementation: partial. The two Rhythmjoy vhosts own routing, and the existing webroot certificate/cron/deploy hook own TLS renewal. Only the new hostname, its DNS A records and certificate SANs were missing; no new vhost, site copy, service or database is required.
+- Keep the existing primary domain. Both apex domains and both `www` names enter the same site. Alias requests use the existing 301 rule and retain path/query. The generated site's canonical URLs remain unchanged.
+- The original host-specific redirect prevents shared DocumentRoot businesses from being redirected. Extend its explicit allowlist only. Keep ACME HTTP exceptions and old calendar redirects unchanged.
+- DNS for `xn--ok1bu3xyqbnfk8l.com` and `www.xn--ok1bu3xyqbnfk8l.com` points to `1.234.23.64`. Expand the existing certificate only after DNS and HTTP challenge access succeed.
+- Deploy only these two vhost files after commit/push, backing up the old files and certificate renewal configuration under `OPS_ROOT/deploy-backups/`. Run `httpd -t` before a graceful reload. Do not use the full restore script for this domain-only change.
+- Validation scope: HTTP/HTTPS for all four names, root and `/schedule/` path/query redirects, current and legacy calendar access, public canonical, preview noindex, ACME HTTP access and TLS renewal. Booking/SMS/database tests are excluded because those implementations and data are unchanged.
+- Rollback: restore the two vhost backups, run `httpd -t`, reload; remove only the newly added DNS records if withdrawing the alias. A successfully expanded certificate remains valid for the original names and can be retained.
