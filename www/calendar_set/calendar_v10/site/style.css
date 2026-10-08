@@ -58,3 +58,5 @@ main{scroll-margin-top:85px}
   .nav{font-size:clamp(10px,2.9vw,12px);gap:4px}
   .header-book{font-size:clamp(10px,2.9vw,12px);gap:4px;padding:9px 7px}
 }
+
+.floor-figure{max-width:960px;margin:32px auto 0}.floor-figure img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:var(--radius)}.floor-figure figcaption{font-size:12px;line-height:1.6;color:var(--muted);margin-top:10px;word-break:keep-all}
