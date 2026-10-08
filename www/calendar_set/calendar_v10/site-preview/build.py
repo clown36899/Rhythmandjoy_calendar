@@ -134,7 +134,7 @@ def write(path, title, desc, body, active='home', crumb=None):
         structured = []
         if not path:
             business['image'] = ORIGIN + ASSETS + '/roomA/image2.webp'
-            business['description'] = business['description'].replace('사당역 7번 출구 도보 1분', '사당역 7번 출구, 대로변 도보 3분 거리')
+            business['description'] = desc  # Match the current public summary, not legacy calendar copy.
             structured.extend([business, {
                 '@context': 'https://schema.org', '@type': 'WebSite',
                 'name': '리듬앤조이 연습실', 'alternateName': '사당연습실 리듬앤조이',
@@ -157,15 +157,15 @@ def write(path, title, desc, body, active='home', crumb=None):
         (target / 'index.html').write_text(public)
         public_routes.append(canonical)
 
-write('', '사당연습실 리듬앤조이 | 공간·요금·예약 안내', '사당역 7번 출구, 대로변 도보 3분 거리. 사당 연습실 리듬앤조이의 A–E홀 사진, 이용요금, 위치와 예약현황을 확인하세요.', f'''
+write('', '사당연습실 리듬앤조이 | 24시간 댄스 연습실', '사당역 7번 출구, 대로변 도보 3분 거리의 사당연습실 리듬앤조이. 24시간 이용 가능한 A–E홀 5개 공간과 댄스 전용 쿠션 마루, 인원 추가금 없는 요금을 확인하세요.', f'''
 <section class="hero"><div class="hero-copy"><span class="eyebrow coral">SADANG · RHYTHM & JOY</span><p class="hero-location"><span class="tiny-dot"></span>사당역 7번 출구, 대로변 도보 3분</p><h1><span>사당연습실</span><br>리듬앤조이<span class="title-dot">.</span></h1><p class="hero-lead">오늘의 연습이<br> 내일의 무대가 되는 곳.</p><p class="hero-desc">혼자 몰입하는 순간부터 함께 맞추는 안무까지.<br> 4평부터 25평까지, 나에게 맞는 공간에서 연습하세요.</p><div class="actions">{button('공간 둘러보기','/spaces/',True)}</div><div class="hero-stats"><span><strong>5</strong>개의 연습룸</span><span><strong>24</strong>시간 운영</span><span><strong>3</strong>분 도보 거리</span></div></div>
 <div class="hero-visual">{img('A','2',eager=True)}<div class="image-caption"><span><b>A HALL</b>20평 · 10 × 6m</span><a href="/spaces/a/" aria-label="A홀 상세 보기">↗</a></div><div class="photo-tag">공간은 비워두고,<br>가능성은 채워두고.</div></div></section>
-<section class="intro-line"><span class="eyebrow">SPACE FOR YOUR RHYTHM</span><p><strong>연습에 필요한 것만, 가까운 곳에.</strong><br> 리듬앤조이는 서울 동작구 사당역 인근의 사당 연습실입니다.<br> 전 홀 댄스 전용 쿠션 마루와 거울을 갖춘 A–E홀에서 나만의 리듬을 찾아보세요.</p></section>
-<section class="section"><div class="section-heading"><div><span class="eyebrow coral">OUR SPACES</span><h2>어떤 공간을 찾고 있나요?</h2></div><a class="text-link" href="/spaces/">5개 공간 모두 보기 <span>↗</span></a></div><div class="room-grid">{''.join(card(x) for x in ['A','B','E'])}</div><div class="small-space-note"><span>작은 공간에서 집중하고 싶다면?</span><a href="/spaces/c/">C홀 · 5평 ↗</a><a href="/spaces/d/">D홀 · 4평 ↗</a></div></section>
+<section class="intro-line"><span class="eyebrow">SPACE FOR YOUR RHYTHM</span><p><strong>사당역 7번 출구, 24시간 연습실.</strong><br> 리듬앤조이는 서울 동작구 사당역 인근의 사당 연습실입니다.<br> 전 홀 댄스 전용 쿠션 마루와 거울을 갖춘 A–E홀에서 개인 연습과 단체 안무를 준비하세요.</p></section>
+<section class="section"><div class="section-heading"><div><span class="eyebrow coral">OUR SPACES</span><h2>사당연습실 A–E홀 둘러보기</h2></div><a class="text-link" href="/spaces/">5개 공간 모두 보기 <span>↗</span></a></div><div class="room-grid">{''.join(card(x) for x in ['A','B','E'])}</div><div class="small-space-note"><span>작은 공간에서 집중하고 싶다면?</span><a href="/spaces/c/">C홀 · 5평 ↗</a><a href="/spaces/d/">D홀 · 4평 ↗</a></div></section>
 ''')
 
-write('spaces','공간 안내 | 사당연습실 리듬앤조이','리듬앤조이 A–E홀의 실제 사진, 크기와 시간대별 요금을 비교하세요.',f'''
-<section class="page-heading"><span class="eyebrow coral">OUR SPACES</span><h1>다섯 개의 공간,<br>각자의 리듬.</h1><p>4평부터 25평까지. 사진과 크기를 비교해 연습에 맞는 룸을 골라보세요.</p></section>
+write('spaces','사당연습실 공간 안내·룸 사진 | 리듬앤조이','사당역 리듬앤조이 A–E홀 5개 연습실의 실제 사진과 크기를 비교하세요. 전 홀 댄스 전용 쿠션 마루와 A·B홀 TV, 개인·단체 연습 공간을 안내합니다.',f'''
+<section class="page-heading"><span class="eyebrow coral">OUR SPACES</span><h1>사당연습실<br>공간 안내</h1><p>리듬앤조이의 개인 연습룸부터 단체 안무 공간까지.<br>4평부터 25평까지. 사진과 크기를 비교해 연습에 맞는 룸을 골라보세요.</p></section>
 <section class="section rooms-section"><div class="room-grid all-rooms">{''.join(card(x) for x in ['A','B','E','C','D'])}</div></section>
 <section class="facilities"><span class="eyebrow">IN EVERY ROOM</span><h2>연습에 집중할 수 있도록.</h2><div><article><b>댄스 전용 쿠션 마루</b><p>전 홀에 적용 · A·E홀은 틈이 없는 마루</p></article><article><b>전면 거울</b><p>동작과 동선을 바로 확인</p></article><article><b>A·B홀 TV</b><p>HDMI·C타입·8핀 커넥터 제공</p></article></div>
 <figure class="floor-figure"><img src="{ASSETS}/dance-floor-structure-v1.png" width="1536" height="1024" alt="외줄장선식 쿠션 마루 구조: 위에서부터 원목마루, 합판, 장선목, 방진고무, 쐐기로 구성" loading="lazy" decoding="async" draggable="false"><figcaption>외줄장선식 쿠션 마루 구조도 · 원목마루, 합판, 장선목, 방진고무, 쐐기</figcaption></figure></section>''','spaces','공간 안내')
@@ -176,15 +176,15 @@ for room,(tagline,description,cover,gallery,feature) in rooms.items():
                  '평일 저녁 · 주말/공휴일<small>평일 16:00~24:00<br>주말·공휴일 06:00~24:00</small>',
                  '새벽<small>매일 00:00~06:00</small>',
                  '새벽 통대관<small>00:00~06:00 · 6시간 전체</small>']
-    write(f'spaces/{room.lower()}',f'{room}홀 {prices[room]["area"]} | 사당연습실 리듬앤조이',f'사당 리듬앤조이 {room}홀 {dimensions[room]}. {tagline} 실제 사진과 시설, 시간대별 이용요금을 확인하세요.',f'''
-<section class="room-detail-hero"><div><span class="eyebrow coral">RHYTHM & JOY / {room} HALL</span><h1>{room}홀<span>{prices[room]['area']}</span></h1><h2>{tagline}</h2><p>{description}</p><div class="specs"><span>{dimensions[room]}</span><span>24시간 운영</span><span>{feature}</span></div></div>{img(room,cover,'detail-cover',True)}</section>
+    write(f'spaces/{room.lower()}',f'{room}홀 {prices[room]["area"]} | 사당연습실 리듬앤조이',f'사당연습실 리듬앤조이 {room}홀 {prices[room]["area"]}, {dimensions[room]}. {tagline} {feature}, 시간대별 요금과 실제 사진을 확인하세요.',f'''
+<section class="room-detail-hero"><div><span class="eyebrow coral">RHYTHM & JOY / {room} HALL</span><h1>{room}홀<span>{prices[room]['area']}</span></h1><h2>{tagline}</h2><p>사당연습실 리듬앤조이 {room}홀입니다. {description}</p><div class="specs"><span>{dimensions[room]}</span><span>24시간 운영</span><span>{feature}</span></div></div>{img(room,cover,'detail-cover',True)}</section>
 <section class="section"><div class="section-heading"><div><span class="eyebrow coral">TAKE A CLOSER LOOK</span><h2>{room}홀 둘러보기</h2></div><span class="subtle">리듬앤조이 실제 시설 사진</span></div><div class="gallery">{''.join(f'<figure>{img(room,n)}<figcaption>{photo_descriptions[room][n]}</figcaption></figure>' for n in gallery)}</div></section>
 <section class="room-rate-section"><div><span class="eyebrow coral">HOURLY RATE</span><h2>{room}홀 이용요금</h2><p>시간당 요금 · 통대관은 6시간 기준<br><strong>인원 추가금 없음</strong></p></div><dl class="rate-list">{''.join(f'<div><dt>{label}</dt><dd>{price}<small>원</small></dd></div>' for label,price in zip(rate_labels,rates))}</dl></section>
 ''','spaces',f'<a href="/spaces/">공간 안내</a><span>/</span>{room}홀')
 
 rows=''.join(f'<tr><th scope="row"><a href="/spaces/{r.lower()}/" draggable="false">{r}홀 <span>{prices[r]["area"]}</span></a></th>'+''.join(f'<td>{p}</td>' for p in prices[r]['rates'])+'</tr>' for r in 'ABCDE')
-write('pricing','이용요금 | 사당연습실 리듬앤조이','A–E홀 평일 낮, 저녁·주말, 새벽 요금과 새벽 통대관 요금을 확인하세요.',f'''
-<section class="page-heading compact"><span class="eyebrow coral">SIMPLE & CLEAR</span><h1>이용요금</h1><p>룸별 요금을 한눈에 비교하세요.<br>시간당 요금이며, 새벽 통대관은 00:00~06:00 전체 요금입니다.<br><strong>인원 추가금 없음</strong></p></section>
+write('pricing','사당연습실 이용요금·새벽 통대관 | 리듬앤조이','사당연습실 리듬앤조이 A–E홀의 평일·주말·새벽 시간당 요금과 00:00~06:00 통대관 요금. 인원 추가금 없이 이용할 수 있습니다.',f'''
+<section class="page-heading compact"><span class="eyebrow coral">SIMPLE & CLEAR</span><h1>사당연습실<br>이용요금</h1><p>리듬앤조이 A–E홀의 시간대별 요금을 한눈에 비교하세요.<br>시간당 요금이며, 새벽 통대관은 00:00~06:00 전체 요금입니다.<br><strong>인원 추가금 없음</strong></p></section>
 <section class="section price-section"><div class="section-heading"><h2>룸별 이용요금</h2><span class="subtle">단위: 원</span></div>
 <table class="price-table" aria-label="룸별 이용요금표">
 <colgroup><col class="room-column"><col span="4"></colgroup>
@@ -194,18 +194,18 @@ write('pricing','이용요금 | 사당연습실 리듬앤조이','A–E홀 평�
 <div class="price-footnotes"><p>네이버와 스페이스클라우드는 동일한 기준 가격으로 운영됩니다.</p></div></section>
 ''','pricing','이용요금')
 
-write('location','오시는 길 | 사당역 7번 출구 리듬앤조이','서울 동작구 남부순환로 2077 지하 2층. 사당역 7번 출구에서 리듬앤조이까지 찾아오는 길과 주차 안내.',f'''
-<section class="page-heading"><span class="eyebrow coral">CLOSER THAN YOU THINK</span><h1>사당역 7번 출구,<br>대로변 도보 3분.</h1><p>7번 출구에서 대로변을 따라 도보 3분. 드림디포 문구점 건물 지하 2층으로 오세요.</p></section>
+write('location','사당역 7번 출구 오시는 길 | 사당연습실 리듬앤조이','사당연습실 리듬앤조이는 사당역 7번 출구에서 대로변 도보 3분 거리입니다. 서울 동작구 남부순환로 2077 지하 2층, 찾아오는 길과 주차 안내를 확인하세요.',f'''
+<section class="page-heading"><span class="eyebrow coral">CLOSER THAN YOU THINK</span><h1>사당역 7번 출구,<br>대로변 도보 3분.</h1><p>사당연습실 리듬앤조이는 7번 출구에서 대로변을 따라 도보 3분 거리입니다.<br>드림디포 문구점 건물 지하 2층으로 오세요.</p></section>
 <section class="location-layout"><div class="address-panel"><span class="eyebrow coral">FIND US</span><h2>리듬앤조이 연습실</h2><address>서울 동작구 남부순환로 2077<br><strong>지하 2층</strong></address><p>사당역 7번 출구, 대로변 도보 3분 거리<br>드림디포 문구점 건물</p><div class="actions">{button('네이버 지도 열기','https://naver.me/59vo9MDk',True)}<button class="button secondary" type="button" data-copy-address>주소 복사 <span aria-hidden="true">↗</span></button></div><p class="copy-result" role="status"></p></div><div class="wayfinding"><span class="eyebrow">HOW TO GET HERE</span><ol><li><span>01</span><div><h3>사당역 7번 출구</h3><p>7번 출구로 나와 대로변을 따라 약 3분 이동해 주세요.</p></div></li><li><span>02</span><div><h3>드림디포 문구점 건물</h3><p>주소: 남부순환로 2077</p></div></li><li><span>03</span><div><h3>지하 2층, 리듬앤조이</h3><p>예약한 홀과 이용시간을 확인하고 입장하세요.</p></div></li></ol></div></section>
 <section class="parking"><span class="eyebrow coral">PARKING</span><h2>주차는 공영주차장을 권장합니다.</h2><p>건물 주차는 기본적으로 불가합니다. 문구점 폐점 후 문구점 앞 공간만 제한적으로 이용할 수 있습니다.<br>카리프트 앞, 지정주차라인, 지하주차 리프트는 사용할 수 없습니다.</p></section>''','location','오시는 길')
 
-write('guide','이용 안내·환불 규정 | 사당연습실 리듬앤조이','사당 리듬앤조이 연습실의 실내화·시설 이용 수칙과 예약 변경·환불 기준을 확인하세요.',f'''
-<section class="page-heading"><span class="eyebrow coral">BEFORE YOUR PRACTICE</span><h1>처음 방문해도,<br>편안하게.</h1><p>방문 전 이용 수칙과 변경·환불 기준을 확인해주세요.</p></section>
+write('guide','이용 안내·환불 규정 | 사당연습실 리듬앤조이','사당연습실 리듬앤조이 방문 전 개인 실내 연습화, 시설 이용 수칙과 예약 변경·환불 기준을 확인하세요.',f'''
+<section class="page-heading"><span class="eyebrow coral">BEFORE YOUR PRACTICE</span><h1>연습실 이용 안내</h1><p>사당연습실 리듬앤조이 방문 전 이용 수칙과 변경·환불 기준을 확인해주세요.</p></section>
 
 <section class="guide-columns"><article><span class="eyebrow coral">HOUSE RULES</span><h2>함께 지키는 이용 수칙</h2><ul><li>외부 신발 착용 불가 (개인 실내 연습화 사용)</li><li>연습을 위한 이용은 10분이라도 대관이 필요합니다.</li><li>징·장구·타악기는 사용할 수 없으며, 탭댄스는 탭판 위에서만 가능합니다.</li><li>국물 음식과 냄새가 심한 음식은 반입하지 마세요.</li><li>물품 파손 시 관리자에게 알려주세요.</li></ul></article><article><span class="eyebrow coral">CANCELLATION</span><h2>변경·환불 안내</h2><p>예약 변경은 취소 후 재예약으로 진행됩니다.</p><dl class="refund"><div><dt>예약 후 2시간 안 변심 취소</dt><dd>무료</dd></div><div><dt>방문 3일 전</dt><dd>70%</dd></div><div><dt>방문 2일 전</dt><dd>50%</dd></div><div><dt>방문 1일 전 · 당일</dt><dd>0%</dd></div></dl><p class="subtle">실제 예약에 표시된 환불 규정을 확인해주세요.</p></article></section>''','guide','이용 안내')
 
-write('schedule','예약·새벽 통대관 | 사당연습실 리듬앤조이','사당 리듬앤조이 A–E홀 예약현황과 예약 방법. 네이버·스페이스클라우드 예약 및 00~06시 새벽 통대관 문자 문의를 안내합니다.',f'''
-<section class="page-heading compact"><span class="eyebrow coral">PLAN YOUR PRACTICE</span><h1>예약하기</h1><p>일정 확인부터 예약, 새벽 대관 문의까지 한곳에서.</p></section>
+write('schedule','사당연습실 예약·새벽 통대관 | 리듬앤조이','사당연습실 리듬앤조이의 실제 예약현황을 확인하고 네이버·스페이스클라우드에서 예약하세요. 00:00~06:00 새벽 통대관은 문자 문의와 스페이스클라우드로 가능합니다.',f'''
+<section class="page-heading compact"><span class="eyebrow coral">PLAN YOUR PRACTICE</span><h1>사당연습실<br>예약하기</h1><p>리듬앤조이 A–E홀 일정 확인부터 예약, 새벽 대관 문의까지 한곳에서.</p></section>
 <section class="booking-panel" aria-label="예약 바로가기"><div><span class="eyebrow coral">BOOK YOUR SPACE</span><h2>연습할 시간을 골랐나요?</h2><p>아래 일정표를 확인한 뒤 예약을 진행해주세요.</p></div>{booking_links()}</section>
 <div class="sample-notice"><span class="tiny-dot"></span><strong>실제 예약현황</strong><span>룸을 선택하거나 예약 색상을 누르면 상세 시간을 확인할 수 있습니다.</span></div>
 <section class="calendar-shell"><iframe title="리듬앤조이 예약현황" src="{PREVIEW_PATH}calendar-v11/index.html" class="calendar-frame"></iframe></section>

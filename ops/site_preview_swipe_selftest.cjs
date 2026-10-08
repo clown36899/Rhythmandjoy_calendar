@@ -229,6 +229,7 @@ async function swipe(route, from, to, options = {}) {
     if (!route) {
       assert.equal(data.find(item => item['@type'] === 'WebSite').url, canonical);
       assert.equal(data.find(item => item['@type'] === 'LocalBusiness').url, canonical);
+      assert.equal(data.find(item => item['@type'] === 'LocalBusiness').description, metaElements(html)['meta[name="description"]'].content, 'Business summary must use the current public copy');
     } else {
       const trail = data.find(item => item['@type'] === 'BreadcrumbList').itemListElement;
       assert.equal(trail.at(-1).item, canonical);
