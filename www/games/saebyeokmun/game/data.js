@@ -17,15 +17,34 @@ export const UNITS={
  scholar:{name:'선비',role:'지원 · 술법 봉인',hp:56,speed:68,range:405,damage:16,period:2.1,cost:34,cooldown:5,formation:-65,spacing:70,guard:0,weapon:'seal'}
 };
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
-// Four walk frames followed by four attack frames; simulation owns the impact clock.
-export const MOTION={haetae:{duration:.64,impact:.32,walkFps:7},rabbit:{duration:.64,impact:.32,walkFps:7},girl:{walkFps:7},keeper:{duration:.64,impact:.32,walkFps:7},cow:{duration:.72,impact:.36,walkFps:6},scholar:{duration:.8,impact:.4,walkFps:6}};
+// Atlas frame counts belong here; the simulation still owns the original impact clock.
+export const MOTION={haetae:{duration:.64,impact:.32,walkFps:84,walkFrames:48,attackFrames:8,idleFrame:56},rabbit:{duration:.64,impact:.32,walkFps:7},girl:{walkFps:84,walkFrames:48,idleFrame:48},keeper:{duration:.64,impact:.32,walkFps:7},cow:{duration:.72,impact:.36,walkFps:72,walkFrames:48,attackFrames:8,idleFrame:56},scholar:{duration:.8,impact:.4,walkFps:6}};
 export function motionFrame(kind,walk,moving,action){
- const s=MOTION[kind];
- return action?4+Math.min(3,Math.floor(action.elapsed/s.duration*4)):moving?Math.floor(walk*s.walkFps)%4:1;
+ const s=MOTION[kind],walkFrames=s.walkFrames||4,attackFrames=s.attackFrames||4;
+ return action?walkFrames+Math.min(attackFrames-1,Math.floor(action.elapsed/s.duration*attackFrames)):moving?Math.floor(walk*s.walkFps)%walkFrames:(s.idleFrame??1);
+}
+// A single distance-based pose supplies both game sprites and the existing motion gallery.
+// The painted torso never changes shape. Feet move backward relative to it only while planted.
+export function walkPose(kind,phase,idle=false){
+ const human=kind==='girl',stance=human?.62:.68,s=MOTION[kind];
+ const stride=(UNITS[kind]?.speed||76)/(s.walkFps/s.walkFrames)/BODY_HEIGHT[kind];
+ const bob=idle?0:Math.cos(phase*Math.PI*(human?4:8))*(human?.007:.005);
+ const specs=human?[[-.035,.5,1,true],[.045,0,1,false]]:[[-.29,0,-1,true],[.25,.25,1,true],[-.29,.5,-1,false],[.25,.75,1,false]];
+ return {bob,bodyBottom:human?-.18:-.19,bodyHeight:human?.78:.77,legs:specs.map(([hipX,offset,bend,far])=>{
+  const p=(phase+offset)%1,planted=idle||p<stance,u=(p-stance)/(1-stance),half=stride*stance/2;
+  let x=0,lift=0,angle=0;
+  if(!idle){
+   if(planted)x=half-stride*p;
+   else{const m=-stride*(1-stance),h00=2*u**3-3*u*u+1,h10=u**3-2*u*u+u,h01=-2*u**3+3*u*u,h11=u**3-u*u;
+    x=h00*(-half)+h10*m+h01*half+h11*m;lift=Math.sin(u*Math.PI)**2*(human?.09:.055);angle=-.2*Math.sin(u*Math.PI);
+   }
+  }
+  return {hipX,hipY:(human?-.285:-.325)+bob,footX:hipX+x,footY:-lift,angle,planted,bend,far,upper:human?.145:.17,lower:human?.145:.14,width:human?.085:(kind==='haetae'?.15:.13),footHeight:human?.067:.072};
+ })};
 }
 export const COMPANIONS=[
  {name:'여행자와 해태',asset:'haetae',tag:'주인공 · 탑승과 합동기',text:'평소에는 나란히 걷습니다. 돌진 필살기를 쓰면 아이가 해태에 올라타 앞길을 뚫고 다시 내려옵니다.',counter:'출발 전 필살기 편성 · Q / E / R 세 자리',motion:true},
- {name:'누렁소',asset:'cow',tag:'방어 · 튼튼한 앞줄',text:'넓은 몸과 뿔로 앞줄을 지킵니다. 여러 마리를 부르면 뒤에서 대기하다 앞 소가 쓰러질 때 교대합니다. 정면 피해 60% 감소, 우박에는 취약합니다.',counter:'체력 245 · 엽전 30 · 정면 방어',motion:true},
+ {name:'누렁소',asset:'cow',tag:'방어 · 튼튼한 앞줄',text:'넓은 몸과 뿔로 앞줄을 지킵니다. 여러 마리를 부르면 앞뒤로 펼쳐져 각각 뿔로 밀어붙입니다. 정면 피해 60% 감소, 우박에는 취약합니다.',counter:'체력 245 · 엽전 30 · 정면 방어',motion:true},
  {name:'돌팔매 도령',asset:'keeper',tag:'공격 · 짱돌에서 먹붓으로',text:'처음에는 주머니에서 짱돌을 꺼내 던집니다. 상단 수련 버튼에 엽전 45를 쓰면 옷과 무기가 바뀌어 먹붓 공격을 합니다.',counter:'소환 18 · 수련 45 · 공격 17 → 28',motion:true},
  {name:'달토끼',asset:'rabbit',tag:'공격 · 씨앗 사격',text:'대나무 통으로 뒤에서 씨앗탄을 쏩니다. 낮은 귀물에는 빗나가므로 누렁소와 도령이 길을 열어줘야 합니다.',counter:'체력 48 · 공격 24 · 소환 24',motion:true},
  {name:'선비',asset:'scholar',tag:'지원 · 붓으로 술법 봉인',text:'장부를 펼친 저승사자를 먼저 노립니다. 붓으로 쓴 봉인이 잠깐 기절시키고 적의 술법과 공격 준비를 끊습니다.',counter:'소환 34 · 짧은 봉인 · 후열 지원',motion:true}

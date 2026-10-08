@@ -1,27 +1,55 @@
-import {ROAD,START,MOTION,motionFrame,AREAS,areaIndex,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS} from './data.js?v=13';
+import {ROAD,START,MOTION,motionFrame,walkPose,AREAS,areaIndex,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS} from './data.js?v=14';
 const P=window.Phaser;
-// The painted road occupies y=510–518 in the 620-high background.
-const GROUND=514;
+// Feet stand inside the painted road, not on its distant top edge.
+const ROAD_EDGE=514,GROUND=542;
 const MODEL_MAP={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',rabbit:'rabbit',keeper:'keeper1',cow:'cow1',scholar:'scholar1'};
 export function makeGame(model,onReady,onFrame,onEvents){
  class RoadScene extends P.Scene{
   constructor(){super('road');this.sprites=new Map();this.effects=[];this.grounding=new Map();this.contacts=new Map();this.offset=0;this.lastX=START;this.heroPose=0;this.shake=0;this.previewAreaIndex=0;}
   preload(){
    this.load.image('allies','./assets/allies.png');this.load.image('enemies','./assets/enemies.png');
-   this.load.image('haetaeMotion','./assets/haetae-motion-v10.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
-   this.load.image('companionWalk','./assets/companions-walk-v11.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
+   this.load.image('haetaeMotion','./assets/haetae-motion-v14.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
+   for(const kind of ['girl','cow','haetae'])this.load.image(kind+'Rig','./assets/'+kind+'-rig-v14b.png');this.load.image('reaperDeparture','./assets/reaper-departure-v14.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
    for(const area of AREAS)this.load.image(area.texture,'./assets/'+area.file);
    this.load.image('roadScenery','./assets/road-scenery-v13.png');
    this.load.image('livingScenery','./assets/living-scenery-v11.png');
    this.load.image('enemyAttacks','./assets/enemy-attacks-v11.png');
-   for(const [key,file] of Object.entries({keeperWalk:'doryeong-stone-v12',keeperBrushWalk:'doryeong-brush-v12',cowWalk:'ox-guard-v12',scholarWalk:'scholar-motion-v12',mountWalk:'mounted-haetae-v12'}))this.load.image(key,'./assets/'+file+'.png');
+   for(const [key,file] of Object.entries({keeperWalk:'doryeong-stone-v12',keeperBrushWalk:'doryeong-brush-v12',cowWalk:'ox-motion-v14',scholarWalk:'scholar-motion-v12',mountWalk:'mounted-haetae-v12'}))this.load.image(key,'./assets/'+file+'.png');
    this.load.on('loaderror',()=>onReady(new Error('그림을 불러오지 못했어요. 새로고침해 주세요.')));
   }
-  sliceAtlas(sheet,names,columns=3,sharedBounds=false,rows=2){
-   const source=this.textures.get(sheet).getSourceImage(),sw=source.width/columns,sh=source.height/rows,cw=Math.ceil(sw),ch=Math.ceil(sh);
-   const scratch=document.createElement('canvas');scratch.width=cw;scratch.height=ch;const ctx=scratch.getContext('2d',{willReadFrequently:true});
+  sliceAtlas(sheet,names,columns=3,sharedBounds=false,rows=2,layout=null){
+   const source=this.textures.get(sheet).getSourceImage(),sw=source.width/columns,sh=source.height/rows;
+   const scratch=document.createElement('canvas');scratch.width=source.width;scratch.height=source.height;
+   const ctx=scratch.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,0,0);
+   const atlas=ctx.getImageData(0,0,source.width,source.height).data;
+   // Generated sheets have real gutters near, but not exactly on, equal-grid boundaries.
+   // Find those transparent bands before cropping so the previous row's shoes cannot leak in.
+   const gutters=(count,size,occupied)=>{
+    const result=[0],cell=size/count;
+    for(let i=1;i<count;i++){
+     const center=i*cell,lo=Math.max(0,Math.floor(center-cell*.18)),hi=Math.min(size,Math.ceil(center+cell*.18));
+     let best=Math.round(center),distance=Infinity,begin=-1;
+     for(let n=lo;n<=hi;n++){
+      if(n<hi&&!occupied[n]){if(begin<0)begin=n;}
+      else if(begin>=0){if(n-begin>=4){const mid=Math.round((begin+n)/2),d=Math.abs(mid-center);if(d<distance){best=mid;distance=d;}}begin=-1;}
+     }
+     result.push(best);
+    }
+    return [...result,size];
+   };
+   const rowInk=new Uint8Array(source.height);
+   for(let y=0;y<source.height;y++)for(let x=0;x<source.width;x++)if(atlas[(y*source.width+x)*4+3]>175){rowInk[y]=1;break;}
+   const rowCuts=layout?layout.y.map(v=>Math.round(v*source.height)):gutters(rows,source.height,rowInk),cells=[];
+   for(let row=0;row<rows;row++){
+    const colInk=new Uint8Array(source.width);
+    for(let x=0;x<source.width;x++)for(let y=rowCuts[row];y<rowCuts[row+1];y++)if(atlas[(y*source.width+x)*4+3]>175){colInk[x]=1;break;}
+    const cuts=layout?layout.x.map(v=>Math.round(v*source.width)):gutters(columns,source.width,colInk);
+    for(let col=0;col<columns;col++)cells.push({x:cuts[col],y:rowCuts[row],w:cuts[col+1]-cuts[col],h:rowCuts[row+1]-rowCuts[row],dx:sw*.25+cuts[col]-col*sw,dy:sh*.25+rowCuts[row]-row*sh});
+   }
+   const cw=Math.ceil(Math.max(sw*1.5,...cells.map(c=>c.dx+c.w))),ch=Math.ceil(Math.max(sh*1.5,...cells.map(c=>c.dy+c.h)));scratch.width=cw;scratch.height=ch;
+   const drawCell=i=>{const c=cells[i];ctx.clearRect(0,0,cw,ch);ctx.drawImage(source,c.x,c.y,c.w,c.h,c.dx,c.dy,c.w,c.h);};
    const bounds=names.map((name,i)=>{
-    ctx.clearRect(0,0,cw,ch);ctx.drawImage(source,(i%columns)*sw,Math.floor(i/columns)*sh,sw,sh,0,0,cw,ch);
+    drawCell(i);
     const rgba=ctx.getImageData(0,0,cw,ch).data;
     let x0=cw,y0=ch,x1=0,y1=0;
     // Read the visible character bounds inside each already generated atlas cell.
@@ -35,19 +63,54 @@ export function makeGame(model,onReady,onFrame,onEvents){
    names.forEach((name,i)=>{
     const groupSize=sharedBounds===true?names.length:sharedBounds||1,start=Math.floor(i/groupSize)*groupSize,group=bounds.slice(start,start+groupSize);
     const {x0,y0,x1,y1}={x0:Math.min(...group.map(b=>b.x0)),y0:Math.min(...group.map(b=>b.y0)),x1:Math.max(...group.map(b=>b.x1)),y1:Math.max(...group.map(b=>b.y1))};
-    ctx.clearRect(0,0,cw,ch);ctx.drawImage(source,(i%columns)*sw,Math.floor(i/columns)*sh,sw,sh,0,0,cw,ch);
+    drawCell(i);
     const texture=this.textures.createCanvas(name,x1-x0+1,y1-y0+1);
     texture.getContext().drawImage(scratch,x0,y0,texture.width,texture.height,0,0,texture.width,texture.height);texture.refresh();
     // Preserve shared dimensions, but anchor each frame by its visible supporting foot.
     this.grounding.set(name,(bounds[i].footY-y0)/texture.height);
    });
   }
+  bakeWalk(kind){
+   const spec=MOTION[kind],h=192,w=kind==='girl'?230:310,baseline=h-2;
+   const parts=Object.fromEntries(['Body','Upper','Lower','Foot'].map(part=>[part,this.textures.get(kind+part).getSourceImage()]));
+   const paint=(name,phase,idle=false)=>{
+    const texture=this.textures.createCanvas(name,w,h),ctx=texture.getContext(),pose=walkPose(kind,phase,idle);
+    ctx.translate(w/2,baseline);ctx.scale(h,h);
+    const segment=(part,a,b,width)=>{
+     const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy),src=parts[part];
+     ctx.save();ctx.translate(a.x,a.y);ctx.rotate(Math.atan2(dy,dx)-Math.PI/2);
+     ctx.drawImage(src,0,src.height*.12,src.width,src.height*.76,-width/2,-.012,width,len+.025);ctx.restore();
+    };
+    for(const leg of pose.legs){
+     const hip={x:leg.hipX,y:leg.hipY},ankle={x:leg.footX,y:leg.footY-leg.footHeight*.48};
+     const dx=ankle.x-hip.x,dy=ankle.y-hip.y,d=Math.max(.001,Math.hypot(dx,dy)),along=(leg.upper**2-leg.lower**2+d*d)/(2*d),side=Math.sqrt(Math.max(0,leg.upper**2-along*along));
+     const knee={x:hip.x+dx/d*along+dy/d*side*leg.bend,y:hip.y+dy/d*along-dx/d*side*leg.bend};
+     ctx.globalAlpha=leg.far?.84:1;
+     segment('Upper',hip,knee,leg.width*1.15);segment('Lower',knee,ankle,leg.width);
+     const foot=parts.Foot,fh=leg.footHeight,fw=fh*foot.width/foot.height;
+     ctx.save();ctx.translate(leg.footX,leg.footY);ctx.rotate(leg.angle);ctx.drawImage(foot,-fw/2,-fh,fw,fh);ctx.restore();
+    }
+    ctx.globalAlpha=1;const body=parts.Body,bh=pose.bodyHeight,bw=bh*body.width/body.height;
+    ctx.drawImage(body,-bw/2,pose.bodyBottom+pose.bob-bh,bw,bh);
+    texture.refresh();this.grounding.set(name,baseline/h);
+   };
+   for(let i=0;i<spec.walkFrames;i++)paint(kind+i,i/spec.walkFrames);
+   paint(kind+spec.idleFrame,0,true);
+   if(kind!=='girl')for(let i=0;i<8;i++){
+    const from=kind+'Source'+(8+i),source=this.textures.get(from).getSourceImage(),name=kind+(spec.walkFrames+i);
+    const texture=this.textures.createCanvas(name,source.width,source.height);texture.getContext().drawImage(source,0,0);texture.refresh();this.grounding.set(name,this.grounding.get(from));
+   }
+   if(kind!=='girl')for(let i=0;i<16;i++)this.textures.remove(kind+'Source'+i);
+  }
   create(){
    this.sliceAtlas('allies',['girl','haetae','rabbit','keeper','haetaeStomp','girlCast']);
    this.sliceAtlas('enemies',['skirt0','skirt1','horse','reaper','boss','cloud']);
-   for(const kind of ['haetae','rabbit'])this.sliceAtlas(kind+'Motion',Array.from({length:8},(_,i)=>kind+i),4,true);
-   this.sliceAtlas('companionWalk',Array.from({length:4},(_,i)=>'girl'+i),4,4);
-   for(const kind of ['keeper','keeperBrush','cow','scholar','mount'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
+   this.sliceAtlas('haetaeMotion',Array.from({length:16},(_,i)=>'haetaeSource'+i),4,true,4);
+   this.sliceAtlas('rabbitMotion',Array.from({length:8},(_,i)=>'rabbit'+i),4,true);
+   this.sliceAtlas('cowWalk',Array.from({length:16},(_,i)=>'cowSource'+i),4,true,4);
+   for(const kind of ['girl','cow','haetae']){this.sliceAtlas(kind+'Rig',['Body','Upper','Lower','Foot'].map(part=>kind+part),2,false,2,{x:[0,.65,1],y:[0,.62,1]});this.bakeWalk(kind);}
+   this.sliceAtlas('reaperDeparture',Array.from({length:8},(_,i)=>'reaperDepart'+i),4,true);
+   for(const kind of ['keeper','keeperBrush','scholar','mount'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
    this.sliceAtlas('actionIcons',['iconKeeper','iconRabbit','iconCharm','iconStomp','iconShelter','iconSound']);
    this.sliceAtlas('livingScenery',['pine','mist','dragon','grass'],2);
    this.sliceAtlas('enemyAttacks',['skirt','horse','reaper','boss'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Strike'+i)),4,4,4);
@@ -75,6 +138,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.tags=new Map();
    this.exitLabel=this.add.text(0,0,'새벽문',{fontFamily:'AppleMyungjo,serif',fontSize:'22px',color:'#776850'}).setOrigin(.5);
    this.root.add(this.exitLabel);
+   this.entryLabel=this.add.text(0,0,'저승문',{fontFamily:'AppleMyungjo,serif',fontSize:'18px',color:'#bbd5c8'}).setOrigin(.5);this.root.add(this.entryLabel);
    this.ready=true;this.resize();this.scale.on('resize',()=>this.resize());
    // Browser toolbar movement changes the stage without always resizing the layout viewport.
    this.stageObserver=new ResizeObserver(()=>this.resize());this.stageObserver.observe(document.getElementById('game'));
@@ -121,16 +185,16 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.mists.forEach((im,i)=>{const w=280+i*110,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(5+i*2)-this.offset*.07)%(vw+650)+vw+650)%(vw+650)-300,140+i*72).setAlpha(.16+i*.025);});
    const fly=(t+8)%75,ds=this.dragon.texture.getSourceImage();this.dragon.setVisible(fly<18).setDisplaySize(140,140*ds.height/ds.width).setPosition(-170+(vw+340)*fly/18,168+Math.sin(fly*.55)*14).setAngle(Math.sin(fly*.8)*3);
    this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=148+(i%2)*28;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*810-(this.offset*.48)%1620-190,505).setAngle(Math.sin(t*.75+i*2)*1.7);});
-   const road=this.road;road.clear();road.fillStyle(color(0xe8dfcb,0x77868a,night*.65),1);road.fillRect(0,GROUND, vw,620-GROUND);
-   road.lineStyle(1,0xa79777,.35);road.lineBetween(0,GROUND,vw,GROUND);
+   const road=this.road;road.clear();road.fillStyle(color(0xe8dfcb,0x77868a,night*.65),1);road.fillRect(0,ROAD_EDGE, vw,620-ROAD_EDGE);
+   road.lineStyle(1,0xa79777,.35);road.lineBetween(0,ROAD_EDGE,vw,ROAD_EDGE);
    // Every ground mark shares the exact world-to-camera transform of the feet.
    for(let i=Math.floor(this.offset/51)-1;i<(this.offset+vw)/51+1;i++){
     const x=i*51-this.offset*PARALLAX.ground,y=GROUND+5+((i*37)%79+79)%79;
     road.lineStyle(1,0xa48b63,.1+(i%3)*.025);road.lineBetween(x,y,x+8+(i%5)*2,y-1);
     if(i%7===0){road.fillStyle(0xab9876,.12);road.fillEllipse(x+15,GROUND+3,27,3);}
    }
-   this.pathTiles.forEach((im,i)=>im.setPosition(i*530-(this.offset%530)-530,GROUND-3).setDisplaySize(540,102).setTint(groundTint));
-   this.pathProps.forEach((im,i)=>{const key=['cairn','mile','flowers'][i%3],frame=im.frame,h=key==='cairn'?72:key==='mile'?80:39,x=i*550-(this.offset*.98)%1650-220;im.setPosition(x,GROUND+3).setDisplaySize(h*frame.width/frame.height,h).setAlpha(.78).setTint(groundTint);});
+   this.pathTiles.forEach((im,i)=>im.setPosition(i*530-(this.offset%530)-530,ROAD_EDGE-3).setDisplaySize(540,102).setTint(groundTint));
+   this.pathProps.forEach((im,i)=>{const key=['cairn','mile','flowers'][i%3],frame=im.frame,h=key==='cairn'?72:key==='mile'?80:39,x=i*550-(this.offset*.98)%1650-220;im.setPosition(x,ROAD_EDGE+3).setDisplaySize(h*frame.width/frame.height,h).setAlpha(.78).setTint(groundTint);});
    if(night>.1)for(let i=0;i<10;i++){const x=((i*181+t*9)%Math.max(1,vw)),y=GROUND-30+Math.sin(t*.8+i)*17;road.fillStyle(0xc0e7ae,night*(.2+.3*Math.sin(t*2+i)**2));road.fillCircle(x,y,2);}
    this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=53+(i%2)*18;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*460-(this.offset*PARALLAX.near)%920-100,600+(i%2)*18).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
   }
@@ -138,28 +202,29 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(const e of this.effects)e.sprite?.destroy();this.effects=[];this.offset=0;this.heroPose=0;this.shake=0;this.contacts.clear();
   }
   previewTexture(key){return this.textures.get(key).getSourceImage().toDataURL?.('image/png');}
-  placeOnGround(image,x,height){
+  placeOnGround(image,x,height,groundY=GROUND){
    const src=image.texture.getSourceImage();
-   image.setOrigin(.5,this.grounding.get(image.texture.key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,GROUND).setAngle(0);
-   this.shadows.fillStyle(0x5f5139,.1);this.shadows.fillEllipse(x,GROUND+2,Math.min(130,image.displayWidth*.72),11);
-   this.shadows.fillStyle(0x63513b,.21);this.shadows.fillEllipse(x,GROUND+1,Math.min(90,image.displayWidth*.5),4);
+   image.setOrigin(.5,this.grounding.get(image.texture.key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,groundY).setAngle(0);
+   this.shadows.fillStyle(0x554b36,.15);this.shadows.fillEllipse(x,groundY+2,Math.min(145,image.displayWidth*.77),9);
+   this.shadows.fillStyle(0x524731,.29);this.shadows.fillEllipse(x,groundY+1,Math.min(105,image.displayWidth*.6),3.5);
   }
-  trackContact(key,kind,walk,moving,x){
-   const beat=Math.floor(walk*MOTION[kind].walkFps/2),previous=this.contacts.get(key);
+  trackContact(key,kind,walk,moving,x,groundY=GROUND){
+   const beat=Math.floor(walk*MOTION[kind].walkFps/(MOTION[kind].walkFrames||4)*2),previous=this.contacts.get(key);
    this.contacts.set(key,beat);
    if(model.status!=='playing'||!moving||previous===undefined||previous===beat)return;
-   const e={type:'footstep',kind,x};this.effects.push({...e,t:0,duration:.32});
+   const e={type:'footstep',kind,x,groundY};this.effects.push({...e,t:0,duration:.32});
    onEvents([e]);
   }
   playEvents(events){
    for(const e of events){
+    if(typeof e.actor==='number'){const actor=model.allies.find(a=>a.id===e.actor);if(actor)e.groundY=GROUND+(model.allies.filter(a=>a.type===actor.type&&a.id<actor.id).length%3)*24;}
     if(e.type==='stomp')this.shake=.15;
     if(e.type==='projectile'&&e.actor==='girl')this.heroPose=.25;
     if(e.type==='hurt')this.shake=.13;
     if(e.type==='vanish'){
-     const ghost=this.add.image(0,0,MODEL_MAP[e.kind]).setOrigin(.5,this.grounding.get(MODEL_MAP[e.kind])??1);
-     const src=ghost.texture.getSourceImage(),h=BODY_HEIGHT[e.kind];ghost.setDisplaySize(h*src.width/src.height,h);this.root.add(ghost);
-     this.effects.push({...e,type:'depart',sprite:ghost,t:0,duration:e.kind==='reaper'?2.6:e.kind==='boss'?2.1:1.35});
+     const departure=this.add.image(0,0,e.kind==='reaper'?'reaperDepart0':MODEL_MAP[e.kind]).setOrigin(.5,this.grounding.get(e.kind==='reaper'?'reaperDepart0':MODEL_MAP[e.kind])??1);
+     const src=departure.texture.getSourceImage(),h=BODY_HEIGHT[e.kind];departure.setDisplaySize(h*src.width/src.height,h);this.root.add(departure);
+     this.effects.push({...e,type:'depart',sprite:departure,t:0,duration:e.kind==='reaper'?3.1:e.kind==='boss'?2.1:1.35});
      if(e.kind==='horse'){
       const hat=this.add.image(0,0,'horse').setOrigin(.5,0),src=hat.texture.getSourceImage(),h=BODY_HEIGHT.horse;
       hat.setCrop(0,0,src.width,Math.floor(src.height*.16)).setDisplaySize(h*src.width/src.height,h);this.root.add(hat);this.effects.push({...e,type:'hat',sprite:hat,t:0,duration:1.75});
@@ -169,47 +234,53 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(['projectile','stomp','hit','vanish','hail','summon','heal','swipe','shelter','charge','guard','hex','claw'].includes(e.type))this.effects.push({...e,t:0,duration:e.type==='hail'?1.2:e.type==='stomp'?.65:e.type==='projectile'?.14:e.type==='shelter'?1:.6});
    }
   }
-  drawGate(x){
+  drawGate(x,entry=false){
    const g=this.decor;
+   if(entry){
+    // The arrival threshold stays on the visible right edge; characters walk through it.
+    g.fillStyle(0x334647,.87);g.fillRect(x-56,GROUND-221,126,221);
+    g.fillStyle(0x183137,.68);g.fillRect(x-35,GROUND-207,91,207);
+    for(let i=0;i<7;i++){g.fillStyle(0x83c3bd,.018*(7-i));g.fillEllipse(x-24-i*4,GROUND-96,44+i*18,185+i*4);}
+   }
    g.lineStyle(3,0x86775e,1);g.strokeRect(x-85,GROUND-225,16,225);g.strokeRect(x+69,GROUND-225,16,225);
    g.fillStyle(0x929487,.8);g.fillPoints([{x:x-120,y:GROUND-222},{x:x-67,y:GROUND-258},{x:x+67,y:GROUND-258},{x:x+120,y:GROUND-222}],true);
    g.lineStyle(3,0x5c6155,.9);g.strokePoints([{x:x-125,y:GROUND-222},{x:x-67,y:GROUND-258},{x:x+67,y:GROUND-258},{x:x+125,y:GROUND-222}]);
    g.lineStyle(1,0x6f725f,.6);for(let i=-65;i<85;i+=17)g.lineBetween(x+i,GROUND-251,x+i+12,GROUND-223);
-   g.fillStyle(0x469795,.06);g.fillRect(x-67,GROUND-220,134,220);g.fillStyle(0xf7f3dc,.2);g.fillEllipse(x,GROUND-115,100,190);
+   g.fillStyle(0x469795,entry?.18:.06);g.fillRect(x-67,GROUND-220,134,220);g.fillStyle(0xf7f3dc,.2);g.fillEllipse(x,GROUND-115,100,190);
   }
-  renderEntity(key,type,x,walk,hp,maxHp,hit,windup,enemy=false,moving=0,action=null,hitDir=1){
+  renderEntity(key,type,x,walk,hp,maxHp,hit,windup,enemy=false,moving=0,action=null,hitDir=1,groundY=GROUND){
    let image=this.sprites.get(key);
    if(!image){image=this.add.image(0,0,MODEL_MAP[type]||type).setOrigin(.5,1);this.root.add(image);this.sprites.set(key,image);}
    if(type==='skirt')image.setTexture(Math.floor(walk*5)%2?'skirt1':'skirt0');
    if(enemy&&(type!=='skirt'||action))image.setTexture(type+'Strike'+(action?enemyAttackFrame(action.elapsed):0));
-   const waiting=type==='cow'&&!enemy&&!moving&&!action&&model.allies.some(a=>a.type==='cow'&&'a'+a.id!==key&&a.hp>0&&a.x>x&&a.x-x<UNITS.cow.spacing+12);
-   if(!enemy&&UNITS[type])image.setTexture((type==='keeper'&&model.keeperRank?'keeperBrush':type)+(waiting?4:motionFrame(type,walk,moving,action))).setFlipX(moving<0&&!action);
+   if(!enemy&&UNITS[type])image.setTexture((type==='keeper'&&model.keeperRank?'keeperBrush':type)+motionFrame(type,walk,moving,action)).setFlipX(moving<0&&!action);
    const height=BODY_HEIGHT[type]||130;
-   this.placeOnGround(image,x-this.offset,height);
+   this.placeOnGround(image,x-this.offset,height,groundY);
+   this.root.bringToTop(image);
    if(enemy&&action){
     const p=action.elapsed/ENEMY_STRIKE.duration,impact=ENEMY_STRIKE.impact/ENEMY_STRIKE.duration,dir=action.dir;
     const thrust=p<impact?-Math.sin(p/impact*Math.PI/2)*7:Math.sin((p-impact)/(1-impact)*Math.PI)*22;
     image.x+=dir*thrust;image.setAngle(dir*(p<impact?-4:7)*Math.sin(p*Math.PI));
     image.setDisplaySize(image.displayWidth*(1+.06*Math.sin(p*Math.PI)),height*(1-.035*Math.sin(p*Math.PI)));
-    if(p<impact){this.fx.lineStyle(2,0x9c6958,.35);this.fx.lineBetween(image.x-dir*20,GROUND-height*.6,image.x-dir*43,GROUND-height*.63);}
+    if(p<impact){this.fx.lineStyle(2,0x9c6958,.35);this.fx.lineBetween(image.x-dir*20,groundY-height*.6,image.x-dir*43,groundY-height*.63);}
    }else if(enemy&&windup>0){image.setAngle(Math.sin(windup*8)*1.8+(type==='horse'?5:0));}
    if(hit>0){
     const response=Math.sin(Math.PI*(1-Math.min(1,hit/.26)));
     image.x+=hitDir*response*(type==='boss'?5:10);
     image.setDisplaySize(image.displayWidth*(1+.07*response),height*(1-.06*response));
    }
-   if(MOTION[type])this.trackContact(key,type,walk,moving,x);
+   if(MOTION[type])this.trackContact(key,type,walk,moving,x,groundY);
    if(hit>0)image.setTint(enemy?0xe8b3a0:0xa9e2d7);else image.clearTint();
    image.setAlpha(hp<=0?0:1);
    if(hp<maxHp||windup>0){
     const w=type==='boss'?150:46,px=x-this.offset;
-    this.fx.fillStyle(0x85755f,.18);this.fx.fillRoundedRect(px-w/2,GROUND-height-13,w,3,1);
-    this.fx.fillStyle(enemy?0xb76d59:0x388b7e,.8);this.fx.fillRect(px-w/2,GROUND-height-13,w*Math.max(0,hp/maxHp),3);
+    this.fx.fillStyle(0x85755f,.18);this.fx.fillRoundedRect(px-w/2,groundY-height-13,w,3,1);
+    this.fx.fillStyle(enemy?0xb76d59:0x388b7e,.8);this.fx.fillRect(px-w/2,groundY-height-13,w*Math.max(0,hp/maxHp),3);
    }
    if(windup>0){
     const px=x-this.offset;
     this.fx.lineStyle(2,0xae6345,.9);
-    this.fx.lineBetween(px-4,GROUND-height-43,px-4,GROUND-height-28);this.fx.fillStyle(0xae6345,1);this.fx.fillCircle(px-4,GROUND-height-22,1.8);
+    this.fx.lineBetween(px-4,groundY-height-43,px-4,groundY-height-28);this.fx.fillStyle(0xae6345,1);this.fx.fillCircle(px-4,groundY-height-22,1.8);
     if(type==='horse')this.fx.strokeEllipse(px-60,GROUND+2,160,12);
    }
   }
@@ -218,7 +289,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(const e of this.effects){
     e.t+=dt;const p=Math.min(1,e.t/e.duration),fade=1-p;
     if(e.type==='projectile'){
-     const seed=e.kind==='seed',stone=e.kind==='stone',ink=e.kind==='ink',seal=e.kind==='seal',dir=Math.sign(e.to-e.from)||1,start=e.from+dir*(seed?27:16),fromY=GROUND-(e.sourceKind==='girl'?66:seed?61:76),toY=GROUND-(BODY_HEIGHT[e.targetKind]||120)*.53;
+     const seed=e.kind==='seed',stone=e.kind==='stone',ink=e.kind==='ink',seal=e.kind==='seal',dir=Math.sign(e.to-e.from)||1,start=e.from+dir*(seed?27:16),fromY=(e.groundY??GROUND)-(e.sourceKind==='girl'?66:seed?61:76),toY=GROUND-(BODY_HEIGHT[e.targetKind]||120)*.53;
      const x=start+(e.to-start)*p-this.offset,y=fromY+(toY-fromY)*p-Math.sin(p*Math.PI)*(stone?66:seed?6:18);
      const angle=Math.atan2(toY-fromY,e.to-start),dx=Math.cos(angle),dy=Math.sin(angle);
      g.lineStyle(seed?2:3,stone?0x9b8b70:ink?0x526a64:seed?0xb89556:0x55a5a3,fade);g.lineBetween(x-dx*30,y-dy*30,x,y);g.fillStyle(stone?0x8e8672:ink?0x314e47:seed?0x896d3d:0x3c9a99,.9);
@@ -229,12 +300,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
      for(let i=0;i<6;i++)g.lineBetween(e.x-this.offset+50+i*55,GROUND-6,e.x-this.offset+55+i*55,GROUND-20*fade);
     }
     if(e.type==='footstep'){
-     const x=e.x-this.offset;
-     g.lineStyle(1,0x9c8662,fade*.3);g.strokeEllipse(x,GROUND+1,9+17*p,3+3*p);
-     for(let i=0;i<3;i++){g.fillStyle(0xa88d62,fade*.26);g.fillCircle(x-9+i*8+(i-1)*9*p,GROUND-2-8*Math.sin(p*Math.PI),1.5);}
+     const x=e.x-this.offset,y=e.groundY??GROUND;
+     g.lineStyle(1,0x9c8662,fade*.3);g.strokeEllipse(x,y+1,9+17*p,3+3*p);
+     for(let i=0;i<3;i++){g.fillStyle(0xa88d62,fade*.26);g.fillCircle(x-9+i*8+(i-1)*9*p,y-2-8*Math.sin(p*Math.PI),1.5);}
     }
     if(e.type==='swipe'){
-     const dir=Math.sign(e.to-e.x)||1,x=e.x-this.offset+dir*18,end=e.to-this.offset,y=GROUND-48;
+     const dir=Math.sign(e.to-e.x)||1,x=e.x-this.offset+dir*18,end=e.to-this.offset,y=(e.groundY??GROUND)-48;
      g.lineStyle(4,0x8c744a,fade);g.lineBetween(x,y+6,end,y-9);g.lineStyle(2,0x4faaa1,fade);g.lineBetween(x,y+3,end+dir*7*p,y-16);
     }
     if(e.type==='guard'){
@@ -261,20 +332,29 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(e.type==='depart'){
      const x=e.x-this.offset,h=BODY_HEIGHT[e.kind],sprite=e.sprite;
      if(e.kind==='reaper'){
-      // Hold the face for the eye flash, release a distinct spirit, then erase it into light.
-      const release=Math.max(0,Math.min(1,(p-.22)/.64)),dissolve=Math.max(0,(p-.66)/.34),rise=245*release*release;
-      sprite.setPosition(x,GROUND-10*release).setAlpha(Math.max(0,1-release*2.2));
-      const eyeX=x-sprite.displayWidth*.15,eyeY=GROUND-h*.79;
-      if(p<.48){const glow=Math.min(1,p/.1)*(1-Math.max(0,(p-.25)/.23));
-       for(const dx of [-4,3]){g.fillStyle(0x7ededb,.13*glow);g.fillCircle(eyeX+dx,eyeY,16);g.fillStyle(0xa4fff0,.5*glow);g.fillCircle(eyeX+dx,eyeY,6);g.fillStyle(0xfffce1,glow);g.fillEllipse(eyeX+dx,eyeY,4.5,3);}
-       g.lineStyle(1.5,0xc0fff0,glow*.6);g.lineBetween(eyeX-22,eyeY,eyeX+20,eyeY);
+      // The same man lifts his chin and opens his arms; only light leaves the eyes.
+      const lift=Math.min(1,p/.46),rise=28*(lift*lift*(3-2*lift));
+      const dissolve=Math.max(0,Math.min(1,(p-.55)/.45));
+      const frame=p<.12?0:p<.23?1:p<.34?2:p<.45?3:p<.59?4:p<.73?5:p<.86?6:7;
+      sprite.setTexture('reaperDepart'+frame).setOrigin(.5,this.grounding.get('reaperDepart0'));
+      const src=sprite.texture.getSourceImage();sprite.setDisplaySize(h*src.width/src.height,h).setPosition(x,GROUND-rise).setAlpha(1-dissolve);
+      this.root.bringToTop(sprite);
+      const eyeX=x-sprite.displayWidth*.025,eyeY=GROUND-rise-h*.845;
+      const glow=Math.min(1,Math.max(0,(p-.27)/.13))*(1-Math.max(0,(p-.75)/.25));
+      for(const dx of [-3,3]){
+       g.fillStyle(0x81ded5,.1*glow);g.fillCircle(eyeX+dx,eyeY,15);
+       g.fillStyle(0xf7ffe1,glow);g.fillEllipse(eyeX+dx,eyeY,4.5,2.8);
+       const length=135*Math.min(1,Math.max(0,(p-.35)/.5));
+       for(let j=0;j<12;j++){
+        const q=j/12,qq=(j+1)/12,xx=eyeX+dx+Math.sin(q*4+p*3)*8*q,yy=eyeY-length*q;
+        g.lineStyle(3*(1-q)+.5,j%2?0xa0e4d8:0xf3f4ce,glow*(1-q)*.8);
+        g.lineBetween(xx,yy,eyeX+dx+Math.sin(qq*4+p*3)*8*qq,eyeY-length*qq);
+       }
       }
-      if(p>.17){const spiritAlpha=Math.min(1,(p-.17)/.1)*(1-dissolve),sx=x+Math.sin(release*4)*10,sy=GROUND-h*.52-rise;
-       g.fillStyle(0x8bddd2,spiritAlpha*.07);g.fillEllipse(sx,sy-10,110,150);
-       g.fillStyle(0xbdece0,spiritAlpha*.7);g.beginPath();g.moveTo(sx-21,sy);g.lineTo(sx-14,sy-25);g.lineTo(sx,sy-34);g.lineTo(sx+17,sy-22);g.lineTo(sx+23,sy+4);g.lineTo(sx+8,sy+30+35*release);g.lineTo(sx+2,sy+16);g.lineTo(sx-10,sy+38+45*release);g.lineTo(sx-12,sy+13);g.closePath();g.fillPath();
-       g.fillStyle(0xfffde7,spiritAlpha*.95);g.fillEllipse(sx,sy-10,23,28);g.fillStyle(0x669b91,spiritAlpha);g.fillCircle(sx-4,sy-12,1.7);g.fillCircle(sx+4,sy-12,1.7);
-       for(let i=0;i<12;i++){const spread=15+55*dissolve,xx=sx+Math.sin(i*2.4+release)*spread,yy=sy+35+i*5-85*dissolve;g.fillStyle(i%2?0xffedb0:0x9adbd1,spiritAlpha*.7);g.fillCircle(xx,yy,(2+i%3)*(1-dissolve));}
-       g.lineStyle(1,0x9cdfd4,spiritAlpha*.3);g.strokeEllipse(x,GROUND-1,35+65*release,7);
+      if(dissolve>0)for(let i=0;i<18;i++){
+       const q=i/18,swirl=Math.sin(i*2.7+p*7),xx=x+swirl*(18+36*dissolve),yy=GROUND-rise-20-q*150-55*dissolve;
+       g.fillStyle(i%3?0x89999a:0xb8c6bb,Math.sin(dissolve*Math.PI)*.12);
+       g.fillEllipse(xx,yy,14+24*dissolve,8+14*dissolve);
       }
      }else if(e.kind==='skirt'){
       sprite.setPosition(x+20*p,GROUND-30*p).setAlpha(fade*fade).setAngle(p*24);
@@ -308,16 +388,19 @@ export function makeGame(model,onReady,onFrame,onEvents){
   update(time,delta){
    if(!this.ready)return;
    const dt=Math.min(delta/1000,.05),playing=model.status==='playing';
-   if(playing)model.step(dt);
-   const events=model.drainEvents();this.playEvents(events);onEvents(events);
-   const intro=model.status==='ready',t=intro?time/1000:model.time;
-   const vw=this.vw;
+   const intro=model.status==='ready',vw=this.vw;
    const targetOffset=intro?0:Math.max(0,Math.min(ROAD-vw*.58,model.x-vw*.28));
    this.offset+=(targetOffset-this.offset)*Math.min(1,dt*8);
+   model.spawnEdge=this.offset+vw;
+   if(playing)model.step(dt);
+   const events=model.drainEvents();this.playEvents(events);onEvents(events);
+   const t=intro?time/1000:model.time;
    const region=intro?this.previewAreaIndex:areaIndex(model.progress()),blend=intro||region===0?1:Math.min(1,(model.progress()-AREAS[region].at)/.035);
    this.drawLandscape(region,blend,t);
    this.decor.clear();this.shadows.clear();this.fx.clear();
    const gateX=ROAD+50-this.offset;this.drawGate(gateX);this.exitLabel.setPosition(gateX,GROUND-280);
+   this.entryLabel.setVisible(!intro&&!model.bossDefeated);
+   if(!intro&&!model.bossDefeated){this.drawGate(vw-22,true);this.entryLabel.setPosition(vw-52,GROUND-238);}
    // Small distance markers make scrolling legible, rather than a static left-side base.
    for(let p=800;p<ROAD;p+=800){
     const x=p-this.offset;if(x<-50||x>vw+50)continue;
@@ -334,7 +417,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(mounted){this.fx.lineStyle(3,0x68a9a2,.45);for(let i=0;i<4;i++)this.fx.lineBetween(heroX-95-i*12,GROUND-24-i*21,heroX-20,GROUND-24-i*21);}
    this.girl.setTexture(this.heroPose>0?'girlCast':'girl'+motionFrame('girl',intro?t:model.walk,walking,null)).setFlipX(!intro&&model.moving<0&&this.heroPose<=0);
    this.placeOnGround(this.girl,heroX-60,intro?145:117);
-   this.girl.setVisible(!mounted);
+   this.girl.setVisible(!mounted);this.root.bringToTop(this.hero);this.root.bringToTop(this.girl);
    if(!intro){this.trackContact('haetae','haetae',model.walk,model.moving,model.x+37);if(!mounted)this.trackContact('girl','girl',model.walk,model.moving,model.x-60);}
    this.lastX=model.x;
    const present=new Set();
@@ -343,8 +426,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
     this.renderEntity('previewKeeper','keeper',vw*.54+this.offset,t*.65,1,1,0,0,false,1);present.add('previewKeeper');
     this.renderEntity('previewCow','cow',vw*.78+this.offset,t*.5,1,1,0,0,false,1);present.add('previewCow');
    }else{
-    for(const a of model.allies){const key='a'+a.id;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir);}
     for(const e of model.enemies){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,0,e.action,e.hitDir);}
+    for(const a of model.allies){const key='a'+a.id,rank=model.allies.filter(b=>b.type===a.type&&b.id<a.id).length;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir,GROUND+(rank%3)*24);}
    }
    for(const [key,obj] of this.sprites)if(!present.has(key)){obj.destroy();this.sprites.delete(key);this.contacts.delete(key);}
    const boss=model.enemies.find(e=>e.type==='boss');
@@ -356,7 +439,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    // Effects render above the units.
    this.root.bringToTop(this.fx);
-   if(playing)this.drawEffects(dt);else this.drawEffects(0);
+   if(playing)this.drawEffects(dt);else this.drawEffects(0);this.root.bringToTop(this.fx);
    if(this.shake>0){if(playing)this.shake-=dt;this.root.x=Math.sin(model.time*100)*2*this.unit;}else this.root.x=0;
    onFrame(model,this);
   }

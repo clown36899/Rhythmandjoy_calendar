@@ -1,11 +1,11 @@
-import {ROAD,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats} from './data.js?v=13';
+import {ROAD,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats} from './data.js?v=14';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
  reset(){
   this.status='ready';this.time=0;this.x=START;this.furthest=START;this.hp=MAX_HP;this.coins=70;
   this.auto=true;this.direction=0;this.allies=[];this.enemies=[];this.events=[];this.nextId=0;
-  this.wave=0;this.respawn=17;this.heroAttack=0;this.shield=0;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS)].map(k=>[k,0]));
+  this.wave=0;this.spawnEdge=0;this.respawn=17;this.heroAttack=0;this.shield=0;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS)].map(k=>[k,0]));
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='동료와 함께 오른쪽 새벽문까지 가요.';
   this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
  }
@@ -16,7 +16,7 @@ export class Journey {
  pause(){if(this.status==='playing'){this.status='paused';this.direction=0;}else if(this.status==='paused')this.status='playing';}
  progress(){return clamp((this.furthest-START)/(ROAD-START),0,1);}
  addAlly(type,x){const s=UNITS[type];
-  // Summons join their own line from the tail, never inside a fighting formation.
+  // Summons enter from the tail; travel spacing is not a combat collision barrier.
   if(x===undefined){const line=this.allies.filter(a=>a.hp>0&&a.type===type);x=Math.min(this.x-65,...line.map(a=>a.x-s.spacing));}const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
  spawn(type,x){const s=ENEMIES[type];const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,stun:0,hit:0,windup:0,action:null,ability:type==='boss'?3:type==='horse'?4.5:5,walk:0};this.enemies.push(a);if(type==='boss')this.bossSpawned=true;return a;}
  reject(message){this.emit('notice',{message});return false;}
@@ -126,12 +126,12 @@ export class Journey {
   this.furthest=Math.max(this.furthest,this.x);
   // Distance triggers are owned here, never by camera or UI.
   while(this.wave<WAVES.length&&this.furthest>=WAVES[this.wave].x){
-   const w=WAVES[this.wave++];w.types.forEach((type,i)=>this.spawn(type,Math.min(ROAD+180,this.x+740+i*125)));this.say(w.message);
+   const w=WAVES[this.wave++];w.types.forEach((type,i)=>this.spawn(type,Math.max(this.x+740,this.spawnEdge+220)+i*125));this.say(w.message);
   }
   this.respawn-=dt;
   if(this.respawn<=0&&!this.bossDefeated){
    this.respawn=19;
-   if(this.enemies.length<8&&this.wave>0&&this.wave<6)this.spawn(this.wave>2&&this.nextId%3===0?'horse':'skirt',this.x+900);
+   if(this.enemies.length<8&&this.wave>0&&this.wave<6)this.spawn(this.wave>2&&this.nextId%3===0?'horse':'skirt',Math.max(this.x+900,this.spawnEdge+220));
   }
   if(this.action?.kind!=='rush'&&this.heroAttack<=0&&front&&front.type!=='skirt'&&front.x-this.x<200){this.hurtEnemy(front,10);this.heroAttack=1.35;this.emit('projectile',{actor:'girl',sourceKind:'girl',targetKind:front.type,from:this.x-60,to:front.x,high:true,hit:true});}
   for(const a of [...this.allies].sort((a,b)=>a.id-b.id)){
@@ -139,21 +139,21 @@ export class Journey {
    const s=unitStats(a.type,this.keeperRank),oldAX=a.x;
    const preceding=this.allies.filter(other=>other.hp>0&&other.type===a.type&&other.id<a.id).sort((b,c)=>c.id-b.id);
    const formation=this.x+s.formation-preceding.length*s.spacing;
-   const limit=preceding.length?preceding[0].x-s.spacing:Infinity;
-   // The same ordered line owns joining, walking, retreat, and active attacks.
-   a.x=Math.min(a.x,limit);
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;this.advanceAction(a,dt);
    if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
    const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55).sort((b,c)=>b.x-c.x);
    const target=(a.type==='scholar'?ahead.find(e=>e.type==='reaper'&&e.x-a.x<=s.range):null)||(['rabbit','scholar'].includes(a.type)?ahead.find(e=>e.type!=='skirt'&&e.x-a.x<=s.range):null)||ahead[0];
+   // Every melee ally shares the front during combat. Formation slots only guide travel.
+   const engaged=target&&s.weapon==='horn'&&target.x<=this.x+s.formation+s.range+120;
+   const goal=engaged?target.x-s.range+Math.min(24,preceding.length*12):formation;
    if(target&&target.x-a.x<=s.range){
     if(a.cd<=0){
      a.cd=s.period;
      a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id};
     }
-   }else if(a.x<Math.min(formation,limit)){a.x=Math.min(a.x+s.speed*dt,formation,limit);}
-   // Followers regroup when the leader deliberately retreats.
-   if(a.x>formation+170||a.x>limit){a.x=Math.max(a.x-s.speed*dt,Math.min(formation+170,limit));}
+   }else if(a.x<goal){a.x=Math.min(a.x+s.speed*dt,goal);}
+   // Regroup only on deliberate retreat; ending combat must never teleport the line.
+   if(this.direction<0&&a.x>formation+170){a.x=Math.max(a.x-s.speed*dt,formation+170);}
    const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;
   }
   for(const e of this.enemies){
