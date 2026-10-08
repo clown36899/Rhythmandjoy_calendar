@@ -28,8 +28,6 @@ business = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</scr
 faq = next(item for item in (json.loads(raw) for raw in re.findall(
     r'<script type="application/ld\+json">(.*?)</script>', legacy_home, re.S))
     if item.get('@type') == 'FAQPage')
-faq_html = ''.join(f'<details class="faq-item" {"open" if i == 0 else ""}><summary draggable="false">{html.escape(item["name"])}</summary><p>{html.escape(item["acceptedAnswer"]["text"])}</p></details>'
-                   for i, item in enumerate(faq['mainEntity']))
 # The business owns the official origin; a calendar's canonical owns that document.
 ORIGIN = business['url'].rstrip('/')
 ASSETS = '/calendar_set/calendar_v10/home_infopage/images'
@@ -133,6 +131,25 @@ for title, question, filename, alt, caption in [
 # Tap boards intentionally remain text-only, including the existing floor-protection rule.
 practice_equipment += f'<article class="equipment-text-only"><b>탭판 {tap_count}개</b><p>{html.escape(tap_rule)}</p></article>'
 
+# The existing answers remain the source of both visible steps/paragraphs and JSON-LD.
+shoe_width, shoe_height, shoe_variants = responsive_image('equipment/tap-shoe-rule-v1.png')
+shoe_srcset = ', '.join(f'{url} {size}w' for size, url in shoe_variants)
+faq_html = ''
+for i, item in enumerate(faq['mainEntity']):
+    name = item['name']
+    paragraphs = item['acceptedAnswer']['text'].split('\n')
+    if name == '리듬앤조이 연습실 예약은 어디서 하나요?':
+        answer = '<ol class="faq-steps">' + ''.join(f'<li>{html.escape(part)}</li>' for part in paragraphs) + '</ol>'
+    else:
+        answer = ''.join(f'<p>{html.escape(part)}</p>' for part in paragraphs)
+    answer = f'<div class="faq-answer">{answer}</div>'
+    if name == '연습화는 따로 준비해야 하나요?':
+        illustration = f'''<figure class="shoe-rule-image"><img src="{shoe_variants[0][1]}" srcset="{shoe_srcset}" sizes="(max-width:560px) calc(100vw - 82px), 260px" width="{shoe_width}" height="{shoe_height}" alt="탭신발 밑창의 앞부분과 뒤꿈치에 달린 금속 징을 보여주는 안내 이미지" draggable="false" loading="lazy" decoding="async"><figcaption>금속 징이 달린 탭신발 예시 · 연출 이미지</figcaption><strong class="shoe-floor-warning"><span aria-hidden="true">×</span> 마루에서 직접 사용 불가</strong><span class="shoe-board-rule">탭판·개인 탭보드 위에서 사용</span></figure>'''
+        answer = f'<div class="faq-shoe-rule">{illustration}{answer}</div>'
+    if name in ('리듬앤조이 연습실 예약은 어디서 하나요?', '새벽 통대관은 어떻게 예약하나요?'):
+        answer += '<a class="faq-menu-guide" href="#booking-menu" data-guide-menu="booking-menu" draggable="false">상단 예약하기 위치 보기 <span aria-hidden="true">↑</span></a>'
+    faq_html += f'<details class="faq-item" {"open" if i == 0 else ""}><summary draggable="false">{html.escape(name)}</summary>{answer}</details>'
+
 def button(label, url, primary=False):
     return f'<a class="button {"primary" if primary else "secondary"}" href="{url}" draggable="false">{label}<span aria-hidden="true">↗</span></a>'
 
@@ -157,7 +174,7 @@ def shell(title, desc, body, active='home', crumb=None):
 </head><body><a class="skip" href="#main">본문 바로가기</a>
 <div class="site-header"><header class="header">
 <a class="header-brand" href="/" aria-label="사당연습실 리듬앤조이 홈" draggable="false">사당연습실 <strong>리듬앤조이</strong></a>
-<nav class="nav" aria-label="주 메뉴">{nav}</nav><a href="/schedule/" class="header-book" {"aria-current=page" if active=="schedule" else ""} draggable="false">예약하기 <span>↗</span></a></header></div>
+<nav class="nav" aria-label="주 메뉴">{nav}</nav><a href="/schedule/" id="booking-menu" class="header-book" {"aria-current=page" if active=="schedule" else ""} draggable="false">예약하기 <span>↗</span><span class="booking-location-hint" aria-hidden="true">이 버튼에서 시작하세요</span></a></header></div>
 <div class="page-viewport"><div class="page-surface">
 <main id="main" tabindex="-1">{breadcrumb}{body}</main>
 <footer><div class="footer-top"><a href="/" class="footer-brand">리듬앤조이<span>RHYTHM & JOY STUDIO</span></a><p>서울 동작구 남부순환로 2077 지하 2층<br>사당역 7번 출구, 대로변 도보 3분 거리 · <a href="tel:01048017180">010-4801-7180</a></p></div><div class="footer-bottom"><span>© RHYTHM & JOY</span><span>홈페이지 미리보기 · 실제 예약현황 연결</span></div></footer>
@@ -237,8 +254,8 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=equipment-photos-20261008')
-        public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=text-brand-20261008')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=faq-guidance-20261008')
+        public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=faq-guidance-20261008')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)
         (target / 'index.html').write_text(public)

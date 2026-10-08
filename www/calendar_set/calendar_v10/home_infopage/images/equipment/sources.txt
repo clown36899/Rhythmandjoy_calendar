@@ -12,3 +12,8 @@ Generated with built-in image_gen. Generic unbranded illustrative tripod, not a 
 Prompt: tripod-illustration-v1.prompt.txt
 
 Tap board: no image requested; text only.
+
+tap-shoe-rule-v1.png
+Generated with built-in image_gen. Generic unbranded tap shoe showing metal toe and heel plates; illustrative example, not a photograph of customer footwear.
+Prompt: tap-shoe-rule-v1.prompt.txt
+No tap board image is included.

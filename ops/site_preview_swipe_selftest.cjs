@@ -227,8 +227,9 @@ async function swipe(route, from, to, options = {}) {
     const data = JSON.parse(structuredText(html));
     if (route === 'guide') {
       const faq = data.find(item => item['@type'] === 'FAQPage');
-      const visible = [...html.matchAll(/<details class="faq-item"[^>]*><summary[^>]*>(.*?)<\/summary><p>(.*?)<\/p><\/details>/gs)].map(([,name,text])=>({name,text}));
-      assert.deepEqual(visible, faq.mainEntity.map(item=>({name:item.name,text:item.acceptedAnswer.text})), 'Visible Q&A and search data must share their existing source');
+      const normalize = text => text.replace(/\s+/g,' ').trim();
+      const visible = [...html.matchAll(/<details class="faq-item"[^>]*><summary[^>]*>(.*?)<\/summary>(.*?)<\/details>/gs)].map(([,name,body])=>({name,text:normalize(body.match(/<div class="faq-answer">(.*?)<\/div>/s)[1].replace(/<[^>]+>/g,' '))}));
+      assert.deepEqual(visible, faq.mainEntity.map(item=>({name:item.name,text:normalize(item.acceptedAnswer.text)})), 'Visible Q&A steps/paragraphs and search data must share their existing source');
       assert.equal(visible.length,12);
       for (const name of ['구르기 매트는 각 홀에 있나요?', '촬영용 삼각대가 있나요?']) {
         const answer = faq.mainEntity.find(item=>item.name === name).acceptedAnswer.text;
@@ -287,6 +288,35 @@ async function swipe(route, from, to, options = {}) {
     }
     checks++;
   }
+  // Reuse the page initializer: normal and cached navigation must bind one focus-only guide.
+  const guideControl = {dataset:{guideMenu:'booking-menu'}};
+  const focusCalls = [], scrollCalls = [];
+  let guideTarget = {focus:options=>focusCalls.push(options),scrollIntoView:options=>scrollCalls.push(options)};
+  const guideRoot = {querySelector:()=>null,querySelectorAll:()=>[guideControl]};
+  const guideContext = {document:{getElementById:id=>id==='booking-menu' ? guideTarget : null},clearInterval};
+  vm.runInNewContext(source.slice(source.indexOf('function initPage(')),guideContext);
+  const cleanupGuide = guideContext.initPage(guideRoot,'https://example.test/guide/');
+  const normalGuideClick = {button:0,prevented:false,preventDefault(){this.prevented=true;}};
+  guideControl.onclick(normalGuideClick);
+  assert.equal(normalGuideClick.prevented,true);
+  assert.equal(focusCalls.length,1);
+  assert.equal(focusCalls[0].preventScroll,true);
+  assert.equal(scrollCalls[0].block,'nearest');
+  cleanupGuide();
+  guideContext.initPage(guideRoot,'https://example.test/guide/');
+  guideControl.onclick({button:0,preventDefault(){}});
+  assert.equal(focusCalls.length,2,'Revisiting cached Q&A must not stack guide handlers');
+  for (const extra of [{ctrlKey:true},{metaKey:true},{shiftKey:true},{altKey:true},{button:1}]) {
+    let prevented=false;
+    guideControl.onclick({button:0,...extra,preventDefault(){prevented=true;}});
+    assert.equal(prevented,false);
+  }
+  assert.equal(focusCalls.length,2);
+  guideTarget=null;
+  let missingTargetPrevented=false;
+  guideControl.onclick({button:0,preventDefault(){missingTargetPrevented=true;}});
+  assert.equal(missingTargetPrevented,false,'A missing target must preserve native anchor fallback');
+  checks++;
   const sitemap = fs.readFileSync(path.resolve(root,'../site/sitemap.xml'),'utf8');
   assert.equal((sitemap.match(/<loc>/g)||[]).length,11);
   assert.equal((sitemap.match(/<lastmod>2026-10-08<\/lastmod>/g)||[]).length,11);

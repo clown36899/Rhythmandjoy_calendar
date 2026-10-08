@@ -316,6 +316,17 @@ if (menuIndex >= 0 && surface && viewport) {
 function initPage(root, href) {
   root.querySelector('main')?.setAttribute('id', 'main');
   const timers = new Set();
+  // Guide to the single sticky menu instead of duplicating booking channels in Q&A.
+  root.querySelectorAll('[data-guide-menu]').forEach(link => {
+    link.onclick = event => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = document.getElementById(link.dataset.guideMenu);
+      if (!target) return; // Keep the native fragment link as a fallback.
+      event.preventDefault();
+      target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+      target.focus({ preventScroll: true });
+    };
+  });
   const copyButton = root.querySelector('[data-copy-address]');
   if (copyButton) copyButton.onclick = async () => {
     const status = root.querySelector('.copy-result');
