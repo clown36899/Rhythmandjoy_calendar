@@ -93,6 +93,7 @@ def shell(title, desc, body, active='home', crumb=None):
 <link rel="stylesheet" href="/preview-assets/style.css"><script src="/preview-assets/site.js" defer></script>
 </head><body><a class="skip" href="#main">본문 바로가기</a>
 <div class="site-header"><header class="header">
+<a class="header-brand" href="/" aria-label="사당연습실 리듬앤조이 홈" draggable="false">사당연습실 <strong>리듬앤조이</strong></a>
 <nav class="nav" aria-label="주 메뉴">{nav}</nav><a href="/schedule/" class="header-book" {"aria-current=page" if active=="schedule" else ""} draggable="false">예약하기 <span>↗</span></a></header></div>
 <div class="page-viewport"><div class="page-surface">
 <main id="main" tabindex="-1">{breadcrumb}{body}</main>
@@ -147,7 +148,7 @@ def write(path, title, desc, body, active='home', crumb=None):
                 f'<meta property="og:image" content="{share_image}">\n'
                 f'<meta property="og:image:alt" content="리듬앤조이 {html.escape(photo_descriptions[image_room][rooms[image_room][2]])}">\n'
                 f'{verification}\n{tracking}\n'
-                '<script src="/calendar_set/calendar_v10/visitor-stats.js?v=historical-stats-20261008" defer></script>\n')
+                '<script src="/calendar_set/calendar_v10/visitor-stats.js?v=text-brand-20261008" defer></script>\n')
         structured = []
         if not path:
             business['image'] = ORIGIN + ASSETS + '/roomA/image2.webp'
@@ -171,8 +172,8 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=historical-stats-20261008')
-        public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=historical-stats-20261008')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=text-brand-20261008')
+        public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=text-brand-20261008')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)
         (target / 'index.html').write_text(public)
