@@ -112,6 +112,7 @@ async function swipe(route, from, to, options = {}) {
     browserScroll: p => { p.fire('touchstart'); p.fire('touchmove', 80, 300, { cancelable: false }); p.fire('touchend', 80); },
     differentFinger: p => { p.fire('touchstart'); p.fire('touchend', 80, 300, { changedTouches: [p.point(80, 300, 2)] }); },
     calendarOrControl: p => { p.target.closest = () => ({}); p.fire('touchstart'); p.fire('touchend', 80); },
+    modalContent: p => { p.target.closest = selector => selector.split(',').some(value=>value.trim()==='dialog') ? {} : null; p.fire('touchstart'); p.fire('touchmove',80); p.fire('touchend', 80); },
     horizontalScroller: p => { p.target.scrollWidth = 500; p.target.overflowX = 'auto'; p.fire('touchstart'); p.fire('touchend', 80); },
   };
   for (const [name, exercise] of Object.entries(guards)) {
@@ -228,15 +229,27 @@ async function swipe(route, from, to, options = {}) {
     if (route === 'guide') {
       const faq = data.find(item => item['@type'] === 'FAQPage');
       const normalize = text => text.replace(/\s+/g,' ').trim();
-      const visible = [...html.matchAll(/<details class="faq-item"[^>]*><summary[^>]*>(.*?)<\/summary>(.*?)<\/details>/gs)].map(([,name,body])=>({name,text:normalize(body.match(/<div class="faq-answer">(.*?)<\/div>/s)[1].replace(/<[^>]+>/g,' '))}));
+      const visible = [...html.matchAll(/<details class="faq-item"[^>]*><summary[^>]*>(.*?)<\/summary>(.*?)<\/details>/gs)].map(([,summary,body])=>({name:summary.match(/class="faq-question">(.*?)<\/span>/)[1],text:normalize(body.match(/<div class="faq-answer">(.*?)<\/div>/s)[1].replace(/<[^>]+>/g,' '))}));
       assert.deepEqual(visible, faq.mainEntity.map(item=>({name:item.name,text:normalize(item.acceptedAnswer.text)})), 'Visible Q&A steps/paragraphs and search data must share their existing source');
-      assert.equal(visible.length,12);
+      assert.equal(visible.length,13);
+      assert.deepEqual([...html.matchAll(/class="faq-number"[^>]*>(\d+)<\/span>/g)].map(m=>m[1]),Array.from({length:13},(_,i)=>String(i+1).padStart(2,'0')));
+      assert.equal((html.match(/class="faq-actions"/g)||[]).length,13,'Every question has a reviewed next action');
+      const detailLinks=[...html.matchAll(/href="([^"]+)" data-faq-detail="([^"]+)"/g)];
+      assert.equal(detailLinks.length,12);
+      for (const [,destination,selectors] of detailLinks) {
+        const url=new URL(destination,'https://example.test');
+        const target=fs.readFileSync(path.resolve(root,'../site',url.pathname.slice(1),'index.html'),'utf8');
+        for (const selector of selectors.split(', ')) assert.ok(target.includes(`id="${selector.slice(1)}"`),`Existing modal source ${selector} must exist in ${url.pathname}`);
+        assert.ok(target.includes(`id="${url.hash.slice(1)}"`),'No-JS fallback anchor must exist');
+      }
+      assert.equal((html.match(/class="faq-action faq-map-link"/g)||[]).length,2,'Location and parking both need direct map links');
       for (const name of ['구르기 매트는 각 홀에 있나요?', '촬영용 삼각대가 있나요?']) {
         const answer = faq.mainEntity.find(item=>item.name === name).acceptedAnswer.text;
         for (const equipmentRoute of ['spaces', 'guide']) {
           const equipmentPage = fs.readFileSync(path.resolve(root,'../site',equipmentRoute,'index.html'),'utf8');
           assert.ok(equipmentPage.includes(`<p>${answer}</p></article>`), 'Shared equipment availability must reuse the FAQ owner');
-          assert.doesNotMatch(equipmentPage.match(/<article class="equipment-text-only">(.*?)<\/article>/s)[1], /<img\b/, 'Tap-board guidance must stay text-only');
+          assert.match(equipmentPage,/equipment-tap-board-actual-v1/, 'User-approved actual tap-board photo must accompany availability');
+          assert.match(equipmentPage,/탭판 4개 · 선착순 사용 가능/);
         }
       }
       assert.doesNotMatch(JSON.stringify(faq), /도보 약 1분/);
@@ -316,6 +329,47 @@ async function swipe(route, from, to, options = {}) {
   let missingTargetPrevented=false;
   guideControl.onclick({button:0,preventDefault(){missingTargetPrevented=true;}});
   assert.equal(missingTargetPrevented,false,'A missing target must preserve native anchor fallback');
+  checks++;
+  // Native detail dialog consumes the same cached page loader and ignores late results.
+  const detailLink=Object.assign(element(),{href:'https://example.test/location/#parking',dataset:{faqTitle:'03 · 주차 안내 자세히',faqDetail:'#parking'},isConnected:true,parentElement:element()});
+  let returnedFocus=0;detailLink.focus=()=>returnedFocus++;
+  const detailBody=Object.assign(element(),{replaceChildren(...nodes){this.nodes=nodes;},textContent:''});
+  const detailTitle=element(),detailSource=element(),detailExtra=Object.assign(element(),{replaceChildren(){}}),detailClose=element();
+  const dialog=Object.assign(element(),{open:false,showModal(){this.open=true;},close(){this.open=false;this.onclose();},querySelector:s=>({'.faq-detail-body':detailBody,'#faq-detail-title':detailTitle,'[data-faq-source]':detailSource,'[data-faq-extra]':detailExtra,'[data-faq-close]':detailClose})[s]});
+  const detailRoot={querySelector:s=>s==='.faq-detail-dialog'?dialog:null,querySelectorAll:s=>s==='[data-faq-detail]'?[detailLink]:[]};
+  const detailContext={document:{getElementById:()=>null},URL,clearInterval};
+  vm.runInNewContext(source.slice(source.indexOf('function initPage(')),detailContext);
+  let resolveDetail,loads=0;
+  const loader=()=>{loads++;return new Promise(resolve=>resolveDetail=resolve);};
+  let cleanupDetail=detailContext.initPage(detailRoot,'https://example.test/guide/',loader);
+  const clickDetail=extra=>({button:0,preventDefault(){this.prevented=true;},...extra});
+  const pendingDetail=detailLink.onclick(clickDetail());
+  assert.equal(dialog.open,true);
+  assert.equal(detailSource.href,detailLink.href);
+  detailClose.onclick();
+  resolveDetail({surface:{querySelectorAll:()=>[element()]}});await pendingDetail;
+  assert.equal(detailBody.nodes,undefined,'Closing before load must prevent stale content writes');
+  assert.equal(returnedFocus,1);
+  const failedDetail=detailLink.onclick(clickDetail());resolveDetail(null);await failedDetail;
+  assert.match(detailBody.textContent,/페이지에서 보기/,'Failure keeps a usable original-page fallback');
+  dialog.close();
+  const successfulDetail=detailLink.onclick(clickDetail());resolveDetail({surface:{querySelectorAll:()=>[element()]}});await successfulDetail;
+  assert.equal(detailBody.nodes.length,1,'Retry must show existing page content');
+  dialog.close();
+  for (const extra of [{ctrlKey:true},{metaKey:true},{shiftKey:true},{altKey:true},{button:1}]) {
+    const event=clickDetail(extra);await detailLink.onclick(event);assert.equal(event.prevented,undefined);
+  }
+  assert.equal(loads,3,'Modified clicks retain native behavior');
+  const detachedDetail=detailLink.onclick(clickDetail());
+  cleanupDetail();
+  assert.equal(dialog.open,false,'Leaving the page must close its dialog');
+  detailBody.nodes=undefined;
+  resolveDetail({surface:{querySelectorAll:()=>[element()]}});await detachedDetail;
+  assert.equal(detailBody.nodes,undefined,'Detached page must ignore pending content');
+  cleanupDetail=detailContext.initPage(detailRoot,'https://example.test/guide/',loader);
+  const cachedDetail=detailLink.onclick(clickDetail());resolveDetail({surface:{querySelectorAll:()=>[element()]}});await cachedDetail;
+  assert.equal(loads,5,'Cached page reinitialization binds one opener');
+  cleanupDetail();
   checks++;
   const sitemap = fs.readFileSync(path.resolve(root,'../site/sitemap.xml'),'utf8');
   assert.equal((sitemap.match(/<loc>/g)||[]).length,11);

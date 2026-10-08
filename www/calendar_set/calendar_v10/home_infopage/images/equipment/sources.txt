@@ -17,3 +17,6 @@ tap-shoe-rule-v1.png
 Generated with built-in image_gen. Generic unbranded tap shoe showing metal toe and heel plates; illustrative example, not a photograph of customer footwear.
 Prompt: tap-shoe-rule-v1.prompt.txt
 No tap board image is included.
+
+2026-10-08 tap-board-actual-v1.png
+Actual studio tap-board photograph supplied by the user in this conversation. User explicitly approved adding this photo to the shoe Q&A and tap-board guidance, superseding the earlier request to omit tap-board images. Original retained unchanged. Four boards, first come first served, confirmed by the user.

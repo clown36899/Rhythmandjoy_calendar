@@ -16,7 +16,7 @@ if (menuIndex >= 0 && surface && viewport) {
   let navigationId = 0;
   let currentURL = location.href;
   let currentScroll = scrollY;
-  let cleanupPage = initPage(surface, currentURL);
+  let cleanupPage = initPage(surface, currentURL, loadPage);
   const pageKey = href => new URL(href, location.href).href;
   previews.set(pageKey(currentURL), Promise.resolve(activePage));
   history.scrollRestoration = 'manual';
@@ -131,7 +131,7 @@ if (menuIndex >= 0 && surface && viewport) {
       if (index === menuIndex) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     });
-    cleanupPage = initPage(surface, destination);
+    cleanupPage = initPage(surface, destination, loadPage);
     viewport.removeAttribute('aria-busy');
     window.scrollTo({ top: y, behavior: 'instant' });
     currentScroll = y;
@@ -313,7 +313,7 @@ if (menuIndex >= 0 && surface && viewport) {
   initPage(surface, location.href);
 }
 
-function initPage(root, href) {
+function initPage(root, href, loadPage) {
   root.querySelector('main')?.setAttribute('id', 'main');
   const timers = new Set();
   // Guide to the single sticky menu instead of duplicating booking channels in Q&A.
@@ -327,6 +327,63 @@ function initPage(root, href) {
       target.focus({ preventScroll: true });
     };
   });
+  // Show the existing page's section, using the same bounded page cache as navigation.
+  const detailDialog = root.querySelector('.faq-detail-dialog');
+  let detailRequest = 0;
+  let detailOpener = null;
+  let disposed = false;
+  if (detailDialog && loadPage && typeof detailDialog.showModal === 'function') {
+    const content = detailDialog.querySelector('.faq-detail-body');
+    const title = detailDialog.querySelector('#faq-detail-title');
+    const sourceLink = detailDialog.querySelector('[data-faq-source]');
+    const extra = detailDialog.querySelector('[data-faq-extra]');
+    detailDialog.querySelector('[data-faq-close]').onclick = () => detailDialog.close();
+    detailDialog.onclose = () => {
+      detailRequest++;
+      if (!disposed && detailOpener?.isConnected) detailOpener.focus({ preventScroll: true });
+    };
+    detailDialog.onclick = event => {
+      if (event.target !== detailDialog) return;
+      const bounds = detailDialog.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right ||
+          event.clientY < bounds.top || event.clientY > bounds.bottom) detailDialog.close();
+    };
+    sourceLink.onclick = () => detailDialog.close();
+    root.querySelectorAll('[data-faq-detail]').forEach(link => {
+      link.onclick = async event => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        const request = ++detailRequest;
+        detailOpener = link;
+        title.textContent = link.dataset.faqTitle;
+        sourceLink.href = link.href;
+        extra.replaceChildren(...[...link.parentElement.querySelectorAll('[data-dialog-extra]')].map(node => node.cloneNode(true)));
+        content.textContent = '안내를 불러오는 중입니다…';
+        content.setAttribute('aria-busy', 'true');
+        detailDialog.showModal();
+        const destination = new URL(link.href, href);
+        destination.hash = '';
+        const current = new URL(href);
+        current.hash = '';
+        const entry = destination.href === current.href ? { surface: root } : await loadPage(destination.href);
+        if (disposed || request !== detailRequest || !detailDialog.open) return;
+        const sections = entry?.surface.querySelectorAll(link.dataset.faqDetail);
+        content.removeAttribute('aria-busy');
+        if (!sections?.length) {
+          content.textContent = '안내를 불러오지 못했습니다. 아래 ‘페이지에서 보기’로 확인해주세요.';
+          return;
+        }
+        content.replaceChildren(...[...sections].map(section => {
+          const copy = section.cloneNode(true);
+          copy.removeAttribute('id');
+          copy.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+          copy.querySelectorAll('img').forEach(img => { img.loading = 'eager'; img.draggable = false; });
+          return copy;
+        }));
+        content.scrollTop = 0;
+      };
+    });
+  }
   const copyButton = root.querySelector('[data-copy-address]');
   if (copyButton) copyButton.onclick = async () => {
     const status = root.querySelector('.copy-result');
@@ -359,6 +416,9 @@ function initPage(root, href) {
     if (frame.dataset.pageSrc) frame.src = frame.dataset.pageSrc;
   }
   return () => {
+    disposed = true;
+    detailRequest++;
+    if (detailDialog?.open) detailDialog.close();
     timers.forEach(clearInterval);
     if (frame) {
       frame.onload = null;
