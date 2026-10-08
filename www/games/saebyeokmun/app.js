@@ -1,7 +1,7 @@
-import {Journey} from './game/model.js?v=16';
-import {makeGame} from './game/scene.js?v=16';
+import {Journey} from './game/model.js?v=17';
+import {makeGame} from './game/scene.js?v=17';
 import {Soundscape} from './game/audio.js?v=14';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,areaIndex,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout} from './game/data.js?v=16';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,areaIndex,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout} from './game/data.js?v=17';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 let installPrompt=null;
@@ -111,9 +111,9 @@ function onReady(error,s){
   article.append(img,tag,title,body,counter);
   if(item.motion||CODEX.includes(item)){
    const row=document.createElement('div');row.className='motion-controls';row.setAttribute('role','group');row.setAttribute('aria-label',item.name+' 동작 시험');
-   const enemy=CODEX.includes(item),defaultMode=enemy?'attack':'walk';
-   const state={kind:item.asset,enemy,img,frames:Array.from({length:enemy?4:(MOTION[item.asset].idleFrame!==undefined?MOTION[item.asset].idleFrame+1:(MOTION[item.asset].walkFrames||4)+(item.motion==='walk'?0:(MOTION[item.asset].attackFrames||4)))},(_,i)=>scene.previewTexture(item.asset+(enemy?'Strike':'')+i)),mode:defaultMode,started:performance.now(),frame:-1,buttons:[]};
-   for(const [mode,label] of (enemy?[['attack','공격'],['idle','멈춤']]:item.motion==='walk'?[['walk','걷기'],['idle','멈춤']]:[['walk','걷기'],['attack','공격'],['idle','멈춤']])){
+   const enemy=CODEX.includes(item),defaultMode='walk';
+   const state={kind:item.asset,enemy,img,frames:Array.from({length:enemy?8:(MOTION[item.asset].idleFrame!==undefined?MOTION[item.asset].idleFrame+1:(MOTION[item.asset].walkFrames||4)+(item.motion==='walk'?0:(MOTION[item.asset].attackFrames||4)))},(_,i)=>scene.previewTexture(item.asset+(enemy?(i<4?'Walk':'Strike'):'')+(enemy?i%4:i))),mode:defaultMode,started:performance.now(),frame:-1,buttons:[]};
+   for(const [mode,label] of (item.motion==='walk'?[['walk','걷기'],['idle','멈춤']]:[['walk','걷기'],['attack','공격'],['idle','멈춤']])){
     const button=document.createElement('button');button.type='button';button.textContent=label;button.setAttribute('aria-label',item.name+' '+label);button.setAttribute('aria-pressed',String(mode===defaultMode));
     button.addEventListener('click',()=>{state.mode=mode;state.started=performance.now();state.buttons.forEach(b=>b.setAttribute('aria-pressed',String(b===button)));});state.buttons.push(button);row.append(button);
    }
@@ -135,7 +135,7 @@ function onFrame(m,s){
  if($('codex').open)for(const p of motionPreviews){
   const spec=p.enemy?ENEMY_STRIKE:MOTION[p.kind],elapsed=(now-p.started)/1000,phase=elapsed%((spec.duration||.64)+.7);
   const action=p.mode==='attack'&&phase<spec.duration?{elapsed:phase}:null;
-  const frame=p.enemy?(action?enemyAttackFrame(phase):0):motionFrame(p.kind,elapsed,p.mode==='walk',action);
+  const frame=p.enemy?(action?4+enemyAttackFrame(phase):motionFrame(p.kind,elapsed,p.mode==='walk',null)):motionFrame(p.kind,elapsed,p.mode==='walk',action);
   if(frame!==p.frame){p.img.src=p.frames[frame];p.frame=frame;}
  }
  if(now-lastFrame<70)return;lastFrame=now;

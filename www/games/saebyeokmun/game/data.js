@@ -1,5 +1,7 @@
 // Single source of sample tuning. All folklore-derived combat roles are game inventions.
 export const ROAD=4200;
+// One world-space threshold owns both the gate drawing and every automatic arrival.
+export const GATE=ROAD+80;
 export const START=220;
 export const MAX_HP=200;
 export const MAX_COINS=100;
@@ -11,38 +13,17 @@ export const ENEMY_STRIKE={duration:.6,impact:.28};
 export function enemyAttackFrame(elapsed){return elapsed<.14?0:elapsed<ENEMY_STRIKE.impact?1:elapsed<.44?2:3;}
 
 export const UNITS={
- cow:{name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:73,damage:12,period:1.35,cost:30,cooldown:4,formation:460,spacing:190,guard:.6,weapon:'horn'},
+ cow:{name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:65,range:73,damage:12,period:1.35,cost:30,cooldown:4,formation:460,spacing:190,guard:.6,weapon:'horn'},
  keeper:{name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:235,damage:17,period:1.15,cost:18,cooldown:3.5,formation:245,spacing:70,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:275,weapon:'ink'}}},
  rabbit:{name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:310,damage:24,period:1.35,cost:24,cooldown:4,formation:140,spacing:62,guard:0,weapon:'seed'},
  scholar:{name:'선비',role:'지원 · 술법 봉인',hp:56,speed:68,range:405,damage:16,period:2.1,cost:34,cooldown:5,formation:-65,spacing:70,guard:0,weapon:'seal'}
 };
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
-// Atlas frame counts belong here; the simulation still owns the original impact clock.
-// The imported ox's supporting hooves travel ~74 world units per cycle at height 141.
-// Journey already measures actual distance / unit speed; this cadence preserves that stride.
-export const MOTION={haetae:{duration:.64,impact:.32,walkFps:84,walkFrames:48,attackFrames:8,idleFrame:56},rabbit:{duration:.64,impact:.32,walkFps:7},girl:{walkFps:84,walkFrames:48,idleFrame:48},keeper:{duration:.64,impact:.32,walkFps:7},cow:{duration:.72,impact:.36,walkFps:48*UNITS.cow.speed/(74*BODY_HEIGHT.cow/141),walkFrames:48,attackFrames:8,idleFrame:56},scholar:{duration:.8,impact:.4,walkFps:6}};
+// Four whole-body walk cels, then four attack cels. Damage keeps its existing action clock.
+export const MOTION={haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,walkFps:6,walkFrames:4},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},skirt:{walkFps:8,walkFrames:4},horse:{walkFps:5,walkFrames:4},reaper:{walkFps:4.5,walkFrames:4},boss:{walkFps:2,walkFrames:4}};
 export function motionFrame(kind,walk,moving,action){
- const s=MOTION[kind],walkFrames=s.walkFrames||4,attackFrames=s.attackFrames||4;
- return action?walkFrames+Math.min(attackFrames-1,Math.floor(action.elapsed/s.duration*attackFrames)):moving?Math.floor(walk*s.walkFps)%walkFrames:(s.idleFrame??1);
-}
-// A single distance-based pose supplies both game sprites and the existing motion gallery.
-// The painted torso never changes shape. Feet move backward relative to it only while planted.
-export function walkPose(kind,phase,idle=false){
- const human=kind==='girl',stance=human?.62:.68,s=MOTION[kind];
- const stride=(UNITS[kind]?.speed||76)/(s.walkFps/s.walkFrames)/BODY_HEIGHT[kind];
- const bob=idle?0:Math.cos(phase*Math.PI*(human?4:8))*(human?.007:.005);
- const specs=human?[[-.035,.5,1,true],[.045,0,1,false]]:[[-.29,0,-1,true],[.25,.25,1,true],[-.29,.5,-1,false],[.25,.75,1,false]];
- return {bob,bodyBottom:human?-.18:-.19,bodyHeight:human?.78:.77,legs:specs.map(([hipX,offset,bend,far])=>{
-  const p=(phase+offset)%1,planted=idle||p<stance,u=(p-stance)/(1-stance),half=stride*stance/2;
-  let x=0,lift=0,angle=0;
-  if(!idle){
-   if(planted)x=half-stride*p;
-   else{const m=-stride*(1-stance),h00=2*u**3-3*u*u+1,h10=u**3-2*u*u+u,h01=-2*u**3+3*u*u,h11=u**3-u*u;
-    x=h00*(-half)+h10*m+h01*half+h11*m;lift=Math.sin(u*Math.PI)**2*(human?.09:.055);angle=-.2*Math.sin(u*Math.PI);
-   }
-  }
-  return {hipX,hipY:(human?-.285:-.325)+bob,footX:hipX+x,footY:-lift,angle,planted,bend,far,upper:human?.145:.17,lower:human?.145:.14,width:human?.085:(kind==='haetae'?.15:.13),footHeight:human?.067:.072};
- })};
+ const s=MOTION[kind],walkFrames=s.walkFrames||4;
+ return action?walkFrames+Math.min(3,Math.floor(action.elapsed/s.duration*4)):moving?Math.floor(walk*s.walkFps)%walkFrames:1;
 }
 export const COMPANIONS=[
  {name:'여행자와 해태',asset:'haetae',tag:'주인공 · 탑승과 합동기',text:'평소에는 나란히 걷습니다. 돌진 필살기를 쓰면 아이가 해태에 올라타 앞길을 뚫고 다시 내려옵니다.',counter:'출발 전 필살기 편성 · Q / E / R 세 자리',motion:true},
@@ -52,10 +33,10 @@ export const COMPANIONS=[
  {name:'선비',asset:'scholar',tag:'지원 · 붓으로 술법 봉인',text:'장부를 펼친 저승사자를 먼저 노립니다. 붓으로 쓴 봉인이 잠깐 기절시키고 적의 술법과 공격 준비를 끊습니다.',counter:'소환 34 · 짧은 봉인 · 후열 지원',motion:true}
 ];
 export const ENEMIES={
- skirt:{name:'지하지인',hp:44,speed:33,range:45,damage:7,period:1.15,reward:9},
- horse:{name:'갓 쓴 말',hp:110,speed:26,range:65,damage:12,period:1.5,reward:15},
- reaper:{name:'저승사자',hp:90,speed:20,range:290,damage:8,period:2,reward:18},
- boss:{name:'강철',hp:1280,speed:8,range:140,damage:14,period:1.4,reward:40}
+ skirt:{name:'지하지인',hp:58,speed:106,range:45,damage:7,period:1.15,reward:9},
+ horse:{name:'갓 쓴 말',hp:155,speed:66,range:65,damage:12,period:1.5,reward:15},
+ reaper:{name:'저승사자',hp:120,speed:58,range:290,damage:8,period:2,reward:18},
+ boss:{name:'강철',hp:1900,speed:16,stopAt:ROAD-180,range:140,damage:14,period:1.4,reward:40}
 };
 export const SKILLS={
  charm:{name:'날림부적',cost:12,cooldown:3.2,icon:'iconCharm',role:'봉인',description:'저승사자를 먼저 겨냥해 술법을 끊어요.'},
@@ -67,12 +48,12 @@ export const SKILLS={
 export const DEFAULT_LOADOUT=['charm','rush','shelter'];
 export function validLoadout(value){return Array.isArray(value)&&value.length===3&&new Set(value).size===3&&value.every(key=>Object.hasOwn(SKILLS,key));}
 export const WAVES=[
- {x:420,types:['skirt','skirt'],message:'치마 아래를 노려요. 돌팔매와 합동 발구름!'},
+ {x:START,types:['skirt','skirt'],message:'멀리 저승문에서 귀물이 와요. 누렁소와 도령을 준비해요.'},
  {x:960,types:['horse','skirt','skirt'],message:'말이 앞발을 들면 돌진! 발구름으로 끊어 주세요.'},
  {x:1600,types:['reaper','horse','skirt'],message:'장부를 펴는 저승사자에게 날림부적을 보내요.'},
  {x:2260,types:['horse','skirt','skirt','reaper'],message:'동료를 번갈아 불러 길을 열어요.'},
  {x:2960,types:['horse','horse','skirt'],message:'먹구름이 가까워졌어요. 비막이를 남겨 두세요.'},
- {x:3500,types:['boss','skirt','skirt'],message:'강철이 길을 막았어요. 우박 예고에 비막이!'}
+ {x:3320,types:['boss','skirt','skirt'],message:'강철이 길을 막았어요. 우박 예고에 비막이!'}
 ];
 export const CODEX=[
  {name:'지하지인',tag:'근접 · 낮은 공격',asset:'skirt',text:'텅 빈 치마와 가느다란 다리. 높은 부적은 머리 위로 지나갑니다.',counter:'누렁소 · 도령 · 발구름',source:'곽재식 강연 5:03',url:'https://www.youtube.com/watch?v=fK2mzliPjcQ&t=303s'},

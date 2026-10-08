@@ -1,11 +1,11 @@
-import {ROAD,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats} from './data.js?v=16';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats} from './data.js?v=17';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
  reset(){
   this.status='ready';this.time=0;this.x=START;this.furthest=START;this.hp=MAX_HP;this.coins=70;
   this.auto=true;this.direction=0;this.allies=[];this.enemies=[];this.events=[];this.nextId=0;
-  this.wave=0;this.spawnEdge=0;this.respawn=17;this.heroAttack=0;this.shield=0;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS)].map(k=>[k,0]));
+  this.wave=0;this.respawn=17;this.heroAttack=0;this.shield=0;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS)].map(k=>[k,0]));
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='동료와 함께 오른쪽 새벽문까지 가요.';
   this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
  }
@@ -18,7 +18,7 @@ export class Journey {
  addAlly(type,x){const s=UNITS[type];
   // Summons enter from the tail; travel spacing is not a combat collision barrier.
   if(x===undefined){const line=this.allies.filter(a=>a.hp>0&&a.type===type);x=Math.min(this.x-65,...line.map(a=>a.x-s.spacing));}const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
- spawn(type,x){const s=ENEMIES[type];const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,stun:0,hit:0,windup:0,action:null,ability:type==='boss'?3:type==='horse'?4.5:5,walk:0};this.enemies.push(a);if(type==='boss')this.bossSpawned=true;return a;}
+ spawn(type,x){const s=ENEMIES[type];const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,stun:0,hit:0,windup:0,action:null,ability:type==='boss'?3:type==='horse'?4.5:5,walk:0,moving:0};this.enemies.push(a);if(type==='boss')this.bossSpawned=true;return a;}
  reject(message){this.emit('notice',{message});return false;}
  summon(type){
   if(this.status!=='playing'||!UNITS[type])return false;
@@ -103,7 +103,7 @@ export class Journey {
   if(a.hp<=0)return;
   const guard=sourceX!==null&&sourceX>=a.x?UNITS[a.type].guard:0;
   const amount=damage*(1-guard);a.hp-=amount;a.hit=.26;a.hitDir=sourceX===null?0:Math.sign(a.x-sourceX);
-  this.emit(guard?'guard':'hit',{x:a.x,from:sourceX,dir:a.hitDir,kind:a.type,damage:amount,enemy:false});
+  this.emit(guard?'guard':'hit',{actor:a.id,x:a.x,from:sourceX,dir:a.hitDir,kind:a.type,damage:amount,enemy:false});
  }
  hurtHero(damage){if(this.status!=='playing')return;this.hp=clamp(this.hp-damage,0,MAX_HP);this.emit('hurt',{x:this.x,damage});if(this.hp<=0)this.finish('lost');}
  cleanup(){
@@ -113,7 +113,7 @@ export class Journey {
  finish(status){if(this.status!=='playing')return;this.status=status;this.direction=0;this.emit('finish',{status});}
  step(dt){
   if(this.status!=='playing'||!Number.isFinite(dt)||dt<=0)return;
-  const oldX=this.x;dt=Math.min(dt,.1);this.time+=dt;this.coins=clamp(this.coins+dt*3.4,0,MAX_COINS);
+  const oldX=this.x;dt=Math.min(dt,.1);this.time+=dt;this.coins=clamp(this.coins+dt*2.2,0,MAX_COINS);
   this.shield=Math.max(0,this.shield-dt);this.heroAttack-=dt;this.advanceAction(this,dt);
   for(const k of Object.keys(this.cooldowns))this.cooldowns[k]=Math.max(0,this.cooldowns[k]-dt);
   const active=this.enemies.filter(e=>e.hp>0);
@@ -126,19 +126,19 @@ export class Journey {
   this.furthest=Math.max(this.furthest,this.x);
   // Distance triggers are owned here, never by camera or UI.
   while(this.wave<WAVES.length&&this.furthest>=WAVES[this.wave].x){
-   const w=WAVES[this.wave++];w.types.forEach((type,i)=>this.spawn(type,Math.max(this.x+740,this.spawnEdge+220)+i*125));this.say(w.message);
+   const w=WAVES[this.wave++];w.types.forEach((type,i)=>this.spawn(type,GATE+24+i*125));this.say(w.message);
   }
   this.respawn-=dt;
   if(this.respawn<=0&&!this.bossDefeated){
    this.respawn=19;
-   if(this.enemies.length<8&&this.wave>0&&this.wave<6)this.spawn(this.wave>2&&this.nextId%3===0?'horse':'skirt',Math.max(this.x+900,this.spawnEdge+220));
+   if(this.enemies.length<8&&this.wave>0&&this.wave<6)this.spawn(this.wave>2&&this.nextId%3===0?'horse':'skirt',GATE+24);
   }
   if(this.action?.kind!=='rush'&&this.heroAttack<=0&&front&&front.type!=='skirt'&&front.x-this.x<200){this.hurtEnemy(front,10);this.heroAttack=1.35;this.emit('projectile',{actor:'girl',sourceKind:'girl',targetKind:front.type,from:this.x-60,to:front.x,high:true,hit:true});}
   for(const a of [...this.allies].sort((a,b)=>a.id-b.id)){
    if(a.hp<=0)continue;
    const s=unitStats(a.type,this.keeperRank),oldAX=a.x;
    const preceding=this.allies.filter(other=>other.hp>0&&other.type===a.type&&other.id<a.id).sort((b,c)=>c.id-b.id);
-   const formation=this.x+s.formation-preceding.length*s.spacing;
+   const formation=Math.min(ROAD-90,this.x+s.formation-preceding.length*s.spacing);
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;this.advanceAction(a,dt);
    if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
    const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55).sort((b,c)=>b.x-c.x);
@@ -158,7 +158,7 @@ export class Journey {
   }
   for(const e of this.enemies){
    if(e.hp<=0)continue;
-   const s=ENEMIES[e.type];e.cd-=dt;e.hit=Math.max(0,e.hit-dt);
+   const s=ENEMIES[e.type];e.moving=0;e.cd-=dt;e.hit=Math.max(0,e.hit-dt);
    if(e.stun>0){e.stun-=dt;e.action=null;continue;}
    if(e.action){this.advanceAction(e,dt);if(this.status!=='playing')break;continue;}
    let targets=this.allies.filter(a=>a.hp>0&&a.x<e.x+50).map(a=>({x:a.x,a}));
@@ -177,7 +177,7 @@ export class Journey {
       if(this.shield<=0){this.hurtHero(24);for(const a of this.allies)this.hurtAlly(a,15);}
       else{this.coins=clamp(this.coins+8,0,MAX_COINS);this.say('우박을 막았어요. 지금 전진해요!');}
       e.ability=9;
-     }else if(e.type==='horse'){e.x=Math.max(target.x+45,e.x-150);attackTarget(23);e.ability=6;this.emit('charge',{x:e.x});}
+     }else if(e.type==='horse'){e.x=Math.max(target.x+45,e.x-150);attackTarget(23);e.ability=6;this.emit('charge',{x:e.x,to:target.x,kind:e.type});}
      else if(e.type==='reaper'){
       for(const other of this.enemies)other.hp=Math.min(other.maxHp,other.hp+15);
       this.emit('heal',{x:e.x});e.ability=8;
@@ -193,7 +193,7 @@ export class Journey {
     else if(e.type==='horse')this.say('말이 돌진을 준비해요. 발구름!');
     continue;
    }
-   if(gap>s.range){e.x-=s.speed*dt;e.walk+=dt;}
+   if(gap>s.range){const dx=Math.min(s.speed*dt,gap-s.range,Math.max(0,e.x-(s.stopAt??START-120)));e.x-=dx;e.moving=dx>0?-1:0;e.walk+=dx/s.speed;}
    else if(e.cd<=0){e.cd=s.period;e.action={kind:'enemy',elapsed:0,resolved:false,targetId:target.a?.id??null,dir:Math.sign(target.x-e.x)||-1};}
    if(this.status!=='playing')break;
   }

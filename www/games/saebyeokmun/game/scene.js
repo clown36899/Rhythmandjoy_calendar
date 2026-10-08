@@ -1,4 +1,4 @@
-import {ROAD,START,MOTION,motionFrame,walkPose,AREAS,areaIndex,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS} from './data.js?v=16';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,areaIndex,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS} from './data.js?v=17';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const ROAD_EDGE=514,GROUND=542;
@@ -8,13 +8,13 @@ export function makeGame(model,onReady,onFrame,onEvents){
   constructor(){super('road');this.sprites=new Map();this.effects=[];this.grounding=new Map();this.contacts=new Map();this.offset=0;this.lastX=START;this.heroPose=0;this.shake=0;this.previewAreaIndex=0;}
   preload(){
    this.load.image('allies','./assets/allies.png');this.load.image('enemies','./assets/enemies.png');
-   this.load.image('haetaeMotion','./assets/haetae-motion-v14.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
-   for(const kind of ['girl','haetae'])this.load.image(kind+'Rig','./assets/'+kind+'-rig-v14b.png');this.load.image('reaperDeparture','./assets/reaper-departure-v14.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
+   this.load.image('haetaeMotion','./assets/haetae-motion-v10.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
+   this.load.image('companionWalk','./assets/companions-walk-v11.png');this.load.image('gate','./assets/underworld-gate-v17.png');this.load.image('enemyWalk','./assets/enemy-walk-v17.png');this.load.image('reaperDeparture','./assets/reaper-departure-v14.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
    for(const area of AREAS)this.load.image(area.texture,'./assets/'+area.file);
    this.load.image('roadScenery','./assets/road-scenery-v13.png');
    this.load.image('livingScenery','./assets/living-scenery-v11.png');
-   this.load.image('enemyAttacks','./assets/enemy-attacks-v11.png');
-   for(const [key,file] of Object.entries({keeperWalk:'doryeong-stone-v12',keeperBrushWalk:'doryeong-brush-v12',cowWalk:'cow-walk-gif-v16',cowAttack:'ox-motion-v14',scholarWalk:'scholar-motion-v12',mountWalk:'mounted-haetae-v12'}))this.load.image(key,'./assets/'+file+'.png');
+   this.load.image('enemyAttacks','./assets/enemy-attacks-v17.png');
+   for(const [key,file] of Object.entries({keeperWalk:'doryeong-stone-v12',keeperBrushWalk:'doryeong-brush-v12',cowWalk:'ox-guard-v12',scholarWalk:'scholar-motion-v12',mountWalk:'mounted-haetae-v12'}))this.load.image(key,'./assets/'+file+'.png');
    this.load.on('loaderror',()=>onReady(new Error('그림을 불러오지 못했어요. 새로고침해 주세요.')));
   }
   sliceAtlas(sheet,names,columns=3,sharedBounds=false,rows=2,layout=null){
@@ -70,56 +70,17 @@ export function makeGame(model,onReady,onFrame,onEvents){
     this.grounding.set(name,(bounds[i].footY-y0)/texture.height);
    });
   }
-  bakeWalk(kind){
-   const spec=MOTION[kind],h=192,w=kind==='girl'?230:310,baseline=h-2;
-   const parts=Object.fromEntries(['Body','Upper','Lower','Foot'].map(part=>[part,this.textures.get(kind+part).getSourceImage()]));
-   const paint=(name,phase,idle=false)=>{
-    const texture=this.textures.createCanvas(name,w,h),ctx=texture.getContext(),pose=walkPose(kind,phase,idle);
-    ctx.translate(w/2,baseline);ctx.scale(h,h);
-    const segment=(part,a,b,width)=>{
-     const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy),src=parts[part];
-     ctx.save();ctx.translate(a.x,a.y);ctx.rotate(Math.atan2(dy,dx)-Math.PI/2);
-     ctx.drawImage(src,0,src.height*.12,src.width,src.height*.76,-width/2,-.012,width,len+.025);ctx.restore();
-    };
-    for(const leg of pose.legs){
-     const hip={x:leg.hipX,y:leg.hipY},ankle={x:leg.footX,y:leg.footY-leg.footHeight*.48};
-     const dx=ankle.x-hip.x,dy=ankle.y-hip.y,d=Math.max(.001,Math.hypot(dx,dy)),along=(leg.upper**2-leg.lower**2+d*d)/(2*d),side=Math.sqrt(Math.max(0,leg.upper**2-along*along));
-     const knee={x:hip.x+dx/d*along+dy/d*side*leg.bend,y:hip.y+dy/d*along-dx/d*side*leg.bend};
-     ctx.globalAlpha=leg.far?.84:1;
-     segment('Upper',hip,knee,leg.width*1.15);segment('Lower',knee,ankle,leg.width);
-     const foot=parts.Foot,fh=leg.footHeight,fw=fh*foot.width/foot.height;
-     ctx.save();ctx.translate(leg.footX,leg.footY);ctx.rotate(leg.angle);ctx.drawImage(foot,-fw/2,-fh,fw,fh);ctx.restore();
-    }
-    ctx.globalAlpha=1;const body=parts.Body,bh=pose.bodyHeight,bw=bh*body.width/body.height;
-    ctx.drawImage(body,-bw/2,pose.bodyBottom+pose.bob-bh,bw,bh);
-    texture.refresh();this.grounding.set(name,baseline/h);
-   };
-   for(let i=0;i<spec.walkFrames;i++)paint(kind+i,i/spec.walkFrames);
-   paint(kind+spec.idleFrame,0,true);
-  }
   create(){
    this.sliceAtlas('allies',['girl','haetae','rabbit','keeper','haetaeStomp','girlCast']);
    this.sliceAtlas('enemies',['skirt0','skirt1','horse','reaper','boss','cloud']);
-   this.sliceAtlas('haetaeMotion',Array.from({length:16},(_,i)=>'haetaeSource'+i),4,true,4);
-   this.sliceAtlas('rabbitMotion',Array.from({length:8},(_,i)=>'rabbit'+i),4,true);
-   this.sliceAtlas('cowAttack',Array.from({length:16},(_,i)=>'cowSource'+i),4,true,4);
-   // Extracted video cels use an exact grid and one shared crop/scale. Their
-   // original full-body drawings replace only the ox's procedural walk.
-   const cowRows=Math.ceil(MOTION.cow.walkFrames/4);
-   this.sliceAtlas('cowWalk',Array.from({length:MOTION.cow.walkFrames},(_,i)=>'cow'+i),4,true,cowRows,{x:[0,.25,.5,.75,1],y:Array.from({length:cowRows+1},(_,i)=>i/cowRows)});
-   for(const kind of ['girl','haetae']){this.sliceAtlas(kind+'Rig',['Body','Upper','Lower','Foot'].map(part=>kind+part),2,false,2,{x:[0,.65,1],y:[0,.62,1]});this.bakeWalk(kind);}
-   // Keep the existing attack art and impact clock for both walk sources.
-   const copies=[['cow'+MOTION.cow.idleFrame,'cow10'],...['cow','haetae'].flatMap(kind=>Array.from({length:MOTION[kind].attackFrames},(_,i)=>[kind+(MOTION[kind].walkFrames+i),kind+'Source'+(8+i)]))];
-   for(const [name,from] of copies){
-    const source=this.textures.get(from).getSourceImage(),texture=this.textures.createCanvas(name,source.width,source.height);
-    texture.getContext().drawImage(source,0,0);texture.refresh();this.grounding.set(name,this.grounding.get(from));
-   }
-   for(const kind of ['cow','haetae'])for(let i=0;i<16;i++)this.textures.remove(kind+'Source'+i);
+   for(const kind of ['haetae','rabbit'])this.sliceAtlas(kind+'Motion',Array.from({length:8},(_,i)=>kind+i),4,true);
+   this.sliceAtlas('companionWalk',Array.from({length:4},(_,i)=>'girl'+i),4,4);
+   this.sliceAtlas('enemyWalk',['skirt','horse','reaper','boss'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Walk'+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
    this.sliceAtlas('reaperDeparture',Array.from({length:8},(_,i)=>'reaperDepart'+i),4,true);
-   for(const kind of ['keeper','keeperBrush','scholar','mount'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
+   for(const kind of ['keeper','keeperBrush','cow','scholar','mount'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
    this.sliceAtlas('actionIcons',['iconKeeper','iconRabbit','iconCharm','iconStomp','iconShelter','iconSound']);
    this.sliceAtlas('livingScenery',['pine','mist','dragon','grass'],2);
-   this.sliceAtlas('enemyAttacks',['skirt','horse','reaper','boss'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Strike'+i)),4,4,4);
+   this.sliceAtlas('enemyAttacks',['skirt','horse','reaper','boss'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Strike'+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
    for(const area of AREAS){const texture=this.textures.get(area.texture),src=texture.getSourceImage();texture.add('far',0,0,0,src.width,Math.floor(src.height/2));texture.add('middle',0,0,Math.floor(src.height/2),src.width,Math.floor(src.height/2));}
    // Unequal atlas cells retain the wide painted path; only runtime texture frames are cropped.
    const roadTexture=this.textures.get('roadScenery'),roadSource=roadTexture.getSourceImage();
@@ -135,6 +96,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.pathTiles=Array.from({length:8},()=>this.add.image(0,0,'roadScenery','path').setOrigin(0,0));this.root.add(this.pathTiles);
    this.pathProps=Array.from({length:9},(_,i)=>this.add.image(0,0,'roadScenery',['cairn','mile','flowers'][i%3]).setOrigin(.5,1));this.root.add(this.pathProps);
    this.decor=this.add.graphics();this.root.add(this.decor);
+   this.gate=this.add.image(0,0,'gate').setOrigin(.5,1);this.root.add(this.gate);
    this.shadows=this.add.graphics();this.root.add(this.shadows);
    this.hero=this.add.image(0,0,'haetae').setOrigin(.5,1);this.girl=this.add.image(0,0,'girl').setOrigin(.5,1);
    this.root.add([this.hero,this.girl]);
@@ -144,7 +106,6 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.tags=new Map();
    this.exitLabel=this.add.text(0,0,'새벽문',{fontFamily:'AppleMyungjo,serif',fontSize:'22px',color:'#776850'}).setOrigin(.5);
    this.root.add(this.exitLabel);
-   this.entryLabel=this.add.text(0,0,'저승문',{fontFamily:'AppleMyungjo,serif',fontSize:'18px',color:'#bbd5c8'}).setOrigin(.5);this.root.add(this.entryLabel);
    this.ready=true;this.resize();this.scale.on('resize',()=>this.resize());
    // Browser toolbar movement changes the stage without always resizing the layout viewport.
    this.stageObserver=new ResizeObserver(()=>this.resize());this.stageObserver.observe(document.getElementById('game'));
@@ -236,29 +197,30 @@ export function makeGame(model,onReady,onFrame,onEvents){
       hat.setCrop(0,0,src.width,Math.floor(src.height*.16)).setDisplaySize(h*src.width/src.height,h);this.root.add(hat);this.effects.push({...e,type:'hat',sprite:hat,t:0,duration:1.75});
      }
     }
+    if(['hit','guard','hurt'].includes(e.type)&&e.damage){
+     const label=this.add.text(0,0,(e.type==='guard'?'막음 ':'')+Math.ceil(e.damage),{fontFamily:'sans-serif',fontSize:e.kind==='boss'?'29px':'25px',fontStyle:'bold',color:e.enemy?'#ffedac':e.type==='guard'?'#c9fff4':'#ffc0a0',stroke:'#343b34',strokeThickness:5}).setOrigin(.5);this.root.add(label);this.effects.push({...e,type:'damage',sprite:label,t:0,duration:.8});
+    }
     if(e.type==='coin'){const label=this.add.text(0,0,'+'+e.amount,{fontFamily:'sans-serif',fontSize:e.reason==='defeat'?'21px':'15px',fontStyle:'bold',color:'#a17727',stroke:'#fff5d6',strokeThickness:3}).setOrigin(.5);this.root.add(label);this.effects.push({...e,type:'coin',sprite:label,t:0,duration:1.05});}
-    if(['projectile','stomp','hit','vanish','hail','summon','heal','swipe','shelter','charge','guard','hex','claw'].includes(e.type))this.effects.push({...e,t:0,duration:e.type==='hail'?1.2:e.type==='stomp'?.65:e.type==='projectile'?.14:e.type==='shelter'?1:.6});
+    if(['projectile','stomp','hit','vanish','hail','summon','heal','swipe','shelter','charge','rush','guard','hex','claw','hurt'].includes(e.type))this.effects.push({...e,t:0,duration:e.type==='hail'?1.2:e.type==='stomp'?.65:e.type==='projectile'?.22:e.type==='shelter'?1:e.type==='rush'?1.1:.55});
    }
   }
-  drawGate(x,entry=false){
-   const g=this.decor;
-   if(entry){
-    // The arrival threshold stays on the visible right edge; characters walk through it.
-    g.fillStyle(0x334647,.87);g.fillRect(x-56,GROUND-221,126,221);
-    g.fillStyle(0x183137,.68);g.fillRect(x-35,GROUND-207,91,207);
-    for(let i=0;i<7;i++){g.fillStyle(0x83c3bd,.018*(7-i));g.fillEllipse(x-24-i*4,GROUND-96,44+i*18,185+i*4);}
-   }
-   g.lineStyle(3,0x86775e,1);g.strokeRect(x-85,GROUND-225,16,225);g.strokeRect(x+69,GROUND-225,16,225);
-   g.fillStyle(0x929487,.8);g.fillPoints([{x:x-120,y:GROUND-222},{x:x-67,y:GROUND-258},{x:x+67,y:GROUND-258},{x:x+120,y:GROUND-222}],true);
-   g.lineStyle(3,0x5c6155,.9);g.strokePoints([{x:x-125,y:GROUND-222},{x:x-67,y:GROUND-258},{x:x+67,y:GROUND-258},{x:x+125,y:GROUND-222}]);
-   g.lineStyle(1,0x6f725f,.6);for(let i=-65;i<85;i+=17)g.lineBetween(x+i,GROUND-251,x+i+12,GROUND-223);
-   g.fillStyle(0x469795,entry?.18:.06);g.fillRect(x-67,GROUND-220,134,220);g.fillStyle(0xf7f3dc,.2);g.fillEllipse(x,GROUND-115,100,190);
+  drawGate(x,t){
+   const g=this.decor,h=350,source=this.gate.texture.getSourceImage(),cleared=model.bossDefeated;
+   this.gate.setPosition(x,GROUND+31).setDisplaySize(h*source.width/source.height,h).setVisible(x>-330&&x<this.vw+330);
+   this.exitLabel.setVisible(this.gate.visible);
+   if(!this.gate.visible)return;
+   // The light lives at the same world threshold as the art and enemy arrivals.
+   const color=cleared?0xffd67d:0x51d9d7,pulse=.5+.5*Math.sin(t*2.1);
+   g.fillStyle(0x233d42,.25);g.fillEllipse(x,GROUND+9,360,23);
+   for(let i=4;i>0;i--){g.lineStyle(5+i*5,color,.035*(5-i));g.strokeEllipse(x,GROUND-94,70+i*18,188+i*13);}
+   g.fillStyle(color,.10+pulse*.06);g.fillEllipse(x-8,GROUND+3,130,19);
+   for(let i=0;i<9;i++){const phase=(t*.24+i/9)%1;g.fillStyle(i%2?0xf5f7d2:color,(1-phase)*.65);g.fillCircle(x+Math.sin(i*2.4+phase*3)*57,GROUND-17-phase*210,2+phase);}
+   this.exitLabel.setPosition(x,GROUND-h-1).setText(cleared?'새벽문 · 길이 열렸다':'저승문 · 길의 끝').setColor(cleared?'#816337':'#356f6a');
   }
   renderEntity(key,type,x,walk,hp,maxHp,hit,windup,enemy=false,moving=0,action=null,hitDir=1,groundY=GROUND){
    let image=this.sprites.get(key);
    if(!image){image=this.add.image(0,0,MODEL_MAP[type]||type).setOrigin(.5,1);this.root.add(image);this.sprites.set(key,image);}
-   if(type==='skirt')image.setTexture(Math.floor(walk*5)%2?'skirt1':'skirt0');
-   if(enemy&&(type!=='skirt'||action))image.setTexture(type+'Strike'+(action?enemyAttackFrame(action.elapsed):0));
+   if(enemy)image.setTexture(type+(action||windup>0?'Strike':'Walk')+(action?enemyAttackFrame(action.elapsed):windup>0?1:motionFrame(type,walk,moving,null))).setFlipX(action? action.dir>0 : moving>0);
    if(!enemy&&UNITS[type])image.setTexture((type==='keeper'&&model.keeperRank?'keeperBrush':type)+motionFrame(type,walk,moving,action)).setFlipX(moving<0&&!action);
    const height=BODY_HEIGHT[type]||130;
    this.placeOnGround(image,x-this.offset,height,groundY);
@@ -267,7 +229,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const p=action.elapsed/ENEMY_STRIKE.duration,impact=ENEMY_STRIKE.impact/ENEMY_STRIKE.duration,dir=action.dir;
     const thrust=p<impact?-Math.sin(p/impact*Math.PI/2)*7:Math.sin((p-impact)/(1-impact)*Math.PI)*22;
     image.x+=dir*thrust;image.setAngle(dir*(p<impact?-4:7)*Math.sin(p*Math.PI));
-    image.setDisplaySize(image.displayWidth*(1+.06*Math.sin(p*Math.PI)),height*(1-.035*Math.sin(p*Math.PI)));
+    // Whole-body drawings carry the pose; do not distort or hinge individual limbs.
     if(p<impact){this.fx.lineStyle(2,0x9c6958,.35);this.fx.lineBetween(image.x-dir*20,groundY-height*.6,image.x-dir*43,groundY-height*.63);}
    }else if(enemy&&windup>0){image.setAngle(Math.sin(windup*8)*1.8+(type==='horse'?5:0));}
    if(hit>0){
@@ -277,63 +239,103 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    if(MOTION[type])this.trackContact(key,type,walk,moving,x,groundY);
    if(hit>0)image.setTint(enemy?0xe8b3a0:0xa9e2d7);else image.clearTint();
-   image.setAlpha(hp<=0?0:1);
+   image.setAlpha(hp<=0?0:enemy?P.Math.Clamp((GATE+55-x)/90,0,1):1);
    if(hp<maxHp||windup>0){
     const w=type==='boss'?150:46,px=x-this.offset;
-    this.fx.fillStyle(0x85755f,.18);this.fx.fillRoundedRect(px-w/2,groundY-height-13,w,3,1);
-    this.fx.fillStyle(enemy?0xb76d59:0x388b7e,.8);this.fx.fillRect(px-w/2,groundY-height-13,w*Math.max(0,hp/maxHp),3);
+    this.fx.fillStyle(0x263d3b,.8);this.fx.fillRoundedRect(px-w/2-1,groundY-height-15,w+2,7,2);
+    this.fx.fillStyle(enemy?0xeb9976:0x6ed6ba,1);this.fx.fillRect(px-w/2,groundY-height-14,w*Math.max(0,hp/maxHp),5);
    }
    if(windup>0){
-    const px=x-this.offset;
-    this.fx.lineStyle(2,0xae6345,.9);
-    this.fx.lineBetween(px-4,groundY-height-43,px-4,groundY-height-28);this.fx.fillStyle(0xae6345,1);this.fx.fillCircle(px-4,groundY-height-22,1.8);
-    if(type==='horse')this.fx.strokeEllipse(px-60,GROUND+2,160,12);
+    const px=x-this.offset,yy=groundY-height-34,pulse=.65+.35*Math.sin(model.time*13)**2;
+    this.fx.fillStyle(0x5a352d,.9);this.fx.fillTriangle(px,yy-24,px-17,yy+8,px+17,yy+8);
+    this.fx.lineStyle(3,0xffbd79,pulse);this.fx.strokeTriangle(px,yy-24,px-17,yy+8,px+17,yy+8);
+    this.fx.lineStyle(4,0xfff2c6,1);this.fx.lineBetween(px,yy-13,px,yy-4);this.fx.fillStyle(0xfff2c6,1);this.fx.fillCircle(px,yy+2,2);
+    if(type==='horse'||type==='boss'){
+     this.fx.fillStyle(0xe37952,.12*pulse);this.fx.fillEllipse(px-130,GROUND+1,280,22);
+     this.fx.lineStyle(3,0xdb804e,pulse);this.fx.strokeEllipse(px-130,GROUND+1,280,22);
+    }
    }
   }
   drawEffects(dt){
    const g=this.fx;
+   // Dark under-strokes and pale cores remain legible on both paper and night scenery.
+   const beam=(x1,y1,x2,y2,color,width=5,alpha=1)=>{
+    g.lineStyle(width+5,0x30443f,alpha*.75);g.lineBetween(x1,y1,x2,y2);
+    g.lineStyle(width,color,alpha);g.lineBetween(x1,y1,x2,y2);
+    g.lineStyle(Math.max(1,width*.27),0xfff9da,alpha*.95);g.lineBetween(x1,y1,x2,y2);
+   };
+   const burst=(x,y,p,color,scale=1)=>{
+    const fade=1-p,r=(9+34*Math.sin(p*Math.PI/2))*scale;
+    g.fillStyle(color,fade*.14);g.fillCircle(x,y,r*1.5);
+    g.lineStyle(5,0x394637,fade*.7);g.strokeCircle(x,y,r*.7);
+    g.lineStyle(2.5,color,fade);g.strokeCircle(x,y,r*.7);
+    for(let i=0;i<7;i++){const a=i*Math.PI*2/7+.2,inner=r*.38,outer=r*(i%2?.85:1.25);beam(x+Math.cos(a)*inner,y+Math.sin(a)*inner,x+Math.cos(a)*outer,y+Math.sin(a)*outer,color,4*scale,fade);}
+    if(p<.22){g.fillStyle(0xfffce7,1-p/.22);g.fillCircle(x,y,13*scale);}
+   };
    for(const e of this.effects){
     e.t+=dt;const p=Math.min(1,e.t/e.duration),fade=1-p;
     if(e.type==='projectile'){
      const seed=e.kind==='seed',stone=e.kind==='stone',ink=e.kind==='ink',seal=e.kind==='seal',dir=Math.sign(e.to-e.from)||1,start=e.from+dir*(seed?27:16),fromY=(e.groundY??GROUND)-(e.sourceKind==='girl'?66:seed?61:76),toY=GROUND-(BODY_HEIGHT[e.targetKind]||120)*.53;
-     const x=start+(e.to-start)*p-this.offset,y=fromY+(toY-fromY)*p-Math.sin(p*Math.PI)*(stone?66:seed?6:18);
-     const angle=Math.atan2(toY-fromY,e.to-start),dx=Math.cos(angle),dy=Math.sin(angle);
-     g.lineStyle(seed?2:3,stone?0x9b8b70:ink?0x526a64:seed?0xb89556:0x55a5a3,fade);g.lineBetween(x-dx*30,y-dy*30,x,y);g.fillStyle(stone?0x8e8672:ink?0x314e47:seed?0x896d3d:0x3c9a99,.9);
-     if(stone){g.fillEllipse(x,y,13,10);g.lineStyle(1,0x554f42,fade);g.strokeEllipse(x,y,13,10);}else if(seed)g.fillCircle(x,y,4);else if(ink){g.fillEllipse(x,y,17,6);g.fillCircle(x-dx*15,y-dy*15,2);}else{g.fillPoints([{x:x+dx*11,y:y+dy*11},{x:x-dy*5,y:y+dx*5},{x:x-dx*11,y:y-dy*11},{x:x+dy*5,y:y-dx*5}],true);if(seal){g.lineStyle(1,0x458983,fade);g.strokeCircle(x,y,17);}}
+     const x=start+(e.to-start)*p-this.offset,y=fromY+(toY-fromY)*p-Math.sin(p*Math.PI)*(stone?60:seed?8:22);
+     const angle=Math.atan2(toY-fromY,e.to-start),dx=Math.cos(angle),dy=Math.sin(angle),color=stone?0xffcc79:seed?0xcbe66a:0x65e8dc;
+     g.fillStyle(color,.14);g.fillCircle(x,y,20);beam(x-dx*44,y-dy*44,x,y,color,seed?4:7,.95);
+     g.fillStyle(stone?0xa38a5b:ink?0x245d64:color,1);
+     if(stone){g.fillEllipse(x,y,20,16);g.lineStyle(3,0x3c4a3d,1);g.strokeEllipse(x,y,20,16);g.fillStyle(0xffecc1,1);g.fillEllipse(x-3,y-4,8,4);}
+     else if(seed){g.fillCircle(x,y,7);g.fillStyle(0xffffd6,1);g.fillCircle(x,y,3);}
+     else if(ink){g.fillEllipse(x,y,24,12);g.lineStyle(3,0x92eee1,1);g.strokeEllipse(x,y,24,12);}
+     else{g.fillStyle(0xffefb6,1);g.fillPoints([{x:x+dx*16,y:y+dy*16},{x:x-dy*8,y:y+dx*8},{x:x-dx*16,y:y-dy*16},{x:x+dy*8,y:y-dx*8}],true);g.lineStyle(2,0x21554f,1);g.strokeCircle(x,y,seal?23:13);}
+     for(let i=1;i<=3;i++){g.fillStyle(color,(1-i/4)*.8);g.fillCircle(x-dx*i*16,y-dy*i*16,4-i*.7);}
     }
     if(e.type==='stomp'){
-     g.lineStyle(3,0x369f9e,fade);g.strokeEllipse(e.x-this.offset+200*p,GROUND-2,70+550*p,14+18*p);
-     for(let i=0;i<6;i++)g.lineBetween(e.x-this.offset+50+i*55,GROUND-6,e.x-this.offset+55+i*55,GROUND-20*fade);
+     const x=e.x-this.offset;
+     g.lineStyle(12,0x254e49,fade*.8);g.strokeEllipse(x+155*p,GROUND-2,80+630*p,22+45*p);
+     g.lineStyle(6,0x6de9d6,fade);g.strokeEllipse(x+155*p,GROUND-2,80+630*p,22+45*p);
+     g.lineStyle(2,0xfff2bb,fade);g.strokeEllipse(x+155*p,GROUND-4,55+570*p,15+30*p);
+     for(let i=0;i<9;i++){const xx=x-30+i*53;beam(xx,GROUND-5,xx+Math.sin(i)*12,GROUND-18-60*Math.sin(p*Math.PI),0xffde88,4,fade);}
     }
     if(e.type==='footstep'){
      const x=e.x-this.offset,y=e.groundY??GROUND;
-     g.lineStyle(1,0x9c8662,fade*.3);g.strokeEllipse(x,y+1,9+17*p,3+3*p);
-     for(let i=0;i<3;i++){g.fillStyle(0xa88d62,fade*.26);g.fillCircle(x-9+i*8+(i-1)*9*p,y-2-8*Math.sin(p*Math.PI),1.5);}
+     g.lineStyle(1.5,0x90754e,fade*.45);g.strokeEllipse(x,y+1,10+21*p,4+4*p);
+     for(let i=0;i<3;i++){g.fillStyle(0xb09462,fade*.38);g.fillCircle(x-9+i*8+(i-1)*10*p,y-2-10*Math.sin(p*Math.PI),2);}
     }
     if(e.type==='swipe'){
-     const dir=Math.sign(e.to-e.x)||1,x=e.x-this.offset+dir*18,end=e.to-this.offset,y=(e.groundY??GROUND)-48;
-     g.lineStyle(4,0x8c744a,fade);g.lineBetween(x,y+6,end,y-9);g.lineStyle(2,0x4faaa1,fade);g.lineBetween(x,y+3,end+dir*7*p,y-16);
+     const dir=Math.sign(e.to-e.x)||1,x=e.x-this.offset+dir*18,end=e.to-this.offset,y=(e.groundY??GROUND)-55;
+     beam(x,y+20,end+dir*16,y-29,0xffd27c,9,fade);
+     beam(x+dir*12,y+28,end+dir*25,y-7,0x8ce3c6,4,fade*.9);
+     burst(end,GROUND-(BODY_HEIGHT[e.targetKind]||120)*.5,p,0xffd77e,.8);
     }
     if(e.type==='guard'){
-     const x=e.x-this.offset+25;
-     g.lineStyle(3,0xbda574,fade);for(let i=0;i<4;i++)g.lineBetween(x+15,GROUND-65,x+25+i*10,GROUND-92+i*17);
-     g.lineStyle(2,0x9b8864,fade*.5);g.strokeEllipse(x-25,GROUND+1,88,5);
+     const dir=Math.sign((e.from??e.x+1)-e.x)||1,x=e.x-this.offset+dir*47,y=(e.groundY??GROUND)-65;
+     g.lineStyle(10,0x25504e,fade*.85);g.beginPath();g.arc(x-dir*22,y,48,dir>0?-1.05:Math.PI-1.05,dir>0?1.05:Math.PI+1.05);g.strokePath();
+     g.lineStyle(5,0x87efda,fade);g.strokePath();
+     for(let i=0;i<4;i++)beam(x,y,x+dir*(27+i*9),y-35+i*22,0xffe3a0,3,fade);
     }
     if(e.type==='hex'){
-     const dir=Math.sign(e.to-e.x)||-1,x=e.x+(e.to-e.x)*p-this.offset,y=GROUND-(BODY_HEIGHT[e.sourceKind]*.5+(BODY_HEIGHT[e.targetKind]*.5-BODY_HEIGHT[e.sourceKind]*.5)*p);
-     g.lineStyle(2,0x7d708e,fade);g.strokeCircle(x,y,7);g.lineBetween(x-dir*22,y+2,x-dir*5,y);
+     const dir=Math.sign(e.to-e.x)||-1,x=e.x+(e.to-e.x)*Math.min(1,p*2)-this.offset,y=GROUND-(BODY_HEIGHT[e.sourceKind]*.5+(BODY_HEIGHT[e.targetKind]*.5-BODY_HEIGHT[e.sourceKind]*.5)*Math.min(1,p*2));
+     beam(x-dir*45,y+6,x,y,0xaf98f1,8,fade);g.fillStyle(0x59436d,fade);g.fillCircle(x,y,12);g.lineStyle(4,0xe4ceff,fade);g.strokeCircle(x,y,15);
+     if(p>.45)burst(e.to-this.offset,GROUND-(BODY_HEIGHT[e.targetKind]||132)*.5,(p-.45)/.55,0xceaeff,.9);
     }
     if(e.type==='claw'){
      const dir=Math.sign(e.to-e.x)||-1,y=GROUND-(BODY_HEIGHT[e.targetKind]||120)*.5;
-     g.lineStyle(2,0x98705b,fade);for(let i=0;i<3;i++)g.lineBetween(e.to-this.offset-dir*(10+i*8),y-17,e.to-this.offset-dir*i*8,y+7);
+     for(let i=0;i<3;i++)beam(e.to-this.offset-dir*(20+i*15),y-36+i*5,e.to-this.offset+dir*(9-i*13),y+20,0xff9b70,5,fade);
     }
-    if(e.type==='summon'||e.type==='heal'){
-     g.lineStyle(2,0x368f82,fade);g.strokeEllipse(e.x-this.offset,GROUND-10-40*p,40+30*p,12);
+    if(e.type==='summon'||e.type==='heal'||e.type==='shelter'){
+     const x=e.x-this.offset,color=e.type==='heal'?0xbce98b:0x71e5d2;
+     g.lineStyle(7,0x355d4c,fade*.8);g.strokeEllipse(x,GROUND-5,50+95*p,15+12*p);g.lineStyle(3,color,fade);g.strokeEllipse(x,GROUND-5,50+95*p,15+12*p);
+     for(let i=0;i<7;i++){const xx=x+Math.sin(i*2.3)*(23+30*p),yy=GROUND-12-100*p-i*8;beam(xx,yy+12,xx,yy-6,color,3,fade);}
     }
-    if(e.type==='hit'||e.type==='vanish'){
-     const h=(BODY_HEIGHT[e.kind]||120)*.53,dir=e.dir||1;
-     for(let i=0;i<6;i++){g.fillStyle(e.enemy===false?0x469894:0x87745e,fade*.75);g.fillCircle(e.x-this.offset+dir*(6+i*6)*p,GROUND-h+Math.sin(i*1.7)*25*p,2.5*(1-p)+1);}
-     if(p<.3){g.lineStyle(2,0xe5c585,fade);g.strokeCircle(e.x-this.offset,GROUND-h,5+14*p);}
+    if(e.type==='rush'||e.type==='charge'){
+     const x=(e.type==='rush'?model.x:e.x)-this.offset,dir=e.type==='rush'?1:-1;
+     for(let i=0;i<5;i++)beam(x-dir*(50+i*18),GROUND-20-i*20,x-dir*(150+60*p+i*12),GROUND-20-i*20,e.type==='rush'?0x73e6d0:0xffbd79,4,fade);
+     g.lineStyle(4,0xffe8b2,fade);g.strokeEllipse(x,GROUND,100+120*p,18+12*p);
+    }
+    if(e.type==='hit'||e.type==='hurt'||e.type==='vanish'){
+     const y=(e.groundY??GROUND)-(BODY_HEIGHT[e.kind]||132)*.53;
+     burst(e.x-this.offset,y,p,e.type==='vanish'?0x9ff0d3:e.enemy?0xffd77b:0xff9b78,e.kind==='boss'?1.3:.85);
+    }
+    if(e.type==='damage'){
+     const x=e.x-this.offset+(e.enemy?13:-14),y=(e.groundY??GROUND)-(BODY_HEIGHT[e.kind]||132)*.74-38*p;
+     e.sprite.setPosition(x,y).setScale(1+Math.max(0,.18-p)*1.2).setAlpha(Math.min(1,fade*2.3));this.root.bringToTop(e.sprite);if(p>=1)e.sprite.destroy();
     }
     if(e.type==='depart'){
      const x=e.x-this.offset,h=BODY_HEIGHT[e.kind],sprite=e.sprite;
@@ -376,16 +378,20 @@ export function makeGame(model,onReady,onFrame,onEvents){
      if(p>=1)sprite.destroy();
     }
     if(e.type==='hat'){const y=GROUND-BODY_HEIGHT.horse+(BODY_HEIGHT.horse-20)*Math.min(1,p*1.3);e.sprite.setPosition(e.x-this.offset+Math.sin(p*6)*18,y).setAngle(Math.sin(p*7)*12).setAlpha(p<.7?1:(1-p)/.3);if(p>=1)e.sprite.destroy();}
+    if(['hit','guard','hurt'].includes(e.type)&&e.damage){
+     const label=this.add.text(0,0,(e.type==='guard'?'막음 ':'')+Math.ceil(e.damage),{fontFamily:'sans-serif',fontSize:e.kind==='boss'?'29px':'25px',fontStyle:'bold',color:e.enemy?'#ffedac':e.type==='guard'?'#c9fff4':'#ffc0a0',stroke:'#343b34',strokeThickness:5}).setOrigin(.5);this.root.add(label);this.effects.push({...e,type:'damage',sprite:label,t:0,duration:.8});
+    }
     if(e.type==='coin'){
      const x=e.x-this.offset,y=GROUND-(BODY_HEIGHT[e.kind]||120)-20-55*p,count=e.reason==='defeat'?3:1;
      for(let i=0;i<count;i++){const cx=x+(i-(count-1)/2)*19*Math.sin(p*Math.PI),cy=y+22+Math.sin(p*Math.PI)*-15;g.fillStyle(0xd3ac55,fade);g.fillCircle(cx,cy,6);g.lineStyle(1,0x94723e,fade);g.strokeCircle(cx,cy,6);g.fillStyle(0xf4e9d0,fade);g.fillRect(cx-1.5,cy-1.5,3,3);}
      e.sprite.setPosition(x,y-2).setAlpha(Math.min(1,fade*2));this.root.bringToTop(e.sprite);if(p>=1)e.sprite.destroy();
     }
     if(e.type==='hail'){
-     for(let i=0;i<13;i++){
-      const x=e.x-this.offset-120+i*39,phase=(p+i*.08)%1;
-      const y=80+phase*(e.blocked?255:420);
-      g.lineStyle(2,0x78b4b0,fade*.85);g.strokeCircle(x,y,4);g.lineBetween(x+4,y-10,x+1,y-3);
+     for(let i=0;i<17;i++){
+      const x=e.x-this.offset-130+i*34,phase=(p+i*.08)%1,y=80+phase*(e.blocked?255:460);
+      beam(x+14,y-32,x,y,0xc0f1f2,4,fade);
+      g.fillStyle(0xe5ffff,fade);g.fillPoints([{x,y:y-9},{x:x+7,y},{x,y:y+9},{x:x-7,y}],true);g.lineStyle(2,0x337f92,fade);g.strokeCircle(x,y,8);
+      if(phase>.86){g.lineStyle(3,e.blocked?0xa7fff1:0xffcd92,fade);g.strokeEllipse(x,e.blocked?335:GROUND,18+24*(phase-.86),8);}
      }
     }
    }
@@ -395,18 +401,15 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(!this.ready)return;
    const dt=Math.min(delta/1000,.05),playing=model.status==='playing';
    const intro=model.status==='ready',vw=this.vw;
-   const targetOffset=intro?0:Math.max(0,Math.min(ROAD-vw*.58,model.x-vw*.28));
+   const targetOffset=intro?0:Math.max(0,Math.min(GATE-vw*.80,model.x-vw*.28));
    this.offset+=(targetOffset-this.offset)*Math.min(1,dt*8);
-   model.spawnEdge=this.offset+vw;
    if(playing)model.step(dt);
    const events=model.drainEvents();this.playEvents(events);onEvents(events);
    const t=intro?time/1000:model.time;
    const region=intro?this.previewAreaIndex:areaIndex(model.progress()),blend=intro||region===0?1:Math.min(1,(model.progress()-AREAS[region].at)/.035);
    this.drawLandscape(region,blend,t);
    this.decor.clear();this.shadows.clear();this.fx.clear();
-   const gateX=ROAD+50-this.offset;this.drawGate(gateX);this.exitLabel.setPosition(gateX,GROUND-280);
-   this.entryLabel.setVisible(!intro&&!model.bossDefeated);
-   if(!intro&&!model.bossDefeated){this.drawGate(vw-22,true);this.entryLabel.setPosition(vw-52,GROUND-238);}
+   this.drawGate(GATE-this.offset,t);
    // Small distance markers make scrolling legible, rather than a static left-side base.
    for(let p=800;p<ROAD;p+=800){
     const x=p-this.offset;if(x<-50||x>vw+50)continue;
@@ -432,7 +435,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     this.renderEntity('previewKeeper','keeper',vw*.54+this.offset,t*.65,1,1,0,0,false,1);present.add('previewKeeper');
     this.renderEntity('previewCow','cow',vw*.78+this.offset,t*.5,1,1,0,0,false,1);present.add('previewCow');
    }else{
-    for(const e of model.enemies){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,0,e.action,e.hitDir);}
+    for(const e of model.enemies){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,e.moving,e.action,e.hitDir);}
     for(const a of model.allies){const key='a'+a.id,rank=model.allies.filter(b=>b.type===a.type&&b.id<a.id).length;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir,GROUND+(rank%3)*24);}
    }
    for(const [key,obj] of this.sprites)if(!present.has(key)){obj.destroy();this.sprites.delete(key);this.contacts.delete(key);}
@@ -440,8 +443,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.cloud.setAlpha(boss?.8:0);if(boss){this.cloud.setPosition(boss.x-this.offset,GROUND-210).setDisplaySize(530,370);}
    if(model.shield>0){
     const x=heroX;
-    this.fx.lineStyle(3,0x499796,.6);this.fx.beginPath();this.fx.arc(x+95,GROUND-145,220,Math.PI,Math.PI*2);this.fx.strokePath();
-    this.fx.fillStyle(0x88b6a4,.07);this.fx.fillEllipse(x+95,GROUND-120,445,300);
+    this.fx.lineStyle(8,0x285c5b,.9);this.fx.beginPath();this.fx.arc(x+95,GROUND-145,220,Math.PI,Math.PI*2);this.fx.strokePath();this.fx.lineStyle(4,0x9ef1df,.95);this.fx.strokePath();
+    this.fx.fillStyle(0x88d6bb,.10);this.fx.fillEllipse(x+95,GROUND-120,445,300);
    }
    // Effects render above the units.
    this.root.bringToTop(this.fx);
