@@ -1,0 +1,14 @@
+Mode: Built-in image_gen / precise-object-edit
+Edit target: floorplan-3d-photo-v2.png
+Owner correction: lower-right equipment-labeled area is stairs; far-left exit-arrow destination is stairs; upper bay above the exit label is an elevator.
+Generated asset: floorplan-3d-access-v3.png
+
+Use case: precise-object-edit.
+Edit the attached completed studio dollhouse render with three corrections confirmed by the actual venue owner. This is a targeted factual correction, not a redesign.
+
+1. The narrow lower-right area currently labeled "화재제어장치" is actually a STAIRWELL. Remove that label completely. Within that same narrow footprint, render a clearly recognizable flight of stairs with several visible gray treads, preserving the enclosing footprint and the existing adjacent D-room boundary and doorway. Label it exactly "계단". Do not label it equipment, storage, or emergency exit.
+2. There is a second STAIRCASE at the far LEFT END of the upper-left corridor, at the tip/end destination of the existing left-pointing "출구" arrow. Add clearly visible stair treads within that far-left corridor end, using the existing corridor footprint. Keep the arrow pointing LEFT toward those stairs and retain the word "출구". Label this staircase exactly "계단". The stairs should be at the leftmost end, not above the exit word and not inside A room.
+3. The double-door bay directly ABOVE the word "출구" in the upper boundary is an ELEVATOR. Depict unmistakable brushed stainless steel elevator doors in that existing bay and label exactly "엘리베이터", above the doorway with a small leader line if needed. You may minimally extend the model at that bay to clarify the elevator cabin but do not move any adjacent room or change the corridor. This location is not a staircase or entrance outside.
+
+Invariants: Preserve exactly all A/B/C/D/E room footprints, their dimension labels, all existing room letters and Korean labels except the obsolete equipment label, mirrors, pale versus oak floors, gray/charcoal walls, TV/AC/table/fan fixtures, ceiling-free dollhouse style, camera angle, model base and clean ivory background. Do not change the TV positions, remove any room, create a new corridor, move the toilet or changing rooms, or swap C and D. Exactly two staircase locations: far upper-left corridor end and narrow lower-right bay next to D. Exactly one elevator: upper edge above 출구.
+Make stairs and elevator easy to identify at website size. Maintain crisp Korean sans-serif typography and precise 3D scale-model rendering.

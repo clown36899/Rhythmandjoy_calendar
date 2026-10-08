@@ -1,0 +1,16 @@
+Mode: Built-in image_gen / precise-object-edit
+Edit target: floorplan-3d-access-v3.png (intermediate generated image)
+Photo reference: roomE/image3.webp
+Generated asset: floorplan-3d-detail-v4.png
+Owner-confirmed corrections: two staircases, elevator above exit label, five labeled wall mirrors, E hall right-side standing AC, no central waiting-room label.
+
+Use case: precise-object-edit.
+Image 1 is the current studio floor-plan dollhouse EDIT TARGET. Image 2 is the real E room showing its white tall standing air conditioner against the RIGHT end, for appliance appearance reference.
+Make these FOUR focused changes, preserving every other aspect of image 1:
+
+1. MIRRORS: The current thin cyan/glowing strips are unclear. Replace them with physically clear, frameless silver-gray reflective mirror panels attached flush to the existing inward-facing room walls, with subtle reflections of the wood floor. NO luminous blue glass strips, NO aquarium/glass-partition appearance. Keep exact locations: A RIGHT wall, B LEFT wall (opposite sides of shared A/B wall), C RIGHT wall, D LEFT wall (opposite sides of shared C/D wall), E LEFT wall. They should look like dance studio wall mirrors, not freestanding windows. Add one crisp Korean label "거울" per hall, five labels total, with short discreet thin charcoal leader lines pointing to that hall's mirror face. Labels must not overlap room letters or dimensions. No duplicated labels within one room. Avoid thick blue edges or glowing bulbs that obscure the reflective face.
+2. E AIR CONDITIONER: Add the tall white standing air conditioner shown in image 2 at the far RIGHT end of E hall, tucked against E's outer right wall. It must be visually recognizable, not another pedestal fan. Preserve the existing E room footprint, floor, dark wall, mirror, and small fan. Do not place the AC in a corridor or the small changing room.
+3. ELEVATOR: The existing small door above the "출구" text must become a recognizable THREE-DIMENSIONAL OPEN-TOP ELEVATOR CABIN, like an apartment architectural model. Show brushed steel cabin walls, a visible cabin floor, a side handrail, and slightly open sliding doors facing the corridor. Render volume and interior depth, not only a flat closed double-door icon. Keep it at the same upper-edge bay directly ABOVE "출구"; a modest upward extension of only this bay into the margin is allowed for readable cabin volume. Keep the label "엘리베이터" above it. Do not move the toilet, stair, corridor or any practice room. If margin is tight, reduce the whole model slightly to keep every part and label in frame.
+4. REMOVE TEXT ONLY: Delete the central Korean label "대기실" entirely, leaving the corridor floor and its layout clean and unchanged. Do not replace it with another text.
+
+Invariants: Keep both newly corrected stairs and their "계단" labels (far left exit corridor end and lower-right bay beside D). Keep the left-pointing arrow and "출구". Keep A 10m × 6m, B 8.4m × 4.5m, C 4.5m × 3.5m, D 4.5m × 2.8m, E 6.5m × 6m exactly. Preserve all room footprint geometry, support rooms, black glazed doors, existing A/B TV/AC/tables, colors/materials and ivory background. No people, no invented amenities, no changes to room size. Retain premium, calm architectural model rendering with legible Korean text.
