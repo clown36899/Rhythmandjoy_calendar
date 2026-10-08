@@ -675,3 +675,25 @@ preview noindex·11개 sitemap 검사다. 이번에는 코드 변경이 없어 �
 - 이전 조사에서 언급한 포함용 조각의 noindex나 외부 서비스 설명은 이번 변경에 포함하지 않았다.
   미확인 색인 피해를 가정해 노출 정책을 넓게 바꾸지 않는다. 검색어 순위 상승 여부는 이후
   실제 검색 보고서로 판단하며, 색인 요청을 반복하거나 순위 상승을 보장하지 않는다.
+
+배포/운영 검증 결과:
+
+- 커밋 `28aec53`을 `origin/main`에 푸시한 뒤 변경된 정적 파일 85개만 배포했다.
+  운영 파일의 이전 버전 해시를 대조하고 새 사진을 먼저, 참조 HTML을 나중에 교체했다.
+- 첫 사전 검사에는 현재 페이지가 사용하지 않는 `fullcal_02.js`가 잘못 포함되어 파일 교체 전
+  중단됐다. 실제 HTML의 직접 호출부가 사용하는 `dist/swipeCalendar.js`로 검사 대상을 바로잡았다.
+  중단 시점에 신규 이미지 디렉터리가 없고 운영 HTML 해시가 이전 버전임을 확인했다.
+  두 번째 배포는 기존 캘린더 로더/실행 파일·v11 UI·방문 집계·원본 사진의 보존 검사를 통과했다.
+- 복구 백업: `/home/clown313python/rhythmjoy_ops/deploy-backups/seo-facilities-r1-28aec53`.
+  서버 파일은 커밋 파일과 해시 일치. 공개 11페이지·59이미지·기존 일정표 2페이지의
+  HTTPS 응답 **72개가 로컬 파일과 바이트 일치**했다.
+- 별칭 `/spaces/a/`는 대표 HTTPS 같은 경로로 301, sitemap 200, preview는 noindex 유지.
+  실제 Chrome 운영 화면에 A홀 25평형·10×6m·변경 사진이 나타나며 가로 넘침이 없다.
+  운영 `/schedule/` 프레임에서 기존 예약 이벤트 표시를 확인했다. 예약 쓰기는 실행하지 않았다.
+- 본문/메타가 변경된 공개 9주소와 기존 일정표 2주소에 한해 기존 네이버 IndexNow를
+  한 번 호출했고 **HTTP 200**으로 접수됐다. 포함용 조각·이미지·미리보기는 제출하지 않았다.
+  [공식 요청 규격](https://searchadvisor.naver.com/guide/indexnow-request)에 따른 갱신 통지이며
+  색인 갱신 완료나 순위 상승 보장은 아니다.
+- 근거: `output/seo-improvements-20261008/live-checks.json`, `image-savings.json`,
+  `indexnow-result.json`, `live-a-hall.png`, `live-guide.png` 및
+  `output/historical-stats-20261008/seo-improve-deployment.json`.
