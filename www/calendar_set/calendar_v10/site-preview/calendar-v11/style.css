@@ -3192,6 +3192,12 @@ html,body{font-family:Pretendard,Arial,sans-serif!important;font-size:14px!impor
 #calendarAll .fc-day,#singleRoomCalendar .fc-day{background:var(--paper)!important;color:var(--ink)!important}
 #calendarAll td.fc-day.fc-today,#singleRoomCalendar td.fc-day.fc-today{background:#f4e9e1!important}
 #calendarAll .fc-day-number,#singleRoomCalendar .fc-day-number{color:var(--ink)!important;font-size:11px!important}
+/* FullCalendar owns today's date; emphasize its existing month cells in both calendars. */
+#calendarAll .fc-dayGridMonth-view td.fc-day.fc-today,
+#singleRoomCalendar .fc-dayGridMonth-view td.fc-day.fc-today{background:#f7ddd0!important;box-shadow:inset 0 0 0 2px var(--accent)}
+#calendarAll .fc-dayGridMonth-view .fc-day-top.fc-today .fc-day-number,
+#singleRoomCalendar .fc-dayGridMonth-view .fc-day-top.fc-today .fc-day-number{display:inline-flex;align-items:center;justify-content:center;gap:2px;padding:1px 2px;margin:2px;max-width:calc(100% - 4px);border-radius:4px;background:var(--green);color:#fff!important;font-size:10px!important;font-weight:800;line-height:18px;white-space:nowrap}
+.fc-dayGridMonth-view .fc-day-top.fc-today .fc-day-number::before{content:"오늘";font-size:9px;font-weight:700}
 .month-header-weekday{color:var(--ink)!important;font-size:11px!important;height:26px!important;line-height:26px!important;padding:0!important}
 .month-header-weekday.sunday,.fc-sun .fc-day-number{color:var(--accent)!important}
 #calendarAll .fc-day-grid-event,#singleRoomCalendar .fc-day-grid-event{height:16px!important;min-height:16px!important;line-height:14px!important;margin-top:2px!important;margin-bottom:2px!important}
@@ -3207,14 +3213,8 @@ html,body{font-family:Pretendard,Arial,sans-serif!important;font-size:14px!impor
   body.desktop-room-detail-open #calendarAll .fc-timeGrid-view .custom-info{display:none}
 }
 /* A stable toolbar: room selection and date controls have separate aligned rows. */
-:root{--calendar-controls-height:128px;--calendar-title-height:34px}
+:root{--calendar-controls-height:96px;--calendar-title-height:34px}
 .bottomtop{height:var(--calendar-controls-height)!important;padding:0 10px 8px;box-sizing:border-box;gap:4px;justify-content:flex-start}
-#fixed-top{margin:0!important;position:static!important;min-height:28px!important;height:28px!important;padding:0!important;width:100%}
-#fixed-top .container-fluid{height:28px;padding:0!important;justify-content:flex-start;gap:7px}
-#fixed-top .logoimg{width:22px!important;height:22px!important;margin:0!important}
-#fixed-top .navbar-brand{margin:0;padding:0}
-#fixed-top .titlerhy{font-size:11px!important}
-#titleMonth{display:none}
 #bottom{position:static!important;flex-shrink:0;align-content:start!important;display:grid!important;grid-template-columns:minmax(0,1fr);gap:7px!important;height:auto!important;min-height:0!important;padding:2px 0 0!important;margin:0!important;border:0!important;overflow:visible!important;width:100%;transition:none!important}
 #roombtnn{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;align-items:center;margin:0!important;width:100%}
 #roombtnn .room-btn{width:100%!important;min-width:0!important;max-width:none!important;height:36px!important;min-height:36px!important;margin:0!important;padding:0!important;font-size:12px!important;line-height:1!important;display:flex;align-items:center;justify-content:center}
@@ -3228,7 +3228,7 @@ html,body{font-family:Pretendard,Arial,sans-serif!important;font-size:14px!impor
 #calendarAll .swiper-container{height:calc(100% - var(--calendar-controls-height) - var(--calendar-title-height))!important;top:var(--calendar-title-height)!important}
 #singleRoomCalendarPanel{height:calc(100% - var(--calendar-controls-height))!important;bottom:var(--calendar-controls-height)!important}
 @media(min-width:700px){
-  :root{--calendar-controls-height:86px}
+  :root{--calendar-controls-height:54px}
   #bottom{grid-template-columns:minmax(220px,1fr) auto;gap:18px!important;align-items:center}
   #roombtnn{max-width:420px}
 }

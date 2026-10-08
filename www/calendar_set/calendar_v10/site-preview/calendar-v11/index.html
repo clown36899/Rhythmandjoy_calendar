@@ -61,7 +61,7 @@
   <script src="/calendar_set/calendar_v10/packages/core/locales/ko.js"></script>
   <script src="browser-guards.js?v=observer-guard-20260615"></script>
 
-  <link href="style.css?v=embed-date-header-20261008" rel="stylesheet" />
+  <link href="style.css?v=embed-date-header-20261008-2" rel="stylesheet" />
   <link href="/calendar_set/calendar_v10/packages/timegrid/main.css" rel="stylesheet" />
 
 
@@ -87,16 +87,6 @@
 <body oncontextmenu="return false" onselectstart="return false" ondragstart="return false">
 
 
-  <modallogo class="logobackground">
-    <div class="center-modal">
-      <img draggable="false" id="logoimga" src="/calendar_set/calendar_v10/img/logo.png" alt="" />
-      <div class="timelogo" style="text-align: center">
-        <span id="clock" style="color: gray">clock</span>
-        <span id="apm" style="color: gray"></span>
-      </div>
-    </div>
-  </modallogo>
-
   <div id="main_room_title"></div>
   <div id="calendarWrapper" style="width: 100%; height: 100%;">
     <div id="calendarAll" class="itemflex"></div>
@@ -106,25 +96,6 @@
     </aside>
   </div>
   <div class="bottomtop">
-    <nav class="navbar navbar-dark bg-dark fixed-top" id="fixed-top">
-      <div class="container-fluid">
-        <div class="logoimg" oncontextmenu="return false">
-          <img draggable="false" src="/calendar_set/calendar_v10/img/logo.png" style="width: 100%; height: 100%; object-fit: cover" alt=""
-            oncontextmenu="return false" />
-        </div>
-        <div class="navbar-brand" oncontextmenu="return false">
-          <div class="titlerhy" style="float: left">리듬앤조이 연습실</div>
-        </div>
-
-        <div>
-          <div style="display: flex">
-            <span id="titleMonth"></span>
-          </div>
-        </div>
-
-
-      </div>
-    </nav>
     <div id="bottom">
       <div id="roombtnn" role="group" aria-label="룸 선택">
 <button type="button" class="room-btn" id="Abtn_pick_oneroom" aria-pressed="false">A</button>
@@ -462,7 +433,6 @@
     var windowheight = window.innerHeight;
     var calendarAllheight = document.querySelector("body").getBoundingClientRect().height;
     var bottomheight = document.querySelector("#bottom").clientHeight;
-    var topnavheight = document.querySelector("#fixed-top").clientHeight;
 
     function changehecon() { }
 
@@ -472,10 +442,6 @@
     }
     window.addEventListener("load", function () {
 
-
-      var viewTitle = calendar?.view?.title || calendar?.calendar?.view?.title || "";
-      document.getElementById('titleMonth').innerHTML = viewTitle;
-      document.getElementById("titleMonth").style.color = "#029df7";
 
       // 🟢 [추가] 초기 로드 시 월간 뷰 레이아웃 적용
       applyMonthViewWidth();
@@ -505,52 +471,6 @@
       });
     });
   </script>
-<script>
-  as = document.querySelector(".center-modal");
-
-  document.querySelector(".navbar-brand").addEventListener("click", function () {
-    document.querySelector(".logobackground").style.top = "calc(var(--vh, 1vh) * 0)";
-  });
-  document.querySelector(".logobackground").addEventListener("click", function () {
-    document.querySelector(".logobackground").style.top = "calc(var(--vh, 1vh) * -300)";
-  });
-
-  // document.querySelector(".navbar-brand").addEventListener("click", function(){
-  //   document.querySelector(".logobackground").style.top="calc(var(--vh, 1vh) * 0)";
-
-  // })
-  // document.querySelector(".navbar-brand").addEventListener("click", function(){
-  //   document.querySelector(".logobackground").style.top="calc(var(--vh, 1vh) * 0)";
-
-  // })
-  // document.querySelector("#fixed-top").addEventListener("click", function(){
-  //   document.querySelector(".logobackground").style.top="calc(var(--vh, 1vh) * -100)";
-
-  // })
-</script>
-
-<script>
-  var Target = document.getElementById("clock");
-  function clock() {
-    var time = new Date();
-
-    var month = time.getMonth();
-    var date = time.getDate();
-    var day = time.getDay();
-    var week = ["일", "월", "화", "수", "목", "금", "토"];
-
-    var hours = time.getHours();
-    var minutes = time.getMinutes();
-    var seconds = time.getSeconds();
-
-    Target.innerText =
-      `${month + 1}월 ${date}일 ${week[day]}요일 ` +
-      `${hours < 10 ? `0${hours}` : hours}:${minutes < 10 ? `0${minutes}` : minutes}:${seconds < 10 ? `0${seconds}` : seconds}`;
-  }
-  clock();
-  setInterval(clock, 1000); // 1초마다 실행
-</script>
-
 
 </body>
 </html>
