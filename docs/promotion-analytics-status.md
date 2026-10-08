@@ -243,3 +243,21 @@ Apache 후보 설정 `httpd -t` 통과. 네이버 스마트플레이스 부가�
   `naver-index-baseline.png`, `google-sitemap-11-processed.png`,
   `google-performance-28day-baseline.png`, `blog-homepage-links-published.png`,
   `blog-search-enabled.png`.
+
+#### 운영 반영 결과
+
+- `eba4386` 커밋을 origin/main에 푸시한 뒤, 해당 커밋의 정적 파일 28개만 배포했다.
+  기존 사이트/미리보기 백업:
+  `/home/clown313python/rhythmjoy_ops/deploy-backups/seo-content-eba4386/content-before.tgz`.
+  새 IndexNow 증명 파일을 제외한 기존 정적 파일은 이 백업으로 복구 가능하다.
+- 운영 공개 HTML 11개, CSS/JS, sitemap.xml이 로컬 빌드와 바이트 단위 일치했다.
+  미리보기 noindex와 증명 URL 200을 확인했다. Apache 설정/서비스를 변경하지 않았다.
+- v10 PC/모바일 HTML, server-calendar-sync.js, 독립 v11 HTML, 공용 .htaccess의
+  배포 전후 SHA-256이 모두 동일했다.
+- 네이버 IndexNow에 기존 사이트맵의 변경된 11개 URL 제출: **HTTP 200**, 응답 본문 없음.
+  접수 결과는 `output/site-preview-20261008/indexnow-result.json`에 기록했다.
+  Google 전송이나 검색 순위 상승 완료로 해석하지 않는다.
+- 운영 브라우저에서 홈의 4~25평/대로변 3분, A홀 쿠션 마루/틈이 없는 마루 문구를 확인했다.
+  B–E홀 본문은 운영 응답과 검증된 빌드의 일치로 확인했다. 새 캡션 CSS와 대표 이미지 메타도 일치한다.
+- 운영 화면 근거: `live-home-content.png`, `live-room-a-floor.png`.
+  모바일 검사에 사용한 임시 viewport는 복원했다.
