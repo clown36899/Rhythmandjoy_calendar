@@ -1,24 +1,26 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './data.js?v=20';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './data.js?v=21';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const ROAD_EDGE=514,GROUND=542;
 const MODEL_MAP={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',rabbit:'rabbit',keeper:'keeper1',cow:'cow1',scholar:'scholar1'};
 // Presentation only: combat and rewards remain exclusively in Journey.
-const FX_ART={hit:'CleanImpact',hurt:'CleanImpact',swipe:'CleanSlash',claw:'CleanCurse',hex:'CleanCurse',guard:'CleanGuard',stomp:'Dust',rush:'CleanSlash',charge:'Dust',summon:'Seal',shelter:'Ward',heal:'Leaf',upgrade:'Seal',vanish:'Smoke'};
-const FX_LIFE={hit:.25,hurt:.28,swipe:.25,claw:.24,hex:.28,guard:.26,stomp:.68,rush:1.3,charge:.48,summon:.68,shelter:.65,heal:1.05,upgrade:1,vanish:1.05,projectile:SHOT_TIME,hail:1.15};
-// Patch anchors are in the unflipped whole-body drawing; alpha clipping keeps them on the body.
+const FX_ART={hit:'CleanImpact',hurt:'CleanImpact',hex:'CleanCurse',guard:'CleanGuard',stomp:'Dust',rush:'CleanSlash',charge:'Dust',summon:'Seal',shelter:'Ward',heal:'Leaf',upgrade:'Seal',vanish:'Smoke'};
+const FX_LIFE={hit:.20,hurt:.20,swipe:.16,claw:.16,hex:.28,guard:.26,stomp:.68,rush:1.3,charge:.48,summon:.68,shelter:.65,heal:1.05,upgrade:1,vanish:1.05,projectile:SHOT_TIME,hail:1.15};
+// Surface landmarks belong to each whole-body cel, not the padded atlas rectangle.
+// x/y are the torso centre; w/h its surface extent. Only sockets move: never the art/limbs.
 const WOUNDS={
- cow:[['Fur',.43,.55,.25,0],['Scar',.68,.66,.17,-.2]],
- haetae:[['Scar',.51,.58,.27,0],['Scar',.7,.7,.17,.4]],
- mount:[['Scar',.55,.70,.20,0],['Cloth',.43,.32,.14,0]],
- rabbit:[['Scar',.55,.68,.2,0],['Cloth',.42,.79,.14,.2]],
- girl:[['Cloth',.54,.72,.22,0],['Scar',.72,.75,.12,0]],
- keeper:[['Cloth',.54,.73,.23,0],['Scar',.41,.78,.16,0]],
- scholar:[['Cloth',.51,.65,.25,0],['Scar',.63,.81,.15,0]],
- skirt:[['Cloth',.52,.46,.36,0],['Cloth',.68,.62,.2,.4]],
- horse:[['Cloth',.53,.68,.24,0],['Scar',.38,.37,.12,0]],
- reaper:[['Dark',.62,.69,.25,0],['Dark',.49,.86,.18,.2]],
- boss:[['Scar',.46,.57,.24,0],['Scar',.63,.65,.2,.35]]
+ cow:{materials:['Fur','Scar'],size:[.44,.43],poses:[[.48,.55,-.05],[.48,.55,-.03],[.47,.56,0],[.49,.56,.04],[.50,.55,.02],[.49,.54,-.03]],attack:[[.49,.55,-.03],[.48,.55,.12],[.49,.57,.28],[.50,.59,.33],[.49,.60,.36],[.50,.56,.13],[.49,.54,-.04],[.49,.55,-.02]]},
+ haetae:{materials:['Fur','Scar'],size:[.48,.37],poses:[[.46,.61,0],[.47,.60,.04],[.46,.61,-.03],[.47,.59,.02]],attack:[[.47,.60,0],[.45,.58,-.13],[.49,.63,.09],[.47,.62,0]]},
+ mount:{materials:['Fur','Scar'],size:[.46,.28],poses:[[.48,.73,0],[.49,.72,.03],[.48,.74,-.02],[.48,.73,0]],attack:[[.46,.70,-.14],[.48,.71,-.06],[.50,.74,.08],[.48,.73,0]]},
+ rabbit:{muzzle:[.79,.67],materials:['Scar','Scar'],size:[.22,.22],poses:[[.48,.75,-.08],[.50,.74,.03],[.48,.75,0],[.49,.74,-.04]],attack:[[.47,.75,-.08],[.46,.75,-.10],[.48,.74,.06],[.48,.75,0]]},
+ girl:{muzzle:[.77,.53],materials:['Cloth','Cloth'],size:[.32,.28],poses:[[.49,.75,.03],[.51,.76,-.04],[.49,.75,.04],[.50,.76,-.02]],attack:[[.52,.75,-.06]]},
+ keeper:{muzzle:[.80,.52],materials:['Cloth','Cloth'],size:[.21,.23],poses:[[.51,0.66,-.10],[.50,0.65,-.06],[.50,0.66,-.07],[.50,0.65,-.09]],attack:[[.52,0.66,0],[.51,0.65,-.09],[.41,0.66,.21],[.46,0.66,.10]]},
+ keeperBrush:{muzzle:[.84,.53],materials:['Cloth','Cloth'],size:[.22,.25],poses:[[.50,0.67,-.07],[.51,0.67,0],[.50,0.68,-.08],[.51,0.67,-.03]],attack:[[.51,0.67,0],[.47,0.66,-.16],[.47,0.67,.14],[.49,0.67,.04]]},
+ scholar:{spots:[[-.12,.18],[.20,.38]],muzzle:[.79,.51],materials:['Cloth','Cloth'],size:[.25,.32],poses:[[.54,.70,.02],[.55,.69,.02],[.54,.70,.03],[.55,.69,.01]],attack:[[.52,.71,0],[.49,.72,.10],[.47,.72,.16],[.51,.71,.04]]},
+ skirt:{materials:['Cloth','Cloth'],size:[.50,.47],poses:[[.49,.38,-.06],[.50,.37,.05],[.49,.38,-.04],[.50,.37,.05]],attack:[[.48,.38,-.08],[.47,.39,-.13],[.54,.40,.12],[.51,.38,.04]]},
+ horse:{spots:[[-.1,.34],[.20,.48]],materials:['Dark','Cloth'],size:[.20,.29],poses:[[.51,.65,-.07],[.52,.65,-.02],[.50,.64,-.06],[.51,.65,-.03]],attack:[[.51,.63,-.08],[.55,.61,-.20],[.48,.66,.12],[.52,.65,.03]]},
+ reaper:{spots:[[-.12,.34],[.18,.48]],muzzle:[.28,.57],materials:['Dark','Dark'],size:[.23,.35],poses:[[.53,.66,.04],[.52,.66,.02],[.53,.66,.04],[.52,.66,.02]],attack:[[.54,.67,0],[.55,.66,-.05],[.53,.67,.05],[.54,.67,0]]},
+ boss:{materials:['Fur','Scar'],size:[.48,.45],poses:[[.53,.60,-.02],[.53,.59,.03],[.54,.60,-.02],[.53,.59,.02]],attack:[[.54,.58,-.12],[.56,.53,-.22],[.50,.64,.15],[.52,.62,.04]]}
 };
 const IMPACT={horn:{size:95,stop:.035,shake:.055},stone:{size:72},seed:{size:58},ink:{size:85},seal:{size:90},charm:{size:84},hex:{size:90},stomp:{size:125,stop:.055,shake:.11},rush:{size:115,stop:.045,shake:.08},boss:{size:115,stop:.05,shake:.1},horse:{size:90,shake:.04},hail:{size:64},physical:{size:75}};
 export function makeGame(model,onReady,onFrame,onEvents){
@@ -200,6 +202,25 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(const e of this.effects)e.sprite?.destroy();this.effects=[];this.offset=0;this.heroPose=0;this.shake=0;this.hitStop=0;this.impactCooldown=0;this.contacts.clear();
   }
   previewTexture(key){return this.textures.get(key).getSourceImage().toDataURL?.('image/png');}
+  bodyPose(base,kind){
+   base=base.replace(/^injured[12]__/, '');
+   const profile=WOUNDS[base.startsWith('keeperBrush')?'keeperBrush':kind];
+   if(!profile)return {x:.5,y:.5,w:.4,h:.4,angle:0};
+   let n=Number(base.match(/(\d+)$/)?.[1]||0),poses=profile.poses;
+   if(kind==='cow'&&n===56)n=10;
+   const attack=base.includes('Strike')||base.endsWith('Cast')||(!base.includes('Walk')&&n>=(kind==='cow'?48:4));
+   if(attack){poses=profile.attack;n=base.includes('Strike')?n:Math.max(0,n-(kind==='cow'?48:4));}
+   // The imported cow video has 48 exposures: interpolate the measured torso sockets only.
+   const phase=kind==='cow'&&!attack?n/8:n,i=Math.floor(phase)%poses.length,j=(i+1)%poses.length,q=phase%1;
+   const a=poses[i],b=poses[j];
+   return {x:a[0]+(b[0]-a[0])*q,y:a[1]+(b[1]-a[1])*q,angle:a[2]+(b[2]-a[2])*q,w:profile.size[0],h:profile.size[1]};
+  }
+  bodyPoint(image,kind,side=0,weapon=false){
+   const base=image.texture.key.replace(/^injured[12]__/, ''),profile=WOUNDS[base.startsWith('keeperBrush')?'keeperBrush':kind];
+   const body=weapon&&profile?.muzzle?{x:profile.muzzle[0],y:profile.muzzle[1],w:0}:this.bodyPose(base,kind),sx=(image.flipX?-1:1),angle=image.rotation||0;
+   const x=((body.x-.5)*sx+side*body.w*.38)*image.displayWidth,y=(body.y-(image.originY??1))*image.displayHeight;
+   return {x:image.x+x*Math.cos(angle)-y*Math.sin(angle),y:image.y+x*Math.sin(angle)+y*Math.cos(angle)};
+  }
   injuryTexture(base,kind,hp,maxHp){
    // Bounded by existing poses × two health bands; never allocated every draw or per actor.
    base=base.replace(/^injured[12]__/, '');
@@ -209,12 +230,19 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const width=Math.max(1,Math.round(height*source.width/source.height));
    const patch=document.createElement('canvas');patch.width=width;patch.height=height;
    const paint=patch.getContext('2d');
-   WOUNDS[kind].slice(0,level).forEach(([material,x,y,size,angle])=>{
-    const mark=this.textures.get('wound'+material+level).getSourceImage(),h=height*size,w=h*mark.width/mark.height;
-    paint.save();paint.translate(x*width,y*height);paint.rotate(angle);paint.drawImage(mark,-w/2,-h/2,w,h);paint.restore();
-   });
+   const body=this.bodyPose(base,kind),profile=WOUNDS[base.startsWith('keeperBrush')?'keeperBrush':kind];
+   // Existing scars persist at low HP; the second mark is additive, not a replacement sticker.
+   for(let i=0;i<level;i++){
+    const mark=this.textures.get('wound'+profile.materials[i]+(i?2:1)).getSourceImage();
+    const h=height*body.h*(i?.37:.47),w=h*mark.width/mark.height;
+    paint.save();paint.translate(body.x*width,body.y*height);paint.rotate(body.angle);
+    const spot=profile.spots?.[i]||[i?.19:-.16,i?.15:-.10];paint.translate(spot[0]*body.w*width,spot[1]*body.h*height);
+    paint.globalAlpha=i?.72:.82;paint.rotate(i?.22:-.12);paint.drawImage(mark,-w/2,-h/2,w,h);paint.restore();
+   }
    paint.globalCompositeOperation='destination-in';paint.drawImage(source,0,0,width,height);
-   const texture=this.textures.createCanvas(key,width,height),ctx=texture.getContext();ctx.drawImage(source,0,0,width,height);ctx.drawImage(patch,0,0);texture.refresh();
+   const texture=this.textures.createCanvas(key,width,height),ctx=texture.getContext();ctx.drawImage(source,0,0,width,height);
+   // Multiply lets the character's own watercolour and cloth folds remain visible through damage.
+   ctx.globalCompositeOperation=profile.materials[0]==='Dark'?'source-over':'multiply';ctx.drawImage(patch,0,0);ctx.globalCompositeOperation='source-over';texture.refresh();
    this.grounding.set(key,this.grounding.get(base)??1);this.injuryTextures.set(key,true);return key;
   }
   placeOnGround(image,x,height,groundY=GROUND){
@@ -243,6 +271,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
      this.shake=Math.max(this.shake,profile.shake||0);
      if(e.weapon==='hex')e.art='CleanCurse';
     }
+    if(e.type==='hail-impact')for(const fx of this.effects)if(fx.type==='hail'){fx.blocked=e.blocked;fx.impacted=true;}
     if(e.type==='projectile'&&e.actor==='girl')this.heroPose=.25;
     if(e.type==='vanish'){
      const living=this.sprites.get((e.enemy===false?'a':'e')+e.actor);
@@ -298,8 +327,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.root.bringToTop(image);
    if(enemy&&action?.kind==='enemy'){
     const p=Math.min(1,action.elapsed/ENEMY_STRIKE.duration),impact=ENEMY_STRIKE.impact/ENEMY_STRIKE.duration,dir=action.dir??-1;
-    const thrust=p<impact?-Math.sin(p/impact*Math.PI/2)*7:Math.sin((p-impact)/(1-impact)*Math.PI)*22;
-    image.x+=dir*thrust;image.setAngle(dir*(p<impact?-4:7)*Math.sin(p*Math.PI));
+    const thrust=p<impact?-Math.sin(p/impact*Math.PI)*7:22*(1-(p-impact)/(1-impact))**2;
+    image.x+=dir*thrust;image.setAngle(dir*(p<impact?-4*Math.sin(p/impact*Math.PI):5*(1-p)/(1-impact)));
     // Whole-body drawings carry the pose; do not distort or hinge individual limbs.
     if(p<impact){this.fx.lineStyle(2,0x9c6958,.35);this.fx.lineBetween(image.x-dir*20,groundY-height*.6,image.x-dir*43,groundY-height*.63);}
    }else if(enemy&&windup>0){image.setAngle(Math.sin(windup*8)*1.8+(type==='horse'?5:0));}
@@ -357,49 +386,63 @@ export function makeGame(model,onReady,onFrame,onEvents){
      g.fillStyle(color,Math.min(1,(1-p)*1.7));g.fillTriangle(xx-r,yy,xx+r,yy-r,xx,yy+r*2);
     }
    };
+   const contact=e=>{
+    const actor=e.type==='hurt'?this.hero:this.sprites.get((e.enemy?'e':'a')+e.actor);
+    if(actor){const at=this.bodyPoint(actor,e.kind,-(e.dir||1));e.contact={x:at.x+this.offset,y:at.y};}
+    const at=e.contact||{x:e.x,y:(e.groundY??GROUND)-(BODY_HEIGHT[e.kind]||132)*.52};
+    return {x:at.x-this.offset,y:at.y};
+   };
    for(const e of this.effects){
-    e.t=Math.min(e.duration,e.t+dt);const p=e.t/e.duration,fade=1-p,tail=p<.48?1:(1-p)/.52,x=(e.x??e.from??model.x)-this.offset,ground=e.groundY??GROUND;
+    e.t=Math.min(e.duration,e.flight?e.flight.t:e.at!==undefined?Math.max(0,model.time-e.at):e.t+dt);const p=e.t/e.duration,fade=1-p,tail=p<.48?1:(1-p)/.52,x=(e.x??e.from??model.x)-this.offset,ground=e.groundY??GROUND;
     if(e.type==='projectile'){
+     if(p>=1)continue; // The contact flash replaces the projectile on the same model tick.
      const stone=e.kind==='stone',seed=e.kind==='seed',ink=e.kind==='ink',seal=e.kind==='seal',hex=e.kind==='hex',dir=Math.sign(e.to-e.from)||1;
-     const from=e.from+dir*18,fy=ground-(e.sourceKind==='girl'?65:e.sourceKind==='reaper'?130:seed?62:78),ty=(e.targetGroundY??GROUND)-(e.hit===false?145:(BODY_HEIGHT[e.targetKind]||132)*.52),travel=p;
-     const at=q=>({x:from+(e.to-from)*q-this.offset,y:fy+(ty-fy)*q-Math.sin(q*Math.PI)*(stone?64:seed?16:30)}),head=at(travel);
+     const source=e.actor==='girl'?this.girl:this.sprites.get((e.enemy?'e':'a')+e.actor);
+     const target=e.targetActor===null?this.hero:this.sprites.get((e.enemy?'a':'e')+e.targetActor);
+     if(!e.launchPoint){const at=source?this.bodyPoint(source,e.sourceKind,0,true):{x:e.from-this.offset+dir*18,y:ground-78};e.launchPoint={x:at.x+this.offset,y:at.y};}
+     const close=target&&Math.abs((target.x+this.offset)-(e.to+(e.targetActor===null?37:0)))<=55;
+     const end=close?this.bodyPoint(target,e.targetKind,-dir):{x:e.to-this.offset,y:(e.targetGroundY??GROUND)-(BODY_HEIGHT[e.targetKind]||132)*.52};
+     if(e.hit===false)end.y=(e.targetGroundY??GROUND)-145;
+     const from=e.launchPoint.x,fy=e.launchPoint.y,ty=end.y,travel=p;
+     const at=q=>({x:(from-this.offset)+(end.x-(from-this.offset))*q,y:fy+(ty-fy)*q-Math.sin(q*Math.PI)*(stone?28:seed?8:16)}),head=at(travel);
      const color=hex?0xc49ae6:stone?0xeac276:seed?0xc3e975:ink?0x53c1b2:0x8fe6d5;
-     ribbon(Array.from({length:5},(_,i)=>at(Math.max(0,travel-.2+i*.05))),stone?3:ink?6:4,color,tail);
+     ribbon(Array.from({length:5},(_,i)=>at(Math.max(0,travel-.2+i*.05))),stone?3:ink?6:4,color,1);
      if(hex){g.fillStyle(0x6b3e91,1);g.fillEllipse(head.x,head.y,23,14);g.fillStyle(0xf3defb,1);g.fillEllipse(head.x-dir*3,head.y-2,12,6);}
-     else if(stone){g.fillStyle(0x574737,tail);g.fillPoints([{x:head.x-12,y:head.y-5},{x:head.x-4,y:head.y-11},{x:head.x+11,y:head.y-6},{x:head.x+10,y:head.y+7},{x:head.x-8,y:head.y+9}],true);g.fillStyle(0xd5b479,tail);g.fillEllipse(head.x-1,head.y-2,15,11);}
-     else if(seed){g.fillStyle(0x375840,tail);g.fillEllipse(head.x,head.y,24,15);g.fillStyle(0xe6f4af,tail);g.fillEllipse(head.x+dir*3,head.y-2,15,8);}
-     else if(ink){g.fillStyle(0x173e40,tail);g.fillEllipse(head.x,head.y,31,18);g.lineStyle(3,0xa3efe0,tail);g.lineBetween(head.x-dir*10,head.y-5,head.x+dir*11,head.y-1);}
+     else if(stone){g.fillStyle(0x574737,1);g.fillPoints([{x:head.x-12,y:head.y-5},{x:head.x-4,y:head.y-11},{x:head.x+11,y:head.y-6},{x:head.x+10,y:head.y+7},{x:head.x-8,y:head.y+9}],true);g.fillStyle(0xd5b479,1);g.fillEllipse(head.x-1,head.y-2,15,11);}
+     else if(seed){g.fillStyle(0x375840,1);g.fillEllipse(head.x,head.y,24,15);g.fillStyle(0xe6f4af,1);g.fillEllipse(head.x+dir*3,head.y-2,15,8);}
+     else if(ink){g.fillStyle(0x173e40,1);g.fillEllipse(head.x,head.y,31,18);g.lineStyle(3,0xa3efe0,1);g.lineBetween(head.x-dir*10,head.y-5,head.x+dir*11,head.y-1);}
      else{
       // An actual paper shape and vermilion stroke identify a talisman, even without color glow.
       const corners=[{x:head.x-dir*13,y:head.y-15},{x:head.x+dir*12,y:head.y-9},{x:head.x+dir*8,y:head.y+18},{x:head.x-dir*16,y:head.y+12}];
-      g.fillStyle(0xffefd0,tail);g.fillPoints(corners,true);g.lineStyle(3,0x334e45,tail);g.strokePoints(corners,true);g.lineStyle(4,0xb64d33,tail);g.lineBetween(head.x,head.y-8,head.x-3,head.y+9);
-      if(seal){g.lineStyle(3,0x73d1bd,tail);g.strokeEllipse(head.x,head.y,46,50);}
+      g.fillStyle(0xffefd0,1);g.fillPoints(corners,true);g.lineStyle(3,0x334e45,1);g.strokePoints(corners,true);g.lineStyle(4,0xb64d33,1);g.lineBetween(head.x,head.y-8,head.x-3,head.y+9);
+      if(seal){g.lineStyle(3,0x73d1bd,1);g.strokeEllipse(head.x,head.y,46,50);}
      }
     }
-    if(e.type==='hit'||e.type==='hurt'){
-     const y=ground-(BODY_HEIGHT[e.kind]||132)*.52,size=(IMPACT[e.weapon]||IMPACT.physical).size;
-     paint(e,x,y,size,size*.8,(e.dir||1)>0?0:180,tail);
-     if(!e.enemy)e.sprite.setTint(0xffbdac);else e.sprite.clearTint();
-     flecks(x,y,p,e.enemy?0xf7cc72:0xe99379,3,40,15);
-    }
-    if(e.type==='swipe'){
-     const dir=Math.sign(e.to-e.x)||1,y=(e.targetGroundY??GROUND)-(BODY_HEIGHT[e.targetKind]||132)*.47;
-     paint(e,e.to-this.offset-dir*18,y,100,95,dir>0?180:0,tail*.9);
-     flecks(e.to-this.offset,y,p,0xf6d297,5,70,30);
-    }
-    if(e.type==='claw'||e.type==='hex'){
-     const dir=Math.sign(e.to-e.x)||-1,y=(e.targetGroundY??GROUND)-(BODY_HEIGHT[e.targetKind]||132)*.52,xx=e.to-this.offset;
-     if(e.type==='hex'){
-      const q=Math.min(1,p*3),startY=GROUND-BODY_HEIGHT.reaper*.64;
-      ribbon(Array.from({length:8},(_,i)=>{const a=Math.max(0,q-.5+i*.5/7);return {x:e.x+(e.to-e.x)*a-this.offset,y:startY+(y-startY)*a+Math.sin(a*Math.PI)*-27};}),11,0xb69acf,tail);
+    if(e.type==='hit'||e.type==='hurt'||e.type==='guard'){
+     const at=contact(e),dir=e.dir||1,blocked=e.type==='guard',profile=IMPACT[e.weapon]||IMPACT.physical;
+     const color=blocked?0x9be2d6:e.weapon==='seed'?0xc4e88b:e.weapon==='hex'?0xd2b2ef:['ink','seal','charm'].includes(e.weapon)?0x8be3d9:0xffd485;
+     const size=profile.size*.48,peak=Math.max(0,1-e.t/.065),remain=(1-p)**2;
+     // One compact, immediate contact. The broad painted image is only a low-alpha trailing wisp.
+     if(e.sprite)paint(e,at.x,at.y,size*1.3,size,dir>0?0:180,remain*.30,Math.max(.38,p));
+     if(blocked){
+      g.lineStyle(4,0x3b605c,remain);g.beginPath();g.arc(at.x-dir*8,at.y,20+9*p,dir>0?-.9:Math.PI-.9,dir>0?.9:Math.PI+.9);g.strokePath();
+      g.lineStyle(2,color,remain);g.beginPath();g.arc(at.x-dir*8,at.y,18+9*p,dir>0?-.9:Math.PI-.9,dir>0?.9:Math.PI+.9);g.strokePath();
+     }else{
+      const radius=5+size*.30*Math.sqrt(p);
+      g.lineStyle(3,color,remain);g.strokeCircle(at.x,at.y,radius);
+      if(peak>0){const r=5+size*.10*peak;g.fillStyle(0x34484a,peak);g.fillPoints([{x:at.x-r*1.8,y:at.y},{x:at.x,y:at.y-r*1.6},{x:at.x+r*1.8,y:at.y},{x:at.x,y:at.y+r*1.6}],true);g.fillStyle(0xfff9df,peak);g.fillCircle(at.x,at.y,r);}
      }
-     paint(e,xx,y,e.type==='hex'?90:100,85,dir<0?180:0,tail);
-     if(e.type==='claw'&&e.kind!=='reaper')e.sprite.setTint(0xffc2a5);
+     for(let i=0;i<4;i++){
+      const angle=(i-1.5)*.58,spread=(8+26*p),xx=at.x+dir*Math.cos(angle)*spread,yy=at.y+Math.sin(angle)*spread;
+      g.lineStyle(i%2?2:3,color,remain);g.lineBetween(xx,yy,xx+dir*Math.cos(angle)*(7+8*p),yy+Math.sin(angle)*7);
+     }
     }
-    if(e.type==='guard'){
-     const dir=Math.sign((e.from??e.x+1)-e.x)||1,y=ground-70;
-     paint(e,x+dir*45,y,100,105,dir>0?0:180,tail);
-     flecks(x+dir*68,y,p,0xffd481,7,72,25);
+    if(e.type==='swipe'||e.type==='claw'||e.type==='hex'){
+     const dir=Math.sign(e.to-e.x)||1,target=this.sprites.get((e.type==='swipe'?'e':'a')+e.targetActor);
+     const end=target?this.bodyPoint(target,e.targetKind,-dir):{x:e.to-this.offset,y:(e.targetGroundY??GROUND)-(BODY_HEIGHT[e.targetKind]||132)*.52};
+     // A thin directional follow-through, not a second impact explosion.
+     g.lineStyle(3,e.type==='swipe'?0xe2b775:0xc8b0b9,(1-p)**2*.7);g.beginPath();g.arc(end.x-dir*19,end.y,21+10*p,dir>0?-.9:Math.PI-.9,dir>0?.9:Math.PI+.9);g.strokePath();
+     if(e.sprite)e.sprite.setVisible(false);
     }
     if(e.type==='stomp'){
      const q=1-(1-p)**3,cx=x+160;
@@ -446,12 +489,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
      if(e.sprite){e.sprite.setPosition(x,y-10).setAlpha(tail);this.root.bringToTop(e.sprite);}
     }
     if(e.type==='hail'){
-     e.blocked=model.shield>0;
+     if(!e.impacted)e.blocked=model.shield>0;
      // One fall, then a ground/shield impact. No modulo loop making new rain appear forever.
      for(let i=0;i<14;i++){
-      const q=Math.min(1,Math.max(0,(p-i*.026)/.62)),xx=x-120+i*35,end=e.blocked?GROUND-220:GROUND,yy=90+(end-90)*q*q;
+      const q=Math.min(1,e.t/.7),xx=x-120+i*35,end=e.blocked?GROUND-220:GROUND,yy=90-i*7+(end-90+i*7)*q*q;
       if(q<1){ribbon([{x:xx+24,y:yy-65},{x:xx+12,y:yy-27},{x:xx,y:yy}],5,0xbce7e4,tail);g.fillStyle(0x375f75,tail);g.fillPoints([{x:xx,y:yy-16},{x:xx+12,y:yy},{x:xx,y:yy+16},{x:xx-12,y:yy}],true);g.fillStyle(0xf2ffec,tail);g.fillTriangle(xx,yy-13,xx+8,yy,xx,yy+11);}
-      else flecks(xx,end-4,Math.min(1,(p-i*.026-.62)/.3),e.blocked?0xa6efd6:0xc2e5e6,4,35,30);
+      else flecks(xx,end-4,Math.min(1,Math.max(0,(e.t-.7)/.30)),e.blocked?0xa6efd6:0xc2e5e6,4,35,30);
      }
     }
     if(e.type==='depart'){

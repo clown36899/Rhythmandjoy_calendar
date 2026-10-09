@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=20';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=21';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -10,7 +10,7 @@ export class Journey {
   this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
  }
  start(stage=this.stage){this.reset();this.stage=Number.isInteger(stage)&&AREAS[stage]?stage:0;this.status='playing';this.addAlly('cow',this.x+130);this.say('자동 전진 중이에요. 달토끼를 불러 함께 출발해요.');}
- emit(type,data={}){this.events.push({type,...data});}
+ emit(type,data={}){this.events.push({type,at:this.time,...data});}
  say(message){this.hint=message;this.hintSerial++;this.lastHintAt=this.time;this.emit('hint',{message});}
  drainEvents(){const events=this.events;this.events=[];return events;}
  pause(){if(this.status==='playing'){this.status='paused';this.direction=0;}else if(this.status==='paused')this.status='playing';}
@@ -58,11 +58,11 @@ export class Journey {
   this.cleanup();return true;
  }
  awardCoins(amount,e,reason){const before=Math.floor(this.coins);this.coins=clamp(this.coins+amount,0,MAX_COINS);const received=Math.floor(this.coins)-before;this.earnedCoins+=received;if(received>0)this.emit('coin',{amount:received,total:this.coins,x:e.x,kind:e.type,reason});}
- hurtEnemy(e,damage,sourceX=this.x,weapon='physical'){if(e.hp<=0||this.status!=='playing'||!Number.isFinite(damage)||damage<=0)return;e.hp-=damage;e.hit=.26;e.hitDir=Math.sign(e.x-sourceX)||1;this.emit('hit',{x:e.x,from:sourceX,dir:e.hitDir,kind:e.type,weapon,damage,enemy:true});this.awardCoins(1,e,'hit');}
+ hurtEnemy(e,damage,sourceX=this.x,weapon='physical'){if(e.hp<=0||this.status!=='playing'||!Number.isFinite(damage)||damage<=0)return;e.hp-=damage;e.hit=.26;e.hitDir=Math.sign(e.x-sourceX)||1;this.emit('hit',{actor:e.id,x:e.x,from:sourceX,dir:e.hitDir,kind:e.type,weapon,damage,enemy:true});this.awardCoins(1,e,'hit');}
  // A flying attack outlives its launch pose. Journey alone owns contact and rewards.
  launchShot({actor,sourceKind,weapon,from,target,damage,high=false,stun=0,enemy=false}){
   const shot={actor,sourceKind,weapon,from,to:target.x,targetId:target.id??null,targetKind:target.type||'haetae',damage,high,stun,enemy,t:0,duration:SHOT_TIME};
-  this.projectiles.push(shot);this.emit('projectile',{...shot,kind:weapon,targetActor:enemy?target.id:undefined,hit:!high||target.type!=='skirt'});
+  this.projectiles.push(shot);this.emit('projectile',{...shot,flight:shot,kind:weapon,targetActor:target.id??null,hit:!high||target.type!=='skirt'});
  }
  advanceProjectiles(dt){
   for(const shot of this.projectiles){
@@ -120,7 +120,7 @@ export class Journey {
     const target=this.enemies.find(e=>e.id===action.targetId&&e.hp>0),unit=unitStats(actor.type,this.keeperRank);
     if(target&&target.x>=actor.x-55&&target.x-actor.x<=unit.range){
      const high=unit.weapon==='seed'||unit.weapon==='seal',hit=!high||target.type!=='skirt';
-     if(unit.weapon==='horn'){this.emit('swipe',{actor:actor.id,kind:unit.weapon,sourceKind:actor.type,targetKind:target.type,x:actor.x,from:actor.x,to:target.x});this.hurtEnemy(target,unit.damage,actor.x,unit.weapon);}
+     if(unit.weapon==='horn'){this.emit('swipe',{actor:actor.id,kind:unit.weapon,sourceKind:actor.type,targetKind:target.type,targetActor:target.id,x:actor.x,from:actor.x,to:target.x});this.hurtEnemy(target,unit.damage,actor.x,unit.weapon);}
      else this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:unit.weapon,from:actor.x,target,damage:unit.damage,high,stun:unit.weapon==='seal'?.65:0});
     }
    }

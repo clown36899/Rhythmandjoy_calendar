@@ -1,7 +1,7 @@
-import {Journey} from './game/model.js?v=20';
-import {makeGame} from './game/scene.js?v=20';
-import {Soundscape} from './game/audio.js?v=20';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=20';
+import {Journey} from './game/model.js?v=21';
+import {makeGame} from './game/scene.js?v=21';
+import {Soundscape} from './game/audio.js?v=21';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=21';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 let installPrompt=null;
