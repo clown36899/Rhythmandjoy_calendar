@@ -13,17 +13,18 @@ export const ENEMY_STRIKE={duration:.6,impact:.28};
 export function enemyAttackFrame(elapsed){return elapsed<.14?0:elapsed<ENEMY_STRIKE.impact?1:elapsed<.44?2:3;}
 
 export const UNITS={
- cow:{name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:65,range:73,damage:12,period:1.35,cost:30,cooldown:4,formation:460,spacing:190,guard:.6,weapon:'horn'},
+ cow:{name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:73,damage:12,period:1.35,cost:30,cooldown:4,formation:460,spacing:190,guard:.6,weapon:'horn'},
  keeper:{name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:235,damage:17,period:1.15,cost:18,cooldown:3.5,formation:245,spacing:70,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:275,weapon:'ink'}}},
  rabbit:{name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:310,damage:24,period:1.35,cost:24,cooldown:4,formation:140,spacing:62,guard:0,weapon:'seed'},
  scholar:{name:'선비',role:'지원 · 술법 봉인',hp:56,speed:68,range:405,damage:16,period:2.1,cost:34,cooldown:5,formation:-65,spacing:70,guard:0,weapon:'seal'}
 };
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
-// Four whole-body walk cels, then four attack cels. Damage keeps its existing action clock.
-export const MOTION={haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,walkFps:6,walkFrames:4},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},skirt:{walkFps:8,walkFrames:4},horse:{walkFps:5,walkFrames:4},reaper:{walkFps:4.5,walkFrames:4},boss:{walkFps:2,walkFrames:4}};
+// Only the ox returns to the imported 48-slot exposure sheet (33 original video poses).
+// Its 74-unit stride / 1.44s cadence stays coupled to actual travel; other bodies stay four cels.
+export const MOTION={haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,walkFps:48/1.44,walkFrames:48,attackFrames:8,idleFrame:56},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},skirt:{walkFps:8,walkFrames:4},horse:{walkFps:5,walkFrames:4},reaper:{walkFps:4.5,walkFrames:4},boss:{walkFps:2,walkFrames:4}};
 export function motionFrame(kind,walk,moving,action){
- const s=MOTION[kind],walkFrames=s.walkFrames||4;
- return action?walkFrames+Math.min(3,Math.floor(action.elapsed/s.duration*4)):moving?Math.floor(walk*s.walkFps)%walkFrames:1;
+ const s=MOTION[kind],walkFrames=s.walkFrames||4,attackFrames=s.attackFrames||4;
+ return action?walkFrames+Math.min(attackFrames-1,Math.floor(action.elapsed/s.duration*attackFrames)):moving?Math.floor(walk*s.walkFps)%walkFrames:(s.idleFrame??1);
 }
 export const COMPANIONS=[
  {name:'여행자와 해태',asset:'haetae',tag:'주인공 · 탑승과 합동기',text:'평소에는 나란히 걷습니다. 돌진 필살기를 쓰면 아이가 해태에 올라타 앞길을 뚫고 다시 내려옵니다.',counter:'출발 전 필살기 편성 · Q / E / R 세 자리',motion:true},

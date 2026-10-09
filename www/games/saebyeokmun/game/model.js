@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats} from './data.js?v=17';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats} from './data.js?v=18';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -83,7 +83,7 @@ export class Journey {
     const valid=action.targetId===null||!!ally,targetX=ally?.x??this.x;
     if(valid&&Math.abs(actor.x-targetX)<=ENEMIES[actor.type].range+24){
      if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage,actor.x);else this.hurtHero(ENEMIES[actor.type].damage);
-     this.emit(actor.type==='reaper'?'hex':'claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae'});
+     this.emit(actor.type==='reaper'?'hex':'claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});
     }
    }else if(action.kind==='haetae'){
     this.emit('stomp',{x:this.x});
@@ -180,7 +180,7 @@ export class Journey {
      }else if(e.type==='horse'){e.x=Math.max(target.x+45,e.x-150);attackTarget(23);e.ability=6;this.emit('charge',{x:e.x,to:target.x,kind:e.type});}
      else if(e.type==='reaper'){
       for(const other of this.enemies)other.hp=Math.min(other.maxHp,other.hp+15);
-      this.emit('heal',{x:e.x});e.ability=8;
+      this.emit('heal',{x:e.x,enemy:true,kind:e.type});e.ability=8;
      }
     }
     if(this.status!=='playing')break;
