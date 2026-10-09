@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './data.js?v=21';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './data.js?v=22';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const ROAD_EDGE=514,GROUND=542;
@@ -262,9 +262,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // Allocate once at event intake. Painting (including paused painting) never adds effects.
    for(const event of events){
     const e={...event};
-    const groundFor=id=>{const actor=model.allies.find(a=>a.id===id);return actor?GROUND+(model.allies.filter(a=>a.type===actor.type&&a.id<actor.id).length%3)*24:GROUND;};
-    e.groundY=typeof e.actor==='number'?groundFor(e.actor):GROUND;
-    e.targetGroundY=typeof e.targetActor==='number'?groundFor(e.targetActor):GROUND;
+    // Overlapping actors share the road; summon order must never change foot height.
+    e.groundY=GROUND;e.targetGroundY=GROUND;
     if(['hit','guard','hurt'].includes(e.type)){
      const profile=IMPACT[e.weapon]||IMPACT.physical;
      if(e.type!=='guard'&&this.impactCooldown<=0&&profile.stop){this.hitStop=profile.stop;this.impactCooldown=.2;}
@@ -579,7 +578,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     this.renderEntity('previewCow','cow',vw*.78+this.offset,t*.5,1,1,0,0,false,1);present.add('previewCow');
    }else{
     for(const e of model.enemies){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,e.moving,e.action,e.hitDir);}
-    for(const a of model.allies){const key='a'+a.id,rank=model.allies.filter(b=>b.type===a.type&&b.id<a.id).length;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir,GROUND+(rank%3)*24);}
+    for(const a of model.allies){const key='a'+a.id;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir);}
    }
    for(const [key,obj] of this.sprites)if(!present.has(key)){obj.destroy();this.sprites.delete(key);this.contacts.delete(key);}
    const boss=model.enemies.find(e=>e.type==='boss');
