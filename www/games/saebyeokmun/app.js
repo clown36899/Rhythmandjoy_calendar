@@ -1,7 +1,7 @@
-import {Journey} from './game/model.js?v=19';
-import {makeGame} from './game/scene.js?v=19';
-import {Soundscape} from './game/audio.js?v=19';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout} from './game/data.js?v=19';
+import {Journey} from './game/model.js?v=20';
+import {makeGame} from './game/scene.js?v=20';
+import {Soundscape} from './game/audio.js?v=20';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=20';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 let installPrompt=null;
@@ -112,12 +112,20 @@ function onReady(error,s){
   if(item.motion||CODEX.includes(item)){
    const row=document.createElement('div');row.className='motion-controls';row.setAttribute('role','group');row.setAttribute('aria-label',item.name+' 동작 시험');
    const enemy=CODEX.includes(item),defaultMode='walk';
-   const state={kind:item.asset,enemy,img,frames:Array.from({length:enemy?8:(MOTION[item.asset].idleFrame!==undefined?MOTION[item.asset].idleFrame+1:(MOTION[item.asset].walkFrames||4)+(item.motion==='walk'?0:(MOTION[item.asset].attackFrames||4)))},(_,i)=>scene.previewTexture(item.asset+(enemy?(i<4?'Walk':'Strike'):'')+(enemy?i%4:i))),mode:defaultMode,started:performance.now(),frame:-1,buttons:[]};
-   for(const [mode,label] of (item.motion==='walk'?[['walk','걷기'],['idle','멈춤']]:[['walk','걷기'],['attack','공격'],['idle','멈춤']])){
+   const keys=Array.from({length:enemy?8:(MOTION[item.asset].idleFrame!==undefined?MOTION[item.asset].idleFrame+1:(MOTION[item.asset].walkFrames||4)+(item.motion==='walk'?0:(MOTION[item.asset].attackFrames||4)))},(_,i)=>item.asset+(enemy?(i<4?'Walk':'Strike'):'')+(enemy?i%4:i));
+   const state={kind:item.asset,enemy,img,keys,variants:new Map(),health:1,mode:defaultMode,started:performance.now(),frame:-1,buttons:[]};
+   for(const [mode,label] of (item.motion==='walk'?[['walk','걷기'],['idle','멈춤']]:[['walk','걷기'],['attack','공격'],['idle','멈춤'],...(item.asset==='reaper'?[['depart','소멸']]:[])])){
     const button=document.createElement('button');button.type='button';button.textContent=label;button.setAttribute('aria-label',item.name+' '+label);button.setAttribute('aria-pressed',String(mode===defaultMode));
-    button.addEventListener('click',()=>{state.mode=mode;state.started=performance.now();state.buttons.forEach(b=>b.setAttribute('aria-pressed',String(b===button)));});state.buttons.push(button);row.append(button);
+    button.addEventListener('click',()=>{state.mode=mode;state.frame=-1;state.started=performance.now();state.buttons.forEach(b=>b.setAttribute('aria-pressed',String(b===button)));});state.buttons.push(button);row.append(button);
    }
-   article.append(row);motionPreviews.push(state);
+   article.append(row);
+   const healthRow=document.createElement('div');healthRow.className='motion-controls';healthRow.setAttribute('role','group');healthRow.setAttribute('aria-label',item.name+' 피해 상태');
+   const healthButtons=[];
+   for(const [health,label] of [[1,'멀쩡함'],[.7,'상처'],[.3,'큰 상처']]){
+    const b=document.createElement('button');b.type='button';b.textContent=label;b.setAttribute('aria-label',item.name+' '+label);b.setAttribute('aria-pressed',String(health===1));
+    b.addEventListener('click',()=>{state.health=health;state.frame=-1;healthButtons.forEach(other=>other.setAttribute('aria-pressed',String(other===b)));});healthButtons.push(b);healthRow.append(b);
+   }
+   article.append(healthRow);motionPreviews.push(state);
   }
   $(COMPANIONS.includes(item)?'companions-grid':'codex-grid').append(article);
  }
@@ -135,8 +143,12 @@ function onFrame(m,s){
  if($('codex').open)for(const p of motionPreviews){
   const spec=p.enemy?ENEMY_STRIKE:MOTION[p.kind],elapsed=(now-p.started)/1000,phase=elapsed%((spec.duration||.64)+.7);
   const action=p.mode==='attack'&&phase<spec.duration?{elapsed:phase}:null;
+  const dying=p.mode==='depart',deathProgress=Math.min(1,(elapsed%(REAPER_DEPARTURE_TIME+1))/REAPER_DEPARTURE_TIME);
   const frame=p.enemy?(action?4+enemyAttackFrame(phase):motionFrame(p.kind,elapsed,p.mode==='walk',null)):motionFrame(p.kind,elapsed,p.mode==='walk',action);
-  if(frame!==p.frame){p.img.src=p.frames[frame];p.frame=frame;}
+  const key=dying?'reaperDepart'+reaperDepartureFrame(deathProgress):scene.injuryTexture(p.keys[frame],p.kind,p.health,1);
+  p.img.style.opacity=dying?String(1-Math.max(0,(deathProgress-.55)/.45)):'1';
+  p.img.style.transform=dying?'translateY(-'+Math.min(1,deathProgress/.46)*9+'px)':'';
+  if(key!==p.frame){if(!p.variants.has(key))p.variants.set(key,scene.previewTexture(key));p.img.src=p.variants.get(key);p.frame=key;}
  }
  if(now-lastFrame<70)return;lastFrame=now;
  $('health-fill').style.width=(m.hp/MAX_HP*100)+'%';$('hp-text').textContent=Math.ceil(m.hp)+' / '+MAX_HP;

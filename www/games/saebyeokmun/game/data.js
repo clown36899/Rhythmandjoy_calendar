@@ -18,6 +18,10 @@ export function combatPower(s){return Math.sqrt(s.hp/(1-(s.guard||0))*s.damage/s
 
 export const PARALLAX={far:.035,middle:.34,ground:1,near:1.18};
 export const ENEMY_STRIKE={duration:.6,impact:.28};
+export const REAPER_DEPARTURE_TIME=3.1;
+export function reaperDepartureFrame(p){return p<.06?0:p<.17?1:p<.29?2:p<.42?3:p<.56?4:p<.70?5:p<.85?6:7;}
+// Health already owns the state; these are display bands, not another injury system.
+export function injuryLevel(hp,maxHp){return !Number.isFinite(hp)||!Number.isFinite(maxHp)||maxHp<=0||hp>=maxHp?0:hp>maxHp*.4?1:2;}
 export function enemyAttackFrame(elapsed){return elapsed<.14?0:elapsed<ENEMY_STRIKE.impact?1:elapsed<.44?2:3;}
 
 export const UNITS={

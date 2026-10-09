@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=19';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=20';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -135,7 +135,8 @@ export class Journey {
  }
  hurtHero(damage,sourceX=this.x+80,weapon='physical'){if(this.status!=='playing')return;this.hp=clamp(this.hp-damage,0,MAX_HP);this.emit('hurt',{x:this.x+37,from:sourceX,dir:Math.sign(this.x-sourceX)||-1,kind:'haetae',weapon,damage});if(this.hp<=0)this.finish('lost');}
  cleanup(){
-  for(const e of this.enemies)if(e.hp<=0&&!e.dead){e.dead=true;this.kills++;this.awardCoins(ENEMIES[e.type].reward,e,'defeat');this.emit('vanish',{x:e.x,kind:e.type,dir:e.hitDir||1});if(e.type==='boss'){this.bossDefeated=true;this.say('먹구름이 걷혔어요. 이제 새벽문까지 함께 가요.');}}
+  for(const e of this.enemies)if(e.hp<=0&&!e.dead){e.dead=true;this.kills++;this.awardCoins(ENEMIES[e.type].reward,e,'defeat');this.emit('vanish',{actor:e.id,x:e.x,kind:e.type,enemy:true,dir:e.hitDir||1});if(e.type==='boss'){this.bossDefeated=true;this.say('먹구름이 걷혔어요. 이제 새벽문까지 함께 가요.');}}
+  for(const a of this.allies)if(a.hp<=0)this.emit('vanish',{actor:a.id,x:a.x,kind:a.type,enemy:false,dir:a.hitDir||-1});
   this.enemies=this.enemies.filter(e=>!e.dead);this.allies=this.allies.filter(a=>a.hp>0);
  }
  finish(status){if(this.status!=='playing')return;this.status=status;this.direction=0;this.emit('finish',{status});}
