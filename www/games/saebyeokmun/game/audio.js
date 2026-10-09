@@ -3,7 +3,7 @@ const NAMES=['step-heavy','step-light','stomp','seed','charm','guard','swipe','h
 const LEVELS={'step-heavy':.18,'step-light':.13,coin:.22,swipe:.38,guard:.62,warning:.8,summon:.65,heal:.55,seal:.68,charm:.68,hex:.7,ascend:.6};
 export class Soundscape {
  constructor({contextFactory=()=>new (window.AudioContext||window.webkitAudioContext)(),fetcher=(url)=>fetch(url),onState=()=>{}}={}){
-  this.contextFactory=contextFactory;this.fetcher=fetcher;this.onState=onState;this.enabled=true;this.playing=false;this.volume=.55;this.buffers=new Map();this.voices=new Set();this.lastPlayed=new Map();this.ambient=null;this.ambientOffset=0;this.loaded=null;this.missing=[];
+  this.contextFactory=contextFactory;this.fetcher=fetcher;this.onState=onState;this.enabled=true;this.musicEnabled=true;this.effectsEnabled=true;this.playing=false;this.volume=.55;this.buffers=new Map();this.voices=new Set();this.lastPlayed=new Map();this.ambient=null;this.ambientOffset=0;this.loaded=null;this.missing=[];
  }
  async unlock(){
   if(!this.context){this.context=this.contextFactory();this.master=this.context.createGain();this.master.gain.value=this.enabled?this.volume:0;
@@ -13,26 +13,27 @@ export class Soundscape {
   if(!this.loaded){
    this.onState('loading');
    this.loaded=Promise.all(NAMES.map(async name=>{
-    try{const response=await this.fetcher('./assets/audio/'+name+(name==='ambience'?'.mp3':'.wav')+'?v=24');if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));}
+    try{const response=await this.fetcher('./assets/audio/'+name+(name==='ambience'?'.mp3':'.wav')+'?v=25');if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));}
     catch{this.missing.push(name);}
    })).then(()=>{this.onState(this.missing.length?'partial':'ready');this.syncAmbience();});
   }
   await this.loaded;this.syncAmbience();
  }
  setEnabled(enabled){this.enabled=enabled;if(this.master)this.master.gain.setValueAtTime(enabled?this.volume:0,this.context.currentTime);if(!enabled)this.stopVoices();else this.syncAmbience();}
+ setChannelEnabled(channel,enabled){if(!['music','effects'].includes(channel))return;this[channel+'Enabled']=!!enabled;if(!enabled)this.stopVoices(false,channel);else if(channel==='music')this.syncAmbience();}
  setVolume(value){this.volume=Math.max(0,Math.min(1,Number(value)||0));if(this.master)this.master.gain.setValueAtTime(this.enabled?this.volume:0,this.context.currentTime);}
  setPlaying(playing){if(this.playing===playing)return;this.playing=playing;if(!playing)this.stopVoices();else this.syncAmbience();}
- stopVoices(resetMusic=false){if(this.ambient)this.ambientOffset=(this.ambientOffset+this.context.currentTime-this.ambient.startedAt)%this.ambient.buffer.duration;for(const v of [...this.voices]){try{v.stop();}catch{}v.disconnect();}this.voices.clear();this.ambient=null;this.lastPlayed.clear();if(resetMusic)this.ambientOffset=0;}
- syncAmbience(){if(this.playing&&this.enabled&&!this.ambient&&this.buffers.has('ambience')&&this.context?.state==='running')this.ambient=this.voice('ambience',{loop:true,gain:.45});}
+ stopVoices(resetMusic=false,channel=null){if(this.ambient&&channel!=='effects')this.ambientOffset=(this.ambientOffset+this.context.currentTime-this.ambient.startedAt)%this.ambient.buffer.duration;for(const v of [...this.voices]){if(channel==='music'&&!v.loop||channel==='effects'&&v.loop)continue;try{v.stop();}catch{}v.disconnect();this.voices.delete(v);}if(channel!=='effects')this.ambient=null;if(channel!=='music')this.lastPlayed.clear();if(resetMusic)this.ambientOffset=0;}
+ syncAmbience(){if(this.playing&&this.enabled&&this.musicEnabled&&!this.ambient&&this.buffers.has('ambience')&&this.context?.state==='running')this.ambient=this.voice('ambience',{loop:true,gain:.45});}
  voice(name,{gain=1,loop=false,pan=0,rate=1}={}){
-  const context=this.context,buffer=this.buffers.get(name);if(!this.enabled||!buffer||context?.state!=='running')return null;
+  const context=this.context,buffer=this.buffers.get(name);if(!this.enabled||!(loop?this.musicEnabled:this.effectsEnabled)||!buffer||context?.state!=='running')return null;
   const source=context.createBufferSource(),volume=context.createGain();source.buffer=buffer;source.loop=loop;source.playbackRate.value=rate;volume.gain.value=gain;source.connect(volume);
   let panner;if(context.createStereoPanner){panner=context.createStereoPanner();panner.pan.value=Math.max(-.7,Math.min(.7,pan));volume.connect(panner);panner.connect(this.master);}else volume.connect(this.master);
   source.onended=()=>{this.voices.delete(source);volume.disconnect();panner?.disconnect();source.disconnect();if(this.ambient===source)this.ambient=null;};
   source.soundName=name;source.startedAt=context.currentTime;this.voices.add(source);source.start(0,loop?this.ambientOffset:0);return source;
  }
  play(name,{gain=1,pan=0,allowIdle=false}={}){
-  if(!this.enabled||(!this.playing&&!allowIdle)||!this.context)return;
+  if(!this.enabled||!this.effectsEnabled||(!this.playing&&!allowIdle)||!this.context)return;
   const now=this.context.currentTime,step=name.startsWith('step-'),limit=step?.18:name==='coin'?.24:.09;
   if(now-(this.lastPlayed.get(name)??-100)<limit)return;
   if(step&&this.voices.size>=7)return;

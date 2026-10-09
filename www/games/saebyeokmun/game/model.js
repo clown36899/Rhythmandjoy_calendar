@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=24';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=25';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -59,6 +59,9 @@ export class Journey {
  }
  awardCoins(amount,e,reason){const before=Math.floor(this.coins);this.coins=clamp(this.coins+amount,0,MAX_COINS);const received=Math.floor(this.coins)-before;this.earnedCoins+=received;if(received>0)this.emit('coin',{amount:received,total:this.coins,x:e.x,kind:e.type,reason});}
  hurtEnemy(e,damage,sourceX=this.x,weapon='physical'){if(e.hp<=0||this.status!=='playing'||!Number.isFinite(damage)||damage<=0)return;e.hp-=damage;e.hit=.26;e.hitDir=Math.sign(e.x-sourceX)||1;this.emit('hit',{actor:e.id,x:e.x,from:sourceX,dir:e.hitDir,kind:e.type,weapon,damage,enemy:true});this.awardCoins(1,e,'hit');}
+ // The gate is an entrance, never an escape route for displaced living enemies.
+ // A not-yet-arrived unit keeps its position; knockback cannot pull it out early.
+ pushEnemy(e,to){e.x=Math.max(e.x,Math.min(GATE-45,to));}
  // A flying attack outlives its launch pose. Journey alone owns contact and rewards.
  launchShot({actor,sourceKind,weapon,from,target,damage,high=false,stun=0,enemy=false}){
   const shot={actor,sourceKind,weapon,from,to:target.x,targetId:target.id??null,targetKind:target.type||'haetae',damage,high,stun,enemy,t:0,duration:SHOT_TIME};
@@ -96,8 +99,11 @@ export class Journey {
    const travel=Math.max(0,Math.min(action.elapsed,1.1)-Math.max(before,.18));
    if(travel>0){
     const from=this.x;this.x=clamp(this.x+travel*420,START,ROAD);
-    for(const e of this.enemies)if(e.hp>0&&e.x>=from-60&&e.x<=this.x+180&&!action.hitIds.includes(e.id)){
-     action.hitIds.push(e.id);this.hurtEnemy(e,65,from,'rush');e.x=Math.min(ROAD+330,Math.max(e.x,this.x+430));e.stun=1.2;e.windup=0;e.action=null;
+    for(const e of this.enemies)if(e.hp>0&&e.x>=from-60&&e.x<=this.x+180){
+     if(!action.hitIds.includes(e.id)){action.hitIds.push(e.id);this.hurtEnemy(e,65,from,'rush');this.pushEnemy(e,this.x+430);e.stun=1.2;e.windup=0;e.action=null;}
+     else this.pushEnemy(e,this.x+145);
+     // Retain the normal contact gap when a live target reaches the gate wall.
+     if(e.hp>0)this.x=Math.min(this.x,Math.max(from,e.x-145));
     }
    }
    if(action.elapsed>=1.3)this.action=null;
@@ -116,7 +122,7 @@ export class Journey {
     }
    }else if(action.kind==='haetae'){
     this.emit('stomp',{x:this.x});
-    for(const e of this.enemies)if(e.hp>0&&e.x>=this.x-70&&e.x<=this.x+390){this.hurtEnemy(e,44,this.x,'stomp');e.x=Math.min(ROAD+330,e.x+85);e.stun=2.1;e.windup=0;e.action=null;}
+    for(const e of this.enemies)if(e.hp>0&&e.x>=this.x-70&&e.x<=this.x+390){this.hurtEnemy(e,44,this.x,'stomp');this.pushEnemy(e,e.x+85);e.stun=2.1;e.windup=0;e.action=null;}
    }else{
     const target=this.enemies.find(e=>e.id===action.targetId&&e.hp>0),unit=unitStats(actor.type,this.keeperRank);
     if(target&&target.x>=actor.x-55&&target.x-actor.x<=unit.range){

@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './data.js?v=24';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './data.js?v=25';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const ROAD_EDGE=514,GROUND=542;
@@ -20,7 +20,7 @@ const WOUNDS={
  skirt:{materials:['Cloth','Cloth'],size:[.50,.47],poses:[[.49,.38,-.06],[.50,.37,.05],[.49,.38,-.04],[.50,.37,.05]],attack:[[.48,.38,-.08],[.47,.39,-.13],[.54,.40,.12],[.51,.38,.04]]},
  horse:{spots:[[-.1,.34],[.20,.48]],materials:['Dark','Cloth'],size:[.20,.29],poses:[[.51,.65,-.07],[.52,.65,-.02],[.50,.64,-.06],[.51,.65,-.03]],attack:[[.51,.63,-.08],[.55,.61,-.20],[.48,.66,.12],[.52,.65,.03]]},
  reaper:{spots:[[-.12,.34],[.18,.48]],muzzle:[.28,.57],materials:['Dark','Dark'],size:[.23,.35],poses:[[.53,.66,.04],[.52,.66,.02],[.53,.66,.04],[.52,.66,.02]],attack:[[.54,.67,0],[.55,.66,-.05],[.53,.67,.05],[.54,.67,0]]},
- boss:{materials:['Fur','Scar'],size:[.48,.45],poses:[[.53,.60,-.02],[.53,.59,.03],[.54,.60,-.02],[.53,.59,.02]],attack:[[.54,.58,-.12],[.56,.53,-.22],[.50,.64,.15],[.52,.62,.04]]}
+ boss:{materials:['Fur','Scar'],size:[.40,.30],poses:[[.56,.64,-.02],[.57,.66,.03],[.56,.64,-.02],[.56,.65,.02],[.57,.67,.03],[.57,.63,-.02]],attack:[[.56,.64,0],[.58,.67,.06],[.58,.7,.1],[.57,.71,.06],[.57,.68,0],[.55,.62,-.05]],cast:[[.56,.68,.04],[.56,.49,-.3],[.58,.5,-.35],[.56,.63,0]]}
 };
 const IMPACT={horn:{size:95,stop:.035,shake:.055},stone:{size:72},seed:{size:58},ink:{size:85},seal:{size:90},charm:{size:84},hex:{size:90},stomp:{size:125,stop:.055,shake:.11},rush:{size:115,stop:.045,shake:.08},boss:{size:115,stop:.05,shake:.1},horse:{size:90,shake:.04},hail:{size:64},physical:{size:75}};
 export function makeGame(model,onReady,onFrame,onEvents){
@@ -34,6 +34,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.load.image('roadScenery','./assets/road-scenery-v13.png');
    this.load.image('livingScenery','./assets/living-scenery-v11.png');
    this.load.image('enemyAttacks','./assets/enemy-attacks-v17.png');
+   this.load.image('bossMotion','./assets/boss-motion-v25.png');
    for(const [key,file] of Object.entries({keeperWalk:'doryeong-stone-v12',keeperBrushWalk:'doryeong-brush-v12',cowWalk:'cow-walk-gif-v16',cowAttack:'ox-motion-v14',scholarWalk:'scholar-motion-v12',mountWalk:'mounted-haetae-v12',combatFX:'combat-fx-v18',magicFX:'magic-fx-v18',cleanFX:'clean-fx-v19',woundArt:'wounds-v20'}))this.load.image(key,'./assets/'+file+'.png');
    this.load.on('loaderror',()=>onReady(new Error('그림을 불러오지 못했어요. 새로고침해 주세요.')));
   }
@@ -95,7 +96,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('enemies',['skirt0','skirt1','horse','reaper','boss','cloud']);
    for(const kind of ['haetae','rabbit'])this.sliceAtlas(kind+'Motion',Array.from({length:8},(_,i)=>kind+i),4,true);
    this.sliceAtlas('companionWalk',Array.from({length:4},(_,i)=>'girl'+i),4,4);
-   this.sliceAtlas('enemyWalk',['skirt','horse','reaper','boss'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Walk'+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
+   this.sliceAtlas('enemyWalk',['skirt','horse','reaper','bossLegacy'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Walk'+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
+   this.sliceAtlas('bossMotion',[...Array.from({length:6},(_,i)=>'bossWalk'+i),...Array.from({length:6},(_,i)=>'bossStrike'+i),...Array.from({length:4},(_,i)=>'bossCast'+i)],4,true,4);
    this.sliceAtlas('reaperDeparture',Array.from({length:8},(_,i)=>'reaperDepart'+i),4,true);
    this.sliceAtlas('woundArt',['Cloth','Scar','Fur','Dark'].map(k=>'wound'+k+'1').concat(['Cloth','Scar','Fur','Dark'].map(k=>'wound'+k+'2')),4,false,2,{x:[0,.25,.5,.75,1],y:[0,.5,1]});
    for(const kind of ['keeper','keeperBrush','scholar','mount'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
@@ -111,7 +113,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('cleanFX',['CleanImpact','CleanSlash','CleanCurse','CleanGuard'].flatMap(kind=>Array.from({length:4},(_,i)=>'fx'+kind+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
    this.sliceAtlas('actionIcons',['iconKeeper','iconRabbit','iconCharm','iconStomp','iconShelter','iconSound']);
    this.sliceAtlas('livingScenery',['pine','mist','dragon','grass'],2);
-   this.sliceAtlas('enemyAttacks',['skirt','horse','reaper','boss'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Strike'+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
+   this.sliceAtlas('enemyAttacks',['skirt','horse','reaper','bossLegacy'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Strike'+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
    for(const area of AREAS){const texture=this.textures.get(area.texture),src=texture.getSourceImage();texture.add('far',0,0,0,src.width,Math.floor(src.height/2));texture.add('middle',0,0,Math.floor(src.height/2),src.width,Math.floor(src.height/2));}
    // Unequal atlas cells retain the wide painted path; only runtime texture frames are cropped.
    const roadTexture=this.textures.get('roadScenery'),roadSource=roadTexture.getSourceImage();
@@ -207,6 +209,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const profile=WOUNDS[base.startsWith('keeperBrush')?'keeperBrush':kind];
    if(!profile)return {x:.5,y:.5,w:.4,h:.4,angle:0};
    let n=Number(base.match(/(\d+)$/)?.[1]||0),poses=profile.poses;
+   if(base.includes('Cast')&&profile.cast){const a=profile.cast[n%profile.cast.length];return {x:a[0],y:a[1],angle:a[2],w:profile.size[0],h:profile.size[1]};}
    if(kind==='cow'&&n===56)n=10;
    const attack=base.includes('Strike')||base.endsWith('Cast')||(!base.includes('Walk')&&n>=(kind==='cow'?48:4));
    if(attack){poses=profile.attack;n=base.includes('Strike')?n:Math.max(0,n-(kind==='cow'?48:4));}
@@ -318,7 +321,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   renderEntity(key,type,x,walk,hp,maxHp,hit,windup,enemy=false,moving=0,action=null,hitDir=1,groundY=GROUND){
    let image=this.sprites.get(key);
    if(!image){image=this.add.image(0,0,MODEL_MAP[type]||type).setOrigin(.5,1);this.root.add(image);this.sprites.set(key,image);}
-   if(enemy)image.setTexture(type+(action||windup>0?'Strike':'Walk')+(action?enemyAttackFrame(action.elapsed):windup>0?1:motionFrame(type,walk,moving,null))).setFlipX(action? action.dir>0 : moving>0);
+   if(enemy)image.setTexture(type==='boss'?bossPose(walk,moving,action,windup):type+(action||windup>0?'Strike':'Walk')+(action?enemyAttackFrame(action.elapsed):windup>0?1:motionFrame(type,walk,moving,null))).setFlipX(action? action.dir>0 : moving>0);
    if(!enemy&&UNITS[type])image.setTexture((type==='keeper'&&model.keeperRank?'keeperBrush':type)+motionFrame(type,walk,moving,action)).setFlipX(moving<0&&!action);
    image.setTexture(this.injuryTexture(image.texture.key,type,hp,maxHp));
    const height=BODY_HEIGHT[type]||130;
