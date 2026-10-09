@@ -4,7 +4,7 @@ import {Soundscape} from './game/audio.js?v=25';
 import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=25';
 const $=id=>document.getElementById(id);
 const model=new Journey();
-let installPrompt=null;
+let installPrompt=null,fullscreenPending=false;
 let scene,ready=false,lastStatus='',lastHint=0,noticeUntil=0,lastFrame=0,infoPaused=false,coinAnimation,lastKeeperRank=-1;
 const keys=new Set();
 const infoDialogs=[$('settings'),$('codex'),$('app-help'),$('loadout')];
@@ -27,10 +27,10 @@ function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify
 updateSound();
 function updateBest(){const n=Math.floor(model.progress()*100);best=Math.max(best,n);$('best').textContent=best+'%';try{localStorage.setItem('saebyeokmun-best',String(best));}catch{}}
 function start(){
- if(!ready)return;model.start(scene.previewAreaIndex);keys.clear();lastStatus='';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
+ if(!ready||fullscreenPending)return;model.start(scene.previewAreaIndex);keys.clear();lastStatus='';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
  if(scene)scene.resetPresentation();updateAuto();soundscape.stopVoices(true);soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});
 }
-function pause(){if(!ready)return;model.pause();keys.clear();model.direction=0;soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
+function pause(){if(!ready||fullscreenPending)return;model.pause();keys.clear();model.direction=0;soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
 function updateAuto(){$('auto').setAttribute('aria-pressed',String(model.auto));}
 function callAction(name){if(UNITS[name])model.summon(name);else model.skill(name);}
 function setDirection(){model.direction=keys.has('right')?1:keys.has('left')?-1:0;}
@@ -48,7 +48,7 @@ $('actions').addEventListener('click',e=>{const b=e.target.closest('[data-action
 $('upgrade').addEventListener('click',()=>{if($('settings').open){$('settings').close();completeInfo();}model.upgradeKeeper();});
 document.addEventListener('dragstart',e=>e.preventDefault());
 document.addEventListener('keydown',e=>{
- if(infoDialogs.some(d=>d.open))return;
+ if(fullscreenPending||infoDialogs.some(d=>d.open))return;
  const k=e.key.toLowerCase();
  if(['arrowleft','arrowright',' ','a','d','q','e','r','1','2','3','4'].includes(k))e.preventDefault();
  if(k===' '){if(!e.repeat)pause();return;}
@@ -68,7 +68,21 @@ document.querySelectorAll('[data-sound]').forEach(button=>button.addEventListene
  if(!soundscape.effectsEnabled){$('audio-status').textContent='설정에서 효과음을 켜면 미리 들을 수 있어요.';return;}await unlockSound();soundscape.play(button.dataset.sound,{allowIdle:true});
 }));
 $('fullscreen').addEventListener('click',async()=>{
- try{if(document.fullscreenElement){await document.exitFullscreen();}else{await document.querySelector('.phone-screen').requestFullscreen();try{await screen.orientation?.lock?.('landscape');}catch{}}}catch{openInfo($('app-help'));}
+ if(fullscreenPending)return;
+ fullscreenPending=true;$('settings-open').disabled=true;
+ // Fullscreen is added above existing top-layer dialogs. Close them first so
+ // an invisible modal cannot keep the entire game inert. Retain pause ownership
+ // until the browser finishes; queued close events must not resume early.
+ for(const dialog of [...infoDialogs].reverse())if(dialog.open)dialog.close();
+ try{
+  if(document.fullscreenElement)await document.exitFullscreen();
+  else{
+   await document.querySelector('.phone-screen').requestFullscreen();
+   // Optional orientation lock must never delay restoring game controls.
+   try{screen.orientation?.lock?.('landscape')?.catch(()=>{});}catch{}
+  }
+ }catch{openInfo($('app-help'));}
+ finally{fullscreenPending=false;$('settings-open').disabled=false;completeInfo();}
 });
 document.addEventListener('fullscreenchange',()=>{const text=document.fullscreenElement?'전체 화면 나가기':'전체 화면';$('fullscreen').setAttribute('aria-label',text);$('fullscreen').textContent='⤢ '+text;});
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;$('install-confirm').hidden=false;});
@@ -79,8 +93,8 @@ $('install-confirm').addEventListener('click',async()=>{if(!installPrompt)return
 // Every combat gesture can recover mobile audio after an OS interruption.
 document.addEventListener('pointerdown',()=>{if(soundscape.enabled&&soundscape.context?.state!=='running')unlockSound();},{passive:true});
 function showNotice(message){$('callout').textContent=message;$('callout').hidden=false;noticeUntil=performance.now()+2400;}
-function openInfo(dialog){if(!infoDialogs.some(d=>d.open)){infoPaused=model.status==='playing';if(infoPaused)model.pause();}keys.clear();model.direction=0;soundscape.setPlaying(false);dialog.showModal();}
-function completeInfo(){if(infoDialogs.some(d=>d.open))return;soundscape.stopVoices();if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
+function openInfo(dialog){if(!fullscreenPending&&!infoDialogs.some(d=>d.open)){infoPaused=model.status==='playing';if(infoPaused)model.pause();}keys.clear();model.direction=0;soundscape.setPlaying(false);dialog.showModal();}
+function completeInfo(){if(fullscreenPending||infoDialogs.some(d=>d.open))return;soundscape.stopVoices();if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
 $('settings-open').addEventListener('click',()=>openInfo($('settings')));
 $('settings-return').addEventListener('click',()=>$('settings').close());
 $('settings').querySelector('.dialog-close').addEventListener('click',()=>$('settings').close());
@@ -195,7 +209,7 @@ function onFrame(m,s){
  }
  const boss=m.enemies.find(e=>e.type==='boss');$('boss-bar').hidden=!boss||m.status!=='playing';if(boss)$('boss-fill').style.width=(boss.hp/boss.maxHp*100)+'%';
  $('pause').hidden=!['playing','paused'].includes(m.status);
- $('pause-overlay').hidden=m.status!=='paused'||infoDialogs.some(d=>d.open);
+ $('pause-overlay').hidden=m.status!=='paused'||fullscreenPending||infoDialogs.some(d=>d.open);
  if(m.status!==lastStatus){
   lastStatus=m.status;
   if(['won','lost'].includes(m.status)){
