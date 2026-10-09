@@ -6,8 +6,16 @@ export const START=220;
 export const MAX_HP=200;
 export const MAX_COINS=100;
 export const BODY_HEIGHT={haetae:132,girl:117,keeper:133,cow:141,scholar:156,rabbit:124,skirt:102,horse:198,reaper:202,boss:228};
-export const AREAS=[{at:0,name:'인왕산 · 비 갠 바위',texture:'inwang',file:'inwang-layers-v11.png'},{at:.3,name:'남한산성 · 노을 성곽',texture:'namhan',file:'namhan-layers-v11.png'},{at:.68,name:'금강산 · 구름 봉우리',texture:'geumgang',file:'geumgang-layers-v11.png'}];
-export function areaIndex(progress){return progress>=AREAS[2].at?2:progress>=AREAS[1].at?1:0;}
+export const AREAS=[{at:0,name:'인왕산 · 비 갠 바위',texture:'inwang',file:'inwang-layers-v11.png'},{at:.3,name:'남한산성 · 성곽길',texture:'namhan',file:'namhan-layers-v11.png'},{at:.68,name:'금강산 · 구름 봉우리',texture:'geumgang',file:'geumgang-layers-v11.png'}];
+// One chosen landscape lasts the whole journey; only celestial time cycles.
+export function skyState(seconds){
+ const cycle=160,phase=((seconds%cycle)+cycle)%cycle/cycle,angle=phase*Math.PI*2;
+ const elevation=Math.sin(angle),smooth=n=>{n=Math.max(0,Math.min(1,n));return n*n*(3-2*n);};
+ return {phase,night:1-smooth((elevation+.12)/.32),dusk:1-smooth(Math.abs(elevation)/.4),sun:{x:.5-.42*Math.cos(angle),height:elevation,visible:elevation>=-.08},moon:{x:.5+.42*Math.cos(angle),height:-elevation,visible:elevation<=.08},name:phase<.09||phase>.94?'새벽':phase<.42?'낮':phase<.56?'노을':'밤'};
+}
+export const SHOT_TIME=.18;
+export function combatPower(s){return Math.sqrt(s.hp/(1-(s.guard||0))*s.damage/s.period);}
+
 export const PARALLAX={far:.035,middle:.34,ground:1,near:1.18};
 export const ENEMY_STRIKE={duration:.6,impact:.28};
 export function enemyAttackFrame(elapsed){return elapsed<.14?0:elapsed<ENEMY_STRIKE.impact?1:elapsed<.44?2:3;}
@@ -21,7 +29,7 @@ export const UNITS={
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
 // Only the ox returns to the imported 48-slot exposure sheet (33 original video poses).
 // Its 74-unit stride / 1.44s cadence stays coupled to actual travel; other bodies stay four cels.
-export const MOTION={haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,walkFps:48/1.44,walkFrames:48,attackFrames:8,idleFrame:56},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},skirt:{walkFps:8,walkFrames:4},horse:{walkFps:5,walkFrames:4},reaper:{walkFps:4.5,walkFrames:4},boss:{walkFps:2,walkFrames:4}};
+export const MOTION={haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,walkFps:48/1.44,walkFrames:48,attackFrames:8,idleFrame:56},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},skirt:{walkFps:106/72*4,walkFrames:4},horse:{walkFps:66/94*4,walkFrames:4},reaper:{walkFps:58/78*4,walkFrames:4},boss:{walkFps:16/40*4,walkFrames:4}};
 export function motionFrame(kind,walk,moving,action){
  const s=MOTION[kind],walkFrames=s.walkFrames||4,attackFrames=s.attackFrames||4;
  return action?walkFrames+Math.min(attackFrames-1,Math.floor(action.elapsed/s.duration*attackFrames)):moving?Math.floor(walk*s.walkFps)%walkFrames:(s.idleFrame??1);
@@ -56,6 +64,23 @@ export const WAVES=[
  {x:2960,types:['horse','horse','skirt'],message:'먹구름이 가까워졌어요. 비막이를 남겨 두세요.'},
  {x:3320,types:['boss','skirt','skirt'],message:'강철이 길을 막았어요. 우박 예고에 비막이!'}
 ];
+// Authored equal-budget reference, never scaled to the live player's choices.
+// HP and basic damage scale together, so this score scales linearly.
+export const BALANCE_REFERENCE=[
+ {party:['cow','cow','keeper','keeper'],rank:0},
+ {party:['cow','cow','keeper','keeper','rabbit'],rank:0},
+ {party:['cow','cow','keeper','keeper','rabbit','scholar'],rank:0},
+ {party:['cow','cow','keeper','keeper','rabbit','rabbit','scholar'],rank:0},
+ {party:['cow','cow','keeper','keeper','rabbit','rabbit','scholar'],rank:1},
+ {party:['cow','cow','keeper','keeper','rabbit','rabbit','scholar'],rank:1}
+];
+export function waveBalance(index){
+ const i=Math.max(0,Math.min(WAVES.length-1,index)),ref=BALANCE_REFERENCE[i];
+ const budget=ref.party.reduce((n,k)=>n+UNITS[k].cost,0)+(ref.rank?UNITS.keeper.upgrade.price:0);
+ const allies=ref.party.reduce((n,k)=>n+combatPower(unitStats(k,ref.rank)),0);
+ const baseEnemy=WAVES[i].types.reduce((n,k)=>n+combatPower(ENEMIES[k]),0),scale=allies/baseEnemy/1.03;
+ return {budget,allies,enemies:baseEnemy*scale,scale,advantage:allies/(baseEnemy*scale)-1};
+}
 export const CODEX=[
  {name:'지하지인',tag:'근접 · 낮은 공격',asset:'skirt',text:'텅 빈 치마와 가느다란 다리. 높은 부적은 머리 위로 지나갑니다.',counter:'누렁소 · 도령 · 발구름',source:'곽재식 강연 5:03',url:'https://www.youtube.com/watch?v=fK2mzliPjcQ&t=303s'},
  {name:'갓 쓴 말',tag:'공격 · 돌진 돌파',asset:'horse',text:'앞발을 들고 잠깐 멈췄다가 달려듭니다. 예고 중 밀어내면 돌진이 끊깁니다.',counter:'발구름 · 동료 전선',source:'사용자 아이디어를 바탕으로 한 창작'},

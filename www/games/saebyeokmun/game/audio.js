@@ -41,16 +41,17 @@ export class Soundscape {
  }
  event(e,heroX){
   let name=e.type;
+  if(e.type==='hit')name=({horn:'horn',stone:'stone',seed:'seed',ink:'ink',seal:'seal',charm:'charm',hex:'hex',stomp:'stomp',rush:'charge',horse:'hurt',boss:'stomp',hail:'hail'})[e.weapon]||'hurt';
   if(e.type==='footstep')name=['haetae','cow'].includes(e.kind)?'step-heavy':'step-light';
-  if(e.type==='projectile')name=({seed:'seed',stone:'stone',ink:'ink',seal:'seal'})[e.kind]||'charm';
+  if(e.type==='projectile')name=({seed:'seed',stone:'stone',ink:'ink',seal:'seal',hex:'hex'})[e.kind]||'charm';
   if(e.type==='swipe'&&e.kind==='horn')name='horn';
   if(e.type==='vanish'&&e.kind==='reaper')name='ascend';
   if(e.type==='claw')name='swipe';
   if(e.type==='rush')name='charge';
   if(e.type==='upgrade')name='heal';
   if(e.type==='finish'){this.setPlaying(false);this.play(e.status==='won'?'win':'lose',{allowIdle:true});return;}
-  if(e.type==='hail'&&e.blocked)name='guard';
+  if(e.type==='hail-impact')name=e.blocked?'guard':'stomp';
   if(!NAMES.includes(name)||name==='ambience')return;
-  this.play(name,{pan:((e.x??e.from??heroX)-heroX-150)/900});
+  this.play(name,{gain:e.type==='projectile'?.3:e.type==='swipe'?.35:1,pan:((e.x??e.from??heroX)-heroX-150)/900});
  }
 }

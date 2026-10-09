@@ -1,7 +1,7 @@
-import {Journey} from './game/model.js?v=18';
-import {makeGame} from './game/scene.js?v=18';
-import {Soundscape} from './game/audio.js?v=14';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,areaIndex,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout} from './game/data.js?v=18';
+import {Journey} from './game/model.js?v=19';
+import {makeGame} from './game/scene.js?v=19';
+import {Soundscape} from './game/audio.js?v=19';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout} from './game/data.js?v=19';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 let installPrompt=null;
@@ -23,7 +23,7 @@ function updateSound(){
 }
 function updateBest(){const n=Math.floor(model.progress()*100);best=Math.max(best,n);$('best').textContent=best+'%';try{localStorage.setItem('saebyeokmun-best',String(best));}catch{}}
 function start(){
- if(!ready)return;model.start();keys.clear();lastStatus='';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
+ if(!ready)return;model.start(scene.previewAreaIndex);keys.clear();lastStatus='';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
  if(scene)scene.resetPresentation();updateAuto();soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});
 }
 function pause(){if(!ready)return;model.pause();keys.clear();model.direction=0;soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
@@ -148,10 +148,10 @@ function onFrame(m,s){
  $('loadout-open').title=['playing','paused'].includes(m.status)?'이번 여정이 끝나면 편성을 바꿀 수 있어요.':'필살기 5개 중 3개 선택';
  $('upgrade').disabled=m.status!=='playing'||m.keeperRank>0||m.coins<UNITS.keeper.upgrade.price;
  if(lastKeeperRank!==m.keeperRank){lastKeeperRank=m.keeperRank;$('upgrade').innerHTML=m.keeperRank?'먹붓 수련 완료':'도령 수련 <small>◎ 45</small>';$('action-keeper').querySelector('strong').textContent=m.keeperRank?'먹붓 도령':'도령';$('action-keeper').querySelector('img').src=s.previewTexture(m.keeperRank?'keeperBrush1':'keeper1');}
- const region=m.status==='ready'?s.previewAreaIndex:areaIndex(m.progress());
- $('area-label').textContent=m.bossDefeated?'새벽문 앞':AREAS[region].name;
+ const region=m.status==='ready'?s.previewAreaIndex:m.stage;
+ $('area-label').textContent=m.bossDefeated?'새벽문 앞':AREAS[region].name.split(' · ')[0]+' · '+skyState(m.time).name;
  $('edition-area').textContent=AREAS[region].name;document.querySelector('.intro-caption strong').textContent=AREAS[region].name;document.body.dataset.area=String(region);
- $('scene-help').textContent=m.status==='ready'?'출발 전, 배경 둘러보기':'함께 지나갈 세 갈래 풍경';
+ $('scene-help').textContent=m.status==='ready'?'출발할 길 선택 · 같은 지형에서 낮과 밤':'한 길에서 해와 달이 교대해요';
  document.querySelectorAll('[data-scene]').forEach(button=>{button.disabled=m.status!=='ready';button.setAttribute('aria-pressed',String(Number(button.dataset.scene)===region));});
  if(now>noticeUntil&&lastHint!==m.hintSerial){$('callout').textContent=m.hint;lastHint=m.hintSerial;}
  $('callout').hidden=m.status==='ready'||m.status==='won'||m.status==='lost'||(m.time-m.lastHintAt>7&&now>noticeUntil);
