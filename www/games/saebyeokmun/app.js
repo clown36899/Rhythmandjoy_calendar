@@ -1,7 +1,7 @@
-import {Journey} from './game/model.js?v=23';
-import {makeGame} from './game/scene.js?v=23';
-import {Soundscape} from './game/audio.js?v=23';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=23';
+import {Journey} from './game/model.js?v=24';
+import {makeGame} from './game/scene.js?v=24';
+import {Soundscape} from './game/audio.js?v=24';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=24';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 let installPrompt=null;
@@ -24,7 +24,7 @@ function updateSound(){
 function updateBest(){const n=Math.floor(model.progress()*100);best=Math.max(best,n);$('best').textContent=best+'%';try{localStorage.setItem('saebyeokmun-best',String(best));}catch{}}
 function start(){
  if(!ready)return;model.start(scene.previewAreaIndex);keys.clear();lastStatus='';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
- if(scene)scene.resetPresentation();updateAuto();soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});
+ if(scene)scene.resetPresentation();updateAuto();soundscape.stopVoices(true);soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});
 }
 function pause(){if(!ready)return;model.pause();keys.clear();model.direction=0;soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
 function updateAuto(){$('auto').setAttribute('aria-pressed',String(model.auto));}

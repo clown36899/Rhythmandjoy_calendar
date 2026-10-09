@@ -1,0 +1,24 @@
+새벽문 v24 음악·효과음 출처
+
+1. Kenney — Impact Sounds (130 recordings), RPG Audio (50 recordings)
+https://kenney.nl/assets/impact-sounds
+https://kenney.nl/assets/rpg-audio
+License: CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+Selected footsteps, impacts, cloth, paper, coins and bells were trimmed, layered,
+pitch shifted and levelled into the game's 23 effects. Original packs are archived locally.
+
+2. 한국저작권위원회 — 국악연주곡_도라지타령 해금연주 오케스트라ver.
+https://gongu.copyright.or.kr/gongu/wrt/wrt/view.do?menuNo=200020&wrtSn=13262881
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+Used as ambience.mp3. Loudness, short start/end fades and encoding adjusted.
+
+3. 한국저작권위원회 — 147.청명한 18현가야금 효과음 027
+Contributor: 양현정
+https://gongu.copyright.or.kr/gongu/wrt/wrt/view.do?menuNo=200020&wrtSn=13290188
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+Used in charm, seal, hex, summon, heal, shelter, ascend, win and lose.
+Trimmed, layered, pitch shifted and levelled; these edits are game-specific.
+No endorsement by the original creators is implied.

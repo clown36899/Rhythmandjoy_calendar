@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=23';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=24';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -18,7 +18,7 @@ export class Journey {
  addAlly(type,x){const s=UNITS[type];
   // Summons enter from the tail; travel spacing is not a combat collision barrier.
   if(x===undefined){const line=this.allies.filter(a=>a.hp>0&&a.type===type);x=Math.min(this.x-65,...line.map(a=>a.x-s.spacing));}const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
- spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={id:++this.nextId,type,x,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:type==='boss'?3:type==='horse'?4.5:5,walk:0,moving:0};this.enemies.push(a);if(type==='boss')this.bossSpawned=true;return a;}
+ spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={id:++this.nextId,type,x,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:s.ability?.initial??Infinity,walk:0,moving:0};this.enemies.push(a);if(type==='boss')this.bossSpawned=true;return a;}
  reject(message){this.emit('notice',{message});return false;}
  summon(type){
   if(this.status!=='playing'||!UNITS[type])return false;
@@ -80,14 +80,15 @@ export class Journey {
  advanceAction(actor,dt){
   const action=actor.action;if(!action)return;
   if(action.kind==='hail'){
+   const ability=ENEMIES.boss.ability;
    action.elapsed+=dt;
-   if(!action.resolved&&action.elapsed>=.7){
+   if(!action.resolved&&action.elapsed>=ability.impact){
     action.resolved=true;const blocked=this.shield>0;
     this.emit('hail-impact',{x:this.x,blocked});
-    if(!blocked){this.hurtHero(24*(actor.powerScale??1),actor.x,'hail');for(const a of this.allies)this.hurtAlly(a,15*(actor.powerScale??1),null,'hail');}
+    if(!blocked){this.hurtHero(ability.damage*(actor.powerScale??1),actor.x,'hail');for(const a of this.allies)this.hurtAlly(a,ability.splash*(actor.powerScale??1),null,'hail');}
     else{this.coins=clamp(this.coins+8,0,MAX_COINS);this.say('우박을 막았어요. 지금 전진해요!');}
    }
-   if(action.elapsed>=1.15)actor.action=null;
+   if(action.elapsed>=ability.duration)actor.action=null;
    return;
   }
   if(action.kind==='rush'){
@@ -154,8 +155,9 @@ export class Journey {
   if(movement>0&&front&&front.x-this.x<145)movement=0;
   this.x=clamp(this.x+movement,START,ROAD);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/76;
   this.furthest=Math.max(this.furthest,this.x);
-  // Distance triggers are owned here, never by camera or UI.
-  while(this.wave<WAVES.length&&this.furthest>=WAVES[this.wave].x){
+  // A full wave already spends the reference power budget. Distance unlocks the
+  // next one, but never stacks two full budgets (including after a player rush).
+  if(this.wave<WAVES.length&&this.furthest>=WAVES[this.wave].x&&!this.enemies.some(e=>e.hp>0)){
    const scale=waveBalance(this.wave).scale,w=WAVES[this.wave++];w.types.forEach((type,i)=>this.spawn(type,GATE+24+i*125,scale));this.say(w.message);
   }
   if(this.action?.kind!=='rush'&&this.heroAttack<=0&&front&&front.type!=='skirt'&&front.x-this.x<200){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:front,damage:10,high:true});}
@@ -200,18 +202,18 @@ export class Journey {
      if(e.type==='boss'){
       e.action={kind:'hail',elapsed:0,resolved:false};
       this.emit('hail',{x:this.x});
-      e.ability=9;
-     }else if(e.type==='horse'){e.x=Math.max(target.x+45,e.x-150);attackTarget(23);e.ability=6;this.emit('charge',{x:e.x,to:target.x,kind:e.type});}
+      e.ability=s.ability.cooldown;
+     }else if(e.type==='horse'){e.x=Math.max(target.x+45,e.x-150);attackTarget(s.ability.damage);e.ability=s.ability.cooldown;this.emit('charge',{x:e.x,to:target.x,kind:e.type});}
      else if(e.type==='reaper'){
-      for(const other of this.enemies)other.hp=Math.min(other.maxHp,other.hp+15*(e.powerScale??1));
-      this.emit('heal',{x:e.x,enemy:true,kind:e.type});e.ability=8;
+      for(const other of this.enemies)other.hp=Math.min(other.maxHp,other.hp+s.ability.heal*(e.powerScale??1));
+      this.emit('heal',{x:e.x,enemy:true,kind:e.type});e.ability=s.ability.cooldown;
      }
     }
     if(this.status!=='playing')break;
     continue;
    }
-   if(e.ability<=0&&((e.type==='boss'&&gap<720)||(e.type==='horse'&&gap<350)||(e.type==='reaper'&&gap<570))){
-    e.windup=e.type==='boss'?2.6:1.7;
+   if(s.ability&&e.ability<=0&&gap<s.ability.range){
+    e.windup=s.ability.windup;
     this.emit('warning',{x:e.x,kind:e.type});
     if(e.type==='boss')this.say('우박이 쏟아져요! 비막이를 펼쳐 주세요.');
     else if(e.type==='horse')this.say('말이 돌진을 준비해요. 발구름!');

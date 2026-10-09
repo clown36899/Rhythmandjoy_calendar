@@ -48,9 +48,9 @@ export const COMPANIONS=[
 ];
 export const ENEMIES={
  skirt:{name:'지하지인',hp:58,speed:106,range:45,damage:7,period:1.15,reward:9},
- horse:{name:'갓 쓴 말',hp:155,speed:66,range:65,damage:12,period:1.5,reward:15},
- reaper:{name:'저승사자',hp:120,speed:58,range:290,damage:8,period:2,reward:18},
- boss:{name:'강철',hp:1900,speed:16,stopAt:ROAD-180,range:140,damage:14,period:1.4,reward:40}
+ horse:{name:'갓 쓴 말',hp:155,speed:66,range:65,damage:12,period:1.5,reward:15,ability:{initial:4.5,cooldown:6,windup:1.7,range:350,damage:23}},
+ reaper:{name:'저승사자',hp:120,speed:58,range:290,damage:8,period:2,reward:18,ability:{initial:5,cooldown:8,windup:1.7,range:570,heal:15}},
+ boss:{name:'강철',hp:1900,speed:16,stopAt:ROAD-180,range:140,damage:14,period:1.4,reward:40,ability:{initial:3,cooldown:9,windup:2.6,range:720,damage:24,splash:15,impact:.7,duration:1.15}}
 };
 export const SKILLS={
  charm:{name:'날림부적',cost:12,cooldown:3.2,icon:'iconCharm',role:'봉인',description:'저승사자를 먼저 겨냥해 술법을 끊어요.'},
@@ -70,7 +70,7 @@ export const WAVES=[
  {x:3320,types:['boss','skirt','skirt'],message:'강철이 길을 막았어요. 우박 예고에 비막이!'}
 ];
 // Authored equal-budget reference, never scaled to the live player's choices.
-// HP and basic damage scale together, so this score scales linearly.
+// HP and sustained output (including telegraphed abilities) scale together.
 export const BALANCE_REFERENCE=[
  {party:['cow','cow','keeper','keeper'],rank:0},
  {party:['cow','cow','keeper','keeper','rabbit'],rank:0},
@@ -83,8 +83,14 @@ export function waveBalance(index){
  const i=Math.max(0,Math.min(WAVES.length-1,index)),ref=BALANCE_REFERENCE[i];
  const budget=ref.party.reduce((n,k)=>n+UNITS[k].cost,0)+(ref.rank?UNITS.keeper.upgrade.price:0);
  const allies=ref.party.reduce((n,k)=>n+combatPower(unitStats(k,ref.rank)),0);
- const baseEnemy=WAVES[i].types.reduce((n,k)=>n+combatPower(ENEMIES[k]),0),scale=allies/baseEnemy/1.03;
- return {budget,allies,enemies:baseEnemy*scale,scale,advantage:allies/(baseEnemy*scale)-1};
+ const enemyStats=WAVES[i].types.map(k=>{
+  const s=ENEMIES[k],a=s.ability;
+  if(!a)return s;
+  const cycle=a.cooldown+a.windup+(a.duration||0),output=(a.damage||0)+(a.splash||0)*ref.party.length+(a.heal||0)*WAVES[i].types.length;
+  return {...s,damage:s.damage*a.cooldown/cycle+output*s.period/cycle};
+ });
+ const baseEnemy=enemyStats.reduce((n,s)=>n+combatPower(s),0),scale=allies/baseEnemy/1.03;
+ return {budget,allies,enemies:baseEnemy*scale,scale,enemyStats,advantage:allies/(baseEnemy*scale)-1};
 }
 export const CODEX=[
  {name:'지하지인',tag:'근접 · 낮은 공격',asset:'skirt',text:'텅 빈 치마와 가느다란 다리. 높은 부적은 머리 위로 지나갑니다.',counter:'누렁소 · 도령 · 발구름',source:'곽재식 강연 5:03',url:'https://www.youtube.com/watch?v=fK2mzliPjcQ&t=303s'},
