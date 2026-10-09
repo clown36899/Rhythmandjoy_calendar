@@ -1,7 +1,7 @@
-import {Journey} from './game/model.js?v=22';
-import {makeGame} from './game/scene.js?v=22';
-import {Soundscape} from './game/audio.js?v=22';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=22';
+import {Journey} from './game/model.js?v=23';
+import {makeGame} from './game/scene.js?v=23';
+import {Soundscape} from './game/audio.js?v=23';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=23';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 let installPrompt=null;
@@ -152,7 +152,12 @@ function onFrame(m,s){
  }
  if(now-lastFrame<70)return;lastFrame=now;
  $('health-fill').style.width=(m.hp/MAX_HP*100)+'%';$('hp-text').textContent=Math.ceil(m.hp)+' / '+MAX_HP;
- const progress=Math.floor(m.progress()*100);$('distance').textContent=progress+'%';$('route-fill').style.width=progress+'%';document.querySelector('.route-dot').style.left=progress+'%';
+ const fraction=m.progress(),progress=Math.floor(fraction*100),sky=skyState(fraction),moonMix=Math.max(0,Math.min(1,(sky.phase-.5)/.07));
+ $('distance').textContent=progress+'%';$('route-fill').style.width=fraction*100+'%';document.querySelector('.route-dot').style.left=fraction*100+'%';
+ $('sky-label').textContent=sky.name;$('journey-dial').style.setProperty('--celestial',moonMix>.5?'#b9d9f5':sky.name==='노을'?'#ffb18b':'#f4d18a');
+ $('dial-sun').setAttribute('opacity',String(1-moonMix));$('dial-moon').setAttribute('opacity',String(moonMix));
+ $('sky-ring-fill').setAttribute('stroke-dashoffset',String(100-fraction*100));
+ $('journey-dial').setAttribute('aria-valuenow',String(progress));$('journey-dial').setAttribute('aria-valuetext',sky.name+' · 길의 '+progress+'%');
  $('coins').textContent=Math.floor(m.coins).toLocaleString('ko-KR');
  $('coin-fill').style.width=(m.coins/MAX_COINS*100)+'%';$('coin-gauge').setAttribute('aria-valuenow',String(Math.floor(m.coins)));
  $('party-count').textContent='동료 '+m.allies.filter(a=>a.hp>0).length+' / 7';
@@ -161,9 +166,9 @@ function onFrame(m,s){
  $('upgrade').disabled=m.status!=='playing'||m.keeperRank>0||m.coins<UNITS.keeper.upgrade.price;
  if(lastKeeperRank!==m.keeperRank){lastKeeperRank=m.keeperRank;$('upgrade').innerHTML=m.keeperRank?'먹붓 수련 완료':'도령 수련 <small>◎ 45</small>';$('action-keeper').querySelector('strong').textContent=m.keeperRank?'먹붓 도령':'도령';$('action-keeper').querySelector('img').src=s.previewTexture(m.keeperRank?'keeperBrush1':'keeper1');}
  const region=m.status==='ready'?s.previewAreaIndex:m.stage;
- $('area-label').textContent=m.bossDefeated?'새벽문 앞':AREAS[region].name.split(' · ')[0]+' · '+skyState(m.time).name;
+ $('area-label').textContent=m.bossDefeated?'새벽문 앞':AREAS[region].name.split(' · ')[0];
  $('edition-area').textContent=AREAS[region].name;document.querySelector('.intro-caption strong').textContent=AREAS[region].name;document.body.dataset.area=String(region);
- $('scene-help').textContent=m.status==='ready'?'출발할 길 선택 · 같은 지형에서 낮과 밤':'한 길에서 해와 달이 교대해요';
+ $('scene-help').textContent=m.status==='ready'?'출발할 길 선택 · 아침에서 밤까지':'길을 따라, 아침에서 밤까지';
  document.querySelectorAll('[data-scene]').forEach(button=>{button.disabled=m.status!=='ready';button.setAttribute('aria-pressed',String(Number(button.dataset.scene)===region));});
  if(now>noticeUntil&&lastHint!==m.hintSerial){$('callout').textContent=m.hint;lastHint=m.hintSerial;}
  $('callout').hidden=m.status==='ready'||m.status==='won'||m.status==='lost'||(m.time-m.lastHintAt>7&&now>noticeUntil);

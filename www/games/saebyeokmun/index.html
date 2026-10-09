@@ -10,9 +10,9 @@
 <link rel="icon" href="./assets/app-icon.svg" type="image/svg+xml">
 <meta name="description" content="해태와 동료들을 이끌고 귀물의 밤을 지나 새벽문까지. 손그림 횡스크롤 전진 방어 게임.">
 <title>새벽문 — 길 끝까지 함께</title>
-<link rel="stylesheet" href="./style.css?v=22">
+<link rel="stylesheet" href="./style.css?v=23">
 <script defer src="./game/phaser.min.js"></script>
-<script type="module" src="./app.js?v=22"></script>
+<script type="module" src="./app.js?v=23"></script>
 </head>
 <body>
 <div class="portrait-guide" role="status"><div class="rotate-device" aria-hidden="true">↻</div><strong>가로로 펼치면, 길이 열려요.</strong><p>휴대폰을 가로로 돌려 주세요.<br>왼손은 이동, 오른손은 동료와 기술.</p></div>
@@ -35,13 +35,22 @@
 <div id="game" aria-label="오른쪽 길 끝까지 전진하는 게임 화면"></div>
 <div class="hud" id="hud" hidden>
 <div class="vital"><span class="hud-label">행렬의 기운</span><div class="bar health"><i id="health-fill"></i></div><span id="hp-text">200 / 200</span></div>
-<div class="journey"><div class="journey-label"><span id="area-label">인왕산</span><b id="distance">0%</b></div><div class="route-track"><i id="route-fill"></i><span class="route-dot">◆</span><span class="route-end">門</span></div></div>
+<div class="journey journey--celestial" id="journey-dial" role="progressbar" aria-label="아침에서 밤까지, 여정의 진행" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+<div class="journey-place"><span id="area-label">인왕산</span><strong id="sky-label">아침</strong></div>
+<svg class="sky-dial" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+<circle class="sky-ring" cx="32" cy="32" r="27"/><circle id="sky-ring-fill" cx="32" cy="32" r="27" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100" transform="rotate(-90 32 32)"/>
+<g id="dial-sun"><circle class="sun-halo" cx="32" cy="32" r="18"/><circle class="sun-core" cx="32" cy="32" r="10"/><path class="sun-rays" d="M32 15v3m0 28v3M15 32h3m28 0h3M20 20l2 2m20 20 2 2M20 44l2-2m20-20 2-2"/></g>
+<g id="dial-moon" opacity="0"><path class="moon-core" d="M38 18a15 15 0 1 0 9 24 16 16 0 0 1-9-24Z"/><path class="moon-star" d="m45 17 1.5 3.5L50 22l-3.5 1.5L45 27l-1.5-3.5L40 22l3.5-1.5Z"/></g>
+</svg>
+<div class="journey-destination"><b id="distance">0%</b><span>새벽문까지</span></div>
+<div class="route-track"><i id="route-fill"></i><span class="route-dot" aria-hidden="true"></span></div>
+</div>
 <div class="hud-right"><div class="coin-bank" title="타격 +1 · 처치 보너스 · 기본 수급 · 주머니 최대 100"><i class="coin-symbol" aria-hidden="true"></i><b id="coins">70</b><small>엽전 <span>/ 100</span></small><div id="coin-gauge" role="progressbar" aria-label="소환에 사용할 엽전" aria-valuemin="0" aria-valuemax="100" aria-valuenow="70"><i id="coin-fill"></i></div></div><button id="pause" class="small-round" aria-label="일시정지">Ⅱ</button></div>
 </div>
 <div class="callout" id="callout" role="status" hidden></div>
 <div class="boss-bar" id="boss-bar" hidden><span>강철 <small>먹구름 아래의 짐승</small></span><div><i id="boss-fill"></i></div></div>
 <div class="intro" id="intro">
-<div class="intro-copy"><div class="eyebrow">A JOURNEY THROUGH THE INK</div><h1>밤을 지나,<br>새벽문까지.</h1><p>해태와 작은 동료들을 이끌고<br>오른쪽 길 끝까지 나아가세요.</p><button id="start" class="primary"><span id="start-label">길 떠나기</span><span>→</span></button><p class="install-hint">주소창 없이: 위의 ⤢ 또는 홈 화면에 추가</p><div class="intro-note">약 3분의 여정 <span>·</span> 터치와 키보드 지원</div><div id="loading" role="status">그림을 불러오는 중…</div></div>
+<div class="intro-copy"><div class="eyebrow">A JOURNEY THROUGH THE INK</div><h1>하루를 건너,<br>새벽문까지.</h1><p>해태와 작은 동료들을 이끌고<br>오른쪽 길 끝까지 나아가세요.</p><button id="start" class="primary"><span id="start-label">길 떠나기</span><span>→</span></button><p class="install-hint">주소창 없이: 위의 ⤢ 또는 홈 화면에 추가</p><div class="intro-note">약 3분의 여정 <span>·</span> 터치와 키보드 지원</div><div id="loading" role="status">그림을 불러오는 중…</div></div>
 <div class="intro-caption"><span>첫 번째 길</span><strong>인왕산</strong><i></i></div>
 </div>
 <div class="modal-overlay" id="pause-overlay" hidden><div class="paper-dialog"><span class="eyebrow">A MOMENT TO BREATHE</span><h2>잠깐, 숨을 고르며.</h2><p>행렬은 여기서 기다리고 있어요.</p><button id="resume" class="primary">계속 걷기 <span>→</span></button><button id="restart-pause" class="text-button">처음부터 다시</button></div></div>

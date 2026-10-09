@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=22';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=23';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}

@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './data.js?v=22';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './data.js?v=23';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const ROAD_EDGE=514,GROUND=542;
@@ -161,7 +161,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   drawLandscape(region,blend,t){
    const vw=this.vw,g=this.sky;g.clear();
-   const state=skyState(t),{night,dusk}=state;
+   const state=skyState(model.status==='ready'?0:model.progress()),{night,dusk}=state;
    const mix=(a,b,v)=>P.Display.Color.Interpolate.ColorWithColor(P.Display.Color.ValueToColor(a),P.Display.Color.ValueToColor(b),1,v);
    const color=(a,b,v)=>{const c=mix(a,b,v);return P.Display.Color.GetColor(c.r,c.g,c.b);};
    const sky=color(color(0xede8db,0xe7b288,dusk*.6),0x243b56,night*.95);

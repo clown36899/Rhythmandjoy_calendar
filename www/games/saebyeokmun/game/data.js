@@ -7,11 +7,12 @@ export const MAX_HP=200;
 export const MAX_COINS=100;
 export const BODY_HEIGHT={haetae:132,girl:117,keeper:133,cow:141,scholar:156,rabbit:124,skirt:102,horse:198,reaper:202,boss:228};
 export const AREAS=[{at:0,name:'인왕산 · 비 갠 바위',texture:'inwang',file:'inwang-layers-v11.png'},{at:.3,name:'남한산성 · 성곽길',texture:'namhan',file:'namhan-layers-v11.png'},{at:.68,name:'금강산 · 구름 봉우리',texture:'geumgang',file:'geumgang-layers-v11.png'}];
-// One chosen landscape lasts the whole journey; only celestial time cycles.
-export function skyState(seconds){
- const cycle=160,phase=((seconds%cycle)+cycle)%cycle/cycle,angle=phase*Math.PI*2;
+// One chosen landscape and one day follow the existing furthest-distance progress.
+// The HUD and landscape read this same presentation state; there is no second clock.
+export function skyState(progress){
+ const p=Number.isFinite(progress)?Math.max(0,Math.min(1,progress)):0,phase=.05+p*.7,angle=phase*Math.PI*2;
  const elevation=Math.sin(angle),smooth=n=>{n=Math.max(0,Math.min(1,n));return n*n*(3-2*n);};
- return {phase,night:1-smooth((elevation+.12)/.32),dusk:1-smooth(Math.abs(elevation)/.4),sun:{x:.5-.42*Math.cos(angle),height:elevation,visible:elevation>=-.08},moon:{x:.5+.42*Math.cos(angle),height:-elevation,visible:elevation<=.08},name:phase<.09||phase>.94?'새벽':phase<.42?'낮':phase<.56?'노을':'밤'};
+ return {phase,night:1-smooth((elevation+.12)/.32),dusk:1-smooth(Math.abs(elevation)/.4),sun:{x:.5-.42*Math.cos(angle),height:elevation,visible:elevation>=-.08},moon:{x:.5+.42*Math.cos(angle),height:-elevation,visible:elevation<=.08},name:phase<.14?'아침':phase<.43?'낮':phase<.57?'노을':'밤'};
 }
 export const SHOT_TIME=.18;
 export function combatPower(s){return Math.sqrt(s.hp/(1-(s.guard||0))*s.damage/s.period);}
