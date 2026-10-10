@@ -1,7 +1,9 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose} from './data.js?v=36';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose} from './data.js?v=37';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const GROUND=542;
+// The overlapping source gutter is composited at draw time, preserving native artwork pixels.
+const LANDSCAPE_OVERLAP=160;
 const MODEL_MAP={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',rabbit:'rabbit',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1',warden:'wardenWalk0',ferryman:'ferrymanWalk0',waterghost:'waterghostWalk0'};
 // Presentation only: combat and rewards remain exclusively in Journey.
 const FX_ART={hit:'CleanImpact',hurt:'CleanImpact',hex:'CleanCurse',guard:'CleanGuard',stomp:'Dust',rush:'CleanSlash',charge:'Dust',summon:'Dust',shelter:'Ward',heal:'Leaf',upgrade:'Seal',vanish:'Smoke'};
@@ -33,11 +35,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.load.image('enemyDefeat','./assets/enemy-defeat-v35.png');
    this.load.image('allyDefeat','./assets/ally-defeat-v35.png');
    this.load.image('allyHurt','./assets/ally-hurt-v32.png');
-   this.load.image('healerWalk','./assets/healer-care-v36.png');this.load.image('umbrellaMotion','./assets/umbrella-motion-v32.png');
+   this.load.image('healerMovingCare','./assets/healer-moving-care-v37.png');this.load.image('healerWalk','./assets/healer-care-v36.png');this.load.image('umbrellaMotion','./assets/umbrella-motion-v32.png');
    this.load.image('allies','./assets/allies.png');this.load.image('enemies','./assets/enemies.png');
    this.load.image('haetaeMotion','./assets/haetae-motion-v10.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
    this.load.image('companionWalk','./assets/companions-walk-v11.png');this.load.image('gate','./assets/underworld-gate-v17.png');this.load.image('enemyWalk','./assets/enemy-walk-v17.png');this.load.image('reaperDeparture','./assets/reaper-departure-v35.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
-   for(const area of AREAS)this.load.image(area.texture,'./assets/'+area.file);
+   for(const area of AREAS){this.load.image(area.texture,'./assets/'+area.file);area.detailFiles.forEach((file,i)=>this.load.image(area.texture+'Detail'+i,'./assets/'+file));}
    this.load.image('nightRoad','./assets/night-road-v32.png');this.load.image('moon','./assets/moon-v32.png');
    this.load.image('livingScenery','./assets/living-scenery-v11.png');
    this.load.image('enemyAttacks','./assets/enemy-attacks-v17.png');
@@ -108,6 +110,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('reaperDeparture',Array.from({length:8},(_,i)=>'reaperDepart'+i),4,true);
    this.sliceAtlas('woundArt',['Cloth','Scar','Fur','Dark'].map(k=>'wound'+k+'1').concat(['Cloth','Scar','Fur','Dark'].map(k=>'wound'+k+'2')),4,false,2,{x:[0,.25,.5,.75,1],y:[0,.5,1]});
    for(const kind of ['keeper','keeperBrush','scholar','mount'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
+   this.sliceAtlas('healerMovingCare',Array.from({length:4},(_,i)=>'healerCareWalk'+i),4,true,1);
    this.sliceAtlas('healerWalk',[...Array.from({length:8},(_,i)=>'healer'+i),...Array.from({length:4},(_,i)=>'healerIdle'+i)],4,true,3);
    for(const kind of ['warden','ferryman','waterghost'])this.sliceAtlas(kind+'Motion',[
     ...['Walk','Strike',...(kind==='waterghost'?[]:['Cast'])].flatMap(mode=>Array.from({length:4},(_,i)=>kind+mode+i)),
@@ -131,14 +134,18 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('livingScenery',['pine','mist','dragon','grass'],2);
    this.sliceAtlas('enemyAttacks',['skirt','horse','reaper','bossLegacy'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Strike'+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
    for(const area of AREAS){const texture=this.textures.get(area.texture),src=texture.getSourceImage(),split=Math.floor(src.height*area.split);texture.add('far',0,0,0,src.width,split);texture.add('middle',0,0,split,src.width,src.height-split);}
+   for(const area of AREAS){const tex=this.textures.get(area.texture+'Detail1'),src=tex.getSourceImage();tex.add('join',0,0,0,LANDSCAPE_OVERLAP,src.height);tex.add('body',0,LANDSCAPE_OVERLAP,0,src.width-LANDSCAPE_OVERLAP,src.height);}
    for(const name of ['nightRoad','castleRoad']){const roadTexture=this.textures.get(name),roadSource=roadTexture.getSourceImage();
    ROAD_SECTIONS.forEach((part,i)=>roadTexture.add(part.frame,0,0,i*roadSource.height/4,roadSource.width,roadSource.height/4));}
    this.root=this.add.container(0,0);
    this.sky=this.add.graphics();this.root.add(this.sky);
    this.moon=this.add.image(0,0,'moon');this.root.add(this.moon);
    this.depths={};
-   for(const depth of ['far','middle']){const im=this.add.image(0,0,'inwang',depth).setOrigin(0,1);this.root.add(im);this.depths[depth]=im;}
-   this.mists=[0,1,2].map(()=>this.add.image(0,0,'mist').setAlpha(.25));this.root.add(this.mists);
+   this.depths.far=[this.add.image(0,0,'inwang','far').setOrigin(0,1)];this.root.add(this.depths.far);
+   // Atmospheric mist belongs behind the near architecture, never over its fine lines.
+   this.mists=[0,1,2].map(()=>this.add.image(0,0,'mist').setAlpha(.12));this.root.add(this.mists);
+   this.depths.middle=[0,1].map(i=>this.add.image(0,0,'inwangDetail'+i).setOrigin(0,1));this.root.add(this.depths.middle);
+   this.detailJoin=this.add.image(0,0,'inwangDetail1','join').setOrigin(0,1).setAlpha(0,1,0,1);this.root.add(this.detailJoin);
    this.dragon=this.add.image(0,0,'dragon').setAlpha(.25);this.root.add(this.dragon);
    this.pines=[0,1,2,3].map(()=>this.add.image(0,0,'pine').setOrigin(.5,1).setAlpha(.6));this.root.add(this.pines);
    this.road=this.add.graphics();this.root.add(this.road);
@@ -192,11 +199,20 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(day){g.fillStyle(0xfff4c5,.13);g.fillCircle(moonX,moonY,73);g.fillStyle(0xfff9dc,.95);g.fillCircle(moonX,moonY,39);}
    for(let i=0;i<(day?0:27);i++){const x=(i*197+43)%Math.max(1,vw),y=top+35+(i*79)%190;g.fillStyle(0xf4e9c9,.18+.23*(.5+.5*Math.sin(t*.45+i)));g.fillCircle(x,y,i%4===0?1.3:.8);}
    for(const depth of ['far','middle']){
-    // One authored panorama per depth covers the whole journey: no mirrored tiles or modulo seams.
-    const w=Math.max(depth==='far'?2300:2800,vw+GATE*PARALLAX[depth]+80),src=this.textures.get(AREAS[region].texture).getSourceImage(),split=Math.floor(src.height*AREAS[region].split),h=w*(depth==='far'?split:src.height-split)/src.width,y=depth==='far'?525:544;
-    this.depths[depth].setTexture(AREAS[region].texture,depth).setFlipX(false).setDisplaySize(w,h).setPosition(-40-this.offset*PARALLAX[depth],y).setTint(0xffffff).setAlpha(depth==='far'?(day?.78:.94):(day?1:.82));
+    // Authored sections overlap in world space; never mirror, repeat or stretch a small atlas row.
+    const area=AREAS[region],parts=this.depths[depth],w=Math.max(depth==='far'?2300:2800,vw+GATE*PARALLAX[depth]+80);
+    const sources=parts.map((_,i)=>this.textures.get(depth==='far'?area.texture:area.texture+'Detail'+i).getSourceImage());
+    const overlap=depth==='middle'?LANDSCAPE_OVERLAP:0,total=sources.reduce((sum,src)=>sum+src.width,0)-overlap*(parts.length-1),scale=w/total;
+    let x=-40-this.offset*PARALLAX[depth];
+    parts.forEach((im,i)=>{
+     const src=sources[i],h=depth==='far'?Math.floor(src.height*area.split):src.height;
+     const join=i?overlap:0;
+     im.setTexture(depth==='far'?area.texture:area.texture+'Detail'+i,depth==='far'?'far':i?'body':'__BASE').setFlipX(false).setDisplaySize((src.width-join)*scale,h*scale).setPosition(x+join*scale,depth==='far'?525:544).setTint(0xffffff).setAlpha(depth==='far'?(day?.86:.94):1);
+     if(join)this.detailJoin.setTexture(area.texture+'Detail'+i,'join').setDisplaySize(join*scale,h*scale).setPosition(x,544);
+     x+=(src.width-overlap)*scale;
+    });
    }
-   this.mists.forEach((im,i)=>{const w=390+i*170,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(3+i)-this.offset*.07)%(vw+650)+vw+650)%(vw+650)-300,top+100+i*94).setTint(0xc4d2dd).setAlpha(.19+i*.025);});
+   this.mists.forEach((im,i)=>{const w=390+i*170,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(3+i)-this.offset*.07)%(vw+650)+vw+650)%(vw+650)-300,top+100+i*94).setTint(0xc4d2dd).setAlpha(day?.055:.12+i*.015);});
    const fly=(t+8)%75,ds=this.dragon.texture.getSourceImage();this.dragon.setVisible(fly<18).setDisplaySize(140,140*ds.height/ds.width).setPosition(-170+(vw+340)*fly/18,top+95+Math.sin(fly*.55)*14).setAngle(Math.sin(fly*.8)*3);
    this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-this.offset*.48-80,534).setVisible(!waterway).setTint(day?0xb9c7a3:0x83969a).setAlpha(day?.16:.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
    const water=this.road;water.clear();

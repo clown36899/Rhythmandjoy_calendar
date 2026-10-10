@@ -7,9 +7,9 @@ export const MAX_HP=200;
 export const MAX_COINS=100;
 export const BODY_HEIGHT={umbrella:185,mount:188,haetae:132,girl:117,keeper:133,cow:141,scholar:156,healer:165,rabbit:124,skirt:102,horse:198,reaper:202,boss:300,warden:230,ferryman:245,waterghost:180,gate:350};
 export const AREAS=[
- {at:0,name:'인왕산 · 달빛 물길',texture:'inwang',file:'inwang-night-layers-v32.png',split:395/724,ground:'nightRoad'},
- {at:1,name:'수원화성 · 낮의 성곽길',texture:'hwaseong',file:'hwaseong-fortress-v36.png',split:382/724,ground:'castleRoad'},
- {at:2,name:'망각의 나루 · 수면 위',texture:'waterway',file:'waterway-layers-v36.png',split:395/724,ground:'water'}
+ {at:0,name:'인왕산 · 달빛 물길',texture:'inwang',detailFiles:['inwang-near-left-v37.png','inwang-near-right-v37.png'],file:'inwang-night-layers-v32.png',split:395/724,ground:'nightRoad'},
+ {at:1,name:'수원화성 · 낮의 성곽길',texture:'hwaseong',detailFiles:['hwaseong-near-left-v37.png','hwaseong-near-right-v37.png'],file:'hwaseong-fortress-v36.png',split:382/724,ground:'castleRoad'},
+ {at:2,name:'망각의 나루 · 수면 위',texture:'waterway',detailFiles:['waterway-near-left-v37.png','waterway-near-right-v37.png'],file:'waterway-layers-v36.png',split:395/724,ground:'water'}
 ];
 // One chosen landscape and its celestial body follow the existing simulation clock.
 // The HUD and landscape read this same presentation state; there is no second clock.
@@ -75,7 +75,7 @@ export function motionFrame(kind,walk,moving,action){
 }
 // Idle illustrations use the existing game clock, never shift the actor's feet.
 export function healerPose(walk,moving,action,time=0){
- if(action?.kind==='healer'&&(!action.phase||action.phase==='treat'))return 'healer'+motionFrame('healer',walk,0,action);
+ if(action?.kind==='healer'&&(!action.phase||action.phase==='treat'))return moving?'healerCareWalk'+Math.floor(walk*MOTION.healer.walkFps)%4:'healer'+motionFrame('healer',walk,0,action);
  return moving?'healer'+motionFrame('healer',walk,moving,null):'healerIdle'+Math.floor(time/1.15)%4;
 }
 export const COMPANIONS=[
@@ -84,7 +84,7 @@ export const COMPANIONS=[
  {name:'돌팔매 도령',asset:'keeper',tag:'공격 · 짱돌에서 먹붓으로',text:'처음에는 주머니에서 짱돌을 꺼내 던집니다. 설정의 도령 수련에 엽전 45를 쓰면 옷과 무기가 바뀌어 먹붓 공격을 합니다.',counter:'소환 18 · 수련 45 · 공격 17 → 28',motion:true},
  {name:'달토끼',asset:'rabbit',tag:'공격 · 씨앗 사격',text:'대나무 통으로 뒤에서 씨앗탄을 쏩니다. 낮은 귀물에는 빗나가므로 누렁소와 도령이 길을 열어줘야 합니다.',counter:'체력 48 · 공격 24 · 소환 24',motion:true},
  {name:'선비',asset:'scholar',tag:'지원 · 붓으로 술법 봉인',text:'사거리에 먼저 들어온 상대를 노립니다. 붓으로 쓴 봉인이 잠깐 기절시키고 적의 술법과 공격 준비를 끊습니다.',counter:'소환 34 · 짧은 봉인 · 후열 지원',motion:true},
- {name:'약방 의원',asset:'healer',tag:'회복 · 약통을 멘 성인 여성 의원',text:'약통을 메고 동행합니다. 다친 동료를 찾아가 붕대를 감고 후열로 돌아옵니다. 기다리는 동안 땀을 닦거나 약재를 정리합니다. 사망한 동료는 되살리지 못합니다.',counter:'소환 36 · 회복 14 · 치료 간격 3.4초',motion:true}
+ {name:'약방 의원',asset:'healer',tag:'회복 · 약통을 멘 성인 여성 의원',text:'약통을 메고 동행합니다. 움직이는 동료도 따라가며 붕대를 감습니다. 치료할 동료가 없을 때만 후열로 돌아오며, 복귀 중에도 환자를 발견하면 다시 찾아갑니다. 기다리는 동안 땀을 닦거나 약재를 정리합니다. 사망한 동료는 되살리지 못합니다.',counter:'소환 36 · 회복 14 · 치료 간격 3.4초',motion:true}
 ];
 export const ENEMIES={
  gate:{name:'저승문',hp:360,speed:0,range:0,damage:0,period:Infinity,reward:0,stationary:true},

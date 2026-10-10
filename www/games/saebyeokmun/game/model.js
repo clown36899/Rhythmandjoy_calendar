@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss} from './data.js?v=36';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss} from './data.js?v=37';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -94,27 +94,31 @@ export class Journey {
   const action=actor.action;if(!action)return;
   if(action.kind==='healer'){
    const spec=MOTION.healer,s=UNITS.healer;
-   const target=action.targetId===null?this:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
-   const valid=target&&target.hp>0&&target.hp<(target.maxHp??MAX_HP);
+   let target=action.targetId===null?this:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
+   const valid=target&&target.hp>0&&target.hp<(target.maxHp??MAX_HP)&&Math.abs(target.x-actor.x)<=s.search;
    const moveTo=goal=>{const gap=goal-actor.x;actor.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);return Math.abs(goal-actor.x)<1;};
-   // A mission owns its patient until completion/cancellation. No mid-wrap retarget.
-   if(this.direction<0||(action.phase!=='return'&&(!target||target.hp<=0||(!valid&&!action.resolved))))action.phase='return';
-   if(action.phase==='approach'){
-    const dx=target.x-actor.x;action.dir=Math.sign(dx)||1;
-    if(target===actor||Math.abs(dx)<=52){action.phase='treat';action.elapsed=0;}
-    else moveTo(target.x-action.dir*52);
-    return;
-   }
+   // Lock each wrap to one patient. Reconsider only between wraps or after cancellation.
+   if(!target||target.hp<=0||Math.abs(target.x-actor.x)>s.search||(!valid&&!action.resolved))action.phase='return';
    if(action.phase==='return'){
-    if(moveTo(this.healerHome(actor)))actor.action=null;
+    const next=this.healerPatient(actor);
+    if(next){target=next;Object.assign(action,{phase:'approach',targetId:next.id??null,elapsed:0,resolved:false,dir:Math.sign(next.x-actor.x)||1});}
+    else{if(moveTo(this.healerHome(actor)))actor.action=null;return;}
+   }
+   if(action.phase==='approach'){
+    const dx=target.x-actor.x;action.dir=Math.sign(dx)||action.dir||1;
+    if(target!==actor)moveTo(target.x-action.dir*52);
+    if(Math.abs(target.x-actor.x)<=52.01&&actor.cd<=0){action.phase='treat';action.elapsed=0;actor.cd=s.period;}
     return;
    }
-   if(!target||Math.abs(target.x-actor.x)>s.range){action.phase='return';return;}
+   // Walking patients keep their treatment clock while the physician follows.
+   if(target!==actor)moveTo(target.x-action.dir*52);
+   if(Math.abs(target.x-actor.x)>s.range)return;
    action.elapsed+=dt;
    if(!action.resolved&&action.elapsed>=spec.impact){
     action.resolved=true;const amount=Math.min(s.heal,(target.maxHp??MAX_HP)-target.hp);
     if(amount>0){target.hp+=amount;this.emit('heal',{actor:actor.id,sourceKind:'healer',targetActor:target.id??null,kind:target.type||'haetae',x:target.x,from:actor.x,amount});}
    }
+   // Return is a patient check, not an unconditional trip home after every wrap.
    if(action.elapsed>=spec.duration)action.phase='return';
    return;
   }
@@ -190,6 +194,10 @@ export class Journey {
   if(this.bossDefeated&&this.wave>=this.waves.length&&this.gateBrokenAt===null&&!this.enemies.some(e=>e.type==='gate')){const gate=this.spawn('gate',GATE);gate.hp=gate.maxHp=STAGES[this.stage].gateHp;}
  }
  finish(status){if(this.status!=='playing')return;this.status=status;this.direction=0;this.emit('finish',{status});}
+ healerPatient(actor){
+  const s=UNITS.healer;
+  return [this,...this.allies].filter(b=>b.hp>0&&b.hp<(b.maxHp??MAX_HP)&&Math.abs(b.x-actor.x)<=s.search).sort((b,c)=>b.hp/(b.maxHp??MAX_HP)-c.hp/(c.maxHp??MAX_HP)||Math.abs(b.x-actor.x)-Math.abs(c.x-actor.x))[0]||null;
+ }
  healerHome(actor){
   const s=UNITS.healer,formation=Math.min(ROAD-90,this.x+s.formation);
   const front=this.enemies.filter(e=>e.hp>0&&e.x>actor.x-55).sort((a,b)=>(a.x-ENEMY_FRONT[a.type])-(b.x-ENEMY_FRONT[b.type]))[0];
@@ -226,9 +234,9 @@ export class Journey {
    if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
    const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55).sort((b,c)=>(b.x-ENEMY_FRONT[b.type])-(c.x-ENEMY_FRONT[c.type]));
    if(s.heal){
-    const wounded=[this,...this.allies].filter(b=>b.hp>0&&b.hp<(b.maxHp??MAX_HP)&&Math.abs(b.x-a.x)<=s.search).sort((b,c)=>b.hp/(b.maxHp??MAX_HP)-c.hp/(c.maxHp??MAX_HP)||Math.abs(b.x-a.x)-Math.abs(c.x-a.x));
-    if(this.direction>=0&&wounded.length&&a.cd<=0){
-     a.cd=s.period;a.action={kind:'healer',phase:'approach',elapsed:0,resolved:false,targetId:wounded[0].id??null,dir:Math.sign(wounded[0].x-a.x)||1};
+    const patient=this.healerPatient(a);
+    if(patient){
+     a.action={kind:'healer',phase:'approach',elapsed:0,resolved:false,targetId:patient.id??null,dir:Math.sign(patient.x-a.x)||1};
     }else{
      const goal=this.healerHome(a),gap=goal-a.x,retreat=this.direction<0&&a.x>goal+170;
      if(gap>0||retreat)a.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);
