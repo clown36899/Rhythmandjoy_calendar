@@ -138,3 +138,31 @@ body{min-height:100svh;display:flex;align-items:center;background:radial-gradien
 @media(max-width:1000px) and (orientation:landscape){
  .control-deck{border:0}.actions .action-group{flex:5}.actions .action-group:last-child{flex:3}.action-row{grid-template-columns:repeat(5,minmax(0,1fr))}
 }
+
+/* The campaign reuses the intro surface and the existing skill editor. */
+body[data-screen=map] .control-deck{visibility:hidden;pointer-events:none}
+.journey-map{pointer-events:auto;background:linear-gradient(100deg,#0b2237f5,#102f45d9 36%,#26445077 75%,#132c40bb);overflow:hidden}
+.map-heading{position:absolute;left:5%;top:7%;width:31%;z-index:1}
+.journey-map h1{font-size:clamp(23px,3vw,37px);line-height:1.22;letter-spacing:-1px;margin:10px 0 12px}
+.journey-map .map-heading p{font-size:10px;line-height:1.8;margin:0 0 10px;color:#c7d8d5}
+#map-clears{display:block;color:#e4c98c;font-size:9px;letter-spacing:.5px}
+.map-land{position:absolute;inset:7% 6% 26% 34%;background:radial-gradient(ellipse at 58% 40%,#f4d89116,transparent 65%)}
+.map-trail{position:absolute;inset:0;width:100%;height:100%;overflow:visible;fill:none;stroke-linecap:round}
+.trail-shadow{stroke:#163943;stroke-width:13}.trail-light{stroke:#d4bb87;stroke-width:2;stroke-dasharray:3 7}
+.map-node{position:absolute;transform:translate(-50%,-50%);min-width:142px;min-height:96px;background:linear-gradient(160deg,#244857d9,#102939da);border:1px solid #b8c4ac58;border-radius:9px;padding:8px 12px;color:#f5e7c8;box-shadow:0 9px 25px #071a2950;text-align:center}
+.map-node[aria-pressed=true]{border-color:#f3cf7f;box-shadow:0 0 0 3px #f3cf7f13,0 10px 25px #071a2950}
+.map-node:disabled{opacity:.62}.map-node[data-state=cleared]{border-color:#a0d9c9}
+.map-node--night{left:26%;top:68%}.map-node--day{left:62%;top:39%}
+.node-mark{display:block;font-size:26px;line-height:1.1;color:#f4d696;margin-bottom:5px}.map-node b{display:block;font-size:11px;font-weight:500}.map-node small{display:block;font-size:8px;margin:4px 0;color:#bccdc8}.stage-state{display:block;font-size:8px;font-style:normal;color:#f1d499}.map-node[data-state=cleared] .stage-state{color:#aee1c4}
+.map-destination{position:absolute;left:89%;top:3%;width:100px;transform:translateX(-50%);font-size:10px;color:#c4ccc3;text-align:center;opacity:.65}.map-destination>span{display:block;font-size:25px}.map-destination small{display:block;font-size:7px;margin-top:4px}
+.map-bottom{position:absolute;inset:auto 4% 5%;display:grid;grid-template-columns:minmax(0,1fr) minmax(125px,.65fr) auto;align-items:center;gap:22px;padding-top:13px;border-top:1px solid #c5dbc032;background:linear-gradient(0deg,#132d3b60,transparent)}
+.map-selected>span{font-size:8px;letter-spacing:1px;color:#a5c5c0}.map-selected h2{font-size:18px;font-weight:500;display:inline-block;margin:5px 9px 2px 0;color:#f8e4b9}.map-selected>small{font-size:8px;color:#b6c5bf}.journey-map .map-selected p{font-size:8px;line-height:1.5;margin:2px 0 0;color:#c4d0c9}
+.map-prepare button{background:#b6d4c516;border:1px solid #c3dbcb60;color:#dfebe0;border-radius:5px;font-size:10px;min-height:44px;width:100%;padding:5px 12px;display:flex;justify-content:space-between;align-items:center}.map-prepare small{display:block;font-size:7px;margin:5px 0 0;color:#a7beb6;text-align:center;line-height:1.4}
+.journey-map .map-depart .primary{min-width:150px;background:#d3ad65;color:#182f35;border-color:#e1be77;border-radius:5px;letter-spacing:.5px;gap:20px;min-height:44px}.journey-map .map-depart .primary:hover{background:#e4c080}.map-depart #loading{font-size:8px;text-align:center}
+@media(max-height:420px) and (orientation:landscape){.map-heading{top:7%;left:4%}.journey-map h1{font-size:27px;margin:7px 0}.journey-map .map-heading p{font-size:9px;line-height:1.5;margin-bottom:6px}.map-land{inset:6% 7% 32% 35%}.map-node{min-width:133px;min-height:87px;padding:6px 9px}.node-mark{font-size:22px;margin-bottom:3px}.map-bottom{bottom:5%;gap:17px;padding-top:9px}.map-selected h2{font-size:16px}.map-selected>span{font-size:7px}.journey-map .map-depart .primary{min-width:143px}}
+@media(max-height:320px) and (orientation:landscape){.map-heading{top:5%}.journey-map h1{font-size:24px;margin:5px 0}.journey-map .map-heading p{font-size:8px;line-height:1.45}.map-node{min-width:122px;min-height:76px;padding:4px 6px}.node-mark{font-size:19px}.map-node b{font-size:10px}.map-node small,.stage-state{font-size:7px}.map-land{inset:4% 8% 34% 35%}.map-destination{font-size:8px}.map-destination>span{font-size:20px}.map-bottom{bottom:4%;gap:12px;padding-top:6px}.map-selected h2{font-size:14px;margin:3px 5px 1px 0}.journey-map .map-selected p{font-size:7px}.map-prepare small{font-size:6px}.journey-map .map-depart .primary{min-width:128px;font-size:10px}}
+
+.map-selected>span{display:block}
+
+.journey-map .map-heading p{font-size:11px;line-height:1.55}.map-node b{font-size:12px}.map-node small{font-size:10px}.stage-state{font-size:9px}.map-selected>span{font-size:10px}.journey-map .map-selected p{font-size:10px}.map-selected>small{font-size:10px}.map-prepare button{font-size:11px}.map-prepare small{font-size:9px}.map-destination{font-size:11px}.map-destination small{font-size:9px}
+@media(max-height:320px) and (orientation:landscape){.journey-map .map-heading p{font-size:10px}.map-node{min-width:138px;min-height:84px}.map-node b{font-size:11px}.map-node small{font-size:9px}.stage-state{font-size:8px}.map-selected>span,.map-selected>small{font-size:9px}.journey-map .map-selected p{font-size:9px}.map-prepare small{font-size:8px}.map-destination small{font-size:8px}#loadout{padding:6px 12px}#loadout .dialog-head .eyebrow,#loadout .loadout-help{display:none}#loadout h2{font-size:18px;margin:0}#loadout .dialog-head{align-items:center;height:44px}#loadout .loadout-slots{margin:3px 0 6px}#loadout .skill-choice{min-height:105px;padding:5px}#loadout .skill-choice[aria-pressed=true]{padding:4px}#loadout .skill-choice img{height:24px;margin-bottom:0}#loadout .skill-choice p{font-size:8px;line-height:1.2;margin:2px 0}#loadout .skill-choice strong{font-size:10px;margin:2px 0}#loadout .loadout-footer{margin-top:4px}}

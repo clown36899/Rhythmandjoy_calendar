@@ -5,23 +5,25 @@ export const GATE=ROAD+80;
 export const START=220;
 export const MAX_HP=200;
 export const MAX_COINS=100;
-export const BODY_HEIGHT={umbrella:185,mount:188,haetae:132,girl:117,keeper:133,cow:141,scholar:156,healer:165,rabbit:124,skirt:102,horse:198,reaper:202,boss:300};
-export const AREAS=[{at:0,name:'인왕산 · 달빛 물길',texture:'inwang',file:'inwang-night-layers-v32.png'},{at:.3,name:'남한산성 · 성곽길',texture:'namhan',file:'namhan-layers-v11.png'},{at:.68,name:'금강산 · 구름 봉우리',texture:'geumgang',file:'geumgang-layers-v11.png'}];
-// One chosen landscape and a slow moon follow the existing furthest-distance progress.
+export const BODY_HEIGHT={umbrella:185,mount:188,haetae:132,girl:117,keeper:133,cow:141,scholar:156,healer:165,rabbit:124,skirt:102,horse:198,reaper:202,boss:300,gate:350};
+export const AREAS=[{at:0,name:'인왕산 · 달빛 물길',texture:'inwang',file:'inwang-night-layers-v32.png'},{at:1,name:'수원화성 · 낮의 성곽길',texture:'hwaseong',file:'hwaseong-day-layers-v35.png'}];
+// One chosen landscape and its celestial body follow the existing simulation clock.
 // The HUD and landscape read this same presentation state; there is no second clock.
-export function skyState(progress){
- const p=Number.isFinite(progress)?Math.max(0,Math.min(1,progress)):0,phase=.61+p*.055,angle=phase*Math.PI*2;
- return {phase,night:1,dusk:0,sun:{x:.5-.42*Math.cos(angle),height:Math.sin(angle),visible:false},moon:{x:.5+.42*Math.cos(angle),height:-Math.sin(angle),visible:true},name:'밤'};
+export function skyState(progress,time=0,stage=0){
+ const q=((Math.max(0,Number.isFinite(time)?time:0)+160)%840)/840,angle=Math.PI*q,day=stage===1;
+ // Exit and re-enter beyond the viewport during very long battles, without changing night/day.
+ const orb={x:-.15+1.3*q,height:Math.sin(angle)};
+ return {phase:day?.25:.75,night:day?0:1,dusk:0,sun:{...orb,visible:day},moon:{...orb,visible:!day},name:day?'낮':'밤'};
 }
 // Four distinct authored sections cover the level, including the camera beyond the gate.
 // These are scenery coordinates, never a second collision or travel model.
-export const ROAD_SECTIONS=['bank','bridge','causeway','approach'].map((frame,i)=>({frame,x:-650+i*1536,width:1536,height:256,foot:60}));
+export const ROAD_SECTIONS=['bank','bridge','causeway','approach'].map((frame,i)=>({frame,x:-650+i*1536,width:1536,height:256,foot:70}));
 export const SHOT_TIME=.18;
 // One overlap order for painting and equal-distance target selection. The player stays visible.
 export const actorLayer=actor=>actor.id??Number.MAX_SAFE_INTEGER;
-export const HERO_STANDOFF=580;
+export const HERO_STANDOFF=400;
 // Painted enemy frontage, measured in road units; all contact checks share it.
-export const ENEMY_FRONT={skirt:35,horse:70,reaper:45,boss:165};
+export const ENEMY_FRONT={skirt:35,horse:70,reaper:45,boss:165,gate:85};
 export const contactGap=(a,b)=>Math.abs(a.x-b.x)-(ENEMY_FRONT[a.type]??ENEMY_FRONT[b.type]??0);
 export function combatPower(s){return Math.sqrt(s.hp/(1-(s.guard||0))*s.damage/s.period);}
 
@@ -30,6 +32,9 @@ export const PARALLAX={far:.035,middle:.34,ground:1,near:1.18};
 export const ENEMY_OUTPUT=.85;
 export const ENEMY_STRIKE={duration:.6,impact:.28};
 export const REAPER_DEPARTURE_TIME=3.1;
+export const ALLY_HIT_TIME=.42;
+export const GATE_BREAK_TIME=1.7;
+export function enemyDepartureFrame(p){return p<.16?0:p<.34?1:p<.56?2:3;}
 export function reaperDepartureFrame(p){return p<.06?0:p<.17?1:p<.29?2:p<.42?3:p<.56?4:p<.70?5:p<.85?6:7;}
 // Health already owns the state; these are display bands, not another injury system.
 export function injuryLevel(hp,maxHp){return !Number.isFinite(hp)||!Number.isFinite(maxHp)||maxHp<=0||hp>=maxHp?0:hp>maxHp*.4?1:2;}
@@ -43,11 +48,11 @@ export function bossPose(walk,moving,action=null,windup=0){
 }
 
 export const UNITS={
- cow:{name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:110,damage:12,period:1.35,cost:30,cooldown:4,formation:470,spacing:0,guard:.6,weapon:'horn'},
- keeper:{name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:385,damage:17,period:1.15,cost:18,cooldown:3.5,formation:195,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:425,weapon:'ink'}}},
- rabbit:{name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:260,damage:24,period:1.35,cost:24,cooldown:4,formation:320,spacing:0,guard:0,weapon:'seed'},
- scholar:{name:'선비',role:'지원 · 술법 봉인',hp:56,speed:68,range:775,damage:16,period:2.1,cost:34,cooldown:5,formation:-195,spacing:0,guard:0,weapon:'seal'},
- healer:{name:'약방 의원',role:'회복 · 대나무 약통',hp:62,speed:70,range:900,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-360,spacing:0,guard:0,weapon:'medicine'}
+ cow:{name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:95,damage:12,period:1.35,cost:30,cooldown:4,formation:305,spacing:0,guard:.6,weapon:'horn'},
+ keeper:{name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:275,damage:17,period:1.15,cost:18,cooldown:3.5,formation:125,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:295,weapon:'ink'}}},
+ rabbit:{name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:185,damage:24,period:1.35,cost:24,cooldown:4,formation:215,spacing:0,guard:0,weapon:'seed'},
+ scholar:{name:'선비',role:'지원 · 술법 봉인',hp:56,speed:68,range:540,damage:16,period:2.1,cost:34,cooldown:5,formation:-140,spacing:0,guard:0,weapon:'seal'},
+ healer:{name:'약방 의원',role:'회복 · 대나무 약통',hp:62,speed:70,range:630,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:0,guard:0,weapon:'medicine'}
 };
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
 // Only the ox returns to the imported 48-slot exposure sheet (33 original video poses).
@@ -66,6 +71,7 @@ export const COMPANIONS=[
  {name:'약방 의원',asset:'healer',tag:'회복 · 약통을 멘 성인 여성 의원',text:'약통을 메고 동행합니다. 다친 동료나 여행자에게 다가가 대나무통의 약가루를 뿌립니다. 사망한 동료는 되살리지 못합니다.',counter:'소환 36 · 회복 14 · 치료 간격 3.4초',motion:true}
 ];
 export const ENEMIES={
+ gate:{name:'저승문',hp:360,speed:0,range:0,damage:0,period:Infinity,reward:0,stationary:true},
  skirt:{name:'지하지인',hp:58,speed:106,range:45,damage:7,period:1.15,reward:9},
  horse:{name:'갓 쓴 말',hp:155,speed:66,range:65,damage:12,period:1.5,reward:15,ability:{initial:4.5,cooldown:6,windup:1.7,range:350,damage:23}},
  reaper:{name:'저승사자',hp:120,speed:58,range:290,damage:8,period:2,reward:18,ability:{initial:5,cooldown:8,windup:1.7,range:570,heal:15}},
@@ -88,6 +94,11 @@ export const WAVES=[
  {x:2960,types:['horse','horse','skirt'],message:'먹구름이 가까워졌어요. 비막이를 남겨 두세요.'},
  {x:3320,types:['boss','skirt','skirt'],message:'강철이 길을 막았어요. 우박 예고에 비막이!'}
 ];
+// Campaign and battle share these authored stage definitions. No second wave scheduler.
+export const STAGES=[
+ {name:'달빛 물길',place:'인왕산',time:'밤',gateHp:360,waves:WAVES,subtitle:'첫 번째 문 · 잃어버린 이름',brief:'달빛 나루의 귀물을 물리치고, 이름을 가둔 첫 저승문을 부수세요.',clue:'문 안쪽에 아이의 이름 한 획이 남아 있었다. 나머지는 낮이 멈춘 성곽 너머에 있다.'},
+ {name:'낮이 멈춘 성곽',place:'수원화성',time:'낮',gateHp:460,waves:WAVES.map((w,i)=>({...w,types:[['skirt','horse'],['horse','skirt','skirt'],['reaper','skirt','skirt'],['horse','reaper','skirt'],['reaper','horse','skirt'],['boss','reaper']][i]})),subtitle:'두 번째 문 · 맡겨 둔 약속',brief:'해가 지지 않는 성곽길. 저승사자의 봉인을 끊고 두 번째 저승문을 부수세요.',clue:'문지기의 장부에는 이렇게 적혀 있었다. “이 이름은 빼앗은 것이 아니다. 아이가 스스로 맡겼다.” 이름의 서고로 가야 할 이유가 생겼다.'}
+];
 // Authored equal-budget reference, never scaled to the live player's choices.
 // HP and sustained output (including telegraphed abilities) scale together.
 export const BALANCE_REFERENCE=[
@@ -98,14 +109,14 @@ export const BALANCE_REFERENCE=[
  {party:['cow','cow','keeper','keeper','rabbit','rabbit','scholar'],rank:1},
  {party:['cow','cow','keeper','keeper','rabbit','rabbit','scholar'],rank:1}
 ];
-export function waveBalance(index){
- const i=Math.max(0,Math.min(WAVES.length-1,index)),ref=BALANCE_REFERENCE[i];
+export function waveBalance(index,stage=0){
+ const waves=STAGES[stage]?.waves||WAVES,i=Math.max(0,Math.min(waves.length-1,index)),ref=BALANCE_REFERENCE[i];
  const budget=ref.party.reduce((n,k)=>n+UNITS[k].cost,0)+(ref.rank?UNITS.keeper.upgrade.price:0);
  const allies=ref.party.reduce((n,k)=>n+combatPower(unitStats(k,ref.rank)),0);
- const enemyStats=WAVES[i].types.map(k=>{
+ const enemyStats=waves[i].types.map(k=>{
   const s=ENEMIES[k],a=s.ability;
   if(!a)return s;
-  const cycle=a.cooldown+a.windup+(a.duration||0),output=(a.damage||0)+(a.splash||0)*ref.party.length+(a.heal||0)*WAVES[i].types.length;
+  const cycle=a.cooldown+a.windup+(a.duration||0),output=(a.damage||0)+(a.splash||0)*ref.party.length+(a.heal||0)*waves[i].types.length;
   return {...s,damage:s.damage*a.cooldown/cycle+output*s.period/cycle};
  });
  const baseEnemy=enemyStats.reduce((n,s)=>n+combatPower(s),0),scale=allies/baseEnemy/1.03;

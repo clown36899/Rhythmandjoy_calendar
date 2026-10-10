@@ -1,11 +1,11 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,actorLayer} from './data.js?v=34';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME} from './data.js?v=35';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const GROUND=542;
 const MODEL_MAP={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',rabbit:'rabbit',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1'};
 // Presentation only: combat and rewards remain exclusively in Journey.
 const FX_ART={hit:'CleanImpact',hurt:'CleanImpact',hex:'CleanCurse',guard:'CleanGuard',stomp:'Dust',rush:'CleanSlash',charge:'Dust',summon:'Dust',shelter:'Ward',heal:'Leaf',upgrade:'Seal',vanish:'Smoke'};
-const FX_LIFE={hit:.20,hurt:.20,swipe:.16,claw:.16,hex:.28,guard:.26,stomp:.68,rush:1.3,charge:.48,summon:1.1,shelter:.65,heal:1.05,upgrade:1,vanish:1.05,projectile:SHOT_TIME,hail:1.15};
+const FX_LIFE={hit:.20,hurt:.42,swipe:.16,claw:.16,hex:.28,guard:.42,stomp:.68,rush:1.3,charge:.48,summon:1.1,shelter:.65,heal:1.05,upgrade:1,vanish:1.05,projectile:SHOT_TIME,hail:1.15};
 // Surface landmarks belong to each whole-body cel, not the padded atlas rectangle.
 // x/y are the torso centre; w/h its surface extent. Only sockets move: never the art/limbs.
 const WOUNDS={
@@ -28,11 +28,13 @@ export function makeGame(model,onReady,onFrame,onEvents){
  class RoadScene extends P.Scene{
   constructor(){super('road');this.sprites=new Map();this.effects=[];this.grounding=new Map();this.contacts=new Map();this.offset=0;this.lastX=START;this.heroPose=0;this.shake=0;this.hitStop=0;this.impactCooldown=0;this.previewAreaIndex=0;this.injuryTextures=new Map();}
   preload(){
+   this.load.image('enemyDefeat','./assets/enemy-defeat-v35.png');
+   this.load.image('allyDefeat','./assets/ally-defeat-v35.png');
    this.load.image('allyHurt','./assets/ally-hurt-v32.png');
    this.load.image('healerWalk','./assets/healer-motion-v32.png');this.load.image('umbrellaMotion','./assets/umbrella-motion-v32.png');
    this.load.image('allies','./assets/allies.png');this.load.image('enemies','./assets/enemies.png');
    this.load.image('haetaeMotion','./assets/haetae-motion-v10.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
-   this.load.image('companionWalk','./assets/companions-walk-v11.png');this.load.image('gate','./assets/underworld-gate-v17.png');this.load.image('enemyWalk','./assets/enemy-walk-v17.png');this.load.image('reaperDeparture','./assets/reaper-departure-v20.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
+   this.load.image('companionWalk','./assets/companions-walk-v11.png');this.load.image('gate','./assets/underworld-gate-v17.png');this.load.image('enemyWalk','./assets/enemy-walk-v17.png');this.load.image('reaperDeparture','./assets/reaper-departure-v35.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
    for(const area of AREAS)this.load.image(area.texture,'./assets/'+area.file);
    this.load.image('nightRoad','./assets/night-road-v32.png');this.load.image('moon','./assets/moon-v32.png');
    this.load.image('livingScenery','./assets/living-scenery-v11.png');
@@ -104,6 +106,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('reaperDeparture',Array.from({length:8},(_,i)=>'reaperDepart'+i),4,true);
    this.sliceAtlas('woundArt',['Cloth','Scar','Fur','Dark'].map(k=>'wound'+k+'1').concat(['Cloth','Scar','Fur','Dark'].map(k=>'wound'+k+'2')),4,false,2,{x:[0,.25,.5,.75,1],y:[0,.5,1]});
    for(const kind of ['keeper','keeperBrush','scholar','mount','healer'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
+   this.sliceAtlas('enemyDefeat',['skirt','horse','boss'].flatMap(k=>Array.from({length:4},(_,i)=>'depart'+k+i)),4,4,3);
+   this.sliceAtlas('allyDefeat',['girl','haetae','cow','keeper','rabbit','scholar','healer','mount'].flatMap(k=>['defeat'+k+'0','defeat'+k+'1']),4,2,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
    this.sliceAtlas('allyHurt',['girl','haetae','cow','keeper','rabbit','scholar','healer','mount','umbrella','keeperBrush'].map(k=>'hurt'+k),5,false,2,{x:[[0,354,824,1266,1675,1983],[0,360,732,1184,1650,1983]].map(row=>row.map(x=>x/1983)),y:[0,384/793,1]});
    this.sliceAtlas('umbrellaMotion',Array.from({length:8},(_,i)=>'umbrella'+i),4,true);
    const cowRows=MOTION.cow.walkFrames/4;
@@ -136,6 +140,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.pathTiles=ROAD_SECTIONS.map(part=>this.add.image(0,0,'nightRoad',part.frame).setOrigin(0,0));this.root.add(this.pathTiles);
    this.decor=this.add.graphics();this.root.add(this.decor);
    this.gate=this.add.image(0,0,'gate').setOrigin(.5,1);this.root.add(this.gate);
+   this.gateFragments=Array.from({length:3},()=>this.add.image(0,0,'gate').setOrigin(.5,1).setVisible(false));this.root.add(this.gateFragments);
    this.gateMist=this.add.image(0,0,'fxSmoke1').setOrigin(.5,1);this.root.add(this.gateMist);
    this.shadows=this.add.graphics();this.root.add(this.shadows);
    this.hero=this.add.image(0,0,'haetae').setOrigin(.5,1);this.girl=this.add.image(0,0,'girl').setOrigin(.5,1);
@@ -172,22 +177,23 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   drawLandscape(region,blend,t){
    const vw=this.vw,g=this.sky,bottom=this.sceneBottom||780;g.clear();
-   const state=skyState(model.status==='ready'?0:model.progress());
-   g.fillGradientStyle(0x1b304d,0x253e59,0x7994a2,0x5c7d90,1);g.fillRect(0,0,vw,bottom);
-   const top=620-(this.viewHeight||620),moonX=state.moon.x*vw,moonY=top+125-(state.moon.height-.637)*90;
+   const state=skyState(model.progress(),t,region),day=state.night===0;
+   g.fillGradientStyle(day?0xa8d4e5:0x1b304d,day?0xc8e7ee:0x253e59,day?0xf5eacd:0x7994a2,day?0xd0dabb:0x5c7d90,1);g.fillRect(0,0,vw,bottom);
+   const top=620-(this.viewHeight||620),moonX=state.moon.x*vw,moonY=top+200-state.moon.height*140;
    g.fillStyle(0xf9df9e,.045);g.fillCircle(moonX,moonY,109);
    this.moon.setPosition(moonX,moonY).setDisplaySize(145,145).setVisible(state.moon.visible);
-   for(let i=0;i<27;i++){const x=(i*197+43)%Math.max(1,vw),y=top+35+(i*79)%190;g.fillStyle(0xf4e9c9,.18+.23*(.5+.5*Math.sin(t*.45+i)));g.fillCircle(x,y,i%4===0?1.3:.8);}
+   if(day){g.fillStyle(0xfff4c5,.13);g.fillCircle(moonX,moonY,73);g.fillStyle(0xfff9dc,.95);g.fillCircle(moonX,moonY,39);}
+   for(let i=0;i<(day?0:27);i++){const x=(i*197+43)%Math.max(1,vw),y=top+35+(i*79)%190;g.fillStyle(0xf4e9c9,.18+.23*(.5+.5*Math.sin(t*.45+i)));g.fillCircle(x,y,i%4===0?1.3:.8);}
    for(const depth of ['far','middle']){
     // One authored panorama per depth covers the whole journey: no mirrored tiles or modulo seams.
     const w=Math.max(depth==='far'?2300:2800,vw+GATE*PARALLAX[depth]+80),h=depth==='far'?420:430,y=depth==='far'?525:544;
-    this.depths[depth].setTexture(AREAS[region].texture,depth).setFlipX(false).setDisplaySize(w,h).setPosition(-40-this.offset*PARALLAX[depth],y).setTint(region===0?0xffffff:0x8eafc8).setAlpha(depth==='far'?.94:.82);
+    this.depths[depth].setTexture(AREAS[region].texture,depth).setFlipX(false).setDisplaySize(w,h).setPosition(-40-this.offset*PARALLAX[depth],y).setTint(0xffffff).setAlpha(depth==='far'?.94:.82);
    }
    this.mists.forEach((im,i)=>{const w=390+i*170,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(3+i)-this.offset*.07)%(vw+650)+vw+650)%(vw+650)-300,top+100+i*94).setTint(0xc4d2dd).setAlpha(.19+i*.025);});
    const fly=(t+8)%75,ds=this.dragon.texture.getSourceImage();this.dragon.setVisible(fly<18).setDisplaySize(140,140*ds.height/ds.width).setPosition(-170+(vw+340)*fly/18,top+95+Math.sin(fly*.55)*14).setAngle(Math.sin(fly*.8)*3);
-   this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-this.offset*.48-80,534).setTint(0x83969a).setAlpha(.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
+   this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-this.offset*.48-80,534).setTint(day?0xb9c7a3:0x83969a).setAlpha(day?.42:.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
    const water=this.road;water.clear();
-   water.fillGradientStyle(0x7794a2,0x55798c,0x1b354a,0x152b3e,1);water.fillRect(0,535,vw,bottom-535);
+   water.fillGradientStyle(day?0x9bc4bc:0x7794a2,day?0x93bbae:0x55798c,day?0x668f88:0x1b354a,day?0x4d7f79:0x152b3e,1);water.fillRect(0,535,vw,bottom-535);
    // The lunar reflection widens toward the viewer; waves drift independently of solid ground.
    for(let i=0;i<47;i++){
     const y=540+i*6;if(y>bottom)break;
@@ -200,7 +206,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     water.lineStyle(1,i%3?0xb3c9cb:0xeee8cf,.08+(i%4)*.027);water.lineBetween(x,y,x+17+i%5*8,y);
    }
    // Each long section is fixed in the world, with no modulo repeating the same road.
-   this.pathTiles.forEach((im,i)=>{const part=ROAD_SECTIONS[i],x=part.x-this.offset*PARALLAX.ground;im.setPosition(x,GROUND-part.foot).setDisplaySize(part.width+.5,part.height).setTint(0xd7e2e5).setVisible(x<vw&&x+part.width>0);});
+   this.pathTiles.forEach((im,i)=>{const part=ROAD_SECTIONS[i],x=part.x-this.offset*PARALLAX.ground;im.setPosition(x,GROUND-part.foot).setDisplaySize(part.width+.5,part.height).setTint(day?0xfff1d5:0xd7e2e5).setVisible(x<vw&&x+part.width>0);});
    for(let i=0;i<12;i++){const x=((i*181+t*5)%Math.max(1,vw)),y=GROUND-25+Math.sin(t*.8+i)*17;water.fillStyle(0xdceab3,.2+.3*Math.sin(t*2+i)**2);water.fillCircle(x,y,1.7);}
    this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=64+(i%2)*31;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*560-this.offset*PARALLAX.near-100,bottom+8).setTint(0x9fb5bd).setAlpha(.8).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
   }
@@ -210,15 +216,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(const [key,body] of actors){
     if(!body.visible||body.x<-250||body.x>this.vw+250)continue;
     present.add(key);let strips=this.reflections.get(key);
-    if(!strips){strips=Array.from({length:4},()=>this.add.image(0,0,body.texture.key));this.waterReflections.add(strips);this.reflections.set(key,strips);}
-    const src=body.texture.getSourceImage(),h=src.height;
-    strips.forEach((im,i)=>{
-     const y=Math.floor(i*h/4),end=Math.floor((i+1)*h/4);
-     im.setTexture(body.texture.key).setOrigin(body.originX,1-body.originY).setFlipX(body.flipX).setFlipY(true)
-      .setDisplaySize(body.displayWidth,body.displayHeight*.76).setCrop(0,y,src.width,end-y)
-      .setPosition(body.x+Math.sin(t*1.5+i*1.9+body.x*.009)*(1.4+(3-i)*.8),GROUND+60+(GROUND-body.y)*.76)
-      .setAngle(-(body.angle||0)).setTint(0xb8ced5).setAlpha((.22+i*.045)*(body.alpha??1));
-    });
+    if(!strips){strips=[this.add.image(0,0,body.texture.key)];this.waterReflections.add(strips);this.reflections.set(key,strips);}
+    // A continuous silhouette cannot tear at crop boundaries. Ripples belong to the water.
+    strips[0].setTexture(body.texture.key).setOrigin(body.originX,1-body.originY).setFlipX(body.flipX).setFlipY(true)
+     .setDisplaySize(body.displayWidth,body.displayHeight*.78)
+     .setPosition(body.x+Math.sin(t*.8+body.x*.006)*1.4,GROUND+68+(GROUND-body.y)*.78)
+     .setAngle(-(body.angle||0)).setTint(model.stage===1?0x699c93:0xa2baca).setAlpha(.19*(body.alpha??1));
    }
    for(const [key,strips] of this.reflections)if(!present.has(key)){strips.forEach(im=>im.destroy());this.reflections.delete(key);}
   }
@@ -299,21 +302,17 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(e.type==='hail-impact')for(const fx of this.effects)if(fx.type==='hail'){fx.blocked=e.blocked;fx.impacted=true;}
     if(e.type==='projectile'&&e.actor==='girl')this.heroPose=.25;
     if(e.type==='vanish'){
-     const living=this.sprites.get((e.enemy===false?'a':'e')+e.actor);
-     const key=e.kind==='reaper'?'reaperDepart0':this.injuryTexture(living?.texture.key||MODEL_MAP[e.kind],e.kind,0,1);
+     const living=e.actor==='hero'?this.hero:e.actor==='girl'?this.girl:this.sprites.get((e.enemy===false?'a':'e')+e.actor);
+     const key=e.enemy===false?'defeat'+e.kind+'0':e.kind==='reaper'?'reaperDepart0':'depart'+e.kind+'0';
      const sprite=this.add.image(0,0,key).setOrigin(.5,this.grounding.get(key)??1).setFlipX(living?.flipX||false);
      const src=sprite.texture.getSourceImage(),h=BODY_HEIGHT[e.kind];sprite.setDisplaySize(h*src.width/src.height,h);this.root.add(sprite);
-     this.effects.push({...e,groundY:living?.y??e.groundY,type:'depart',sprite,t:0,duration:e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.enemy===false?1.1:e.kind==='boss'?2.1:1.35});
-     if(e.kind==='horse'){
-      const hat=this.add.image(0,0,'horse').setOrigin(.5,0),src=hat.texture.getSourceImage();
-      hat.setCrop(0,0,src.width,Math.floor(src.height*.16)).setDisplaySize(BODY_HEIGHT.horse*src.width/src.height,BODY_HEIGHT.horse);this.root.add(hat);
-      this.effects.push({...e,type:'hat',sprite:hat,t:0,duration:1.5});
-     }
+     this.effects.push({...e,groundY:living?.y??e.groundY,type:'depart',sprite,t:0,duration:e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.enemy===false?1.8:e.kind==='boss'?2.7:2.1});
+
     }
     if(['hit','guard','hurt'].includes(e.type)&&e.damage){
      const lane=this.effects.filter(a=>a.type==='damage'&&Math.abs(a.x-e.x)<30).length%3;
-     const label=this.add.text(0,0,(e.type==='guard'?'막음 ':'')+Math.ceil(e.damage),{fontFamily:'sans-serif',fontSize:e.kind==='boss'?'36px':'32px',fontStyle:'bold',color:e.type==='guard'?'#aeffee':e.enemy?'#fff4ce':'#ffd2b3',stroke:'#263431',strokeThickness:6}).setOrigin(.5);
-     this.root.add(label);this.effects.push({...e,type:'damage',lane,sprite:label,t:0,duration:.66});
+     const label=this.add.text(0,0,(e.enemy===false||e.type==='hurt'?'−':'')+Math.ceil(e.damage),{fontFamily:'sans-serif',fontSize:e.enemy===false||e.type==='hurt'?'38px':e.kind==='boss'?'36px':'32px',fontStyle:'bold',color:e.enemy===false||e.type==='hurt'?'#ffad91':e.enemy?'#fff4ce':'#ffad91',stroke:'#263431',strokeThickness:6}).setOrigin(.5);
+     this.root.add(label);this.effects.push({...e,type:'damage',lane,sprite:label,t:0,duration:e.enemy===false||e.type==='hurt'?.95:.66});
     }
     if(e.type==='heal'&&!e.enemy&&e.amount>0){
      const label=this.add.text(0,0,'+'+Math.round(e.amount),{fontFamily:'sans-serif',fontSize:'34px',fontStyle:'bold',color:'#c5ffd8',stroke:'#183c37',strokeThickness:6}).setOrigin(.5);
@@ -323,27 +322,43 @@ export function makeGame(model,onReady,onFrame,onEvents){
      const label=e.reason==='defeat'?this.add.text(0,0,'+'+e.amount,{fontFamily:'sans-serif',fontSize:'24px',fontStyle:'bold',color:'#ffe6a4',stroke:'#614528',strokeThickness:4}).setOrigin(.5):null;
      if(label)this.root.add(label);this.effects.push({...e,type:'coin',sprite:label,t:0,duration:.72});
     }
-    if(FX_LIFE[e.type]){
+    if(FX_LIFE[e.type]&&!(e.type==='vanish'&&e.enemy===false)){
      const art=e.art||(e.type==='summon'?({cow:'Dust',keeper:'Dust',rabbit:'Leaf',scholar:'Seal',healer:'Leaf',haetae:'Seal'}[e.kind]||'Seal'):e.type==='heal'&&e.enemy?'Smoke':FX_ART[e.type]);
      const sprite=art?this.add.image(0,0,'fx'+art+'0').setVisible(false):null;
      if(sprite)this.root.add(sprite);
-     this.effects.push({...e,art,sprite,t:0,duration:e.type==='vanish'&&e.kind==='reaper'?REAPER_DEPARTURE_TIME:FX_LIFE[e.type]});
+     this.effects.push({...e,art,sprite,t:0,duration:e.type==='vanish'&&e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.type==='vanish'?(e.kind==='boss'?2.7:2.1):e.type==='hit'&&e.enemy===false?ALLY_HIT_TIME:FX_LIFE[e.type]});
     }
    }
   }
   drawGate(x,t){
-   const g=this.decor,h=350,source=this.gate.texture.getSourceImage(),cleared=model.bossDefeated;
-   this.gate.setPosition(x,GROUND+31).setDisplaySize(h*source.width/source.height,h).setVisible(x>-330&&x<this.vw+330);
-   this.exitLabel.setVisible(this.gate.visible);
-   this.gateMist.setVisible(this.gate.visible).setPosition(x,GROUND+3).setDisplaySize(120,230).setAlpha(.24+Math.sin(t*.8)*.06).setTint(cleared?0xffe3a7:0x91d5cb);
-   if(!this.gate.visible)return;
-   // The light lives at the same world threshold as the art and enemy arrivals.
-   const color=cleared?0xffd67d:0x51d9d7,pulse=.5+.5*Math.sin(t*2.1);
-   g.fillStyle(0x233d42,.25);g.fillEllipse(x,GROUND+9,360,23);
-   for(let i=4;i>0;i--){g.lineStyle(5+i*5,color,.035*(5-i));g.strokeEllipse(x,GROUND-94,70+i*18,188+i*13);}
-   g.fillStyle(color,.10+pulse*.06);g.fillEllipse(x-8,GROUND+3,130,19);
-   for(let i=0;i<9;i++){const phase=(t*.24+i/9)%1;g.fillStyle(i%2?0xf5f7d2:color,(1-phase)*.65);g.fillCircle(x+Math.sin(i*2.4+phase*3)*57,GROUND-17-phase*210,2+phase);}
-   this.exitLabel.setPosition(x,GROUND-h-1).setText(cleared?'새벽문 · 길이 열렸다':'저승문 · 길의 끝').setColor(cleared?'#816337':'#356f6a');
+   const g=this.decor,front=this.fx,h=350,source=this.gate.texture.getSourceImage(),gate=model.enemies.find(e=>e.type==='gate');
+   const ratio=gate?Math.max(0,gate.hp/gate.maxHp):model.gateBrokenAt!==null?0:1,broken=model.gateBrokenAt!==null;
+   const p=broken?Math.min(1,(model.time-model.gateBrokenAt)/GATE_BREAK_TIME):0,w=h*source.width/source.height,visible=x>-330&&x<this.vw+330;
+   const tremor=gate?.hit>0?Math.sin(t*95)*4:0;
+   this.gate.setPosition(x+tremor,GROUND+31).setDisplaySize(w,h).setVisible(visible&&!broken).setAlpha(1).setTint(ratio<.34?0xc0bbb0:0xffffff);
+   this.exitLabel.setVisible(visible);
+   this.gateMist.setVisible(visible).setPosition(x,GROUND+3).setDisplaySize(120,230).setAlpha(broken?.6*(1-p):.2).setTint(broken?0xffe3a7:0x91d5cb);
+   this.gateFragments?.forEach((im,i)=>{
+    const regions=[[0,0,source.width,source.height*.36],[0,source.height*.36,source.width/2,source.height*.64],[source.width/2,source.height*.36,source.width/2,source.height*.64]],dir=i===1?-1:i===2?1:0;
+    im.setVisible(visible&&broken&&p<1).setCrop(...regions[i]).setDisplaySize(w,h).setPosition(x+dir*100*p,GROUND+31-95*Math.sin(p*Math.PI)+170*p*p).setAngle((i===0?18:dir*27)*p).setAlpha(Math.max(0,1-p*p));
+   });
+   if(!visible)return;
+   const color=broken?0xffd67d:gate?0xffbc73:0x51d9d7;
+   g.fillStyle(0x233d42,.25);g.fillEllipse(x,GROUND+9,340,22);
+   if(!broken){
+    g.lineStyle(3,color,.4);g.strokeEllipse(x,GROUND-103,108,201);
+    for(let i=0;i<7;i++){const q=(t*.3+i/7)%1;g.fillStyle(color,(1-q)*.7);g.fillCircle(x+Math.sin(i*2.4+q*3)*52,GROUND-15-q*200,2+q);}
+    if(ratio<.67)for(let i=0;i<(ratio<.34?7:3);i++){
+     const xx=x-90+i*29,yy=GROUND-255+(i%3)*48;
+     for(const [width,c] of [[7,0x26302e],[2,color]]){front.lineStyle(width,c,.9);front.beginPath();front.moveTo(xx,yy);front.lineTo(xx-9,yy+27);front.lineTo(xx+11,yy+44);front.lineTo(xx-5,yy+76);front.strokePath();}
+    }
+   }
+   if(broken||ratio<.34){
+    for(let i=0;i<18;i++){const q=i/18,travel=broken?p:.12,xx=x+Math.sin(i*2.4)*(40+160*travel),yy=GROUND+10-110*Math.sin(travel*Math.PI)+120*travel*travel+(i%3)*5;
+     front.fillStyle(i%2?0x718081:0xaaa792,broken?1-p*.4:.85);front.fillTriangle(xx-5-i%4,yy,xx+7,yy-7,xx+10,yy+6);}
+   }
+   if(broken){front.lineStyle(8,color,(1-p)*.8);front.strokeEllipse(x,GROUND-100,80+230*p,120+230*p);}
+   this.exitLabel.setPosition(x,GROUND-h-1).setText(broken?'봉인 해제':!gate?'저승문 · 문지기의 봉인':ratio>.67?'저승문 · 문짝을 부수세요':ratio>.34?'저승문 · 균열':'저승문 · 붕괴 직전').setColor(model.stage===1?'#463e36':'#ffe3ad');
   }
   drawBossCloud(boss,t){
    const departure=this.effects.find(e=>e.type==='depart'&&e.kind==='boss'),alive=!!boss;
@@ -381,12 +396,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(p<impact){this.fx.lineStyle(2,0x9c6958,.35);this.fx.lineBetween(image.x-dir*20,groundY-height*.6,image.x-dir*43,groundY-height*.63);}
    }else if(enemy&&windup>0){image.setAngle(Math.sin(windup*8)*1.8+(type==='horse'?5:0));}
    if(hit>0){
-    const age=.26-hit,response=age<.035?1:Math.max(0,1-(age-.035)/.225)**2;
+    const total=enemy?.26:ALLY_HIT_TIME,age=total-hit,response=age<.05?1:Math.max(0,1-(age-.05)/(total-.05))**2;
     image.x+=hitDir*response*(type==='boss'?5:10);
     image.setAngle(hitDir*response*(type==='boss'?2:5));
    }
    if(MOTION[type])this.trackContact(key,type,walk,moving,x,groundY);
-   if(hit>.215)image.setTintFill(0xfff7dd);else if(hit>0)image.setTint(enemy?0xf3c9b9:0xffddcc);else image.clearTint();
+   if(hit>(enemy?.225:ALLY_HIT_TIME-.035))image.setTintFill(0xfff7dd);else if(hit>0)image.setTint(enemy?0xf3c9b9:0xffae99);else image.clearTint();
    const arrival=this.effects.find(e=>e.type==='summon'&&e.actor===Number(key.slice(1)));
    image.setAlpha(hp<=0?0:enemy?P.Math.Clamp((GATE+55-x)/90,0,1):arrival?Math.min(1,.35+(model.time-arrival.at)*3):1);
    if(enemy&&x>GATE-65&&x<GATE+45){
@@ -400,7 +415,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     }
    }
    if(hp<maxHp||windup>0){
-    const w=type==='boss'?150:46,px=x-this.offset;
+    const w=type==='boss'?150:enemy?46:66,px=x-this.offset;
     this.fx.fillStyle(0x263d3b,.8);this.fx.fillRoundedRect(px-w/2-1,groundY-height-15,w+2,7,2);
     this.fx.fillStyle(enemy?0xeb9976:0x6ed6ba,1);this.fx.fillRect(px-w/2,groundY-height-14,w*Math.max(0,hp/maxHp),5);
    }
@@ -452,7 +467,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     return {x:at.x-this.offset,y:at.y};
    };
    for(const e of this.effects){
-    e.t=Math.min(e.duration,e.flight?e.flight.t:e.at!==undefined?Math.max(0,model.time-e.at):e.t+dt);const p=e.t/e.duration,fade=1-p,tail=p<.48?1:(1-p)/.52,x=(e.x??e.from??model.x)-this.offset,ground=e.groundY??GROUND;
+    e.t=Math.min(e.duration,['won','lost'].includes(model.status)?e.t+dt:e.flight?e.flight.t:e.at!==undefined?Math.max(0,model.time-e.at):e.t+dt);const p=e.t/e.duration,fade=1-p,tail=p<.48?1:(1-p)/.52,x=(e.x??e.from??model.x)-this.offset,ground=e.groundY??GROUND;
     if(e.type==='projectile'){
      if(p>=1)continue; // The contact flash replaces the projectile on the same model tick.
      const stone=e.kind==='stone',seed=e.kind==='seed',ink=e.kind==='ink',seal=e.kind==='seal',hex=e.kind==='hex',dir=Math.sign(e.to-e.from)||1;
@@ -479,8 +494,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
     }
     if(e.type==='hit'||e.type==='hurt'||e.type==='guard'){
      const at=contact(e),dir=e.dir||1,blocked=e.type==='guard',profile=IMPACT[e.weapon]||IMPACT.physical;
-     const color=blocked?0x9be2d6:e.weapon==='seed'?0xc4e88b:e.weapon==='hex'?0xd2b2ef:['ink','seal','charm'].includes(e.weapon)?0x8be3d9:0xffd485;
-     const size=profile.size*.48,peak=Math.max(0,1-e.t/.065),remain=(1-p)**2;
+     const color=e.enemy===false||e.type==='hurt'?0xff8c6e:blocked?0x9be2d6:e.weapon==='seed'?0xc4e88b:e.weapon==='hex'?0xd2b2ef:['ink','seal','charm'].includes(e.weapon)?0x8be3d9:0xffd485;
+     const size=profile.size*(e.enemy===false||e.type==='hurt'?.72:.48),peak=Math.max(0,1-e.t/.065),remain=(1-p)**2;
      // One compact, immediate contact. The broad painted image is only a low-alpha trailing wisp.
      if(e.sprite)paint(e,at.x,at.y,size*1.3,size,dir>0?0:180,remain*.30,Math.max(.38,p));
      if(blocked){
@@ -549,7 +564,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     }
     if(e.type==='shelter'){e.sprite.setVisible(false);flecks(x+90,GROUND-185,p,0xaee6dc,7,60,70);}
     if(e.type==='vanish'){
-     const late=e.kind==='reaper'?Math.max(0,p-.22)/.78:p;
+     const late=e.kind==='reaper'?Math.max(0,p-.22)/.78:Math.max(0,p-.65)/.35;
      paint(e,x,GROUND-(BODY_HEIGHT[e.kind]||132)*.45-80*late,155,205,0,Math.sin(late*Math.PI)*.7,late);
     }
     if(e.type==='footstep'){
@@ -582,7 +597,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
      }
     }
     if(e.type==='depart'){
-     const x=e.x-this.offset,h=BODY_HEIGHT[e.kind],sprite=e.sprite;
+     const x=e.x-this.offset,h=BODY_HEIGHT[e.kind]*(e.kind==='boss'?.64:1),sprite=e.sprite;
      if(e.kind==='reaper'){
       // The same man lifts his chin and opens his arms; only light leaves the eyes.
       const lift=Math.min(1,p/.46),rise=28*(lift*lift*(3-2*lift));
@@ -605,20 +620,16 @@ export function makeGame(model,onReady,onFrame,onEvents){
        g.fillEllipse(xx,yy,14+24*dissolve,8+14*dissolve);
       }
      }else if(e.enemy===false){
-      sprite.setPosition(x+(e.dir||-1)*7*p,(e.groundY??GROUND)+9*p).setAngle((e.dir||-1)*14*p).setAlpha(p<.2?1:Math.max(0,(1-p)/.8));
-     }else if(e.kind==='skirt'){
-      sprite.setPosition(x+20*p,GROUND-30*p).setAlpha(fade*fade).setAngle(p*24);
-      for(let i=0;i<9;i++){const xx=x+(i-4)*15*p+40*p,yy=GROUND-35-i*6-95*p;g.lineStyle(3, i%2?0xfaf4df:0xbeb39e,fade);g.lineBetween(xx,yy,xx+Math.sin(p*9+i)*12,yy-15);}
-     }else if(e.kind==='horse'){
-      sprite.setPosition(x,GROUND).setAlpha(Math.max(0,1-p*2));
-      for(let i=0;i<10;i++){g.fillStyle(0x7d7567,fade*.35);g.fillCircle(x+Math.sin(i*2)*35*(1+p),GROUND-i*17-40*p,3+4*p);}
+      const key='defeat'+e.kind+(p<.32?'0':'1'),src=this.textures.get(key).getSourceImage();
+      sprite.setTexture(key).setOrigin(.5,this.grounding.get(key)??1).setDisplaySize(h*.88*src.width/src.height,h*.88).setPosition(x+(e.dir||-1)*8*Math.min(1,p/.32),e.groundY??GROUND).setAngle(0).setAlpha(p<.62?1:Math.max(0,(1-p)/.38));
+      if(p>.60)flecks(x,GROUND-h*.25,(p-.60)/.40,0xbad9c9,8,65,60);
      }else{
-      sprite.setPosition(x,GROUND+16*p).setTint(0xa8b6a0).setAlpha(Math.max(0,1-p*1.7));
-      if(p>.35){const grow=Math.min(1,(p-.35)*3);g.lineStyle(2,0x558d70,fade+.2);g.lineBetween(x,GROUND,x,GROUND-27*grow);g.fillStyle(0x87b293,fade+.2);g.fillEllipse(x-7*grow,GROUND-16*grow,15*grow,7*grow);g.fillEllipse(x+7*grow,GROUND-23*grow,15*grow,7*grow);}
-      for(let i=0;i<9;i++){g.fillStyle(0x6f7164,fade*.3);g.fillCircle(x+(i-4)*11,GROUND-70+60*p+Math.sin(i)*20,7*fade);}
+      const key='depart'+e.kind+enemyDepartureFrame(p),src=this.textures.get(key).getSourceImage();
+      sprite.setTexture(key).setOrigin(.5,this.grounding.get(key)??1).setDisplaySize(h*src.width/src.height,h).setPosition(x,GROUND).setAlpha(p<.68?1:Math.max(0,(1-p)/.32));
+      this.root.bringToTop(sprite);
+      if(p>.60)flecks(x,GROUND-h*.2,(p-.60)/.40,e.kind==='boss'?0x97b5a2:0xaebcb9,8,85,70);
      }
     }
-    if(e.type==='hat'){const y=GROUND-BODY_HEIGHT.horse+(BODY_HEIGHT.horse-20)*Math.min(1,p*1.3);e.sprite.setPosition(e.x-this.offset+Math.sin(p*6)*18,y).setAngle(Math.sin(p*7)*12).setAlpha(p<.7?1:(1-p)/.3);}
 
     if(p>=1)e.sprite?.destroy();
    }
@@ -652,12 +663,13 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const sheltering=!intro&&model.shield>0,mounted=!intro&&(model.action?.kind==='rush'||sheltering);
    const opening=sheltering?6-model.shield:0;
    const heroFrame=sheltering?(opening<.6?Math.min(3,Math.floor(opening/.15)):walking?4+motionFrame('haetae',model.walk,true,null):7):mounted?(model.action.elapsed<.18?4:Math.floor(model.action.elapsed*14)%4):motionFrame('haetae',intro?t:model.walk,walking,intro?null:model.action);
-   const heroHurt=!intro&&this.effects.some(e=>e.type==='hurt'&&model.time-(e.at??model.time-e.t)<.20);
+   const heroHurt=!intro&&this.effects.some(e=>e.type==='hurt'&&model.time-(e.at??model.time-e.t)<ALLY_HIT_TIME);
    this.hero.setTexture(this.injuryTexture(heroHurt?'hurt'+(sheltering?'umbrella':mounted?'mount':'haetae'):(sheltering?'umbrella':mounted?'mount':'haetae')+heroFrame,mounted?'mount':'haetae',intro?MAX_HP:model.hp,MAX_HP)).setFlipX(sheltering||intro||model.action?false:model.moving?model.moving<0:this.hero.flipX);
    this.placeOnGround(this.hero,heroX+37,sheltering?BODY_HEIGHT.umbrella:mounted?BODY_HEIGHT.mount:intro?150:BODY_HEIGHT.haetae);
    this.girl.setTexture(this.injuryTexture(heroHurt?'hurtgirl':this.heroPose>0?'girlCast':'girl'+motionFrame('girl',intro?t:model.walk,walking,null),'girl',intro?MAX_HP:model.hp,MAX_HP)).setFlipX(intro||this.heroPose>0?false:model.moving?model.moving<0:this.girl.flipX);
    this.placeOnGround(this.girl,heroX-60,intro?145:117);
-   this.girl.setVisible(!mounted);
+   this.hero.setVisible(model.hp>0);this.girl.setVisible(!mounted&&model.hp>0);
+   if(heroHurt){this.hero.setTint(0xffb39c);this.girl.setTint(0xffb39c);}else{this.hero.clearTint();this.girl.clearTint();}
    if(!intro){this.trackContact('haetae','haetae',model.walk,model.moving,model.x+37);if(!mounted)this.trackContact('girl','girl',model.walk,model.moving,model.x-60);}
    this.lastX=model.x;
    const present=new Set();
@@ -666,7 +678,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     this.renderEntity('previewKeeper','keeper',vw*.54+this.offset,t*.65,1,1,0,0,false,1);present.add('previewKeeper');
     this.renderEntity('previewCow','cow',vw*.78+this.offset,t*.5,1,1,0,0,false,1);present.add('previewCow');
    }else{
-    for(const e of [...model.enemies].sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,e.moving,e.action,e.hitDir);}
+    for(const e of model.enemies.filter(e=>e.type!=='gate').sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,e.moving,e.action,e.hitDir);}
     for(const a of [...model.allies].sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='a'+a.id;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir);}
    }
    for(const [key,obj] of this.sprites)if(!present.has(key)){obj.destroy();this.sprites.delete(key);this.contacts.delete(key);}
@@ -683,7 +695,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    // Effects render above the units.
    this.root.bringToTop(this.fx);
-   if(playing)this.drawEffects(dt);else this.drawEffects(0);this.root.bringToTop(this.fx);
+   if(playing||['won','lost'].includes(model.status))this.drawEffects(dt);else this.drawEffects(0);this.root.bringToTop(this.fx);
    // Values must remain legible above the painted motes, including while paused.
    for(const e of this.effects)if(e.sprite&&['damage','healingAmount','coin'].includes(e.type))this.root.bringToTop(e.sprite);
    if(this.shake>0){if(playing)this.shake-=dt;this.root.x=Math.sin(model.time*100)*2*this.unit;}else this.root.x=0;
