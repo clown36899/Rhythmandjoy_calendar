@@ -10,9 +10,9 @@
 <link rel="icon" href="./assets/app-icon.svg" type="image/svg+xml">
 <meta name="description" content="해태와 동료들을 이끌고 귀물의 밤을 지나 새벽문까지. 손그림 횡스크롤 전진 방어 게임.">
 <title>새벽문 — 길 끝까지 함께</title>
-<link rel="stylesheet" href="./style.css?v=35">
+<link rel="stylesheet" href="./style.css?v=36">
 <script defer src="./game/phaser.min.js"></script>
-<script type="module" src="./app.js?v=35"></script>
+<script type="module" src="./app.js?v=36"></script>
 </head>
 <body data-screen="map">
 <div class="portrait-guide" role="status"><div class="rotate-device" aria-hidden="true">↻</div><strong>가로로 펼치면, 길이 열려요.</strong><p>휴대폰을 가로로 돌려 주세요.<br>왼손은 이동, 오른손은 동료와 기술.</p></div>
@@ -39,16 +39,19 @@
 </div>
 <div class="callout" id="callout" role="status" hidden></div>
 <div class="boss-bar" id="boss-bar" hidden><span id="boss-label">강철 · 먹구름 아래의 짐승</span><div><i id="boss-fill"></i></div></div>
-<div class="intro journey-map" id="intro" aria-label="여정 지도">
-<div class="map-heading"><span class="eyebrow">새벽문 · 잃어버린 이름</span><h1>나를 찾으러,<br>저승으로.</h1><p>아이는 제 이름을 기억하지 못한다.<br>해태가 아는 것은, 아이가 저편에 무언가 맡겼다는 것.</p><span id="map-clears"></span></div>
-<div class="map-land" aria-label="열린 길과 다음 목적지">
-<svg class="map-trail" viewBox="0 0 700 280" preserveAspectRatio="none" aria-hidden="true"><path class="trail-shadow" d="M70 210C100 140 170 225 230 140S340 62 430 102 490 45 590 35"/><path class="trail-light" d="M70 210C100 140 170 225 230 140S340 62 430 102 490 45 590 35"/></svg>
-<button id="stage-0" class="map-node map-node--night" aria-pressed="true"><span class="node-mark">☾</span><b>01 · 달빛 물길</b><small>인왕산 · 밤</small><em class="stage-state">출발할 수 있어요</em></button>
-<button id="stage-1" class="map-node map-node--day" aria-pressed="false" disabled><span class="node-mark">☀</span><b>02 · 낮이 멈춘 성곽</b><small>수원화성 · 낮</small><em class="stage-state">앞선 문을 열어 주세요</em></button>
-<div class="map-destination"><span>▥</span>이름의 서고<small>두 문 너머의 목적지</small></div>
+<div class="intro home-screen" id="intro" aria-label="새벽문 메인">
+<div class="home-copy"><span class="eyebrow">잃어버린 이름을 찾아</span><h1>새벽문</h1><p>이름을 맡겨 둔 저편으로.<br>작은 행렬이 다시 길을 나섭니다.</p><button id="enter-map" class="primary" disabled>게임 들어가기 <span>→</span></button><small id="home-loading">그림을 불러오는 중…</small><small id="home-chapter">달빛 물길 · 인왕산</small></div><span class="home-signature">세 개의 문, 하나의 잊힌 약속</span>
+</div>
+<dialog id="journey-map" class="journey-map" aria-labelledby="map-title">
+<img class="map-art" src="./assets/journey-map-v36.png" alt="달빛 산길에서 성곽을 지나 망각의 강으로 이어지는 여정 지도" draggable="false">
+<div class="map-heading"><span class="eyebrow">새벽문 · 여정 지도</span><h1 id="map-title">어느 길을 걸을까요.</h1><span id="map-clears"></span></div><button class="dialog-close map-close" aria-label="메인으로 돌아가기">×</button>
+<div class="map-land" aria-label="세 개의 길 선택">
+<button id="stage-0" class="map-node map-node--night" aria-pressed="true"><span class="node-mark">01</span><b>달빛 물길</b><small>인왕산 · 밤</small><em class="stage-state">출발할 수 있어요</em></button>
+<button id="stage-1" class="map-node map-node--day" aria-pressed="false" disabled><span class="node-mark">02</span><b>낮이 멈춘 성곽</b><small>수원화성 · 낮</small><em class="stage-state">앞선 문을 열어 주세요</em></button>
+<button id="stage-2" class="map-node map-node--water" aria-pressed="false" disabled><span class="node-mark">03</span><b>물 위에 남은 발자국</b><small>망각의 나루 · 수면</small><em class="stage-state">앞선 문을 열어 주세요</em></button>
 </div>
 <div class="map-bottom"><div class="map-selected"><span id="map-chapter"></span><h2 id="map-name"></h2><small id="map-place"></small><p id="map-brief"></p></div><div class="map-prepare"><button id="map-loadout">필살기 편성 <span>↗</span></button><small id="map-skills"></small></div><div class="map-depart"><button id="start" class="primary"><span id="start-label">길 따라가기</span><span>→</span></button><div id="loading" role="status">그림을 불러오는 중…</div></div></div>
-</div>
+</dialog>
 <div class="modal-overlay" id="pause-overlay" hidden><div class="paper-dialog"><span class="eyebrow">A MOMENT TO BREATHE</span><h2>잠깐, 숨을 고르며.</h2><p>행렬은 여기서 기다리고 있어요.</p><button id="resume" class="primary">계속 걷기 <span>→</span></button><button id="restart-pause" class="text-button">처음부터 다시</button><button id="pause-map" class="text-button">지도로 돌아가기</button></div></div>
 <div class="modal-overlay" id="result" hidden><div class="paper-dialog"><span class="eyebrow" id="result-tag"></span><h2 id="result-title"></h2><p id="result-copy"></p><div id="result-stats" class="result-stats"></div><button id="result-map" class="primary">지도로 돌아가기 <span>→</span></button><button id="restart" class="text-button">이 길 다시 걷기</button><button id="result-codex" class="text-button">만났던 귀물 살펴보기</button></div></div>
 </div>

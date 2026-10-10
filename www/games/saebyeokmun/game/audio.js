@@ -54,7 +54,7 @@ export class Soundscape {
   if(e.type==='rush')name='charge';
   if(e.type==='upgrade')name='heal';
   if(e.type==='finish'){this.setPlaying(false);this.play(e.status==='won'?'win':'lose',{allowIdle:true});return;}
-  if(e.type==='hail-impact')name=e.blocked?'guard':'stomp';
+  if(['hail-impact','quake-impact','tide-impact'].includes(e.type))name=e.blocked?'guard':'stomp';
   if(!NAMES.includes(name)||name==='ambience')return;
   this.play(name,{gain:e.type==='projectile'?.45:1,pan:((e.x??e.from??heroX)-heroX-150)/900});
  }

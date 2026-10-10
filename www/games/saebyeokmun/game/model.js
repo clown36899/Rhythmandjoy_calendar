@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME} from './data.js?v=35';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss} from './data.js?v=36';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -19,7 +19,7 @@ export class Journey {
  addAlly(type,x){const s=UNITS[type];
   // Same-kind companions share their slot; adding one never pushes an existing body.
   if(x===undefined)x=this.x-65;const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
- spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={id:++this.nextId,type,x,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:s.ability?.initial??Infinity,walk:0,moving:0};this.enemies.push(a);if(type==='boss')this.bossSpawned=true;return a;}
+ spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={id:++this.nextId,type,x,bornAt:this.time,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:s.ability?.initial??Infinity,walk:0,moving:0};this.enemies.push(a);if(isBoss(type))this.bossSpawned=true;return a;}
  reject(message){this.emit('notice',{message});return false;}
  summon(type){
   if(this.status!=='playing'||!UNITS[type])return false;
@@ -92,14 +92,41 @@ export class Journey {
  // Both test animations use the same action clock; rendering never applies damage.
  advanceAction(actor,dt){
   const action=actor.action;if(!action)return;
-  if(action.kind==='hail'){
-   const ability=ENEMIES.boss.ability;
+  if(action.kind==='healer'){
+   const spec=MOTION.healer,s=UNITS.healer;
+   const target=action.targetId===null?this:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
+   const valid=target&&target.hp>0&&target.hp<(target.maxHp??MAX_HP);
+   const moveTo=goal=>{const gap=goal-actor.x;actor.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);return Math.abs(goal-actor.x)<1;};
+   // A mission owns its patient until completion/cancellation. No mid-wrap retarget.
+   if(this.direction<0||(action.phase!=='return'&&(!target||target.hp<=0||(!valid&&!action.resolved))))action.phase='return';
+   if(action.phase==='approach'){
+    const dx=target.x-actor.x;action.dir=Math.sign(dx)||1;
+    if(target===actor||Math.abs(dx)<=52){action.phase='treat';action.elapsed=0;}
+    else moveTo(target.x-action.dir*52);
+    return;
+   }
+   if(action.phase==='return'){
+    if(moveTo(this.healerHome(actor)))actor.action=null;
+    return;
+   }
+   if(!target||Math.abs(target.x-actor.x)>s.range){action.phase='return';return;}
+   action.elapsed+=dt;
+   if(!action.resolved&&action.elapsed>=spec.impact){
+    action.resolved=true;const amount=Math.min(s.heal,(target.maxHp??MAX_HP)-target.hp);
+    if(amount>0){target.hp+=amount;this.emit('heal',{actor:actor.id,sourceKind:'healer',targetActor:target.id??null,kind:target.type||'haetae',x:target.x,from:actor.x,amount});}
+   }
+   if(action.elapsed>=spec.duration)action.phase='return';
+   return;
+  }
+  if(isBoss(actor.type)&&action.kind===ENEMIES[actor.type].ability.kind){
+   const ability=ENEMIES[actor.type].ability;
    action.elapsed+=dt;
    if(!action.resolved&&action.elapsed>=ability.impact){
     action.resolved=true;const blocked=this.shield>0;
-    this.emit('hail-impact',{x:this.x,blocked});
-    if(!blocked){this.hurtHero(ability.damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,'hail');for(const a of this.allies)this.hurtAlly(a,ability.splash*(actor.powerScale??1)*ENEMY_OUTPUT,null,'hail');}
-    else{this.coins=clamp(this.coins+8,0,MAX_COINS);this.say('우박을 막았어요. 지금 전진해요!');}
+    this.emit(action.kind+'-impact',{x:action.x??this.x,from:actor.x,kind:actor.type,blocked});
+    const within=target=>action.kind==='hail'||(target.x>=actor.x-(action.kind==='quake'?520:950)&&target.x<=actor.x+90);
+    if(!blocked){if(within(this))this.hurtHero(ability.damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,action.kind);for(const a of this.allies)if(within(a))this.hurtAlly(a,ability.splash*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,action.kind);}
+    else{this.coins=clamp(this.coins+8,0,MAX_COINS);this.say('큰 공격을 막았어요. 지금 전진해요!');}
    }
    if(action.elapsed>=ability.duration)actor.action=null;
    return;
@@ -130,13 +157,6 @@ export class Journey {
      else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);
      this.emit('claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});}
     }
-   }else if(action.kind==='healer'){
-    const target=action.targetId===null?this:this.allies.find(a=>a.id===action.targetId&&a.hp>0),unit=UNITS.healer;
-    // One locked target, one impact; no resurrection or retargeting after a death.
-    if(target&&target.hp>0&&Math.abs(target.x-actor.x)<=unit.range){
-     const amount=Math.min(unit.heal,(target.maxHp??MAX_HP)-target.hp);
-     if(amount>0){target.hp+=amount;this.emit('heal',{actor:actor.id,sourceKind:'healer',targetActor:target.id??null,kind:target.type||'haetae',x:target.x,from:actor.x,amount});}
-    }
    }else if(action.kind==='haetae'){
     this.emit('stomp',{x:this.x});
     for(const e of this.enemies)if(e.hp>0&&e.x>=this.x-70&&e.x<=this.x+390){this.hurtEnemy(e,44,this.x,'stomp');this.pushEnemy(e,e.x+85);e.stun=2.1;e.windup=0;e.action=null;}
@@ -164,12 +184,18 @@ export class Journey {
   this.hp=clamp(this.hp-damage,0,MAX_HP);this.emit('hurt',{x:this.x+37,from:sourceX,dir:Math.sign(this.x-sourceX)||-1,kind:'haetae',weapon,damage});if(this.hp<=0){const mounted=this.action?.kind==='rush'||this.shield>0;this.emit('vanish',{actor:'hero',x:this.x+37,kind:mounted?'mount':'haetae',enemy:false});if(!mounted)this.emit('vanish',{actor:'girl',x:this.x-60,kind:'girl',enemy:false});this.finish('lost');}
  }
  cleanup(){
-  for(const e of this.enemies)if(e.hp<=0&&!e.dead){e.dead=true;if(e.type==='gate'){this.gateBrokenAt=this.time;this.furthest=ROAD;this.emit('gate-break',{x:e.x,kind:'gate'});continue;}this.kills++;this.awardCoins(ENEMIES[e.type].reward,e,'defeat');this.emit('vanish',{actor:e.id,x:e.x,kind:e.type,enemy:true,dir:e.hitDir||1});if(e.type==='boss'){this.bossDefeated=true;this.say('문을 지키던 귀물이 사라졌어요. 저승문을 부숴 길을 열어요!');}}
+  for(const e of this.enemies)if(e.hp<=0&&!e.dead){e.dead=true;if(e.type==='gate'){this.gateBrokenAt=this.time;this.furthest=ROAD;this.emit('gate-break',{x:e.x,kind:'gate'});continue;}this.kills++;this.awardCoins(ENEMIES[e.type].reward,e,'defeat');this.emit('vanish',{actor:e.id,x:e.x,kind:e.type,enemy:true,dir:e.hitDir||1});if(isBoss(e.type)){this.bossDefeated=true;this.say('문을 지키던 귀물이 사라졌어요. 저승문을 부숴 길을 열어요!');}}
   for(const a of this.allies)if(a.hp<=0)this.emit('vanish',{actor:a.id,x:a.x,kind:a.type,enemy:false,dir:a.hitDir||-1});
   this.enemies=this.enemies.filter(e=>!e.dead);this.allies=this.allies.filter(a=>a.hp>0);
   if(this.bossDefeated&&this.wave>=this.waves.length&&this.gateBrokenAt===null&&!this.enemies.some(e=>e.type==='gate')){const gate=this.spawn('gate',GATE);gate.hp=gate.maxHp=STAGES[this.stage].gateHp;}
  }
  finish(status){if(this.status!=='playing')return;this.status=status;this.direction=0;this.emit('finish',{status});}
+ healerHome(actor){
+  const s=UNITS.healer,formation=Math.min(ROAD-90,this.x+s.formation);
+  const front=this.enemies.filter(e=>e.hp>0&&e.x>actor.x-55).sort((a,b)=>(a.x-ENEMY_FRONT[a.type])-(b.x-ENEMY_FRONT[b.type]))[0];
+  const engaged=front&&front.x<=Math.max(formation,actor.x)+HERO_STANDOFF-s.formation+180;
+  return Math.max(START-130,engaged?front.x-ENEMY_FRONT[front.type]-HERO_STANDOFF+s.formation:formation);
+ }
  step(dt){
   if(this.status!=='playing'||!Number.isFinite(dt)||dt<=0)return;
   const oldX=this.x;dt=Math.min(dt,.1);this.time+=dt;this.coins=clamp(this.coins+dt*2.2,0,MAX_COINS);
@@ -199,19 +225,27 @@ export class Journey {
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;this.advanceAction(a,dt);
    if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
    const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55).sort((b,c)=>(b.x-ENEMY_FRONT[b.type])-(c.x-ENEMY_FRONT[c.type]));
-   const wounded=s.heal?[this,...this.allies].filter(b=>b.hp>0&&b.hp<(b.maxHp??MAX_HP)&&Math.abs(b.x-a.x)<=s.range+350).sort((b,c)=>b.hp/(b.maxHp??MAX_HP)-c.hp/(c.maxHp??MAX_HP)):[];
+   if(s.heal){
+    const wounded=[this,...this.allies].filter(b=>b.hp>0&&b.hp<(b.maxHp??MAX_HP)&&Math.abs(b.x-a.x)<=s.search).sort((b,c)=>b.hp/(b.maxHp??MAX_HP)-c.hp/(c.maxHp??MAX_HP)||Math.abs(b.x-a.x)-Math.abs(c.x-a.x));
+    if(this.direction>=0&&wounded.length&&a.cd<=0){
+     a.cd=s.period;a.action={kind:'healer',phase:'approach',elapsed:0,resolved:false,targetId:wounded[0].id??null,dir:Math.sign(wounded[0].x-a.x)||1};
+    }else{
+     const goal=this.healerHome(a),gap=goal-a.x,retreat=this.direction<0&&a.x>goal+170;
+     if(gap>0||retreat)a.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);
+    }
+    const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;continue;
+   }
    const hittable=['rabbit','scholar'].includes(a.type)?ahead.filter(e=>e.type!=='skirt'):ahead;
-   const target=s.heal?wounded[0]:this.selectContact(a,hittable.length?hittable:ahead,s.range);
+   const target=this.selectContact(a,hittable.length?hittable:ahead,s.range);
    const contactFront=ahead[0];
    // Enemy-relative slots stay put if the free-moving traveller dashes through the line.
    const engaged=contactFront&&contactFront.x<=Math.max(this.x+s.formation,a.x)+s.range+180;
-   let goal=engaged?contactFront.x-ENEMY_FRONT[contactFront.type]-(s.heal?HERO_STANDOFF-s.formation:s.range):formation;
-   if(s.heal&&target&&Math.abs(target.x-goal)>s.range)goal=target.x-Math.sign(target.x-goal)*s.range*.95;
+   let goal=engaged?contactFront.x-ENEMY_FRONT[contactFront.type]-s.range:formation;
    const retreat=this.direction<0&&a.x>formation+170;
    if(retreat)goal=Math.min(goal,formation+170);
    const gap=goal-a.x,backing=gap<-18&&retreat;
    // Approach each firing distance; hold when crowded. Only left input permits retreat.
-   if(!retreat&&target&&(s.heal?Math.abs(target.x-a.x):contactGap(a,target))<=s.range+1e-6&&a.cd<=0){
+   if(!retreat&&target&&contactGap(a,target)<=s.range+1e-6&&a.cd<=0){
     a.cd=s.period;a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,dir:Math.sign(target.x-a.x)||1};
    }else if(backing||gap>1e-6){a.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);}
    const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;
@@ -233,9 +267,9 @@ export class Journey {
    if(e.windup>0){
     e.windup-=dt;
     if(e.windup<=0){
-     if(e.type==='boss'){
-      e.action={kind:'hail',elapsed:0,resolved:false};
-      this.emit('hail',{x:this.x});
+     if(isBoss(e.type)){
+      e.action={kind:s.ability.kind,elapsed:0,resolved:false,x:this.x};
+      this.emit(s.ability.kind,{x:this.x,from:e.x,kind:e.type});
       e.ability=s.ability.cooldown;
      }else if(e.type==='horse'){e.x=Math.max(target.x+45,e.x-150);attackTarget(s.ability.damage);e.ability=s.ability.cooldown;this.emit('charge',{x:e.x,to:target.x,kind:e.type});}
      else if(e.type==='reaper'){
@@ -249,7 +283,7 @@ export class Journey {
    if(s.ability&&e.ability<=0&&gap<s.ability.range){
     e.windup=s.ability.windup;
     this.emit('warning',{x:e.x,kind:e.type});
-    if(e.type==='boss')this.say('우박이 쏟아져요! 비막이를 펼쳐 주세요.');
+    if(isBoss(e.type))this.say(e.type==='boss'?'우박이 쏟아져요! 비막이를 펼쳐 주세요.':e.type==='warden'?'돌창을 들어요! 내려찍기에 비막이!':'큰 파도가 밀려와요! 비막이를 준비해요.');
     else if(e.type==='horse')this.say('말이 돌진을 준비해요. 발구름!');
     continue;
    }

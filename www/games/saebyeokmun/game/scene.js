@@ -1,11 +1,11 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME} from './data.js?v=35';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose} from './data.js?v=36';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const GROUND=542;
-const MODEL_MAP={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',rabbit:'rabbit',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1'};
+const MODEL_MAP={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',rabbit:'rabbit',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1',warden:'wardenWalk0',ferryman:'ferrymanWalk0',waterghost:'waterghostWalk0'};
 // Presentation only: combat and rewards remain exclusively in Journey.
 const FX_ART={hit:'CleanImpact',hurt:'CleanImpact',hex:'CleanCurse',guard:'CleanGuard',stomp:'Dust',rush:'CleanSlash',charge:'Dust',summon:'Dust',shelter:'Ward',heal:'Leaf',upgrade:'Seal',vanish:'Smoke'};
-const FX_LIFE={hit:.20,hurt:.42,swipe:.16,claw:.16,hex:.28,guard:.42,stomp:.68,rush:1.3,charge:.48,summon:1.1,shelter:.65,heal:1.05,upgrade:1,vanish:1.05,projectile:SHOT_TIME,hail:1.15};
+const FX_LIFE={hit:.20,hurt:.42,swipe:.16,claw:.16,hex:.28,guard:.42,stomp:.68,rush:1.3,charge:.48,summon:1.1,shelter:.65,heal:1.05,upgrade:1,vanish:1.05,projectile:SHOT_TIME,hail:1.15,quake:1.25,tide:1.45};
 // Surface landmarks belong to each whole-body cel, not the padded atlas rectangle.
 // x/y are the torso centre; w/h its surface extent. Only sockets move: never the art/limbs.
 const WOUNDS={
@@ -28,10 +28,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
  class RoadScene extends P.Scene{
   constructor(){super('road');this.sprites=new Map();this.effects=[];this.grounding=new Map();this.contacts=new Map();this.offset=0;this.lastX=START;this.heroPose=0;this.shake=0;this.hitStop=0;this.impactCooldown=0;this.previewAreaIndex=0;this.injuryTextures=new Map();}
   preload(){
+   for(const kind of ['warden','ferryman','waterghost'])this.load.image(kind+'Motion','./assets/'+kind+'-v36.png');
+   this.load.image('castleRoad','./assets/hwaseong-road-v36.png');
    this.load.image('enemyDefeat','./assets/enemy-defeat-v35.png');
    this.load.image('allyDefeat','./assets/ally-defeat-v35.png');
    this.load.image('allyHurt','./assets/ally-hurt-v32.png');
-   this.load.image('healerWalk','./assets/healer-motion-v32.png');this.load.image('umbrellaMotion','./assets/umbrella-motion-v32.png');
+   this.load.image('healerWalk','./assets/healer-care-v36.png');this.load.image('umbrellaMotion','./assets/umbrella-motion-v32.png');
    this.load.image('allies','./assets/allies.png');this.load.image('enemies','./assets/enemies.png');
    this.load.image('haetaeMotion','./assets/haetae-motion-v10.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
    this.load.image('companionWalk','./assets/companions-walk-v11.png');this.load.image('gate','./assets/underworld-gate-v17.png');this.load.image('enemyWalk','./assets/enemy-walk-v17.png');this.load.image('reaperDeparture','./assets/reaper-departure-v35.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
@@ -105,7 +107,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('bossMotion',[...Array.from({length:6},(_,i)=>'bossWalk'+i),...Array.from({length:6},(_,i)=>'bossStrike'+i),...Array.from({length:4},(_,i)=>'bossCast'+i)],4,true,4);
    this.sliceAtlas('reaperDeparture',Array.from({length:8},(_,i)=>'reaperDepart'+i),4,true);
    this.sliceAtlas('woundArt',['Cloth','Scar','Fur','Dark'].map(k=>'wound'+k+'1').concat(['Cloth','Scar','Fur','Dark'].map(k=>'wound'+k+'2')),4,false,2,{x:[0,.25,.5,.75,1],y:[0,.5,1]});
-   for(const kind of ['keeper','keeperBrush','scholar','mount','healer'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
+   for(const kind of ['keeper','keeperBrush','scholar','mount'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
+   this.sliceAtlas('healerWalk',[...Array.from({length:8},(_,i)=>'healer'+i),...Array.from({length:4},(_,i)=>'healerIdle'+i)],4,true,3);
+   for(const kind of ['warden','ferryman','waterghost'])this.sliceAtlas(kind+'Motion',[
+    ...['Walk','Strike',...(kind==='waterghost'?[]:['Cast'])].flatMap(mode=>Array.from({length:4},(_,i)=>kind+mode+i)),
+    ...Array.from({length:4},(_,i)=>'depart'+kind+i)
+   ],4,true,kind==='waterghost'?3:4);
    this.sliceAtlas('enemyDefeat',['skirt','horse','boss'].flatMap(k=>Array.from({length:4},(_,i)=>'depart'+k+i)),4,4,3);
    this.sliceAtlas('allyDefeat',['girl','haetae','cow','keeper','rabbit','scholar','healer','mount'].flatMap(k=>['defeat'+k+'0','defeat'+k+'1']),4,2,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
    this.sliceAtlas('allyHurt',['girl','haetae','cow','keeper','rabbit','scholar','healer','mount','umbrella','keeperBrush'].map(k=>'hurt'+k),5,false,2,{x:[[0,354,824,1266,1675,1983],[0,360,732,1184,1650,1983]].map(row=>row.map(x=>x/1983)),y:[0,384/793,1]});
@@ -123,9 +130,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('actionIcons',['iconKeeper','iconRabbit','iconCharm','iconStomp','iconShelter','iconSound']);
    this.sliceAtlas('livingScenery',['pine','mist','dragon','grass'],2);
    this.sliceAtlas('enemyAttacks',['skirt','horse','reaper','bossLegacy'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Strike'+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
-   for(const area of AREAS){const texture=this.textures.get(area.texture),src=texture.getSourceImage(),split=Math.floor(src.height*(area.texture==='inwang'?395/724:.5));texture.add('far',0,0,0,src.width,split);texture.add('middle',0,0,split,src.width,src.height-split);}
-   const roadTexture=this.textures.get('nightRoad'),roadSource=roadTexture.getSourceImage();
-   ROAD_SECTIONS.forEach((part,i)=>roadTexture.add(part.frame,0,0,i*roadSource.height/4,roadSource.width,roadSource.height/4));
+   for(const area of AREAS){const texture=this.textures.get(area.texture),src=texture.getSourceImage(),split=Math.floor(src.height*area.split);texture.add('far',0,0,0,src.width,split);texture.add('middle',0,0,split,src.width,src.height-split);}
+   for(const name of ['nightRoad','castleRoad']){const roadTexture=this.textures.get(name),roadSource=roadTexture.getSourceImage();
+   ROAD_SECTIONS.forEach((part,i)=>roadTexture.add(part.frame,0,0,i*roadSource.height/4,roadSource.width,roadSource.height/4));}
    this.root=this.add.container(0,0);
    this.sky=this.add.graphics();this.root.add(this.sky);
    this.moon=this.add.image(0,0,'moon');this.root.add(this.moon);
@@ -177,7 +184,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   drawLandscape(region,blend,t){
    const vw=this.vw,g=this.sky,bottom=this.sceneBottom||780;g.clear();
-   const state=skyState(model.progress(),t,region),day=state.night===0;
+   const state=skyState(model.progress(),t,region),day=state.night===0,waterway=AREAS[region].ground==='water';
    g.fillGradientStyle(day?0xa8d4e5:0x1b304d,day?0xc8e7ee:0x253e59,day?0xf5eacd:0x7994a2,day?0xd0dabb:0x5c7d90,1);g.fillRect(0,0,vw,bottom);
    const top=620-(this.viewHeight||620),moonX=state.moon.x*vw,moonY=top+200-state.moon.height*140;
    g.fillStyle(0xf9df9e,.045);g.fillCircle(moonX,moonY,109);
@@ -186,42 +193,57 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(let i=0;i<(day?0:27);i++){const x=(i*197+43)%Math.max(1,vw),y=top+35+(i*79)%190;g.fillStyle(0xf4e9c9,.18+.23*(.5+.5*Math.sin(t*.45+i)));g.fillCircle(x,y,i%4===0?1.3:.8);}
    for(const depth of ['far','middle']){
     // One authored panorama per depth covers the whole journey: no mirrored tiles or modulo seams.
-    const w=Math.max(depth==='far'?2300:2800,vw+GATE*PARALLAX[depth]+80),h=depth==='far'?420:430,y=depth==='far'?525:544;
-    this.depths[depth].setTexture(AREAS[region].texture,depth).setFlipX(false).setDisplaySize(w,h).setPosition(-40-this.offset*PARALLAX[depth],y).setTint(0xffffff).setAlpha(depth==='far'?.94:.82);
+    const w=Math.max(depth==='far'?2300:2800,vw+GATE*PARALLAX[depth]+80),src=this.textures.get(AREAS[region].texture).getSourceImage(),split=Math.floor(src.height*AREAS[region].split),h=w*(depth==='far'?split:src.height-split)/src.width,y=depth==='far'?525:544;
+    this.depths[depth].setTexture(AREAS[region].texture,depth).setFlipX(false).setDisplaySize(w,h).setPosition(-40-this.offset*PARALLAX[depth],y).setTint(0xffffff).setAlpha(depth==='far'?(day?.78:.94):(day?1:.82));
    }
    this.mists.forEach((im,i)=>{const w=390+i*170,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(3+i)-this.offset*.07)%(vw+650)+vw+650)%(vw+650)-300,top+100+i*94).setTint(0xc4d2dd).setAlpha(.19+i*.025);});
    const fly=(t+8)%75,ds=this.dragon.texture.getSourceImage();this.dragon.setVisible(fly<18).setDisplaySize(140,140*ds.height/ds.width).setPosition(-170+(vw+340)*fly/18,top+95+Math.sin(fly*.55)*14).setAngle(Math.sin(fly*.8)*3);
-   this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-this.offset*.48-80,534).setTint(day?0xb9c7a3:0x83969a).setAlpha(day?.42:.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
+   this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-this.offset*.48-80,534).setVisible(!waterway).setTint(day?0xb9c7a3:0x83969a).setAlpha(day?.16:.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
    const water=this.road;water.clear();
-   water.fillGradientStyle(day?0x9bc4bc:0x7794a2,day?0x93bbae:0x55798c,day?0x668f88:0x1b354a,day?0x4d7f79:0x152b3e,1);water.fillRect(0,535,vw,bottom-535);
+   water.fillGradientStyle(day?0xc6b792:waterway?0x629eaa:0x7794a2,day?0xbca985:waterway?0x387b91:0x55798c,day?0x776e55:0x1b354a,day?0x68634e:0x152b3e,1);water.fillRect(0,535,vw,bottom-535);
    // The lunar reflection widens toward the viewer; waves drift independently of solid ground.
-   for(let i=0;i<47;i++){
+   for(let i=0;i<(day?0:47);i++){
     const y=540+i*6;if(y>bottom)break;
     const spread=24+i*3.1,x=moonX+Math.sin(i*1.7+t*.8)*spread*.35;
     water.lineStyle(i%4===0?2.3:1,0xffe2a1,.07+(i%5)*.026);
     water.lineBetween(x-spread*.5,y,x+spread*.5+Math.sin(t+i)*9,y);
    }
-   for(let i=0;i<80;i++){
+   for(let i=0;i<(day?0:80);i++){
     const x=((i*173-this.offset*.14+t*(i%3+1))%(vw+240)+vw+240)%(vw+240)-120,y=545+(i*37)%Math.max(1,bottom-545);
     water.lineStyle(1,i%3?0xb3c9cb:0xeee8cf,.08+(i%4)*.027);water.lineBetween(x,y,x+17+i%5*8,y);
    }
    // Each long section is fixed in the world, with no modulo repeating the same road.
-   this.pathTiles.forEach((im,i)=>{const part=ROAD_SECTIONS[i],x=part.x-this.offset*PARALLAX.ground;im.setPosition(x,GROUND-part.foot).setDisplaySize(part.width+.5,part.height).setTint(day?0xfff1d5:0xd7e2e5).setVisible(x<vw&&x+part.width>0);});
+   this.pathTiles.forEach((im,i)=>{
+    const part=ROAD_SECTIONS[i],total=1536*ROAD_SECTIONS.length;
+    let x=part.x-this.offset*PARALLAX.ground;
+    if(model.status==='ready')x=((x+part.width)%total+total)%total-part.width;
+    const foot=day?[135,135,130,120][i]:part.foot;
+    im.setTexture(day?'castleRoad':'nightRoad',part.frame).setPosition(x,GROUND-foot).setDisplaySize(part.width+.5,part.height).setTint(day?0xffffff:0xd7e2e5).setVisible(!waterway&&x<vw&&x+part.width>0);
+   });
+   if(waterway){
+    water.lineStyle(2,0xcbf3ed,.3);water.lineBetween(0,GROUND+1,vw,GROUND+1);
+    // World-anchored lotus islands sit below the shared walking waterline.
+    for(let i=0;i<15;i++){const x=i*380-this.offset*.9;if(x<-80||x>vw+80)continue;const y=GROUND+75+(i%3)*38;
+     water.fillStyle(0x284f53,.55);water.fillEllipse(x,y,51,14);water.lineStyle(1,0x7eb9a1,.55);water.strokeEllipse(x,y,50,13);
+     if(i%3===0){water.fillStyle(0xefe7da,.65);for(let j=0;j<5;j++)water.fillEllipse(x+Math.cos(j*1.3)*6,y-6+Math.sin(j*1.3)*3,8,6);}
+    }
+   }
+
    for(let i=0;i<12;i++){const x=((i*181+t*5)%Math.max(1,vw)),y=GROUND-25+Math.sin(t*.8+i)*17;water.fillStyle(0xdceab3,.2+.3*Math.sin(t*2+i)**2);water.fillCircle(x,y,1.7);}
-   this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=64+(i%2)*31;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*560-this.offset*PARALLAX.near-100,bottom+8).setTint(0x9fb5bd).setAlpha(.8).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
+   this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=64+(i%2)*31;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*560-this.offset*PARALLAX.near-100,bottom+8).setVisible(!waterway).setTint(day?0xa9a478:0x9fb5bd).setAlpha(.8).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
   }
   drawReflections(t){
    // Reuse the rendered cel, injury texture, facing and foot origin; no second animation clock.
    const actors=[...this.sprites.entries(),['hero',this.hero],['girl',this.girl]],present=new Set();
    for(const [key,body] of actors){
-    if(!body.visible||body.x<-250||body.x>this.vw+250)continue;
+    if(model.stage===1||!body.visible||body.x<-250||body.x>this.vw+250)continue;
     present.add(key);let strips=this.reflections.get(key);
     if(!strips){strips=[this.add.image(0,0,body.texture.key)];this.waterReflections.add(strips);this.reflections.set(key,strips);}
     // A continuous silhouette cannot tear at crop boundaries. Ripples belong to the water.
     strips[0].setTexture(body.texture.key).setOrigin(body.originX,1-body.originY).setFlipX(body.flipX).setFlipY(true)
      .setDisplaySize(body.displayWidth,body.displayHeight*.78)
-     .setPosition(body.x+Math.sin(t*.8+body.x*.006)*1.4,GROUND+68+(GROUND-body.y)*.78)
-     .setAngle(-(body.angle||0)).setTint(model.stage===1?0x699c93:0xa2baca).setAlpha(.19*(body.alpha??1));
+     .setPosition(body.x+Math.sin(t*.8+body.x*.006)*1.4,GROUND+(model.stage===2?4:68)+(GROUND-body.y)*.78)
+     .setAngle(-(body.angle||0)).setTint(model.stage===1?0x699c93:0xa2baca).setAlpha((model.stage===2?.29:.19)*(body.alpha??1));
    }
    for(const [key,strips] of this.reflections)if(!present.has(key)){strips.forEach(im=>im.destroy());this.reflections.delete(key);}
   }
@@ -277,6 +299,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   placeOnGround(image,x,height,groundY=GROUND){
    const src=image.texture.getSourceImage();
    image.setOrigin(.5,this.grounding.get(image.texture.key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,groundY).setAngle(0);
+   if(model.stage===2){const pulse=.5+.5*Math.sin(model.time*2+x*.02);this.shadows.lineStyle(1.5,0xe3fff6,.45);this.shadows.strokeEllipse(x,groundY+2,Math.min(130,image.displayWidth*.8)+pulse*9,10+pulse*3);return;}
    this.shadows.fillStyle(0x554b36,.15);this.shadows.fillEllipse(x,groundY+2,Math.min(145,image.displayWidth*.77),9);
    this.shadows.fillStyle(0x524731,.29);this.shadows.fillEllipse(x,groundY+1,Math.min(105,image.displayWidth*.6),3.5);
   }
@@ -299,14 +322,14 @@ export function makeGame(model,onReady,onFrame,onEvents){
      this.shake=Math.max(this.shake,profile.shake||0);
      if(e.weapon==='hex')e.art='CleanCurse';
     }
-    if(e.type==='hail-impact')for(const fx of this.effects)if(fx.type==='hail'){fx.blocked=e.blocked;fx.impacted=true;}
+    if(['hail-impact','quake-impact','tide-impact'].includes(e.type))for(const fx of this.effects)if(fx.type===e.type.replace('-impact','')){fx.blocked=e.blocked;fx.impacted=true;}
     if(e.type==='projectile'&&e.actor==='girl')this.heroPose=.25;
     if(e.type==='vanish'){
      const living=e.actor==='hero'?this.hero:e.actor==='girl'?this.girl:this.sprites.get((e.enemy===false?'a':'e')+e.actor);
      const key=e.enemy===false?'defeat'+e.kind+'0':e.kind==='reaper'?'reaperDepart0':'depart'+e.kind+'0';
      const sprite=this.add.image(0,0,key).setOrigin(.5,this.grounding.get(key)??1).setFlipX(living?.flipX||false);
      const src=sprite.texture.getSourceImage(),h=BODY_HEIGHT[e.kind];sprite.setDisplaySize(h*src.width/src.height,h);this.root.add(sprite);
-     this.effects.push({...e,groundY:living?.y??e.groundY,type:'depart',sprite,t:0,duration:e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.enemy===false?1.8:e.kind==='boss'?2.7:2.1});
+     this.effects.push({...e,groundY:living?.y??e.groundY,type:'depart',sprite,t:0,duration:e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.enemy===false?1.8:isBoss(e.kind)?2.7:2.1});
 
     }
     if(['hit','guard','hurt'].includes(e.type)&&e.damage){
@@ -326,7 +349,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
      const art=e.art||(e.type==='summon'?({cow:'Dust',keeper:'Dust',rabbit:'Leaf',scholar:'Seal',healer:'Leaf',haetae:'Seal'}[e.kind]||'Seal'):e.type==='heal'&&e.enemy?'Smoke':FX_ART[e.type]);
      const sprite=art?this.add.image(0,0,'fx'+art+'0').setVisible(false):null;
      if(sprite)this.root.add(sprite);
-     this.effects.push({...e,art,sprite,t:0,duration:e.type==='vanish'&&e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.type==='vanish'?(e.kind==='boss'?2.7:2.1):e.type==='hit'&&e.enemy===false?ALLY_HIT_TIME:FX_LIFE[e.type]});
+     this.effects.push({...e,art,sprite,t:0,duration:e.type==='vanish'&&e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.type==='vanish'?(isBoss(e.kind)?2.7:2.1):e.type==='hit'&&e.enemy===false?ALLY_HIT_TIME:FX_LIFE[e.type]});
     }
    }
   }
@@ -378,11 +401,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(flash){g.lineStyle(7,0x968bcc,.35*fade);g.lineBetween(x-48,y-127,x-15,y-95);g.lineBetween(x-15,y-95,x-38,y-68);g.lineStyle(2,0xf2edff,fade);g.lineBetween(x-48,y-127,x-15,y-95);g.lineBetween(x-15,y-95,x-38,y-68);}
    if(charge>0)for(let i=0;i<5;i++){const q=(t*.85+i*.2)%1;g.fillStyle(0xdaebfc,fade*charge*(1-q)*.7);g.fillCircle(x-115+i*57,y+q*35,2+i%2);}
   }
-  renderEntity(key,type,x,walk,hp,maxHp,hit,windup,enemy=false,moving=0,action=null,hitDir=1,groundY=GROUND){
+  renderEntity(key,type,x,walk,hp,maxHp,hit,windup,enemy=false,moving=0,action=null,hitDir=1,groundY=GROUND,bornAt=-Infinity){
    let image=this.sprites.get(key);
    if(!image){image=this.add.image(0,0,MODEL_MAP[type]||type).setOrigin(.5,1);this.root.add(image);this.sprites.set(key,image);}
-   if(enemy)image.setTexture(type==='boss'?bossPose(walk,moving,action,windup):type+(action||windup>0?'Strike':'Walk')+(action?enemyAttackFrame(action.elapsed):windup>0?1:motionFrame(type,walk,moving,null))).setFlipX(action? action.dir>0 : moving>0);
-   if(!enemy&&UNITS[type])image.setTexture((type==='keeper'&&model.keeperRank?'keeperBrush':type)+motionFrame(type,walk,moving,action)).setFlipX(type==='healer'&&action?action.dir<0:action?false:moving?moving<0:image.flipX);
+   if(enemy)image.setTexture(isBoss(type)?bossPose(walk,moving,action,windup,type):type+(action||windup>0?'Strike':'Walk')+(action?enemyAttackFrame(action.elapsed):windup>0?1:motionFrame(type,walk,moving,null))).setFlipX(action? action.dir>0 : moving>0);
+   if(!enemy&&UNITS[type])image.setTexture(type==='healer'?healerPose(walk,moving,action,model.time+(Number(key.slice(1))||0)*.4):(type==='keeper'&&model.keeperRank?'keeperBrush':type)+motionFrame(type,walk,moving,action)).setFlipX(type==='healer'?(action?.phase==='treat'?action.dir<0:moving?moving<0:image.flipX):action?false:moving?moving<0:image.flipX);
    if(!enemy&&hit>0)image.setTexture('hurt'+(type==='keeper'&&model.keeperRank?'keeperBrush':type));
    image.setTexture(this.injuryTexture(image.texture.key,type,hp,maxHp));
    const height=BODY_HEIGHT[type]||130;
@@ -402,10 +425,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    if(MOTION[type])this.trackContact(key,type,walk,moving,x,groundY);
    if(hit>(enemy?.225:ALLY_HIT_TIME-.035))image.setTintFill(0xfff7dd);else if(hit>0)image.setTint(enemy?0xf3c9b9:0xffae99);else image.clearTint();
-   const arrival=this.effects.find(e=>e.type==='summon'&&e.actor===Number(key.slice(1)));
-   image.setAlpha(hp<=0?0:enemy?P.Math.Clamp((GATE+55-x)/90,0,1):arrival?Math.min(1,.35+(model.time-arrival.at)*3):1);
-   if(enemy&&x>GATE-65&&x<GATE+45){
-    const q=P.Math.Clamp((GATE+45-x)/110,0,1),px=x-this.offset,color=type==='reaper'?0xb2daee:type==='skirt'?0xcebb88:0xb5a3ce;
+   const arrival=this.effects.find(e=>e.type==='summon'&&e.actor===Number(key.slice(1))),entry=P.Math.Clamp((model.time-bornAt)/.8,0,1);
+   // Arrival has one lifetime. Position and knockback cannot make a living enemy fade again.
+   image.setAlpha(hp<=0?0:enemy?.3+.7*entry:arrival?Math.min(1,.35+(model.time-arrival.at)*3):1);
+   if(enemy&&entry<1){
+    const q=entry,px=x-this.offset,color=type==='reaper'?0xb2daee:type==='skirt'?0xcebb88:0xb5a3ce;
     for(let i=0;i<5;i++){
      const xx=px+Math.sin(model.time*3+i)*28,yy=groundY-20-i*24;this.fx.fillStyle(color,(1-q)*.65);
      if(type==='skirt'){this.fx.lineStyle(2,color,(1-q)*.8);this.fx.lineBetween(xx,yy+45,xx+12,yy+25);}
@@ -415,7 +439,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     }
    }
    if(hp<maxHp||windup>0){
-    const w=type==='boss'?150:enemy?46:66,px=x-this.offset;
+    const w=isBoss(type)?150:enemy?46:66,px=x-this.offset;
     this.fx.fillStyle(0x263d3b,.8);this.fx.fillRoundedRect(px-w/2-1,groundY-height-15,w+2,7,2);
     this.fx.fillStyle(enemy?0xeb9976:0x6ed6ba,1);this.fx.fillRect(px-w/2,groundY-height-14,w*Math.max(0,hp/maxHp),5);
    }
@@ -428,9 +452,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
      const ax=px-45-i*48;this.fx.fillStyle(0xc97651,pulse*(.75-i*.13));
      this.fx.fillPoints([{x:ax,y:GROUND-2},{x:ax+22,y:GROUND-10},{x:ax+31,y:GROUND-10},{x:ax+9,y:GROUND-2},{x:ax+31,y:GROUND+6},{x:ax+22,y:GROUND+6}],true);
     }
-    if(type==='boss'){
+    if(isBoss(type)){
      // Hail hits the party, not an ellipse under the distant caster.
-     const left=model.x-this.offset-125;
+     const left=type==='warden'?x-this.offset-520:model.x-this.offset-125;
      this.fx.fillStyle(0x775587,.13*pulse);this.fx.fillRoundedRect(left,GROUND-4,480,12,5);
      this.fx.lineStyle(3,0xd4b7e7,pulse);this.fx.lineBetween(left,GROUND-4,left+480,GROUND-4);
      for(let i=0;i<7;i++){const xx=left+20+i*70;this.fx.fillStyle(0xd6c1e5,pulse*.75);this.fx.fillTriangle(xx,GROUND-13,xx-6,GROUND-24,xx+6,GROUND-24);}
@@ -558,8 +582,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
      paint(e,x,ground-92-35*p,180,205,0,tail);
      if(e.enemy)e.sprite.setTint(0xaf8bbe);flecks(x,ground-20,p,e.enemy?0xb596cf:0xc8e59b,8,75,150);
      if(e.sourceKind==='healer'){
-      const from=e.from-this.offset;
-      for(let i=0;i<9;i++){const q=Math.min(1,p*2+i*.035),xx=from+(x-from)*q,yy=GROUND-85-Math.sin(q*Math.PI)*30;g.fillStyle(i%2?0xeaf0b8:0x81dbc7,(1-p)*.7);g.fillCircle(xx,yy,2+(i%3));}
+      const patient=e.targetActor===null?this.hero:this.sprites.get('a'+e.targetActor),point=patient?this.bodyPoint(patient,e.kind):{x,y:ground-60};
+      for(let i=0;i<3;i++){g.lineStyle(3,0xfff8dd,tail*.85);g.beginPath();g.arc(point.x,point.y+i*5,16,-.2,Math.PI+.2);g.strokePath();}
      }
     }
     if(e.type==='shelter'){e.sprite.setVisible(false);flecks(x+90,GROUND-185,p,0xaee6dc,7,60,70);}
@@ -568,8 +592,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
      paint(e,x,GROUND-(BODY_HEIGHT[e.kind]||132)*.45-80*late,155,205,0,Math.sin(late*Math.PI)*.7,late);
     }
     if(e.type==='footstep'){
-     const q=p*p;g.fillStyle(0x877653,fade*.32);g.fillEllipse(x-8*q,ground,18+30*p,5+5*p);
-     flecks(x,ground-2,p,0xc2b08a,3,24,15);
+     if(model.stage===2){g.lineStyle(2,0xc9f8f4,fade*.7);g.strokeEllipse(x,ground+2,18+80*p,5+17*p);flecks(x,ground,p,0xc5f3f5,4,28,25);}
+     else {const q=p*p;g.fillStyle(0x877653,fade*.32);g.fillEllipse(x-8*q,ground,18+30*p,5+5*p);flecks(x,ground-2,p,0xc2b08a,3,24,15);}
     }
     if(e.type==='healingAmount'){
      const patient=e.targetActor===null?this.hero:this.sprites.get('a'+e.targetActor);
@@ -595,6 +619,17 @@ export function makeGame(model,onReady,onFrame,onEvents){
       if(q<1){ribbon([{x:xx+24,y:yy-65},{x:xx+12,y:yy-27},{x:xx,y:yy}],5,0xbce7e4,tail);g.fillStyle(0x375f75,tail);g.fillPoints([{x:xx,y:yy-16},{x:xx+12,y:yy},{x:xx,y:yy+16},{x:xx-12,y:yy}],true);g.fillStyle(0xf2ffec,tail);g.fillTriangle(xx,yy-13,xx+8,yy,xx,yy+11);}
       else flecks(xx,end-4,Math.min(1,Math.max(0,(e.t-.7)/.30)),e.blocked?0xa6efd6:0xc2e5e6,4,35,30);
      }
+    }
+    if(e.type==='quake'){
+     const px=(e.from??e.x)-this.offset-70,impact=.75,active=Math.max(0,(e.t-impact)/.5);
+     if(e.t<impact){g.lineStyle(4,0xf0c47b,.6);g.lineBetween(px-460,GROUND,px,GROUND);}
+     else {const cx=px-active*460;g.lineStyle(8,0xf5d090,fade);g.strokeEllipse(cx,GROUND,55+active*65,25+active*20);flecks(cx,GROUND,active,0xd8b57d,9,120,90);}
+    }
+    if(e.type==='tide'){
+     const q=Math.min(1,e.t/.85),xx=(e.from??e.x)-this.offset-q*800,yy=e.blocked?GROUND-190:GROUND;
+     g.lineStyle(17,0x3ba9bc,tail*.65);g.beginPath();g.arc(xx,yy-38,62,-Math.PI*.95,Math.PI*.45);g.strokePath();
+     g.lineStyle(5,0xe4ffef,tail);g.beginPath();g.arc(xx-4,yy-40,62,-Math.PI*.95,Math.PI*.45);g.strokePath();
+     for(let i=0;i<6;i++){g.lineStyle(2,0xc8f6f4,tail*.8);g.lineBetween(xx+i*17,yy+4+i%2*4,xx+110+i*19,yy+4+i%2*4);}
     }
     if(e.type==='depart'){
      const x=e.x-this.offset,h=BODY_HEIGHT[e.kind]*(e.kind==='boss'?.64:1),sprite=e.sprite;
@@ -642,17 +677,17 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const intro=model.status==='ready',vw=this.vw;
    // Keep the rear support visible when possible, while a freely moving hero stays on screen.
    const partyLeft=Math.min(model.x-110,...model.allies.filter(a=>a.hp>0).map(a=>a.x-(BODY_HEIGHT[a.type]||130)*.5));
-   const targetOffset=intro?0:Math.max(0,model.x-vw*.65,Math.min(GATE-vw*.80,model.x-vw*.28,partyLeft-35));
+   const targetOffset=intro?(time/1000*30)%4800:Math.max(0,model.x-vw*.65,Math.min(GATE-vw*.80,model.x-vw*.28,partyLeft-35));
    this.offset+=(targetOffset-this.offset)*Math.min(1,dt*8);
    if(playing)model.step(dt);
    const events=model.drainEvents();this.playEvents(events);onEvents(events);
-   const t=intro?12:model.time;
+   const t=intro?time/1000:model.time;
    const region=intro?this.previewAreaIndex:model.stage,blend=1;
    this.drawLandscape(region,blend,t);
    this.decor.clear();this.shadows.clear();this.fx.clear();
    this.drawGate(GATE-this.offset,t);
    // Small distance markers make scrolling legible, rather than a static left-side base.
-   for(let p=800;p<ROAD;p+=800){
+   for(let p=800;p<ROAD&&model.stage!==2;p+=800){
     const x=p-this.offset;if(x<-50||x>vw+50)continue;
     this.decor.fillStyle(0x978367,.5);this.decor.fillRect(x,GROUND-35,4,35);
     this.decor.lineStyle(1,0xb19b75,.65);this.decor.lineBetween(x-12,GROUND-35,x+19,GROUND-35);
@@ -678,7 +713,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     this.renderEntity('previewKeeper','keeper',vw*.54+this.offset,t*.65,1,1,0,0,false,1);present.add('previewKeeper');
     this.renderEntity('previewCow','cow',vw*.78+this.offset,t*.5,1,1,0,0,false,1);present.add('previewCow');
    }else{
-    for(const e of model.enemies.filter(e=>e.type!=='gate').sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,e.moving,e.action,e.hitDir);}
+    for(const e of model.enemies.filter(e=>e.type!=='gate').sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,e.moving,e.action,e.hitDir,GROUND,e.bornAt);}
     for(const a of [...model.allies].sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='a'+a.id;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir);}
    }
    for(const [key,obj] of this.sprites)if(!present.has(key)){obj.destroy();this.sprites.delete(key);this.contacts.delete(key);}
