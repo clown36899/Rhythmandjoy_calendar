@@ -1,11 +1,11 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './data.js?v=32';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,actorLayer} from './data.js?v=33';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const GROUND=542;
 const MODEL_MAP={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',rabbit:'rabbit',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1'};
 // Presentation only: combat and rewards remain exclusively in Journey.
-const FX_ART={hit:'CleanImpact',hurt:'CleanImpact',hex:'CleanCurse',guard:'CleanGuard',stomp:'Dust',rush:'CleanSlash',charge:'Dust',summon:'Seal',shelter:'Ward',heal:'Leaf',upgrade:'Seal',vanish:'Smoke'};
-const FX_LIFE={hit:.20,hurt:.20,swipe:.16,claw:.16,hex:.28,guard:.26,stomp:.68,rush:1.3,charge:.48,summon:.68,shelter:.65,heal:1.05,upgrade:1,vanish:1.05,projectile:SHOT_TIME,hail:1.15};
+const FX_ART={hit:'CleanImpact',hurt:'CleanImpact',hex:'CleanCurse',guard:'CleanGuard',stomp:'Dust',rush:'CleanSlash',charge:'Dust',summon:'Dust',shelter:'Ward',heal:'Leaf',upgrade:'Seal',vanish:'Smoke'};
+const FX_LIFE={hit:.20,hurt:.20,swipe:.16,claw:.16,hex:.28,guard:.26,stomp:.68,rush:1.3,charge:.48,summon:1.1,shelter:.65,heal:1.05,upgrade:1,vanish:1.05,projectile:SHOT_TIME,hail:1.15};
 // Surface landmarks belong to each whole-body cel, not the padded atlas rectangle.
 // x/y are the torso centre; w/h its surface extent. Only sockets move: never the art/limbs.
 const WOUNDS={
@@ -324,7 +324,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
      if(label)this.root.add(label);this.effects.push({...e,type:'coin',sprite:label,t:0,duration:.72});
     }
     if(FX_LIFE[e.type]){
-     const art=e.art||(e.type==='heal'&&e.enemy?'Smoke':FX_ART[e.type]);
+     const art=e.art||(e.type==='summon'?({cow:'Dust',keeper:'Dust',rabbit:'Leaf',scholar:'Seal',healer:'Leaf',haetae:'Seal'}[e.kind]||'Seal'):e.type==='heal'&&e.enemy?'Smoke':FX_ART[e.type]);
      const sprite=art?this.add.image(0,0,'fx'+art+'0').setVisible(false):null;
      if(sprite)this.root.add(sprite);
      this.effects.push({...e,art,sprite,t:0,duration:e.type==='vanish'&&e.kind==='reaper'?REAPER_DEPARTURE_TIME:FX_LIFE[e.type]});
@@ -344,6 +344,24 @@ export function makeGame(model,onReady,onFrame,onEvents){
    g.fillStyle(color,.10+pulse*.06);g.fillEllipse(x-8,GROUND+3,130,19);
    for(let i=0;i<9;i++){const phase=(t*.24+i/9)%1;g.fillStyle(i%2?0xf5f7d2:color,(1-phase)*.65);g.fillCircle(x+Math.sin(i*2.4+phase*3)*57,GROUND-17-phase*210,2+phase);}
    this.exitLabel.setPosition(x,GROUND-h-1).setText(cleared?'새벽문 · 길이 열렸다':'저승문 · 길의 끝').setColor(cleared?'#816337':'#356f6a');
+  }
+  drawBossCloud(boss,t){
+   const departure=this.effects.find(e=>e.type==='depart'&&e.kind==='boss'),alive=!!boss;
+   if(!alive&&!departure){this.cloud.setAlpha(0);return;}
+   const fade=alive?1:Math.max(0,1-(t-(departure.at??t))/departure.duration);
+   const charge=alive&&boss.windup>0?1-boss.windup/2.6:alive&&boss.action?.kind==='hail'?1:0;
+   const x=(boss?.x??departure.x)-this.offset,y=GROUND-260+Math.sin(t*1.8)*8;
+   const expansion=alive?1:1+(1-fade)*.45;
+   this.cloud.setPosition(x+Math.sin(t*.75)*12,y).setDisplaySize((410+Math.sin(t*1.4)*16)*expansion,220+Math.cos(t*1.7)*9).setAngle(Math.sin(t*.8)*2).setAlpha((.76+charge*.16)*fade).setTint(charge>.7?0xd9c7ef:0xaab8cc);
+   const g=this.fx;
+   // A rolling rim and occasional internal lightning; hail itself uses its existing impact clock.
+   for(let i=0;i<7;i++){
+    const phase=(t*.16+i/7)%1,xx=x+Math.cos(phase*Math.PI*2)*145,yy=y-65+Math.sin(phase*Math.PI*2)*24;
+    g.lineStyle(2,charge?0xd3c8ed:0x98bbca,fade*(.2+charge*.25));g.beginPath();g.arc(xx,yy,12+i%3*5,phase*6,phase*6+Math.PI*1.35);g.strokePath();
+   }
+   const flash=charge>.45&&Math.sin(t*17)>.82;
+   if(flash){g.lineStyle(7,0x968bcc,.35*fade);g.lineBetween(x-48,y-127,x-15,y-95);g.lineBetween(x-15,y-95,x-38,y-68);g.lineStyle(2,0xf2edff,fade);g.lineBetween(x-48,y-127,x-15,y-95);g.lineBetween(x-15,y-95,x-38,y-68);}
+   if(charge>0)for(let i=0;i<5;i++){const q=(t*.85+i*.2)%1;g.fillStyle(0xdaebfc,fade*charge*(1-q)*.7);g.fillCircle(x-115+i*57,y+q*35,2+i%2);}
   }
   renderEntity(key,type,x,walk,hp,maxHp,hit,windup,enemy=false,moving=0,action=null,hitDir=1,groundY=GROUND){
    let image=this.sprites.get(key);
@@ -369,7 +387,18 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    if(MOTION[type])this.trackContact(key,type,walk,moving,x,groundY);
    if(hit>.215)image.setTintFill(0xfff7dd);else if(hit>0)image.setTint(enemy?0xf3c9b9:0xffddcc);else image.clearTint();
-   image.setAlpha(hp<=0?0:enemy?P.Math.Clamp((GATE+55-x)/90,0,1):1);
+   const arrival=this.effects.find(e=>e.type==='summon'&&e.actor===Number(key.slice(1)));
+   image.setAlpha(hp<=0?0:enemy?P.Math.Clamp((GATE+55-x)/90,0,1):arrival?Math.min(1,.35+(model.time-arrival.at)*3):1);
+   if(enemy&&x>GATE-65&&x<GATE+45){
+    const q=P.Math.Clamp((GATE+45-x)/110,0,1),px=x-this.offset,color=type==='reaper'?0xb2daee:type==='skirt'?0xcebb88:0xb5a3ce;
+    for(let i=0;i<5;i++){
+     const xx=px+Math.sin(model.time*3+i)*28,yy=groundY-20-i*24;this.fx.fillStyle(color,(1-q)*.65);
+     if(type==='skirt'){this.fx.lineStyle(2,color,(1-q)*.8);this.fx.lineBetween(xx,yy+45,xx+12,yy+25);}
+     else if(type==='horse')this.fx.fillEllipse(xx+20,groundY-4-i%2*6,18+q*25,7+q*6);
+     else if(type==='reaper')this.fx.fillTriangle(xx-4,yy+9,xx+4,yy+9,xx+Math.sin(model.time*4+i)*5,yy-12);
+     else this.fx.fillCircle(xx,yy,2+i%3);
+    }
+   }
    if(hp<maxHp||windup>0){
     const w=type==='boss'?150:46,px=x-this.offset;
     this.fx.fillStyle(0x263d3b,.8);this.fx.fillRoundedRect(px-w/2-1,groundY-height-15,w+2,7,2);
@@ -490,8 +519,22 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(e.type==='charge'){
      paint(e,x+50,GROUND-25,230,100,0,tail);flecks(e.to-this.offset,GROUND-45,p,0xc79273,9,110,55);
     }
-    if(e.type==='summon'||e.type==='upgrade'){
-     paint(e,x,ground-80,150,170,0,tail);flecks(x,ground-60,p,0xc1ead4,7,60,120);
+    if(e.type==='upgrade'){paint(e,x,ground-80,150,170,0,tail);flecks(x,ground-60,p,0xc1ead4,7,60,120);}
+    if(e.type==='summon'){
+     const body=e.actor==='hero'?this.hero:this.sprites.get('a'+e.actor),cx=body?.x??x,q=1-(1-p)**3;
+     if(e.kind==='cow'){
+      paint(e,cx-30,ground-12,160,65,0,tail*.7);flecks(cx,ground-3,p,0xd5b685,11,95,32);
+      g.lineStyle(2,0xffd98f,tail);g.strokeEllipse(cx+20,ground-76,30+q*45,28+q*25);
+     }else if(e.kind==='keeper'){
+      paint(e,cx-18,ground-8,88,48,0,tail*.55);for(let i=0;i<5;i++){const xx=cx-25+i*13-30*p,yy=ground-4-Math.sin(p*Math.PI)*(15+i*5);g.fillStyle(0xa59270,tail);g.fillEllipse(xx,yy,7,5);}
+     }else if(e.kind==='rabbit'||e.kind==='healer'){
+      paint(e,cx,ground-36-50*p,e.kind==='healer'?95:65,120,0,tail*.65);
+      for(let i=0;i<7;i++){const a=i*2.4+q*2,xx=cx+Math.cos(a)*(15+q*40),yy=ground-15-i*9-50*p;g.fillStyle(e.kind==='healer'?0x9fe9ca:0xd1e39a,tail);g.fillEllipse(xx,yy,10,4);}
+     }else{
+      paint(e,cx,ground-50,125,140,0,tail*.35);
+      g.lineStyle(3,e.kind==='haetae'?0xf5d28a:0x8de1d4,tail);g.strokeEllipse(cx,ground-3,25+q*115,8+q*19);
+      for(let i=0;i<3;i++){const xx=cx+(i-1)*32;g.lineStyle(2,e.kind==='haetae'?0xffe6ad:0xb5ebe2,tail);g.lineBetween(xx,ground-20-60*p,xx+9,ground-32-60*p);}
+     }
     }
     if(e.type==='heal'){
      const patient=e.targetActor===null?this.hero:this.sprites.get('a'+e.targetActor);
@@ -586,7 +629,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const rawDt=Math.min(delta/1000,.05),playing=model.status==='playing',dt=playing?Math.max(0,rawDt-this.hitStop):rawDt;
    if(playing){this.hitStop=Math.max(0,this.hitStop-rawDt);this.impactCooldown=Math.max(0,this.impactCooldown-rawDt);}
    const intro=model.status==='ready',vw=this.vw;
-   const targetOffset=intro?0:Math.max(0,Math.min(GATE-vw*.80,model.x-vw*.28));
+   // Keep the rear support visible when possible, while a freely moving hero stays on screen.
+   const partyLeft=Math.min(model.x-110,...model.allies.filter(a=>a.hp>0).map(a=>a.x-(BODY_HEIGHT[a.type]||130)*.5));
+   const targetOffset=intro?0:Math.max(0,model.x-vw*.65,Math.min(GATE-vw*.80,model.x-vw*.28,partyLeft-35));
    this.offset+=(targetOffset-this.offset)*Math.min(1,dt*8);
    if(playing)model.step(dt);
    const events=model.drainEvents();this.playEvents(events);onEvents(events);
@@ -621,15 +666,15 @@ export function makeGame(model,onReady,onFrame,onEvents){
     this.renderEntity('previewKeeper','keeper',vw*.54+this.offset,t*.65,1,1,0,0,false,1);present.add('previewKeeper');
     this.renderEntity('previewCow','cow',vw*.78+this.offset,t*.5,1,1,0,0,false,1);present.add('previewCow');
    }else{
-    for(const e of model.enemies){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,e.moving,e.action,e.hitDir);}
-    for(const a of model.allies){const key='a'+a.id;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir);}
+    for(const e of [...model.enemies].sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,e.moving,e.action,e.hitDir);}
+    for(const a of [...model.allies].sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='a'+a.id;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir);}
    }
    for(const [key,obj] of this.sprites)if(!present.has(key)){obj.destroy();this.sprites.delete(key);this.contacts.delete(key);}
    // All summons finish ordering first: the traveller remains visible at every party size.
    this.root.bringToTop(this.hero);this.root.bringToTop(this.girl);
    this.drawReflections(t);
    const boss=model.enemies.find(e=>e.type==='boss');
-   this.cloud.setAlpha(boss?.8:0);if(boss){this.cloud.setPosition(boss.x-this.offset,GROUND-210).setDisplaySize(530,370);}
+   this.drawBossCloud(boss,t);
    this.ward.setVisible(false);
    if(model.shield>0){
     const cx=heroX+37+this.hero.displayWidth*.16,cy=GROUND-this.hero.displayHeight*.73,radius=this.hero.displayHeight*.31,alpha=Math.min(1,model.shield)*Math.min(1,opening/.45);

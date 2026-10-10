@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=32';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,AREAS,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap} from './data.js?v=33';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -7,17 +7,17 @@ export class Journey {
   this.auto=true;this.direction=0;this.allies=[];this.enemies=[];this.projectiles=[];this.events=[];this.nextId=0;this.stage=0;
   this.wave=0;this.heroAttack=0;this.shield=0;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS)].map(k=>[k,0]));
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='동료와 함께 오른쪽 새벽문까지 가요.';
-  this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
+  delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
  }
- start(stage=this.stage){this.reset();this.stage=Number.isInteger(stage)&&AREAS[stage]?stage:0;this.status='playing';this.addAlly('cow',this.x+130);this.say('자동 전진 중이에요. 달토끼를 불러 함께 출발해요.');}
+ start(stage=this.stage){this.reset();this.stage=Number.isInteger(stage)&&AREAS[stage]?stage:0;this.status='playing';const cow=this.addAlly('cow',this.x+130);this.emit('summon',{actor:cow.id,kind:'cow',x:cow.x});this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('자동 전진 중이에요. 달토끼를 불러 함께 출발해요.');}
  emit(type,data={}){this.events.push({type,at:this.time,...data});}
  say(message){this.hint=message;this.hintSerial++;this.lastHintAt=this.time;this.emit('hint',{message});}
  drainEvents(){const events=this.events;this.events=[];return events;}
  pause(){if(this.status==='playing'){this.status='paused';this.direction=0;}else if(this.status==='paused')this.status='playing';}
  progress(){return clamp((this.furthest-START)/(ROAD-START),0,1);}
  addAlly(type,x){const s=UNITS[type];
-  // Summons enter from the tail; travel spacing is not a combat collision barrier.
-  if(x===undefined){const line=this.allies.filter(a=>a.hp>0&&a.type===type);x=Math.min(this.x-65,...line.map(a=>a.x-s.spacing));}const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
+  // Same-kind companions share their slot; adding one never pushes an existing body.
+  if(x===undefined)x=this.x-65;const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
  spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={id:++this.nextId,type,x,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:s.ability?.initial??Infinity,walk:0,moving:0};this.enemies.push(a);if(type==='boss')this.bossSpawned=true;return a;}
  reject(message){this.emit('notice',{message});return false;}
  summon(type){
@@ -26,7 +26,7 @@ export class Journey {
   if(this.allies.filter(a=>a.hp>0).length>=7)return this.reject('동료는 일곱까지 함께 걸을 수 있어요.');
   if(this.coins<UNITS[type].cost)return this.reject('엽전이 조금 더 필요해요.');
   this.coins-=UNITS[type].cost;this.cooldowns[type]=UNITS[type].cooldown;
-  const ally=this.addAlly(type);this.summons++;this.emit('summon',{kind:type,x:ally.x});return true;
+  const ally=this.addAlly(type);this.summons++;this.emit('summon',{actor:ally.id,kind:type,x:ally.x});return true;
  }
  upgradeKeeper(){
   if(this.status!=='playing')return false;
@@ -35,6 +35,15 @@ export class Journey {
   this.coins-=price;this.keeperRank=1;
   for(const a of this.allies)if(a.type==='keeper'){a.action=null;a.cd=Math.max(a.cd,.3);}
   this.emit('upgrade',{kind:'keeper',x:this.x});this.say('도령이 먹붓을 배웠어요. 지금 동료와 새로 부를 동료 모두 성장해요.');return true;
+ }
+ // Action.targetId owns one strike. engagedId only retains contact between strikes.
+ // Release on death/escape; ties use the same layer as the actual character drawing.
+ selectContact(actor,candidates,range){
+  const sorted=candidates.filter(a=>a.hp>0).sort((a,b)=>contactGap(actor,a)-contactGap(actor,b)||actorLayer(b)-actorLayer(a));
+  const current=sorted.find(a=>(a.id??null)===actor.engagedId&&contactGap(actor,a)<=range+18);
+  const target=current||sorted[0];
+  if(current||(target&&contactGap(actor,target)<=range+1e-6))actor.engagedId=target.id??null;else delete actor.engagedId;
+  return target;
  }
  targetForCharm(){const inRange=this.enemies.filter(e=>e.hp>0&&e.x>=this.x-30&&e.x<=this.x+590);return inRange.find(e=>e.type==='reaper')||inRange.find(e=>e.type!=='skirt')||inRange[0];}
  skill(type){
@@ -115,7 +124,7 @@ export class Journey {
    if(action.kind==='enemy'){
     const ally=action.targetId===null?null:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
     const valid=action.targetId===null||!!ally,targetX=ally?.x??this.x;
-    if(valid&&Math.abs(actor.x-targetX)<=ENEMIES[actor.type].range+24){
+    if(valid&&contactGap(actor,{x:targetX})<=ENEMIES[actor.type].range+24){
      if(actor.type==='reaper')this.launchShot({actor:actor.id,sourceKind:'reaper',weapon:'hex',from:actor.x,target:ally||this,damage:ENEMIES.reaper.damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
      else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);
      this.emit('claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});}
@@ -132,7 +141,7 @@ export class Journey {
     for(const e of this.enemies)if(e.hp>0&&e.x>=this.x-70&&e.x<=this.x+390){this.hurtEnemy(e,44,this.x,'stomp');this.pushEnemy(e,e.x+85);e.stun=2.1;e.windup=0;e.action=null;}
    }else{
     const target=this.enemies.find(e=>e.id===action.targetId&&e.hp>0),unit=unitStats(actor.type,this.keeperRank);
-    if(target&&target.x>=actor.x-55&&target.x-actor.x<=unit.range){
+    if(target&&target.x>=actor.x-55&&contactGap(actor,target)<=unit.range+1e-6){
      const high=unit.weapon==='seed'||unit.weapon==='seal',hit=!high||target.type!=='skirt';
      if(unit.weapon==='horn'){this.emit('swipe',{actor:actor.id,kind:unit.weapon,sourceKind:actor.type,targetKind:target.type,targetActor:target.id,x:actor.x,from:actor.x,to:target.x});this.hurtEnemy(target,unit.damage,actor.x,unit.weapon);}
      else this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:unit.weapon,from:actor.x,target,damage:unit.damage,high,stun:unit.weapon==='seal'?.65:0});
@@ -166,11 +175,17 @@ export class Journey {
   this.shield=Math.max(0,this.shield-dt);this.heroAttack-=dt;this.advanceAction(this,dt);
   for(const k of Object.keys(this.cooldowns))this.cooldowns[k]=Math.max(0,this.cooldowns[k]-dt);
   const active=this.enemies.filter(e=>e.hp>0);
-  const front=active.filter(e=>e.x>=this.x-20).sort((a,b)=>a.x-b.x)[0];
+  const front=active.filter(e=>e.x>=this.x-20).sort((a,b)=>(a.x-ENEMY_FRONT[a.type])-(b.x-ENEMY_FRONT[b.type]))[0];
   let direction=this.direction|| (this.auto?1:0);
   let movement=direction*(this.direction?76:36)*dt;
   if(this.action)movement=0;
-  if(movement>0&&front&&front.x-this.x<145)movement=0;
+  const stopAt=this.direction?145:this.allies.some(a=>a.hp>0)?HERO_STANDOFF:145;
+  if(movement>0&&front)movement=Math.min(movement,Math.max(0,front.x-ENEMY_FRONT[front.type]-this.x-stopAt));
+  // Automatic escort can give ground; explicit movement and mounted actions always win.
+  if(!this.direction&&this.auto&&!this.action&&front&&this.allies.some(a=>a.hp>0)){
+   const gap=front.x-ENEMY_FRONT[front.type]-this.x-HERO_STANDOFF;
+   if(gap<-18)movement=-Math.min(36*dt,-gap);
+  }
   this.x=clamp(this.x+movement,START,ROAD);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/76;
   this.furthest=Math.max(this.furthest,this.x);
   // A full wave already spends the reference power budget. Distance unlocks the
@@ -178,28 +193,30 @@ export class Journey {
   if(this.wave<WAVES.length&&this.furthest>=WAVES[this.wave].x&&!this.enemies.some(e=>e.hp>0)){
    const scale=waveBalance(this.wave).scale,w=WAVES[this.wave++];w.types.forEach((type,i)=>this.spawn(type,GATE+24+i*125,scale));this.say(w.message);
   }
-  if(!this.shield&&this.action?.kind!=='rush'&&this.heroAttack<=0&&front&&front.type!=='skirt'&&front.x-this.x<200){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:front,damage:10,high:true});}
+  const heroTarget=this.selectContact(this,active.filter(e=>e.x>=this.x-20&&e.type!=='skirt'),660);
+  if(!this.shield&&this.action?.kind!=='rush'&&this.heroAttack<=0&&heroTarget&&contactGap(this,heroTarget)<660){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:heroTarget,damage:10,high:true});}
   for(const a of [...this.allies].sort((a,b)=>a.id-b.id)){
    if(a.hp<=0)continue;
    const s=unitStats(a.type,this.keeperRank),oldAX=a.x;
-   const preceding=this.allies.filter(other=>other.hp>0&&other.type===a.type&&other.id<a.id).sort((b,c)=>c.id-b.id);
-   const formation=Math.min(ROAD-90,this.x+s.formation-preceding.length*s.spacing);
+   const formation=Math.min(ROAD-90,this.x+s.formation);
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;this.advanceAction(a,dt);
    if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
-   const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55).sort((b,c)=>b.x-c.x);
+   const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55).sort((b,c)=>(b.x-ENEMY_FRONT[b.type])-(c.x-ENEMY_FRONT[c.type]));
    const wounded=s.heal?[this,...this.allies].filter(b=>b.hp>0&&b.hp<(b.maxHp??MAX_HP)&&Math.abs(b.x-a.x)<=s.range+350).sort((b,c)=>b.hp/(b.maxHp??MAX_HP)-c.hp/(c.maxHp??MAX_HP)):[];
-   const target=s.heal?wounded[0]:(a.type==='scholar'?ahead.find(e=>e.type==='reaper'&&e.x-a.x<=s.range):null)||(['rabbit','scholar'].includes(a.type)?ahead.find(e=>e.type!=='skirt'&&e.x-a.x<=s.range):null)||ahead[0];
-   // Every melee ally shares the front during combat. Formation slots only guide travel.
-   const engaged=target&&s.weapon==='horn'&&target.x<=this.x+s.formation+s.range+120;
-   const goal=s.heal&&target&&target.x>a.x+s.range?target.x-s.range*.75:engaged?target.x-s.range+Math.min(24,preceding.length*12):formation;
-   if(target&&(s.heal?Math.abs(target.x-a.x):target.x-a.x)<=s.range){
-    if(a.cd<=0){
-     a.cd=s.period;
-     a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,dir:Math.sign(target.x-a.x)||1};
-    }
-   }else if(a.x<goal){a.x=Math.min(a.x+s.speed*dt,goal);}
-   // Regroup only on deliberate retreat; ending combat must never teleport the line.
-   if(this.direction<0&&a.x>formation+170){a.x=Math.max(a.x-s.speed*dt,formation+170);}
+   const hittable=['rabbit','scholar'].includes(a.type)?ahead.filter(e=>e.type!=='skirt'):ahead;
+   const target=s.heal?wounded[0]:this.selectContact(a,hittable.length?hittable:ahead,s.range);
+   const contactFront=ahead[0];
+   // Enemy-relative slots stay put if the free-moving traveller dashes through the line.
+   const engaged=contactFront&&contactFront.x<=Math.max(this.x+s.formation,a.x)+s.range+180;
+   let goal=engaged?contactFront.x-ENEMY_FRONT[contactFront.type]-(s.heal?HERO_STANDOFF-s.formation:s.range):formation;
+   if(s.heal&&target&&Math.abs(target.x-goal)>s.range)goal=target.x-Math.sign(target.x-goal)*s.range*.95;
+   const retreat=this.direction<0&&a.x>formation+170;
+   if(retreat)goal=Math.min(goal,formation+170);
+   const gap=goal-a.x,backing=gap<-18&&(engaged||retreat);
+   // Settle each type at its own firing distance, with a dead band against foot jitter.
+   if(!retreat&&target&&(s.heal?Math.abs(target.x-a.x):contactGap(a,target))<=s.range+1e-6&&a.cd<=0){
+    a.cd=s.period;a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,dir:Math.sign(target.x-a.x)||1};
+   }else if(backing||gap>1e-6){a.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);}
    const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;
   }
   for(const e of this.enemies){
@@ -207,9 +224,9 @@ export class Journey {
    const s=ENEMIES[e.type];e.moving=0;e.cd-=dt;e.hit=Math.max(0,e.hit-dt);
    if(e.stun>0){e.stun-=dt;e.action=null;continue;}
    if(e.action){this.advanceAction(e,dt);if(this.status!=='playing')break;continue;}
-   let targets=this.allies.filter(a=>a.hp>0&&a.x<e.x+50).map(a=>({x:a.x,a}));
-   targets.push({x:this.x,a:null});
-   targets.sort((a,b)=>b.x-a.x);const target=targets[0],gap=e.x-target.x;
+   const candidates=[...this.allies.filter(a=>a.hp>0&&a.x<e.x+50),this];
+   const chosen=this.selectContact(e,candidates,e.windup>0&&s.ability?s.ability.range:s.range);
+   const target={x:chosen.x,a:chosen===this?null:chosen},gap=contactGap(e,chosen);
    const attackTarget=(amount)=>{
     if(target.a)this.hurtAlly(target.a,amount*(e.powerScale??1)*ENEMY_OUTPUT,e.x,e.type);
     else this.hurtHero(amount*(e.powerScale??1)*ENEMY_OUTPUT,e.x,e.type);

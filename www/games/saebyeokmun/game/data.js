@@ -17,6 +17,12 @@ export function skyState(progress){
 // These are scenery coordinates, never a second collision or travel model.
 export const ROAD_SECTIONS=['bank','bridge','causeway','approach'].map((frame,i)=>({frame,x:-650+i*1536,width:1536,height:256,foot:60}));
 export const SHOT_TIME=.18;
+// One overlap order for painting and equal-distance target selection. The player stays visible.
+export const actorLayer=actor=>actor.id??Number.MAX_SAFE_INTEGER;
+export const HERO_STANDOFF=580;
+// Painted enemy frontage, measured in road units; all contact checks share it.
+export const ENEMY_FRONT={skirt:35,horse:70,reaper:45,boss:165};
+export const contactGap=(a,b)=>Math.abs(a.x-b.x)-(ENEMY_FRONT[a.type]??ENEMY_FRONT[b.type]??0);
 export function combatPower(s){return Math.sqrt(s.hp/(1-(s.guard||0))*s.damage/s.period);}
 
 export const PARALLAX={far:.035,middle:.34,ground:1,near:1.18};
@@ -37,11 +43,11 @@ export function bossPose(walk,moving,action=null,windup=0){
 }
 
 export const UNITS={
- cow:{name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:73,damage:12,period:1.35,cost:30,cooldown:4,formation:460,spacing:190,guard:.6,weapon:'horn'},
- keeper:{name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:235,damage:17,period:1.15,cost:18,cooldown:3.5,formation:245,spacing:70,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:275,weapon:'ink'}}},
- rabbit:{name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:310,damage:24,period:1.35,cost:24,cooldown:4,formation:140,spacing:62,guard:0,weapon:'seed'},
- scholar:{name:'선비',role:'지원 · 술법 봉인',hp:56,speed:68,range:405,damage:16,period:2.1,cost:34,cooldown:5,formation:-65,spacing:70,guard:0,weapon:'seal'},
- healer:{name:'약방 의원',role:'회복 · 대나무 약통',hp:62,speed:70,range:350,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-95,spacing:74,guard:0,weapon:'medicine'}
+ cow:{name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:110,damage:12,period:1.35,cost:30,cooldown:4,formation:470,spacing:0,guard:.6,weapon:'horn'},
+ keeper:{name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:385,damage:17,period:1.15,cost:18,cooldown:3.5,formation:195,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:425,weapon:'ink'}}},
+ rabbit:{name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:260,damage:24,period:1.35,cost:24,cooldown:4,formation:320,spacing:0,guard:0,weapon:'seed'},
+ scholar:{name:'선비',role:'지원 · 술법 봉인',hp:56,speed:68,range:775,damage:16,period:2.1,cost:34,cooldown:5,formation:-195,spacing:0,guard:0,weapon:'seal'},
+ healer:{name:'약방 의원',role:'회복 · 대나무 약통',hp:62,speed:70,range:900,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-360,spacing:0,guard:0,weapon:'medicine'}
 };
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
 // Only the ox returns to the imported 48-slot exposure sheet (33 original video poses).
@@ -53,10 +59,10 @@ export function motionFrame(kind,walk,moving,action){
 }
 export const COMPANIONS=[
  {name:'여행자와 해태',asset:'haetae',tag:'주인공 · 탑승과 합동기',text:'평소에는 나란히 걷습니다. 돌진 필살기를 쓰면 아이가 해태에 올라타 앞길을 뚫고 다시 내려옵니다.',counter:'출발 전 필살기 편성 · Q / E / R 세 자리',motion:true},
- {name:'누렁소',asset:'cow',tag:'방어 · 튼튼한 앞줄',text:'넓은 몸과 뿔로 앞줄을 지킵니다. 여러 마리를 부르면 앞뒤로 펼쳐져 각각 뿔로 밀어붙입니다. 정면 피해 60% 감소, 우박에는 취약합니다.',counter:'체력 245 · 엽전 30 · 정면 방어',motion:true},
+ {name:'누렁소',asset:'cow',tag:'방어 · 튼튼한 앞줄',text:'넓은 몸과 뿔로 앞줄을 지킵니다. 같은 종류는 앞줄을 함께 쓰며, 겹쳐 있어도 각각 뿔로 밀어붙입니다. 정면 피해 60% 감소, 우박에는 취약합니다.',counter:'체력 245 · 엽전 30 · 정면 방어',motion:true},
  {name:'돌팔매 도령',asset:'keeper',tag:'공격 · 짱돌에서 먹붓으로',text:'처음에는 주머니에서 짱돌을 꺼내 던집니다. 설정의 도령 수련에 엽전 45를 쓰면 옷과 무기가 바뀌어 먹붓 공격을 합니다.',counter:'소환 18 · 수련 45 · 공격 17 → 28',motion:true},
  {name:'달토끼',asset:'rabbit',tag:'공격 · 씨앗 사격',text:'대나무 통으로 뒤에서 씨앗탄을 쏩니다. 낮은 귀물에는 빗나가므로 누렁소와 도령이 길을 열어줘야 합니다.',counter:'체력 48 · 공격 24 · 소환 24',motion:true},
- {name:'선비',asset:'scholar',tag:'지원 · 붓으로 술법 봉인',text:'장부를 펼친 저승사자를 먼저 노립니다. 붓으로 쓴 봉인이 잠깐 기절시키고 적의 술법과 공격 준비를 끊습니다.',counter:'소환 34 · 짧은 봉인 · 후열 지원',motion:true},
+ {name:'선비',asset:'scholar',tag:'지원 · 붓으로 술법 봉인',text:'사거리에 먼저 들어온 상대를 노립니다. 붓으로 쓴 봉인이 잠깐 기절시키고 적의 술법과 공격 준비를 끊습니다.',counter:'소환 34 · 짧은 봉인 · 후열 지원',motion:true},
  {name:'약방 의원',asset:'healer',tag:'회복 · 약통을 멘 성인 여성 의원',text:'약통을 메고 동행합니다. 다친 동료나 여행자에게 다가가 대나무통의 약가루를 뿌립니다. 사망한 동료는 되살리지 못합니다.',counter:'소환 36 · 회복 14 · 치료 간격 3.4초',motion:true}
 ];
 export const ENEMIES={
