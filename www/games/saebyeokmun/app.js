@@ -1,6 +1,6 @@
 import {Journey} from './game/model.js?v=25';
 import {makeGame} from './game/scene.js?v=25';
-import {Soundscape} from './game/audio.js?v=25';
+import {Soundscape} from './game/audio.js?v=31';
 import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=25';
 const $=id=>document.getElementById(id);
 const model=new Journey();

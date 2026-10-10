@@ -2,9 +2,9 @@
 
 게임 테스트 URL: https://xn--xy1b23ggrmm5bfb82ees967e.com/games/saebyeokmun/
 
-`www/games/saebyeokmun/`은 새벽문 게임의 실행 산출물만 보관한다. 편집 원본 소유자는 `/Users/inteyeo/Downloads/saebyeokmun-web-demo`이며 소스 커밋은 `86dad736f0f8d0cce37c2f9b03e476d80a6e4d40`이다. 이 폴더에서 게임 로직을 따로 개발하지 않는다. 다음 갱신은 원본 검사·커밋·푸시 후 `dist`를 다시 복사한다.
+`www/games/saebyeokmun/`은 새벽문 게임의 실행 산출물만 보관한다. 편집 원본 소유자는 `/Users/inteyeo/Downloads/saebyeokmun-web-demo`이며 소스 커밋은 `a61dd63ec9cf4ad9d2942acb8da788e7c40230a4`이다. 이 폴더에서 게임 로직을 따로 개발하지 않는다. 다음 갱신은 원본 검사·커밋·푸시 후 `dist`를 다시 복사한다.
 
-기존 정적 파일 서빙과 대상 설정이 있으므로 별도 웹서버, DB, 프로세스, Apache 설정을 추가하지 않는다. 실행 파일 63개, 54,929,732바이트. 제작 시안·프롬프트·검토 화면·음원 생성 코드·실행에 쓰지 않는 이미지는 공개 폴더에 없다. 모든 제작 자료는 로컬 프로젝트 자료 폴더에 보관한다.
+기존 정적 파일 서빙과 대상 설정이 있으므로 별도 웹서버, DB, 프로세스, Apache 설정을 추가하지 않는다. 실행 파일 63개, 56,318,923바이트. 제작 시안·프롬프트·검토 화면·음원 생성 코드·실행에 쓰지 않는 이미지는 공개 폴더에 없다. 모든 제작 자료는 로컬 프로젝트 자료 폴더에 보관한다.
 
 기존 `restore-cafe24.sh`는 `www/` 전체를 `--delete` 동기화한다. 게임 실행 산출물을 이 저장소에도 포함하여 추후 캘린더 전체 복구 시 사라지지 않게 한다. 게임 테스트 갱신은 전체 복구를 실행하지 않고, 커밋·푸시된 이 하위 폴더만 올린다. 기존 배포 작업의 호스트 확인·정확한 커밋·파일 해시 검증 방식을 재사용한다. 원래 캘린더와 다른 프로젝트의 파일·서비스·DB에는 관여하지 않는다.
 
@@ -193,3 +193,11 @@ Chrome 실제 조작: 시작→소환→설정→전체화면 거부→설치 �
 
 Scene의 기존 ResizeObserver/resize/update→onFrame 호출부도 확인했으며 모델 paused에서도 UI 갱신이 계속되는 구조라 바꾸지 않았다. 미변경 전투 밸런스의 승률 재조정과 DB/계정/결제/서버 설정 검사는 제외한다. 모든 원본/검토/이전소스는 로컬에 보존하고 실행 파일만 배포한다.
 
+
+
+# v31 - User-supplied background music
+
+Existing implementation: present. Start/settings -> single Soundscape -> ambience.mp3 loop -> browser output. Reused the music/effects switches, pause position, unlock and single-loop safeguards; no new player, state, database or queue.
+Replaced the existing asset with Pixel Rain & Side-Scroll Cafe (artist tag: proteanTown), 175.850667 seconds. Audio stream copied without re-encoding; embedded cover removed. Runtime MP3: 2,815,085 bytes. Full decoded PCM hashes match the supplied original. Existing music gain changed from .45 to .22 to leave space for effects. Updated current attribution and versioned cache URLs.
+Existing audio/app tests: 9 passed. Chrome: all audio ready, gameplay/summon, independent channel toggles, settings return, preferences retained after reload, no errors or warnings. Physical Android speaker listening and a full-duration loop listening test remain unverified. No combat/rendering/DB/account/payment/server configuration changes, so these unchanged paths were not expanded. Art concepts remain local and are not included in this release.
+Source and runtime mirror are committed and pushed before deployment. Reuse prior runtime hash checks and a recoverable game-directory swap; preserve calendar files and services.
