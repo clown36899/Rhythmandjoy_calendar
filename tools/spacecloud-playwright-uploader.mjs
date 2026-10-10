@@ -1661,6 +1661,34 @@ export async function inspectSpacecloudReservationStatus(context, task, {
   };
 
   await loadSpacecloudCalendar(page, row.roomKey);
+  if (row.reservationNo) {
+    // Customer audits identify the mirror by its source reservation number.
+    // Their task id may be the later delete task, not the original upload.
+    // Reuse the authoritative external-schedule verifier: native SpaceCloud
+    // bookings in the same slot are not mirrors and have no delete popup.
+    const readCalendar = () => fetchSpacecloudCalendarMonth(page, row.roomKey, row.date);
+    const wait = (delayMs) => page.waitForTimeout(delayMs);
+    const initial = await pollForSpacecloudCalendarIdentity({
+      readCalendar, row, wait, timeoutMs: 0,
+    });
+    const verification = initial.identityMatched ? initial : await pollForSpacecloudCalendarAbsence({
+      readCalendar, row, wait, timeoutMs,
+    });
+    const status = verification.identityMatched
+      ? 'found'
+      : verification.absenceConfirmed ? 'not_found' : 'needs_review';
+    return {
+      status,
+      exists: status === 'found' ? true : status === 'not_found' ? false : null,
+      reservationNo: row.reservationNo,
+      candidateCount: verification.candidateCount,
+      reason: verification.apiError || verification.reason,
+      source: 'spacecloud-calendar-api',
+      verification,
+    };
+  }
+
+  // Preserve the legacy name-only inspection when no durable number exists.
   await gotoCalendarMonth(page, row.date);
   const search = await waitForDirectEventCandidates(page, row, { timeoutMs });
   const candidates = search.candidates || [];

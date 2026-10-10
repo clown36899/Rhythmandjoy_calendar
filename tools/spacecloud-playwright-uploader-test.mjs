@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 import {
   assessCalendarMonthGrid,
@@ -11,6 +12,7 @@ import {
   directUploadRetryMode,
   directUploadVerificationTarget,
   inspectSpacecloudConfirmedReservation,
+  inspectSpacecloudReservationStatus,
   pollForSpacecloudCalendarAbsence,
   pollForSpacecloudCalendarIdentity,
   popupDeleteVerification,
@@ -1215,6 +1217,84 @@ test('calendar API absence requires consecutive authoritative reads and never tr
   });
   assert.equal(failed.absenceConfirmed, false);
   assert.equal(failed.reason, 'calendar-api-read-failed');
+});
+
+test('customer mirror audit uses authoritative schedules and preserves uncertain identities', async (t) => {
+  const schedule = {
+    id: 9550001, name: '김*희님', symd: '20260904', eymd: '20260904',
+    shour: 20, ehour: 21, memo: 'taskId=332 / naverReservationNo=1289402981',
+  };
+  const cases = [
+    { name: 'native booking in the same slot', schedules: [], native: [schedule], expected: 'not_found' },
+    { name: 'existing mirror with the original upload task id', schedules: [schedule], expected: 'found' },
+    { name: 'legacy taskless mirror', schedules: [{ ...schedule, memo: 'naverReservationNo=1289402981' }], expected: 'found' },
+    { name: 'different reservation in the same slot', schedules: [{ ...schedule, memo: 'taskId=901 / naverReservationNo=1399999999' }], expected: 'not_found' },
+    { name: 'unidentified direct schedule', schedules: [{ ...schedule, memo: '' }], expected: 'needs_review', timeoutMs: 0 },
+    { name: 'authentication failure', status: 401, schedules: [], expected: 'needs_review' },
+    { name: 'transient failure before stable absence', failures: 2, schedules: [], expected: 'not_found' },
+  ];
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      let reads = 0;
+      let url = '';
+      const month = calendarGridExpectation(2026, 9);
+      const page = {
+        url: () => url,
+        goto: async (target) => { url = target; },
+        waitForResponse: async (predicate) => {
+          const response = {
+            url: () => 'https://api.spacecloud.kr/partner/reservations/calendar?product_id=108674&year=2026&month=09',
+            finished: async () => null,
+            ok: () => true,
+          };
+          assert.equal(predicate(response), true);
+          return response;
+        },
+        waitForFunction: async () => {},
+        waitForTimeout: async () => {},
+        locator: () => { throw new Error('numbered mirror audit must not click a calendar candidate'); },
+        evaluate: async (callback, params) => {
+          if (params?.endpoint) {
+            return runInNewContext(`(${callback.toString()})(input)`, {
+              input: params,
+              URL,
+              window: { localStorage: { getItem: () => '{"accessToken":"test-token"}' } },
+              fetch: async (target, options) => {
+                const request = new URL(target);
+                assert.equal(request.searchParams.get('product_id'), '108674');
+                assert.equal(request.searchParams.get('year'), '2026');
+                assert.equal(request.searchParams.get('month'), '09');
+                assert.equal(options.method || 'GET', 'GET');
+                reads += 1;
+                const status = reads <= (scenario.failures || 0) ? 503 : scenario.status || 200;
+                return {
+                  ok: status === 200, status,
+                  text: async () => JSON.stringify([{ ymd: '20260904', external_schedules: scenario.schedules, reservations: scenario.native || [] }]),
+                };
+              },
+            });
+          }
+          if (callback.toString().includes('dayNumbers')) return {
+            title: '2026. 9', cellCount: month.compactCellCount,
+            dayNumbers: Array.from({ length: month.compactCellCount }, (_, i) => i - month.firstWeekday + 1),
+          };
+          return '2026. 9';
+        },
+      };
+      const result = await inspectSpacecloudReservationStatus({ pages: () => [page] }, {
+        id: 900, taskType: 'delete', roomKey: 'b', date: '2026-09-04',
+        startTime: '20:00', endTime: '22:00', reserverName: '김영희', reservationNo: '1289402981',
+      }, { timeoutMs: scenario.timeoutMs ?? 50 });
+      assert.equal(result.status, scenario.expected);
+      assert.equal(result.source, 'spacecloud-calendar-api');
+      assert.equal(result.exists, scenario.expected === 'found' ? true : scenario.expected === 'not_found' ? false : null);
+      if (result.status === 'not_found') {
+        assert.equal(result.verification.absenceConfirmed, true);
+        assert.equal(result.verification.consecutiveAbsentReads, 2);
+        assert.ok(reads >= 3);
+      }
+    });
+  }
 });
 
 test('calendar API never treats a same-reservation taskId mismatch as absence', async () => {
