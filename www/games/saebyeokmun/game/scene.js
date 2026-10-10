@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,actorLayer} from './data.js?v=33';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,actorLayer} from './data.js?v=34';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const GROUND=542;

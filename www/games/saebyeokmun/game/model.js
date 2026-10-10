@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,AREAS,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap} from './data.js?v=33';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,AREAS,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap} from './data.js?v=34';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -181,11 +181,6 @@ export class Journey {
   if(this.action)movement=0;
   const stopAt=this.direction?145:this.allies.some(a=>a.hp>0)?HERO_STANDOFF:145;
   if(movement>0&&front)movement=Math.min(movement,Math.max(0,front.x-ENEMY_FRONT[front.type]-this.x-stopAt));
-  // Automatic escort can give ground; explicit movement and mounted actions always win.
-  if(!this.direction&&this.auto&&!this.action&&front&&this.allies.some(a=>a.hp>0)){
-   const gap=front.x-ENEMY_FRONT[front.type]-this.x-HERO_STANDOFF;
-   if(gap<-18)movement=-Math.min(36*dt,-gap);
-  }
   this.x=clamp(this.x+movement,START,ROAD);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/76;
   this.furthest=Math.max(this.furthest,this.x);
   // A full wave already spends the reference power budget. Distance unlocks the
@@ -212,8 +207,8 @@ export class Journey {
    if(s.heal&&target&&Math.abs(target.x-goal)>s.range)goal=target.x-Math.sign(target.x-goal)*s.range*.95;
    const retreat=this.direction<0&&a.x>formation+170;
    if(retreat)goal=Math.min(goal,formation+170);
-   const gap=goal-a.x,backing=gap<-18&&(engaged||retreat);
-   // Settle each type at its own firing distance, with a dead band against foot jitter.
+   const gap=goal-a.x,backing=gap<-18&&retreat;
+   // Approach each firing distance; hold when crowded. Only left input permits retreat.
    if(!retreat&&target&&(s.heal?Math.abs(target.x-a.x):contactGap(a,target))<=s.range+1e-6&&a.cd<=0){
     a.cd=s.period;a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,dir:Math.sign(target.x-a.x)||1};
    }else if(backing||gap>1e-6){a.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);}
