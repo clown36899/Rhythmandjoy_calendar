@@ -8,14 +8,16 @@ export class Soundscape {
  async unlock(){
   if(!this.context){this.context=this.contextFactory();this.master=this.context.createGain();this.master.gain.value=this.enabled?this.volume:0;
    if(this.context.createDynamicsCompressor){this.limiter=this.context.createDynamicsCompressor();this.limiter.threshold.value=-5;this.limiter.knee.value=6;this.limiter.ratio.value=12;this.limiter.attack.value=.003;this.limiter.release.value=.16;this.master.connect(this.limiter);this.limiter.connect(this.context.destination);}else this.master.connect(this.context.destination);
-   this.context.onstatechange=()=>this.onState(this.context.state==='running'?(this.missing.length?'partial':'ready'):'locked');}
+   this.context.onstatechange=()=>{if(this.context.state==='running')this.syncAmbience();this.onState(this.context.state==='running'?(this.missing.length?'partial':'ready'):'locked');};}
   await this.context.resume();
-  if(!this.loaded){
-   this.onState('loading');
-   this.loaded=Promise.all(NAMES.map(async name=>{
-    try{const response=await this.fetcher('./assets/audio/'+name+(name==='ambience'?'.mp3':'.wav')+'?v=31');if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));}
+  // One in-flight load, but a transient failure must not become a permanent cached result.
+  const pending=NAMES.filter(name=>!this.buffers.has(name));
+  if(!this.loaded&&pending.length){
+   this.onState('loading');this.missing=[];
+   this.loaded=Promise.all(pending.map(async name=>{
+    try{const response=await this.fetcher('./assets/audio/'+name+(name==='ambience'?'.mp3?v=39':'.wav?v=31'));if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));if(name==='ambience')this.syncAmbience();}
     catch{this.missing.push(name);}
-   })).then(()=>{this.onState(this.missing.length?'partial':'ready');this.syncAmbience();});
+   })).then(()=>{this.onState(this.missing.length?'partial':'ready');this.syncAmbience();}).finally(()=>{this.loaded=null;});
   }
   await this.loaded;this.syncAmbience();
  }
@@ -24,7 +26,7 @@ export class Soundscape {
  setVolume(value){this.volume=Math.max(0,Math.min(1,Number(value)||0));if(this.master)this.master.gain.setValueAtTime(this.enabled?this.volume:0,this.context.currentTime);}
  setPlaying(playing){if(this.playing===playing)return;this.playing=playing;if(!playing)this.stopVoices();else this.syncAmbience();}
  stopVoices(resetMusic=false,channel=null){if(this.ambient&&channel!=='effects')this.ambientOffset=(this.ambientOffset+this.context.currentTime-this.ambient.startedAt)%this.ambient.buffer.duration;for(const v of [...this.voices]){if(channel==='music'&&!v.loop||channel==='effects'&&v.loop)continue;try{v.stop();}catch{}v.disconnect();this.voices.delete(v);}if(channel!=='effects')this.ambient=null;if(channel!=='music')this.lastPlayed.clear();if(resetMusic)this.ambientOffset=0;}
- syncAmbience(){if(this.playing&&this.enabled&&this.musicEnabled&&!this.ambient&&this.buffers.has('ambience')&&this.context?.state==='running')this.ambient=this.voice('ambience',{loop:true,gain:.22});}
+ syncAmbience(){if(this.playing&&this.enabled&&this.musicEnabled&&!this.ambient&&this.buffers.has('ambience')&&this.context?.state==='running')this.ambient=this.voice('ambience',{loop:true,gain:.32});}
  voice(name,{gain=1,loop=false,pan=0,rate=1}={}){
   const context=this.context,buffer=this.buffers.get(name);if(!this.enabled||!(loop?this.musicEnabled:this.effectsEnabled)||!buffer||context?.state!=='running')return null;
   const source=context.createBufferSource(),volume=context.createGain();source.buffer=buffer;source.loop=loop;source.playbackRate.value=rate;volume.gain.value=gain;source.connect(volume);

@@ -1,15 +1,16 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss} from './data.js?v=37';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty} from './data.js?v=40';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
  reset(){
-  this.status='ready';this.time=0;this.x=START;this.furthest=START;this.hp=MAX_HP;this.coins=70;
+  this.status='ready';this.party=[...DEFAULT_PARTY];this.time=0;this.x=START;this.furthest=START;this.hp=MAX_HP;this.coins=70;
   this.auto=true;this.direction=0;this.allies=[];this.enemies=[];this.projectiles=[];this.events=[];this.nextId=0;this.stage=0;this.gateBrokenAt=null;
   this.wave=0;this.heroAttack=0;this.shield=0;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS)].map(k=>[k,0]));
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='동료와 함께 오른쪽 새벽문까지 가요.';
   delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
  }
- start(stage=this.stage){this.reset();this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.status='playing';const cow=this.addAlly('cow',this.x+130);this.emit('summon',{actor:cow.id,kind:'cow',x:cow.x});this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('자동 전진 중이에요. 달토끼를 불러 함께 출발해요.');}
+ start(stage=this.stage,party=DEFAULT_PARTY){this.reset();this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.status='playing';const first=this.addAlly(this.party[0],this.x+130);this.emit('summon',{actor:first.id,kind:first.type,x:first.x});this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('자동 전진 중이에요. 달토끼를 불러 함께 출발해요.');}
+ get summonCount(){return this.allies.filter(a=>a.hp>0&&!a.helper).length;}
  get waves(){return STAGES[this.stage].waves;}
  emit(type,data={}){this.events.push({type,at:this.time,...data});}
  say(message){this.hint=message;this.hintSerial++;this.lastHintAt=this.time;this.emit('hint',{message});}
@@ -22,9 +23,9 @@ export class Journey {
  spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={id:++this.nextId,type,x,bornAt:this.time,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:s.ability?.initial??Infinity,walk:0,moving:0};this.enemies.push(a);if(isBoss(type))this.bossSpawned=true;return a;}
  reject(message){this.emit('notice',{message});return false;}
  summon(type){
-  if(this.status!=='playing'||!UNITS[type])return false;
+  if(this.status!=='playing'||!UNITS[type]||!this.party.includes(type))return false;
   if(this.cooldowns[type]>0)return this.reject('조금만 기다려 주세요.');
-  if(this.allies.filter(a=>a.hp>0).length>=7)return this.reject('동료는 일곱까지 함께 걸을 수 있어요.');
+  if(this.summonCount>=7)return this.reject('동료는 일곱까지 함께 걸을 수 있어요.');
   if(this.coins<UNITS[type].cost)return this.reject('엽전이 조금 더 필요해요.');
   this.coins-=UNITS[type].cost;this.cooldowns[type]=UNITS[type].cooldown;
   const ally=this.addAlly(type);this.summons++;this.emit('summon',{actor:ally.id,kind:type,x:ally.x});return true;
@@ -157,7 +158,7 @@ export class Journey {
     const ally=action.targetId===null?null:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
     const valid=action.targetId===null||!!ally,targetX=ally?.x??this.x;
     if(valid&&contactGap(actor,{x:targetX})<=ENEMIES[actor.type].range+24){
-     if(actor.type==='reaper')this.launchShot({actor:actor.id,sourceKind:'reaper',weapon:'hex',from:actor.x,target:ally||this,damage:ENEMIES.reaper.damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
+     if(actor.type==='reaper')this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:'hex',from:actor.x,target:ally||this,damage:ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
      else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);
      this.emit('claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});}
     }
@@ -168,7 +169,7 @@ export class Journey {
     const target=this.enemies.find(e=>e.id===action.targetId&&e.hp>0),unit=unitStats(actor.type,this.keeperRank);
     if(target&&target.x>=actor.x-55&&contactGap(actor,target)<=unit.range+1e-6){
      const high=unit.weapon==='seed'||unit.weapon==='seal',hit=!high||target.type!=='skirt';
-     if(unit.weapon==='horn'){this.emit('swipe',{actor:actor.id,kind:unit.weapon,sourceKind:actor.type,targetKind:target.type,targetActor:target.id,x:actor.x,from:actor.x,to:target.x});this.hurtEnemy(target,unit.damage,actor.x,unit.weapon);}
+     if(['horn','spear','sword'].includes(unit.weapon)){this.emit('swipe',{actor:actor.id,kind:unit.weapon,sourceKind:actor.type,targetKind:target.type,targetActor:target.id,x:actor.x,from:actor.x,to:target.x});this.hurtEnemy(target,unit.damage,actor.x,unit.weapon);}
      else this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:unit.weapon,from:actor.x,target,damage:unit.damage,high,stun:unit.weapon==='seal'?.65:0});
     }
    }
@@ -222,7 +223,10 @@ export class Journey {
   // A full wave already spends the reference power budget. Distance unlocks the
   // next one, but never stacks two full budgets (including after a player rush).
   if(this.wave<this.waves.length&&this.furthest>=this.waves[this.wave].x&&!this.enemies.some(e=>e.hp>0)){
-   const scale=waveBalance(this.wave,this.stage).scale,w=this.waves[this.wave++];w.types.forEach((type,i)=>this.spawn(type,GATE+24+i*125,scale));this.say(w.message);
+   const scale=waveBalance(this.wave,this.stage).scale,w=this.waves[this.wave++];w.types.forEach((type,i)=>this.spawn(type,GATE+24+i*125,scale));
+   // The existing monotonic wave cursor owns each one-time helper arrival.
+   if(w.helper){const a=this.addAlly(w.helper,this.x-65);a.helper=true;this.emit('summon',{actor:a.id,kind:a.type,x:a.x});}
+   this.say(w.message);
   }
   const heroTarget=this.selectContact(this,active.filter(e=>e.x>=this.x-20&&e.type!=='skirt'),480);
   if(!this.shield&&this.action?.kind!=='rush'&&this.heroAttack<=0&&heroTarget&&contactGap(this,heroTarget)<480){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:heroTarget,damage:10,high:true});}

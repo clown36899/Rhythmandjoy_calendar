@@ -1,4 +1,4 @@
-새벽문 v31 음악·효과음 출처
+새벽문 v38 음악·효과음 출처
 
 1. Kenney — Impact Sounds (130 recordings), RPG Audio (50 recordings)
 https://kenney.nl/assets/impact-sounds
@@ -8,13 +8,12 @@ https://creativecommons.org/publicdomain/zero/1.0/
 Selected footsteps, impacts, cloth, paper, coins and bells were trimmed, layered,
 pitch shifted and levelled into the game's 23 effects. Original packs are archived locally.
 
-2. Pixel Rain & Side-Scroll Cafe
-Artist tag in supplied file: proteanTown
-User-provided MP3, supplied on 2026-10-10 for this game's background music.
-Used as ambience.mp3. Audio stream copied without re-encoding; embedded cover
-art removed from the runtime copy. Full track retained and looped by the existing
-music player. Playback gain reduced to .22; original archived locally.
+2. Yokai Battle Theme
+User-provided MP3, supplied on 2026-10-11 for this game's background music.
+Used as ambience.mp3 without re-encoding. Full source remains local. Existing
+single-loop music player uses gain .32 and the user's saved master volume.
 No CC0 or CC BY license is asserted for this user-provided track.
+Previously used Pixel Rain & Side-Scroll Cafe is archived locally, not published.
 
 3. 한국저작권위원회 — 147.청명한 18현가야금 효과음 027
 Contributor: 양현정

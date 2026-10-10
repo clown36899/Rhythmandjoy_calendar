@@ -1,13 +1,14 @@
-import {Journey} from './game/model.js?v=37';
-import {makeGame} from './game/scene.js?v=37';
-import {Soundscape} from './game/audio.js?v=37';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose} from './game/data.js?v=37';
+import {Campaign} from './game/campaign.js?v=40';
+import {Journey} from './game/model.js?v=40';
+import {makeGame} from './game/scene.js?v=40';
+import {Soundscape} from './game/audio.js?v=40';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,validParty} from './game/data.js?v=40';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 let installPrompt=null,fullscreenPending=false;
 let scene,ready=false,lastStatus='',lastHint=0,noticeUntil=0,lastFrame=0,infoPaused=false,coinAnimation,lastKeeperRank=-1,resultReadyAt=Infinity;
 const keys=new Set();
-const infoDialogs=[$('settings'),$('codex'),$('app-help'),$('loadout'),$('journey-map')];
+const infoDialogs=[$('settings'),$('codex'),$('app-help'),$('loadout'),$('journey-map'),$('roster')];
 // Keep dialogs in the fullscreen subtree and one pause owner for nested panels.
 for(const dialog of infoDialogs)document.querySelector('.phone-screen').append(dialog);
 const motionPreviews=[];
@@ -16,23 +17,27 @@ let best=0,loadout=[...DEFAULT_LOADOUT],draftLoadout=[],clearedStages=0;
 // Campaign completion is distinct from the existing best distance: only a destroyed
 // gate earns a clear. One sequential count keeps the stage save recoverable.
 try{const saved=Number(localStorage.getItem('saebyeokmun-cleared'));if(Number.isInteger(saved)&&saved>=0&&saved<=STAGES.length)clearedStages=saved;}catch{}
-let selectedStage=Math.min(clearedStages,STAGES.length-1);
+let savedCampaign={};try{savedCampaign=JSON.parse(localStorage.getItem('saebyeokmun-campaign')||'{}')||{};}catch{}
+const campaign=new Campaign(savedCampaign);if(!Array.isArray(savedCampaign.cleared))campaign.cleared=Array.from({length:clearedStages},(_,i)=>i);
+let activeRun=0,draftParty=[],rosterFocus='king',rosterMotion=null;
+function saveCampaign(){try{localStorage.setItem('saebyeokmun-campaign',JSON.stringify(campaign.snapshot()));return true;}catch{showNotice('이 브라우저에서 저장할 수 없어요. 현재 화면에서만 유지됩니다.');return false;}}
+let selectedStage=STAGES.findIndex((_,i)=>!campaign.cleared.includes(i));if(selectedStage<0)selectedStage=0;
 document.body.dataset.screen='map';
 function renderMap(){
  for(let i=0;i<STAGES.length;i++){
-  const node=$('stage-'+i),cleared=i<clearedStages,locked=i>clearedStages;
+  const node=$('stage-'+i),cleared=campaign.cleared.includes(i),locked=!TEST_MODE&&i>clearedStages;
   node.disabled=locked;node.dataset.state=cleared?'cleared':locked?'locked':'open';node.setAttribute('aria-pressed',String(i===selectedStage));
-  node.querySelector('.stage-state').textContent=cleared?'✓ 문 파괴 완료':locked?'앞선 문을 열어 주세요':'출발할 수 있어요';
+  node.querySelector('.stage-state').textContent=cleared?'✓ 문 파괴 완료':locked?'앞선 문을 열어 주세요':TEST_MODE?'테스트 · 바로 출발':'출발할 수 있어요';
  }
  const stage=STAGES[selectedStage];$('home-chapter').textContent=stage.name+' · '+stage.place;$('map-chapter').textContent=stage.subtitle;$('map-place').textContent=stage.place+' · '+stage.time;
- $('map-name').textContent=stage.name;$('map-brief').textContent=stage.brief;$('map-clears').textContent=clearedStages+' / '+STAGES.length+'개의 문을 열었어요';
- $('map-skills').textContent=loadout.map(k=>SKILLS[k].name).join(' · ');$('start-label').textContent=selectedStage<clearedStages?'이 길 다시 걷기':'길 따라가기';
+ $('map-name').textContent=stage.name;$('map-brief').textContent=stage.brief;$('map-clears').textContent=campaign.cleared.length+' / '+STAGES.length+' 클리어 · 테스트에서 모든 길 개방';
+ $('map-skills').textContent=loadout.map(k=>SKILLS[k].name).join(' · ');$('start-label').textContent=campaign.cleared.includes(selectedStage)?'이 길 다시 걷기':'길 따라가기';
  if(scene){scene.previewAreaIndex=selectedStage;model.stage=selectedStage;}
 }
-function selectStage(index){if(!Number.isInteger(index)||!STAGES[index]||index>clearedStages||model.status!=='ready')return;selectedStage=index;renderMap();}
+function selectStage(index){if(!Number.isInteger(index)||!STAGES[index]||(!TEST_MODE&&index>clearedStages)||model.status!=='ready')return;selectedStage=index;renderMap();}
 function showMap(){
  if(fullscreenPending)return;infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();
- keys.clear();model.reset();lastStatus='';resultReadyAt=Infinity;selectedStage=Math.min(clearedStages,STAGES.length-1);
+ keys.clear();model.reset();lastStatus='';resultReadyAt=Infinity;selectedStage=STAGES.findIndex((_,i)=>!campaign.cleared.includes(i));if(selectedStage<0)selectedStage=0;
  $('intro').hidden=false;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=true;$('callout').hidden=true;document.body.dataset.screen='map';
  scene?.resetPresentation();soundscape.stopVoices(true);soundscape.setPlaying(false);renderMap();openInfo($('journey-map'));
 }
@@ -55,7 +60,7 @@ function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify
 updateSound();
 function updateBest(){const n=Math.floor(model.progress()*100);best=Math.max(best,n);$('best').textContent=best+'%';try{localStorage.setItem('saebyeokmun-best',String(best));}catch{}}
 function start(){
- if(!ready||fullscreenPending||selectedStage>clearedStages)return;infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();model.start(selectedStage);keys.clear();lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
+ if(!ready||fullscreenPending||(!TEST_MODE&&selectedStage>clearedStages))return;infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();activeRun=campaign.begin();saveCampaign();model.start(selectedStage,campaign.party);renderSummonSlots();keys.clear();lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
  if(scene)scene.resetPresentation();updateAuto();soundscape.stopVoices(true);soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});
 }
 function pause(){if(!ready||fullscreenPending)return;model.pause();keys.clear();model.direction=0;soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
@@ -83,7 +88,7 @@ document.addEventListener('keydown',e=>{
  if(k==='enter'&&model.status==='ready'&&ready)openInfo($('journey-map'));
  if(k==='arrowleft'||k==='a'){keys.add('left');setDirection();}
  if(k==='arrowright'||k==='d'){keys.add('right');setDirection();}
- if(!e.repeat&&{'1':'cow','2':'keeper','3':'rabbit','4':'scholar','5':'healer',q:loadout[0],e:loadout[1],r:loadout[2]}[k])callAction({'1':'cow','2':'keeper','3':'rabbit','4':'scholar','5':'healer',q:loadout[0],e:loadout[1],r:loadout[2]}[k]);
+ if(!e.repeat&&{'1':campaign.party[0],'2':campaign.party[1],'3':campaign.party[2],'4':campaign.party[3],'5':campaign.party[4],q:loadout[0],e:loadout[1],r:loadout[2]}[k])callAction({'1':campaign.party[0],'2':campaign.party[1],'3':campaign.party[2],'4':campaign.party[3],'5':campaign.party[4],q:loadout[0],e:loadout[1],r:loadout[2]}[k]);
 });
 document.addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(k==='arrowleft'||k==='a')keys.delete('left');if(k==='arrowright'||k==='d')keys.delete('right');setDirection();});
 function blurPause(){keys.clear();model.direction=0;infoPaused=false;if(model.status==='playing')model.pause();soundscape.setPlaying(false);soundscape.stopVoices();}
@@ -135,6 +140,30 @@ function renderSkillSlots(){
  $('skill-slots').innerHTML=loadout.map((key,i)=>{const s=SKILLS[key];return `<button class="action" id="action-${key}" data-action="${key}"><span class="action-role magic">${s.role}</span><kbd>${['Q','E','R'][i]}</kbd><span class="action-art"><img data-icon="${s.icon}" alt="" draggable="false"></span><strong>${key==='rush'?'해태 돌진':key==='stomp'?'발구름':s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
  if(scene)$('skill-slots').querySelectorAll('[data-icon]').forEach(img=>{img.src=scene.previewTexture(img.dataset.icon);});
 }
+function renderSummonSlots(){
+ $('summon-slots').innerHTML=campaign.party.map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}"><kbd>${i+1}</kbd><span class="action-art"><img data-icon="${icon}" src="${scene?.previewTexture(icon)||''}" alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
+ lastKeeperRank=-1;
+}
+function renderRoster(){
+ $('roster-balance').textContent='◎ '+campaign.balance.toLocaleString('ko-KR');
+ $('roster-count').textContent=draftParty.length+' / 5 편성';$('roster-save').disabled=!validParty(draftParty);
+ $('roster-slots').innerHTML=Array.from({length:5},(_,i)=>`<button data-party-remove="${i}" ${draftParty[i]?'':'disabled'} aria-label="${i+1}번 ${UNITS[draftParty[i]]?.name||'빈 자리'} 편성 해제"><small>${i+1}</small>${draftParty[i]?`<img src="${scene.previewTexture(draftParty[i]+'1')}" alt="" draggable="false"><span>${UNITS[draftParty[i]].name}</span>`:'<span>+</span>'}</button>`).join('');
+ $('roster-choices').innerHTML=Object.entries(UNITS).map(([key,s])=>`<button class="roster-card" data-character="${key}" aria-label="${s.name} 살펴보기" aria-pressed="${rosterFocus===key}"><img src="${scene.previewTexture(key+'1')}" alt="" draggable="false"><strong>${s.name}</strong><small>${s.role.split(' · ')[0]}</small><em>${draftParty.includes(key)?'편성 중':campaign.owned.includes(key)?'보유':'◎ '+s.price+' · 체험 가능'}</em></button>`).join('');
+ const s=UNITS[rosterFocus];$('roster-name').textContent=s.name;$('roster-role').textContent=s.role;$('roster-stats').textContent='체력 '+s.hp+' · 공격 '+s.damage+' · 소환 '+s.cost+' 엽전';
+ $('roster-description').textContent=({king:'어보의 빛으로 적을 잠깐 봉인합니다.',prince:'후열에서 활을 당겨 화살이 닿을 때 피해를 줍니다.',minister:'교지와 부채를 펼쳐 먼 상대의 공격 준비를 끊습니다.',cavalry:'말을 타고 앞줄로 달려가 검으로 공격합니다.',spearman:'2스테이지에서는 한 명이 자동으로 돕습니다. 직접 편성하면 소환할 수 있어요.',archer:'2스테이지 중반에 한 명이 자동으로 돕습니다. 편성하면 다른 길에서도 소환할 수 있어요.',healer:'부상한 동료를 찾아가 움직이는 중에도 붕대를 감습니다.'})[rosterFocus]||'함께 걸으며 각자의 거리에서 길을 지킵니다.';
+ const owned=campaign.owned.includes(rosterFocus),selected=draftParty.includes(rosterFocus),buy=$('roster-buy');buy.disabled=owned||campaign.balance<s.price;buy.textContent=owned?'보유 중':'구매 · ◎ '+s.price;
+ const select=$('roster-select');select.disabled=selected||draftParty.length===5||(!TEST_MODE&&!owned);select.textContent=selected?'편성 중':owned?'편성에 넣기':'테스트로 편성';
+ const img=$('roster-preview');img.src=scene.previewTexture(rosterFocus+'1');rosterMotion={kind:rosterFocus,enemy:false,img,keys:Array.from({length:rosterFocus==='cow'?57:8},(_,i)=>rosterFocus+i),variants:new Map(),health:1,mode:'walk',started:performance.now(),frame:-1};
+}
+function openRoster(){if(!ready||['playing','paused'].includes(model.status))return;draftParty=[...campaign.party];renderRoster();openInfo($('roster'));}
+for(const id of ['roster-open','map-roster','result-roster'])$(id).addEventListener('click',openRoster);
+$('roster-choices').addEventListener('click',e=>{const b=e.target.closest('[data-character]');if(!b)return;rosterFocus=b.dataset.character;renderRoster();});
+$('roster-slots').addEventListener('click',e=>{const b=e.target.closest('[data-party-remove]');if(!b||b.disabled)return;draftParty.splice(Number(b.dataset.partyRemove),1);renderRoster();});
+$('roster-select').addEventListener('click',()=>{if(draftParty.length<5&&!draftParty.includes(rosterFocus)&&(TEST_MODE||campaign.owned.includes(rosterFocus))){draftParty.push(rosterFocus);renderRoster();}});
+$('roster-buy').addEventListener('click',()=>{if(campaign.buy(rosterFocus)){saveCampaign();renderRoster();}});
+$('roster-save').addEventListener('click',()=>{if(campaign.select(draftParty)){saveCampaign();renderSummonSlots();$('roster').close();}});
+$('roster').querySelector('.dialog-close').addEventListener('click',()=>$('roster').close());
+$('roster-motions').addEventListener('click',e=>{const b=e.target.closest('[data-roster-motion]');if(b&&rosterMotion){rosterMotion.mode=b.dataset.rosterMotion;rosterMotion.started=performance.now();}});
 function renderLoadout(){
  $('loadout-slots').innerHTML=[0,1,2].map(i=>`<button data-remove="${i}" ${draftLoadout[i]?'':'disabled'}><kbd>${['Q','E','R'][i]}</kbd>${SKILLS[draftLoadout[i]]?.name||'비어 있는 자리'}${draftLoadout[i]?'<span>×</span>':''}</button>`).join('');
  $('loadout-choices').innerHTML=Object.entries(SKILLS).map(([key,s])=>{const i=draftLoadout.indexOf(key);return `<button class="skill-choice" data-skill="${key}" aria-pressed="${i>=0}" ${i<0&&draftLoadout.length===3?'disabled':''}><img src="${scene?.previewTexture(s.icon)||''}" alt="" draggable="false"><span class="choice-role">${s.role} ${i>=0?'· '+['Q','E','R'][i]+' 장착':''}</span><strong>${s.name}</strong><p>${s.description}</p><small>◎ ${s.cost} · 대기 ${s.cooldown}초</small></button>`;}).join('');
@@ -149,9 +178,9 @@ $('loadout').querySelector('.dialog-close').addEventListener('click',()=>$('load
 renderSkillSlots();
 function onReady(error,s){
  if(error){$('loading').textContent=error.message;$('home-loading').textContent=error.message;return;}
- scene=s;ready=true;startButton.disabled=false;$('enter-map').disabled=false;$('home-loading').hidden=true;$('loading').hidden=true;renderMap();
+ scene=s;ready=true;startButton.disabled=false;$('enter-map').disabled=false;$('roster-open').disabled=false;$('home-loading').hidden=true;$('loading').hidden=true;renderMap();renderSummonSlots();
  document.querySelectorAll('[data-icon]').forEach(img=>{img.src=scene.previewTexture(img.dataset.icon);img.draggable=false;});
- const preview={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',haetae:'haetae1',rabbit:'rabbit1',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1',girl:'girl1',warden:'wardenWalk0',ferryman:'ferrymanWalk0',waterghost:'waterghostWalk0'};
+ const preview={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',haetae:'haetae1',rabbit:'rabbit1',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1',king:'king1',prince:'prince1',minister:'minister1',cavalry:'cavalry1',girl:'girl1',warden:'wardenWalk0',ferryman:'ferrymanWalk0',waterghost:'waterghostWalk0',spearman:'spearman0',archer:'archer0',mangtae:'mangtaeWalk0',shadow:'shadowWalk0'};
  for(const item of [...COMPANIONS,...CODEX]){
   const article=document.createElement('article');article.className='codex-card';
   const img=document.createElement('img');img.src=scene.previewTexture(preview[item.asset]);img.alt=item.name;img.className='sprite-preview';img.draggable=false;
@@ -193,21 +222,22 @@ function onEvents(events){
 function onFrame(m,s){
  soundscape.setPlaying(m.status==='playing');
  const now=performance.now();
- if($('codex').open)for(const p of motionPreviews){
+ if($('codex').open||$('roster').open)for(const p of [...($('codex').open?motionPreviews:[]),...($('roster').open&&rosterMotion?[rosterMotion]:[])]){
   const spec=p.enemy?ENEMY_STRIKE:MOTION[p.kind],elapsed=(now-p.started)/1000,phase=elapsed%((spec.duration||.64)+.7);
   const action=p.mode==='attack'&&phase<spec.duration?{elapsed:phase}:null;
   const dying=p.mode==='depart',deathDuration=p.kind==='reaper'?REAPER_DEPARTURE_TIME:p.enemy?(isBoss(p.kind)?2.7:2.1):1.8,deathProgress=Math.min(1,(elapsed%(deathDuration+1))/deathDuration);
-  const frame=p.enemy?(action?4+enemyAttackFrame(phase):motionFrame(p.kind,elapsed,p.mode==='walk',null)):motionFrame(p.kind,elapsed,p.mode==='walk',action);
+  const frame=p.enemy?(action?4+enemyAttackFrame(phase):motionFrame(p.kind,elapsed,p.mode==='walk',null)):motionFrame(p.kind,p.mode==='walk'?elapsed:0,p.mode==='walk',action);
   const ability=isBoss(p.kind)?ENEMIES[p.kind].ability:null,castPhase=elapsed%((ability?.windup??2.6)+(ability?.duration??1.15)+.7);
   const bossKey=ability?bossPose(elapsed,p.mode==='walk',p.mode==='cast'&&castPhase>=ability.windup&&castPhase<ability.windup+ability.duration?{kind:ability.kind,elapsed:castPhase-ability.windup}:action?{...action,kind:'enemy'}:null,p.mode==='cast'&&castPhase<ability.windup?ability.windup-castPhase:0,p.kind):null;
-  const pose=p.kind==='healer'?healerPose(elapsed,p.mode==='walk',action?{...action,kind:'healer',phase:'treat'}:null,elapsed):bossKey||p.keys[frame];
-  const key=dying?(p.kind==='reaper'?'reaperDepart'+reaperDepartureFrame(deathProgress):p.enemy?'depart'+p.kind+enemyDepartureFrame(deathProgress):'defeat'+p.kind+(deathProgress<.32?0:1)):scene.injuryTexture(pose,p.kind,p.health,1);
+  const pose=['king','prince','minister','cavalry'].includes(p.kind)&&p.mode==='idle'?p.kind+'Idle0':p.kind==='healer'?healerPose(elapsed,p.mode==='walk',action?{...action,kind:'healer',phase:'treat'}:null,elapsed):bossKey||p.keys[frame];
+  const key=dying?(p.kind==='reaper'?'reaperDepart'+reaperDepartureFrame(deathProgress):p.enemy?'depart'+p.kind+enemyDepartureFrame(deathProgress,ENEMIES[p.kind]?.departureFrames):'defeat'+p.kind+(deathProgress<.32?0:1)):scene.injuryTexture(pose,p.kind,p.health,1);
 
   p.img.style.opacity=dying?String(1-Math.max(0,(deathProgress-.55)/.45)):'1';
   p.img.style.transform=dying&&p.kind==='reaper'?'translateY(-'+Math.min(1,deathProgress/.46)*9+'px)':'';
   if(key!==p.frame){if(!p.variants.has(key))p.variants.set(key,scene.previewTexture(key));p.img.src=p.variants.get(key);p.frame=key;}
  }
  if(now-lastFrame<70)return;lastFrame=now;
+ $('hero-state').textContent=m.hp<=0?'잠시 쉬어 가기':m.shield>0?'우산으로 보호 중':m.action?.kind==='rush'?'해태 돌진':m.action?'합동 공격':m.moving?'길을 걷는 중':'숨 고르는 중';
  $('health-fill').style.width=(m.hp/MAX_HP*100)+'%';$('hp-text').textContent=Math.ceil(m.hp)+' / '+MAX_HP;
  const fraction=m.progress(),progress=Math.floor(fraction*100),sky=skyState(fraction,m.time,m.status==='ready'?s.previewAreaIndex:m.stage),moonMix=sky.night;
  $('distance').textContent=progress+'%';$('route-fill').style.width=fraction*100+'%';document.querySelector('.route-dot').style.left=fraction*100+'%';
@@ -217,11 +247,11 @@ function onFrame(m,s){
  $('journey-dial').setAttribute('aria-valuenow',String(progress));$('journey-dial').setAttribute('aria-valuetext',sky.name+' · 길의 '+progress+'%');
  $('coins').textContent=Math.floor(m.coins).toLocaleString('ko-KR');
  $('coin-fill').style.width=(m.coins/MAX_COINS*100)+'%';$('coin-gauge').setAttribute('aria-valuenow',String(Math.floor(m.coins)));
- $('party-count').textContent='동료 '+m.allies.filter(a=>a.hp>0).length+' / 7';
+ $('party-count').textContent='동료 '+m.summonCount+' / 7'+(m.allies.some(a=>a.hp>0&&a.helper)?' · 조력 '+m.allies.filter(a=>a.hp>0&&a.helper).length:'');
  $('loadout-open').disabled=!ready||['playing','paused'].includes(m.status);
  $('loadout-open').title=['playing','paused'].includes(m.status)?'이번 여정이 끝나면 편성을 바꿀 수 있어요.':'필살기 5개 중 3개 선택';
  $('upgrade').disabled=!(m.status==='playing'||m.status==='paused'&&infoPaused&&$('settings').open)||m.keeperRank>0||m.coins<UNITS.keeper.upgrade.price;
- if(lastKeeperRank!==m.keeperRank){lastKeeperRank=m.keeperRank;$('upgrade').innerHTML=m.keeperRank?'먹붓 수련 완료':'도령 수련 <small>◎ 45</small>';$('action-keeper').querySelector('strong').textContent=m.keeperRank?'먹붓 도령':'도령';$('action-keeper').querySelector('img').src=s.previewTexture(m.keeperRank?'keeperBrush1':'keeper1');}
+ if(lastKeeperRank!==m.keeperRank){lastKeeperRank=m.keeperRank;$('upgrade').innerHTML=m.keeperRank?'먹붓 수련 완료':'도령 수련 <small>◎ 45</small>';const keeperButton=$('action-keeper');if(keeperButton){keeperButton.querySelector('strong').textContent=m.keeperRank?'먹붓 도령':'도령';keeperButton.querySelector('img').src=s.previewTexture(m.keeperRank?'keeperBrush1':'keeper1');}}
  const region=m.status==='ready'?s.previewAreaIndex:m.stage;
  $('area-label').textContent=m.bossDefeated?'새벽문 앞':AREAS[region].name.split(' · ')[0];
  $('edition-area').textContent=AREAS[region].name;document.body.dataset.area=String(region);
@@ -229,9 +259,9 @@ function onFrame(m,s){
  $('callout').hidden=m.status==='ready'||m.status==='won'||m.status==='lost'||(m.time-m.lastHintAt>7&&now>noticeUntil);
  for(const [name,baseSpec] of Object.entries({...UNITS,...SKILLS})){
   const spec=UNITS[name]?unitStats(name,m.keeperRank):baseSpec;
-  const button=$('action-'+name),cd=m.cooldowns[name];if(!button)continue;button.disabled=m.status!=='playing'||cd>0||m.coins<spec.cost||(UNITS[name]&&m.allies.length>=7)||(['rush','stomp'].includes(name)&&!!m.action);
+  const button=$('action-'+name),cd=m.cooldowns[name];if(!button)continue;button.disabled=m.status!=='playing'||cd>0||m.coins<spec.cost||(UNITS[name]&&m.summonCount>=7)||(['rush','stomp'].includes(name)&&!!m.action);
   button.dataset.state=m.status!=='playing'?'idle':cd>0?'cooldown':m.coins<spec.cost?'cost':button.disabled?'full':'ready';
-  button.querySelector('.cooldown').style.height=(cd/spec.cooldown*100)+'%';
+  button.querySelector('.cooldown').style.height=(cd/spec.cooldown*100)+'%';button.style.setProperty('--cooldown-turn',Math.max(0,Math.min(1,cd/spec.cooldown))+'turn');
   button.title=spec.name+(spec.role?' · '+spec.role:'')+' · '+(button.dataset.state==='full'?'동료가 가득해요':cd>0?cd.toFixed(1)+'초 뒤':spec.cost+' 엽전');
   button.setAttribute('aria-label',button.title);
   let badge=button.querySelector('.countdown');
@@ -245,9 +275,9 @@ function onFrame(m,s){
   lastStatus=m.status;
   if(['won','lost'].includes(m.status)){
    updateBest();resultReadyAt=now+(m.status==='lost'?1800:350);$('result').hidden=true;
-   if(m.status==='won'){clearedStages=Math.max(clearedStages,m.stage+1);try{localStorage.setItem('saebyeokmun-cleared',String(clearedStages));}catch{}}
+   if(m.status==='won'){const reward=campaign.clear(activeRun,m.earnedCoins,m.stage);saveCampaign();clearedStages=0;while(campaign.cleared.includes(clearedStages))clearedStages++;try{localStorage.setItem('saebyeokmun-cleared',String(clearedStages));}catch{}$('result-earned').textContent='구매용 엽전 +'+reward+' · 보유 '+campaign.balance+' (완주 보너스 50 포함)';}else $('result-earned').textContent='완주하면 모은 엽전이 구매용으로 쌓여요.';
    $('result-tag').textContent=m.status==='won'?'문을 부수고, 남겨진 이름을 따라':'THE JOURNEY CONTINUES';
-   $('result-title').textContent=m.status==='won'?['이름의 첫 획.','스스로 맡긴 이름.','잊기로 한 약속.'][m.stage]:'오늘의 발걸음은 여기까지.';
+   $('result-title').textContent=m.status==='won'?['이름의 첫 획.','스스로 맡긴 이름.','잊기로 한 약속.','꽃으로 남은 이름.'][m.stage]:'오늘의 발걸음은 여기까지.';
    $('result-copy').textContent=m.status==='won'?STAGES[m.stage].clue:'동료를 모으고 귀물의 예고를 살펴보세요. 열어 둔 길은 지도에 남아 있어요.';
    $('result-stats').replaceChildren();
    for(const [label,value] of [['걸어온 길',progress+'%'],['모은 엽전',Math.floor(m.earnedCoins).toLocaleString('ko-KR')],['함께한 시간',Math.floor(m.time/60)+':'+String(Math.floor(m.time%60)).padStart(2,'0')]]){
@@ -257,5 +287,5 @@ function onFrame(m,s){
  }
  if(['won','lost'].includes(m.status))$('result').hidden=now<resultReadyAt;
 }
-renderMap();
+renderMap();renderSummonSlots();
 makeGame(model,onReady,onFrame,onEvents);

@@ -1,16 +1,24 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose} from './data.js?v=37';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame} from './data.js?v=40';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const GROUND=542;
 // The overlapping source gutter is composited at draw time, preserving native artwork pixels.
 const LANDSCAPE_OVERLAP=160;
-const MODEL_MAP={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',rabbit:'rabbit',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1',warden:'wardenWalk0',ferryman:'ferrymanWalk0',waterghost:'waterghostWalk0'};
+const MODEL_MAP={king:'king1',prince:'prince1',minister:'minister1',cavalry:'cavalry1',spearman:'spearman0',archer:'archer0',mangtae:'mangtaeWalk0',shadow:'shadowWalk0',skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',rabbit:'rabbit',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1',warden:'wardenWalk0',ferryman:'ferrymanWalk0',waterghost:'waterghostWalk0'};
 // Presentation only: combat and rewards remain exclusively in Journey.
 const FX_ART={hit:'CleanImpact',hurt:'CleanImpact',hex:'CleanCurse',guard:'CleanGuard',stomp:'Dust',rush:'CleanSlash',charge:'Dust',summon:'Dust',shelter:'Ward',heal:'Leaf',upgrade:'Seal',vanish:'Smoke'};
 const FX_LIFE={hit:.20,hurt:.42,swipe:.16,claw:.16,hex:.28,guard:.42,stomp:.68,rush:1.3,charge:.48,summon:1.1,shelter:.65,heal:1.05,upgrade:1,vanish:1.05,projectile:SHOT_TIME,hail:1.15,quake:1.25,tide:1.45};
 // Surface landmarks belong to each whole-body cel, not the padded atlas rectangle.
 // x/y are the torso centre; w/h its surface extent. Only sockets move: never the art/limbs.
 const WOUNDS={
+ king:{muzzle:[.82,.55],materials:['Cloth','Scar'],size:[.25,.3],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
+ prince:{muzzle:[.87,.5],materials:['Cloth','Scar'],size:[.25,.3],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
+ minister:{muzzle:[.85,.52],materials:['Cloth','Scar'],size:[.25,.3],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
+ cavalry:{muzzle:[.84,.4],materials:['Fur','Cloth'],size:[.25,.3],poses:[[.5,.65,0]],attack:[[.5,.65,0]]},
+ spearman:{muzzle:[.83,.57],materials:['Dark','Cloth'],size:[.25,.3],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
+ archer:{muzzle:[.84,.44],materials:['Dark','Cloth'],size:[.25,.3],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
+ mangtae:{materials:['Fur','Scar'],size:[.45,.5],poses:[[.5,.5,0]],attack:[[.5,.5,0]]},
+ shadow:{materials:['Fur','Scar'],size:[.5,.35],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
  cow:{materials:['Fur','Scar'],size:[.44,.43],poses:[[.48,.55,-.05],[.48,.55,-.03],[.47,.56,0],[.49,.56,.04],[.50,.55,.02],[.49,.54,-.03]],attack:[[.49,.55,-.03],[.48,.55,.12],[.49,.57,.28],[.50,.59,.33],[.49,.60,.36],[.50,.56,.13],[.49,.54,-.04],[.49,.55,-.02]]},
  haetae:{materials:['Fur','Scar'],size:[.48,.37],poses:[[.46,.61,0],[.47,.60,.04],[.46,.61,-.03],[.47,.59,.02]],attack:[[.47,.60,0],[.45,.58,-.13],[.49,.63,.09],[.47,.62,0]]},
  mount:{materials:['Fur','Scar'],size:[.46,.28],poses:[[.48,.73,0],[.49,.72,.03],[.48,.74,-.02],[.48,.73,0]],attack:[[.46,.70,-.14],[.48,.71,-.06],[.50,.74,.08],[.48,.73,0]]},
@@ -28,10 +36,15 @@ const WOUNDS={
 const IMPACT={horn:{size:95,stop:.035,shake:.055},stone:{size:72},seed:{size:58},ink:{size:85},seal:{size:90},charm:{size:84},hex:{size:90},stomp:{size:125,stop:.055,shake:.11},rush:{size:115,stop:.045,shake:.08},boss:{size:115,stop:.05,shake:.1},horse:{size:90,shake:.04},hail:{size:64},physical:{size:75}};
 export function makeGame(model,onReady,onFrame,onEvents){
  class RoadScene extends P.Scene{
-  constructor(){super('road');this.sprites=new Map();this.effects=[];this.grounding=new Map();this.contacts=new Map();this.offset=0;this.lastX=START;this.heroPose=0;this.shake=0;this.hitStop=0;this.impactCooldown=0;this.previewAreaIndex=0;this.injuryTextures=new Map();}
+  constructor(){super('road');this.sprites=new Map();this.effects=[];this.grounding=new Map();this.celScale=new Map();this.registrationX=new Map();this.idleSince=null;this.contacts=new Map();this.offset=0;this.lastX=START;this.heroPose=0;this.shake=0;this.hitStop=0;this.impactCooldown=0;this.previewAreaIndex=0;this.injuryTextures=new Map();}
   preload(){
+   for(const kind of ["king","prince","minister","cavalry"])this.load.image(kind+"Atlas","./assets/"+kind+"-v39.png");
+   this.load.image("storybookRoad","./assets/storybook-road-v39.png");
    for(const kind of ['warden','ferryman','waterghost'])this.load.image(kind+'Motion','./assets/'+kind+'-v36.png');
-   this.load.image('castleRoad','./assets/hwaseong-road-v36.png');
+   for(const key of ['girlIdle','haetaeIdle','battle','humanRecovery','creatureRecovery'])this.load.image(key,'./assets/'+({girlIdle:'girl-idle',haetaeIdle:'haetae-idle',battle:'distant-war',humanRecovery:'human-recovery',creatureRecovery:'creature-recovery'}[key])+'-v38.png');
+   this.load.image('distantTroops','./assets/joseon-distant-troops-v38.png');this.load.image('troopsWalk','./assets/joseon-troops-walk-v38.png');this.load.image('troopsAttack','./assets/joseon-troops-attack-v38.png');
+   this.load.image('stageFoes','./assets/stage-two-foes-v38.png');this.load.image('foeAttacks','./assets/hanyang-battle-v38.png');
+   this.load.image('castleRoad','./assets/hanyang-road-simple-v40.png');
    this.load.image('enemyDefeat','./assets/enemy-defeat-v35.png');
    this.load.image('allyDefeat','./assets/ally-defeat-v35.png');
    this.load.image('allyHurt','./assets/ally-hurt-v32.png');
@@ -44,10 +57,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.load.image('livingScenery','./assets/living-scenery-v11.png');
    this.load.image('enemyAttacks','./assets/enemy-attacks-v17.png');
    this.load.image('bossMotion','./assets/boss-motion-v25.png');
-   for(const [key,file] of Object.entries({keeperWalk:'doryeong-stone-v12',keeperBrushWalk:'doryeong-brush-v12',cowWalk:'cow-walk-gif-v16',cowAttack:'ox-motion-v14',scholarWalk:'scholar-motion-v12',mountWalk:'mounted-haetae-v12',combatFX:'combat-fx-v18',magicFX:'magic-fx-v18',cleanFX:'clean-fx-v19',woundArt:'wounds-v20'}))this.load.image(key,'./assets/'+file+'.png');
+   for(const [key,file] of Object.entries({keeperWalk:'doryeong-stone-v12',keeperBrushWalk:'doryeong-brush-v12',cowWalk:'cow-walk-gif-v16',cowAttack:'ox-motion-v14',scholarWalk:'joseon-scholar-v38b',mountWalk:'mounted-haetae-v12',combatFX:'combat-fx-v18',magicFX:'magic-fx-v18',cleanFX:'clean-fx-v19',woundArt:'wounds-v20'}))this.load.image(key,'./assets/'+file+'.png');
    this.load.on('loaderror',()=>onReady(new Error('그림을 불러오지 못했어요. 새로고침해 주세요.')));
   }
-  sliceAtlas(sheet,names,columns=3,sharedBounds=false,rows=2,layout=null){
+  sliceAtlas(sheet,names,columns=3,sharedBounds=false,rows=2,layout=null,scaleReference=null){
    const source=this.textures.get(sheet).getSourceImage(),sw=source.width/columns,sh=source.height/rows;
    const scratch=document.createElement('canvas');scratch.width=source.width;scratch.height=source.height;
    const ctx=scratch.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,0,0);
@@ -85,9 +98,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
     // Read the visible character bounds inside each already generated atlas cell.
     for(let y=0;y<ch;y++)for(let x=0;x<cw;x++)if(rgba[(y*cw+x)*4+3]>175){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
     if(x1<=x0){x0=0;y0=0;x1=cw-1;y1=ch-1;}
-    const footY=y1;
+    const footY=y1;let footLeft=cw,footRight=0;
+    if(scaleReference)for(let y=Math.max(y0,footY-Math.max(4,Math.round((footY-y0)*.035)));y<=footY;y++)for(let x=x0;x<=x1;x++)if(rgba[(y*cw+x)*4+3]>175){footLeft=Math.min(footLeft,x);footRight=Math.max(footRight,x);}
+    const footX=footRight>=footLeft?(footLeft+footRight)/2:(x0+x1)/2;
     x0=Math.max(0,x0-3);y0=Math.max(0,y0-3);x1=Math.min(cw-1,x1+3);y1=Math.min(ch-1,y1+3);
-    return {x0,y0,x1,y1,footY};
+    return {x0,y0,x1,y1,footY,footX};
    });
    // Animation cells share one crop and one scale; per-frame trimming makes feet slide.
    names.forEach((name,i)=>{
@@ -98,10 +113,22 @@ export function makeGame(model,onReady,onFrame,onEvents){
     texture.getContext().drawImage(scratch,x0,y0,texture.width,texture.height,0,0,texture.width,texture.height);texture.refresh();
     // Preserve shared dimensions, but anchor each frame by its visible supporting foot.
     this.grounding.set(name,(bounds[i].footY-y0)/texture.height);
+    if(scaleReference){const b=bounds[scaleReference[i]];this.celScale.set(name,texture.height/(b.footY-b.y0+4));this.registrationX.set(name,(bounds[i].footX-x0)/texture.width);}
    });
   }
   create(){
+   for(const kind of ['king','prince','minister','cavalry'])this.sliceAtlas(kind+'Atlas',[...Array.from({length:8},(_,i)=>kind+i),'hurt'+kind,kind+'Idle0','defeat'+kind+'0','defeat'+kind+'1'],4,true,3,null,Array(12).fill(0));
    this.sliceAtlas('allies',['girl','haetae','rabbit','keeper','haetaeStomp','girlCast']);
+   for(const kind of ['girl','haetae'])this.sliceAtlas(kind+'Idle',Array.from({length:12},(_,i)=>kind+'Idle'+i),4,true,3,null,Array(12).fill(0));
+   this.sliceAtlas('battle',['spear','archer','mangtae','shadow'].flatMap(k=>Array.from({length:4},(_,i)=>(['spear','archer'].includes(k)?'legacybattle':'battle')+k+i)),4,4,4);
+   const newFoes=['spearman','archer','mangtae','shadow'];
+   this.sliceAtlas('distantTroops',['spear','archer'].flatMap(k=>Array.from({length:4},(_,i)=>'battle'+k+i)),4,4,2);
+   this.sliceAtlas('stageFoes',newFoes.flatMap(k=>[...Array.from({length:4},(_,i)=>(['spearman','archer'].includes(k)?'legacy'+k:k)+'Walk'+i),'depart'+(['spearman','archer'].includes(k)?'legacy'+k:k)+'0','depart'+(['spearman','archer'].includes(k)?'legacy'+k:k)+'1']),6,6,4,null,newFoes.flatMap((_,i)=>Array(6).fill(i*6)));
+   this.sliceAtlas('foeAttacks',newFoes.flatMap(k=>Array.from({length:4},(_,i)=>(['spearman','archer'].includes(k)?'legacy'+k:k)+'Strike'+i)),4,4,4);
+   this.sliceAtlas('troopsWalk',['spearman','archer'].flatMap(k=>[...Array.from({length:4},(_,i)=>k+i),'defeat'+k+'0','defeat'+k+'1']),6,6,2,null,[...Array(6).fill(0),...Array(6).fill(6)]);
+   this.sliceAtlas('troopsAttack',['spearman','archer'].flatMap(k=>Array.from({length:4},(_,i)=>k+(i+4))),4,4,2,null,[0,0,0,0,4,4,4,4]);
+   this.sliceAtlas('humanRecovery',['girl','keeper','scholar','healer'].flatMap(k=>[k==='scholar'?'legacyScholarRecover0':k+'Recover0',k==='scholar'?'legacyScholarRecover1':k+'Recover1']),4,2,2,null,Array.from({length:8},(_,i)=>Math.floor(i/2)*2+1));
+   this.sliceAtlas('creatureRecovery',['haetae','cow','rabbit'].flatMap(k=>[k+'Recover0',k+'Recover1']),3,2,2,null,[1,1,3,3,5,5]);
    this.sliceAtlas('enemies',['skirt0','skirt1','horse','reaper','boss','cloud']);
    for(const kind of ['haetae','rabbit'])this.sliceAtlas(kind+'Motion',Array.from({length:8},(_,i)=>kind+i),4,true);
    this.sliceAtlas('companionWalk',Array.from({length:4},(_,i)=>'girl'+i),4,4);
@@ -109,7 +136,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('bossMotion',[...Array.from({length:6},(_,i)=>'bossWalk'+i),...Array.from({length:6},(_,i)=>'bossStrike'+i),...Array.from({length:4},(_,i)=>'bossCast'+i)],4,true,4);
    this.sliceAtlas('reaperDeparture',Array.from({length:8},(_,i)=>'reaperDepart'+i),4,true);
    this.sliceAtlas('woundArt',['Cloth','Scar','Fur','Dark'].map(k=>'wound'+k+'1').concat(['Cloth','Scar','Fur','Dark'].map(k=>'wound'+k+'2')),4,false,2,{x:[0,.25,.5,.75,1],y:[0,.5,1]});
-   for(const kind of ['keeper','keeperBrush','scholar','mount'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
+   for(const kind of ['keeper','keeperBrush','mount'])this.sliceAtlas(kind+'Walk',Array.from({length:8},(_,i)=>kind+i),4,true);
    this.sliceAtlas('healerMovingCare',Array.from({length:4},(_,i)=>'healerCareWalk'+i),4,true,1);
    this.sliceAtlas('healerWalk',[...Array.from({length:8},(_,i)=>'healer'+i),...Array.from({length:4},(_,i)=>'healerIdle'+i)],4,true,3);
    for(const kind of ['warden','ferryman','waterghost'])this.sliceAtlas(kind+'Motion',[
@@ -117,8 +144,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
     ...Array.from({length:4},(_,i)=>'depart'+kind+i)
    ],4,true,kind==='waterghost'?3:4);
    this.sliceAtlas('enemyDefeat',['skirt','horse','boss'].flatMap(k=>Array.from({length:4},(_,i)=>'depart'+k+i)),4,4,3);
-   this.sliceAtlas('allyDefeat',['girl','haetae','cow','keeper','rabbit','scholar','healer','mount'].flatMap(k=>['defeat'+k+'0','defeat'+k+'1']),4,2,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
-   this.sliceAtlas('allyHurt',['girl','haetae','cow','keeper','rabbit','scholar','healer','mount','umbrella','keeperBrush'].map(k=>'hurt'+k),5,false,2,{x:[[0,354,824,1266,1675,1983],[0,360,732,1184,1650,1983]].map(row=>row.map(x=>x/1983)),y:[0,384/793,1]});
+   this.sliceAtlas('allyDefeat',['girl','haetae','cow','keeper','rabbit','scholar','healer','mount'].flatMap(k=>[k==='scholar'?'legacyDefeatScholar0':'defeat'+k+'0',k==='scholar'?'legacyDefeatScholar1':'defeat'+k+'1']),4,2,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
+   this.sliceAtlas('allyHurt',['girl','haetae','cow','keeper','rabbit','scholar','healer','mount','umbrella','keeperBrush'].map(k=>k==='scholar'?'legacyHurtScholar':'hurt'+k),5,false,2,{x:[[0,354,824,1266,1675,1983],[0,360,732,1184,1650,1983]].map(row=>row.map(x=>x/1983)),y:[0,384/793,1]});
+   this.sliceAtlas('scholarWalk',[...Array.from({length:8},(_,i)=>'scholar'+i),'hurtscholar','scholarIdle0','scholarRecover0','scholarRecover1','defeatscholar0','defeatscholar1','scholarIdle1','scholarDisplay'],4,true,4,{x:[[0,328,654,984,1312],[0,318,706,1035,1312],[0,340,656,984,1312],[0,334,656,980,1312]].map(row=>row.map(x=>x/1312)),y:[0,349/1199,646/1199,927/1199,1]},Array(16).fill(0));
    this.sliceAtlas('umbrellaMotion',Array.from({length:8},(_,i)=>'umbrella'+i),4,true);
    const cowRows=MOTION.cow.walkFrames/4;
    this.sliceAtlas('cowWalk',Array.from({length:48},(_,i)=>'cow'+i),4,true,cowRows,{x:[0,.25,.5,.75,1],y:Array.from({length:cowRows+1},(_,i)=>i/cowRows)});
@@ -134,8 +162,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('livingScenery',['pine','mist','dragon','grass'],2);
    this.sliceAtlas('enemyAttacks',['skirt','horse','reaper','bossLegacy'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Strike'+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
    for(const area of AREAS){const texture=this.textures.get(area.texture),src=texture.getSourceImage(),split=Math.floor(src.height*area.split);texture.add('far',0,0,0,src.width,split);texture.add('middle',0,0,split,src.width,src.height-split);}
-   for(const area of AREAS){const tex=this.textures.get(area.texture+'Detail1'),src=tex.getSourceImage();tex.add('join',0,0,0,LANDSCAPE_OVERLAP,src.height);tex.add('body',0,LANDSCAPE_OVERLAP,0,src.width-LANDSCAPE_OVERLAP,src.height);}
-   for(const name of ['nightRoad','castleRoad']){const roadTexture=this.textures.get(name),roadSource=roadTexture.getSourceImage();
+   for(const area of AREAS){if(area.detailOverlap===0)continue;const tex=this.textures.get(area.texture+'Detail1'),src=tex.getSourceImage();tex.add('join',0,0,0,LANDSCAPE_OVERLAP,src.height);tex.add('body',0,LANDSCAPE_OVERLAP,0,src.width-LANDSCAPE_OVERLAP,src.height);}
+   for(const name of ['nightRoad','castleRoad','storybookRoad']){const roadTexture=this.textures.get(name),roadSource=roadTexture.getSourceImage();
    ROAD_SECTIONS.forEach((part,i)=>roadTexture.add(part.frame,0,0,i*roadSource.height/4,roadSource.width,roadSource.height/4));}
    this.root=this.add.container(0,0);
    this.sky=this.add.graphics();this.root.add(this.sky);
@@ -144,8 +172,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.depths.far=[this.add.image(0,0,'inwang','far').setOrigin(0,1)];this.root.add(this.depths.far);
    // Atmospheric mist belongs behind the near architecture, never over its fine lines.
    this.mists=[0,1,2].map(()=>this.add.image(0,0,'mist').setAlpha(.12));this.root.add(this.mists);
-   this.depths.middle=[0,1].map(i=>this.add.image(0,0,'inwangDetail'+i).setOrigin(0,1));this.root.add(this.depths.middle);
+   this.depths.middle=[0,1,2].map(i=>this.add.image(0,0,'inwangDetail'+Math.min(i,1)).setOrigin(0,1));this.root.add(this.depths.middle);
    this.detailJoin=this.add.image(0,0,'inwangDetail1','join').setOrigin(0,1).setAlpha(0,1,0,1);this.root.add(this.detailJoin);
+   // Fixed decoration pool: distant warfare never joins the playable combat model.
+   this.battleFX=this.add.graphics();this.root.add(this.battleFX);
+   this.battleGroups=[.21,.51,.81].map(u=>({u,actors:['spear','archer','mangtae','shadow'].map(k=>this.add.image(0,0,'battle'+k+'0').setOrigin(.5,1))}));
+   for(const group of this.battleGroups)this.root.add(group.actors);
    this.dragon=this.add.image(0,0,'dragon').setAlpha(.25);this.root.add(this.dragon);
    this.pines=[0,1,2,3].map(()=>this.add.image(0,0,'pine').setOrigin(.5,1).setAlpha(.6));this.root.add(this.pines);
    this.road=this.add.graphics();this.root.add(this.road);
@@ -200,21 +232,24 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(let i=0;i<(day?0:27);i++){const x=(i*197+43)%Math.max(1,vw),y=top+35+(i*79)%190;g.fillStyle(0xf4e9c9,.18+.23*(.5+.5*Math.sin(t*.45+i)));g.fillCircle(x,y,i%4===0?1.3:.8);}
    for(const depth of ['far','middle']){
     // Authored sections overlap in world space; never mirror, repeat or stretch a small atlas row.
-    const area=AREAS[region],parts=this.depths[depth],w=Math.max(depth==='far'?2300:2800,vw+GATE*PARALLAX[depth]+80);
+    const area=AREAS[region],pool=this.depths[depth],parts=depth==='far'?pool:pool.slice(0,area.detailFiles.length),w=Math.max(depth==='far'?2300:2800,vw+GATE*PARALLAX[depth]+80);
     const sources=parts.map((_,i)=>this.textures.get(depth==='far'?area.texture:area.texture+'Detail'+i).getSourceImage());
-    const overlap=depth==='middle'?LANDSCAPE_OVERLAP:0,total=sources.reduce((sum,src)=>sum+src.width,0)-overlap*(parts.length-1),scale=w/total;
+    pool.forEach((im,i)=>im.setVisible(i<parts.length));
+    const overlap=depth==='middle'?(area.detailOverlap??LANDSCAPE_OVERLAP):0,total=sources.reduce((sum,src)=>sum+src.width,0)-overlap*(parts.length-1),scale=w/total;
     let x=-40-this.offset*PARALLAX[depth];
     parts.forEach((im,i)=>{
      const src=sources[i],h=depth==='far'?Math.floor(src.height*area.split):src.height;
      const join=i?overlap:0;
-     im.setTexture(depth==='far'?area.texture:area.texture+'Detail'+i,depth==='far'?'far':i?'body':'__BASE').setFlipX(false).setDisplaySize((src.width-join)*scale,h*scale).setPosition(x+join*scale,depth==='far'?525:544).setTint(0xffffff).setAlpha(depth==='far'?(day?.86:.94):1);
+     im.setTexture(depth==='far'?area.texture:area.texture+'Detail'+i,depth==='far'?'far':i&&overlap?'body':'__BASE').setFlipX(false).setDisplaySize((src.width-join)*scale,h*scale).setPosition(x+join*scale,depth==='far'?525:544).setTint(0xffffff).setAlpha(depth==='far'?(day?.86:.94):1);
+     this.detailJoin.setVisible(overlap>0);
      if(join)this.detailJoin.setTexture(area.texture+'Detail'+i,'join').setDisplaySize(join*scale,h*scale).setPosition(x,544);
      x+=(src.width-overlap)*scale;
     });
    }
+   this.drawBackgroundBattle(region,t);
    this.mists.forEach((im,i)=>{const w=390+i*170,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(3+i)-this.offset*.07)%(vw+650)+vw+650)%(vw+650)-300,top+100+i*94).setTint(0xc4d2dd).setAlpha(day?.055:.12+i*.015);});
    const fly=(t+8)%75,ds=this.dragon.texture.getSourceImage();this.dragon.setVisible(fly<18).setDisplaySize(140,140*ds.height/ds.width).setPosition(-170+(vw+340)*fly/18,top+95+Math.sin(fly*.55)*14).setAngle(Math.sin(fly*.8)*3);
-   this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-this.offset*.48-80,534).setVisible(!waterway).setTint(day?0xb9c7a3:0x83969a).setAlpha(day?.16:.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
+   this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-this.offset*.48-80,534).setVisible(!waterway&&region===0).setTint(day?0xb9c7a3:0x83969a).setAlpha(day?.16:.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
    const water=this.road;water.clear();
    water.fillGradientStyle(day?0xc6b792:waterway?0x629eaa:0x7794a2,day?0xbca985:waterway?0x387b91:0x55798c,day?0x776e55:0x1b354a,day?0x68634e:0x152b3e,1);water.fillRect(0,535,vw,bottom-535);
    // The lunar reflection widens toward the viewer; waves drift independently of solid ground.
@@ -233,8 +268,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const part=ROAD_SECTIONS[i],total=1536*ROAD_SECTIONS.length;
     let x=part.x-this.offset*PARALLAX.ground;
     if(model.status==='ready')x=((x+part.width)%total+total)%total-part.width;
-    const foot=day?[135,135,130,120][i]:part.foot;
-    im.setTexture(day?'castleRoad':'nightRoad',part.frame).setPosition(x,GROUND-foot).setDisplaySize(part.width+.5,part.height).setTint(day?0xffffff:0xd7e2e5).setVisible(!waterway&&x<vw&&x+part.width>0);
+    const area=AREAS[region],foot=area.roadFeet?.[i]??part.foot;
+    im.setTexture(waterway?'nightRoad':area.ground,part.frame).setPosition(x,GROUND-foot).setDisplaySize(part.width+.5,part.height).setTint(day?0xffffff:0xd7e2e5).setVisible(!waterway&&x<vw&&x+part.width>0);
    });
    if(waterway){
     water.lineStyle(2,0xcbf3ed,.3);water.lineBetween(0,GROUND+1,vw,GROUND+1);
@@ -246,7 +281,47 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
 
    for(let i=0;i<12;i++){const x=((i*181+t*5)%Math.max(1,vw)),y=GROUND-25+Math.sin(t*.8+i)*17;water.fillStyle(0xdceab3,.2+.3*Math.sin(t*2+i)**2);water.fillCircle(x,y,1.7);}
-   this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=64+(i%2)*31;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*560-this.offset*PARALLAX.near-100,bottom+8).setVisible(!waterway).setTint(day?0xa9a478:0x9fb5bd).setAlpha(.8).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
+   this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=64+(i%2)*31;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*560-this.offset*PARALLAX.near-100,bottom+8).setVisible(!waterway&&region===0).setTint(day?0xa9a478:0x9fb5bd).setAlpha(.8).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
+  }
+  drawBackgroundBattle(region,t){
+   if(!this.battleGroups)return;
+   const g=this.battleFX;g.clear();
+   const panorama=Math.max(2800,this.vw+GATE*PARALLAX.middle+80),left=-40-this.offset*PARALLAX.middle;
+   this.battleGroups.forEach((group,i)=>{
+    const x=left+group.u*panorama,visible=region===1&&x>-220&&x<this.vw+220;
+    group.actors.forEach(im=>im.setVisible(visible));if(!visible)return;
+    const period=5.4+i*.6,q=((t+i*1.3)%period)/period;
+    const spear=q<.15?0:q<.28?1:q<.44?2:3,archer=q<.14?0:q<.29?1:q<.49?2:3;
+    const struck=q>=.40&&q<.54,reply=q>=.66&&q<.8;
+    const frames=[spear,archer,struck?2:reply?1:0,struck?2:reply?1:0],positions=[x-33,x-108,x+35+(struck?14:0)-(reply?10:0),x+93+(struck?10:0)-(reply?20:0)];
+    const sizes=[38,36,37,35],base=495-i%2*9;
+    group.actors.forEach((im,j)=>{const key='battle'+['spear','archer','mangtae','shadow'][j]+frames[j],src=this.textures.get(key).getSourceImage();im.setTexture(key).setOrigin(.5,this.grounding.get(key)??1).setDisplaySize(sizes[j]*src.width/src.height,sizes[j]).setPosition(positions[j],base).setAlpha(.9).setTint(0xd9d8c0);});
+    // Draw -> release -> flight -> recoil. A single phase owns every distant consequence.
+    if(q>=.29&&q<.41){const p=(q-.29)/.12,ax=x-90+p*129,ay=base-39-Math.sin(p*Math.PI)*10;g.lineStyle(2,0x453c2c,.85);g.lineBetween(ax-12,ay,ax+7,ay-1);g.fillStyle(0xece0b1,.95);g.fillTriangle(ax+7,ay-1,ax+2,ay-4,ax+2,ay+2);}
+    if(struck){const a=1-(q-.4)/.14;g.lineStyle(2,0xffecb1,a);for(let k=0;k<5;k++){const angle=k*1.26;g.lineBetween(x+36+Math.cos(angle)*3,base-36+Math.sin(angle)*3,x+36+Math.cos(angle)*14,base-36+Math.sin(angle)*14);}}
+    if(reply){g.lineStyle(2,0x678b92,.55);g.beginPath();g.arc(x-6,base-38,20,-1.5,.8);g.strokePath();}
+    for(let k=0;k<3;k++){const phase=(t*.08+i*.21+k*.3)%1;g.fillStyle(0x574e45,(1-phase)*.12);g.fillEllipse(x+82+k*13+Math.sin(phase*5)*9,base-18-phase*78,17+phase*31,21+phase*40);}
+    const ember=(t*.4+i*.13)%1;g.fillStyle(0xe9af53,(1-ember)*.7);g.fillCircle(x+71,base-5-ember*28,1.5);
+   });
+  }
+  recoveryCel(kind,targetActor){
+   if(!['girl','haetae','cow','keeper','rabbit','scholar','healer'].includes(kind))return null;
+   const effect=this.effects.find(e=>e.type==='heal'&&!e.enemy&&e.amount>0&&e.targetActor===targetActor),age=effect?model.time-(effect.at??model.time-effect.t):Infinity;
+   return age>=0&&age<.9?kind+'Recover'+(age<.24?0:1):null;
+  }
+  drawPatientRecovery(patient,kind,p,tail){
+   if(!patient)return;
+   const g=this.fx,point=this.bodyPoint(patient,kind),w=patient.displayWidth,h=patient.displayHeight,dir=patient.flipX?-1:1;
+   const styles={king:[0xffdd91,.1,.6,3],prince:[0xb9e8ed,.16,.58,2],minister:[0xa8edcd,.12,.62,3],cavalry:[0xe4d8a4,.28,.78,4],cow:[0xffd98b,.28,.72,3],haetae:[0xb8f1d8,.25,.69,4],girl:[0xffe3a6,.17,.62,2],keeper:[0xccf2cc,.12,.58,2],rabbit:[0xd7f3a8,.16,.78,3],scholar:[0xb0f0ce,.12,.60,2],healer:[0xb6e3fb,.16,.62,2]},style=styles[kind]||styles.haetae;
+   const [color,side,vertical,count]=style,bandX=patient.x+dir*w*side,bandY=patient.y-(patient.originY-vertical)*h;
+   g.fillStyle(color,tail*.12);g.fillEllipse(point.x,point.y,Math.min(130,w*.7),h*.45);
+   for(let i=0;i<count;i++){const xx=point.x+(i-(count-1)/2)*Math.min(25,w*.18),yy=point.y-h*.23-40*p-i%2*12,r=5+(1-p)*2;g.lineStyle(6,0x215747,tail);g.lineBetween(xx-r,yy,xx+r,yy);g.lineBetween(xx,yy-r,xx,yy+r);g.lineStyle(3,color,tail);g.lineBetween(xx-r,yy,xx+r,yy);g.lineBetween(xx,yy-r,xx,yy+r);}
+   // Cloth wraps the specific sleeve/paw, rather than a common cloud hiding the face.
+   for(let i=0;i<3;i++){g.lineStyle(2.5,0xfff7db,tail*.85);g.beginPath();g.arc(bandX,bandY+i*3,Math.min(12,w*.075),-.35,Math.PI+.2);g.strokePath();}
+   if(kind==='haetae'||kind==='cow'){g.lineStyle(2,color,tail*.65);for(let i=0;i<2;i++){g.beginPath();g.arc(point.x+(i?1:-1)*w*.19,point.y-10-12*p,8+10*p,-p*3,p*3+2.7);g.strokePath();}}
+   if(kind==='rabbit'){for(let i=0;i<2;i++){g.fillStyle(color,tail*.7);g.fillCircle(patient.x+dir*(i?8:-8),patient.y-h*.85-8*p,2.8);}}
+   if(kind==='scholar'){g.lineStyle(2,color,tail*.65);g.strokeRect(point.x+dir*w*.1-6,point.y-7,12,16);}
+   if(kind==='girl'||kind==='healer'||kind==='keeper'){g.lineStyle(2,color,tail*.65);g.strokeEllipse(bandX,bandY,17+15*p,11+7*p);}
   }
   drawReflections(t){
    // Reuse the rendered cel, injury texture, facing and foot origin; no second animation clock.
@@ -258,14 +333,14 @@ export function makeGame(model,onReady,onFrame,onEvents){
     // A continuous silhouette cannot tear at crop boundaries. Ripples belong to the water.
     strips[0].setTexture(body.texture.key).setOrigin(body.originX,1-body.originY).setFlipX(body.flipX).setFlipY(true)
      .setDisplaySize(body.displayWidth,body.displayHeight*.78)
-     .setPosition(body.x+Math.sin(t*.8+body.x*.006)*1.4,GROUND+(model.stage===2?4:68)+(GROUND-body.y)*.78)
-     .setAngle(-(body.angle||0)).setTint(model.stage===1?0x699c93:0xa2baca).setAlpha((model.stage===2?.29:.19)*(body.alpha??1));
+     .setPosition(body.x+Math.sin(t*.8+body.x*.006)*1.4,GROUND+(AREAS[model.stage].ground==='water'?4:68)+(GROUND-body.y)*.78)
+     .setAngle(-(body.angle||0)).setTint(model.stage===1?0x699c93:0xa2baca).setAlpha((AREAS[model.stage].ground==='water'?.29:.19)*(body.alpha??1));
    }
    for(const [key,strips] of this.reflections)if(!present.has(key)){strips.forEach(im=>im.destroy());this.reflections.delete(key);}
   }
   resetPresentation(){
    for(const strips of this.reflections?.values()||[])strips.forEach(im=>im.destroy());this.reflections?.clear();
-   for(const e of this.effects)e.sprite?.destroy();this.effects=[];this.offset=0;this.heroPose=0;this.shake=0;this.hitStop=0;this.impactCooldown=0;this.contacts.clear();
+   for(const e of this.effects)e.sprite?.destroy();this.effects=[];this.offset=0;this.heroPose=0;this.idleSince=null;this.shake=0;this.hitStop=0;this.impactCooldown=0;this.contacts.clear();
   }
   previewTexture(key){return this.textures.get(key).getSourceImage().toDataURL?.('image/png');}
   bodyPose(base,kind){
@@ -273,6 +348,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const profile=WOUNDS[base.startsWith('keeperBrush')?'keeperBrush':kind];
    if(!profile)return {x:.5,y:.5,w:.4,h:.4,angle:0};
    let n=Number(base.match(/(\d+)$/)?.[1]||0),poses=profile.poses;
+   if(base.includes('Idle')||base.includes('Recover')){const a=profile.poses[0];return {x:a[0],y:a[1],angle:0,w:profile.size[0],h:profile.size[1]};}
    if(base.includes('Cast')&&profile.cast){const a=profile.cast[n%profile.cast.length];return {x:a[0],y:a[1],angle:a[2],w:profile.size[0],h:profile.size[1]};}
    if(kind==='cow'&&n===56)n=10;
    const attack=base.includes('Strike')||base.endsWith('Cast')||(!base.includes('Walk')&&n>=(kind==='cow'?48:4));
@@ -285,7 +361,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   bodyPoint(image,kind,side=0,weapon=false){
    const base=image.texture.key.replace(/^injured[12]__/, ''),profile=WOUNDS[base.startsWith('keeperBrush')?'keeperBrush':kind];
    const body=weapon&&profile?.muzzle?{x:profile.muzzle[0],y:profile.muzzle[1],w:0}:this.bodyPose(base,kind),sx=(image.flipX?-1:1),angle=image.rotation||0;
-   const x=((body.x-.5)*sx+side*body.w*.38)*image.displayWidth,y=(body.y-(image.originY??1))*image.displayHeight;
+   const x=((sx<0?1-body.x:body.x)-(image.originX??.5)+side*body.w*.38)*image.displayWidth,y=(body.y-(image.originY??1))*image.displayHeight;
    return {x:image.x+x*Math.cos(angle)-y*Math.sin(angle),y:image.y+x*Math.sin(angle)+y*Math.cos(angle)};
   }
   injuryTexture(base,kind,hp,maxHp){
@@ -310,12 +386,13 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const texture=this.textures.createCanvas(key,width,height),ctx=texture.getContext();ctx.drawImage(source,0,0,width,height);
    // Multiply lets the character's own watercolour and cloth folds remain visible through damage.
    ctx.globalCompositeOperation=profile.materials[0]==='Dark'?'source-over':'multiply';ctx.drawImage(patch,0,0);ctx.globalCompositeOperation='source-over';texture.refresh();
-   this.grounding.set(key,this.grounding.get(base)??1);this.injuryTextures.set(key,true);return key;
+   this.grounding.set(key,this.grounding.get(base)??1);if(this.celScale.has(base))this.celScale.set(key,this.celScale.get(base));if(this.registrationX.has(base))this.registrationX.set(key,this.registrationX.get(base));this.injuryTextures.set(key,true);return key;
   }
   placeOnGround(image,x,height,groundY=GROUND){
-   const src=image.texture.getSourceImage();
-   image.setOrigin(.5,this.grounding.get(image.texture.key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,groundY).setAngle(0);
-   if(model.stage===2){const pulse=.5+.5*Math.sin(model.time*2+x*.02);this.shadows.lineStyle(1.5,0xe3fff6,.45);this.shadows.strokeEllipse(x,groundY+2,Math.min(130,image.displayWidth*.8)+pulse*9,10+pulse*3);return;}
+   const src=image.texture.getSourceImage();height*=this.celScale.get(image.texture.key)??1;
+   const rx=this.registrationX.get(image.texture.key)??.5;
+   image.setOrigin(image.flipX?1-rx:rx,this.grounding.get(image.texture.key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,groundY).setAngle(0);
+   if(AREAS[model.stage].ground==='water'){const pulse=.5+.5*Math.sin(model.time*2+x*.02);this.shadows.lineStyle(1.5,0xe3fff6,.45);this.shadows.strokeEllipse(x,groundY+2,Math.min(130,image.displayWidth*.8)+pulse*9,10+pulse*3);return;}
    this.shadows.fillStyle(0x554b36,.15);this.shadows.fillEllipse(x,groundY+2,Math.min(145,image.displayWidth*.77),9);
    this.shadows.fillStyle(0x524731,.29);this.shadows.fillEllipse(x,groundY+1,Math.min(105,image.displayWidth*.6),3.5);
   }
@@ -422,7 +499,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(!image){image=this.add.image(0,0,MODEL_MAP[type]||type).setOrigin(.5,1);this.root.add(image);this.sprites.set(key,image);}
    if(enemy)image.setTexture(isBoss(type)?bossPose(walk,moving,action,windup,type):type+(action||windup>0?'Strike':'Walk')+(action?enemyAttackFrame(action.elapsed):windup>0?1:motionFrame(type,walk,moving,null))).setFlipX(action? action.dir>0 : moving>0);
    if(!enemy&&UNITS[type])image.setTexture(type==='healer'?healerPose(walk,moving,action,model.time+(Number(key.slice(1))||0)*.4):(type==='keeper'&&model.keeperRank?'keeperBrush':type)+motionFrame(type,walk,moving,action)).setFlipX(type==='healer'?(action?.phase==='treat'?action.dir<0:moving?moving<0:image.flipX):action?false:moving?moving<0:image.flipX);
-   if(!enemy&&hit>0)image.setTexture('hurt'+(type==='keeper'&&model.keeperRank?'keeperBrush':type));
+   if(!enemy&&['king','prince','minister','cavalry'].includes(type)&&!moving&&!action)image.setTexture(type+'Idle0');
+   if(!enemy&&type==='scholar'&&!moving&&!action)image.setTexture('scholarIdle'+Math.floor(model.time/2.8)%2);
+   if(!enemy&&!moving&&!action&&hit<=0&&!(type==='keeper'&&model.keeperRank)){const recovery=this.recoveryCel(type,Number(key.slice(1)));if(recovery)image.setTexture(recovery);}
+   if(!enemy&&hit>0&&!['spearman','archer'].includes(type))image.setTexture('hurt'+(type==='keeper'&&model.keeperRank?'keeperBrush':type));
    image.setTexture(this.injuryTexture(image.texture.key,type,hp,maxHp));
    const height=BODY_HEIGHT[type]||130;
    this.placeOnGround(image,x-this.offset,height,groundY);
@@ -510,7 +590,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     e.t=Math.min(e.duration,['won','lost'].includes(model.status)?e.t+dt:e.flight?e.flight.t:e.at!==undefined?Math.max(0,model.time-e.at):e.t+dt);const p=e.t/e.duration,fade=1-p,tail=p<.48?1:(1-p)/.52,x=(e.x??e.from??model.x)-this.offset,ground=e.groundY??GROUND;
     if(e.type==='projectile'){
      if(p>=1)continue; // The contact flash replaces the projectile on the same model tick.
-     const stone=e.kind==='stone',seed=e.kind==='seed',ink=e.kind==='ink',seal=e.kind==='seal',hex=e.kind==='hex',dir=Math.sign(e.to-e.from)||1;
+     const stone=e.kind==='stone',seed=e.kind==='seed',ink=e.kind==='ink',seal=e.kind==='seal',hex=e.kind==='hex',arrow=e.kind==='arrow',dir=Math.sign(e.to-e.from)||1;
      const source=e.actor==='girl'?this.girl:this.sprites.get((e.enemy?'e':'a')+e.actor);
      const target=e.targetActor===null?this.hero:this.sprites.get((e.enemy?'a':'e')+e.targetActor);
      if(!e.launchPoint){const at=source?this.bodyPoint(source,e.sourceKind,0,true):{x:e.from-this.offset+dir*18,y:ground-78};e.launchPoint={x:at.x+this.offset,y:at.y};}
@@ -520,8 +600,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
      const from=e.launchPoint.x,fy=e.launchPoint.y,ty=end.y,travel=p;
      const at=q=>({x:(from-this.offset)+(end.x-(from-this.offset))*q,y:fy+(ty-fy)*q-Math.sin(q*Math.PI)*(stone?28:seed?8:16)}),head=at(travel);
      const color=hex?0xc49ae6:stone?0xeac276:seed?0xc3e975:ink?0x53c1b2:0x8fe6d5;
-     ribbon(Array.from({length:5},(_,i)=>at(Math.max(0,travel-.2+i*.05))),stone?3:ink?6:4,color,1);
-     if(hex){g.fillStyle(0x6b3e91,1);g.fillEllipse(head.x,head.y,23,14);g.fillStyle(0xf3defb,1);g.fillEllipse(head.x-dir*3,head.y-2,12,6);}
+     if(!arrow)ribbon(Array.from({length:5},(_,i)=>at(Math.max(0,travel-.2+i*.05))),stone?3:ink?6:4,color,1);
+     if(arrow){g.lineStyle(4,0x433724,1);g.lineBetween(head.x-dir*19,head.y,head.x+dir*12,head.y);g.lineStyle(2,0xf6e3a9,.9);g.lineBetween(head.x-dir*17,head.y-1,head.x+dir*10,head.y-1);g.fillStyle(0xe9e6d6,1);g.fillTriangle(head.x+dir*18,head.y,head.x+dir*8,head.y-5,head.x+dir*8,head.y+5);g.lineStyle(2,0xbc6151,.9);g.lineBetween(head.x-dir*17,head.y,head.x-dir*24,head.y-5);g.lineBetween(head.x-dir*17,head.y,head.x-dir*24,head.y+5);}
+     else if(hex){g.fillStyle(0x6b3e91,1);g.fillEllipse(head.x,head.y,23,14);g.fillStyle(0xf3defb,1);g.fillEllipse(head.x-dir*3,head.y-2,12,6);}
      else if(stone){g.fillStyle(0x574737,1);g.fillPoints([{x:head.x-12,y:head.y-5},{x:head.x-4,y:head.y-11},{x:head.x+11,y:head.y-6},{x:head.x+10,y:head.y+7},{x:head.x-8,y:head.y+9}],true);g.fillStyle(0xd5b479,1);g.fillEllipse(head.x-1,head.y-2,15,11);}
      else if(seed){g.fillStyle(0x375840,1);g.fillEllipse(head.x,head.y,24,15);g.fillStyle(0xe6f4af,1);g.fillEllipse(head.x+dir*3,head.y-2,15,8);}
      else if(ink){g.fillStyle(0x173e40,1);g.fillEllipse(head.x,head.y,31,18);g.lineStyle(3,0xa3efe0,1);g.lineBetween(head.x-dir*10,head.y-5,head.x+dir*11,head.y-1);}
@@ -592,15 +673,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
      }
     }
     if(e.type==='heal'){
-     const patient=e.targetActor===null?this.hero:this.sprites.get('a'+e.targetActor);
-     const cx=patient?.x??x;
-     if(!e.enemy)for(let i=0;i<4;i++){const xx=cx+(i-1.5)*25,yy=ground-55-i%2*28-70*p,r=5+(1-p)*2;g.lineStyle(6,0x1d6554,tail);g.lineBetween(xx-r,yy,xx+r,yy);g.lineBetween(xx,yy-r,xx,yy+r);g.lineStyle(3,0xa4ffd0,tail);g.lineBetween(xx-r,yy,xx+r,yy);g.lineBetween(xx,yy-r,xx,yy+r);}
-     paint(e,x,ground-92-35*p,180,205,0,tail);
-     if(e.enemy)e.sprite.setTint(0xaf8bbe);flecks(x,ground-20,p,e.enemy?0xb596cf:0xc8e59b,8,75,150);
-     if(e.sourceKind==='healer'){
-      const patient=e.targetActor===null?this.hero:this.sprites.get('a'+e.targetActor),point=patient?this.bodyPoint(patient,e.kind):{x,y:ground-60};
-      for(let i=0;i<3;i++){g.lineStyle(3,0xfff8dd,tail*.85);g.beginPath();g.arc(point.x,point.y+i*5,16,-.2,Math.PI+.2);g.strokePath();}
-     }
+     const patient=e.targetActor==null?this.hero:this.sprites.get('a'+e.targetActor);
+     if(e.enemy){paint(e,x,ground-92-35*p,180,205,0,tail);e.sprite?.setTint(0xaf8bbe);flecks(x,ground-20,p,0xb596cf,8,75,150);}
+     else {e.sprite?.setVisible(false);this.drawPatientRecovery(patient,e.targetActor==null?(model.shield>0||model.action?.kind==='rush'?'mount':'haetae'):e.kind,p,tail);if(e.targetActor==null&&this.girl?.visible)this.drawPatientRecovery(this.girl,'girl',p,tail);}
     }
     if(e.type==='shelter'){e.sprite.setVisible(false);flecks(x+90,GROUND-185,p,0xaee6dc,7,60,70);}
     if(e.type==='vanish'){
@@ -608,11 +683,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
      paint(e,x,GROUND-(BODY_HEIGHT[e.kind]||132)*.45-80*late,155,205,0,Math.sin(late*Math.PI)*.7,late);
     }
     if(e.type==='footstep'){
-     if(model.stage===2){g.lineStyle(2,0xc9f8f4,fade*.7);g.strokeEllipse(x,ground+2,18+80*p,5+17*p);flecks(x,ground,p,0xc5f3f5,4,28,25);}
+     if(AREAS[model.stage].ground==='water'){g.lineStyle(2,0xc9f8f4,fade*.7);g.strokeEllipse(x,ground+2,18+80*p,5+17*p);flecks(x,ground,p,0xc5f3f5,4,28,25);}
      else {const q=p*p;g.fillStyle(0x877653,fade*.32);g.fillEllipse(x-8*q,ground,18+30*p,5+5*p);flecks(x,ground-2,p,0xc2b08a,3,24,15);}
     }
     if(e.type==='healingAmount'){
-     const patient=e.targetActor===null?this.hero:this.sprites.get('a'+e.targetActor);
+     const patient=e.targetActor==null?this.hero:this.sprites.get('a'+e.targetActor);
      e.sprite.setPosition(patient?.x??x,ground-(BODY_HEIGHT[e.kind]||132)-18-38*p).setAlpha(Math.min(1,fade*3));this.root.bringToTop(e.sprite);
     }
     if(e.type==='damage'){
@@ -671,12 +746,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
        g.fillEllipse(xx,yy,14+24*dissolve,8+14*dissolve);
       }
      }else if(e.enemy===false){
-      const key='defeat'+e.kind+(p<.32?'0':'1'),src=this.textures.get(key).getSourceImage();
-      sprite.setTexture(key).setOrigin(.5,this.grounding.get(key)??1).setDisplaySize(h*.88*src.width/src.height,h*.88).setPosition(x+(e.dir||-1)*8*Math.min(1,p/.32),e.groundY??GROUND).setAngle(0).setAlpha(p<.62?1:Math.max(0,(1-p)/.38));
+      const key='defeat'+e.kind+(p<.32?'0':'1'),src=this.textures.get(key).getSourceImage(),rx=this.registrationX.get(key)??.5,scaledH=h*.88*(this.celScale.get(key)??1);
+      sprite.setTexture(key).setOrigin(sprite.flipX?1-rx:rx,this.grounding.get(key)??1).setDisplaySize(scaledH*src.width/src.height,scaledH).setPosition(x+(e.dir||-1)*8*Math.min(1,p/.32),e.groundY??GROUND).setAngle(0).setAlpha(p<.62?1:Math.max(0,(1-p)/.38));
       if(p>.60)flecks(x,GROUND-h*.25,(p-.60)/.40,0xbad9c9,8,65,60);
      }else{
-      const key='depart'+e.kind+enemyDepartureFrame(p),src=this.textures.get(key).getSourceImage();
-      sprite.setTexture(key).setOrigin(.5,this.grounding.get(key)??1).setDisplaySize(h*src.width/src.height,h).setPosition(x,GROUND).setAlpha(p<.68?1:Math.max(0,(1-p)/.32));
+      const key='depart'+e.kind+enemyDepartureFrame(p,ENEMIES[e.kind]?.departureFrames),src=this.textures.get(key).getSourceImage(),rx=this.registrationX.get(key)??.5,scaledH=h*(this.celScale.get(key)??1);
+      sprite.setTexture(key).setOrigin(sprite.flipX?1-rx:rx,this.grounding.get(key)??1).setDisplaySize(scaledH*src.width/src.height,scaledH).setPosition(x,GROUND).setAlpha(p<.68?1:Math.max(0,(1-p)/.32));
       this.root.bringToTop(sprite);
       if(p>.60)flecks(x,GROUND-h*.2,(p-.60)/.40,e.kind==='boss'?0x97b5a2:0xaebcb9,8,85,70);
      }
@@ -715,9 +790,13 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const opening=sheltering?6-model.shield:0;
    const heroFrame=sheltering?(opening<.6?Math.min(3,Math.floor(opening/.15)):walking?4+motionFrame('haetae',model.walk,true,null):7):mounted?(model.action.elapsed<.18?4:Math.floor(model.action.elapsed*14)%4):motionFrame('haetae',intro?t:model.walk,walking,intro?null:model.action);
    const heroHurt=!intro&&this.effects.some(e=>e.type==='hurt'&&model.time-(e.at??model.time-e.t)<ALLY_HIT_TIME);
-   this.hero.setTexture(this.injuryTexture(heroHurt?'hurt'+(sheltering?'umbrella':mounted?'mount':'haetae'):(sheltering?'umbrella':mounted?'mount':'haetae')+heroFrame,mounted?'mount':'haetae',intro?MAX_HP:model.hp,MAX_HP)).setFlipX(sheltering||intro||model.action?false:model.moving?model.moving<0:this.hero.flipX);
+   const idleEligible=!intro&&!walking&&!mounted&&!model.action&&!heroHurt&&this.heroPose<=0&&!model.enemies.some(e=>e.hp>0&&Math.abs(e.x-model.x)<450);
+   if(!idleEligible)this.idleSince=null;else if(this.idleSince===null)this.idleSince=t;
+   const idleElapsed=this.idleSince===null?0:t-this.idleSince,haetaeIdle=travellerIdleFrame('haetae',idleElapsed,region),girlIdle=travellerIdleFrame('girl',idleElapsed,region);
+   const heroRecovery=!walking&&!mounted&&!model.action?this.recoveryCel('haetae',null):null,girlRecovery=!walking&&!mounted&&this.heroPose<=0?this.recoveryCel('girl',null):null;
+   this.hero.setTexture(this.injuryTexture(heroHurt?'hurt'+(sheltering?'umbrella':mounted?'mount':'haetae'):heroRecovery??(haetaeIdle!==null&&!mounted?'haetaeIdle'+haetaeIdle:(sheltering?'umbrella':mounted?'mount':'haetae')+heroFrame),mounted?'mount':'haetae',intro?MAX_HP:model.hp,MAX_HP)).setFlipX(sheltering||intro||model.action?false:model.moving?model.moving<0:this.hero.flipX);
    this.placeOnGround(this.hero,heroX+37,sheltering?BODY_HEIGHT.umbrella:mounted?BODY_HEIGHT.mount:intro?150:BODY_HEIGHT.haetae);
-   this.girl.setTexture(this.injuryTexture(heroHurt?'hurtgirl':this.heroPose>0?'girlCast':'girl'+motionFrame('girl',intro?t:model.walk,walking,null),'girl',intro?MAX_HP:model.hp,MAX_HP)).setFlipX(intro||this.heroPose>0?false:model.moving?model.moving<0:this.girl.flipX);
+   this.girl.setTexture(this.injuryTexture(heroHurt?'hurtgirl':this.heroPose>0?'girlCast':girlRecovery??(girlIdle!==null?'girlIdle'+girlIdle:'girl'+motionFrame('girl',intro?t:model.walk,walking,null)),'girl',intro?MAX_HP:model.hp,MAX_HP)).setFlipX(intro||this.heroPose>0?false:model.moving?model.moving<0:this.girl.flipX);
    this.placeOnGround(this.girl,heroX-60,intro?145:117);
    this.hero.setVisible(model.hp>0);this.girl.setVisible(!mounted&&model.hp>0);
    if(heroHurt){this.hero.setTint(0xffb39c);this.girl.setTint(0xffb39c);}else{this.hero.clearTint();this.girl.clearTint();}
