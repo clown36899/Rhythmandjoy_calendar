@@ -2,9 +2,9 @@
 
 게임 테스트 URL: https://xn--xy1b23ggrmm5bfb82ees967e.com/games/saebyeokmun/
 
-`www/games/saebyeokmun/`은 새벽문 게임의 실행 산출물만 보관한다. 편집 원본 소유자는 `/Users/inteyeo/Downloads/saebyeokmun-web-demo`이며 소스 커밋은 `a61dd63ec9cf4ad9d2942acb8da788e7c40230a4`이다. 이 폴더에서 게임 로직을 따로 개발하지 않는다. 다음 갱신은 원본 검사·커밋·푸시 후 `dist`를 다시 복사한다.
+`www/games/saebyeokmun/`은 새벽문 게임의 실행 산출물만 보관한다. 편집 원본 소유자는 `/Users/inteyeo/Downloads/saebyeokmun-web-demo`이며 소스 커밋은 `1721bcbda55cfb70319e742df231921ee385f2bf`이다. 이 폴더에서 게임 로직을 따로 개발하지 않는다. 다음 갱신은 원본 검사·커밋·푸시 후 `dist`를 다시 복사한다.
 
-기존 정적 파일 서빙과 대상 설정이 있으므로 별도 웹서버, DB, 프로세스, Apache 설정을 추가하지 않는다. 실행 파일 63개, 56,318,923바이트. 제작 시안·프롬프트·검토 화면·음원 생성 코드·실행에 쓰지 않는 이미지는 공개 폴더에 없다. 모든 제작 자료는 로컬 프로젝트 자료 폴더에 보관한다.
+기존 정적 파일 서빙과 대상 설정이 있으므로 별도 웹서버, DB, 프로세스, Apache 설정을 추가하지 않는다. 실행 파일 67개, 66,128,209바이트. 제작 시안·프롬프트·검토 화면·음원 생성 코드·실행에 쓰지 않는 이미지는 공개 폴더에 없다. 모든 제작 자료는 로컬 프로젝트 자료 폴더에 보관한다.
 
 기존 `restore-cafe24.sh`는 `www/` 전체를 `--delete` 동기화한다. 게임 실행 산출물을 이 저장소에도 포함하여 추후 캘린더 전체 복구 시 사라지지 않게 한다. 게임 테스트 갱신은 전체 복구를 실행하지 않고, 커밋·푸시된 이 하위 폴더만 올린다. 기존 배포 작업의 호스트 확인·정확한 커밋·파일 해시 검증 방식을 재사용한다. 원래 캘린더와 다른 프로젝트의 파일·서비스·DB에는 관여하지 않는다.
 
@@ -201,3 +201,39 @@ Existing implementation: present. Start/settings -> single Soundscape -> ambienc
 Replaced the existing asset with Pixel Rain & Side-Scroll Cafe (artist tag: proteanTown), 175.850667 seconds. Audio stream copied without re-encoding; embedded cover removed. Runtime MP3: 2,815,085 bytes. Full decoded PCM hashes match the supplied original. Existing music gain changed from .45 to .22 to leave space for effects. Updated current attribution and versioned cache URLs.
 Existing audio/app tests: 9 passed. Chrome: all audio ready, gameplay/summon, independent channel toggles, settings return, preferences retained after reload, no errors or warnings. Physical Android speaker listening and a full-duration loop listening test remain unverified. No combat/rendering/DB/account/payment/server configuration changes, so these unchanged paths were not expanded. Art concepts remain local and are not included in this release.
 Source and runtime mirror are committed and pushed before deployment. Reuse prior runtime hash checks and a recoverable game-directory swap; preserve calendar files and services.
+
+
+# v32 — 달빛 물길, 의녀 치료, 우산, 피격 표정
+
+기존 구현 **일부 있음**. Journey의 HP/행동/소환, Scene의 전신 셀/접지/효과 수명, data의 난이도와 거리 기반 하늘, 기존 반응형 버튼·설정·오디오를 재사용한다. 별도 전투 모델·게임 시계·DB·큐·서비스는 추가하지 않았다. 신규 의녀는 같은 UNITS/MOTION/소환 슬롯과 advanceAction을 사용한다. 8장 의녀/우산 및 10장 아군 피격 시트만 기존 로더에 연결한다.
+
+## 증상에서 화면까지의 경로와 기존 보호
+
+- 주인공 가림: 각 엔티티 생성/갱신 → root.bringToTop → 먼저 앞에 놓았던 주인공을 동료가 다시 덮음. 캐릭터 그리기 종료 후 주인공/소녀, 그 위 효과와 숫자로 순서를 통일한다. 기존 공통 GROUND542와 소의 독립 전투는 유지한다.
+- 좌우대칭 산: 카메라 위치 → 기존 배경 타일의 modulo/번갈아 flipX → 대칭 산봉우리 반복. 긴 비대칭 밤 풍경을 생성해 깊이당 하나씩 배치한다. 전체 카메라 범위보다 넓으며 원경 .035/중경 .34/지면1/전경1.18은 유지한다. 길은 고정 월드 좌표의 강둑/돌다리/둑길/문 앞 4구간이다. 달은 기존 furthest 진행률을 읽어 밤하늘에서만 천천히 이동한다.
+- 우산 몸집: shield → 전신 우산 셀 → 전체 높이230 → 해태 몸이 보행보다 커짐. 전체 높이를185로 보정(기존 보행132/돌진188)하고 보호 호도 실제 그림 크기를 따른다. 발 위치542는 바뀌지 않는다.
+- 이동 떨림: 미세한 대열 이동/정지 → motionFrame의 moving 분기 → 걷기 프레임과 고정 대기 프레임 반복 교체. 이동거리 시계를 유지하고 정지 시 마지막 걷기 셀·방향을 유지한다. 최초 대기 셀, 공격 시계, 공통 크롭과 발 원점은 유지한다. 원본 그림의 자연스러운 체형 변화까지 제거한 것은 아니다.
+- 치료: 다친 생존 대상/사거리 → 의녀의 0.5초 분사 순간 → HP 상한 내 14 회복 1회 및 heal 이벤트 → 실제 회복량 +N/초록 십자/약가루. 대상 사망/이탈 시 취소, 만피/사망자 회복 없음. 라벨은 이벤트 때 한 번 만들고 일시정지·소멸·재시작 수명 관리를 재사용한다.
+- 피격: Journey의 실제 명중 → a.hit 또는 hero hurt 이벤트 → 표정 전신 셀+기존 움찔 → 0.2~0.26초 후 기존 자세. 렌더러는 HP/보상/판정을 변경하지 않는다. 방어 성공으로 피해0이면 찡그림 없음. 업그레이드 도령과 탑승 자세도 포함한다.
+- 난이도: 기존 waveBalance 고정 기준 → 출현 배율 → 기본/원거리/돌진/우박/회복. 최신 약화 요청으로 ENEMY_OUTPUT=.85를 공유해 모든 적 피해·회복을15% 줄인다. 체력/속도/등장 위치/보상/한 무리씩 진행은 유지한다. 이전의 기준 전투력3% 조건은 이번 완화에 따라 약11.7% 아군 우세가 되며 결과 보고도 실제 수치에 맞춘다. 실사용 승률이나 모든 편성의 우세를 보장하는 값은 아니다.
+
+관련 이력은 접지/동작26089fd2, 거리 보행8def3fda, 겹침/문/보스22b144ca, 특수능력 포함 균형63472138과 직접 호출부·기존 테스트만 조사했다. 최초 의도인 명중1회·대상 고정·공통 발 높이·동일 소 독립 공격·웨이브 중첩 방지·문 경계와 비행 시계를 보존한다. 증상 전용 예외나 중복 소유자는 추가하지 않았다.
+
+## 반사와 그림 보관
+
+반사는 현재 표시 중인 전신 셀/상처/방향/발 원점을 그대로 뒤집어 수면에4줄로 그린다. 별도 애니메이션이나 캐릭터 복제가 아닌 표시 전용이며 바위 아래에 놓인다. 화면에서 사라지거나 퇴장한 캐릭터의 반사는 해제한다.
+
+내장 image_gen으로 생성했다. 최종 이미지들은 dist/assets/*v32.png, 프롬프트/미채택 원본/비교 화면은 로컬 output/nap-procession-shadow-tests/game-sample-v32-night-road 및 프로젝트 자료 보관소에 남긴다. 이전 배경/도로 실행 파일은 design/unused-assets로 이동했다. 사용자가 준 음악과 기존 소48칸은 유지한다. 공개에는 실행 파일만 배포한다.
+
+## 검증
+
+61개 검사 통과. 기존 접지/겹침·음소거·전체화면·피격·효과 수명·거리 보행·생존 대상·웨이브·보스 경계 검사를 유지/확장했다. 의녀의 비용/쿨다운/만피/사망/이탈/정지/상한 회복, 우산 정면/우박/후방/종료, 반사의 프레임/방향/할당/해제, 비대칭 배경의 맵 범위, 찡그림 해제와 자세 복귀, 감소된 기본·특수 출력을 확인했다.
+
+일반 모델 조작: 의녀 혼합 편성161.8초/기운200/회복308, 방어·공격 편성160.1초/기운200으로 완주. 무지원42.1초/32%에서 실패. 조작 정책의 회귀 결과이며 사용자 승률 추정이 아니다.
+
+Chrome 실제 Scene의 비교 도구에서 +14와 상한+1, 찡그린 전신, 우산185/발542, 주인공 겹침 순서와 밤 배경을 확인했다. 667×280에서 그림1001×420(1.5배), 버튼높이52/너비약61, 가로넘침0, 드래그 이미지0. 실제 Android 발열/프레임률·주소창/기기 전체화면과 스피커 청감은 미검증이다. 변경 없는 DB/계정/결제/서버 설정 검사는 제외한다.
+
+정적 파일 배포 전 소스와 카페24 미러를 각각 커밋·푸시한다. 실행물 해시와 이전 운영 게임/캘린더 보호 파일을 비교하고 복구 가능한 게임 폴더 교체만 수행한다. DB 마이그레이션이 없고 이전 게임 백업 복원으로 롤백한다.
+
+실제 Chrome 일반 플레이: 초반 소환 이후 보충을 하지 않은 판은31~53%에서 실패했다. 이후 정상 버튼으로 누렁소·도령·달토끼·의녀·선비를 보충하고 발구름/날림부적/비막이를 사용한 판은3:27, 기운200/200, 엽전177 획득으로100% 완주했다. 보스는 맵 끝 문에서 싸웠고 마지막 처치 후 도착했다. 844×300에서 캔버스1266×450, 문서너비844, 콘솔 오류/경고0. 비교 도구는 강제 배치/정지 상태로 표정을 보는 로컬 전용이며 일반 완주 기록과 분리한다.
+

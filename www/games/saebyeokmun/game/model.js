@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=25';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,WAVES,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,AREAS} from './data.js?v=32';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -40,7 +40,7 @@ export class Journey {
  skill(type){
   if(this.status!=='playing'||!SKILLS[type])return false;
   if(this.cooldowns[type]>0)return this.reject('기술을 준비하고 있어요.');
-  if(['rush','stomp'].includes(type)&&this.action)return this.reject('합동 동작이 끝나면 사용할 수 있어요.');
+  if(['rush','stomp','shelter'].includes(type)&&(this.action||this.shield>0))return this.reject('합동 동작이 끝나면 사용할 수 있어요.');
   if(this.coins<SKILLS[type].cost)return this.reject('엽전이 조금 더 필요해요.');
   const target=type==='charm'?this.targetForCharm():null;
   if(type==='charm'&&!target)return this.reject('아직 부적이 닿을 귀물이 없어요.');
@@ -88,7 +88,7 @@ export class Journey {
    if(!action.resolved&&action.elapsed>=ability.impact){
     action.resolved=true;const blocked=this.shield>0;
     this.emit('hail-impact',{x:this.x,blocked});
-    if(!blocked){this.hurtHero(ability.damage*(actor.powerScale??1),actor.x,'hail');for(const a of this.allies)this.hurtAlly(a,ability.splash*(actor.powerScale??1),null,'hail');}
+    if(!blocked){this.hurtHero(ability.damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,'hail');for(const a of this.allies)this.hurtAlly(a,ability.splash*(actor.powerScale??1)*ENEMY_OUTPUT,null,'hail');}
     else{this.coins=clamp(this.coins+8,0,MAX_COINS);this.say('우박을 막았어요. 지금 전진해요!');}
    }
    if(action.elapsed>=ability.duration)actor.action=null;
@@ -116,9 +116,16 @@ export class Journey {
     const ally=action.targetId===null?null:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
     const valid=action.targetId===null||!!ally,targetX=ally?.x??this.x;
     if(valid&&Math.abs(actor.x-targetX)<=ENEMIES[actor.type].range+24){
-     if(actor.type==='reaper')this.launchShot({actor:actor.id,sourceKind:'reaper',weapon:'hex',from:actor.x,target:ally||this,damage:ENEMIES.reaper.damage*(actor.powerScale??1),enemy:true});
-     else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1),actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1),actor.x,actor.type);
+     if(actor.type==='reaper')this.launchShot({actor:actor.id,sourceKind:'reaper',weapon:'hex',from:actor.x,target:ally||this,damage:ENEMIES.reaper.damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
+     else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);
      this.emit('claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});}
+    }
+   }else if(action.kind==='healer'){
+    const target=action.targetId===null?this:this.allies.find(a=>a.id===action.targetId&&a.hp>0),unit=UNITS.healer;
+    // One locked target, one impact; no resurrection or retargeting after a death.
+    if(target&&target.hp>0&&Math.abs(target.x-actor.x)<=unit.range){
+     const amount=Math.min(unit.heal,(target.maxHp??MAX_HP)-target.hp);
+     if(amount>0){target.hp+=amount;this.emit('heal',{actor:actor.id,sourceKind:'healer',targetActor:target.id??null,kind:target.type||'haetae',x:target.x,from:actor.x,amount});}
     }
    }else if(action.kind==='haetae'){
     this.emit('stomp',{x:this.x});
@@ -135,12 +142,17 @@ export class Journey {
   if(action.elapsed>=spec.duration)actor.action=null;
  }
  hurtAlly(a,damage,sourceX=null,weapon='physical'){
-  if(a.hp<=0)return;
+  if(a.hp<=0||this.status!=='playing')return;
+  if(this.shield>0&&(weapon==='hail'||(sourceX!==null&&sourceX>=a.x))){this.emit('guard',{actor:a.id,x:a.x,from:sourceX,dir:-1,kind:a.type,weapon,damage:0,umbrella:true,enemy:false});return;}
   const guard=sourceX!==null&&sourceX>=a.x?UNITS[a.type].guard:0;
   const amount=damage*(1-guard);a.hp-=amount;a.hit=.26;a.hitDir=sourceX===null?0:Math.sign(a.x-sourceX);
   this.emit(guard?'guard':'hit',{actor:a.id,x:a.x,from:sourceX,dir:a.hitDir,kind:a.type,weapon,damage:amount,enemy:false});
  }
- hurtHero(damage,sourceX=this.x+80,weapon='physical'){if(this.status!=='playing')return;this.hp=clamp(this.hp-damage,0,MAX_HP);this.emit('hurt',{x:this.x+37,from:sourceX,dir:Math.sign(this.x-sourceX)||-1,kind:'haetae',weapon,damage});if(this.hp<=0)this.finish('lost');}
+ hurtHero(damage,sourceX=this.x+80,weapon='physical'){
+  if(this.status!=='playing')return;
+  if(this.shield>0&&(weapon==='hail'||(sourceX!==null&&sourceX>=this.x))){this.emit('guard',{x:this.x+37,from:sourceX,dir:-1,kind:'haetae',weapon,damage:0,umbrella:true,enemy:false});return;}
+  this.hp=clamp(this.hp-damage,0,MAX_HP);this.emit('hurt',{x:this.x+37,from:sourceX,dir:Math.sign(this.x-sourceX)||-1,kind:'haetae',weapon,damage});if(this.hp<=0)this.finish('lost');
+ }
  cleanup(){
   for(const e of this.enemies)if(e.hp<=0&&!e.dead){e.dead=true;this.kills++;this.awardCoins(ENEMIES[e.type].reward,e,'defeat');this.emit('vanish',{actor:e.id,x:e.x,kind:e.type,enemy:true,dir:e.hitDir||1});if(e.type==='boss'){this.bossDefeated=true;this.say('먹구름이 걷혔어요. 이제 새벽문까지 함께 가요.');}}
   for(const a of this.allies)if(a.hp<=0)this.emit('vanish',{actor:a.id,x:a.x,kind:a.type,enemy:false,dir:a.hitDir||-1});
@@ -166,7 +178,7 @@ export class Journey {
   if(this.wave<WAVES.length&&this.furthest>=WAVES[this.wave].x&&!this.enemies.some(e=>e.hp>0)){
    const scale=waveBalance(this.wave).scale,w=WAVES[this.wave++];w.types.forEach((type,i)=>this.spawn(type,GATE+24+i*125,scale));this.say(w.message);
   }
-  if(this.action?.kind!=='rush'&&this.heroAttack<=0&&front&&front.type!=='skirt'&&front.x-this.x<200){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:front,damage:10,high:true});}
+  if(!this.shield&&this.action?.kind!=='rush'&&this.heroAttack<=0&&front&&front.type!=='skirt'&&front.x-this.x<200){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:front,damage:10,high:true});}
   for(const a of [...this.allies].sort((a,b)=>a.id-b.id)){
    if(a.hp<=0)continue;
    const s=unitStats(a.type,this.keeperRank),oldAX=a.x;
@@ -175,14 +187,15 @@ export class Journey {
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;this.advanceAction(a,dt);
    if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
    const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55).sort((b,c)=>b.x-c.x);
-   const target=(a.type==='scholar'?ahead.find(e=>e.type==='reaper'&&e.x-a.x<=s.range):null)||(['rabbit','scholar'].includes(a.type)?ahead.find(e=>e.type!=='skirt'&&e.x-a.x<=s.range):null)||ahead[0];
+   const wounded=s.heal?[this,...this.allies].filter(b=>b.hp>0&&b.hp<(b.maxHp??MAX_HP)&&Math.abs(b.x-a.x)<=s.range+350).sort((b,c)=>b.hp/(b.maxHp??MAX_HP)-c.hp/(c.maxHp??MAX_HP)):[];
+   const target=s.heal?wounded[0]:(a.type==='scholar'?ahead.find(e=>e.type==='reaper'&&e.x-a.x<=s.range):null)||(['rabbit','scholar'].includes(a.type)?ahead.find(e=>e.type!=='skirt'&&e.x-a.x<=s.range):null)||ahead[0];
    // Every melee ally shares the front during combat. Formation slots only guide travel.
    const engaged=target&&s.weapon==='horn'&&target.x<=this.x+s.formation+s.range+120;
-   const goal=engaged?target.x-s.range+Math.min(24,preceding.length*12):formation;
-   if(target&&target.x-a.x<=s.range){
+   const goal=s.heal&&target&&target.x>a.x+s.range?target.x-s.range*.75:engaged?target.x-s.range+Math.min(24,preceding.length*12):formation;
+   if(target&&(s.heal?Math.abs(target.x-a.x):target.x-a.x)<=s.range){
     if(a.cd<=0){
      a.cd=s.period;
-     a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id};
+     a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,dir:Math.sign(target.x-a.x)||1};
     }
    }else if(a.x<goal){a.x=Math.min(a.x+s.speed*dt,goal);}
    // Regroup only on deliberate retreat; ending combat must never teleport the line.
@@ -198,8 +211,8 @@ export class Journey {
    targets.push({x:this.x,a:null});
    targets.sort((a,b)=>b.x-a.x);const target=targets[0],gap=e.x-target.x;
    const attackTarget=(amount)=>{
-    if(target.a)this.hurtAlly(target.a,amount*(e.powerScale??1),e.x,e.type);
-    else this.hurtHero(amount*(e.powerScale??1),e.x,e.type);
+    if(target.a)this.hurtAlly(target.a,amount*(e.powerScale??1)*ENEMY_OUTPUT,e.x,e.type);
+    else this.hurtHero(amount*(e.powerScale??1)*ENEMY_OUTPUT,e.x,e.type);
    };
    e.ability-=dt;
    if(e.windup>0){
@@ -211,7 +224,7 @@ export class Journey {
       e.ability=s.ability.cooldown;
      }else if(e.type==='horse'){e.x=Math.max(target.x+45,e.x-150);attackTarget(s.ability.damage);e.ability=s.ability.cooldown;this.emit('charge',{x:e.x,to:target.x,kind:e.type});}
      else if(e.type==='reaper'){
-      for(const other of this.enemies)other.hp=Math.min(other.maxHp,other.hp+s.ability.heal*(e.powerScale??1));
+      for(const other of this.enemies)other.hp=Math.min(other.maxHp,other.hp+s.ability.heal*(e.powerScale??1)*ENEMY_OUTPUT);
       this.emit('heal',{x:e.x,enemy:true,kind:e.type});e.ability=s.ability.cooldown;
      }
     }

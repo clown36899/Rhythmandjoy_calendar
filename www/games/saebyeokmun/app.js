@@ -1,7 +1,7 @@
-import {Journey} from './game/model.js?v=25';
-import {makeGame} from './game/scene.js?v=25';
+import {Journey} from './game/model.js?v=32';
+import {makeGame} from './game/scene.js?v=32';
 import {Soundscape} from './game/audio.js?v=31';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=25';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame} from './game/data.js?v=32';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 let installPrompt=null,fullscreenPending=false;
@@ -50,12 +50,12 @@ document.addEventListener('dragstart',e=>e.preventDefault());
 document.addEventListener('keydown',e=>{
  if(fullscreenPending||infoDialogs.some(d=>d.open))return;
  const k=e.key.toLowerCase();
- if(['arrowleft','arrowright',' ','a','d','q','e','r','1','2','3','4'].includes(k))e.preventDefault();
+ if(['arrowleft','arrowright',' ','a','d','q','e','r','1','2','3','4','5'].includes(k))e.preventDefault();
  if(k===' '){if(!e.repeat)pause();return;}
  if(k==='enter'&&model.status==='ready')start();
  if(k==='arrowleft'||k==='a'){keys.add('left');setDirection();}
  if(k==='arrowright'||k==='d'){keys.add('right');setDirection();}
- if(!e.repeat&&{'1':'cow','2':'keeper','3':'rabbit','4':'scholar',q:loadout[0],e:loadout[1],r:loadout[2]}[k])callAction({'1':'cow','2':'keeper','3':'rabbit','4':'scholar',q:loadout[0],e:loadout[1],r:loadout[2]}[k]);
+ if(!e.repeat&&{'1':'cow','2':'keeper','3':'rabbit','4':'scholar','5':'healer',q:loadout[0],e:loadout[1],r:loadout[2]}[k])callAction({'1':'cow','2':'keeper','3':'rabbit','4':'scholar','5':'healer',q:loadout[0],e:loadout[1],r:loadout[2]}[k]);
 });
 document.addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(k==='arrowleft'||k==='a')keys.delete('left');if(k==='arrowright'||k==='d')keys.delete('right');setDirection();});
 function blurPause(){keys.clear();model.direction=0;infoPaused=false;if(model.status==='playing')model.pause();soundscape.setPlaying(false);soundscape.stopVoices();}
@@ -122,7 +122,7 @@ function onReady(error,s){
  if(error){$('loading').textContent=error.message;return;}
  scene=s;ready=true;startButton.disabled=false;$('loading').hidden=true;
  document.querySelectorAll('[data-icon]').forEach(img=>{img.src=scene.previewTexture(img.dataset.icon);img.draggable=false;});
- const preview={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',haetae:'haetae1',rabbit:'rabbit1',keeper:'keeper1',cow:'cow1',scholar:'scholar1',girl:'girl1'};
+ const preview={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',haetae:'haetae1',rabbit:'rabbit1',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1',girl:'girl1'};
  for(const item of [...COMPANIONS,...CODEX]){
   const article=document.createElement('article');article.className='codex-card';
   const img=document.createElement('img');img.src=scene.previewTexture(preview[item.asset]);img.alt=item.name;img.className='sprite-preview';img.draggable=false;
@@ -136,7 +136,7 @@ function onReady(error,s){
    const enemy=CODEX.includes(item),defaultMode='walk';
    const keys=Array.from({length:enemy?8:(MOTION[item.asset].idleFrame!==undefined?MOTION[item.asset].idleFrame+1:(MOTION[item.asset].walkFrames||4)+(item.motion==='walk'?0:(MOTION[item.asset].attackFrames||4)))},(_,i)=>item.asset+(enemy?(i<4?'Walk':'Strike'):'')+(enemy?i%4:i));
    const state={kind:item.asset,enemy,img,keys,variants:new Map(),health:1,mode:defaultMode,started:performance.now(),frame:-1,buttons:[]};
-   for(const [mode,label] of (item.motion==='walk'?[['walk','걷기'],['idle','멈춤']]:[['walk','걷기'],['attack','공격'],['idle','멈춤'],...(item.asset==='reaper'?[['depart','소멸']]:item.asset==='boss'?[['cast','우박 시전']]:[])])){
+   for(const [mode,label] of (item.motion==='walk'?[['walk','걷기'],['idle','멈춤']]:[['walk','걷기'],['attack',item.asset==='healer'?'치료':'공격'],['idle','멈춤'],...(item.asset==='reaper'?[['depart','소멸']]:item.asset==='boss'?[['cast','우박 시전']]:[])])){
     const button=document.createElement('button');button.type='button';button.textContent=label;button.setAttribute('aria-label',item.name+' '+label);button.setAttribute('aria-pressed',String(mode===defaultMode));
     button.addEventListener('click',()=>{state.mode=mode;state.frame=-1;state.started=performance.now();state.buttons.forEach(b=>b.setAttribute('aria-pressed',String(b===button)));});state.buttons.push(button);row.append(button);
    }
@@ -192,7 +192,7 @@ function onFrame(m,s){
  const region=m.status==='ready'?s.previewAreaIndex:m.stage;
  $('area-label').textContent=m.bossDefeated?'새벽문 앞':AREAS[region].name.split(' · ')[0];
  $('edition-area').textContent=AREAS[region].name;document.querySelector('.intro-caption strong').textContent=AREAS[region].name;document.body.dataset.area=String(region);
- $('scene-help').textContent=m.status==='ready'?'출발할 길 선택 · 아침에서 밤까지':'길을 따라, 아침에서 밤까지';
+ $('scene-help').textContent=m.status==='ready'?'출발할 길 선택 · 달빛을 따라':'달빛을 따라, 새벽문까지';
  document.querySelectorAll('[data-scene]').forEach(button=>{button.disabled=m.status!=='ready';button.setAttribute('aria-pressed',String(Number(button.dataset.scene)===region));});
  if(now>noticeUntil&&lastHint!==m.hintSerial){$('callout').textContent=m.hint;lastHint=m.hintSerial;}
  $('callout').hidden=m.status==='ready'||m.status==='won'||m.status==='lost'||(m.time-m.lastHintAt>7&&now>noticeUntil);
