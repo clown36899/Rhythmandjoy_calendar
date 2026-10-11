@@ -1,3 +1,15 @@
+## v48 — 몽유도원 자연 길·끝없는 푸른 물·아군 +10%
+
+기준 원화의 붓결로 몽유도원 길과 물길을 다시 생성했다. 1번은 두꺼운 거친 돌담을 낮고 부드러운 자연 길로 바꿨다. 기존7장 순환을 Phaser native7프레임으로 유지하며 반전 없이1944px로 연결한다. 3번은 강둑/바위/연꽃 섬 없는 파랑·흰색 중심의 끝없는 물로 구분했다. 원화2장1942×809/1944×809, 기존 overlap160/수면 foot.72 유지. 기존 거리 기반 발걸음에 흰색·연파랑3개 파문을 .65초로 연결하며 수면 경계선/절차적 섬을 제거했다.
+
+소환 동료 체력·공격·치료량 현재×1.1. 소216.9475/도령53.13/토끼42.504/선비49.588/의원54.901, 의원회복15.4. 단일 UNITS 소유에서 수련 공격까지 한 번만 적용한다. 기존30개 적 스케일은 reference budget에서 HP/출력상승을 상쇄해 유지한다. 주인공200·10명/총50·접전/합류 카메라·아군 양쪽 제한·적 동일개체 반복·비용/쿨다운/보상·미니맵·드래그 금지 유지.
+
+95/95 기존·확장 검사 통과. HP/출력/수련/치료 상한과 죽은 대상·단발 타격·정지/재시작·wave fixture·5단계 정상 조작 완주 및 실패·50명·경계/카메라와7프레임 연결/수면 파문 수명 확인. Chrome1280×720 정상1/3번 선택/시작/소환/전진/정지·844×300 물길 플레이, 넘침0/드래그 이미지0/콘솔 오류0. 별도 표시 fixture로 길 순환 경계와 물 연결/끝 위치를 시각 확인했으며 정상 완주와 구분한다. 실물Android GPU/발열·모든 편성 승률·변경 없는 DB/달력/결제는 제외.
+
+[수정 근거·기존 보호 목적·불변조건·검증 범위](/Users/inteyeo/Downloads/saebyeokmun-web-demo/design/review-v48.md), [내장 image_gen 프롬프트와 최종 경로](/Users/inteyeo/Downloads/saebyeokmun-web-demo/design/scenery-v48/prompts.json), [물길 실제 작은 화면](/Users/inteyeo/Rhythmjoy_calendar/output/saebyeokmun-v48-water-mobile.png).
+
+원본 Sites source helper 커밋/푸시 후 같은 public 프로젝트에 저장/배포한다. 미러 게임과 이 문서만 커밋/푸시하고 canonical git archive 전체해시를 검증한 후 Cafe24 게임 폴더만 복구 가능한 교체로 반영한다. 기존 SELinux 문맥을 상속하며 관련 없는 홈페이지4파일/서비스는 전후 읽기 검증한다. 배포 결과/커밋/백업/전체해시는 output/saebyeokmun-v48-deployment.json에 보존한다. 이전 Sites 버전 또는 게임 폴더 백업으로 복구하며 DB schema 변경 없음.
+
 ## v47 — 사용자 원화와 같은 붓결의 물길
 
 원본 소스 `8f5d01e01bb195529ec167d4965ef27433f118a2`를 Sites source helper로 커밋·푸시하고 실행물을 패키징했다. 기존 public Sites 프로젝트/주소를 유지한다. 3번 ‘망각의 나루’를 사용자 첨부 원화의 세밀한 먹선·수채 명암·솔잎·화강암·상아색 안개와 등불 표현에 맞춰 새로 그렸다. 최종 원화2장1942×809/1944×809, 겹침160 제외3726px; 대칭/반전 복제 없음. 내장 image_gen 사용, [프롬프트와 원본](/Users/inteyeo/Downloads/saebyeokmun-web-demo/design/waterway-v47/prompts.json) 보존. 최초 투명 조각 시안은 실행물에서 제외한다.

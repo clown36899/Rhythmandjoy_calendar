@@ -1,4 +1,4 @@
-import {DEFAULT_PARTY,UNITS,validParty,TEST_MODE,STAGES} from './data.js?v=47';
+import {DEFAULT_PARTY,UNITS,validParty,TEST_MODE,STAGES} from './data.js?v=48';
 // Local progression is separate from Journey's capped battle purse. No cash purchases.
 export class Campaign {
  constructor(saved={}){

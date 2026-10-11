@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame} from './data.js?v=47';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame} from './data.js?v=48';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const GROUND=542;
@@ -52,7 +52,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.load.image('allies','./assets/allies.png');this.load.image('enemies','./assets/enemies.png');
    this.load.image('haetaeMotion','./assets/haetae-motion-v10.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
    this.load.image('companionWalk','./assets/companions-walk-v11.png');this.load.image('gate','./assets/underworld-gate-v17.png');this.load.image('enemyWalk','./assets/enemy-walk-v17.png');this.load.image('reaperDeparture','./assets/reaper-departure-v35.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
-   for(const area of AREAS){this.load.image(area.texture,'./assets/'+area.file);for(const [suffix,file] of [['Sky',area.skyFile],['Clouds',area.cloudFile],['Moon',area.moonFile]])if(file)this.load.image(area.texture+suffix,'./assets/'+file);area.detailFiles.forEach((file,i)=>this.load.image(area.texture+'Detail'+i,'./assets/'+file));area.roadTiles?.forEach((tile,i)=>this.load.image(area.texture+'Road'+i,'./assets/'+tile.file));}
+   for(const area of AREAS){this.load.image(area.texture,'./assets/'+area.file);for(const [suffix,file] of [['Sky',area.skyFile],['Clouds',area.cloudFile],['Moon',area.moonFile]])if(file)this.load.image(area.texture+suffix,'./assets/'+file);area.detailFiles.forEach((file,i)=>this.load.image(area.texture+'Detail'+i,'./assets/'+file));if(area.roadAtlas)this.load.image(area.texture+'RoadAtlas','./assets/'+area.roadAtlas);else area.roadTiles?.forEach((tile,i)=>this.load.image(area.texture+'Road'+i,'./assets/'+tile.file));}
    this.load.image('nightRoad','./assets/night-road-v32.png');this.load.image('moon','./assets/moon-v32.png');
    this.load.image('livingScenery','./assets/living-scenery-v11.png');
    this.load.image('enemyAttacks','./assets/enemy-attacks-v17.png');
@@ -163,6 +163,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.sliceAtlas('enemyAttacks',['skirt','horse','reaper','bossLegacy'].flatMap(kind=>Array.from({length:4},(_,i)=>kind+'Strike'+i)),4,4,4,{x:[0,.25,.5,.75,1],y:[0,.25,.5,.75,1]});
    for(const area of AREAS){const texture=this.textures.get(area.texture),src=texture.getSourceImage(),split=Math.floor(src.height*area.split);texture.add('far',0,0,0,src.width,split);texture.add('middle',0,0,split,src.width,src.height-split);}
    for(const area of AREAS){if(area.detailOverlap===0)continue;const tex=this.textures.get(area.texture+'Detail1'),src=tex.getSourceImage();tex.add('join',0,0,0,LANDSCAPE_OVERLAP,src.height);tex.add('body',0,LANDSCAPE_OVERLAP,0,src.width-LANDSCAPE_OVERLAP,src.height);}
+   // Native frames retain all seven contiguous authored sections without seven image copies.
+   for(const area of AREAS.filter(a=>a.roadAtlas)){const tex=this.textures.get(area.texture+'RoadAtlas');for(const part of area.roadTiles)tex.add(part.frame,0,part.x,part.sourceY,part.width,part.sourceHeight);}
    for(const name of ['nightRoad','castleRoad','storybookRoad']){const roadTexture=this.textures.get(name),roadSource=roadTexture.getSourceImage();
    ROAD_SECTIONS.forEach((part,i)=>roadTexture.add(part.frame,0,0,i*roadSource.height/4,roadSource.width,roadSource.height/4));}
    for(const area of AREAS.filter(area=>area.panorama)){const tex=this.textures.get(area.texture+'Detail0'),src=tex.getSourceImage(),overlap=area.detailOverlap;tex.add('body',0,0,0,src.width-overlap,src.height);tex.add('tail',0,src.width-overlap,0,overlap,src.height);}
@@ -291,7 +293,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(let i=0;i<(day?0:47);i++){
     const y=540+i*6;if(y>bottom)break;
     const spread=24+i*3.1,x=moonX+Math.sin(i*1.7+t*.8)*spread*.35;
-    water.lineStyle(i%4===0?2.3:1,0xffe2a1,.07+(i%5)*.026);
+    water.lineStyle(i%4===0?2.3:1,waterway?0xe6f4ff:0xffe2a1,.07+(i%5)*.026);
     water.lineBetween(x-spread*.5,y,x+spread*.5+Math.sin(t+i)*9,y);
    }
    for(let i=0;i<(day||panorama?0:80);i++){
@@ -306,18 +308,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
     let x=tiles?part.x+Math.floor(i/tiles.length)*total-((this.offset*PARALLAX.ground%total)+total)%total:part.x-this.offset*PARALLAX.ground;
     if(!tiles&&model.status==='ready')x=((x+part.width)%total+total)%total-part.width;
     const foot=tiles?part.foot:area.roadFeet?.[i]??part.foot;
-    im.setTexture(tiles?area.texture+'Road'+i%tiles.length:waterway?'nightRoad':area.ground,tiles?'__BASE':part.frame).setFlipX(false).setPosition(x,GROUND-foot).setDisplaySize(part.width+(tiles?0:.5),part.height).setTint(tiles||day?0xffffff:0xd7e2e5).setVisible(!waterway&&x<vw&&x+part.width>0);
+    im.setTexture(tiles?area.roadAtlas?area.texture+'RoadAtlas':area.texture+'Road'+i%tiles.length:waterway?'nightRoad':area.ground,tiles?area.roadAtlas?part.frame:'__BASE':part.frame).setFlipX(false).setPosition(x,GROUND-foot).setDisplaySize(part.width+(tiles?0:.5),part.height).setTint(tiles||day?0xffffff:0xd7e2e5).setVisible(!waterway&&x<vw&&x+part.width>0);
    });
-   if(waterway){
-    water.lineStyle(2,0xcbf3ed,.3);water.lineBetween(0,GROUND+1,vw,GROUND+1);
-    // World-anchored lotus islands sit below the shared walking waterline.
-    for(let i=0;i<15;i++){const x=i*380-this.offset*.9;if(x<-80||x>vw+80)continue;const y=GROUND+75+(i%3)*38;
-     water.fillStyle(0x284f53,.55);water.fillEllipse(x,y,51,14);water.lineStyle(1,0x7eb9a1,.55);water.strokeEllipse(x,y,50,13);
-     if(i%3===0){water.fillStyle(0xefe7da,.65);for(let j=0;j<5;j++)water.fillEllipse(x+Math.cos(j*1.3)*6,y-6+Math.sin(j*1.3)*3,8,6);}
-    }
-   }
-
-   for(let i=0;i<12;i++){const x=((i*181+t*5)%Math.max(1,vw)),y=GROUND-25+Math.sin(t*.8+i)*17;water.fillStyle(0xdceab3,.2+.3*Math.sin(t*2+i)**2);water.fillCircle(x,y,1.7);}
+   // Endless water has no artificial walking boundary or decorative land islands.
+   for(let i=0;i<(waterway?0:12);i++){const x=((i*181+t*5)%Math.max(1,vw)),y=GROUND-25+Math.sin(t*.8+i)*17;water.fillStyle(0xdceab3,.2+.3*Math.sin(t*2+i)**2);water.fillCircle(x,y,1.7);}
    this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=64+(i%2)*31;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*560-this.offset*PARALLAX.near-100,bottom+8).setVisible(!panorama&&!waterway&&region===0).setTint(day?0xa9a478:0x9fb5bd).setAlpha(.8).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
   }
   drawBackgroundBattle(region,t){
@@ -429,7 +423,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const src=image.texture.getSourceImage();height*=this.celScale.get(image.texture.key)??1;
    const rx=this.registrationX.get(image.texture.key)??.5;
    image.setOrigin(image.flipX?1-rx:rx,this.grounding.get(image.texture.key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,groundY).setAngle(0);
-   if(AREAS[model.stage].ground==='water'){const pulse=.5+.5*Math.sin(model.time*2+x*.02);this.shadows.lineStyle(1.5,0xe3fff6,.45);this.shadows.strokeEllipse(x,groundY+2,Math.min(130,image.displayWidth*.8)+pulse*9,10+pulse*3);return;}
+   if(AREAS[model.stage].ground==='water'){const pulse=.5+.5*Math.sin(model.time*2+x*.02);this.shadows.lineStyle(1,0xeaf5ff,.28);this.shadows.strokeEllipse(x,groundY+2,Math.min(130,image.displayWidth*.8)+pulse*9,10+pulse*3);return;}
    this.shadows.fillStyle(0x554b36,.15);this.shadows.fillEllipse(x,groundY+2,Math.min(145,image.displayWidth*.77),9);
    this.shadows.fillStyle(0x524731,.29);this.shadows.fillEllipse(x,groundY+1,Math.min(105,image.displayWidth*.6),3.5);
   }
@@ -437,7 +431,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const beat=Math.floor(walk*MOTION[kind].walkFps/(MOTION[kind].walkFrames||4)*2),previous=this.contacts.get(key);
    this.contacts.set(key,beat);
    if(model.status!=='playing'||!moving||previous===undefined||previous===beat)return;
-   const e={type:'footstep',kind,x,groundY};this.effects.push({...e,t:0,duration:.32});
+   const e={type:'footstep',kind,x,groundY};this.effects.push({...e,t:0,duration:AREAS[model.stage].ground==='water'?.65:.32});
    onEvents([e]);
   }
   playEvents(events){
@@ -720,7 +714,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
      paint(e,x,GROUND-(BODY_HEIGHT[e.kind]||132)*.45-80*late,155,205,0,Math.sin(late*Math.PI)*.7,late);
     }
     if(e.type==='footstep'){
-     if(AREAS[model.stage].ground==='water'){g.lineStyle(2,0xc9f8f4,fade*.7);g.strokeEllipse(x,ground+2,18+80*p,5+17*p);flecks(x,ground,p,0xc5f3f5,4,28,25);}
+     if(AREAS[model.stage].ground==='water'){g.lineStyle(1.6,0xf3faff,fade*.72);g.strokeEllipse(x,ground+2,16+105*p,4+22*p);g.lineStyle(1,0xb4d6f4,fade*.55);g.strokeEllipse(x,ground+2,12+73*p,3+15*p);g.lineStyle(1,0xffffff,fade*.4);g.strokeEllipse(x,ground+2,8+40*p,2+9*p);}
      else {const q=p*p;g.fillStyle(0x877653,fade*.32);g.fillEllipse(x-8*q,ground,18+30*p,5+5*p);flecks(x,ground-2,p,0xc2b08a,3,24,15);}
     }
     if(e.type==='healingAmount'){
