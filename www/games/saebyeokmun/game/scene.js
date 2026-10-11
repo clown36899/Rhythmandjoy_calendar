@@ -1,4 +1,4 @@
-import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame} from './data.js?v=40';
+import {ROAD,GATE,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame} from './data.js?v=47';
 const P=window.Phaser;
 // Feet stand inside the painted road, not on its distant top edge.
 const GROUND=542;
@@ -52,7 +52,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.load.image('allies','./assets/allies.png');this.load.image('enemies','./assets/enemies.png');
    this.load.image('haetaeMotion','./assets/haetae-motion-v10.png');this.load.image('rabbitMotion','./assets/rabbit-motion-v10.png');
    this.load.image('companionWalk','./assets/companions-walk-v11.png');this.load.image('gate','./assets/underworld-gate-v17.png');this.load.image('enemyWalk','./assets/enemy-walk-v17.png');this.load.image('reaperDeparture','./assets/reaper-departure-v35.png');this.load.image('actionIcons','./assets/action-icons-v11.png');
-   for(const area of AREAS){this.load.image(area.texture,'./assets/'+area.file);area.detailFiles.forEach((file,i)=>this.load.image(area.texture+'Detail'+i,'./assets/'+file));}
+   for(const area of AREAS){this.load.image(area.texture,'./assets/'+area.file);for(const [suffix,file] of [['Sky',area.skyFile],['Clouds',area.cloudFile],['Moon',area.moonFile]])if(file)this.load.image(area.texture+suffix,'./assets/'+file);area.detailFiles.forEach((file,i)=>this.load.image(area.texture+'Detail'+i,'./assets/'+file));area.roadTiles?.forEach((tile,i)=>this.load.image(area.texture+'Road'+i,'./assets/'+tile.file));}
    this.load.image('nightRoad','./assets/night-road-v32.png');this.load.image('moon','./assets/moon-v32.png');
    this.load.image('livingScenery','./assets/living-scenery-v11.png');
    this.load.image('enemyAttacks','./assets/enemy-attacks-v17.png');
@@ -165,15 +165,20 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(const area of AREAS){if(area.detailOverlap===0)continue;const tex=this.textures.get(area.texture+'Detail1'),src=tex.getSourceImage();tex.add('join',0,0,0,LANDSCAPE_OVERLAP,src.height);tex.add('body',0,LANDSCAPE_OVERLAP,0,src.width-LANDSCAPE_OVERLAP,src.height);}
    for(const name of ['nightRoad','castleRoad','storybookRoad']){const roadTexture=this.textures.get(name),roadSource=roadTexture.getSourceImage();
    ROAD_SECTIONS.forEach((part,i)=>roadTexture.add(part.frame,0,0,i*roadSource.height/4,roadSource.width,roadSource.height/4));}
+   for(const area of AREAS.filter(area=>area.panorama)){const tex=this.textures.get(area.texture+'Detail0'),src=tex.getSourceImage(),overlap=area.detailOverlap;tex.add('body',0,0,0,src.width-overlap,src.height);tex.add('tail',0,src.width-overlap,0,overlap,src.height);}
+   for(const area of AREAS.filter(area=>area.paintingFoot!==undefined)){const tex=this.textures.get(area.texture+'Detail0'),src=tex.getSourceImage();tex.add('waterFooter',0,Math.floor(src.width*.36),Math.floor(src.height*.82),Math.floor(src.width*.28),Math.floor(src.height*.18));}
    this.root=this.add.container(0,0);
    this.sky=this.add.graphics();this.root.add(this.sky);
+   this.skyPlate=this.add.image(0,0,'inwangSky').setOrigin(0,0).setVisible(false);this.root.add(this.skyPlate);
    this.moon=this.add.image(0,0,'moon');this.root.add(this.moon);
    this.depths={};
+   this.mists=[0,1,2].map(()=>this.add.image(0,0,'mist').setAlpha(.12));this.root.add(this.mists[0]);
    this.depths.far=[this.add.image(0,0,'inwang','far').setOrigin(0,1)];this.root.add(this.depths.far);
    // Atmospheric mist belongs behind the near architecture, never over its fine lines.
-   this.mists=[0,1,2].map(()=>this.add.image(0,0,'mist').setAlpha(.12));this.root.add(this.mists);
-   this.depths.middle=[0,1,2].map(i=>this.add.image(0,0,'inwangDetail'+Math.min(i,1)).setOrigin(0,1));this.root.add(this.depths.middle);
-   this.detailJoin=this.add.image(0,0,'inwangDetail1','join').setOrigin(0,1).setAlpha(0,1,0,1);this.root.add(this.detailJoin);
+   this.root.add(this.mists.slice(1));
+   const detailArea=AREAS.find(area=>area.detailFiles.length&&area.detailOverlap!==0);
+   this.depths.middle=[0,1,2].map(i=>this.add.image(0,0,detailArea.texture+'Detail'+Math.min(i,1)).setOrigin(0,1));this.root.add(this.depths.middle);
+   this.detailJoin=this.add.image(0,0,detailArea.texture+'Detail1','join').setOrigin(0,1).setAlpha(0,1,0,1);this.root.add(this.detailJoin);
    // Fixed decoration pool: distant warfare never joins the playable combat model.
    this.battleFX=this.add.graphics();this.root.add(this.battleFX);
    this.battleGroups=[.21,.51,.81].map(u=>({u,actors:['spear','archer','mangtae','shadow'].map(k=>this.add.image(0,0,'battle'+k+'0').setOrigin(.5,1))}));
@@ -216,6 +221,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // Keep the old battle viewport and foot height while painting more river behind the deck.
    const deck=document.querySelector('.control-deck').getBoundingClientRect().height;
    const battleHeight=Math.max(1,bounds.height-deck),viewHeight=phone?Math.max(440,Math.min(620,620*2.35/(bounds.width/battleHeight))):620;
+   const tiled=AREAS.find(area=>area.roadTiles)?.roadTiles;
+   if(tiled){const cycle=tiled.reduce((sum,tile)=>sum+tile.width,0),needed=(Math.ceil(width/(battleHeight*density/viewHeight)/cycle)+1)*tiled.length;
+    while(this.pathTiles.length<needed){const im=this.add.image(0,0,'nightRoad','bank').setOrigin(0,0);this.pathTiles.push(im);this.root.addAt(im,this.root.getIndex(this.pathTiles[0]));}}
    this.viewHeight=viewHeight;this.unit=battleHeight*density/viewHeight;this.vw=width/this.unit;this.root.setScale(this.unit);this.root.y=(viewHeight-620)*this.unit;
    this.sceneBottom=620+deck*density/this.unit;
    this.game.canvas.dataset.viewHeight=String(Math.round(viewHeight));
@@ -223,14 +231,41 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   drawLandscape(region,blend,t){
    const vw=this.vw,g=this.sky,bottom=this.sceneBottom||780;g.clear();
-   const state=skyState(model.progress(),t,region),day=state.night===0,waterway=AREAS[region].ground==='water';
+   const area=AREAS[region],panorama=area.panorama,painting=area.paintingFoot!==undefined;
+   const state=skyState(model.progress(),t,region),day=state.night===0,waterway=area.ground==='water';
    g.fillGradientStyle(day?0xa8d4e5:0x1b304d,day?0xc8e7ee:0x253e59,day?0xf5eacd:0x7994a2,day?0xd0dabb:0x5c7d90,1);g.fillRect(0,0,vw,bottom);
-   const top=620-(this.viewHeight||620),moonX=state.moon.x*vw,moonY=top+200-state.moon.height*140;
+   const top=620-(this.viewHeight||620),moonY=top+(panorama?160:200)-state.moon.height*(panorama?85:140);
+   let moonX=(state.moon.x+(panorama?.29-skyState(0,0,region).moon.x:0))*vw;
    g.fillStyle(0xf9df9e,.045);g.fillCircle(moonX,moonY,109);
-   this.moon.setPosition(moonX,moonY).setDisplaySize(145,145).setVisible(state.moon.visible);
+   this.moon.setTexture(area.moonFile?area.texture+'Moon':'moon').setPosition(moonX,moonY).setDisplaySize(panorama?190:145,panorama?190:145).setVisible(state.moon.visible);
    if(day){g.fillStyle(0xfff4c5,.13);g.fillCircle(moonX,moonY,73);g.fillStyle(0xfff9dc,.95);g.fillCircle(moonX,moonY,39);}
-   for(let i=0;i<(day?0:27);i++){const x=(i*197+43)%Math.max(1,vw),y=top+35+(i*79)%190;g.fillStyle(0xf4e9c9,.18+.23*(.5+.5*Math.sin(t*.45+i)));g.fillCircle(x,y,i%4===0?1.3:.8);}
-   for(const depth of ['far','middle']){
+   for(let i=0;i<(day||panorama?0:27);i++){const x=(i*197+43)%Math.max(1,vw),y=top+35+(i*79)%190;g.fillStyle(0xf4e9c9,.18+.23*(.5+.5*Math.sin(t*.45+i)));g.fillCircle(x,y,i%4===0?1.3:.8);}
+   this.skyPlate.setVisible(!!panorama&&!painting);
+   // Finished paintings keep their fine brushwork; the same moon stays on its existing clock.
+   const moonBackdrop=painting?this.detailJoin:this.skyPlate;
+   if(this.root.getIndex(this.moon)!==this.root.getIndex(moonBackdrop)+1)this.root.moveAbove(this.moon,moonBackdrop);
+   if(panorama){
+    const src=this.textures.get(area.texture).getSourceImage(),w=Math.max(vw+GATE*PARALLAX.far+80,(bottom-top)*src.width/src.height),h=w*src.height/src.width;
+    if(!painting)this.skyPlate.setTexture(area.texture+'Sky').setPosition(-40,top).setDisplaySize(w,h);
+    if(!painting)this.mists[0].setTexture(area.texture+'Clouds').setOrigin(0,0).setPosition(-40+Math.sin(t/180)*120,top).setDisplaySize(w,h).setAlpha(.82).setVisible(true);else this.mists[0].setVisible(false);
+    this.mists.slice(1).forEach(im=>im.setVisible(false));
+    this.depths.far[0].setTexture(area.texture).setOrigin(0,0).setFlipX(false).setPosition(-40-this.offset*PARALLAX.far,top).setDisplaySize(w,h).setTint(0xffffff).setAlpha(1).setVisible(!painting);
+    const sources=area.detailFiles.map((_,i)=>this.textures.get(area.texture+'Detail'+i).getSourceImage()),overlap=area.detailOverlap;
+    const total=sources.reduce((sum,image)=>sum+image.width,0)-overlap;
+    // A complete landscape shares the mountain plane, rather than cropping its sky as near scenery.
+    const parallax=painting?PARALLAX.far:PARALLAX.middle;
+    const scale=Math.max(painting?(GROUND-top)/(sources[0].height*area.paintingFoot):w/src.width,(vw+4800*parallax+80)/total),left=-40-this.offset*parallax;
+    const detailTop=painting?GROUND-sources[0].height*area.paintingFoot*scale:top;
+    // Extend only the river below the painting behind the controls; never enlarge its sky to fill the deck.
+    if(painting){const floor=detailTop+sources[0].height*scale;this.skyPlate.setTexture(area.texture+'Detail0','waterFooter').setPosition(0,floor-.5).setDisplaySize(vw,Math.max(1,bottom-floor+1)).setVisible(bottom>floor);}
+    if(painting){moonX=left+(state.moon.x+.29-skyState(0,0,region).moon.x)*sources[0].width*scale;const size=sources[0].height*.225*scale;this.moon.setPosition(moonX,detailTop+sources[0].height*(.275-state.moon.height*.16)*scale).setDisplaySize(size,size);}
+    const edge=left+(sources[0].width-overlap)*scale;
+    this.depths.middle[0].setTexture(area.texture+'Detail0','body').setOrigin(0,0).setPosition(left,detailTop).setDisplaySize((sources[0].width-overlap)*scale,sources[0].height*scale).setAlpha(1).setVisible(true).setFlipX(false);
+    this.depths.middle[1].setTexture(area.texture+'Detail1','body').setOrigin(0,0).setPosition(edge+overlap*scale,detailTop).setDisplaySize((sources[1].width-overlap)*scale,sources[1].height*scale).setAlpha(1).setVisible(true).setFlipX(false);
+    // Both sides of an alpha scene fade across the same gutter, including pine branches.
+    this.depths.middle[2].setTexture(area.texture+'Detail0','tail').setOrigin(0,0).setPosition(edge,detailTop).setDisplaySize(overlap*scale,sources[0].height*scale).setAlpha(...(painting?[1]:[1,0,1,0])).setVisible(true).setFlipX(false);
+    this.detailJoin.setTexture(area.texture+'Detail1','join').setOrigin(0,0).setPosition(edge,detailTop).setDisplaySize(overlap*scale,sources[1].height*scale).setVisible(true);
+   }else for(const depth of ['far','middle']){
     // Authored sections overlap in world space; never mirror, repeat or stretch a small atlas row.
     const area=AREAS[region],pool=this.depths[depth],parts=depth==='far'?pool:pool.slice(0,area.detailFiles.length),w=Math.max(depth==='far'?2300:2800,vw+GATE*PARALLAX[depth]+80);
     const sources=parts.map((_,i)=>this.textures.get(depth==='far'?area.texture:area.texture+'Detail'+i).getSourceImage());
@@ -240,18 +275,18 @@ export function makeGame(model,onReady,onFrame,onEvents){
     parts.forEach((im,i)=>{
      const src=sources[i],h=depth==='far'?Math.floor(src.height*area.split):src.height;
      const join=i?overlap:0;
-     im.setTexture(depth==='far'?area.texture:area.texture+'Detail'+i,depth==='far'?'far':i&&overlap?'body':'__BASE').setFlipX(false).setDisplaySize((src.width-join)*scale,h*scale).setPosition(x+join*scale,depth==='far'?525:544).setTint(0xffffff).setAlpha(depth==='far'?(day?.86:.94):1);
+     im.setTexture(depth==='far'?area.texture:area.texture+'Detail'+i,depth==='far'?'far':i&&overlap?'body':'__BASE').setFlipX(false).setDisplaySize((src.width-join)*scale,h*scale).setOrigin(0,1).setPosition(x+join*scale,depth==='far'?525:544).setTint(0xffffff).setAlpha(depth==='far'?(day?.86:.94):1);
      this.detailJoin.setVisible(overlap>0);
-     if(join)this.detailJoin.setTexture(area.texture+'Detail'+i,'join').setDisplaySize(join*scale,h*scale).setPosition(x,544);
+     if(join)this.detailJoin.setTexture(area.texture+'Detail'+i,'join').setOrigin(0,1).setDisplaySize(join*scale,h*scale).setPosition(x,544);
      x+=(src.width-overlap)*scale;
     });
    }
    this.drawBackgroundBattle(region,t);
-   this.mists.forEach((im,i)=>{const w=390+i*170,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(3+i)-this.offset*.07)%(vw+650)+vw+650)%(vw+650)-300,top+100+i*94).setTint(0xc4d2dd).setAlpha(day?.055:.12+i*.015);});
-   const fly=(t+8)%75,ds=this.dragon.texture.getSourceImage();this.dragon.setVisible(fly<18).setDisplaySize(140,140*ds.height/ds.width).setPosition(-170+(vw+340)*fly/18,top+95+Math.sin(fly*.55)*14).setAngle(Math.sin(fly*.8)*3);
-   this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-this.offset*.48-80,534).setVisible(!waterway&&region===0).setTint(day?0xb9c7a3:0x83969a).setAlpha(day?.16:.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
+   this.mists.forEach((im,i)=>{if(panorama)return;im.setTexture('mist').setOrigin(.5).setVisible(true);const w=390+i*170,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(3+i)-this.offset*.07)%(vw+650)+vw+650)%(vw+650)-300,top+100+i*94).setTint(0xc4d2dd).setAlpha(day?.055:.12+i*.015);});
+   const fly=(t+8)%75,ds=this.dragon.texture.getSourceImage();this.dragon.setVisible(!panorama&&fly<18).setDisplaySize(140,140*ds.height/ds.width).setPosition(-170+(vw+340)*fly/18,top+95+Math.sin(fly*.55)*14).setAngle(Math.sin(fly*.8)*3);
+   this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-this.offset*.48-80,534).setVisible(!panorama&&!waterway&&region===0).setTint(day?0xb9c7a3:0x83969a).setAlpha(day?.16:.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
    const water=this.road;water.clear();
-   water.fillGradientStyle(day?0xc6b792:waterway?0x629eaa:0x7794a2,day?0xbca985:waterway?0x387b91:0x55798c,day?0x776e55:0x1b354a,day?0x68634e:0x152b3e,1);water.fillRect(0,535,vw,bottom-535);
+   if(!panorama){water.fillGradientStyle(day?0xc6b792:waterway?0x629eaa:0x7794a2,day?0xbca985:waterway?0x387b91:0x55798c,day?0x776e55:0x1b354a,day?0x68634e:0x152b3e,1);water.fillRect(0,535,vw,bottom-535);}
    // The lunar reflection widens toward the viewer; waves drift independently of solid ground.
    for(let i=0;i<(day?0:47);i++){
     const y=540+i*6;if(y>bottom)break;
@@ -259,17 +294,19 @@ export function makeGame(model,onReady,onFrame,onEvents){
     water.lineStyle(i%4===0?2.3:1,0xffe2a1,.07+(i%5)*.026);
     water.lineBetween(x-spread*.5,y,x+spread*.5+Math.sin(t+i)*9,y);
    }
-   for(let i=0;i<(day?0:80);i++){
+   for(let i=0;i<(day||panorama?0:80);i++){
     const x=((i*173-this.offset*.14+t*(i%3+1))%(vw+240)+vw+240)%(vw+240)-120,y=545+(i*37)%Math.max(1,bottom-545);
     water.lineStyle(1,i%3?0xb3c9cb:0xeee8cf,.08+(i%4)*.027);water.lineBetween(x,y,x+17+i%5*8,y);
    }
-   // Each long section is fixed in the world, with no modulo repeating the same road.
+   // Scenery only: the seven authored tiles wrap in order without any reflection.
    this.pathTiles.forEach((im,i)=>{
-    const part=ROAD_SECTIONS[i],total=1536*ROAD_SECTIONS.length;
-    let x=part.x-this.offset*PARALLAX.ground;
-    if(model.status==='ready')x=((x+part.width)%total+total)%total-part.width;
-    const area=AREAS[region],foot=area.roadFeet?.[i]??part.foot;
-    im.setTexture(waterway?'nightRoad':area.ground,part.frame).setPosition(x,GROUND-foot).setDisplaySize(part.width+.5,part.height).setTint(day?0xffffff:0xd7e2e5).setVisible(!waterway&&x<vw&&x+part.width>0);
+    if(!area.roadTiles&&i>=ROAD_SECTIONS.length){im.setVisible(false);return;}
+    const tiles=area.roadTiles,part=tiles?tiles[i%tiles.length]:ROAD_SECTIONS[i];
+    const total=tiles?tiles.reduce((sum,tile)=>sum+tile.width,0):1536*ROAD_SECTIONS.length;
+    let x=tiles?part.x+Math.floor(i/tiles.length)*total-((this.offset*PARALLAX.ground%total)+total)%total:part.x-this.offset*PARALLAX.ground;
+    if(!tiles&&model.status==='ready')x=((x+part.width)%total+total)%total-part.width;
+    const foot=tiles?part.foot:area.roadFeet?.[i]??part.foot;
+    im.setTexture(tiles?area.texture+'Road'+i%tiles.length:waterway?'nightRoad':area.ground,tiles?'__BASE':part.frame).setFlipX(false).setPosition(x,GROUND-foot).setDisplaySize(part.width+(tiles?0:.5),part.height).setTint(tiles||day?0xffffff:0xd7e2e5).setVisible(!waterway&&x<vw&&x+part.width>0);
    });
    if(waterway){
     water.lineStyle(2,0xcbf3ed,.3);water.lineBetween(0,GROUND+1,vw,GROUND+1);
@@ -281,7 +318,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
 
    for(let i=0;i<12;i++){const x=((i*181+t*5)%Math.max(1,vw)),y=GROUND-25+Math.sin(t*.8+i)*17;water.fillStyle(0xdceab3,.2+.3*Math.sin(t*2+i)**2);water.fillCircle(x,y,1.7);}
-   this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=64+(i%2)*31;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*560-this.offset*PARALLAX.near-100,bottom+8).setVisible(!waterway&&region===0).setTint(day?0xa9a478:0x9fb5bd).setAlpha(.8).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
+   this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=64+(i%2)*31;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*560-this.offset*PARALLAX.near-100,bottom+8).setVisible(!panorama&&!waterway&&region===0).setTint(day?0xa9a478:0x9fb5bd).setAlpha(.8).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
   }
   drawBackgroundBattle(region,t){
    if(!this.battleGroups)return;
@@ -766,11 +803,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const rawDt=Math.min(delta/1000,.05),playing=model.status==='playing',dt=playing?Math.max(0,rawDt-this.hitStop):rawDt;
    if(playing){this.hitStop=Math.max(0,this.hitStop-rawDt);this.impactCooldown=Math.max(0,this.impactCooldown-rawDt);}
    const intro=model.status==='ready',vw=this.vw;
-   // Keep the rear support visible when possible, while a freely moving hero stays on screen.
-   const partyLeft=Math.min(model.x-110,...model.allies.filter(a=>a.hp>0).map(a=>a.x-(BODY_HEIGHT[a.type]||130)*.5));
-   const targetOffset=intro?(time/1000*30)%4800:Math.max(0,model.x-vw*.65,Math.min(GATE-vw*.80,model.x-vw*.28,partyLeft-35));
+   // Share the entry/clamp footprint: joining at the left edge cannot pull the camera back.
+   // Rear support stays visible; the freely moving traveller retains the same camera bounds.
+   const partyLeft=Math.min(model.x-145,...model.allies.filter(a=>a.hp>0&&!a.entering).map(a=>a.x-model.screenPadding(a.type)*.5));
+   const targetOffset=intro?(time/1000*30)%4800:Math.max(0,model.x-vw*.65,Math.min(GATE-vw*.80,model.x-vw*.28,partyLeft));
    this.offset+=(targetOffset-this.offset)*Math.min(1,dt*8);
-   if(playing)model.step(dt);
+   if(playing){model.setViewport(this.offset,vw);model.step(dt);}
    const events=model.drainEvents();this.playEvents(events);onEvents(events);
    const t=intro?time/1000:model.time;
    const region=intro?this.previewAreaIndex:model.stage,blend=1;

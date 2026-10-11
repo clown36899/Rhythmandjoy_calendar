@@ -5,11 +5,14 @@ export const GATE=ROAD+80;
 export const START=220;
 export const MAX_HP=200;
 export const MAX_COINS=100;
+export const ALLY_HP_SCALE=.7*1.15;
+export const ALLY_TYPE_LIMIT=10;
+export const ALLY_TOTAL_LIMIT=50;
 export const BODY_HEIGHT={king:165,prince:156,minister:165,cavalry:205,umbrella:185,mount:188,haetae:132,girl:117,keeper:133,cow:141,scholar:156,healer:165,rabbit:124,skirt:102,horse:198,reaper:202,boss:300,warden:230,ferryman:245,waterghost:180,spearman:158,archer:154,mangtae:148,shadow:140,gate:350};
 export const AREAS=[
- {at:0,name:'인왕산 · 달빛 물길',texture:'inwang',detailFiles:['inwang-near-left-v37.png','inwang-near-right-v37.png'],file:'inwang-night-layers-v32.png',split:395/724,ground:'nightRoad'},
+ {at:0,name:'인왕산 · 달빛 물길',texture:'inwang',detailFiles:['inwang-near0-v44.png','inwang-near1-v44.png'],detailOverlap:160,file:'inwang-far-v44.png',skyFile:'inwang-sky-v44.png',cloudFile:'inwang-clouds-v44.png',moonFile:'inwang-moon-v44.png',split:1,ground:'nightRoad',panorama:true,roadTiles:[{file:'inwang-road-01-v43.png',x:0,width:299,height:224,foot:48},{file:'inwang-road-02-v43.png',x:299,width:300,height:224,foot:48},{file:'inwang-road-03-v43.png',x:599,width:299,height:224,foot:48},{file:'inwang-road-04-v43.png',x:898,width:300,height:224,foot:48},{file:'inwang-road-05-v43.png',x:1198,width:299,height:224,foot:48},{file:'inwang-road-06-v43.png',x:1497,width:300,height:224,foot:48},{file:'inwang-road-07-v43.png',x:1797,width:300,height:224,foot:48}]},
  {at:1,name:'한양 · 요괴의 전쟁터',texture:'hwaseong',detailFiles:['hanyang-simple-left-v40.png','hanyang-simple-right-v40.png'],detailOverlap:160,file:'simple-hills-v40.png',split:.62,ground:'castleRoad',roadFeet:[163,129,160,118]},
- {at:2,name:'망각의 나루 · 수면 위',texture:'waterway',detailFiles:['waterway-near-0-v39b.png','waterway-near-1-v39c.png'],file:'waterway-far-v39b.png',split:.62,ground:'water'},
+ {at:2,name:'망각의 나루 · 수면 위',texture:'waterway',detailFiles:['waterway-left-v47.png','waterway-right-v47.png'],detailOverlap:160,file:'waterway-left-v47.png',moonFile:'inwang-moon-v44.png',split:1,ground:'water',panorama:true,paintingFoot:.72},
  {at:3,name:'먹빛 꽃숲 · 그림체 비교',texture:'storybook',detailFiles:['storybook-near-0-v39b.png','storybook-near-1-v39b.png'],detailOverlap:160,file:'storybook-far-v39.png',split:.5,ground:'storybookRoad',roadFeet:[125,92,169,126]},
  {at:4,name:'작은 연꽃 나루 · 캐릭터 붓결',texture:'waterTest',detailFiles:['water-test-left-v40.png','water-test-right-v40.png'],detailOverlap:160,file:'simple-hills-v40.png',split:.62,ground:'water'}
 ];
@@ -63,7 +66,8 @@ export function bossPose(walk,moving,action=null,windup=0,kind='boss'){
 export const TEST_MODE=true;
 export const DEFAULT_PARTY=['cow','keeper','rabbit','scholar','healer'];
 export function validParty(value){return Array.isArray(value)&&value.length===5&&new Set(value).size===5&&value.every(k=>Object.hasOwn(UNITS,k));}
-export const UNITS={
+// Apply the exact HP multiplier once; rounding also changes the reference wave budget.
+export const UNITS=Object.fromEntries(Object.entries({
  cow:{price:0,name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:95,damage:12,period:1.35,cost:30,cooldown:4,formation:305,spacing:0,guard:.6,weapon:'horn'},
  keeper:{price:0,name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:275,damage:17,period:1.15,cost:18,cooldown:3.5,formation:125,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:295,weapon:'ink'}}},
  rabbit:{price:0,name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:185,damage:24,period:1.35,cost:24,cooldown:4,formation:215,spacing:0,guard:0,weapon:'seed'},
@@ -75,7 +79,7 @@ export const UNITS={
  minister:{name:'영의정',role:'지원 · 교지 봉인',price:220,hp:85,speed:62,range:500,damage:14,period:2.2,cost:32,cooldown:5,formation:-80,spacing:0,guard:.05,weapon:'seal'},
  cavalry:{name:'기마 무관',role:'돌파 · 기마 검격',price:240,hp:170,speed:90,range:100,damage:18,period:1.7,cost:40,cooldown:6,formation:295,spacing:0,guard:.3,weapon:'sword'},
  healer:{price:0,name:'약방 의원',role:'회복 · 찾아가는 붕대 치료',hp:62,speed:115,range:105,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:0,guard:0,weapon:'medicine'}
-};
+}).map(([kind,stats])=>[kind,{...stats,hp:stats.hp*ALLY_HP_SCALE}]));
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
 // Only the ox returns to the imported 48-slot exposure sheet (33 original video poses).
 // Its 74-unit stride / 1.44s cadence stays coupled to actual travel; other bodies stay four cels.
@@ -150,7 +154,7 @@ export const STAGES=[
 // Same encounter conditions as the third river; only scenery differs in this comparison.
 STAGES.push({...STAGES[2],name:'작은 연꽃 나루',place:'그림체 실험',subtitle:'물길 비교 · 캐릭터와 같은 선과 면',brief:'캐릭터처럼 단순한 갈색 윤곽과 큰 수채화 면으로 그린 물길입니다. 3번과 같은 전투를 비교해 보세요.',clue:'버드나무 사이로 작은 배 한 척. 같은 여정을 다른 붓결로 걸었다.'});
 
-// Authored equal-budget reference, never scaled to the live player's choices.
+// Preserve the authored enemy budget when only companion HP is reduced. Never scale to the live party.
 // HP and sustained output (including telegraphed abilities) scale together.
 export const BALANCE_REFERENCE=[
  {party:['cow','cow','keeper','keeper'],rank:0},
@@ -170,7 +174,7 @@ export function waveBalance(index,stage=0){
   const cycle=a.cooldown+a.windup+(a.duration||0),output=(a.damage||0)+(a.splash||0)*ref.party.length+(a.heal||0)*waves[i].types.length;
   return {...s,damage:s.damage*a.cooldown/cycle+output*s.period/cycle};
  });
- const baseEnemy=enemyStats.reduce((n,s)=>n+combatPower(s),0),scale=allies/baseEnemy/1.03;
+ const baseEnemy=enemyStats.reduce((n,s)=>n+combatPower(s),0),scale=allies/Math.sqrt(ALLY_HP_SCALE)/baseEnemy/1.03;
  const enemies=baseEnemy*scale*Math.sqrt(ENEMY_OUTPUT);
  return {budget,allies,enemies,scale,enemyStats,advantage:allies/enemies-1};
 }

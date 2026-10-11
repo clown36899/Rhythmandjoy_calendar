@@ -232,3 +232,13 @@ body[data-screen=map] .control-deck{visibility:hidden;pointer-events:none}
 #journey-map .map-land .map-node{position:relative;left:auto;top:auto;transform:none;min-width:0;width:100%;min-height:89px}
 @media(max-height:430px) and (orientation:landscape){#journey-map .map-land{inset:12% 3% 36% 31%;gap:17px 10px}#journey-map .map-land .map-node{min-height:67px;padding:5px}}
 @media(max-height:320px) and (orientation:landscape){#journey-map .map-land{inset:13% 3% 38% 30%;gap:15px 8px}#journey-map .map-land .map-node{min-height:56px;padding:3px}#journey-map .map-node small{margin:2px 0}}
+
+/* Read-only minimap lives between the existing movement and summon controls. */
+.battle-minimap{flex:0 0 124px;box-sizing:border-box;height:56px;padding:4px 6px;border:1px solid #b4ded06b;border-radius:6px;background:#0d2834bf;pointer-events:none;user-select:none;-webkit-user-drag:none;color:#d9eee5;margin-bottom:12px}
+.minimap-label{display:flex;align-items:center;gap:4px;font-size:8px;white-space:nowrap;line-height:10px}.minimap-label i{width:4px;height:4px;border-radius:50%;display:inline-block;margin-left:auto}.minimap-label .ally-dot{background:#6fe7cb}.minimap-label .enemy-dot{background:#ff8778;margin-left:3px}
+.battle-minimap svg{display:block;width:100%;height:35px;overflow:hidden}.battle-minimap path{stroke:#96b7b559;stroke-width:1;fill:none}.battle-minimap rect{fill:#c5e5de17;stroke:#e0eddd80;stroke-width:1}.map-hero{fill:#fff2b8}.map-ally{fill:#6fe7cb}.map-enemy{fill:#ff8778}
+.summon-group .unit-count{position:absolute;right:-3px;top:-6px;z-index:7;border:1px solid #b4ded082;border-radius:9px;padding:0 3px;font-size:8px;line-height:13px;background:#173a43ec;color:#e4f5dc;pointer-events:none}
+.actions .action:disabled[data-state=full]{opacity:1;filter:none}
+.control-deck .party-count{display:block}
+@media(max-width:1000px) and (orientation:landscape){.battle-minimap{flex-basis:110px;height:43px;margin-bottom:7px;padding:3px 5px}.battle-minimap svg{height:28px}.minimap-label{font-size:7px;line-height:8px}.summon-group .unit-count{font-size:7px;line-height:11px;top:-6px}}
+@media(max-width:700px) and (orientation:landscape){.battle-minimap{flex-basis:86px;padding:3px}.minimap-label{gap:2px;font-size:6px}}

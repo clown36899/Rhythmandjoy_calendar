@@ -1,8 +1,8 @@
-import {Campaign} from './game/campaign.js?v=40';
-import {Journey} from './game/model.js?v=40';
-import {makeGame} from './game/scene.js?v=40';
-import {Soundscape} from './game/audio.js?v=40';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,validParty} from './game/data.js?v=40';
+import {Campaign} from './game/campaign.js?v=47';
+import {Journey} from './game/model.js?v=47';
+import {makeGame} from './game/scene.js?v=47';
+import {Soundscape} from './game/audio.js?v=47';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=47';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 let installPrompt=null,fullscreenPending=false;
@@ -60,10 +60,18 @@ function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify
 updateSound();
 function updateBest(){const n=Math.floor(model.progress()*100);best=Math.max(best,n);$('best').textContent=best+'%';try{localStorage.setItem('saebyeokmun-best',String(best));}catch{}}
 function start(){
- if(!ready||fullscreenPending||(!TEST_MODE&&selectedStage>clearedStages))return;infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();activeRun=campaign.begin();saveCampaign();model.start(selectedStage,campaign.party);renderSummonSlots();keys.clear();lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
+ if(!ready||fullscreenPending||(!TEST_MODE&&selectedStage>clearedStages))return;infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();activeRun=campaign.begin();saveCampaign();model.start(selectedStage,campaign.party,scene?.vw);renderSummonSlots();keys.clear();lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
  if(scene)scene.resetPresentation();updateAuto();soundscape.stopVoices(true);soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});
 }
 function pause(){if(!ready||fullscreenPending)return;model.pause();keys.clear();model.direction=0;soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
+function renderMinimap(m){
+ const bounds=m.viewport||{left:0,right:GATE},pad=340,left=Math.min(0,bounds.left-pad),right=Math.max(GATE,bounds.right+pad),span=right-left;
+ const x=value=>8+224*Math.max(0,Math.min(1,(value-left)/span));
+ $('minimap-view').setAttribute('x',String(x(bounds.left)));$('minimap-view').setAttribute('width',String(x(bounds.right)-x(bounds.left)));
+ const allies=m.allies.filter(a=>a.hp>0),enemies=m.enemies.filter(e=>e.hp>0);
+ $('minimap-points').innerHTML=[`<circle class="map-hero" cx="${x(m.x)}" cy="23" r="3"/>`,...allies.map(a=>`<circle data-actor="a${a.id}" class="map-ally" cx="${x(a.x)}" cy="${10+a.id%3*4}" r="2"/>`),...enemies.map(e=>`<circle data-actor="e${e.id}" class="map-enemy" cx="${x(e.x)}" cy="${28+e.id%3*4}" r="2"/>`)].join('');
+ $('battle-minimap').setAttribute('aria-label',`전장 미니맵 · 아군 ${allies.length}명 · 적 ${enemies.length}명 · 흰 점 주인공, 청록 점 아군, 붉은 점 적`);
+}
 function updateAuto(){$('auto').setAttribute('aria-pressed',String(model.auto));}
 function callAction(name){if(UNITS[name])model.summon(name);else model.skill(name);}
 function setDirection(){model.direction=keys.has('right')?1:keys.has('left')?-1:0;}
@@ -141,7 +149,7 @@ function renderSkillSlots(){
  if(scene)$('skill-slots').querySelectorAll('[data-icon]').forEach(img=>{img.src=scene.previewTexture(img.dataset.icon);});
 }
 function renderSummonSlots(){
- $('summon-slots').innerHTML=campaign.party.map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}"><kbd>${i+1}</kbd><span class="action-art"><img data-icon="${icon}" src="${scene?.previewTexture(icon)||''}" alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
+ $('summon-slots').innerHTML=campaign.party.map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}"><kbd>${i+1}</kbd><span class="unit-count">0/10</span><span class="action-art"><img data-icon="${icon}" src="${scene?.previewTexture(icon)||''}" alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
  lastKeeperRank=-1;
 }
 function renderRoster(){
@@ -247,7 +255,8 @@ function onFrame(m,s){
  $('journey-dial').setAttribute('aria-valuenow',String(progress));$('journey-dial').setAttribute('aria-valuetext',sky.name+' · 길의 '+progress+'%');
  $('coins').textContent=Math.floor(m.coins).toLocaleString('ko-KR');
  $('coin-fill').style.width=(m.coins/MAX_COINS*100)+'%';$('coin-gauge').setAttribute('aria-valuenow',String(Math.floor(m.coins)));
- $('party-count').textContent='동료 '+m.summonCount+' / 7'+(m.allies.some(a=>a.hp>0&&a.helper)?' · 조력 '+m.allies.filter(a=>a.hp>0&&a.helper).length:'');
+ renderMinimap(m);
+ $('party-count').textContent='동료 '+m.summonCount+' / '+ALLY_TOTAL_LIMIT+(m.allies.some(a=>a.hp>0&&a.helper)?' · 조력 '+m.allies.filter(a=>a.hp>0&&a.helper).length:'');
  $('loadout-open').disabled=!ready||['playing','paused'].includes(m.status);
  $('loadout-open').title=['playing','paused'].includes(m.status)?'이번 여정이 끝나면 편성을 바꿀 수 있어요.':'필살기 5개 중 3개 선택';
  $('upgrade').disabled=!(m.status==='playing'||m.status==='paused'&&infoPaused&&$('settings').open)||m.keeperRank>0||m.coins<UNITS.keeper.upgrade.price;
@@ -259,13 +268,13 @@ function onFrame(m,s){
  $('callout').hidden=m.status==='ready'||m.status==='won'||m.status==='lost'||(m.time-m.lastHintAt>7&&now>noticeUntil);
  for(const [name,baseSpec] of Object.entries({...UNITS,...SKILLS})){
   const spec=UNITS[name]?unitStats(name,m.keeperRank):baseSpec;
-  const button=$('action-'+name),cd=m.cooldowns[name];if(!button)continue;button.disabled=m.status!=='playing'||cd>0||m.coins<spec.cost||(UNITS[name]&&m.summonCount>=7)||(['rush','stomp'].includes(name)&&!!m.action);
-  button.dataset.state=m.status!=='playing'?'idle':cd>0?'cooldown':m.coins<spec.cost?'cost':button.disabled?'full':'ready';
+  const button=$('action-'+name),cd=m.cooldowns[name],full=!!UNITS[name]&&m.atSummonLimit(name);if(!button)continue;button.disabled=m.status!=='playing'||cd>0||m.coins<spec.cost||full||(['rush','stomp'].includes(name)&&!!m.action);
+  button.dataset.state=m.status!=='playing'?'idle':full?'full':cd>0?'cooldown':m.coins<spec.cost?'cost':button.disabled?'full':'ready';
   button.querySelector('.cooldown').style.height=(cd/spec.cooldown*100)+'%';button.style.setProperty('--cooldown-turn',Math.max(0,Math.min(1,cd/spec.cooldown))+'turn');
   button.title=spec.name+(spec.role?' · '+spec.role:'')+' · '+(button.dataset.state==='full'?'동료가 가득해요':cd>0?cd.toFixed(1)+'초 뒤':spec.cost+' 엽전');
-  button.setAttribute('aria-label',button.title);
+  button.setAttribute('aria-label',button.title);if(UNITS[name])button.querySelector('.unit-count').textContent=m.countAllies(name)+'/'+ALLY_TYPE_LIMIT;
   let badge=button.querySelector('.countdown');
-  if(cd>0){if(!badge){badge=document.createElement('span');badge.className='countdown';button.append(badge);}badge.textContent=Math.ceil(cd);}
+  if(cd>0&&!full){if(!badge){badge=document.createElement('span');badge.className='countdown';button.append(badge);}badge.textContent=Math.ceil(cd);}
   else badge?.remove();
  }
  const boss=m.enemies.find(e=>isBoss(e.type))||m.enemies.find(e=>e.type==='gate');$('boss-bar').hidden=!boss||m.status!=='playing';if(boss){$('boss-fill').style.width=(boss.hp/boss.maxHp*100)+'%';$('boss-label').textContent=boss.type==='gate'?'저승문 · '+(boss.hp/boss.maxHp>.67?'봉인된 문':boss.hp/boss.maxHp>.34?'벌어진 균열':'무너지는 봉인'):ENEMIES[boss.type].name+' · '+({boss:'우박',warden:'내려찍기',ferryman:'밀려오는 파도'}[boss.type]);}

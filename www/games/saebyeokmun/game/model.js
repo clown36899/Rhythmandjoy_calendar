@@ -1,31 +1,52 @@
-import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty} from './data.js?v=40';
+import {ROAD,GATE,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './data.js?v=47';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
  reset(){
   this.status='ready';this.party=[...DEFAULT_PARTY];this.time=0;this.x=START;this.furthest=START;this.hp=MAX_HP;this.coins=70;
   this.auto=true;this.direction=0;this.allies=[];this.enemies=[];this.projectiles=[];this.events=[];this.nextId=0;this.stage=0;this.gateBrokenAt=null;
-  this.wave=0;this.heroAttack=0;this.shield=0;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS)].map(k=>[k,0]));
+  this.viewport=null;this.helperArrivals=new Map();this.wave=0;this.heroAttack=0;this.shield=0;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS)].map(k=>[k,0]));
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='동료와 함께 오른쪽 새벽문까지 가요.';
   delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
  }
- start(stage=this.stage,party=DEFAULT_PARTY){this.reset();this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.status='playing';const first=this.addAlly(this.party[0],this.x+130);this.emit('summon',{actor:first.id,kind:first.type,x:first.x});this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('자동 전진 중이에요. 달토끼를 불러 함께 출발해요.');}
- get summonCount(){return this.allies.filter(a=>a.hp>0&&!a.helper).length;}
+ start(stage=this.stage,party=DEFAULT_PARTY,viewportWidth=null){this.reset();if(Number.isFinite(viewportWidth)&&viewportWidth>0)this.setViewport(0,viewportWidth);this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.status='playing';const first=this.addAlly(this.party[0],this.viewport?undefined:this.x+130);this.emit('summon',{actor:first.id,kind:first.type,x:first.x});this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('자동 전진 중이에요. 달토끼를 불러 함께 출발해요.');}
+ get summonCount(){return this.allies.filter(a=>a.hp>0).length;}
+ countAllies(type){return this.allies.filter(a=>a.hp>0&&a.type===type).length;}
+ atSummonLimit(type){return this.summonCount>=ALLY_TOTAL_LIMIT||this.countAllies(type)>=ALLY_TYPE_LIMIT;}
+ // Viewport geometry is input to the one combat model, never a separate display coordinate.
+ setViewport(left,width){if(!Number.isFinite(left)||!Number.isFinite(width)||width<=0)return false;this.viewport={left,right:left+width,width};return true;}
+ screenPadding(type){return (BODY_HEIGHT[type]||132)+24;}
+ advanceEntry(actor,enemy,dt){
+  if(!this.viewport||!actor.entering)return false;const dir=enemy?-1:1,pad=this.screenPadding(actor.type)*.5,edge=enemy?this.viewport.right-pad:this.viewport.left+pad,gap=(edge-actor.x)*dir;
+  if(gap<=0){actor.entering=false;return false;}const speed=(enemy?ENEMIES:UNITS)[actor.type].speed,travel=Math.min(gap,speed*dt);actor.x+=dir*travel;actor.moving=dir;actor.walk+=travel/speed;if(travel>=gap)actor.entering=false;return true;
+ }
+ constrainScreen(previous=null){
+  const bounds=this.viewport;if(!bounds)return;
+  for(const a of this.allies){if(a.hp<=0)continue;const pad=this.screenPadding(a.type),left=bounds.left+pad*.5,right=bounds.right-pad*.5;
+   if(a.entering){if(a.x<left)continue;a.entering=false;}
+   const before=a.x;a.x=clamp(a.x,left,Math.max(left,right));const old=previous?.get(a.id);if(old&&a.x!==before){a.moving=Math.sign(a.x-old.x);a.walk=old.walk+Math.abs(a.x-old.x)/UNITS[a.type].speed;}
+  }
+  for(const e of this.enemies){if(e.hp<=0||ENEMIES[e.type].stationary)continue;const pad=this.screenPadding(e.type);
+   if(e.entering){if(e.x>bounds.right-pad*.5)continue;e.entering=false;}
+   if(e.x<bounds.left-pad){e.x=bounds.right+pad;e.entering=true;e.action=null;e.windup=0;delete e.engagedId;}
+   else e.x=Math.min(e.x,bounds.right-pad*.5);
+  }
+ }
  get waves(){return STAGES[this.stage].waves;}
  emit(type,data={}){this.events.push({type,at:this.time,...data});}
  say(message){this.hint=message;this.hintSerial++;this.lastHintAt=this.time;this.emit('hint',{message});}
  drainEvents(){const events=this.events;this.events=[];return events;}
  pause(){if(this.status==='playing'){this.status='paused';this.direction=0;}else if(this.status==='paused')this.status='playing';}
  progress(){return clamp((this.furthest-START)/(ROAD-START),0,1);}
- addAlly(type,x){const s=UNITS[type];
+ addAlly(type,x){const s=UNITS[type];if(!s||this.atSummonLimit(type))return null;
   // Same-kind companions share their slot; adding one never pushes an existing body.
-  if(x===undefined)x=this.x-65;const a={id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
- spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={id:++this.nextId,type,x,bornAt:this.time,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:s.ability?.initial??Infinity,walk:0,moving:0};this.enemies.push(a);if(isBoss(type))this.bossSpawned=true;return a;}
+  const entering=x===undefined&&!!this.viewport;if(x===undefined)x=entering?this.viewport.left-this.screenPadding(type):this.x-65;const a={entering,bornAt:this.time,id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
+ spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={entering:!!this.viewport&&x>this.viewport.right,id:++this.nextId,type,x,bornAt:this.time,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:s.ability?.initial??Infinity,walk:0,moving:0};this.enemies.push(a);if(isBoss(type))this.bossSpawned=true;return a;}
  reject(message){this.emit('notice',{message});return false;}
  summon(type){
   if(this.status!=='playing'||!UNITS[type]||!this.party.includes(type))return false;
   if(this.cooldowns[type]>0)return this.reject('조금만 기다려 주세요.');
-  if(this.summonCount>=7)return this.reject('동료는 일곱까지 함께 걸을 수 있어요.');
+  if(this.atSummonLimit(type))return this.reject(this.summonCount>=ALLY_TOTAL_LIMIT?'동료는 총 50명까지 함께할 수 있어요.':'같은 동료는 10명까지 부를 수 있어요.');
   if(this.coins<UNITS[type].cost)return this.reject('엽전이 조금 더 필요해요.');
   this.coins-=UNITS[type].cost;this.cooldowns[type]=UNITS[type].cooldown;
   const ally=this.addAlly(type);this.summons++;this.emit('summon',{actor:ally.id,kind:type,x:ally.x});return true;
@@ -72,7 +93,7 @@ export class Journey {
  hurtEnemy(e,damage,sourceX=this.x,weapon='physical'){if(e.hp<=0||this.status!=='playing'||!Number.isFinite(damage)||damage<=0)return;e.hp-=damage;e.hit=.26;e.hitDir=Math.sign(e.x-sourceX)||1;this.emit('hit',{actor:e.id,x:e.x,from:sourceX,dir:e.hitDir,kind:e.type,weapon,damage,enemy:true});this.awardCoins(1,e,'hit');}
  // The gate is an entrance, never an escape route for displaced living enemies.
  // A not-yet-arrived unit keeps its position; knockback cannot pull it out early.
- pushEnemy(e,to){if(ENEMIES[e.type].stationary)return;e.x=Math.max(e.x,Math.min(GATE-45,to));}
+ pushEnemy(e,to){if(ENEMIES[e.type].stationary||this.viewport&&e.entering)return;const right=this.viewport&&!e.entering?Math.min(GATE-45,this.viewport.right-this.screenPadding(e.type)*.5):GATE-45;e.x=Math.max(e.x,Math.min(right,to));}
  // A flying attack outlives its launch pose. Journey alone owns contact and rewards.
  launchShot({actor,sourceKind,weapon,from,target,damage,high=false,stun=0,enemy=false}){
   const shot={actor,sourceKind,weapon,from,to:target.x,targetId:target.id??null,targetKind:target.type||'haetae',damage,high,stun,enemy,t:0,duration:SHOT_TIME};
@@ -207,7 +228,7 @@ export class Journey {
  }
  step(dt){
   if(this.status!=='playing'||!Number.isFinite(dt)||dt<=0)return;
-  const oldX=this.x;dt=Math.min(dt,.1);this.time+=dt;this.coins=clamp(this.coins+dt*2.2,0,MAX_COINS);
+  const oldX=this.x,previous=this.viewport?new Map(this.allies.map(a=>[a.id,{x:a.x,walk:a.walk}])):null;dt=Math.min(dt,.1);this.time+=dt;this.coins=clamp(this.coins+dt*2.2,0,MAX_COINS);
   this.advanceProjectiles(dt);if(this.status!=='playing')return;
   this.shield=Math.max(0,this.shield-dt);this.heroAttack-=dt;this.advanceAction(this,dt);
   for(const k of Object.keys(this.cooldowns))this.cooldowns[k]=Math.max(0,this.cooldowns[k]-dt);
@@ -223,18 +244,19 @@ export class Journey {
   // A full wave already spends the reference power budget. Distance unlocks the
   // next one, but never stacks two full budgets (including after a player rush).
   if(this.wave<this.waves.length&&this.furthest>=this.waves[this.wave].x&&!this.enemies.some(e=>e.hp>0)){
-   const scale=waveBalance(this.wave,this.stage).scale,w=this.waves[this.wave++];w.types.forEach((type,i)=>this.spawn(type,GATE+24+i*125,scale));
-   // The existing monotonic wave cursor owns each one-time helper arrival.
-   if(w.helper){const a=this.addAlly(w.helper,this.x-65);a.helper=true;this.emit('summon',{actor:a.id,kind:a.type,x:a.x});}
+   const scale=waveBalance(this.wave,this.stage).scale,w=this.waves[this.wave++];w.types.forEach((type,i)=>this.spawn(type,this.viewport?this.viewport.right+this.screenPadding(type)+i*125:GATE+24+i*125,scale));if(w.helper)this.helperArrivals.set(this.wave-1,false);
+
    this.say(w.message);
   }
+  // Reached helper waves wait for capacity; the same wave index can arrive only once.
+  for(const [i,arrived] of this.helperArrivals){const type=this.waves[i].helper;if(arrived||this.atSummonLimit(type))continue;const a=this.addAlly(type);a.helper=true;this.helperArrivals.set(i,true);this.emit('summon',{actor:a.id,kind:a.type,x:a.x});}
   const heroTarget=this.selectContact(this,active.filter(e=>e.x>=this.x-20&&e.type!=='skirt'),480);
   if(!this.shield&&this.action?.kind!=='rush'&&this.heroAttack<=0&&heroTarget&&contactGap(this,heroTarget)<480){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:heroTarget,damage:10,high:true});}
   for(const a of [...this.allies].sort((a,b)=>a.id-b.id)){
    if(a.hp<=0)continue;
    const s=unitStats(a.type,this.keeperRank),oldAX=a.x;
    const formation=Math.min(ROAD-90,this.x+s.formation);
-   a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;this.advanceAction(a,dt);
+   a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(this.advanceEntry(a,false,dt))continue;this.advanceAction(a,dt);
    if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
    const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55).sort((b,c)=>(b.x-ENEMY_FRONT[b.type])-(c.x-ENEMY_FRONT[c.type]));
    if(s.heal){
@@ -267,6 +289,7 @@ export class Journey {
    if(ENEMIES[e.type].stationary){e.hit=Math.max(0,e.hit-dt);continue;}
    const s=ENEMIES[e.type];e.moving=0;e.cd-=dt;e.hit=Math.max(0,e.hit-dt);
    if(e.stun>0){e.stun-=dt;e.action=null;continue;}
+   if(this.advanceEntry(e,true,dt))continue;
    if(e.action){this.advanceAction(e,dt);if(this.status!=='playing')break;continue;}
    const candidates=[...this.allies.filter(a=>a.hp>0&&a.x<e.x+50),this];
    const chosen=this.selectContact(e,candidates,e.windup>0&&s.ability?s.ability.range:s.range);
@@ -299,10 +322,11 @@ export class Journey {
     else if(e.type==='horse')this.say('말이 돌진을 준비해요. 발구름!');
     continue;
    }
-   if(gap>s.range){const dx=Math.min(s.speed*dt,gap-s.range,Math.max(0,e.x-(s.stopAt??START-120)));e.x-=dx;e.moving=dx>0?-1:0;e.walk+=dx/s.speed;}
+   if(gap>s.range){const dx=Math.min(s.speed*dt,gap-s.range,Math.max(0,e.x-(s.stopAt??(this.viewport?this.viewport.left-this.screenPadding(e.type)-1:START-120))));e.x-=dx;e.moving=dx>0?-1:0;e.walk+=dx/s.speed;}
    else if(e.cd<=0){e.cd=s.period;e.action={kind:'enemy',elapsed:0,resolved:false,targetId:target.a?.id??null,dir:Math.sign(target.x-e.x)||-1};}
    if(this.status!=='playing')break;
   }
+  if(this.status==='playing')this.constrainScreen(previous);
   this.cleanup();
   if(this.status==='playing'&&this.bossDefeated&&this.gateBrokenAt!==null&&this.time-this.gateBrokenAt>=GATE_BREAK_TIME&&this.enemies.length===0)this.finish('won');
  }
