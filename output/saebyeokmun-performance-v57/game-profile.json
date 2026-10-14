@@ -1,0 +1,28 @@
+[
+  {
+    "limited": false,
+    "frames": 361,
+    "fps": 120.23978679478056,
+    "modelSeconds": 3.008539999999994,
+    "taskCPUSeconds": 0.8420560000000004,
+    "scriptCPUSeconds": 0.6743419999999993,
+    "elapsed": 3.0023339996114373,
+    "allies": 50,
+    "enemies": 10,
+    "limit": 0,
+    "heapMB": 275
+  },
+  {
+    "limited": true,
+    "frames": 142,
+    "fps": 47.28360674691256,
+    "modelSeconds": 3.000000000000001,
+    "taskCPUSeconds": 0.5440499999999995,
+    "scriptCPUSeconds": 0.372328,
+    "elapsed": 3.003154999576509,
+    "allies": 50,
+    "enemies": 10,
+    "limit": 60,
+    "heapMB": 292
+  }
+]

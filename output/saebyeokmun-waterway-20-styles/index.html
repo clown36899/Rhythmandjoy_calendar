@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>물길 · 20가지 그림체</title>
+<style>
+:root{color-scheme:light dark;--bg:light-dark(#f4f1e9,#161916);--fg:light-dark(#26352f,#ecebe2);--muted:light-dark(#59665c,#b9c0b6);--panel:light-dark(#fffdf7,#252c26);--line:light-dark(#ced4c7,#526053);--accent:light-dark(#325642,#afd1b3)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,sans-serif;line-height:1.5}
+main{max-width:1600px;margin:auto;padding:32px}header{display:flex;justify-content:space-between;gap:16px;align-items:end;flex-wrap:wrap;margin-bottom:28px}
+h1{font-weight:500;font-size:30px;margin:0}h2{font-size:20px;font-weight:500;margin:0 0 16px}p{margin:4px 0 0;color:var(--muted)}
+a{color:var(--accent)}button,select{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;min-height:44px}
+button{cursor:pointer}button:hover{border-color:var(--accent)}button:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+button:disabled{opacity:.5;cursor:default}
+img{-webkit-user-drag:none;user-select:none;display:block;width:100%;height:auto;aspect-ratio:2.2;object-fit:contain}
+.compare{margin-bottom:36px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:20px}.pair figure{margin:0;min-width:0}
+.pair label{display:flex;align-items:center;gap:10px;margin:0 0 12px}.pair select{flex:1;min-width:0}
+.pair figcaption{color:var(--muted);margin-top:8px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px 18px}
+.sample{min-width:0}.sample h3{font-size:16px;font-weight:500;margin:10px 0 8px}.image-open{display:block;padding:0;border:0;background:transparent;min-height:0;width:100%}
+.sample-actions{display:flex;gap:6px;flex-wrap:wrap}.sample-actions button{font-size:13px;padding:6px 9px}
+.sample-actions a{align-self:center;font-size:13px;margin-left:auto}
+.status{min-height:24px;color:var(--muted);margin-top:12px}
+dialog{padding:22px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);max-width:1600px;width:96vw;max-height:95vh}
+dialog::backdrop{background:rgb(0 0 0 / .7)}.viewer-head{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}.viewer-head h2{margin:0}
+.viewer-head div{display:flex;gap:8px}.viewer-image{max-height:70vh;object-fit:contain}
+footer{margin-top:32px;color:var(--muted);font-size:13px}
+@media(max-width:1100px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){main{padding:20px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.pair{grid-template-columns:1fr}.viewer-head{flex-wrap:wrap}}
+@media(max-width:430px){main{padding:16px}.grid{grid-template-columns:1fr}h1{font-size:24px}.viewer-head div{flex-wrap:wrap}}
+@media print{.compare,.sample-actions,.status,footer,header a{display:none}.grid{grid-template-columns:repeat(4,1fr);gap:12px}.sample{break-inside:avoid}main{padding:0}}
+</style>
+</head>
+<body>
+<main id="waterway-gallery">
+<header><div><h1>물길 · 20가지 그림체</h1><p>같은 풍경, 다른 표현. 시안을 눌러 크게 보고 두 가지를 나란히 비교하세요.</p></div><a href="../saebyeokmun-art-direction-v41/joseon-waterway-dawn.png" target="_blank" rel="noopener" draggable="false">기준 시안 보기 ↗</a></header>
+<section class="compare" aria-labelledby="compare-title"><h2 id="compare-title">나란히 비교</h2><div class="pair">
+<figure><label for="pick-a">A<select id="pick-a" aria-label="비교할 A 그림체"></select></label><button type="button" class="image-open" id="open-a" aria-label="A 시안 크게 보기"><img id="img-a" draggable="false" alt=""></button><figcaption id="caption-a"></figcaption></figure>
+<figure><label for="pick-b">B<select id="pick-b" aria-label="비교할 B 그림체"></select></label><button type="button" class="image-open" id="open-b" aria-label="B 시안 크게 보기"><img id="img-b" draggable="false" alt=""></button><figcaption id="caption-b"></figcaption></figure>
+</div><div id="status" class="status" role="status" aria-live="polite"></div></section>
+<section aria-labelledby="all-title"><h2 id="all-title">전체 시안 · 20종</h2><div class="grid" id="samples"></div></section>
+<footer>내장 imagegen으로 제작한 그림체 비교 시안입니다. 게임 적용 전 원화이며 모든 이미지의 원본을 보존했습니다.</footer>
+<dialog id="viewer" aria-labelledby="viewer-title"><div class="viewer-head"><h2 id="viewer-title"></h2><div><button type="button" id="prev" aria-label="이전 시안">← 이전</button><button type="button" id="next" aria-label="다음 시안">다음 →</button><button type="button" id="close">닫기 ×</button></div></div><img id="viewer-image" class="viewer-image" alt="" draggable="false"></dialog>
+</main>
+<script>
+(()=>{
+const root=document.getElementById('waterway-gallery');
+const samples=[{"id":1,"name":"조선 민화","file":"images/01-minhwa.png"},{"id":2,"name":"흑백 수묵","file":"images/02-ink-wash.png"},{"id":3,"name":"맑은 수채화","file":"images/03-watercolor.png"},{"id":4,"name":"청색 목판화","file":"images/04-woodblock.png"},{"id":5,"name":"셀 애니메이션","file":"images/05-cel-animation.png"},{"id":6,"name":"동화책 과슈","file":"images/06-gouache.png"},{"id":7,"name":"32비트 픽셀","file":"images/07-pixel-art.png"},{"id":8,"name":"겹종이 공예","file":"images/08-paper-cut.png"},{"id":9,"name":"리노컷 판화","file":"images/09-linocut.png"},{"id":10,"name":"아르누보 포스터","file":"images/10-art-nouveau.png"},{"id":11,"name":"두꺼운 유화","file":"images/11-oil-impasto.png"},{"id":12,"name":"색연필 드로잉","file":"images/12-colored-pencil.png"},{"id":13,"name":"파스텔 분필","file":"images/13-chalk-pastel.png"},{"id":14,"name":"펜화와 옅은 채색","file":"images/14-pen-engraving.png"},{"id":15,"name":"로우폴리 3D","file":"images/15-low-poly.png"},{"id":16,"name":"클레이 미니어처","file":"images/16-clay-diorama.png"},{"id":17,"name":"펠트 자수","file":"images/17-felt-applique.png"},{"id":18,"name":"스테인드글라스","file":"images/18-stained-glass.png"},{"id":19,"name":"나전칠기","file":"images/19-mother-of-pearl.png"},{"id":20,"name":"네온 설화","file":"images/20-neon-folklore.png"}];
+const label=s=>String(s.id).padStart(2,'0')+' · '+s.name;
+const get=id=>samples.find(s=>s.id===Number(id))||samples[0];
+const viewer=root.querySelector('#viewer');
+let current=1;
+for(const slot of ['a','b']){
+ const select=root.querySelector('#pick-'+slot);
+ for(const s of samples){const option=document.createElement('option');option.value=s.id;option.textContent=label(s);select.append(option)}
+ select.value=slot==='a'?1:8;
+ select.addEventListener('change',()=>update(slot,true));
+ root.querySelector('#open-'+slot).addEventListener('click',()=>open(select.value));
+}
+function update(slot,announce=false){
+ const s=get(root.querySelector('#pick-'+slot).value);
+ const img=root.querySelector('#img-'+slot);img.src=s.file;img.alt=label(s)+' 물길 배경';
+ root.querySelector('#caption-'+slot).textContent=label(s);
+ if(announce)root.querySelector('#status').textContent=slot.toUpperCase()+'에 '+label(s)+' 선택';
+}
+function assign(slot,id){root.querySelector('#pick-'+slot).value=id;update(slot,true);root.querySelector('.compare').scrollIntoView({block:'start'});}
+function show(id){current=get(id).id;const s=get(current);root.querySelector('#viewer-title').textContent=label(s)+' / 20';const img=root.querySelector('#viewer-image');img.src=s.file;img.alt=label(s)+' 물길 배경 원화';}
+function open(id){show(id);viewer.showModal();}
+const grid=root.querySelector('#samples');
+for(const s of samples){
+ const article=document.createElement('article');article.className='sample';article.dataset.id=s.id;
+ const imageButton=document.createElement('button');imageButton.type='button';imageButton.className='image-open';imageButton.setAttribute('aria-label',label(s)+' 크게 보기');
+ const img=document.createElement('img');img.src=s.file;img.alt=label(s)+' 물길 배경';img.draggable=false;imageButton.append(img);imageButton.addEventListener('click',()=>open(s.id));
+ const heading=document.createElement('h3');heading.textContent=label(s);
+ const actions=document.createElement('div');actions.className='sample-actions';
+ for(const slot of ['a','b']){const button=document.createElement('button');button.type='button';button.textContent=slot.toUpperCase()+'로 비교';button.setAttribute('aria-label',label(s)+'를 '+slot.toUpperCase()+'로 비교');button.addEventListener('click',()=>assign(slot,s.id));actions.append(button)}
+ const link=document.createElement('a');link.href=s.file;link.download=s.file.split('/').pop();link.draggable=false;link.textContent='원본 저장';actions.append(link);
+ article.append(imageButton,heading,actions);grid.append(article);
+}
+root.querySelector('#close').addEventListener('click',()=>viewer.close());
+root.querySelector('#prev').addEventListener('click',()=>show(current===1?20:current-1));
+root.querySelector('#next').addEventListener('click',()=>show(current===20?1:current+1));
+viewer.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'){e.preventDefault();show(current===1?20:current-1)}if(e.key==='ArrowRight'){e.preventDefault();show(current===20?1:current+1)}});
+root.addEventListener('dragstart',e=>e.preventDefault());
+update('a');update('b');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+{
+  "master": "road-master.png",
+  "sourceWidth": 2097,
+  "sourceHeight": 750,
+  "cropY": 304,
+  "cropHeight": 224,
+  "order": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    1
+  ],
+  "generatedBy": "built-in image_gen localized seam repaint",
+  "method": "Circular offset only (no reflection), repaint old wrap seam in image center, circular offset back, crop 7 consecutive PNGs",
+  "tiles": [
+    {
+      "id": 1,
+      "file": "road-01.png",
+      "x": 0,
+      "y": 304,
+      "width": 299,
+      "height": 224,
+      "foot": 48
+    },
+    {
+      "id": 2,
+      "file": "road-02.png",
+      "x": 299,
+      "y": 304,
+      "width": 300,
+      "height": 224,
+      "foot": 48
+    },
+    {
+      "id": 3,
+      "file": "road-03.png",
+      "x": 599,
+      "y": 304,
+      "width": 299,
+      "height": 224,
+      "foot": 48
+    },
+    {
+      "id": 4,
+      "file": "road-04.png",
+      "x": 898,
+      "y": 304,
+      "width": 300,
+      "height": 224,
+      "foot": 48
+    },
+    {
+      "id": 5,
+      "file": "road-05.png",
+      "x": 1198,
+      "y": 304,
+      "width": 299,
+      "height": 224,
+      "foot": 48
+    },
+    {
+      "id": 6,
+      "file": "road-06.png",
+      "x": 1497,
+      "y": 304,
+      "width": 300,
+      "height": 224,
+      "foot": 48
+    },
+    {
+      "id": 7,
+      "file": "road-07.png",
+      "x": 1797,
+      "y": 304,
+      "width": 300,
+      "height": 224,
+      "foot": 48
+    }
+  ]
+}

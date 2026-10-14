@@ -1,0 +1,172 @@
+{
+  "prayer": {
+    "start": [
+      390,
+      475,
+      560,
+      645,
+      730
+    ],
+    "current": [
+      390,
+      475,
+      560,
+      645,
+      730
+    ],
+    "phase": "perform",
+    "poses": [
+      "injured2__healerPray1",
+      "injured2__healerPray1",
+      "injured2__healerPray1",
+      "injured2__healerPray1",
+      "injured2__healerPray1"
+    ]
+  },
+  "healed": {
+    "hero": 200,
+    "allies": [
+      [
+        54.900999999999996,
+        54.900999999999996
+      ],
+      [
+        54.900999999999996,
+        54.900999999999996
+      ],
+      [
+        54.900999999999996,
+        54.900999999999996
+      ],
+      [
+        54.900999999999996,
+        54.900999999999996
+      ],
+      [
+        54.900999999999996,
+        54.900999999999996
+      ],
+      [
+        216.9475,
+        216.9475
+      ]
+    ],
+    "positions": [
+      390,
+      475,
+      560,
+      645,
+      730
+    ],
+    "resumedRegularCare": true,
+    "teamAction": null
+  },
+  "arrows": {
+    "shots": 25,
+    "fifth": 5,
+    "perActor": [
+      5,
+      5,
+      5,
+      5,
+      5
+    ],
+    "launched": 5,
+    "rows": [
+      460,
+      510,
+      560,
+      610,
+      660
+    ],
+    "enemyHP": [
+      {
+        "id": 7,
+        "x": 1150,
+        "hp": 9991.2,
+        "entering": false
+      },
+      {
+        "id": 8,
+        "x": 1300,
+        "hp": 9991.2,
+        "entering": false
+      },
+      {
+        "id": 9,
+        "x": 1951.6965860145115,
+        "hp": 10000,
+        "entering": true
+      }
+    ],
+    "viewport": {
+      "left": 0,
+      "right": 1791.6965860145115,
+      "width": 1791.6965860145115
+    }
+  },
+  "impact": {
+    "remainingEnemies": [
+      {
+        "id": 9,
+        "hp": 9991.2
+      },
+      {
+        "id": 10,
+        "hp": 360
+      }
+    ],
+    "originalEnemyIds": [
+      7,
+      8,
+      9
+    ],
+    "kills": 2,
+    "teamAction": null,
+    "positions": [
+      516,
+      566,
+      616,
+      666,
+      716
+    ],
+    "firingPositions": [
+      460,
+      510,
+      560,
+      610,
+      660
+    ],
+    "allies": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  "cow": {
+    "texture": "cow20",
+    "height": 141,
+    "y": 542,
+    "foot": 0.9408602150537635,
+    "frames": 145,
+    "footAnchors": 1,
+    "motion": {
+      "duration": 0.72,
+      "impact": 0.36,
+      "walkFps": 33.333333333333336,
+      "walkFrames": 48,
+      "runFps": 45.714285714285715,
+      "runFrames": 48,
+      "attackFrames": 48,
+      "idleFrame": 96
+    }
+  },
+  "fresh": {
+    "hook": false,
+    "screen": "map",
+    "canvas": true
+  },
+  "errors": []
+}

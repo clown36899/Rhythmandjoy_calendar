@@ -1,0 +1,9 @@
+{
+  "mode": "builtin image_gen",
+  "asset": "healer-prayer-v55.png",
+  "source": "/Users/inteyeo/.codex/generated_images/01a1288f-ed37-7670-92a8-2d02ce448cc4/exec-d49d94bb-ce67-422a-8c9a-e418a923d2e9.png",
+  "prompt": "Use case: illustration-story. Asset: transparent 2-frame healer prayer sprite sheet for existing game. Image 1 is STYLE/CHARACTER reference ONLY: exactly the same adult Joseon female healer, same rounded face, braid with red ribbon, black traditional square cap, white hanbok coat with blue cuffs, blue skirt, herb basket on back, same warm ink outline and restrained watercolor. Create TWO full-body poses side by side in equal 720x720 cells, horizontal 1440x720 sheet. Left pose: stands firmly on both feet, head tilted toward the sky, both hands rising together before chest. Right pose: head tipped upward, closed gentle eyes, both hands raised and palms opened toward the sky in prayer for healing. NO bandage in hands, no floating items or magical effects. Preserve character height, style and body proportions; reference boots rest on same baseline, generous transparent margin above hands and between cells. Each entire body must remain within its own cell. No background, shadow plate, text, frame labels, extra characters or crops. True transparent background.",
+  "reference": "dist/assets/healer-care-v36.png",
+  "output": "dist/assets/healer-prayer-v55.png",
+  "verification": "104/104 tests; actual browser controls, cast poses, 40 arrow shots, same rider IDs returned, coin arrival counting, mobile 667px controls tested"
+}

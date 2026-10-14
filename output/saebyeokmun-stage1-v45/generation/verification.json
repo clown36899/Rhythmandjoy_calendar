@@ -1,0 +1,65 @@
+{
+  "assets": [
+    {
+      "name": "sky",
+      "width": 1944,
+      "height": 809,
+      "transparentPixels": 0
+    },
+    {
+      "name": "clouds",
+      "width": 1942,
+      "height": 809,
+      "transparentPixels": 857639
+    },
+    {
+      "name": "far",
+      "width": 1944,
+      "height": 809,
+      "transparentPixels": 1067428
+    },
+    {
+      "name": "near0",
+      "width": 1944,
+      "height": 809,
+      "transparentPixels": 389714
+    },
+    {
+      "name": "near1",
+      "width": 1942,
+      "height": 809,
+      "transparentPixels": 486404
+    },
+    {
+      "name": "moon",
+      "width": 1254,
+      "height": 1254,
+      "transparentPixels": 602474
+    }
+  ],
+  "nearSourceSpan": 3726,
+  "overlap": 160,
+  "verifiedViewportSizes": [
+    [
+      667,
+      280
+    ],
+    [
+      844,
+      300
+    ],
+    [
+      1280,
+      720
+    ]
+  ],
+  "tests": 94,
+  "fullSlotOpacity": 1,
+  "minimapBetweenControls": true,
+  "hpScale": 0.7,
+  "heroHp": 200,
+  "typeLimit": 10,
+  "totalLimit": 50,
+  "enemyLoop": "left outside to right outside, preserves id/hp/bornAt/rewards",
+  "allyLoop": false
+}

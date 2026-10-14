@@ -1,0 +1,149 @@
+
+> saebyeokmun-web-demo@0.1.0 test
+> node --test tests/*.test.mjs
+
+✔ fullscreen releases modal input blocking before entry and preserves gameplay after entry/exit (21.31ms)
+✔ fullscreen denial leaves a closable help dialog, preserves pause ownership, and permits retry (3.692292ms)
+✔ fullscreen never resumes a manually paused, backgrounded, ready or ended journey (9.403334ms)
+✔ nested settings close only resumes after the final dialog; fullscreen keeps manual resume and keyboard safe (1.334833ms)
+✔ test stages stay open while actual clears, legacy saves and skill selection remain independent (6.667417ms)
+✔ returning to map closes nested dialogs without resuming the discarded attempt or leaking input (1.316042ms)
+✔ main roster saves test selection without spending and passes the same five slots into the next journey (1.776125ms)
+✔ app win transition credits once, failed attempts pay nothing, and main purchase persists ownership (2.965834ms)
+✔ minimap uses live actor positions and each full summon slot stays identified until capacity opens (2.62225ms)
+✔ unlock starts one ambience loop, pause and mute stop voices, resume never duplicates it (2.576791ms)
+✔ muting during asynchronous loading cannot start delayed background or effects (1.29575ms)
+✔ event mapping uses separate weapon sounds, rate limits footsteps, and preserves ending cue (0.877042ms)
+✔ unavailable sample degrades sound only and volume remains bounded (0.287084ms)
+✔ walking leaves room for combat cues and mobile interruption resumes on unlock (0.252417ms)
+✔ a transient music load failure retries only the missing buffer and concurrent unlocks share one attempt (0.206458ms)
+✔ music starts before a delayed effect, respects pause/mute, and context recovery restores at most one loop (0.872875ms)
+✔ clear settlement pays one recorded run, preserves capped battle purse and survives reload (1.319459ms)
+✔ purchases debit once, insufficient funds never grant ownership; free test selection does not forge purchases (0.553958ms)
+✔ corrupt campaign fields cannot introduce unknown units, invalid parties or negative money (0.610542ms)
+✔ selected roster owns starter, summon permissions, cooldowns and automatic helper capacity (2.231791ms)
+✔ four new companions resolve attacks once and cancel dead targets using shared impact/flight timing (1.094625ms)
+✔ a hit owns one damage label; paused and repeated draws never allocate more (5.898458ms)
+✔ all combat effect families expire with finite coordinates and no draw-time allocations (12.525542ms)
+✔ reset disposes every active image and label, and a new journey can show effects again (0.316333ms)
+✔ mixed and overlapping allies keep one ground through death, resummon, pause and retreat (5.064208ms)
+✔ joining reinforcements never pull the camera backwards; rear support and manual retreat stay visible (208.548833ms)
+✔ damage bands follow existing health, recover, reuse textures and preserve original foot origin (1.182916ms)
+✔ river reflections follow current cels and facing, reuse one continuous image during pause and dispose hidden/dead actors (0.292ms)
+✔ authored road remains joined at every camera position and parallax drawing never changes battle state (4.522042ms)
+✔ boss casting pose without melee direction remains finite and does not move the model (0.631ms)
+✔ projectile presentation shares the live flight clock and contact starts at zero age (0.592334ms)
+✔ surface sockets follow authored poses, flip and recoil; worsening damage retains the first scar (0.321584ms)
+✔ healing display uses actual capped amount, follows the patient, freezes and disposes once (0.766166ms)
+✔ ally wince cels use the actual hit timer and return to the held walk without changing feet or facing (0.247042ms)
+✔ boss cloud rolls on the game clock, charges with the real windup and disperses after death without allocations (0.242959ms)
+✔ arrival follows the actual ally without changing its ground, size or combat state (0.148625ms)
+✔ gate health stages and destruction fragments render existing state without changing damage, awards or allocation (0.767583ms)
+✔ ally death uses buckling and collapsed cels, pauses, then finishes after terminal loss without changing the model (0.39125ms)
+✔ non-reaper enemy departures show four whole-body poses on the ground before fading (0.440875ms)
+✔ every enemy entrance finishes by time even when stationary at the gate or knocked back into it (0.401542ms)
+✔ patient-specific recovery follows moving bodies and prioritizes walking, attack, injury and brush upgrade (0.493ms)
+✔ idle uses a stopped interval, preserves feet and neutral body scale, pauses and immediately yields to travel and shelter (1.157ms)
+✔ distant Joseon battle synchronizes projectile, recoil and reply, freezes on the game clock and never creates combatants (2.525375ms)
+✔ stage yokai keep support-foot registration and two defeat cels through pause (2.801792ms)
+✔ Joseon helper cels use the shared ally walk, attack, hurt and death paths (0.437334ms)
+✔ party travels right through a continuous road and can retreat within its boundary (6.643584ms)
+✔ a live enemy blocks walking through the frontline (1.17825ms)
+✔ summoning spends once and respects cooldown and full team limit (0.535167ms)
+✔ unaffordable actions never create units or negative coins (0.184458ms)
+✔ high talismans miss the skirt while a ground stomp hurts, interrupts, and pushes it (1.381625ms)
+✔ targeting prioritizes a reaper in range and interrupts its ritual (0.238166ms)
+✔ a whiff without a target costs no coins or cooldown (0.128125ms)
+✔ pause freezes movement, elapsed time, resources and actions (0.282334ms)
+✔ hail damages on landing and shelter cast during the fall blocks it (0.767625ms)
+✔ all stage gates stay at the world end, cannot attack or be pushed, and must collapse before a clear (1.662583ms)
+✔ failure is terminal and finish is emitted only once (0.176208ms)
+✔ restart clears enemies, cooldowns and results (0.073125ms)
+✔ complete seeded journey can be won using normal player actions with bounded resources (1114.976292ms)
+✔ without support the expedition can lose instead of drifting to an automatic victory (7.572916ms)
+✔ frontline ox guards direct attacks but not attacks from behind or overhead (0.302667ms)
+✔ rabbit aims at a tall target behind a skirt and fires once at its impact frame (0.378833ms)
+✔ a rabbit shot cannot retarget a vanished target or hit an out-of-range target (0.310834ms)
+✔ defenders march ahead, attackers stay behind, and stopped feet hold the last walking cel (14.063667ms)
+✔ both animation previews and live actions use the same walk and impact frames (0.569375ms)
+✔ automatic and manual walking advance the pose by distance rather than wall clock (0.827375ms)
+✔ hit reaction records the attack direction without adding gameplay displacement (0.158417ms)
+✔ night moon and daytime sun follow time even while standing, freeze on pause, and never switch stage (9.913208ms)
+✔ hit and defeat income fills the same bounded wallet used by summons without double rewards (0.229291ms)
+✔ each monster winds up, impacts once toward its selected target, and keeps the existing ox guard (0.976208ms)
+✔ pending enemy strikes freeze while paused, cancel under stun, and never retarget a dead or escaped ally (0.258416ms)
+✔ stone attacks low targets, brush training updates existing and future keepers once per journey (0.683542ms)
+✔ scholar seals the first reachable target at the shared impact clock (0.439041ms)
+✖ mounted rush charges only during its action, hits each crossed foe once, and returns to walking (10.455084ms)
+✔ recovery caps living party health, consumes once and does not revive dead allies (0.439667ms)
+✔ physician reuses summon limits and heals the locked living target once on her bandage cel (1.327083ms)
+✔ physician never retargets a dead or escaped patient; healthy parties keep walking (0.46775ms)
+✔ umbrella blocks frontal melee, missiles and overhead but keeps rear damage, expiry and cast costs (0.444375ms)
+✔ three unique known skills form a loadout; corrupt saved selections are rejected (0.105333ms)
+✔ every overlapping defender approaches and deals its own timed damage without waiting for another to die (6.093083ms)
+✔ all automatic arrivals originate at the final world gate independent of viewport and hero position (7.857125ms)
+✔ enemy whole-body walks use actual travel and stop under attack, stun and pause (2.035167ms)
+✔ companion HP tuning preserves every existing enemy wave scale and prevents stacking (5.281458ms)
+✔ projectile contact owns damage, reward and control exactly once; pause, death, miss and restart are safe (0.993458ms)
+✔ ally defeat emits one presentation departure, no coin reward, and cannot revive on healing (0.4315ms)
+✔ enemy damage and restoration share the 15 percent reduction including missiles and charge (0.267208ms)
+✔ first contact survives a closer arrival; simultaneous overlap chooses the painted foreground on both sides (0.437875ms)
+✔ combat slots separate types, overlap cows, and do not leash manual movement or a rush (11.742083ms)
+✔ each stage guardian impacts once, respects shelter, survives knockback, and releases its gate only on death (1.326125ms)
+✔ physician approaches, wraps, returns and cancels safely while using the existing action clock (0.83025ms)
+✔ physician follows moving patients, keeps healing rate, and interrupts her return for new wounds (2.108792ms)
+✔ stage two helpers join once at separate waves, never as enemies or paid summons (0.744041ms)
+✔ helper spear impacts once and helper arrow waits for one real flight contact (0.117459ms)
+✔ ten of each selected companion fit the fifty limit; rejected calls preserve IDs, money and cooldowns (0.303375ms)
+✖ screen entries walk from outside; allies never escape either side and a passed enemy returns on the right with its identity intact (0.400375ms)
+✔ a free helper waits for a full team, arrives once after a slot opens, and cannot overflow capacity (0.647125ms)
+ℹ tests 95
+ℹ suites 0
+ℹ pass 93
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1301.231792
+
+✖ failing tests:
+
+test at tests/journey.test.mjs:209:1
+✖ mounted rush charges only during its action, hits each crossed foe once, and returns to walking (10.455084ms)
+  AssertionError [ERR_ASSERTION]: knockback cannot pull a pending arrival out of the portal
+  
+  4680 !== 4480
+  
+      at TestContext.<anonymous> (file:///Users/inteyeo/Downloads/saebyeokmun-web-demo/tests/journey.test.mjs:224:81)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+      at Test.postRun (node:internal/test_runner/test:1173:19)
+      at Test.run (node:internal/test_runner/test:1101:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:744:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 4680,
+    expected: 4480,
+    operator: 'strictEqual'
+  }
+
+test at tests/journey.test.mjs:503:1
+✖ screen entries walk from outside; allies never escape either side and a passed enemy returns on the right with its identity intact (0.400375ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  4280 !== 8260
+  
+      at TestContext.<anonymous> (file:///Users/inteyeo/Downloads/saebyeokmun-web-demo/tests/journey.test.mjs:514:61)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+      at Test.postRun (node:internal/test_runner/test:1173:19)
+      at Test.run (node:internal/test_runner/test:1101:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:744:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 4280,
+    expected: 8260,
+    operator: 'strictEqual'
+  }

@@ -1,0 +1,117 @@
+{
+  "mode": "built-in image_gen",
+  "junctions": {
+    "wood-entry": {
+      "prompt": "Use case: precise-object-edit. Asset type: transparent horizontal side-view painted game path junction. Image 1 is the edit target, 600x280 native composition. Repair ONLY the middle 240px band x180..420 around the bad vertical join x300. Left stone path meets right wooden bridge. Paint a compact solid stone abutment at the join; wooden board ends rest directly on that abutment with a readable contact edge, and the timber beam extends right, preserving the wood post at x440. Connect the left stone support profile to the abutment naturally.\nMaintain a physically continuous flat walking surface at y80 (28.6% from the top), with no step or hole at the material junction. Keep the existing two different materials; join them through a deliberately drawn opaque structural contact, never by fading them into one another. Broad restrained blue-grey watercolor stone faces, soft sage moss and thin charcoal ink contours exactly as the target, preserving the original level of detail. No extra texture, stippling, glitter, flowers or sharp facets.\nOutside x180..420 preserve the original artwork and silhouettes exactly as context; do not shift, zoom, enlarge or change the camera/composition. Preserve transparent background, transparent space above/below and existing open bridge spans. No water, ground fill, scenery, characters, text or borders. Output is the SAME full 600:280 composition with only the center repaired.",
+      "generated": "/Users/inteyeo/.codex/generated_images/01a1288f-ed37-7670-92a8-2d02ce448cc4/exec-2d589b7e-056f-4d91-a445-5129c7a8d1bd.png",
+      "replacement": {
+        "sourceX": 180,
+        "width": 240,
+        "height": 280,
+        "alphaBlend": false
+      }
+    },
+    "wood-exit": {
+      "prompt": "Use case: precise-object-edit. Asset type: transparent horizontal side-view painted game path junction. Image 1 is the edit target, 600x280 native composition. Repair ONLY the middle 240px band x180..420 around the bad vertical join x300. Left wooden bridge meets right stone path. Preserve the timber beam and wood post at x110. Repaint the join as one compact stone abutment that receives the board ends and continues into the right path. Simplify the tall rock stack at the join so it does not stick through the walking surface.\nMaintain a physically continuous flat walking surface at y80 (28.6% from the top), with no step or hole at the material junction. Keep the existing two different materials; join them through a deliberately drawn opaque structural contact, never by fading them into one another. Broad restrained blue-grey watercolor stone faces, soft sage moss and thin charcoal ink contours exactly as the target, preserving the original level of detail. No extra texture, stippling, glitter, flowers or sharp facets.\nOutside x180..420 preserve the original artwork and silhouettes exactly as context; do not shift, zoom, enlarge or change the camera/composition. Preserve transparent background, transparent space above/below and existing open bridge spans. No water, ground fill, scenery, characters, text or borders. Output is the SAME full 600:280 composition with only the center repaired.",
+      "generated": "/Users/inteyeo/.codex/generated_images/01a1288f-ed37-7670-92a8-2d02ce448cc4/exec-fbfa643d-d9f1-4712-84fd-ad9f9447f839.png",
+      "replacement": {
+        "sourceX": 180,
+        "width": 240,
+        "height": 280,
+        "alphaBlend": false
+      }
+    },
+    "steps-entry": {
+      "prompt": "Use case: precise-object-edit. Asset type: transparent horizontal side-view painted game path junction. Image 1 is the edit target, 600x280 native composition. Repair ONLY the middle 240px band x180..420 around the bad vertical join x300. Left deep stone path bank meets right low stepping-stone approach. Sculpt the end of the left bank into a solid sloping stone abutment beneath the same level walking surface, leading to the first broad flat stepping stone on the right. It must be a natural bank ending, not a vertical sliced cliff or transparent blend.\nMaintain a physically continuous flat walking surface at y80 (28.6% from the top), with no step or hole at the material junction. Keep the existing two different materials; join them through a deliberately drawn opaque structural contact, never by fading them into one another. Broad restrained blue-grey watercolor stone faces, soft sage moss and thin charcoal ink contours exactly as the target, preserving the original level of detail. No extra texture, stippling, glitter, flowers or sharp facets.\nOutside x180..420 preserve the original artwork and silhouettes exactly as context; do not shift, zoom, enlarge or change the camera/composition. Preserve transparent background, transparent space above/below and existing open bridge spans. No water, ground fill, scenery, characters, text or borders. Output is the SAME full 600:280 composition with only the center repaired.",
+      "generated": "/Users/inteyeo/.codex/generated_images/01a1288f-ed37-7670-92a8-2d02ce448cc4/exec-60137bcd-48ba-463a-a15b-9eec8da00d44.png",
+      "replacement": {
+        "sourceX": 180,
+        "width": 240,
+        "height": 280,
+        "alphaBlend": false
+      }
+    },
+    "steps-exit": {
+      "prompt": "Use case: precise-object-edit. Asset type: transparent horizontal side-view painted game path junction. Image 1 is the edit target, 600x280 native composition. Repair ONLY the middle 240px band x180..420 around the bad vertical join x300. Left stepping stones and their low rocky bank meet right stone path. Close the accidental vertical gap at x300 by painting a solid low stone landing and compact bank supporting the right path. Keep the natural underside hollow of the right bridge farther right and the open stepping-stone water gaps farther left.\nMaintain a physically continuous flat walking surface at y80 (28.6% from the top), with no step or hole at the material junction. Keep the existing two different materials; join them through a deliberately drawn opaque structural contact, never by fading them into one another. Broad restrained blue-grey watercolor stone faces, soft sage moss and thin charcoal ink contours exactly as the target, preserving the original level of detail. No extra texture, stippling, glitter, flowers or sharp facets.\nOutside x180..420 preserve the original artwork and silhouettes exactly as context; do not shift, zoom, enlarge or change the camera/composition. Preserve transparent background, transparent space above/below and existing open bridge spans. No water, ground fill, scenery, characters, text or borders. Output is the SAME full 600:280 composition with only the center repaired.",
+      "generated": "/Users/inteyeo/.codex/generated_images/01a1288f-ed37-7670-92a8-2d02ce448cc4/exec-7fd55294-a156-478c-be9e-7d69b758557a.png",
+      "replacement": {
+        "sourceX": 180,
+        "width": 240,
+        "height": 280,
+        "alphaBlend": false
+      }
+    }
+  },
+  "sections": [
+    {
+      "name": "돌다리",
+      "x": 0,
+      "width": 680,
+      "frame": "path0",
+      "height": 280,
+      "foot": 80,
+      "sourceY": 0,
+      "sourceHeight": 280
+    },
+    {
+      "name": "나무다리",
+      "x": 680,
+      "width": 1000,
+      "frame": "path1",
+      "height": 280,
+      "foot": 80,
+      "sourceY": 0,
+      "sourceHeight": 280
+    },
+    {
+      "name": "수풀길",
+      "x": 1680,
+      "width": 340,
+      "frame": "path2",
+      "height": 280,
+      "foot": 80,
+      "sourceY": 0,
+      "sourceHeight": 280
+    },
+    {
+      "name": "돌길",
+      "x": 2020,
+      "width": 200,
+      "frame": "path3",
+      "height": 280,
+      "foot": 80,
+      "sourceY": 0,
+      "sourceHeight": 280
+    },
+    {
+      "name": "징검다리",
+      "x": 2220,
+      "width": 800,
+      "frame": "path4",
+      "height": 280,
+      "foot": 80,
+      "sourceY": 0,
+      "sourceHeight": 280
+    },
+    {
+      "name": "수풀길",
+      "x": 3020,
+      "width": 260,
+      "frame": "path5",
+      "height": 280,
+      "foot": 80,
+      "sourceY": 0,
+      "sourceHeight": 280
+    },
+    {
+      "name": "돌길",
+      "x": 3280,
+      "width": 356,
+      "frame": "path6",
+      "height": 280,
+      "foot": 80,
+      "sourceY": 0,
+      "sourceHeight": 280
+    }
+  ]
+}

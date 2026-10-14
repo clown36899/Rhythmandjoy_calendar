@@ -1,0 +1,19 @@
+{
+  "native": {
+    "id": "appgdep_6acba23732f081918d79afe35efdaeb8",
+    "project_id": "appgprj_6ac73ea81b1c8191814da13af6605280",
+    "title": "새벽문 — 귀물 수비대",
+    "version_id": "appgprj_6ac73ea81b1c8191814da13af6605280~appgver_be76613e3e348191b81dadfe9249ed1f",
+    "type": "publish",
+    "status": "succeeded",
+    "url": "https://saebyeokmun-paper-guard.azurecharm1.chatgpt.site",
+    "has_mcp": false,
+    "screenshot_asset_pointer": null,
+    "provider_deployment_id": "site---6ac73ea81b1c8191814da13af6605280",
+    "failure_message": null,
+    "env_set_revision": 0,
+    "updated_at": "2026-10-11T14:50:58.240338+00:00"
+  },
+  "publicBrowser": "### Result\n{\"url\":\"https://xn--xy1b23ggrmm5bfb82ees967e.com/games/saebyeokmun/?v=48&updated=1\",\"version\":\"./app.js?v=48\",\"screen\":\"game\",\"area\":\"망각의 나루\",\"overflow\":0,\"draggable\":0,\"images\":[{\"url\":\"https://xn--xy1b23ggrmm5bfb82ees967e.com/games/saebyeokmun/assets/waterway-left-v48.png\",\"status\":200},{\"url\":\"https://xn--xy1b23ggrmm5bfb82ees967e.com/games/saebyeokmun/assets/waterway-left-v48.png\",\"status\":200},{\"url\":\"https://xn--xy1b23ggrmm5bfb82ees967e.com/games/saebyeokmun/assets/waterway-right-v48.png\",\"status\":200}]}\n### Ran Playwright code\n```js\nawait (async page=>{await page.setViewportSize({width:1280,height:720});await page.goto('https://xn--xy1b23ggrmm5bfb82ees967e.com/games/saebyeokmun/?v=48&updated=1',{waitUntil:'domcontentloaded',timeout:30000});const version=await page.locator('script[type=module]').getAttribute('src');if(version!=='./app.js?v=48')throw new Error('unexpected version '+version);await page.waitForFunction(()=>!document.querySelector('#enter-map').disabled,{timeout:55000});await page.locator('#enter-map').click();await page.locator('#stage-2').click();await page.locator('#start').click();await page.locator('#action-keeper').click();await page.setViewportSize({width:844,height:300});await page.keyboard.down('ArrowRight');await page.waitForTimeout(1500);await page.keyboard.up('ArrowRight');await page.screenshot({path:'/Users/inteyeo/Rhythmjoy_calendar/output/saebyeokmun-v48-public-water.png'});return await page.evaluate(()=>({url:location.href,version:document.querySelector('script[type=module]').getAttribute('src'),screen:document.body.dataset.screen,area:document.querySelector('#area-label').textContent,overflow:document.documentElement.scrollWidth-innerWidth,draggable:[...document.images].filter(i=>i.draggable).length,images:performance.getEntriesByType('resource').filter(e=>/waterway-(left|right)-v48/.test(e.name)).map(e=>({url:e.name,status:e.responseStatus}))}));})(page);\n```\n### Page\n- Page URL: https://xn--xy1b23ggrmm5bfb82ees967e.com/games/saebyeokmun/?v=48&updated=1\n- Page Title: 새벽문 — 길 끝까지 함께\n- Console: 0 errors, 1 warnings\n### Events\n- New console entries: .playwright-mcp/console-2026-10-11T03-13-19-734Z.log#L41-L42",
+  "cacheObservation": "Browser visited v48 URL before atomic replacement and retained v47 HTML. Read-only no-store fetch returned v48; new updated URL loaded v48 and both new water assets HTTP200. No server cache/configuration changes."
+}

@@ -1,0 +1,8 @@
+Scope: local foreground artwork only. No game runtime, combat, database, queue, server configuration or deployment changes.
+Existing implementation: partly available. Reused v42 transparent road master, seven consecutive crops and repeat preview. The missing part was an authored non-mirrored 7-to-1 connection.
+Symptom path: request matching edge motifs -> image_gen authored bilateral flower/reed groups -> circular repetition placed those groups around the seam -> visibly reflected composition despite continuous height.
+Protection retained: continuous walking surface, transparent empty background and arch, fixed ordered sequence, zero reflection transforms, original source and v42 preserved for rollback.
+Common cause correction: circularly offset the master so the original wrap seam was internal; image_gen repainted that region as asymmetrical diagonal granite/moss; circularly offset back and recropped all seven files. No symptom-specific runtime exception or duplicate terrain system.
+Validation: seven PNGs decoded; stitched crop pixels equal corrected master exactly (zero differing channels); wrap edges both occupy y21..187 in cropped coordinates; 180-pixel wrap neighborhoods are not mirror copies (mean RGB absolute difference 51.13/255), also visually reviewed. Inline data is a compressed display preview; full PNG originals are retained.
+Preview validation: repeat playback, pause, full seven-section view and wrap close-up work. At 320px viewport, no horizontal overflow and zero draggable images. Fragment is 296048 bytes; no document wrapper tags, unresolved placeholders or escaped newlines.
+Excluded: game/combat/DB regression checks because those paths are unchanged. Runtime integration and deployment remain outside this artwork request.

@@ -1,0 +1,84 @@
+{
+  "master": "road-master.png",
+  "sourceWidth": 2098,
+  "sourceHeight": 750,
+  "cropY": 320,
+  "cropHeight": 208,
+  "order": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    1
+  ],
+  "generatedBy": "built-in image_gen",
+  "splitBy": "macOS sips (crop only, no resampling)",
+  "tiles": [
+    {
+      "id": 1,
+      "file": "road-01.png",
+      "x": 0,
+      "y": 320,
+      "width": 299,
+      "height": 208,
+      "foot": 32
+    },
+    {
+      "id": 2,
+      "file": "road-02.png",
+      "x": 299,
+      "y": 320,
+      "width": 300,
+      "height": 208,
+      "foot": 32
+    },
+    {
+      "id": 3,
+      "file": "road-03.png",
+      "x": 599,
+      "y": 320,
+      "width": 300,
+      "height": 208,
+      "foot": 32
+    },
+    {
+      "id": 4,
+      "file": "road-04.png",
+      "x": 899,
+      "y": 320,
+      "width": 299,
+      "height": 208,
+      "foot": 32
+    },
+    {
+      "id": 5,
+      "file": "road-05.png",
+      "x": 1198,
+      "y": 320,
+      "width": 300,
+      "height": 208,
+      "foot": 32
+    },
+    {
+      "id": 6,
+      "file": "road-06.png",
+      "x": 1498,
+      "y": 320,
+      "width": 300,
+      "height": 208,
+      "foot": 32
+    },
+    {
+      "id": 7,
+      "file": "road-07.png",
+      "x": 1798,
+      "y": 320,
+      "width": 300,
+      "height": 208,
+      "foot": 32
+    }
+  ]
+}

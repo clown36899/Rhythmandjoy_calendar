@@ -1,8 +1,8 @@
-import {DEFAULT_PARTY,UNITS,validParty,TEST_MODE,STAGES} from './data.js?v=48';
+import {DEFAULT_PARTY,UNITS,validParty,TEST_MODE,STAGES} from './data.js?v=66';
 // Local progression is separate from Journey's capped battle purse. No cash purchases.
 export class Campaign {
  constructor(saved={}){
-  this.cleared=Array.isArray(saved?.cleared)?[...new Set(saved.cleared.filter(i=>Number.isInteger(i)&&STAGES[i]))]:[];
+  this.cleared=Array.isArray(saved?.cleared)?[...new Set(saved.cleared.filter(i=>Number.isInteger(i)&&STAGES[i]).map(i=>(saved.routeVersion??1)<2&&i===9?STAGES.length-1:i))]:[];
   this.balance=Number.isSafeInteger(saved?.balance)&&saved.balance>=0?saved.balance:0;
   this.owned=[...new Set([...DEFAULT_PARTY,...(Array.isArray(saved?.owned)?saved.owned.filter(k=>Object.hasOwn(UNITS,k)):[])])];
   this.party=validParty(saved?.party)&&(TEST_MODE||saved.party.every(k=>this.owned.includes(k)))?[...saved.party]:[...DEFAULT_PARTY];
@@ -20,5 +20,5 @@ export class Campaign {
   this.balance-=s.price;this.owned.push(kind);return true;
  }
  select(party){if(!validParty(party)||(!TEST_MODE&&party.some(k=>!this.owned.includes(k))))return false;this.party=[...party];return true;}
- snapshot(){return {cleared:[...this.cleared],balance:this.balance,owned:[...this.owned],party:[...this.party],run:this.run,settled:this.settled};}
+ snapshot(){return {routeVersion:2,cleared:[...this.cleared],balance:this.balance,owned:[...this.owned],party:[...this.party],run:this.run,settled:this.settled};}
 }

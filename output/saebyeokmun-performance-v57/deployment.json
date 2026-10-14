@@ -1,0 +1,12 @@
+{
+  "project_id": "appgprj_6ac73ea81b1c8191814da13af6605280",
+  "version_id": "appgprj_6ac73ea81b1c8191814da13af6605280~appgver_660fb968f3d08191b97ae4ddfe25b7d1",
+  "version_number": 28,
+  "commit_sha": "c911aeed7affd662689bb302443e1339871fe00e",
+  "deployment_id": "appgdep_6acc453ec3b48191bced8204c6e07384",
+  "status": "succeeded",
+  "url": "https://saebyeokmun-paper-guard.azurecharm1.chatgpt.site",
+  "updated_at": "2026-10-12T02:26:32.483429+00:00",
+  "archive": "/Users/inteyeo/Downloads/saebyeokmun-web-demo/.openai/saebyeokmun-v57.tar.gz",
+  "verification": "104 tests passed; 50 allies / 10 enemies browser performance comparison; actual pause/resume and mobile opacity/drag/overflow; native succeeded response verifies publication"
+}

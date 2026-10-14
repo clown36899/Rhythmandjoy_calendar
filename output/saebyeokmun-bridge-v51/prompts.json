@@ -1,0 +1,29 @@
+{
+  "mode": "built-in image_gen",
+  "stone": {
+    "file": "stone-connected.png",
+    "dimensions": [
+      2424,
+      280
+    ],
+    "original": "/Users/inteyeo/Rhythmjoy_calendar/output/saebyeokmun-bridge-v49/bridge-center.png",
+    "sourceCrop": {
+      "x": 86,
+      "y": 380,
+      "width": 1212,
+      "height": 280
+    },
+    "joinPrompt": "Repair the abrupt vertical join in this existing hand-painted bridge strip. Image 1 is the actual join at original pixel scale. Keep the left and right stones exactly as painted. Repaint only the narrow central band x210..290, where the two paintings meet at x250, so the same stones, worn walking ledge and low moss shapes flow naturally across the join without a vertical line. Match the existing hand-drawn blue-grey ink/watercolor washes and restrained detail; do not add fine texture or extra foliage. Blend the uneven lower rocky silhouette organically and keep the foot surface level. Do not redesign the rest, smooth/blur the painting, enlarge the stones, add dots/facets or sharpen anything. Keep the 500x280 layout and pixel scale. Replace the plain grey area outside the bridge with genuine transparency, while leaving the stone painting untouched outside the central repair. No new objects or text.",
+    "note": "Approved seam composition baked into both native period ends, two unreflected repetitions; no repaint outside each 80px join band."
+  },
+  "wood": {
+    "file": "wood-bridge.png",
+    "prompt": "Use case: stylized-concept. Create a low old wooden footbridge segment for this exact Korean moonlit ink-and-watercolor painting. Input image is the approved stone bridge: match its hand, native scale, charcoal contour weight, cool subdued colors and restrained watercolor washes. Change the bridge material to broad weathered wood planks and a few simple supporting beams; put small grey stone abutments at both ends so it joins the stone path. Side-on platform-game view, same 1944x809 canvas, walking deck stays level near y456, underside near y595; open transparent space under the wooden span. Keep the wood in muted grey-brown/taupe, soft broad painted faces with only a few grain strokes. Sparse subdued moss at the stone ends. No dense wood grain, stippling, carved facets, photorealistic texture, added decorative flowers or extra greenery. No high railings across the walking line. Preserve genuine transparent background, no water, landscape, sky, characters or text. One natural asymmetric bridge, no mirroring. Exact same drawing style as the reference, do not embellish it.",
+    "status": "confirmation sample only"
+  },
+  "verification": {
+    "tests": 95,
+    "passed": 95
+  },
+  "runtime": "local source and www mirror only"
+}

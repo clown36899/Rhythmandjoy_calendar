@@ -1,6 +1,6 @@
 // One audio owner. User-provided music + credited effects; see assets/audio/LICENSES.txt.
 const NAMES=['step-heavy','step-light','stomp','seed','charm','guard','swipe','hurt','summon','heal','shelter','hail','warning','charge','hex','win','lose','coin','stone','ink','seal','horn','ascend','ambience'];
-const LEVELS={'step-heavy':.18,'step-light':.13,coin:.22,swipe:.38,guard:.62,warning:.8,summon:.65,heal:.55,seal:.68,charm:.68,hex:.7,ascend:.6};
+const LEVELS={'step-heavy':.18,'step-light':.13,coin:.32,swipe:.38,guard:.62,warning:.8,summon:.65,heal:.55,seal:.68,charm:.68,hex:.7,ascend:.6};
 export class Soundscape {
  constructor({contextFactory=()=>new (window.AudioContext||window.webkitAudioContext)(),fetcher=(url)=>fetch(url),onState=()=>{}}={}){
   this.contextFactory=contextFactory;this.fetcher=fetcher;this.onState=onState;this.enabled=true;this.musicEnabled=true;this.effectsEnabled=true;this.playing=false;this.volume=.55;this.buffers=new Map();this.voices=new Set();this.lastPlayed=new Map();this.ambient=null;this.ambientOffset=0;this.loaded=null;this.missing=[];
@@ -15,7 +15,7 @@ export class Soundscape {
   if(!this.loaded&&pending.length){
    this.onState('loading');this.missing=[];
    this.loaded=Promise.all(pending.map(async name=>{
-    try{const response=await this.fetcher('./assets/audio/'+name+(name==='ambience'?'.mp3?v=39':'.wav?v=31'));if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));if(name==='ambience')this.syncAmbience();}
+    try{const response=await this.fetcher('./assets/audio/'+name+(name==='ambience'?'.mp3?v=39':name==='coin'?'.wav?v=67':'.wav?v=31'));if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));if(name==='ambience')this.syncAmbience();}
     catch{this.missing.push(name);}
    })).then(()=>{this.onState(this.missing.length?'partial':'ready');this.syncAmbience();}).finally(()=>{this.loaded=null;});
   }
@@ -36,7 +36,7 @@ export class Soundscape {
  }
  play(name,{gain=1,pan=0,allowIdle=false}={}){
   if(!this.enabled||!this.effectsEnabled||(!this.playing&&!allowIdle)||!this.context)return;
-  const now=this.context.currentTime,step=name.startsWith('step-'),limit=step?.18:name==='coin'?.24:.09;
+  const now=this.context.currentTime,step=name.startsWith('step-'),limit=step?.18:name==='coin'?.55:.09;
   if(now-(this.lastPlayed.get(name)??-100)<limit)return;
   if(step&&this.voices.size>=7)return;
   if(this.voices.size>=12){
@@ -56,7 +56,9 @@ export class Soundscape {
   if(e.type==='rush')name='charge';
   if(e.type==='upgrade')name='heal';
   if(e.type==='finish'){this.setPlaying(false);this.play(e.status==='won'?'win':'lose',{allowIdle:true});return;}
-  if(['hail-impact','quake-impact','tide-impact'].includes(e.type))name=e.blocked?'guard':'stomp';
+  if(['hail-impact','quake-impact','tide-impact','boss-impact'].includes(e.type))name=e.blocked?'guard':'stomp';
+  if(e.type==='portal-open')name='warning';
+  if(e.type==='portal-close'||e.type==='gate-break')name='ascend';
   if(!NAMES.includes(name)||name==='ambience')return;
   this.play(name,{gain:e.type==='projectile'?.45:1,pan:((e.x??e.from??heroX)-heroX-150)/900});
  }

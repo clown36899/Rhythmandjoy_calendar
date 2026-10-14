@@ -1,0 +1,103 @@
+{
+  "mode": "built-in image_gen for new artwork; approved artwork composed with browser canvas",
+  "status": "local game source and www mirror applied; no external deployment",
+  "reference": "/Users/inteyeo/Rhythmjoy_calendar/output/saebyeokmun-bridge-v50/bridge-original.png",
+  "atlas": {
+    "file": "terrain-atlas.png",
+    "width": 3636,
+    "height": 280,
+    "foot": 80,
+    "sections": [
+      {
+        "name": "돌다리",
+        "x": 0,
+        "width": 680,
+        "frame": "path0",
+        "height": 280,
+        "foot": 80,
+        "sourceY": 0,
+        "sourceHeight": 280
+      },
+      {
+        "name": "나무다리",
+        "x": 680,
+        "width": 1000,
+        "frame": "path1",
+        "height": 280,
+        "foot": 80,
+        "sourceY": 0,
+        "sourceHeight": 280
+      },
+      {
+        "name": "수풀길",
+        "x": 1680,
+        "width": 340,
+        "frame": "path2",
+        "height": 280,
+        "foot": 80,
+        "sourceY": 0,
+        "sourceHeight": 280
+      },
+      {
+        "name": "돌길",
+        "x": 2020,
+        "width": 200,
+        "frame": "path3",
+        "height": 280,
+        "foot": 80,
+        "sourceY": 0,
+        "sourceHeight": 280
+      },
+      {
+        "name": "징검다리",
+        "x": 2220,
+        "width": 800,
+        "frame": "path4",
+        "height": 280,
+        "foot": 80,
+        "sourceY": 0,
+        "sourceHeight": 280
+      },
+      {
+        "name": "수풀길",
+        "x": 3020,
+        "width": 260,
+        "frame": "path5",
+        "height": 280,
+        "foot": 80,
+        "sourceY": 0,
+        "sourceHeight": 280
+      },
+      {
+        "name": "돌길",
+        "x": 3280,
+        "width": 356,
+        "frame": "path6",
+        "height": 280,
+        "foot": 80,
+        "sourceY": 0,
+        "sourceHeight": 280
+      }
+    ]
+  },
+  "generation": {
+    "steps": {
+      "file": "steps.png",
+      "prompt": "Use case: stylized-concept. Draw a short stepping-stone crossing for the exact moonlit Korean ink-and-watercolor painting in the reference. Match the same hand, native stone size, blue-grey broad watercolor faces, charcoal contours and quiet sage moss. Canvas 1944x809; the crossing occupies only x550..1350, with genuine transparency everywhere else. Put five or six low, broad, flat stepping stones in a horizontal line, their worn foot tops at y456, rock bottoms near y535..575. Narrow natural transparent water gaps between stones, and small matching stone banks at the two ends. Flat readable rock faces with a few large painted tones, no added granulated texture or micro-facets. Stone sizes and brush scale match the reference, no embellishment or flower bouquets. No water painting, landscape, people, shadows on the background, text or UI. No mirror symmetry. This will be inserted into the existing path at its original pixel scale."
+    },
+    "brush": {
+      "file": "brush.png",
+      "prompt": "Use case: stylized-concept. Paint ONLY a few small low roadside plant clumps to add to the existing Korean moonlit watercolor stone path in the reference. Match its muted sage, olive and blue-grey ink washes, charcoal brush outlines, subdued ivory grass tips and exact native brush scale. Genuine transparent canvas 1944x809. Place 3 sparse asymmetric low clumps between x600 and x1200; their root line is y456, their tallest leaves near y408. A few simple grass blades and low fern/shrub leaf shapes with generous transparent space between them. Broad soft watercolor shapes, restrained detail. Do not paint or redesign any stones, bridge, road, ground, water, mountains or sky. No dense leaf stippling, extra flowers, shiny highlights or photographic texture. No characters or text. Quiet plants through which the party walks, not a big hedge.",
+      "used": "only above-foot plants; generated duplicate road discarded"
+    }
+  },
+  "approvedWood": "/Users/inteyeo/Rhythmjoy_calendar/output/saebyeokmun-bridge-v51/wood-bridge.png",
+  "assembly": "compose.js",
+  "verification": {
+    "testsPassed": 95,
+    "browserCameraPositions": 22,
+    "browserFailures": 0,
+    "loopBordersUnchanged": true,
+    "openWoodSpan": true
+  }
+}

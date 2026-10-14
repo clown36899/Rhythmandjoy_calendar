@@ -165,6 +165,17 @@ The user completes only the platform login/second-factor step. The recovery
 service verifies both calendars before restarting the watcher. If the failure
 repeats, compare these records before naming a cause:
 
+The mini PC also has `kiosk-page-watchdog.timer`, which can restart the kiosk
+while a login window is open. Pause that existing timer and its service for the
+manual login, then restore them after authentication and watcher recovery.
+Verify the physical display as well as process state. Use the automation's
+existing browser launcher and password store for manual login; an independently
+launched default Chrome can save cookies using a different encryption backend.
+On Chrome 147, an observed `Emulation.setDeviceMetricsOverride` error was traced
+to the browser's own Omnibox Popup targets. The automation profile now has the
+existing `webui-omnibox-aim-popup` and `webui-omnibox-popup` settings disabled;
+the reservation code and other browser profiles are unchanged.
+
 ```text
 /home/kiosk-j/rhythmjoy-logs/spacecloud-watch/session-diagnostics.jsonl
 /home/kiosk-j/rhythmjoy-logs/spacecloud-watch/session-check-state.json

@@ -1,0 +1,131 @@
+{
+  "mode": "built-in image_gen",
+  "prompts": {
+    "roof": {
+      "path": "/Users/inteyeo/Rhythmjoy_calendar/output/saebyeokmun-bridge-v51/wood-bridge.png",
+      "prompt": "Use case: precise-object-edit. Image 1 is the edit target, transparent 1944x809 game scenery. Preserve the entire existing wooden deck, planks, stone banks, timber underside, top walking surface at y460, scale and silhouettes exactly. Add a Korean tiled roof above the middle wooden bridge, a quiet side-view covered wooden bridge. Roof spans x540..1390, ridge near y100, eaves near y240, supported by three slender rear timber columns ending at the existing deck y460. Keep the passage open and airy: columns behind the walking lane, no tall front balustrade, no wall or door. Traditional grey-blue gently curved roof tiles drawn with few soft strokes, muted warm wood, restrained charcoal outlines, watercolor broad surfaces matching the target exactly. Do not add stronger texture, small grain, facets, moss stipple, extra flowers or saturation. Existing deck endpoints and stone banks must remain unchanged, full opacity at structural contacts, no fade or ghost rocks. Transparent background remains clear above, through the passage and below the span. No moon, mountains, background, people, water or text. Same 1944:809 composition."
+    },
+    "willow": {
+      "path": "/Users/inteyeo/Rhythmjoy_calendar/output/saebyeokmun-bridge-v50/bridge-original.png",
+      "prompt": "Use case: precise-object-edit. Image 1 is the edit target, transparent 1944x809 game scenery. Preserve the entire existing stone path, rocks, moss, walking surface at y460, scale and silhouette exactly. Add a tall willow grove BEHIND the central walking lane: three graceful old willow trunks at roughly x520,950,1390, branches high in the upper part y40..230 with long sparse hanging willow fronds down to y300..370. The trunks meet the REAR edge of the stone bank at y450; they never cover the walking lane. Broad open silhouettes, soft muted sage leaves, blue-grey shadow, subdued warm charcoal ink contours and the same restrained watercolor brushwork as the target. Lots of height, with open space between hanging branches so the moonlit mountains remain visible. Keep all path and rock pixels and both outer 300px of the original strip unchanged; grove tapers naturally, no tree chopped by an edge. Do not increase ground texture, add photoreal leaves, grain or tiny noisy detail. All tree/stone contacts are solid painted structures, no fading or ghost transparency at connections. True transparent empty background. No water, sky, moon, mountains, characters, text or border. Same 1944:809 composition."
+    }
+  },
+  "generated": {
+    "roof": "/Users/inteyeo/.codex/generated_images/01a1288f-ed37-7670-92a8-2d02ce448cc4/exec-54e54ca6-184c-48c9-8da9-061b0ce83c47.png",
+    "willow": "/Users/inteyeo/.codex/generated_images/01a1288f-ed37-7670-92a8-2d02ce448cc4/exec-7dcd5eb5-b35e-47cf-98af-2dc73355de95.png"
+  },
+  "sections": [
+    {
+      "x": 0,
+      "width": 680,
+      "frame": "path0",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    },
+    {
+      "x": 680,
+      "width": 1000,
+      "frame": "path1",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    },
+    {
+      "x": 1680,
+      "width": 340,
+      "frame": "path2",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    },
+    {
+      "x": 2020,
+      "width": 200,
+      "frame": "path3",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    },
+    {
+      "x": 2220,
+      "width": 800,
+      "frame": "path4",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    },
+    {
+      "x": 3020,
+      "width": 260,
+      "frame": "path5",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    },
+    {
+      "x": 3280,
+      "width": 356,
+      "frame": "path6",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    },
+    {
+      "x": 3636,
+      "width": 680,
+      "frame": "path7",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    },
+    {
+      "x": 4316,
+      "width": 1000,
+      "frame": "path8",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    },
+    {
+      "x": 5316,
+      "width": 1212,
+      "frame": "path9",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    },
+    {
+      "x": 6528,
+      "width": 744,
+      "frame": "path10",
+      "height": 720,
+      "foot": 500,
+      "sourceY": 0,
+      "sourceHeight": 720
+    }
+  ],
+  "asset": {
+    "width": 7272,
+    "height": 720,
+    "foot": 500,
+    "alphaBlend": false
+  },
+  "stage1": {
+    "start": 220,
+    "roadEnd": 8180,
+    "gateX": 8260,
+    "waves": 12,
+    "enemySpeedScale": 0.8
+  }
+}
