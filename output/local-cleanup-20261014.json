@@ -1,6 +1,6 @@
 {
   "date": "2026-10-14",
-  "status": "backup prepared; deletion requires successful remote verification",
+  "status": "completed",
   "existing_implementation": "Git history and .gitignore already own backup/exclusion; no application code or schema added",
   "protection": "Keep login profiles, customer data, database/ledger files and live www bytes; public Git excludes private runtime data",
   "cause": "Historical game copies and generated Chrome models/caches accumulated locally",
@@ -93,5 +93,16 @@
     "Current branch and original staging index preserved"
   ],
   "excluded_checks": "No application code or DB changes: live booking, SMS, payment and deployment tests are outside cleanup scope",
-  "restore": "For output artwork, git restore --source=codex/local-backup-20261014 --worktree -- output/<directory>. For canonical copies, git archive <canonical_restore commit> www/games/saebyeokmun | tar -x -C <restored directory>. Chrome regenerates removed component/cache data."
+  "restore": "For output artwork, git restore --source=codex/local-backup-20261014 --worktree -- output/<directory>. For canonical copies, git archive <canonical_restore commit> www/games/saebyeokmun | tar -x -C <restored directory>. Chrome regenerates removed component/cache data.",
+  "backup_commit_before_deletion": "9e39988a6d647aefb35887830be9a9cb2b9a3120",
+  "remote_backup_verified": true,
+  "removed_files": 6648,
+  "removed_bytes": 5699374821,
+  "retained_files_sha256_verified": 5367,
+  "before_disk_kib": 7458288,
+  "after_disk_kib": 2014128,
+  "net_disk_saved_kib": 5444160,
+  "main_branch_unchanged": true,
+  "original_index_unchanged": true,
+  "deployed": false
 }
