@@ -12,7 +12,7 @@
 <title>다섯개의 나라</title>
 <link rel="stylesheet" href="./style.css?v=90">
 <script defer src="./game/phaser.min.js"></script>
-<script type="module" src="./app.js?v=102"></script>
+<script type="module" src="./app.js?v=103"></script>
 </head>
 <body data-screen="map">
 <svg class="journey-icons" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -80,7 +80,7 @@
 <div class="control-deck">
 <div class="movement">
 <div class="move-pair"><button id="move-left" aria-label="왼쪽 이동" data-hold="-1">←</button><button id="move-right" aria-label="오른쪽 이동" data-hold="1">→</button></div>
-<button id="auto" aria-pressed="true" class="auto-button"><i></i> 자동 전진</button>
+<button id="auto" aria-pressed="false" class="auto-button"><i></i> 자동 전진</button>
 <span id="party-count" class="party-count">동료 1 / 50</span>
 </div>
 <div id="battle-minimap" class="battle-minimap" role="img" aria-label="전장 미니맵" draggable="false"><span class="minimap-label">미니맵 <i class="ally-dot"></i>아군 <i class="enemy-dot"></i>적</span><svg viewBox="0 0 240 46" aria-hidden="true" focusable="false"><path d="M8 23H232"/><rect id="minimap-view" x="8" y="5" width="224" height="36" rx="3"/><g id="minimap-points"></g></svg></div>

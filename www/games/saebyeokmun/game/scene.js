@@ -1,6 +1,6 @@
 import {HEALER_VIDEO} from './healer-motion.js?v=100';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=101';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=101';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=103';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=103';
 import {AssetDownloads} from './downloads.js?v=70';
 import {ASSET_BYTES} from './asset-sizes.js?v=102';
 const P=window.Phaser;
@@ -108,8 +108,17 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const area=AREAS[index];if(!area.paintingSingle&&!area.roadTiles&&area.ground!=='water')keys.add(area.ground);
    return [...keys];
   }
-  loadFiles(keys,onProgress=()=>{}){
-   const job=(this.loadQueue||Promise.resolve()).catch(()=>{}).then(()=>this.consumeFiles(keys,onProgress));this.loadQueue=job;return job;
+  observeLoad(job,onProgress){
+   if(!onProgress)return job;
+   const observers=this.loadObservers??=new Set();observers.add(onProgress);
+   if(this.loadProgress)onProgress(this.loadProgress);
+   return job.finally(()=>observers.delete(onProgress));
+  }
+  loadFiles(keys,onProgress){
+   const job=(this.loadQueue||Promise.resolve()).catch(()=>{}).then(async()=>{
+    try{return await this.consumeFiles(keys,p=>{this.loadProgress=p;for(const fn of this.loadObservers||[])fn(p);});}
+    finally{this.loadProgress=null;}
+   });this.loadQueue=job;return this.observeLoad(job,onProgress);
   }
   async consumeFiles(keys,onProgress=()=>{}){
    const missing=[...new Set(keys)].filter(k=>!this.loadedFiles.has(k)),files=missing.map(k=>this.files.get(k)).sort((a,b)=>(a.type==='json'?0:1)-(b.type==='json'?0:1));
@@ -133,7 +142,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
 
   async ensureCommon(onProgress){
    if(this.commonReady)return;
-   if(this.commonPromise)return this.commonPromise;
+   if(this.commonPromise)return this.observeLoad(this.commonPromise,onProgress);
    this.commonPromise=(async()=>{
     await this.loadFiles(this.commonKeys,onProgress);
     const cowNames=[...Array.from({length:48},(_,i)=>'cow'+i),...Array.from({length:48},(_,i)=>'cowRun'+i),...Array.from({length:48},(_,i)=>'cow'+(48+i)),'cow96',...Array.from({length:29},(_,i)=>'cowEmotion'+i),'hurtcow',...Array.from({length:MOTION.cow.angerFrames},(_,i)=>'cowAnger'+i),...Array.from({length:12},(_,i)=>'cowRageRun'+i)];
@@ -599,8 +608,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const rx=this.registrationX.get(image.texture.key)??.5;
    image.setOrigin(image.flipX?1-rx:rx,this.grounding.get(image.texture.key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,groundY).setAngle(0);
    if(AREAS[model.stage].ground==='water'){const pulse=.5+.5*Math.sin(model.time*2+x*.02);this.shadows.lineStyle(1,0xeaf5ff,.28);this.shadows.strokeEllipse(x,groundY+2,Math.min(130,image.displayWidth*.8)+pulse*9,10+pulse*3);return;}
-   this.shadows.fillStyle(0x554b36,.15);this.shadows.fillEllipse(x,groundY+2,Math.min(145,image.displayWidth*.77),9);
-   this.shadows.fillStyle(0x524731,.29);this.shadows.fillEllipse(x,groundY+1,Math.min(105,image.displayWidth*.6),3.5);
+   this.shadows.fillStyle(0x18221f,.24);this.shadows.fillEllipse(x,groundY+3,Math.min(180,image.displayWidth*.78),12);
+   this.shadows.fillStyle(0x101916,.48);this.shadows.fillEllipse(x,groundY+1,Math.min(135,image.displayWidth*.6),5);
   }
   trackContact(key,kind,walk,moving,x,groundY=GROUND){
    const beat=Math.floor(walk*MOTION[kind].walkFps/(MOTION[kind].walkFrames||4)*2),previous=this.contacts.get(key);
@@ -741,7 +750,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    v.treating=treating;v.elapsed=action?.elapsed??0;
    if(moving||action||hit>0||!idleAllowed)v.idleSince=clock;
-   let name=hit>0?'hurt':action?.kind===kind&&kind!=='healer'?'attack':moving?(model.direction>0?'run':'walk'):treating?v.cast:'idle';
+   const running=kind==='healer'?action?.phase==='approach':model.direction!==0;
+   let name=hit>0?'hurt':action?.kind===kind&&kind!=='healer'?'attack':moving?(running?'run':'walk'):treating?v.cast:'idle';
    let recoveryFrame=null;
    if(name==='idle'&&!action){
     const recovery=this.recoveryCel(kind,kind==='healer'?Number(key.slice(1)):null);
@@ -749,12 +759,14 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const age=clock-v.idleSince,slot=Math.floor((age-8)/14),within=(age-8)%14;
     if(!recovery&&age>8){if(v.slot!==slot){v.slot=slot;v.idle=Math.random()<.5?'dance':'annoyed';}if(within<6)name=v.idle;}
    }
-   if(v.state!==name){v.state=name;v.since=clock;v.walkAt=walk;}
-   const spec=clips[name],elapsed=moving&&kind!=='healer'?Math.max(0,walk-(v.walkAt??0)):clock-v.since;
-   let frame=recoveryFrame??Math.floor(elapsed*spec.fps)%spec.frames;
+   if(v.state!==name){v.state=name;v.since=clock;}
+   // Supplied videos keep their source cadence. Travel distance must not slow auto walking.
+   const spec=clips[name],elapsed=Math.max(0,clock-v.since);
+   const cycle=moving&&spec.cycles?.[0],loopStart=cycle?.start??0,loopFrames=cycle?cycle.end-loopStart+1:spec.frames;
+   let frame=recoveryFrame??loopStart+Math.floor(elapsed*spec.fps)%loopFrames;
    if(treating&&name===v.cast){const cue=spec.cycles[v.cycle],t=action.elapsed,clock=MOTION.healer;frame=Math.round(t<=clock.impact?cue.start+(cue.impact-cue.start)*Math.min(1,t/clock.impact):cue.impact+(cue.end-cue.impact)*Math.min(1,(t-clock.impact)/(clock.duration-clock.impact)));}
    if(name==='attack'&&spec.cue){const cue=spec.cue,t=action.elapsed,span=kind==='girl'?{impact:0,duration:.85}:MOTION[kind];frame=Math.round(t<span.impact?cue.start+(cue.impact-cue.start)*t/span.impact:cue.impact+(cue.end-cue.impact)*Math.min(1,(t-span.impact)/(span.duration-span.impact)));}
-   const soundCycle=Math.floor(elapsed/(spec.frames/spec.fps)),playing=model.status==='playing';
+   const soundCycle=Math.floor(elapsed/(loopFrames/spec.fps)),playing=model.status==='playing';
    if(spec.audio&&(v.soundState!==name||v.soundCycle!==soundCycle||v.soundPlaying!==playing)){
     v.soundState=name;v.soundCycle=soundCycle;v.soundPlaying=playing;
     onEvents([{type:'motion-audio',actor:key,sound:playing?kind+'-'+name:null,offset:frame/spec.fps,x:kind==='healer'?model.allies.find(a=>'a'+a.id===key)?.x:model.x}]);
@@ -774,7 +786,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const spec=TEAM_SKILLS.arrowRain,t=action.elapsed-(spec.firstRelease-spec.volleyInterval*.5),frame=t<0||t>=spec.volleys*spec.volleyInterval?0:4+Math.min(3,Math.floor(t%spec.volleyInterval/spec.volleyInterval*4));
     image.setTexture('archer'+frame).setFlipX(false);
    }
-   if(!enemy&&type==='cow'&&moving&&!action&&moving>0&&(model.direction>0||model.enemies.some(e=>e.hp>0&&e.x>=x-55&&e.x<x+550)))image.setTexture('cowRun'+Math.floor(walk*MOTION.cow.runFps)%MOTION.cow.runFrames);
+   if(!enemy&&type==='cow'&&moving&&!action&&moving>0&&model.enemies.some(e=>e.hp>0&&e.x>=x-55&&e.x<x+550))image.setTexture('cowRun'+Math.floor(walk*MOTION.cow.runFps)%MOTION.cow.runFrames);
    if(!enemy&&type==='cow'){
     // Presentation uses the existing action/distance clocks; it never changes combat.
     const alerted=model.allies.find(a=>'a'+a.id===key)?.alerted;
@@ -1107,16 +1119,15 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const scaledDt=rawDt*rate,dt=playing?Math.max(0,scaledDt-this.hitStop):rawDt;
    if(playing){this.hitStop=Math.max(0,this.hitStop-scaledDt);this.impactCooldown=Math.max(0,this.impactCooldown-scaledDt);}
    const intro=model.status==='ready',vw=this.vw;
-   // Share the entry/clamp footprint: joining at the left edge cannot pull the camera back.
-   // Rear support stays visible; the freely moving traveller retains the same camera bounds.
-   // Advance the existing camera and simulation together in bounded substeps.
-   // Multiplying a single step would discard time at the model's .1s guard.
+   // One camera follows the traveller inside the existing 28–65% safe region.
+   // A dead zone preserves immediate stopping; companions cannot move the camera.
+   // Keep bounded simulation steps, including accelerated observer playback.
    const steps=playing?Math.max(1,Math.ceil(dt/.05)):1,stepDt=dt/steps;
    for(let i=0;i<steps;i++){
-    const partyLeft=Math.min(model.x-145,...model.allies.filter(a=>a.hp>0&&!a.entering).map(a=>a.x-model.screenPadding(a.type)*.5));
-    const targetOffset=intro?(time/1000*30)%4800:Math.max(Math.min(0,model.gateX-vw+model.portalInset),Math.min(model.gateX-vw+model.portalInset,Math.max(model.x-vw*.65,Math.min(model.x-vw*.28,partyLeft))));
-    this.offset+=(targetOffset-this.offset)*Math.min(1,stepDt*8);if(!intro)this.offset=Math.min(this.offset,model.gateX-vw+model.portalInset);
     if(model.status==='playing'){model.setViewport(this.offset,vw);model.step(stepDt);}
+    const targetOffset=intro?(time/1000*30)%4800:Math.max(Math.min(0,model.gateX-vw+model.portalInset),Math.min(model.gateX-vw+model.portalInset,Math.max(model.x-vw*.65,Math.min(model.x-vw*.28,this.offset))));
+    if(intro)this.offset+=(targetOffset-this.offset)*Math.min(1,stepDt*8);else this.offset=targetOffset;
+    if(model.status==='playing')model.setViewport(this.offset,vw);
    }
    const events=model.drainEvents();this.playEvents(events);onEvents(events);
    const t=intro?time/1000:model.time;
@@ -1132,7 +1143,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    const heroX=intro?vw*.68:model.x-this.offset;
    const walking=intro||model.moving!==0;
-   if(playing)this.heroPose=Math.max(0,this.heroPose-dt);
+   if(playing)this.heroPose=model.moving?0:Math.max(0,this.heroPose-dt);
    const sheltering=!intro&&model.shield>0&&model.shieldKind!=='water',mounted=!intro&&(model.action?.kind==='rush'||sheltering);
    const opening=sheltering?6-model.shield:0;
    const heroFrame=sheltering?(opening<.6?Math.min(3,Math.floor(opening/.15)):walking?4+motionFrame('haetae',model.walk,true,null):7):mounted?(model.action.elapsed<.18?4:Math.floor(model.action.elapsed*14)%4):motionFrame('haetae',intro?t:model.walk,walking,intro?null:model.action);
@@ -1147,7 +1158,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.hero.setTexture(this.injuryTexture(haetaeBase,mounted?'mount':'haetae',intro?MAX_HP:model.hp,MAX_HP)).setFlipX(sheltering||intro||model.action?false:model.moving?model.moving<0:this.hero.flipX);
    this.placeOnGround(this.hero,heroX+37,sheltering?BODY_HEIGHT.umbrella:mounted?BODY_HEIGHT.mount:intro?150:BODY_HEIGHT.haetae);
    this.girl.setTexture(this.injuryTexture(girlBase,'girl',intro?MAX_HP:model.hp,MAX_HP)).setFlipX(intro||this.heroPose>0?false:model.moving?model.moving<0:this.girl.flipX);
-   this.placeOnGround(this.girl,heroX-60,intro?145:117);
+   this.placeOnGround(this.girl,heroX-60,intro?145:BODY_HEIGHT.girl);
    this.hero.setVisible(model.hp>0);this.girl.setVisible(!mounted&&model.hp>0);
    if(heroHurt){this.hero.setTint(0xffb39c);this.girl.setTint(0xffb39c);}else{this.hero.clearTint();this.girl.clearTint();}
    if(!intro){this.trackContact('haetae','haetae',model.walk,model.moving,model.x+37);if(!mounted)this.trackContact('girl','girl',model.walk,model.moving,model.x-60);}
@@ -1169,8 +1180,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const boss=model.enemies.find(e=>e.type==='boss');
    this.drawBossCloud(boss,t);
    this.ward.setVisible(false);
-   this.waterWard?.setVisible(!intro&&model.shield>0&&model.shieldKind==='water'&&model.hp>0);
-   if(this.waterWard?.visible){const pulse=1+Math.sin(t*4)*.015,h=BODY_HEIGHT.haetae*2.12*pulse;this.waterWard.setPosition(heroX+3,GROUND+12).setDisplaySize(h,h).setAlpha(Math.min(1,model.shield/.5)*.85).setAngle(Math.sin(t*2)*1.2);this.root.bringToTop(this.waterWard);}
+   this.waterWard?.setVisible(!intro&&model.waterWard>0&&model.hp>0);
+   if(this.waterWard?.visible){const w=SKILLS.waterWard.radius*2;this.waterWard.setPosition(heroX,GROUND+12).setDisplaySize(w,w*.60).setAlpha(Math.min(1,model.waterWard/.5)*.85).setAngle(0);this.root.bringToTop(this.waterWard);}
    if(sheltering){
     const cx=heroX+37+this.hero.displayWidth*.16,cy=GROUND-this.hero.displayHeight*.73,radius=this.hero.displayHeight*.31,alpha=Math.min(1,model.shield)*Math.min(1,opening/.45);
     this.fx.lineStyle(9,0x69c7ae,.12*alpha);this.fx.beginPath();this.fx.arc(cx,cy,radius,-Math.PI*.68,Math.PI*.12);this.fx.strokePath();

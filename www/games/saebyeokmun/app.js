@@ -1,9 +1,9 @@
 import {Campaign} from './game/campaign.js?v=70';
-import {Journey} from './game/model.js?v=101';
+import {Journey} from './game/model.js?v=103';
 import {Autoplay} from './game/autoplay.js?v=70';
-import {makeGame} from './game/scene.js?v=102';
+import {makeGame} from './game/scene.js?v=103';
 import {Soundscape} from './game/audio.js?v=101';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=101';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=103';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -384,7 +384,7 @@ function onFrame(m,s){
  }
  if(now-lastFrame<70)return;lastFrame=now;
  renderAutoplay();
- $('hero-state').textContent=m.invincible?'테스트 · 무적':m.hp<=0?'잠시 쉬어 가기':m.shield>0?(m.shieldKind==='water'?'물의 수호막으로 보호 중':'우산으로 보호 중'):m.action?.kind==='rush'?'해태 돌진':m.action?'합동 공격':m.moving?'길을 걷는 중':'위험';
+ $('hero-state').textContent=m.invincible?'테스트 · 무적':m.hp<=0?'잠시 쉬어 가기':m.shield>0?(m.waterWard>0?'우산·물의 수호막으로 보호 중':'우산으로 보호 중'):m.waterWard>0?'물의 수호막으로 보호 중':m.action?.kind==='rush'?'해태 돌진':m.action?'합동 공격':m.moving?'길을 걷는 중':'위험';
  $('health-fill').style.width=(m.hp/MAX_HP*100)+'%';$('hp-text').textContent=Math.ceil(m.hp)+' / '+MAX_HP;
  const fraction=m.progress(),progress=Math.floor(fraction*100),sky=skyState(fraction,m.time,m.status==='ready'?s.previewAreaIndex:m.stage),moonMix=sky.night;
  $('distance').textContent=progress+'%';$('route-fill').style.width=fraction*100+'%';document.querySelector('.route-dot').style.left=fraction*100+'%';
@@ -410,10 +410,10 @@ function onFrame(m,s){
  $('callout').hidden=m.status==='ready'||m.status==='won'||m.status==='lost'||(m.time-m.lastHintAt>7&&now>noticeUntil);
  for(const [name,baseSpec] of Object.entries({...UNITS,...SKILLS})){
   const spec=UNITS[name]?unitStats(name,m.keeperRank):baseSpec;
-  const button=$('action-'+name),cd=m.cooldowns[name],full=!!UNITS[name]&&m.atSummonLimit(name);if(!button)continue;button.disabled=m.status!=='playing'||cd>0||m.coins<spec.cost||full||(['rush','stomp'].includes(name)&&!!m.action);
-  button.dataset.state=m.status!=='playing'?'idle':full?'full':cd>0?'cooldown':m.coins<spec.cost?'cost':button.disabled?'full':'ready';
+  const button=$('action-'+name),cd=m.cooldowns[name],full=!!UNITS[name]&&m.atSummonLimit(name);if(!button)continue;button.disabled=m.status!=='playing'||cd>0||m.coins<spec.cost||full||(name==='charm'&&!!m.moving)||(['rush','stomp'].includes(name)&&!!m.action);
+  button.dataset.state=m.status!=='playing'?'idle':full?'full':cd>0?'cooldown':m.coins<spec.cost?'cost':button.disabled?'idle':'ready';
   button.querySelector('.cooldown').style.height=(cd/spec.cooldown*100)+'%';button.style.setProperty('--cooldown-turn',Math.max(0,Math.min(1,cd/spec.cooldown))+'turn');
-  button.title=spec.name+(spec.role?' · '+spec.role:'')+' · '+(button.dataset.state==='full'?'동료가 가득해요':cd>0?cd.toFixed(1)+'초 뒤':button.dataset.state==='cost'?'엽전 '+Math.ceil(spec.cost-m.coins)+' 부족 · 필요 '+spec.cost:spec.cost+' 엽전');
+  button.title=spec.name+(spec.role?' · '+spec.role:'')+' · '+(name==='charm'&&m.moving?'멈춘 뒤 사용 가능':button.dataset.state==='full'?'동료가 가득해요':cd>0?cd.toFixed(1)+'초 뒤':button.dataset.state==='cost'?'엽전 '+Math.ceil(spec.cost-m.coins)+' 부족 · 필요 '+spec.cost:spec.cost+' 엽전');
   button.setAttribute('aria-label',button.title);if(UNITS[name])button.querySelector('.unit-count').textContent=m.countAllies(name)+'/'+ALLY_TYPE_LIMIT;
   let badge=button.querySelector('.countdown');
   if(cd>0&&!full){if(!badge){badge=document.createElement('span');badge.className='countdown';button.append(badge);}badge.textContent=Math.ceil(cd);}
@@ -443,14 +443,15 @@ function onFrame(m,s){
 }
 function updateDownload(p){
  const mb=n=>(n/1048576).toFixed(1);
- $('download-progress').value=p.percent;$('download-percent').textContent=p.percent+'%';
- $('download-bytes').textContent=`${mb(p.loaded)} / ${mb(p.total)} MB · 남은 용량 ${mb(Math.max(0,p.total-p.loaded))} MB`;
- $('download-state').textContent=p.phase==='prepare'?'준비 중':'다운로드';
+ if(p.phase==='waiting'){$('download-progress').removeAttribute('value');$('download-percent').textContent='준비 중';}
+ else{$('download-progress').value=p.percent;$('download-percent').textContent=p.percent+'%';}
+ $('download-bytes').textContent=p.total?`${mb(p.loaded)} / ${mb(p.total)} MB · 남은 용량 ${mb(Math.max(0,p.total-p.loaded))} MB`:'필요한 그림을 확인하고 있어요.';
+ $('download-state').textContent=p.phase==='prepare'?`그림·동작 준비 ${p.prepared} / ${p.prepareTotal}`:p.phase==='waiting'?'준비 중':'다운로드';
 }
 async function prepareFor(title,work,retry){
  if(preparing)return false;preparing=true;const epoch=++entryEpoch;retryAssets=retry;
  $('download-title').textContent=title;$('download-retry').hidden=true;$('download-state').textContent='확인 중';
- updateDownload({loaded:0,total:0,percent:0});
+ updateDownload({loaded:0,total:0,percent:0,phase:'waiting'});
  fitPhoneDialogs();$('asset-loading').showModal();
  try{await work(p=>{if(epoch===entryEpoch)updateDownload(p);});if(epoch!==entryEpoch)return false;$('asset-loading').close();document.querySelectorAll('[data-icon]').forEach(img=>{const src=scene.previewTexture(img.dataset.icon);if(src)img.src=src;});return true;}
  catch(error){if(epoch===entryEpoch){$('download-state').textContent=error.message;$('download-retry').hidden=false;}return false;}

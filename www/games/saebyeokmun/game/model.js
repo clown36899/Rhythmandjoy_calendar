@@ -1,11 +1,11 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=101';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=103';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
  reset(){
   this.status='ready';this.party=[...DEFAULT_PARTY];this.time=0;this.x=START;this.furthest=START;this.hp=MAX_HP;this.coins=70;
-  this.auto=true;this.invincible=false;this.tour=false;this.portal=null;this.direction=0;this.allies=[];this.enemies=[];this.projectiles=[];this.events=[];this.nextId=0;this.stage=0;this.gateBrokenAt=null;
-  this.viewport=null;this.helperArrivals=new Map();this.teamAction=null;this.wave=0;this.heroAttack=0;this.shield=0;this.shieldKind=null;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS),...Object.keys(TEAM_SKILLS)].map(k=>[k,0]));
+  this.auto=false;this.invincible=false;this.tour=false;this.portal=null;this.direction=0;this.allies=[];this.enemies=[];this.projectiles=[];this.events=[];this.nextId=0;this.stage=0;this.gateBrokenAt=null;
+  this.viewport=null;this.helperArrivals=new Map();this.teamAction=null;this.wave=0;this.waveClearAt=null;this.heroAttack=0;this.shield=0;this.waterWard=0;this.shieldKind=null;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS),...Object.keys(TEAM_SKILLS)].map(k=>[k,0]));
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='집으로 가는 길을 동료와 함께 열어요.';
   delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
  }
@@ -23,18 +23,17 @@ export class Journey {
    const speed=ENEMIES[actor.type].speed,edge=actor.entryOrigin-this.screenPadding(actor.type)*.5,gap=actor.x-edge;
    if(gap<=0){actor.entering=false;return false;}const travel=Math.min(gap,speed*this.enemySpeedScale*dt);actor.x-=travel;actor.walk+=travel/speed;actor.moving=-1;if(travel>=gap)actor.entering=false;return true;
   }
-  if(!this.viewport||!actor.entering)return false;const dir=enemy?-1:1,pad=this.screenPadding(actor.type)*.5,edge=enemy?this.viewport.right-pad:this.viewport.left+pad,gap=(edge-actor.x)*dir;
+  if(!this.viewport||!actor.entering)return false;const dir=enemy?-1:1,pad=this.screenPadding(actor.type)*.5,edge=enemy?this.viewport.right-pad:(actor.entryOrigin??this.viewport.left)+pad,gap=(edge-actor.x)*dir;
   if(gap<=0){actor.entering=false;return false;}const speed=(enemy?ENEMIES:UNITS)[actor.type].speed,travel=Math.min(gap,speed*(enemy?this.enemySpeedScale:1)*dt);actor.x+=dir*travel;actor.moving=dir;actor.walk+=travel/speed;if(travel>=gap)actor.entering=false;return true;
  }
- constrainScreen(previous=null){
+ constrainScreen(){
   const bounds=this.viewport;if(!bounds)return;
-  for(const a of this.allies){if(a.hp<=0)continue;const pad=this.screenPadding(a.type),left=bounds.left+pad*.5,right=bounds.right-pad*.5;
-   if(a.entering){if(a.x<left)continue;a.entering=false;}
-   const before=a.x;a.x=clamp(a.x,left,Math.max(left,right));const old=previous?.get(a.id);if(old&&a.x!==before){a.moving=Math.sign(a.x-old.x);a.walk=old.walk+Math.abs(a.x-old.x)/UNITS[a.type].speed;}
-  }
   for(const e of this.enemies){if(e.hp<=0||ENEMIES[e.type].stationary)continue;const pad=this.screenPadding(e.type);
    if(e.entering){if(Number.isFinite(e.entryOrigin)||e.x>bounds.right-pad*.5)continue;e.entering=false;}
-   if(e.x<bounds.left-pad){e.x=e.entryOrigin=this.portalX;e.entryAt=this.time;e.entering=true;e.action=null;e.windup=0;delete e.engagedId;}
+   if(e.x<bounds.left-pad){
+    // A portal crossing cancels the old contact, even if the new position is close to the old aim point.
+    for(const shot of this.projectiles)if(!shot.enemy&&shot.targetId===e.id)shot.targetId=null;
+    e.x=e.entryOrigin=this.portalX;e.entryAt=this.time;e.entering=true;e.action=null;e.windup=0;delete e.engagedId;}
    else e.x=Math.min(e.x,bounds.right-pad*.5);
   }
  }
@@ -52,7 +51,7 @@ export class Journey {
  progress(){return clamp((this.furthest-START)/(this.roadEnd-START),0,1);}
  addAlly(type,x){const s=UNITS[type];if(!s||this.atSummonLimit(type))return null;
   // Same-kind companions share their slot; adding one never pushes an existing body.
-  const entering=x===undefined&&!!this.viewport;if(x===undefined)x=entering?this.viewport.left-this.screenPadding(type):this.x-65;const a={entering,bornAt:this.time,id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
+  const entering=x===undefined&&!!this.viewport;if(x===undefined)x=entering?this.viewport.left-this.screenPadding(type):this.x-65;const a={entering,entryOrigin:entering?this.viewport.left:null,bornAt:this.time,id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
  spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={entering:!!this.viewport&&x>this.viewport.right,id:++this.nextId,type,x,bornAt:this.time,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:s.ability?.initial??Infinity,walk:0,moving:0};this.enemies.push(a);if(isBoss(type)){this.bossSpawned=true;this.bossDefeated=false;}return a;}
  reject(message){this.emit('notice',{message});return false;}
  summon(type){
@@ -85,12 +84,14 @@ export class Journey {
   if(TEAM_SKILLS[type])return this.teamSkill(type);
   if(this.status!=='playing'||!SKILLS[type])return false;
   if(this.cooldowns[type]>0)return this.reject('기술을 준비하고 있어요.');
-  if(['rush','stomp','shelter','waterWard'].includes(type)&&(this.action||this.shield>0))return this.reject('합동 동작이 끝나면 사용할 수 있어요.');
+  if(['rush','stomp','shelter'].includes(type)&&(this.action||this.shield>0))return this.reject('합동 동작이 끝나면 사용할 수 있어요.');
+  if(type==='charm'&&this.moving)return this.reject('멈춘 뒤 부적을 던질 수 있어요.');
   if(this.coins<SKILLS[type].cost)return this.reject('엽전이 조금 더 필요해요.');
   const target=type==='charm'?this.targetForCharm():null;
   if(type==='charm'&&!target)return this.reject('아직 부적이 닿을 귀물이 없어요.');
   this.coins-=SKILLS[type].cost;this.cooldowns[type]=SKILLS[type].cooldown;this.casts++;
-  if(type==='shelter'||type==='waterWard'){this.shield=6;this.shieldKind=type==='waterWard'?'water':'umbrella';this.emit('shelter',{x:this.x,kind:this.shieldKind});}
+  if(type==='shelter'){this.shield=6;this.shieldKind='umbrella';this.emit('shelter',{x:this.x,kind:'umbrella'});}
+  if(type==='waterWard'){this.waterWard=6;this.emit('shelter',{x:this.x,kind:'water'});}
   if(type==='charm'){
    this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target,damage:52,high:true,stun:1.3});
    if(target.type==='skirt')this.say('지하지인은 낮아요. 누렁소·돌팔매·발구름으로 막아요.');
@@ -144,7 +145,7 @@ export class Journey {
    }
    if(team.elapsed>=spec.castTime){team.phase='return';team.elapsed=0;completed=team.key!=='cavalryCharge';}
   }
-  if(completed){for(const {a}of living)if(a.action?.kind==='team'){if(team.key==='prayer')a.carePosition=a.x;a.action=null;}this.teamAction=null;this.emit('team-end',{key:team.key,x:this.x,members:living.map(p=>p.a.id)});return;}
+  if(completed){for(const {a}of living)if(a.action?.kind==='team')a.action=null;this.teamAction=null;this.emit('team-end',{key:team.key,x:this.x,members:living.map(p=>p.a.id)});return;}
   for(const {a}of living)if(a.action?.kind==='team')Object.assign(a.action,{phase:team.phase,elapsed:team.elapsed});
  }
  awardCoins(amount,e,reason){const before=Math.floor(this.coins);this.coins=clamp(this.coins+amount*3,0,MAX_COINS);const received=Math.floor(this.coins)-before;this.earnedCoins+=received;if(received>0)this.emit('coin',{amount:received,total:this.coins,x:e.x,kind:e.type,reason});}
@@ -192,7 +193,7 @@ export class Journey {
    if(action.phase==='return'){
     const next=this.healerPatient(actor);
     if(next){target=next;Object.assign(action,{phase:'approach',targetId:next.id??null,elapsed:0,resolved:false,dir:Math.sign(next.x-actor.x)||1});}
-    else{actor.carePosition=actor.x;actor.action=null;return;}
+    else{actor.action=null;return;}
    }
    if(action.phase==='approach'){
     // Treatment is cast from behind the patient, not through their body.
@@ -218,12 +219,12 @@ export class Journey {
    action.elapsed+=dt;
    const impacts=ability.impacts||[ability.impact];let impact=action.impacts??(action.resolved?impacts.length:0);
    while(impact<impacts.length&&action.elapsed>=impacts[impact]){
-    const blocked=this.shield>0;
-    this.emit(action.kind+'-impact',{x:action.x??this.x,from:actor.x,kind:actor.type,blocked});
     const zones=this.bossZones(actor,action.x??this.x,impact),within=target=>zones.some(z=>target.x>=z.left&&target.x<=z.right);
+    const blocked=this.shield>0||this.waterWard>0&&[this,...this.allies].some(a=>a.hp>0&&within(a)&&this.shieldBlocks(a,actor.x,action.kind));
+    this.emit(action.kind+'-impact',{x:action.x??this.x,from:actor.x,kind:actor.type,blocked});
     if(ability.pattern)this.emit('boss-impact',{x:action.x??this.x,from:actor.x,kind:actor.type,zones,attack:action.kind,blocked});
-    if(!blocked){if(within(this))this.hurtHero(ability.damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,action.kind);for(const a of this.allies)if(within(a))this.hurtAlly(a,ability.splash*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,action.kind);}
-    else if(!action.guardRewarded){action.guardRewarded=true;this.coins=clamp(this.coins+8,0,MAX_COINS);this.say('큰 공격을 막았어요. 지금 전진해요!');}
+    if(!this.shield){if(within(this))this.hurtHero(ability.damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,action.kind);for(const a of this.allies)if(within(a))this.hurtAlly(a,ability.splash*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,action.kind);}
+    if(blocked&&!action.guardRewarded){action.guardRewarded=true;this.coins=clamp(this.coins+8,0,MAX_COINS);this.say('큰 공격을 막았어요. 지금 전진해요!');}
     impact++;action.impacts=impact;action.resolved=impact===impacts.length;
    }
    if(action.elapsed>=ability.duration)actor.action=null;
@@ -269,9 +270,12 @@ export class Journey {
   }
   if(action.elapsed>=spec.duration)actor.action=null;
  }
+ shieldBlocks(actor,sourceX,weapon){
+  return this.waterWard>0&&Math.abs(actor.x-this.x)<=SKILLS.waterWard.radius||this.shield>0&&(weapon==='hail'||sourceX!==null&&sourceX>=actor.x);
+ }
  hurtAlly(a,damage,sourceX=null,weapon='physical'){
   if(a.hp<=0||this.status!=='playing')return;
-  if(this.shield>0&&(weapon==='hail'||(sourceX!==null&&sourceX>=a.x))){this.emit('guard',{actor:a.id,x:a.x,from:sourceX,dir:-1,kind:a.type,weapon,damage:0,umbrella:true,enemy:false});return;}
+  if(this.shieldBlocks(a,sourceX,weapon)){this.emit('guard',{actor:a.id,x:a.x,from:sourceX,dir:-1,kind:a.type,weapon,damage:0,umbrella:true,enemy:false});return;}
   const guard=sourceX!==null&&sourceX>=a.x?UNITS[a.type].guard:0;
   const amount=damage*(1-guard);a.hp-=amount;a.hit=ALLY_HIT_TIME;a.hitDir=sourceX===null?0:Math.sign(a.x-sourceX);
   this.emit(guard?'guard':'hit',{actor:a.id,x:a.x,from:sourceX,dir:a.hitDir,kind:a.type,weapon,damage:amount,enemy:false});
@@ -289,7 +293,7 @@ export class Journey {
  hurtHero(damage,sourceX=this.x+80,weapon='physical'){
   if(this.status!=='playing')return;
   if(this.invincible)return;
-  if(this.shield>0&&(weapon==='hail'||(sourceX!==null&&sourceX>=this.x))){this.emit('guard',{x:this.x+37,from:sourceX,dir:-1,kind:'haetae',weapon,damage:0,umbrella:true,enemy:false});return;}
+  if(this.shieldBlocks(this,sourceX,weapon)){this.emit('guard',{x:this.x+37,from:sourceX,dir:-1,kind:'haetae',weapon,damage:0,umbrella:true,enemy:false});return;}
   this.hp=clamp(this.hp-damage,0,MAX_HP);this.emit('hurt',{x:this.x+37,from:sourceX,dir:Math.sign(this.x-sourceX)||-1,kind:'haetae',weapon,damage});if(this.hp<=0){const mounted=this.action?.kind==='rush'||this.shield>0&&this.shieldKind!=='water';this.emit('vanish',{actor:'hero',x:this.x+37,kind:mounted?'mount':'haetae',enemy:false});if(!mounted)this.emit('vanish',{actor:'girl',x:this.x-60,kind:'girl',enemy:false});this.finish('lost');}
  }
  cleanup(){
@@ -304,19 +308,19 @@ export class Journey {
   return [this,...this.allies].filter(b=>b.hp>0&&b.hp<(b.maxHp??MAX_HP)&&Math.abs(b.x-actor.x)<=s.search).sort((b,c)=>b.hp/(b.maxHp??MAX_HP)-c.hp/(c.maxHp??MAX_HP)||Math.abs(b.x-actor.x)-Math.abs(c.x-actor.x))[0]||null;
  }
  healerHome(actor){
-  // Before first care, follow the party. Afterwards only a new patient moves her.
-  if(Number.isFinite(actor.carePosition))return actor.carePosition;
-  const s=UNITS.healer,formation=Math.min(this.roadEnd-90,this.x+s.formation);
+  // Healthy support follows the independent front line, never traveller input.
+  const s=UNITS.healer,leaders=this.allies.filter(a=>a.hp>0&&a.type!=='healer'&&!a.entering);
+  const formation=Math.min(this.roadEnd-90,leaders.length?Math.max(...leaders.map(a=>a.x))-s.spacing:this.roadEnd-90);
   const front=this.enemies.filter(e=>e.hp>0&&e.x>actor.x-55).sort((a,b)=>(a.x-ENEMY_FRONT[a.type])-(b.x-ENEMY_FRONT[b.type]))[0];
   const engaged=front&&front.x<=Math.max(formation,actor.x)+HERO_STANDOFF-s.formation+180;
   return Math.max(START-130,engaged?front.x-ENEMY_FRONT[front.type]-HERO_STANDOFF+s.formation:formation);
  }
  step(dt){
   if(this.status!=='playing'||!Number.isFinite(dt)||dt<=0)return;
-  const oldX=this.x,previous=this.viewport?new Map(this.allies.map(a=>[a.id,{x:a.x,walk:a.walk}])):null;dt=Math.min(dt,.1);this.time+=dt;this.coins=clamp(this.coins+dt*2.2,0,MAX_COINS);
+  const oldX=this.x;dt=Math.min(dt,.1);this.time+=dt;this.coins=clamp(this.coins+dt*2.2,0,MAX_COINS);
   if(this.portal)this.portal.x=this.portalX;
   this.advanceProjectiles(dt);if(this.status!=='playing')return;
-  this.shield=Math.max(0,this.shield-dt);this.heroAttack-=dt;this.advanceAction(this,dt);
+  this.shield=Math.max(0,this.shield-dt);this.waterWard=Math.max(0,this.waterWard-dt);this.heroAttack-=dt;this.advanceAction(this,dt);
   for(const k of Object.keys(this.cooldowns))this.cooldowns[k]=Math.max(0,this.cooldowns[k]-dt);
   const active=this.enemies.filter(e=>e.hp>0&&this.time>=(e.entryAt??e.bornAt));
   const front=active.filter(e=>e.x>=this.x-20).sort((a,b)=>(a.x-ENEMY_FRONT[a.type])-(b.x-ENEMY_FRONT[b.type]))[0];
@@ -330,8 +334,11 @@ export class Journey {
   this.advanceTeam(dt);
   // A full wave already spends the reference power budget. Distance unlocks the
   // next one, but never stacks two full budgets (including after a player rush).
-  if(this.wave<this.waves.length&&this.furthest>=this.waves[this.wave].x&&!this.enemies.some(e=>e.hp>0)){
-   const scale=waveBalance(this.wave,this.stage,this.waves).scale,w=this.waves[this.wave++];
+  const waveEmpty=!this.enemies.some(e=>e.hp>0);
+  if(this.wave>0&&waveEmpty&&this.waveClearAt===null)this.waveClearAt=this.time;
+  if(!waveEmpty)this.waveClearAt=null;
+  if(this.wave<this.waves.length&&waveEmpty&&(this.furthest>=this.waves[this.wave].x||this.waveClearAt!==null&&this.time-this.waveClearAt>=(this.waves[this.wave].afterClear??Infinity))){
+   const scale=waveBalance(this.wave,this.stage,this.waves).scale,w=this.waves[this.wave++];this.waveClearAt=null;
    if(!this.portal){this.portal={x:this.portalX,openedAt:this.time,style:STAGES[this.stage].gateStyle};this.emit('portal-open',{x:this.portal.x,style:this.portal.style});}
    w.types.forEach((type,i)=>{const e=this.spawn(type,this.portal.x,scale);e.entryOrigin=this.portal.x;e.entryAt=this.time+i*.85;e.entering=true;});if(w.helper)this.helperArrivals.set(this.wave-1,false);
 
@@ -340,7 +347,7 @@ export class Journey {
   // Reached helper waves wait for capacity; the same wave index can arrive only once.
   for(const [i,arrived] of this.helperArrivals){const type=this.waves[i].helper;if(arrived||this.atSummonLimit(type))continue;const a=this.addAlly(type);a.helper=true;this.helperArrivals.set(i,true);this.emit('summon',{actor:a.id,kind:a.type,x:a.x});}
   const heroTarget=this.selectContact(this,active.filter(e=>e.x>=this.x-20&&e.type!=='skirt'),480);
-  if(!this.shield&&this.action?.kind!=='rush'&&this.heroAttack<=0&&heroTarget&&contactGap(this,heroTarget)<480){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:heroTarget,damage:10,high:true});}
+  if(!this.moving&&!this.shield&&this.action?.kind!=='rush'&&this.heroAttack<=0&&heroTarget&&contactGap(this,heroTarget)<480){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:heroTarget,damage:10,high:true});}
   for(const a of [...this.allies].sort((a,b)=>a.id-b.id)){
    if(a.hp<=0)continue;
    const s=unitStats(a.type,this.keeperRank),oldAX=a.x;
@@ -358,8 +365,8 @@ export class Journey {
     if(patient){
      a.action={kind:'healer',phase:'approach',elapsed:0,resolved:false,targetId:patient.id??null,dir:Math.sign(patient.x-a.x)||1};
     }else{
-     const goal=this.healerHome(a),gap=goal-a.x,retreat=this.direction<0&&a.x>goal+170;
-     if(gap>0||retreat)a.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);
+     const goal=this.healerHome(a),gap=goal-a.x;
+     if(gap>0)a.x+=Math.min(gap,s.speed*.55*dt);
     }
     const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;continue;
    }
@@ -417,7 +424,7 @@ export class Journey {
    else if(e.cd<=0){e.cd=s.period;e.action={kind:'enemy',elapsed:0,resolved:false,targetId:target.a?.id??null,dir:Math.sign(target.x-e.x)||-1};}
    if(this.status!=='playing')break;
   }
-  if(this.status==='playing')this.constrainScreen(previous);
+  if(this.status==='playing')this.constrainScreen();
   this.cleanup();
   if(this.status==='playing'&&this.bossDefeated&&this.gateBrokenAt!==null&&this.time-this.gateBrokenAt>=GATE_BREAK_TIME&&this.enemies.length===0)this.finish('won');
  }

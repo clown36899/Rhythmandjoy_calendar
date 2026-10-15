@@ -19,6 +19,8 @@ const CORE_AREAS=[
 ];
 export const AREAS=[...CORE_AREAS.slice(0,9),...EXTRA_CHAPTERS.map((s,i)=>({at:i+9,name:s.place+' · '+s.name,texture:'journey'+(i+10),detailFiles:[],detailOverlap:0,file:s.asset,skyInPainting:true,split:1,ground:s.ground,panorama:true,paintingSingle:true,paintingFoot:s.paintingFoot})),{...CORE_AREAS[9],at:39}];
 for(const s of EXTRA_MONSTERS)BODY_HEIGHT[s.key]=s.height;
+// One presentation size table serves every cel, wound and departure; world combat distances stay unchanged.
+for(const kind of Object.keys(BODY_HEIGHT))if(kind!=='gate')BODY_HEIGHT[kind]=Math.round(BODY_HEIGHT[kind]*1.4);
 // One chosen landscape and its celestial body follow the existing simulation clock.
 // The HUD and landscape read this same presentation state; there is no second clock.
 export function skyState(progress,time=0,stage=0){
@@ -126,7 +128,7 @@ export const COMPANIONS=[
  {name:'돌팔매 도령',asset:'keeper',tag:'공격 · 짱돌에서 먹붓으로',text:'처음에는 주머니에서 짱돌을 꺼내 던집니다. 설정의 도령 수련에 엽전 45를 쓰면 옷과 무기가 바뀌어 먹붓 공격을 합니다.',counter:'소환 18 · 수련 45 · 공격 '+UNITS.keeper.damage.toFixed(1)+' → '+UNITS.keeper.upgrade.stats.damage.toFixed(1),motion:true},
  {name:'달토끼',asset:'rabbit',tag:'공격 · 씨앗 사격',text:'대나무 통으로 뒤에서 씨앗탄을 쏩니다. 낮은 귀물에는 빗나가므로 누렁소와 도령이 길을 열어줘야 합니다.',counter:'체력 '+Math.round(UNITS.rabbit.hp)+' · 공격 '+UNITS.rabbit.damage.toFixed(1)+' · 소환 24',motion:true},
  {name:'선비',asset:'scholar',tag:'지원 · 붓으로 술법 봉인',text:'사거리에 먼저 들어온 상대를 노립니다. 갓과 망건을 갖춘 조선 선비. 부채를 펼치고 붓으로 쓴 봉인이 잠깐 기절시키고 적의 술법과 공격 준비를 끊습니다.',counter:'소환 34 · 짧은 봉인 · 후열 지원',motion:true},
- {name:'약방 의원',asset:'healer',tag:'회복 · 약통을 멘 성인 여성 의원',text:'약통을 메고 동행합니다. 움직이는 동료도 따라가며 붕대를 감습니다. 치료할 동료가 없을 때만 후열로 돌아오며, 복귀 중에도 환자를 발견하면 다시 찾아갑니다. 기다리는 동안 땀을 닦거나 약재를 정리합니다. 사망한 동료는 되살리지 못합니다.',counter:'소환 36 · 회복 '+UNITS.healer.heal.toFixed(1)+' · 치료 간격 3.4초',motion:true}
+ {name:'약방 의원',asset:'healer',tag:'회복 · 약통을 멘 성인 여성 의원',text:'약통을 메고 동행합니다. 움직이는 동료도 따라가며 붕대를 감습니다. 치료할 동료가 없으면 다른 동료 뒤에서 앞으로 걷고, 다친 동료를 발견하면 뛰어가 치료합니다. 기다리는 동안 땀을 닦거나 약재를 정리합니다. 사망한 동료는 되살리지 못합니다.',counter:'소환 36 · 회복 '+UNITS.healer.heal.toFixed(1)+' · 치료 간격 3.4초',motion:true}
 ];
 for(const s of EXTRA_MONSTERS)MOTION[s.key]={walkFps:6,walkFrames:4};
 const addedBosses=EXTRA_MONSTERS.filter(s=>s.boss);
@@ -160,7 +162,7 @@ export const SKILLS={
  stomp:{name:'합동 발구름',cost:20,cooldown:7,icon:'iconStomp',role:'제압',description:'가까운 적을 밀고 돌진 준비를 끊어요.'},
  rush:{name:'해태 타고 돌진',cost:32,cooldown:12,icon:'mount1',role:'돌파',description:'잠깐 해태에 올라타 돌진하며 길을 열어요.'},
  shelter:{name:'비막이',cost:16,cooldown:11,icon:'umbrella3',role:'보호',description:'해태에 올라 우산을 전방 45도로 펼쳐요. 6초 동안 앞쪽 공격과 우박을 막고, 뒤쪽 공격은 막지 못해요.'},
- waterWard:{name:'물의 수호막',cost:16,cooldown:11,icon:'waterWard',role:'보호',description:'해태가 물결로 보호막을 만들어요. 6초 동안 앞쪽 공격과 우박을 막아요. 뒤쪽 공격은 막지 못하며, 아이는 해태 곁에 남아요.'},
+ waterWard:{name:'물의 수호막',cost:16,cooldown:11,radius:340,icon:'waterWard',role:'범위 보호',description:'해태가 넓은 물 보호막을 펼쳐 6초 동안 안에 있는 동료를 지켜요. 비막이와 따로 사용할 수 있어요.'},
  mend:{name:'숨 돌리기',cost:30,cooldown:18,icon:'iconSound',role:'회복',description:'행렬의 기운 45, 동료 체력 15를 회복해요.'}
 };
 export const DEFAULT_LOADOUT=['charm','rush','shelter'];
@@ -200,6 +202,7 @@ export const STAGES=[...CORE_STAGES.slice(0,9),...EXTRA_CHAPTERS,CORE_STAGES[9]]
  const tourEnd=980,tourTypes=[...new Set([...ordinary,...finale.filter(k=>!isBoss(k))])],tourGroups=Array.from({length:Math.ceil(tourTypes.length/4)},(_,j)=>tourTypes.slice(j*4,j*4+4));
  tourGroups.push(finale.filter(isBoss));
  const tourWaves=tourGroups.map((types,j)=>({...waves[Math.min(j,waves.length-1)],types,x:Math.round(START+j*(tourEnd-START-320)/(tourGroups.length-1)),balanceIndex:j===tourGroups.length-1?3:Math.min(j,4)}));
+ if(i===0)for(const wave of waves.slice(1))wave.afterClear=3;
  return{...stage,reward:STAGE_REWARDS[i]||null,pressure:i<10?.40+i*.045:1,subtitle:stage.subtitle.replace(/^\d+장/,i+1+'장'),roadEnd,enemySpeedScale:.8,gateHp:i<10?100+i*20:300+i%6*24,waves,gateStyle:i%GATE_STYLES.length,tour:{roadEnd:tourEnd,waves:tourWaves},act:Math.floor(i/10)};
 });
 

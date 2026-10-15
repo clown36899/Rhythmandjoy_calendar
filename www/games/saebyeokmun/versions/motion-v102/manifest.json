@@ -1,0 +1,31 @@
+{
+  "id": "./",
+  "name": "다섯개의 나라",
+  "short_name": "다섯개의 나라",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
+  "orientation": "landscape",
+  "theme_color": "#34463e",
+  "background_color": "#eee7d8",
+  "icons": [
+    {
+      "src": "../../assets/app-icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "../../assets/app-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "prefer_related_applications": false
+}
