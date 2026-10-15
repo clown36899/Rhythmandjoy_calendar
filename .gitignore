@@ -45,4 +45,6 @@ www/calendar_set/full_ver7/*
 !www/calendar_set/full_ver7/calendar_9.html
 
 # Owned runtime art for the static game; working images elsewhere stay ignored.
-!www/games/saebyeokmun/assets/*.png
+!www/games/saebyeokmun/**/*.png
+!www/games/saebyeokmun/**/*.jpg
+!www/games/saebyeokmun/**/*.jpeg
