@@ -146,12 +146,14 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.commonPromise=(async()=>{
     await this.loadFiles(this.commonKeys,onProgress);
     const cowNames=[...Array.from({length:48},(_,i)=>'cow'+i),...Array.from({length:48},(_,i)=>'cowRun'+i),...Array.from({length:48},(_,i)=>'cow'+(48+i)),'cow96',...Array.from({length:29},(_,i)=>'cowEmotion'+i),'hurtcow',...Array.from({length:MOTION.cow.angerFrames},(_,i)=>'cowAnger'+i),...Array.from({length:12},(_,i)=>'cowRageRun'+i)];
-    const registered=this.cache.json.get('cowVideoMeta');for(const key of cowNames){this.grounding.set(key,registered.ground);this.celScale.set(key,registered.scale);this.registrationX.set(key,registered.originX);}
+    const registered=this.cache.json.get('cowVideoMeta');for(const [i,key] of cowNames.entries()){if(i>=48||!this.grounding.has(key))this.grounding.set(key,registered.ground);this.celScale.set(key,registered.scale);this.registrationX.set(key,registered.originX);}
     // Registered healing cells use the same world pixel scale and floor as v93.
     const heal=this.cache.json.get('cowHealingMeta');
     for(let i=0;i<COW_HEAL.frames;i++){const key='cowRecoverVideo'+i;this.grounding.set(key,heal.ground);this.celScale.set(key,heal.scale);this.registrationX.set(key,heal.originX);}
     for(const spec of [COW_REST,...COW_IDLE]){const idle=this.cache.json.get(spec.asset+'Meta');for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;this.grounding.set(key,idle.ground);this.celScale.set(key,idle.scale);this.registrationX.set(key,idle.originX);}}
-    for(const spec of VIDEO_SHEETS)for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;this.grounding.set(key,spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
+    // Walking always has a supporting foot: keep the slicer's per-cel measurement.
+    // Running retains the registered floor so airborne poses do not stick to the ground.
+    for(const clips of Object.values(VIDEO_MOTION))for(const [name,spec] of Object.entries(clips))for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;if(name!=='walk'||!this.grounding.has(key))this.grounding.set(key,spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
     this.initializeWorld();this.commonReady=true;
    })();try{await this.commonPromise;}finally{this.commonPromise=null;}
   }
@@ -608,8 +610,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const rx=this.registrationX.get(image.texture.key)??.5;
    image.setOrigin(image.flipX?1-rx:rx,this.grounding.get(image.texture.key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,groundY).setAngle(0);
    if(AREAS[model.stage].ground==='water'){const pulse=.5+.5*Math.sin(model.time*2+x*.02);this.shadows.lineStyle(1,0xeaf5ff,.28);this.shadows.strokeEllipse(x,groundY+2,Math.min(130,image.displayWidth*.8)+pulse*9,10+pulse*3);return;}
-   this.shadows.fillStyle(0x18221f,.24);this.shadows.fillEllipse(x,groundY+3,Math.min(180,image.displayWidth*.78),12);
-   this.shadows.fillStyle(0x101916,.48);this.shadows.fillEllipse(x,groundY+1,Math.min(135,image.displayWidth*.6),5);
+   const contactWidth=Math.min(image.displayWidth*.92,image.displayHeight*1.15);
+   this.shadows.fillStyle(0x18221f,.24);this.shadows.fillEllipse(x,groundY+3,contactWidth,12);
+   this.shadows.fillStyle(0x101916,.48);this.shadows.fillEllipse(x,groundY+1,contactWidth*.84,5);
   }
   trackContact(key,kind,walk,moving,x,groundY=GROUND){
    const beat=Math.floor(walk*MOTION[kind].walkFps/(MOTION[kind].walkFrames||4)*2),previous=this.contacts.get(key);
