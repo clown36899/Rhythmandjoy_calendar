@@ -1,6 +1,8 @@
 // One audio owner. User-provided music + credited effects; see assets/audio/LICENSES.txt.
-const NAMES=['step-heavy','step-light','stomp','seed','charm','guard','swipe','hurt','summon','heal','shelter','hail','warning','charge','hex','win','lose','coin','stone','ink','seal','horn','ascend','ambience'];
-const LEVELS={'step-heavy':.18,'step-light':.13,coin:.22,swipe:.38,guard:.62,warning:.8,summon:.65,heal:.55,seal:.68,charm:.68,hex:.7,ascend:.6};
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=101';
+const MOTION_AUDIO=Object.fromEntries(Object.entries(TRAVELLER_VIDEO).flatMap(([kind,clips])=>Object.entries(clips).filter(([,c])=>c.audio).map(([name,c])=>[kind+'-'+name,c.audio])));
+const NAMES=['step-heavy','step-light','stomp','seed','charm','guard','swipe','hurt','summon','heal','shelter','hail','warning','charge','hex','win','lose','coin','stone','ink','seal','horn','ascend','ambience',...Object.keys(MOTION_AUDIO)];
+const LEVELS={'step-heavy':.18,'step-light':.13,coin:.32,swipe:.38,guard:.62,warning:.8,summon:.65,heal:.55,seal:.68,charm:.68,hex:.7,ascend:.6};
 export class Soundscape {
  constructor({contextFactory=()=>new (window.AudioContext||window.webkitAudioContext)(),fetcher=(url)=>fetch(url),onState=()=>{}}={}){
   this.contextFactory=contextFactory;this.fetcher=fetcher;this.onState=onState;this.enabled=true;this.musicEnabled=true;this.effectsEnabled=true;this.playing=false;this.volume=.55;this.buffers=new Map();this.voices=new Set();this.lastPlayed=new Map();this.ambient=null;this.ambientOffset=0;this.loaded=null;this.missing=[];
@@ -15,7 +17,7 @@ export class Soundscape {
   if(!this.loaded&&pending.length){
    this.onState('loading');this.missing=[];
    this.loaded=Promise.all(pending.map(async name=>{
-    try{const response=await this.fetcher('./assets/audio/'+name+(name==='ambience'?'.mp3?v=39':'.wav?v=31'));if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));if(name==='ambience')this.syncAmbience();}
+    try{const response=await this.fetcher('./assets/audio/'+(MOTION_AUDIO[name]||name+(name==='ambience'?'.mp3?v=39':name==='coin'?'.wav?v=67':'.wav?v=31')));if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));if(name==='ambience')this.syncAmbience();}
     catch{this.missing.push(name);}
    })).then(()=>{this.onState(this.missing.length?'partial':'ready');this.syncAmbience();}).finally(()=>{this.loaded=null;});
   }
@@ -27,16 +29,16 @@ export class Soundscape {
  setPlaying(playing){if(this.playing===playing)return;this.playing=playing;if(!playing)this.stopVoices();else this.syncAmbience();}
  stopVoices(resetMusic=false,channel=null){if(this.ambient&&channel!=='effects')this.ambientOffset=(this.ambientOffset+this.context.currentTime-this.ambient.startedAt)%this.ambient.buffer.duration;for(const v of [...this.voices]){if(channel==='music'&&!v.loop||channel==='effects'&&v.loop)continue;try{v.stop();}catch{}v.disconnect();this.voices.delete(v);}if(channel!=='effects')this.ambient=null;if(channel!=='music')this.lastPlayed.clear();if(resetMusic)this.ambientOffset=0;}
  syncAmbience(){if(this.playing&&this.enabled&&this.musicEnabled&&!this.ambient&&this.buffers.has('ambience')&&this.context?.state==='running')this.ambient=this.voice('ambience',{loop:true,gain:.32});}
- voice(name,{gain=1,loop=false,pan=0,rate=1}={}){
+ voice(name,{gain=1,loop=false,pan=0,rate=1,offset=0}={}){
   const context=this.context,buffer=this.buffers.get(name);if(!this.enabled||!(loop?this.musicEnabled:this.effectsEnabled)||!buffer||context?.state!=='running')return null;
   const source=context.createBufferSource(),volume=context.createGain();source.buffer=buffer;source.loop=loop;source.playbackRate.value=rate;volume.gain.value=gain;source.connect(volume);
   let panner;if(context.createStereoPanner){panner=context.createStereoPanner();panner.pan.value=Math.max(-.7,Math.min(.7,pan));volume.connect(panner);panner.connect(this.master);}else volume.connect(this.master);
   source.onended=()=>{this.voices.delete(source);volume.disconnect();panner?.disconnect();source.disconnect();if(this.ambient===source)this.ambient=null;};
-  source.soundName=name;source.startedAt=context.currentTime;this.voices.add(source);source.start(0,loop?this.ambientOffset:0);return source;
+  source.soundName=name;source.startedAt=context.currentTime;this.voices.add(source);source.start(0,loop?this.ambientOffset:Math.max(0,Math.min(offset,buffer.duration-.01)));return source;
  }
- play(name,{gain=1,pan=0,allowIdle=false}={}){
+ play(name,{gain=1,pan=0,allowIdle=false,offset=0}={}){
   if(!this.enabled||!this.effectsEnabled||(!this.playing&&!allowIdle)||!this.context)return;
-  const now=this.context.currentTime,step=name.startsWith('step-'),limit=step?.18:name==='coin'?.24:.09;
+  const now=this.context.currentTime,step=name.startsWith('step-'),limit=step?.18:name==='coin'?.55:.09;
   if(now-(this.lastPlayed.get(name)??-100)<limit)return;
   if(step&&this.voices.size>=7)return;
   if(this.voices.size>=12){
@@ -44,9 +46,14 @@ export class Soundscape {
    if(!quiet)return;quiet.stop();quiet.disconnect();this.voices.delete(quiet);
   }
   const vary=step||['stone','horn','seed','hurt','guard','swipe'].includes(name),rate=vary?.97+(now*7%1)*.06:1;
-  const voice=this.voice(name,{gain:gain*(LEVELS[name]??.86),pan,rate});if(voice)this.lastPlayed.set(name,now);
+  const voice=this.voice(name,{gain:gain*(LEVELS[name]??.86),pan,rate,offset});if(voice)this.lastPlayed.set(name,now);return voice;
  }
  event(e,heroX){
+  if(e.type==='motion-audio'){
+   for(const voice of [...this.voices])if(voice.motionActor===e.actor){voice.stop();voice.disconnect();this.voices.delete(voice);}
+   if(e.sound&&MOTION_AUDIO[e.sound]){const voice=this.play(e.sound,{gain:.38,offset:e.offset??0,pan:((e.x??heroX)-heroX)/800});if(voice)voice.motionActor=e.actor;}
+   return;
+  }
   if(e.type==='swipe'||e.type==='claw')return;
   let name=e.type;
   if(e.type==='hit')name=({horn:'horn',stone:'stone',seed:'seed',ink:'ink',seal:'seal',charm:'charm',hex:'hex',stomp:'stomp',rush:'charge',horse:'hurt',boss:'stomp',hail:'hail'})[e.weapon]||'hurt';
@@ -56,7 +63,9 @@ export class Soundscape {
   if(e.type==='rush')name='charge';
   if(e.type==='upgrade')name='heal';
   if(e.type==='finish'){this.setPlaying(false);this.play(e.status==='won'?'win':'lose',{allowIdle:true});return;}
-  if(['hail-impact','quake-impact','tide-impact'].includes(e.type))name=e.blocked?'guard':'stomp';
+  if(['hail-impact','quake-impact','tide-impact','boss-impact'].includes(e.type))name=e.blocked?'guard':'stomp';
+  if(e.type==='portal-open')name='warning';
+  if(e.type==='portal-close'||e.type==='gate-break')name='ascend';
   if(!NAMES.includes(name)||name==='ambience')return;
   this.play(name,{gain:e.type==='projectile'?.45:1,pan:((e.x??e.from??heroX)-heroX-150)/900});
  }

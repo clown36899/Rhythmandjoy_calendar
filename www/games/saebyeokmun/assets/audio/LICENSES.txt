@@ -23,3 +23,20 @@ https://creativecommons.org/licenses/by/4.0/
 Used in charm, seal, hex, summon, heal, shelter, ascend, win and lose.
 Trimmed, layered, pitch shifted and levelled; these edits are game-specific.
 No endorsement by the original creators is implied.
+
+4. v65 coin.wav — Kenney RPG Audio (CC0): handleCoins + handleCoins2.
+Layered into a 0.76-second cascading coin rattle, with pitch/level and tail edits.
+
+5. v66 coin.wav — Kenney RPG Audio + Impact Sounds (CC0).
+Coin handling and light metal strikes, high-passed, pitch-shifted, shortened,
+and layered into bright coin collisions and a settling roll.
+
+6. Current v67 coin.wav — "3.4) Coins clinking.WAV"
+by 16FPanskaLipovska_Katerina, December 17, 2019.
+https://freesound.org/people/16FPanskaLipovska_Katerina/sounds/497941/
+License: Creative Commons Zero (CC0 1.0 Universal).
+https://creativecommons.org/publicdomain/zero/1.0/
+Actual coins clinking in a palm. Excerpt 7.02–7.78 seconds from the public
+high-quality preview, native pitch, mono conversion, 22.05 kHz, gentle rumble
+filter, level normalization and a 120ms tail fade. No added metal/bell sounds.
+The previous v65/v66 coin mixes above are historical and no longer shipped.
