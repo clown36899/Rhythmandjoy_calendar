@@ -19,9 +19,9 @@
         "game/model.js": "5aa46323b3f7c4efcde0b2008a43498580448067da69866b877ac34b18d55f79",
         "game/phaser.min.js": "e92ddef111ba42e92d316979c732311757093688ea1810591cb7aa2858eba7a7",
         "game/scene.js": "0033582f8047fb6d787283e72a4742035a9838ae5016b1e0a9756663c978d84e",
-        "index.html": "14d31a1fc0fe4d360753f148ae2a54484eabb9e4a8f1cc4ca513ceb40c2ba396",
-        "manifest.json": "eab2aef59c3f7149bcb2efb88314182ddf8db7b4ec00ee12ef7994c83106d7c4",
-        "style.css": "afc703e4745f49d39398b55d728c6576ef248e70451732d08f779b4d9f1a0f34"
+        "index.html": "8b15651f6938c41a8d5a9be13c50dbca36f6b64d0c9a7b643d80b5c3eddf687e",
+        "manifest.json": "421a6a4d542a6dce5141d632a5907e7fab5250748c9f5ba936270f32d63e7682",
+        "style.css": "4459c766973435ab0fedb31d411ab1e536f4a2295807bd2ce1f28c694c26d59a"
       },
       "sharedAssetSha256": {
         "assets/action-icons-v11.webp": "60892910f31e60f0ceba364c8226e65536d2a6d483c9917dda1cfce6e45b06d0",
@@ -257,16 +257,15 @@
       "sourceCommit": null,
       "description": "지도 및 폰 UI 개편",
       "sourceFileSha256": {
-        "index.html": "85e54cfb5170a9cac8ee3e8399280955c2b1414039ae6ae73275e06e00a71eb7",
-        ".DS_Store": "8d31f80c1658239aaffd665ed591911f0e3367a86348523d29efb2f84995599d",
-        "style.css": "8108c4ee97a3e401ff64a683438d8bfe288bb6c03543a7f73237355ed38b7442",
-        "manifest.json": "0a5b17fba502d8a51bdbdf0be83567975fea0cb43d7d23c777686f57484f309f",
+        "index.html": "b419b17dd78d9874ebe24ec79488b9796b205ab8e534eb3ffa75a094d568304c",
+        "style.css": "508098257b595e31966449ae0881200daeaa2ec24ad4d059127171fba8248d2c",
+        "manifest.json": "0d2a98e6a4c6a437625bfca3a575d0c69fa8790e71cedb231c54d18bb14fd464",
         "app.js": "481f14004bad1d5592ee3440ebd83e05617b2dde5a0617ca0f0c5dfccc1bcd82",
         "game/downloads.js": "e55529b8e29346adc0ce384d0e0c139feba3601e9b902c291b4963f25a6a94dc",
         "game/scene.js": "22e15a80814776487155ac5cd5277f24a9e23b7ddb493e91682cf175bc46e9e3",
         "game/expansion-monsters.js": "49a3be031527e61f6ac6c355286853329ba5bf4788e20693942ee5d8ab3c9059",
         "game/autoplay.js": "a0821190ade16c2bbc176b633c1ce5249671ff48985dc1a5ad26015666617f0b",
-        "game/PHASER-LICENSE.md": "080f3d5539e766bb556df5b8e86c4f5d581ece35c692b80956ca352b84d29134",
+        "game/PHASER-LICENSE.md": "c3123cd25de4eccf1fd5a5a0a6fc872299116d1dbbb48b00f2554a4c35220a65",
         "game/audio.js": "42eb08268d4ca163c9213511629233380a6065298e0f6e7bd12eac552e2f38f2",
         "game/data.js": "9911a294b22461df5ac85bae1aeecd9d79b1087f976ee40bca9a357344e4b697",
         "game/phaser.min.js": "e92ddef111ba42e92d316979c732311757093688ea1810591cb7aa2858eba7a7",
@@ -662,9 +661,9 @@
         "game/phaser.min.js": "e92ddef111ba42e92d316979c732311757093688ea1810591cb7aa2858eba7a7",
         "game/scene.js": "6e64bf5d0cea8a8c10f463b710381a16204cd605d0af0b7c1f217d5080717ba5",
         "game/traveller-motion.js": "4b441292371ef4e671f707cafd87a8ceba3161e4464dbfed097651aa7c9712e2",
-        "index.html": "9a2085bdf63a01a662f877d037ed3ba39c82a3eac6a7a548192e95c1a85873cb",
-        "manifest.json": "0a5b17fba502d8a51bdbdf0be83567975fea0cb43d7d23c777686f57484f309f",
-        "style.css": "8108c4ee97a3e401ff64a683438d8bfe288bb6c03543a7f73237355ed38b7442"
+        "index.html": "3f0e17b2f60d23edd072bc3f17a574597df7d92def5dccc1f20d117cf27613b8",
+        "manifest.json": "efe52269467c2ae13b413edb63a15a07a7b450551384544e7640f5c9ee26027d",
+        "style.css": "508098257b595e31966449ae0881200daeaa2ec24ad4d059127171fba8248d2c"
       },
       "sharedAssetSha256": {
         "assets/action-icons-v11.webp": "60892910f31e60f0ceba364c8226e65536d2a6d483c9917dda1cfce6e45b06d0",
