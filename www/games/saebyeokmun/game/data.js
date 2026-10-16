@@ -19,8 +19,11 @@ const CORE_AREAS=[
 ];
 export const AREAS=[...CORE_AREAS.slice(0,9),...EXTRA_CHAPTERS.map((s,i)=>({at:i+9,name:s.place+' · '+s.name,texture:'journey'+(i+10),detailFiles:[],detailOverlap:0,file:s.asset,skyInPainting:true,split:1,ground:s.ground,panorama:true,paintingSingle:true,paintingFoot:s.paintingFoot})),{...CORE_AREAS[9],at:39}];
 for(const s of EXTRA_MONSTERS)BODY_HEIGHT[s.key]=s.height;
-// One presentation size table serves every cel, wound and departure; world combat distances stay unchanged.
+// One presentation size table serves every cel, wound and departure.
+// The measured contact envelope below separately owns readable combat spacing.
 for(const kind of Object.keys(BODY_HEIGHT))if(kind!=='gate')BODY_HEIGHT[kind]=Math.round(BODY_HEIGHT[kind]*1.4);
+// User-reviewed calf size: every pose, shadow and departure uses this table.
+BODY_HEIGHT.cow*=.95;
 // One chosen landscape and its celestial body follow the existing simulation clock.
 // The HUD and landscape read this same presentation state; there is no second clock.
 export function skyState(progress,time=0,stage=0){
@@ -36,10 +39,11 @@ export const SHOT_TIME=.18;
 // One overlap order for painting and equal-distance target selection. The player stays visible.
 export const actorLayer=actor=>actor.id??Number.MAX_SAFE_INTEGER;
 export const HERO_STANDOFF=400;
-// Painted enemy frontage, measured in road units; all contact checks share it.
+// Painted frontage in road units. Keep the legacy export name; both sides of
+// contact use this one owner, including companion cels populated below.
 export const ENEMY_FRONT={skirt:35,horse:70,reaper:45,boss:165,warden:80,ferryman:95,waterghost:45,mangtae:43,shadow:52,dokkaebi:46,bulgasari:85,changgwi:43,gumiho:63,bandit:45,pirate:48,gate:85};
 for(const s of EXTRA_MONSTERS)ENEMY_FRONT[s.key]=s.frontage;
-export const contactGap=(a,b)=>Math.abs(a.x-b.x)-(ENEMY_FRONT[a.type]??ENEMY_FRONT[b.type]??0);
+export const contactGap=(a,b)=>Math.abs(a.x-b.x)-(ENEMY_FRONT[a.type??'hero']??0)-(ENEMY_FRONT[b.type??'hero']??0);
 export function combatPower(s){return Math.sqrt(s.hp/(1-(s.guard||0))*s.damage/s.period);}
 
 export const PARALLAX={far:.035,middle:.34,ground:1,near:1.18};
@@ -95,12 +99,17 @@ export const UNITS=Object.fromEntries(Object.entries({
  prince:{name:'세자',role:'공격 · 활 사격',price:180,hp:65,speed:82,range:330,damage:22,period:1.5,cost:30,cooldown:4.5,formation:90,spacing:0,guard:0,weapon:'arrow'},
  minister:{name:'영의정',role:'지원 · 교지 봉인',price:220,hp:85,speed:62,range:500,damage:14,period:2.2,cost:32,cooldown:5,formation:-80,spacing:0,guard:.05,weapon:'seal'},
  cavalry:{name:'기마 무관',role:'돌파 · 기마 검격',price:240,hp:170,speed:90,range:100,damage:18,period:1.7,cost:40,cooldown:6,formation:295,spacing:0,guard:.3,weapon:'sword'},
- healer:{price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:240,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:200,guard:0,weapon:'medicine'}
+ healer:{price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:240,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:170,guard:0,weapon:'medicine'}
 }).map(([kind,stats])=>[kind,{...stats,hp:stats.hp*ALLY_HP_SCALE,damage:stats.damage*ALLY_OUTPUT,...(stats.heal?{heal:stats.heal*ALLY_OUTPUT}:{}),...(stats.upgrade?{upgrade:{...stats.upgrade,stats:{...stats.upgrade.stats,damage:stats.upgrade.stats.damage*ALLY_OUTPUT}}}:{})}]));
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
+// One shared party clearance preserves the authored differences between
+// firing slots. Visual combat review selects90: close without hiding faces.
+// Using the complete horn/hoof envelope (141) left an excessive visible gap.
+ENEMY_FRONT.hero=90;
+for(const kind of Object.keys(UNITS))ENEMY_FRONT[kind]=ENEMY_FRONT.hero;
 // The ox uses the supplied video: 48 walk, 48 run and 48 retimed attack cels.
 // Its 74-unit stride / 1.44s cadence stays coupled to actual travel; other bodies stay four cels.
-export const MOTION={dokkaebi:{walkFps:5,walkFrames:4},bulgasari:{walkFps:5,walkFrames:4},changgwi:{walkFps:5,walkFrames:4},gumiho:{walkFps:5,walkFrames:4},bandit:{walkFps:5,walkFrames:4},pirate:{walkFps:5,walkFrames:4},king:{duration:.9,impact:.45,walkFps:5,walkFrames:4},prince:{duration:.8,impact:.4,walkFps:6,walkFrames:4},minister:{duration:1,impact:.5,walkFps:5,walkFrames:4},cavalry:{duration:.8,impact:.4,walkFps:6,walkFrames:4},haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,angerFrames:98,angerFps:48,walkFps:48/1.44,walkFrames:48,runFps:48/1.05,runFrames:48,attackFrames:48,idleFrame:96},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},healer:{duration:3.2,impact:1.45,walkFps:8,walkFrames:4},warden:{walkFps:4,walkFrames:4},ferryman:{walkFps:4,walkFrames:4},waterghost:{walkFps:4,walkFrames:4},spearman:{duration:.8,impact:.4,walkFps:5,walkFrames:4},archer:{duration:1,impact:.5,walkFps:5,walkFrames:4},mangtae:{walkFps:6,walkFrames:4},shadow:{walkFps:7,walkFrames:4},skirt:{walkFps:106/72*4,walkFrames:4},horse:{walkFps:66/94*4,walkFrames:4},reaper:{walkFps:58/78*4,walkFrames:4},boss:{walkFps:16/40*6,walkFrames:6,idleFrame:0}};
+export const MOTION={dokkaebi:{walkFps:5,walkFrames:4},bulgasari:{walkFps:5,walkFrames:4},changgwi:{walkFps:5,walkFrames:4},gumiho:{walkFps:5,walkFrames:4},bandit:{walkFps:5,walkFrames:4},pirate:{walkFps:5,walkFrames:4},king:{duration:.9,impact:.45,walkFps:5,walkFrames:4},prince:{duration:.8,impact:.4,walkFps:6,walkFrames:4},minister:{duration:1,impact:.5,walkFps:5,walkFrames:4},cavalry:{duration:.8,impact:.4,walkFps:6,walkFrames:4},haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,angerFrames:98,angerFps:48,walkFps:48/1.44,walkFrames:48,runFps:48/1.05,runFrames:48,attackFrames:48,idleFrame:96},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},healer:{duration:3.2,impact:1.45,notice:29/24,walkFps:8,walkFrames:4},warden:{walkFps:4,walkFrames:4},ferryman:{walkFps:4,walkFrames:4},waterghost:{walkFps:4,walkFrames:4},spearman:{duration:.8,impact:.4,walkFps:5,walkFrames:4},archer:{duration:1,impact:.5,walkFps:5,walkFrames:4},mangtae:{walkFps:6,walkFrames:4},shadow:{walkFps:7,walkFrames:4},skirt:{walkFps:106/72*4,walkFrames:4},horse:{walkFps:66/94*4,walkFrames:4},reaper:{walkFps:58/78*4,walkFrames:4},boss:{walkFps:16/40*6,walkFrames:6,idleFrame:0}};
 export function motionFrame(kind,walk,moving,action){
  const s=MOTION[kind],walkFrames=s.walkFrames||4,attackFrames=s.attackFrames||4;
  return action?walkFrames+Math.min(attackFrames-1,Math.floor(action.elapsed/s.duration*attackFrames)):(moving||walk>0)?Math.floor(walk*s.walkFps)%walkFrames:(s.idleFrame??1);

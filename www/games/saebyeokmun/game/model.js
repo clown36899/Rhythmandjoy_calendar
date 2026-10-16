@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=103';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=127-field-ready';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -79,7 +79,7 @@ export class Journey {
   if(current||(target&&contactGap(actor,target)<=range+1e-6))actor.engagedId=target.id??null;else delete actor.engagedId;
   return target;
  }
- targetForCharm(){const inRange=this.enemies.filter(e=>e.hp>0&&this.time>=(e.entryAt??e.bornAt)&&e.x>=this.x-30&&e.x<=this.x+590);return inRange.find(e=>e.type==='reaper'||ENEMIES[e.type].behavior==='heal')||inRange.find(e=>e.type!=='skirt')||inRange[0];}
+ targetForCharm(){const inRange=this.enemies.filter(e=>e.hp>0&&this.time>=(e.entryAt??e.bornAt)&&e.x>=this.x-30&&contactGap(this,e)<=590);return inRange.find(e=>e.type==='reaper'||ENEMIES[e.type].behavior==='heal')||inRange.find(e=>e.type!=='skirt')||inRange[0];}
  skill(type){
   if(TEAM_SKILLS[type])return this.teamSkill(type);
   if(this.status!=='playing'||!SKILLS[type])return false;
@@ -192,10 +192,17 @@ export class Journey {
    if(!target||target.hp<=0||Math.abs(target.x-actor.x)>s.search||(!valid&&!action.resolved))action.phase='return';
    if(action.phase==='return'){
     const next=this.healerPatient(actor);
-    if(next){target=next;Object.assign(action,{phase:'approach',targetId:next.id??null,elapsed:0,resolved:false,dir:Math.sign(next.x-actor.x)||1});}
+    if(next){const continuing=action.resolved&&(next.id??null)===action.targetId;target=next;Object.assign(action,{phase:'approach',targetId:next.id??null,elapsed:continuing?spec.notice:0,resolved:false,dir:Math.sign(next.x-actor.x)||1});}
     else{actor.action=null;return;}
    }
    if(action.phase==='approach'){
+    // The existing approach clock first owns the stationary discovery gesture.
+    // No movement or remote heal happens while noticing a new patient.
+    if((action.elapsed??0)<spec.notice){
+     action.elapsed=(action.elapsed??0)+dt;
+     if(action.elapsed<=spec.notice)return;
+     dt=action.elapsed-spec.notice; // Only the part after preparation may travel.
+    }else action.elapsed+=dt;
     // Treatment is cast from behind the patient, not through their body.
     action.dir=1;const goal=target===actor?actor.x:target.x-s.spacing;
     const reached=target===actor||moveTo(goal);
@@ -251,14 +258,14 @@ export class Journey {
    if(action.kind==='enemy'){
     const ally=action.targetId===null?null:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
     const valid=action.targetId===null||!!ally,targetX=ally?.x??this.x;
-    if(valid&&contactGap(actor,{x:targetX})<=ENEMIES[actor.type].range+24){
+    if(valid&&contactGap(actor,ally||this)<=ENEMIES[actor.type].range+24){
      if(actor.type==='reaper'||['ranged','heal'].includes(ENEMIES[actor.type].behavior))this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:'hex',from:actor.x,target:ally||this,damage:ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
      else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);
      this.emit('claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});}
     }
    }else if(action.kind==='haetae'){
     this.emit('stomp',{x:this.x});
-    for(const e of this.enemies)if(e.hp>0&&e.x>=this.x-70&&e.x<=this.x+390){this.hurtEnemy(e,44,this.x,'stomp');this.pushEnemy(e,e.x+85);e.stun=2.1;e.windup=0;e.action=null;}
+    for(const e of this.enemies)if(e.hp>0&&e.x>=this.x-70&&contactGap(this,e)<=390){this.hurtEnemy(e,44,this.x,'stomp');this.pushEnemy(e,e.x+85);e.stun=2.1;e.windup=0;e.action=null;}
    }else{
     const target=this.enemies.find(e=>e.id===action.targetId&&e.hp>0),unit=unitStats(actor.type,this.keeperRank);
     if(target&&target.x>=actor.x-55&&contactGap(actor,target)<=unit.range+1e-6){
@@ -312,8 +319,8 @@ export class Journey {
   const s=UNITS.healer,leaders=this.allies.filter(a=>a.hp>0&&a.type!=='healer'&&!a.entering);
   const formation=Math.min(this.roadEnd-90,leaders.length?Math.max(...leaders.map(a=>a.x))-s.spacing:this.roadEnd-90);
   const front=this.enemies.filter(e=>e.hp>0&&e.x>actor.x-55).sort((a,b)=>(a.x-ENEMY_FRONT[a.type])-(b.x-ENEMY_FRONT[b.type]))[0];
-  const engaged=front&&front.x<=Math.max(formation,actor.x)+HERO_STANDOFF-s.formation+180;
-  return Math.max(START-130,engaged?front.x-ENEMY_FRONT[front.type]-HERO_STANDOFF+s.formation:formation);
+  const engaged=front&&contactGap({...actor,x:Math.max(formation,actor.x)},front)<=HERO_STANDOFF-s.formation+180;
+  return Math.max(START-130,engaged?actor.x+contactGap(actor,front)-HERO_STANDOFF+s.formation:formation);
  }
  step(dt){
   if(this.status!=='playing'||!Number.isFinite(dt)||dt<=0)return;
@@ -328,7 +335,7 @@ export class Journey {
   let movement=direction*(this.direction?76:36)*dt;
   if(this.action||this.teamAction&&!this.direction)movement=0;
   const stopAt=this.direction?145:this.allies.some(a=>a.hp>0)?HERO_STANDOFF:145;
-  if(movement>0&&front)movement=Math.min(movement,Math.max(0,front.x-ENEMY_FRONT[front.type]-this.x-stopAt));
+  if(movement>0&&front)movement=Math.min(movement,Math.max(0,contactGap(this,front)-stopAt));
   this.x=clamp(this.x+movement,START,this.roadEnd);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/76;
   this.furthest=Math.max(this.furthest,this.x);
   this.advanceTeam(dt);
@@ -354,8 +361,11 @@ export class Journey {
    if(a.action?.kind==='team'){a.cd=Math.max(0,a.cd-dt);a.hit=Math.max(0,a.hit-dt);continue;}
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(this.advanceEntry(a,false,dt))continue;
    if(a.type==='cow'){
-    const noticed=this.enemies.some(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55);
-    if(!noticed){a.alerted=false;if(a.action?.phase==='anger')a.action=null;}
+    const threats=this.enemies.filter(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55);
+    if(!threats.length){a.alerted=false;if(a.action?.phase==='anger')a.action=null;}
+    else if(!a.alerted&&!a.action&&threats.some(e=>contactGap(a,e)<=s.range+s.speed*MOTION.cow.angerFrames/MOTION.cow.angerFps)){
+     a.alerted=true;a.action={kind:'cow',phase:'anger',elapsed:0};
+    }
    }
    this.advanceAction(a,dt);
    if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
@@ -374,10 +384,9 @@ export class Journey {
    const target=this.selectContact(a,hittable.length?hittable:ahead,s.range);
    const contactFront=ahead[0];
    // Companions march independently of traveller input, stopping at firing range.
-   const goal=Math.min(this.roadEnd-90,contactFront?contactFront.x-ENEMY_FRONT[contactFront.type]-s.range:this.roadEnd-90),gap=goal-a.x;
-   if(target&&contactGap(a,target)<=s.range+1e-6&&a.cd<=0){
-    if(a.type==='cow'&&!a.alerted){a.alerted=true;a.action={kind:'cow',phase:'anger',elapsed:0};}
-    else{a.cd=s.period;a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,dir:Math.sign(target.x-a.x)||1};}
+   const goal=Math.min(this.roadEnd-90,contactFront?a.x+contactGap(a,contactFront)-s.range:this.roadEnd-90),gap=goal-a.x;
+   if(target&&contactGap(a,target)<=s.range+1e-6&&a.cd<=0&&(a.type!=='cow'||a.alerted)){
+    a.cd=s.period;a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,dir:Math.sign(target.x-a.x)||1};
    }else if(gap>1e-6){a.x+=Math.min(gap,s.speed*dt);}
    const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;
   }
@@ -403,7 +412,7 @@ export class Journey {
       e.action={kind:s.ability.kind,elapsed:0,resolved:false,x:e.focus??this.x};
       if(!s.ability.pattern)this.emit(s.ability.kind,{x:this.x,from:e.x,kind:e.type});
       e.ability=s.ability.cooldown;
-     }else if(e.type==='horse'||s.behavior==='charge'){e.x=Math.max(target.x+45,e.x-150);attackTarget(s.ability.damage);e.ability=s.ability.cooldown;this.emit('charge',{x:e.x,to:target.x,kind:e.type});}
+     }else if(e.type==='horse'||s.behavior==='charge'){e.x=Math.min(e.x,Math.max(e.x-gap+s.range,e.x-150));attackTarget(s.ability.damage);e.ability=s.ability.cooldown;this.emit('charge',{x:e.x,to:target.x,kind:e.type});}
      else if(e.type==='reaper'||s.behavior==='heal'){
       for(const other of this.enemies.filter(other=>!ENEMIES[other.type].stationary))other.hp=Math.min(other.maxHp,other.hp+s.ability.heal*(e.powerScale??1)*ENEMY_OUTPUT);
       this.emit('heal',{x:e.x,enemy:true,kind:e.type});e.ability=s.ability.cooldown;

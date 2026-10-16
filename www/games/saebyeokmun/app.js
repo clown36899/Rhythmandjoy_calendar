@@ -1,9 +1,9 @@
 import {Campaign} from './game/campaign.js?v=70';
-import {Journey} from './game/model.js?v=103';
+import {Journey} from './game/model.js?v=127-field-ready';
 import {Autoplay} from './game/autoplay.js?v=70';
-import {makeGame} from './game/scene.js?v=103';
-import {Soundscape} from './game/audio.js?v=101';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=103';
+import {makeGame} from './game/scene.js?v=selected127-field-ready';
+import {Soundscape} from './game/audio.js?v=selected127-field-ready';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=127-field-ready';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
