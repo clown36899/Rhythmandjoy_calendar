@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=127-field-ready';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=128-close-care';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -187,7 +187,12 @@ export class Journey {
    const spec=MOTION.healer,s=UNITS.healer;
    let target=action.targetId===null?this:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
    const valid=target&&target.hp>0&&target.hp<(target.maxHp??MAX_HP)&&Math.abs(target.x-actor.x)<=s.search;
-   const moveTo=goal=>{const gap=goal-actor.x;actor.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);return Math.abs(goal-actor.x)<1;};
+   const moveTo=goal=>{
+    // Rear spacing is a preferred approach slot, never a reason to retreat
+    // from an already reachable patient (including an overlapping/left one).
+    if(actor.x>=goal&&Math.abs(target.x-actor.x)<=s.range)return true;
+    const gap=goal-actor.x;actor.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);return Math.abs(goal-actor.x)<1;
+   };
    // Lock each wrap to one patient. Reconsider only between wraps or after cancellation.
    if(!target||target.hp<=0||Math.abs(target.x-actor.x)>s.search||(!valid&&!action.resolved))action.phase='return';
    if(action.phase==='return'){
@@ -203,7 +208,7 @@ export class Journey {
      if(action.elapsed<=spec.notice)return;
      dt=action.elapsed-spec.notice; // Only the part after preparation may travel.
     }else action.elapsed+=dt;
-    // Treatment is cast from behind the patient, not through their body.
+    // Approach a distant patient from behind; keep an existing close position.
     action.dir=1;const goal=target===actor?actor.x:target.x-s.spacing;
     const reached=target===actor||moveTo(goal);
     if(reached&&actor.cd<=0){action.phase='treat';action.elapsed=0;actor.cd=s.period;}
