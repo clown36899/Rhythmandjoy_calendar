@@ -976,7 +976,7 @@ body{display:block;min-height:0}
 .vital-values{display:flex;align-items:center;justify-content:space-between;margin-top:4px;gap:4px}
 .vital-values #hp-text{font-size:11px;color:#f5f3dd;white-space:nowrap}
 .vital-values small{font-size:7px;color:#a6d5c9;white-space:nowrap}
-.control-deck{height:93.5px;box-sizing:border-box;padding:4px 18px 8px;align-items:flex-end;gap:12px;background:linear-gradient(180deg,#091b2500,#091b253b)}
+.control-deck{height:80px;box-sizing:border-box;padding:2px 18px calc(2px + env(safe-area-inset-bottom));align-items:flex-end;gap:12px;background:linear-gradient(180deg,#091b2500,#091b253b)}
 .control-deck .movement{width:118px;min-width:118px;display:flex;flex-direction:column;align-items:center;gap:3px;margin:0;position:relative}
 .movement .auto-button{order:-1;border-radius:20px;min-height:24px;padding:3px 12px;font-size:10px}
 .movement .move-pair{display:flex;gap:4px}
@@ -986,15 +986,15 @@ body{display:block;min-height:0}
 .control-deck .actions{display:grid;grid-template-columns:minmax(0,1fr) 173.8px;align-items:end;gap:16px;flex:1;min-width:0;pointer-events:none}
 .actions .action-group{min-width:0;flex:none}
 .summon-group{justify-self:center}
-.summon-group .action-row{display:grid;grid-template-columns:repeat(5,68.2px);gap:9px}
+.summon-group .action-row{display:grid;grid-template-columns:repeat(5,78.2px);gap:4px}
 .actions .action{pointer-events:auto;color:#e8f3e8;background:#173541;box-shadow:none;border:1px solid #88d0c17a;overflow:visible;position:relative;transform:none}
-.summon-group{--summon-size:84px}
-.summon-group .action{width:var(--summon-size);height:var(--summon-size);border:2px solid #88d0c1;border-radius:50%;padding:0;margin-bottom:18px;background:#173541}
-.summon-group .action-art{position:absolute;inset:3px 3px auto;transform:none;width:calc(var(--summon-size) - 10px);height:calc(var(--summon-size) - 20px);display:grid;place-items:center;border-radius:50%;overflow:hidden;background:radial-gradient(ellipse,#47777980,transparent 72%)}
+.summon-group{--summon-size:78px}
+.summon-group .action{width:var(--summon-size);height:var(--summon-size);border:2px solid #88d0c1;border-radius:50%;padding:0;margin-bottom:0;background:#173541}
+.summon-group .action-art{position:absolute;inset:3px 3px auto;transform:none;width:calc(var(--summon-size) - 10px);height:calc(var(--summon-size) - 28px);display:grid;place-items:center;border-radius:50%;overflow:hidden;background:radial-gradient(ellipse,#47777980,transparent 72%)}
 .summon-group .action-art img{height:100%;width:100%;object-fit:contain;transform:scale(1.14);transform-origin:center 58%;opacity:1;filter:none}
 .actions .action-role,.actions .action kbd{display:none}
-.summon-group .action strong{position:absolute;left:0;right:0;top:calc(var(--summon-size) - 19px);line-height:15px;font-size:10px;text-shadow:0 1px 3px #061b23,0 0 5px #061b23;margin:0;text-align:center}
-.summon-group .action small{position:absolute;inset:auto -4px -17px;line-height:14px;background:#173541;font-size:10px;border-radius:8px;color:#f0d899;margin:0;text-align:center}
+.summon-group .action strong{position:absolute;left:0;right:0;top:calc(var(--summon-size) - 29px);line-height:15px;font-size:10px;text-shadow:0 1px 3px #061b23,0 0 5px #061b23;margin:0;text-align:center}
+.summon-group .action small{position:absolute;inset:auto 2px 1px;line-height:14px;background:#173541;font-size:10px;border-radius:8px;color:#f0d899;margin:0;text-align:center}
 .actions .action small em{display:none}
 .actions .cooldown{border-radius:50%;width:100%;max-height:100%;background:transparent;pointer-events:none;overflow:hidden}
 .actions .countdown{position:absolute;inset:15px 0 auto;text-align:center;color:#fff5cb;font-size:20px;line-height:24px;pointer-events:none}
@@ -1004,12 +1004,12 @@ body{display:block;min-height:0}
 .actions .action:active:not(:disabled){background:#479f94}
 .actions .action:disabled{opacity:1;filter:none}
 .actions .action:focus-visible{outline:2px solid #ffe2a3;outline-offset:3px}
-.skill-group{position:relative;height:94.6px;width:173.8px;pointer-events:none}
+.skill-group{position:relative;height:80px;width:173.8px;pointer-events:none}
 .skill-group .action-row{display:block}
 .skill-group .action{position:absolute;width:53.9px;height:53.9px;min-width:44px;border-radius:50%;margin:0;padding:0;background:#173541}
 .skill-group .action:nth-child(1){left:0;bottom:2px}
 .skill-group .action:nth-child(2){right:0;bottom:0;width:80.3px;height:80.3px;border:2px solid #95d4c2;outline:1px solid #d5c89570;outline-offset:4px}
-.skill-group .action:nth-child(3){left:34.1px;top:-24.2px}
+.skill-group .action:nth-child(3){left:34.1px;top:-7px}
 .skill-group .action-art{inset:3px 5px auto;transform:none;width:auto;height:29.7px}
 .skill-group .action-art img{height:100%;width:100%;object-fit:contain}
 .skill-group .action strong{position:absolute;inset:auto -4px 4px;line-height:11px;font-size:8px;margin:0;text-align:center;white-space:nowrap}
@@ -1025,18 +1025,18 @@ body{display:block;min-height:0}
 .vital-values #hp-text{font-size:9px}
 .vital-values small{font-size:6px}
 .hud .journey--celestial{left:51%;width:26%;min-width:150px}
-.control-deck{height:69.3px;min-height:69.3px;padding:3px 9px calc(3px + env(safe-area-inset-bottom));gap:8px;box-sizing:border-box}
+.control-deck{height:68px;min-height:68px;padding:1px 9px calc(1px + env(safe-area-inset-bottom));gap:8px;box-sizing:border-box}
 .control-deck .movement{width:103px;min-width:103px;gap:2px}
 .movement .auto-button{min-height:20px;padding:1px 9px;font-size:8px}
 .move-pair button{width:48px;height:44px;font-size:24px}
 .party-count{position:absolute;top:-9px;bottom:auto;left:0;right:0;text-align:center;font-size:7px}
 .control-deck .actions{grid-template-columns:minmax(0,1fr) 148.5px;gap:10px}
-.summon-group .action-row{gap:8px}
+.summon-group .action-row{gap:4px}
 .summon-group .action{min-width:44px}
 .skill-group{height:75.9px;width:148.5px}
 .skill-group .action{width:48.4px;height:48.4px}
 .skill-group .action:nth-child(2){width:62.7px;height:62.7px;outline-offset:2px}
-.skill-group .action:nth-child(3){left:31.9px;top:-30.8px}
+.skill-group .action:nth-child(3){left:31.9px;top:-12px}
 .skill-group .action-art{height:26.4px}
 .skill-group .action strong{font-size:7px;bottom:4px;line-height:9px}
 .skill-group .action:nth-child(2) .action-art{height:33px;top:4px}
@@ -1184,7 +1184,7 @@ body{display:block;min-height:0}
 .map-enemy{fill:#ff8778}
 .summon-group .unit-count{position:absolute;right:-3px;top:-6px;z-index:7;border:1px solid #b4ded082;border-radius:9px;padding:0 3px;font-size:8px;line-height:13px;background:#173a43ec;color:#e4f5dc;pointer-events:none}
 .actions .action:disabled[data-state=full]{opacity:1;filter:none}
-#team-skills{position:absolute;right:0;bottom:calc(100% + 36px);display:flex;gap:7px;pointer-events:auto}
+#team-skills{position:absolute;right:0;bottom:calc(100% + 8px);display:flex;gap:7px;pointer-events:auto}
 #team-skills[hidden],#team-skills .action[hidden]{display:none}
 #team-skills .action{position:relative;inset:auto;width:62px;height:62px;min-width:62px;border:1px solid #b9e2d5;outline:none;margin:0;padding:0;border-radius:50%;background:#173541;opacity:1;filter:none}
 #team-skills .action-art{inset:4px 5px auto;width:50px;height:37px;transform:none;opacity:1;filter:none}
@@ -1193,7 +1193,7 @@ body{display:block;min-height:0}
 #team-skills .action:focus-visible{outline:2px solid #ffe2a3;outline-offset:3px}
 #team-skills .action[data-state=active]{border-color:#ffe2a3}
 @media(max-width:1000px) and (orientation:landscape){
-#team-skills{gap:5px;bottom:calc(100% + 40px)}
+#team-skills{gap:5px;bottom:calc(100% + 8px)}
 #team-skills .action{width:48.4px;height:48.4px;min-width:48.4px}
 #team-skills .action-art{inset:3px 4px auto;width:38px;height:28px}
 #team-skills .action strong{font-size:7px;bottom:4px}}
@@ -1265,7 +1265,7 @@ body[data-autoplay=true] #callout{display:none}
 .actions{min-width:0}
 .summon-group{flex:1;min-width:0;max-width:520px}
 .skill-group{flex-shrink:0}
-.summon-picker{display:flex;align-items:center;justify-content:flex-end;gap:4px;height:26px;color:#d4e3d9}
+.summon-picker{display:flex;align-items:center;justify-content:flex-end;gap:4px;height:18px;color:#d4e3d9}
 .summon-picker span{margin-right:auto;font-size:8px}
 .summon-picker button{border:1px solid #bad3c04d;border-radius:4px;width:32px;height:25px;background:#2b4647;color:#ecdfb7;font-size:20px;touch-action:manipulation}
 .summon-group .action-row{width:100%;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:none;user-select:none;-webkit-overflow-scrolling:touch}
@@ -1274,7 +1274,7 @@ body[data-autoplay=true] #callout{display:none}
 .summon-group img{pointer-events:none;-webkit-user-drag:none;user-select:none}
 .summon-group .action:hover:not(:disabled){transform:none}
 @media(max-width:1000px) and (orientation:landscape){
-.summon-group{max-width:none;--summon-size:72px}
+.summon-group{max-width:none;--summon-size:70px}
 .summon-picker{height:18px}
 .summon-picker span{font-size:7px}
 .summon-picker button{height:16px;width:26px;font-size:15px}
@@ -1282,7 +1282,7 @@ body[data-autoplay=true] #callout{display:none}
 .summon-group .action small{font-size:9px}
 .control-deck .actions{gap:10px}}
 .summon-group{width:100%;pointer-events:auto}
-.summon-group .action-row{display:flex;flex-wrap:nowrap;padding:8px 5px 3px;max-width:100%}
+.summon-group .action-row{display:flex;flex-wrap:nowrap;padding:5px 5px 0;max-width:100%}
 .summon-group .action{touch-action:pan-x}
 @media(max-width:1000px) and (orientation:landscape){
 .summon-picker button{display:none}}
@@ -1629,7 +1629,7 @@ img,svg,canvas{-webkit-user-drag:none}button,img,svg{user-select:none}
 /* Battle responsiveness follows the actual device screen, including split panes. */
 .phone-screen{container: battle / inline-size}
 @container battle (max-width:760px){
- .control-deck{height:96px;min-height:96px;padding:4px 8px 7px;gap:8px;box-sizing:border-box;flex-wrap:nowrap}
+ .control-deck{height:78px;min-height:78px;padding:1px 8px calc(1px + env(safe-area-inset-bottom));gap:8px;box-sizing:border-box;flex-wrap:nowrap}
  .control-deck .movement{width:96px;min-width:96px;gap:2px;margin:0;display:flex;flex-direction:column}
  .movement .auto-button{min-height:20px;height:20px;width:auto;flex-direction:row;padding:1px 7px;font-size:8px}
  .move-pair button{width:44px;height:44px;min-height:44px;font-size:23px}
@@ -1638,19 +1638,19 @@ img,svg,canvas{-webkit-user-drag:none}button,img,svg{user-select:none}
  .battle-minimap svg{height:27px}
  .minimap-label{font-size:6px;gap:2px;line-height:8px}
  .control-deck .actions{grid-template-columns:minmax(64px,1fr) 112px;gap:8px;align-items:end}
- .summon-group{--summon-size:54px;max-width:none}
+ .summon-group{--summon-size:64px;max-width:none}
  .summon-picker{height:18px}
  .summon-picker span{font-size:7px}
  .summon-picker button{height:18px;width:26px;font-size:15px}
- .summon-group .action-row{gap:7px;padding:7px 5px 3px}
- .summon-group .action{min-width:54px;margin-bottom:15px}
- .summon-group .action strong{font-size:8px;line-height:11px;top:calc(var(--summon-size) - 15px)}
- .summon-group .action small{font-size:8px;line-height:12px;bottom:-14px}
+ .summon-group .action-row{gap:3px;padding:5px 5px 0}
+ .summon-group .action{min-width:64px;margin-bottom:0}
+ .summon-group .action strong{font-size:8px;line-height:11px;top:calc(var(--summon-size) - 25px)}
+ .summon-group .action small{font-size:8px;line-height:12px;bottom:0}
  .summon-group .unit-count{font-size:7px;line-height:11px}
- .skill-group{width:112px;height:76px}
+ .skill-group{width:112px;height:64px}
  .skill-group .action{width:44px;height:44px;min-width:44px}
  .skill-group .action:nth-child(2){width:60px;height:60px;outline-offset:2px}
- .skill-group .action:nth-child(3){left:15px;top:-16px}
+ .skill-group .action:nth-child(3){left:15px;top:-10px}
  .skill-group .action-art{height:25px}
  .skill-group .action strong{font-size:7px;line-height:9px;bottom:3px}
  .skill-group .action small{font-size:7px;line-height:10px;top:-5px}
@@ -1675,7 +1675,7 @@ img,svg,canvas{-webkit-user-drag:none}button,img,svg{user-select:none}
  .hud .coin-bank small{font-size:7px;line-height:9px}
  .stage-tools{top:5px;right:7px;gap:3px}
  .stage-tools .small-round{width:44px;height:44px;min-width:44px}
- #team-skills{gap:4px;bottom:calc(100% + 26px)}
+ #team-skills{gap:4px;bottom:calc(100% + 8px)}
  #team-skills .action{width:44px;height:44px;min-width:44px}
  #team-skills .action-art{width:34px;height:26px}
 }

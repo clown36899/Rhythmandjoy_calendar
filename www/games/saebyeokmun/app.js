@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=133-streaming';
-import {Journey} from './game/model.js?v=133-streaming';
+import {Campaign} from './game/campaign.js?v=134-elevated';
+import {Journey} from './game/model.js?v=134-elevated';
 import {Autoplay} from './game/autoplay.js?v=70';
-import {makeGame} from './game/scene.js?v=selected133-streaming';
-import {Soundscape} from './game/audio.js?v=selected133-streaming';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=133-streaming';
+import {makeGame} from './game/scene.js?v=selected134-elevated';
+import {Soundscape} from './game/audio.js?v=selected134-elevated';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=134-elevated';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -272,9 +272,17 @@ function renderTeamSkills(m,s){
  }
  $('team-skills').hidden=!visible;
 }
+function hydrateIcons(root=document){
+ if(!scene)return;
+ for(const img of root.querySelectorAll('[data-icon]')){
+  const key=img.dataset.icon,src=scene.previewTexture(key);if(src){img.src=src;continue;}
+  const kind=key.replace(/\d+$/,'');if(!scene.commonReady)continue;
+  scene.ensurePreview(kind).then(()=>{if(img.isConnected===false||img.dataset.icon!==key)return;const ready=scene.previewTexture(key);if(ready)img.src=ready;}).catch(()=>{});
+ }
+}
 function renderSummonSlots(){
  $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-count">0/10</span><span class="action-art"><img data-icon="${icon}" src="${scene?.previewTexture(icon)||''}" alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
- lastKeeperRank=-1;
+ lastKeeperRank=-1;hydrateIcons($('summon-slots'));
 }
 function renderRoster(){
  $('roster-balance').textContent='◎ '+campaign.balance.toLocaleString('ko-KR');
@@ -312,7 +320,7 @@ function onReady(error,s){
  if(error){$('loading').textContent=error.message;$('home-loading').textContent=error.message;$('opening-loading').textContent=error.message;return;}
  scene=s;ready=true;startButton.disabled=false;$('enter-map').disabled=false;$('roster-open').disabled=false;$('home-loading').hidden=true;$('loading').hidden=true;$('opening-continue').disabled=false;$('opening-skip').disabled=false;$('opening-loading').textContent='갈 길을 고르면 필요한 그림부터 받습니다.';renderMap();renderSummonSlots();
  // The home menu owns entry; opening the map is always an explicit choice.
- document.querySelectorAll('[data-icon]').forEach(img=>{img.src=scene.previewTexture(img.dataset.icon);img.draggable=false;});
+ hydrateIcons();document.querySelectorAll('[data-icon]').forEach(img=>{img.draggable=false;});
  const preview={skirt:'skirt0',horse:'horse',reaper:'reaper',boss:'boss',haetae:'haetae1',rabbit:'rabbit1',keeper:'keeper1',cow:'cow1',scholar:'scholar1',healer:'healer1',king:'king1',prince:'prince1',minister:'minister1',cavalry:'cavalry1',girl:'girl1',warden:'wardenWalk0',ferryman:'ferrymanWalk0',waterghost:'waterghostWalk0',spearman:'spearman0',archer:'archer0',mangtae:'mangtaeWalk0',shadow:'shadowWalk0'};
  for(const [kind,spec]of Object.entries(ENEMIES))if(spec.atlas)preview[kind]=kind+'Walk0';
  for(const item of [...COMPANIONS,...CODEX]){
@@ -453,7 +461,7 @@ async function prepareFor(title,work,retry){
  $('download-title').textContent=title;$('download-retry').hidden=true;$('download-state').textContent='확인 중';
  updateDownload({loaded:0,total:0,percent:0,phase:'waiting'});
  fitPhoneDialogs();$('asset-loading').showModal();
- try{await work(p=>{if(epoch===entryEpoch)updateDownload(p);});if(epoch!==entryEpoch)return false;$('asset-loading').close();document.querySelectorAll('[data-icon]').forEach(img=>{const src=scene.previewTexture(img.dataset.icon);if(src)img.src=src;});return true;}
+ try{await work(p=>{if(epoch===entryEpoch)updateDownload(p);});if(epoch!==entryEpoch)return false;$('asset-loading').close();hydrateIcons();return true;}
  catch(error){if(epoch===entryEpoch){$('download-state').textContent=error.message;$('download-retry').hidden=false;}return false;}
  finally{preparing=false;}
 }
