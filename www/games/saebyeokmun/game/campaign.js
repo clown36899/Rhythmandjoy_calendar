@@ -1,4 +1,4 @@
-import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=131-world';
+import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=132-world-start';
 // Local progression is separate from Journey's capped battle purse. No cash purchases.
 export class Campaign {
  constructor(saved={}){

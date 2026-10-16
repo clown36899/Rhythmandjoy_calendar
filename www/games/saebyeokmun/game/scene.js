@@ -1,8 +1,8 @@
-import {HEALER_VIDEO} from './healer-motion.js?v=selected131-world';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected131-world';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=131-world';
+import {HEALER_VIDEO} from './healer-motion.js?v=selected132-world-start';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected132-world-start';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=132-world-start';
 import {AssetDownloads} from './downloads.js?v=70';
-import {ASSET_BYTES} from './asset-sizes.js?v=selected131-world';
+import {ASSET_BYTES} from './asset-sizes.js?v=selected132-world-start';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));

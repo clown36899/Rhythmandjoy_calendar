@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=131-world';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=132-world-start';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -9,7 +9,7 @@ export class Journey {
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='집으로 가는 길을 동료와 함께 열어요.';
   delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
  }
- start(stage=this.stage,party=DEFAULT_PARTY,viewportWidth=null,options={}){this.reset();this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.tour=options.tour===true;if(Number.isFinite(viewportWidth)&&viewportWidth>0){this.setViewport(0,viewportWidth);this.setViewport(Math.min(0,this.gateX-viewportWidth+this.portalInset),viewportWidth);}this.status='playing';const first=this.addAlly(this.party[0],this.viewport?undefined:this.x+130);this.emit('summon',{actor:first.id,kind:first.type,x:first.x});this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('');if(this.route.deployment)for(let i=0;i<this.route.deployment.initialWaves;i++)this.deployWave();}
+ start(stage=this.stage,party=DEFAULT_PARTY,viewportWidth=null,options={}){this.reset();this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.tour=options.tour===true;if(Number.isFinite(viewportWidth)&&viewportWidth>0){this.setViewport(0,viewportWidth);this.setViewport(Math.min(0,this.gateX-viewportWidth+this.portalInset),viewportWidth);}this.status='playing';const first=this.addAlly(this.party[0],this.viewport&&!this.route.deployment?undefined:this.x+130);this.emit('summon',{actor:first.id,kind:first.type,x:first.x});this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('');if(this.route.deployment)for(let i=0;i<this.route.deployment.initialWaves;i++)this.deployWave();}
  get summonTypes(){return this.tour?Object.keys(UNITS):this.party;}
  get summonCount(){return this.allies.filter(a=>a.hp>0).length;}
  countAllies(type){return this.allies.filter(a=>a.hp>0&&a.type===type).length;}
