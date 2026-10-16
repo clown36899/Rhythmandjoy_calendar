@@ -220,7 +220,7 @@ export const STAGES=[...CORE_STAGES.slice(0,9),...EXTRA_CHAPTERS,CORE_STAGES[9]]
  const tourEnd=980,tourTypes=[...new Set([...ordinary,...finale.filter(k=>!isBoss(k))])],tourGroups=Array.from({length:Math.ceil(tourTypes.length/4)},(_,j)=>tourTypes.slice(j*4,j*4+4));
  tourGroups.push(finale.filter(isBoss));
  const tourWaves=tourGroups.map((types,j)=>({...waves[Math.min(j,waves.length-1)],types,x:Math.round(START+j*(tourEnd-START-320)/(tourGroups.length-1)),balanceIndex:j===tourGroups.length-1?3:Math.min(j,4)}));
- return{...stage,deployment:i<5?{initialWaves:3,interval:6,limit:12,noticeRadius:600}:undefined,reward:STAGE_REWARDS[i]||null,pressure:i<10?.40+i*.045:1,subtitle:stage.subtitle.replace(/^\d+장/,i+1+'장'),roadEnd,enemySpeedScale:.8,gateHp:i<10?100+i*20:300+i%6*24,waves,gateStyle:i%GATE_STYLES.length,tour:{roadEnd:tourEnd,waves:tourWaves},act:Math.floor(i/10)};
+ return{...stage,deployment:i<5?{initialWaves:3,interval:6,limit:12}:undefined,reward:STAGE_REWARDS[i]||null,pressure:i<10?.40+i*.045:1,subtitle:stage.subtitle.replace(/^\d+장/,i+1+'장'),roadEnd,enemySpeedScale:.8,gateHp:i<10?100+i*20:300+i%6*24,waves,gateStyle:i%GATE_STYLES.length,tour:{roadEnd:tourEnd,waves:tourWaves},act:Math.floor(i/10)};
 });
 
 // Stage definitions own travel bounds; previews, HUD and simulation share these derived coordinates.

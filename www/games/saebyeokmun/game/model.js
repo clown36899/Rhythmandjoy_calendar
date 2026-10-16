@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=132-world-start';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=133-streaming';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -379,9 +379,9 @@ export class Journey {
    if(a.action?.kind==='team'){a.cd=Math.max(0,a.cd-dt);a.hit=Math.max(0,a.hit-dt);continue;}
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(this.advanceEntry(a,false,dt))continue;
    if(a.type==='cow'){
-    const threats=this.enemies.filter(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55);
+    const threats=this.enemies.filter(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55&&contactGap(a,e)<=s.range+30);
     if(!threats.length){a.alerted=false;if(a.action?.phase==='anger')a.action=null;}
-    else if(!a.alerted&&!a.action&&threats.some(e=>contactGap(a,e)<=s.range+s.speed*MOTION.cow.angerFrames/MOTION.cow.angerFps)){
+    else if(!a.alerted&&!a.action){
      a.alerted=true;a.action={kind:'cow',phase:'anger',elapsed:0};
     }
    }
@@ -418,7 +418,6 @@ export class Journey {
    const candidates=[...this.allies.filter(a=>a.hp>0&&a.x<e.x+50),this];
    const chosen=this.selectContact(e,candidates,e.windup>0&&s.ability?s.ability.range:s.range);
    const target={x:chosen.x,a:chosen===this?null:chosen},gap=contactGap(e,chosen);
-   if(this.route.deployment&&gap>Math.max(this.route.deployment.noticeRadius,s.ability?.range??0))continue;
    const attackTarget=(amount)=>{
     if(target.a)this.hurtAlly(target.a,amount*(e.powerScale??1)*ENEMY_OUTPUT,e.x,e.type);
     else this.hurtHero(amount*(e.powerScale??1)*ENEMY_OUTPUT,e.x,e.type);
