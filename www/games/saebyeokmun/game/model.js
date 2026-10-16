@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=128-close-care';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=131-world';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -9,7 +9,7 @@ export class Journey {
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='집으로 가는 길을 동료와 함께 열어요.';
   delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
  }
- start(stage=this.stage,party=DEFAULT_PARTY,viewportWidth=null,options={}){this.reset();this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.tour=options.tour===true;if(Number.isFinite(viewportWidth)&&viewportWidth>0){this.setViewport(0,viewportWidth);this.setViewport(Math.min(0,this.gateX-viewportWidth+this.portalInset),viewportWidth);}this.status='playing';const first=this.addAlly(this.party[0],this.viewport?undefined:this.x+130);this.emit('summon',{actor:first.id,kind:first.type,x:first.x});this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('');}
+ start(stage=this.stage,party=DEFAULT_PARTY,viewportWidth=null,options={}){this.reset();this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.tour=options.tour===true;if(Number.isFinite(viewportWidth)&&viewportWidth>0){this.setViewport(0,viewportWidth);this.setViewport(Math.min(0,this.gateX-viewportWidth+this.portalInset),viewportWidth);}this.status='playing';const first=this.addAlly(this.party[0],this.viewport?undefined:this.x+130);this.emit('summon',{actor:first.id,kind:first.type,x:first.x});this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('');if(this.route.deployment)for(let i=0;i<this.route.deployment.initialWaves;i++)this.deployWave();}
  get summonTypes(){return this.tour?Object.keys(UNITS):this.party;}
  get summonCount(){return this.allies.filter(a=>a.hp>0).length;}
  countAllies(type){return this.allies.filter(a=>a.hp>0&&a.type===type).length;}
@@ -27,7 +27,7 @@ export class Journey {
   if(gap<=0){actor.entering=false;return false;}const speed=(enemy?ENEMIES:UNITS)[actor.type].speed,travel=Math.min(gap,speed*(enemy?this.enemySpeedScale:1)*dt);actor.x+=dir*travel;actor.moving=dir;actor.walk+=travel/speed;if(travel>=gap)actor.entering=false;return true;
  }
  constrainScreen(){
-  const bounds=this.viewport;if(!bounds)return;
+  const bounds=this.viewport;if(!bounds||this.route.deployment)return;
   for(const e of this.enemies){if(e.hp<=0||ENEMIES[e.type].stationary)continue;const pad=this.screenPadding(e.type);
    if(e.entering){if(Number.isFinite(e.entryOrigin)||e.x>bounds.right-pad*.5)continue;e.entering=false;}
    if(e.x<bounds.left-pad){
@@ -42,7 +42,7 @@ export class Journey {
  get roadEnd(){return this.route.roadEnd;}
  get gateX(){return this.roadEnd+GATE-ROAD;}
  get portalInset(){return Math.min(120,(this.viewport?.width??1200)*.1);}
- get portalX(){return Math.min(this.gateX,this.viewport?this.viewport.right-this.portalInset:this.x+760);}
+ get portalX(){if(this.route.deployment)return this.gateX;return Math.min(this.gateX,this.viewport?this.viewport.right-this.portalInset:this.x+760);}
  get waves(){return this.route.waves;}
  emit(type,data={}){this.events.push({type,at:this.time,...data});}
  say(message){this.hint=message;this.hintSerial++;this.lastHintAt=this.time;this.emit('hint',{message});}
@@ -152,7 +152,7 @@ export class Journey {
  hurtEnemy(e,damage,sourceX=this.x,weapon='physical'){if(e.hp<=0||this.status!=='playing'||this.time<(e.entryAt??e.bornAt)||!Number.isFinite(damage)||damage<=0)return;e.hp-=damage;e.hit=.26;e.hitDir=Math.sign(e.x-sourceX)||1;this.emit('hit',{actor:e.id,x:e.x,from:sourceX,dir:e.hitDir,kind:e.type,weapon,damage,enemy:true});this.awardCoins(1,e,'hit');}
  // The gate is an entrance, never an escape route for displaced living enemies.
  // A not-yet-arrived unit keeps its position; knockback cannot pull it out early.
- pushEnemy(e,to){if(ENEMIES[e.type].stationary||this.viewport&&e.entering)return;const right=this.viewport&&!e.entering?Math.min(this.gateX-45,this.viewport.right-this.screenPadding(e.type)*.5):this.gateX-45;e.x=Math.max(e.x,Math.min(right,to));}
+ pushEnemy(e,to){if(ENEMIES[e.type].stationary||this.viewport&&e.entering)return;const right=this.viewport&&!this.route.deployment&&!e.entering?Math.min(this.gateX-45,this.viewport.right-this.screenPadding(e.type)*.5):this.gateX-45;e.x=Math.max(e.x,Math.min(right,to));}
  // A flying attack outlives its launch pose. Journey alone owns contact and rewards.
  launchShot({actor,sourceKind,weapon,from,target,to=target?.x,damage,high=false,stun=0,enemy=false,duration=SHOT_TIME,arc=0,areaRadius=0,finishOnScreen=false}){
   const shot={actor,sourceKind,weapon,from,to,targetId:target?.id??null,targetKind:target?.type||'haetae',damage,high,stun,enemy,t:0,duration,arc,areaRadius,finishOnScreen};
@@ -312,7 +312,7 @@ export class Journey {
   for(const e of this.enemies)if(e.hp<=0&&!e.dead){e.dead=true;if(e.type==='gate'){this.gateBrokenAt=this.time;this.furthest=this.roadEnd;this.emit('gate-break',{x:e.x,kind:'gate',style:STAGES[this.stage].gateStyle});continue;}this.kills++;this.awardCoins(ENEMIES[e.type].reward,e,'defeat');this.emit('vanish',{actor:e.id,x:e.x,kind:e.type,enemy:true,dir:e.hitDir||1});if(isBoss(e.type)){this.bossDefeated=!this.enemies.some(other=>other.hp>0&&isBoss(other.type));if(this.bossDefeated)this.say('');}}
   for(const a of this.allies)if(a.hp<=0)this.emit('vanish',{actor:a.id,x:a.x,kind:a.type,enemy:false,dir:a.hitDir||-1});
   this.enemies=this.enemies.filter(e=>!e.dead);this.allies=this.allies.filter(a=>a.hp>0);
-  if(this.bossDefeated&&this.wave>=this.waves.length&&this.gateBrokenAt===null&&(!this.viewport||this.portalX>=this.gateX-1)&&!this.enemies.some(e=>e.type==='gate')){const gate=this.spawn('gate',this.gateX);gate.hp=gate.maxHp=STAGES[this.stage].gateHp;}
+  if(this.bossDefeated&&this.wave>=this.waves.length&&this.gateBrokenAt===null&&(!this.viewport||this.route.deployment||this.portalX>=this.gateX-1)&&!this.enemies.some(e=>e.type==='gate')){const gate=this.spawn('gate',this.gateX);gate.hp=gate.maxHp=STAGES[this.stage].gateHp;}
  }
  finish(status){if(this.status!=='playing')return;this.status=status;this.direction=0;for(const a of this.allies)if(a.action?.kind==='team')a.action=null;this.teamAction=null;this.emit('finish',{status});}
  healerPatient(actor){
@@ -326,6 +326,19 @@ export class Journey {
   const front=this.enemies.filter(e=>e.hp>0&&e.x>actor.x-55).sort((a,b)=>(a.x-ENEMY_FRONT[a.type])-(b.x-ENEMY_FRONT[b.type]))[0];
   const engaged=front&&contactGap({...actor,x:Math.max(formation,actor.x)},front)<=HERO_STANDOFF-s.formation+180;
   return Math.max(START-130,engaged?actor.x+contactGap(actor,front)-HERO_STANDOFF+s.formation:formation);
+ }
+ // Stage placement and replenishment share the existing wave index and budget.
+ deployWave(){
+  const index=this.wave,w=this.waves[index];if(!w)return false;
+  const d=this.route.deployment,scale=waveBalance(index,this.stage,this.waves).scale;
+  this.wave++;this.waveClearAt=null;
+  if(!this.portal){this.portal={x:this.portalX,openedAt:this.time,style:STAGES[this.stage].gateStyle};this.emit('portal-open',{x:this.portal.x,style:this.portal.style});}
+  if(d)this.portal.openedAt=this.time;
+  const initial=d&&index<d.initialWaves;
+  const centre=initial?(index?START+(this.roadEnd-START)*(.05+.9*index/d.initialWaves):START+480):this.portal.x;
+  w.types.forEach((type,i)=>{const e=this.spawn(type,centre+(initial?i*75:0),scale);e.entering=!initial;if(!initial){e.entryOrigin=this.portal.x;e.entryAt=this.time+i*.85;}});
+  if(w.helper&&!d)this.helperArrivals.set(index,false);
+  this.say(w.message);return true;
  }
  step(dt){
   if(this.status!=='playing'||!Number.isFinite(dt)||dt<=0)return;
@@ -349,13 +362,13 @@ export class Journey {
   const waveEmpty=!this.enemies.some(e=>e.hp>0);
   if(this.wave>0&&waveEmpty&&this.waveClearAt===null)this.waveClearAt=this.time;
   if(!waveEmpty)this.waveClearAt=null;
-  if(this.wave<this.waves.length&&waveEmpty&&(this.furthest>=this.waves[this.wave].x||this.waveClearAt!==null&&this.time-this.waveClearAt>=(this.waves[this.wave].afterClear??Infinity))){
-   const scale=waveBalance(this.wave,this.stage,this.waves).scale,w=this.waves[this.wave++];this.waveClearAt=null;
-   if(!this.portal){this.portal={x:this.portalX,openedAt:this.time,style:STAGES[this.stage].gateStyle};this.emit('portal-open',{x:this.portal.x,style:this.portal.style});}
-   w.types.forEach((type,i)=>{const e=this.spawn(type,this.portal.x,scale);e.entryOrigin=this.portal.x;e.entryAt=this.time+i*.85;e.entering=true;});if(w.helper)this.helperArrivals.set(this.wave-1,false);
-
-   this.say(w.message);
-  }
+  const deployment=this.route.deployment;
+  if(deployment){
+   const next=this.waves[this.wave];
+   if(next&&this.time-(this.portal?.openedAt??0)>=deployment.interval&&this.enemies.filter(e=>e.hp>0).length+next.types.length<=deployment.limit)this.deployWave();
+   const reached=Math.max(this.furthest,...this.allies.filter(a=>a.hp>0).map(a=>a.x));
+   this.waves.forEach((w,i)=>{if(w.helper&&reached>=w.x&&!this.helperArrivals.has(i))this.helperArrivals.set(i,false);});
+  }else if(this.wave<this.waves.length&&waveEmpty&&(this.furthest>=this.waves[this.wave].x||this.waveClearAt!==null&&this.time-this.waveClearAt>=(this.waves[this.wave].afterClear??Infinity)))this.deployWave();
   // Reached helper waves wait for capacity; the same wave index can arrive only once.
   for(const [i,arrived] of this.helperArrivals){const type=this.waves[i].helper;if(arrived||this.atSummonLimit(type))continue;const a=this.addAlly(type);a.helper=true;this.helperArrivals.set(i,true);this.emit('summon',{actor:a.id,kind:a.type,x:a.x});}
   const heroTarget=this.selectContact(this,active.filter(e=>e.x>=this.x-20&&e.type!=='skirt'),480);
@@ -405,6 +418,7 @@ export class Journey {
    const candidates=[...this.allies.filter(a=>a.hp>0&&a.x<e.x+50),this];
    const chosen=this.selectContact(e,candidates,e.windup>0&&s.ability?s.ability.range:s.range);
    const target={x:chosen.x,a:chosen===this?null:chosen},gap=contactGap(e,chosen);
+   if(this.route.deployment&&gap>Math.max(this.route.deployment.noticeRadius,s.ability?.range??0))continue;
    const attackTarget=(amount)=>{
     if(target.a)this.hurtAlly(target.a,amount*(e.powerScale??1)*ENEMY_OUTPUT,e.x,e.type);
     else this.hurtHero(amount*(e.powerScale??1)*ENEMY_OUTPUT,e.x,e.type);
@@ -415,11 +429,11 @@ export class Journey {
     if(e.windup<=0){
      if(isBoss(e.type)){
       e.action={kind:s.ability.kind,elapsed:0,resolved:false,x:e.focus??this.x};
-      if(!s.ability.pattern)this.emit(s.ability.kind,{x:this.x,from:e.x,kind:e.type});
+      if(!s.ability.pattern)this.emit(s.ability.kind,{x:e.focus??target.x,from:e.x,kind:e.type});
       e.ability=s.ability.cooldown;
      }else if(e.type==='horse'||s.behavior==='charge'){e.x=Math.min(e.x,Math.max(e.x-gap+s.range,e.x-150));attackTarget(s.ability.damage);e.ability=s.ability.cooldown;this.emit('charge',{x:e.x,to:target.x,kind:e.type});}
      else if(e.type==='reaper'||s.behavior==='heal'){
-      for(const other of this.enemies.filter(other=>!ENEMIES[other.type].stationary))other.hp=Math.min(other.maxHp,other.hp+s.ability.heal*(e.powerScale??1)*ENEMY_OUTPUT);
+      for(const other of this.enemies.filter(other=>!ENEMIES[other.type].stationary&&(!this.route.deployment||Math.abs(other.x-e.x)<=s.ability.range)))other.hp=Math.min(other.maxHp,other.hp+s.ability.heal*(e.powerScale??1)*ENEMY_OUTPUT);
       this.emit('heal',{x:e.x,enemy:true,kind:e.type});e.ability=s.ability.cooldown;
      }
     }
@@ -428,13 +442,13 @@ export class Journey {
    }
    if(s.ability&&e.ability<=0&&gap<s.ability.range){
     e.windup=s.ability.windup;
-    e.focus=this.x;
+    e.focus=target.x;
     this.emit('warning',{x:e.x,kind:e.type});
     if(isBoss(e.type))this.say(s.ability.name?s.ability.name+'! 빛나는 바닥을 피하거나 비막이를 펼쳐요.':e.type==='boss'?'우박이 쏟아져요! 비막이를 펼쳐 주세요.':e.type==='warden'?'돌창을 들어요! 내려찍기에 비막이!':'큰 파도가 밀려와요! 비막이를 준비해요.');
     else if(e.type==='horse')this.say('말이 돌진을 준비해요. 발구름!');
     continue;
    }
-   if(gap>s.range){const dx=Math.min(s.speed*this.enemySpeedScale*dt,gap-s.range,Math.max(0,e.x-((s.stopAt===undefined?undefined:this.roadEnd-(ROAD-s.stopAt))??(this.viewport?this.viewport.left-this.screenPadding(e.type)-1:START-120))));e.x-=dx;e.moving=dx>0?-1:0;e.walk+=dx/s.speed;}
+   if(gap>s.range){const dx=Math.min(s.speed*this.enemySpeedScale*dt,gap-s.range,Math.max(0,e.x-((s.stopAt===undefined?undefined:this.roadEnd-(ROAD-s.stopAt))??(this.viewport&&!this.route.deployment?this.viewport.left-this.screenPadding(e.type)-1:START-120))));e.x-=dx;e.moving=dx>0?-1:0;e.walk+=dx/s.speed;}
    else if(e.cd<=0){e.cd=s.period;e.action={kind:'enemy',elapsed:0,resolved:false,targetId:target.a?.id??null,dir:Math.sign(target.x-e.x)||-1};}
    if(this.status!=='playing')break;
   }

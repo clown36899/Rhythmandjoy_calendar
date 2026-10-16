@@ -1,8 +1,8 @@
-import {HEALER_VIDEO} from './healer-motion.js?v=selected128-close-care';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected128-close-care';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=128-close-care';
+import {HEALER_VIDEO} from './healer-motion.js?v=selected131-world';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected131-world';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=131-world';
 import {AssetDownloads} from './downloads.js?v=70';
-import {ASSET_BYTES} from './asset-sizes.js?v=selected128-close-care';
+import {ASSET_BYTES} from './asset-sizes.js?v=selected131-world';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -468,16 +468,16 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const x=((i*173-this.offset*.14+t*(i%3+1))%(vw+240)+vw+240)%(vw+240)-120,y=545+(i*37)%Math.max(1,bottom-545);
     water.lineStyle(1,i%3?0xb3c9cb:0xeee8cf,.08+(i%4)*.027);water.lineBetween(x,y,x+17+i%5*8,y);
    }
-   // Scenery only: the seven authored tiles wrap in order without any reflection.
+   // Scenery only: authored surfaces wrap in order without mirroring.
    this.pathTiles.forEach((im,i)=>{
-    if(area.paintingSingle){im.setVisible(false);return;}
+    if(area.paintingSingle&&!area.roadTiles){im.setVisible(false);return;}
     if(!area.roadTiles&&i>=ROAD_SECTIONS.length){im.setVisible(false);return;}
     const tiles=area.roadTiles,part=tiles?tiles[i%tiles.length]:ROAD_SECTIONS[i];
     const total=tiles?tiles.reduce((sum,tile)=>sum+tile.width,0):1536*ROAD_SECTIONS.length;
     let x=tiles?part.x+Math.floor(i/tiles.length)*total-((this.offset*PARALLAX.ground%total)+total)%total:part.x-this.offset*PARALLAX.ground;
     if(!tiles&&model.status==='ready')x=((x+part.width)%total+total)%total-part.width;
     const foot=tiles?part.foot:area.roadFeet?.[i]??part.foot;
-    im.setTexture(tiles?area.roadAtlas?area.texture+'RoadAtlas':area.texture+'Road'+i%tiles.length:waterway?'nightRoad':area.ground,tiles?area.roadAtlas?part.frame:'__BASE':part.frame).setFlipX(false).setPosition(x,GROUND-foot).setDisplaySize(part.width+(tiles?0:.5),part.height).setTint(tiles||day?0xffffff:0xd7e2e5).setVisible(!waterway&&x<vw&&x+part.width>0);
+    im.setTexture(tiles?area.roadAtlas?area.texture+'RoadAtlas':area.texture+'Road'+i%tiles.length:waterway?'nightRoad':area.ground,tiles?area.roadAtlas?part.frame:'__BASE':part.frame).setFlipX(false).setPosition(x,GROUND-foot).setDisplaySize(part.width+(tiles?0:.5),part.height).setTint(tiles||day?0xffffff:0xd7e2e5).setVisible((!waterway||!!tiles)&&x<vw&&x+part.width>0);
    });
    // Endless water has no artificial walking boundary or decorative land islands.
    for(let i=0;i<(waterway?0:12);i++){const x=((i*181+t*5)%Math.max(1,vw)),y=GROUND-25+Math.sin(t*.8+i)*17;water.fillStyle(0xdceab3,.2+.3*Math.sin(t*2+i)**2);water.fillCircle(x,y,1.7);}

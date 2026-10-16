@@ -17,6 +17,11 @@ const CORE_AREAS=[
  {at:0,name:'몽유도원 · 달빛 산수',texture:'inwang',detailFiles:['inwang-near0-v44.webp','inwang-near1-v44.webp'],detailOverlap:160,file:'inwang-far-v44.webp',skyFile:'inwang-sky-v44.webp',cloudFile:'inwang-clouds-v44.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,roadAtlas:'mongyudowon-terrain-v54.webp',roadTiles:[[0,680],[680,1000],[1680,340],[2020,200],[2220,800],[3020,260],[3280,356],[3636,680],[4316,1000],[5316,1212],[6528,744]].map(([x,width],i)=>({frame:'path'+i,x,width,height:720,foot:500,sourceY:0,sourceHeight:720}))},
  {at:1,name:'수원 · 높은 버들숲',texture:'home1',detailFiles:[],detailOverlap:0,file:'homecoming-02-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.68}, {at:2,name:'공주 · 금강의 기와다리',texture:'home2',detailFiles:[],detailOverlap:0,file:'homecoming-03-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.59}, {at:3,name:'부여 · 사막의 꿈',texture:'home3',detailFiles:[],detailOverlap:0,file:'homecoming-04-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.62}, {at:4,name:'군산 · 푸른 바닷가',texture:'home4',detailFiles:[],detailOverlap:0,file:'homecoming-05-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'water',panorama:true,paintingSingle:true,paintingFoot:.70}, {at:5,name:'전주 · 돌아오는 장터',texture:'home5',detailFiles:[],detailOverlap:0,file:'homecoming-06-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.70}, {at:6,name:'남원 · 전쟁의 꿈',texture:'home6',detailFiles:[],detailOverlap:0,file:'homecoming-07-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.70}, {at:7,name:'광양 · 지옥의 꿈',texture:'home7',detailFiles:[],detailOverlap:0,file:'homecoming-08-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.70}, {at:8,name:'여수 · 끝없는 물길',texture:'home8',detailFiles:[],detailOverlap:0,file:'homecoming-09-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'water',panorama:true,paintingSingle:true,paintingFoot:.70}, {at:9,name:'순천 · 갈대늪 너머 집',texture:'home9',detailFiles:[],detailOverlap:0,file:'homecoming-10-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.70}
 ];
+// These authored foregrounds match their own clean plates, including the sea's
+// near water. Later paintings keep their original no-generic-ground protection.
+for(const [i,scale,foot] of [[1,1.4,550],[2,2.4,469],[3,1.4,497],[4,1.4,566]]){
+ Object.assign(CORE_AREAS[i],{file:`home${i}-background-v131.webp`,roadTiles:[{file:`home${i}-terrain-v131.webp`,x:0,width:Math.round(1942*scale),height:Math.round((i===4?809:810)*scale),foot:foot*scale}]});
+}
 export const AREAS=[...CORE_AREAS.slice(0,9),...EXTRA_CHAPTERS.map((s,i)=>({at:i+9,name:s.place+' · '+s.name,texture:'journey'+(i+10),detailFiles:[],detailOverlap:0,file:s.asset,skyInPainting:true,split:1,ground:s.ground,panorama:true,paintingSingle:true,paintingFoot:s.paintingFoot})),{...CORE_AREAS[9],at:39}];
 for(const s of EXTRA_MONSTERS)BODY_HEIGHT[s.key]=s.height;
 // One presentation size table serves every cel, wound and departure.
@@ -82,7 +87,8 @@ export const TEAM_SKILLS={
  cavalryCharge:{name:'기병 일제돌진',unit:'cavalry',required:5,cost:0,cooldown:45,icon:'cavalry1',castTime:3.2,description:'기병 5명이 전방에 줄을 맞춰 돌진하고 같은 기병들이 돌아와 전투를 계속합니다.'}
 };
 export const DEFAULT_PARTY=['cow','keeper','rabbit','scholar','healer'];
-export const STARTER_PARTY=['cow'];
+// Rebuilt companions are available from first play; girl/haetae are the base heroes.
+export const STARTER_PARTY=['cow','healer'];
 // One reward schedule shared by settlement, collection UI and stage tuning.
 export const STAGE_REWARDS=['keeper','rabbit','healer','spearman','archer','scholar','prince','minister','cavalry','king'];
 export function validParty(value){return Array.isArray(value)&&value.length>=1&&value.length<=5&&new Set(value).size===value.length&&value.every(k=>Object.hasOwn(UNITS,k));}
@@ -204,15 +210,17 @@ export const STAGES=[...CORE_STAGES.slice(0,9),...EXTRA_CHAPTERS,CORE_STAGES[9]]
  const fallback=stage.waves?.slice(0,3).map(w=>w.types)||[['dokkaebi','bandit'],['pirate','waterghost'],['changgwi','gumiho']];
  const boss=family.find(s=>s.boss)?.key||addedBosses[i%Math.max(1,addedBosses.length)]?.key||['boss','warden','ferryman'][i%3];
  const endTypes=stage.waves?.at(-1).types||[boss,ordinary.at(-1)||'shadow'];
- const roadEnd=i<10?1500+i*150:stage.waves?3600+i%5*480:stage.roadEnd,count=i<10?3+Math.ceil(i/2):2*Math.max(6+i%4,Math.ceil(ordinary.length/2)+1);
+ const roadEnd=i<5?[3300,6000,6900,7200,8400][i]:i<10?1500+i*150:stage.waves?3600+i%5*480:stage.roadEnd;
+ // A bounded stream of four keeps the requested total without spawning a crowd.
+ // The final boss is included; the exit gate is scenery, not a monster quota.
+ const total=i<5?50+i*10:null,count=total?Math.ceil((total-1)/4)+1:i<10?3+Math.ceil(i/2):2*Math.max(6+i%4,Math.ceil(ordinary.length/2)+1);
  const finale=[...new Set([...endTypes,...family.filter(s=>s.boss).map(s=>s.key)])];
- const waves=Array.from({length:count},(_,j)=>({x:Math.round(START+j*(roadEnd-START-420)/(count-1)),types:i<10?(j===count-1?[endTypes.find(isBoss)||boss]:Array.from({length:Math.min(2+Math.floor(i/3),4)},(_,n)=>(stage.waves?.[j%3].types.filter(k=>!isBoss(k))||fallback[j%fallback.length])[n%(stage.waves?.[j%3].types.filter(k=>!isBoss(k)).length||fallback[j%fallback.length].length)])):j===count-1?finale:ordinary.length?Array.from({length:4},(_,n)=>ordinary[(j*4+n)%ordinary.length]):fallback[j%fallback.length],balanceIndex:j===count-1?3:Math.min(j,4),helper:i===1&&j===1?'spearman':i===1&&j===3?'archer':null,message:j===count-1?'지옥문 안에서 큰 귀물이 나와요. 예고를 살펴 함께 막아요.':stage.hint}));
+ const waves=Array.from({length:count},(_,j)=>({x:Math.round(START+j*(roadEnd-START-420)/(count-1)),types:i<10?(j===count-1?[endTypes.find(isBoss)||boss]:Array.from({length:total?Math.min(4,total-1-j*4):Math.min(2+Math.floor(i/3),4)},(_,n)=>(stage.waves?.[j%3].types.filter(k=>!isBoss(k))||fallback[j%fallback.length])[n%(stage.waves?.[j%3].types.filter(k=>!isBoss(k)).length||fallback[j%fallback.length].length)])):j===count-1?finale:ordinary.length?Array.from({length:4},(_,n)=>ordinary[(j*4+n)%ordinary.length]):fallback[j%fallback.length],balanceIndex:j===count-1?3:total?Math.min(2,Math.floor(j*3/(count-1))):Math.min(j,4),helper:i===1&&j===1?'spearman':i===1&&j===3?'archer':null,message:j===count-1?'지옥문 안에서 큰 귀물이 나와요. 예고를 살펴 함께 막아요.':stage.hint}));
  // The short observer route covers every regional identity, not just first/last waves.
  const tourEnd=980,tourTypes=[...new Set([...ordinary,...finale.filter(k=>!isBoss(k))])],tourGroups=Array.from({length:Math.ceil(tourTypes.length/4)},(_,j)=>tourTypes.slice(j*4,j*4+4));
  tourGroups.push(finale.filter(isBoss));
  const tourWaves=tourGroups.map((types,j)=>({...waves[Math.min(j,waves.length-1)],types,x:Math.round(START+j*(tourEnd-START-320)/(tourGroups.length-1)),balanceIndex:j===tourGroups.length-1?3:Math.min(j,4)}));
- if(i===0)for(const wave of waves.slice(1))wave.afterClear=3;
- return{...stage,reward:STAGE_REWARDS[i]||null,pressure:i<10?.40+i*.045:1,subtitle:stage.subtitle.replace(/^\d+장/,i+1+'장'),roadEnd,enemySpeedScale:.8,gateHp:i<10?100+i*20:300+i%6*24,waves,gateStyle:i%GATE_STYLES.length,tour:{roadEnd:tourEnd,waves:tourWaves},act:Math.floor(i/10)};
+ return{...stage,deployment:i<5?{initialWaves:3,interval:6,limit:12,noticeRadius:600}:undefined,reward:STAGE_REWARDS[i]||null,pressure:i<10?.40+i*.045:1,subtitle:stage.subtitle.replace(/^\d+장/,i+1+'장'),roadEnd,enemySpeedScale:.8,gateHp:i<10?100+i*20:300+i%6*24,waves,gateStyle:i%GATE_STYLES.length,tour:{roadEnd:tourEnd,waves:tourWaves},act:Math.floor(i/10)};
 });
 
 // Stage definitions own travel bounds; previews, HUD and simulation share these derived coordinates.

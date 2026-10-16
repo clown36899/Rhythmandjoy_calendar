@@ -1,11 +1,11 @@
-import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=70';
+import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=131-world';
 // Local progression is separate from Journey's capped battle purse. No cash purchases.
 export class Campaign {
  constructor(saved={}){
   this.cleared=Array.isArray(saved?.cleared)?[...new Set(saved.cleared.filter(i=>Number.isInteger(i)&&STAGES[i]).map(i=>(saved.routeVersion??1)<2&&i===9?STAGES.length-1:i))]:[];
   this.balance=Number.isSafeInteger(saved?.balance)&&saved.balance>=0?saved.balance:0;
   const legacy=saved?.collectionVersion!==1&&(Array.isArray(saved?.owned)||validParty(saved?.party));
-  this.owned=[...new Set([...(legacy?DEFAULT_PARTY:STARTER_PARTY),...(Array.isArray(saved?.owned)?saved.owned.filter(k=>Object.hasOwn(UNITS,k)):[]),...this.cleared.map(i=>STAGE_REWARDS[i]).filter(Boolean)])];
+  this.owned=[...new Set([...STARTER_PARTY,...(legacy?DEFAULT_PARTY:[]),...(Array.isArray(saved?.owned)?saved.owned.filter(k=>Object.hasOwn(UNITS,k)):[]),...this.cleared.map(i=>STAGE_REWARDS[i]).filter(Boolean)])];
   const party=Array.isArray(saved?.party)?saved.party.filter(k=>this.owned.includes(k)):[];
   this.party=validParty(party)?[...party]:this.owned.slice(0,5);
   this.run=Number.isSafeInteger(saved?.run)&&saved.run>=0?saved.run:0;
