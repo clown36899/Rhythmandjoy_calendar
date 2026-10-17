@@ -4,7 +4,7 @@ import {TRAVELLER_VIDEO} from './traveller-motion.js?v=146-entry';
 import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=146-entry';
 import {AssetDownloads} from './downloads.js?v=70';
 import {VIDEO_DELIVERY} from './video-delivery.js?v=146-entry';
-import {ASSET_BYTES} from './asset-sizes.js?v=146-entry';
+import {ASSET_BYTES} from './asset-sizes.js?v=146-entry-opt';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));

@@ -1,7 +1,7 @@
 import {Campaign} from './game/campaign.js?v=146-entry';
 import {Journey} from './game/model.js?v=146-entry';
 import {Autoplay} from './game/autoplay.js?v=146-entry';
-import {makeGame} from './game/scene.js?v=146-entry';
+import {makeGame} from './game/scene.js?v=146-entry-opt';
 import {Soundscape} from './game/audio.js?v=146-entry';
 import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=146-entry';
 const $=id=>document.getElementById(id);
@@ -141,9 +141,9 @@ function coverOpening(){
  video.play().catch(()=>{});
 }
 async function prepareOpeningFilm(stage){
- const video=$('opening-video'),file=`./assets/entry-stage${stage===1?2:1}-v146.mp4`;
+ const epoch=entryEpoch,video=$('opening-video'),file=`./assets/entry-stage${stage===1?2:1}-v146.mp4`;
  if(video.dataset.nextFile===file)return;
- await scene.downloads.request({url:file});const blob=scene.downloads.take(file);
+ await scene.downloads.request({url:file});const blob=scene.downloads.take(file);if(epoch!==entryEpoch)return;
  if(video.dataset.nextSrc)URL.revokeObjectURL(video.dataset.nextSrc);
  video.dataset.nextSrc=URL.createObjectURL(blob);video.dataset.nextFile=file;
 }
@@ -181,7 +181,13 @@ $('opening-video').addEventListener('error',finishOpeningFilm);
 $('opening').addEventListener('animationend',e=>{if(e.target!==$('opening')||e.animationName!=='entry-world'||!openingAutomatic)return;$('opening').close();document.body.dataset.entryPhase='ui';});
 document.querySelector('.control-deck').addEventListener('animationend',e=>{if(e.target===document.querySelector('.control-deck')&&e.animationName==='entry-hud')finishOpeningUI();});
 $('opening').addEventListener('cancel',e=>{if(openingAutomatic)e.preventDefault();});
-$('opening').addEventListener('close',()=>{openingEpoch++;stopNarration();});
+$('opening').addEventListener('close',()=>{
+ openingEpoch++;stopNarration();const video=$('opening-video');
+ // Closing releases movie buffers; backgrounding only pauses the current film.
+ video.removeAttribute('src');video.load();
+ if(video.dataset.nextSrc)URL.revokeObjectURL(video.dataset.nextSrc);
+ delete video.dataset.nextSrc;delete video.dataset.nextFile;delete video.dataset.clip;
+});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&$('opening').open&&['playing','preparing'].includes($('opening').dataset.phase))$('opening-video').play().catch(finishOpeningFilm);});
 function updateBest(){const n=Math.floor(model.progress()*100);best=Math.max(best,n);$('best').textContent=best+'%';try{localStorage.setItem('saebyeokmun-best',String(best));}catch{}}
 async function start(testStage=null,cinematic=false){
