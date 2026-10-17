@@ -19,7 +19,7 @@ const CORE_AREAS=[
 ];
 // v134 viewpoint trial: one broad painted deck, four stable presentation depths.
 // Journey retains its existing horizontal combat and travel coordinates.
-Object.assign(CORE_AREAS[0],{roadAtlas:null,roadFlipX:true,roadTopTrim:10,actorScale:.675,actorFloors:[380,440,500,560],cameraAnchor:.5,gateFile:'stage1-gate-isometric-v134.webp',gateOrigin:[.48,.83],gateGround:470,gateHeight:650,gateColor:0xd34e31,gateLipStart:.63,roadTiles:[{file:'stage1-isometric-road-v134.webp',x:0,width:1983,height:793,foot:500,top:300}]});
+Object.assign(CORE_AREAS[0],{roadAtlas:null,roadFlipX:true,roadTopTrim:5,actorScale:.8775,actorFloors:[425,455,485,515],cameraAnchor:.5,gateFile:'stage1-gate-isometric-v134.webp',gateOrigin:[.48,.83],gateGround:470,gateHeight:650,gateColor:0xd34e31,gateLipStart:.63,roadTiles:[{file:'stage1-isometric-road-v137.webp',x:0,width:1983,height:396.5,sourceHeight:793,foot:286,top:300}]});
 // These authored foregrounds match their own clean plates, including the sea's
 // near water. Later paintings keep their original no-generic-ground protection.
 for(const [i,scale,foot] of [[1,1.4,550],[2,2.4,469],[3,1.4,497],[4,1.4,566]]){

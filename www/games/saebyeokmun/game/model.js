@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=136-mid';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=137-flow';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -73,10 +73,15 @@ export class Journey {
  // Action.targetId owns one strike. engagedId only retains contact between strikes.
  // Release on death/escape; ties use the same layer as the actual character drawing.
  selectContact(actor,candidates,range){
-  const sorted=candidates.filter(a=>a.hp>0).sort((a,b)=>contactGap(actor,a)-contactGap(actor,b)||actorLayer(b)-actorLayer(a));
-  const current=sorted.find(a=>(a.id??null)===actor.engagedId&&contactGap(actor,a)<=range+18);
-  const target=current||sorted[0];
-  if(current||(target&&contactGap(actor,target)<=range+1e-6))actor.engagedId=target.id??null;else delete actor.engagedId;
+  let nearest,current,nearestGap=Infinity,currentGap=Infinity,nearestLayer=-Infinity,currentLayer=-Infinity;
+  for(const candidate of candidates){
+   if(!(candidate.hp>0))continue;
+   const gap=contactGap(actor,candidate),layer=actorLayer(candidate);
+   if(!nearest||gap<nearestGap||gap===nearestGap&&layer>nearestLayer){nearest=candidate;nearestGap=gap;nearestLayer=layer;}
+   if((candidate.id??null)===actor.engagedId&&gap<=range+18&&(!current||gap<currentGap||gap===currentGap&&layer>currentLayer)){current=candidate;currentGap=gap;currentLayer=layer;}
+  }
+  const target=current||nearest;
+  if(current||(target&&nearestGap<=range+1e-6))actor.engagedId=target.id??null;else delete actor.engagedId;
   return target;
  }
  targetForCharm(){const inRange=this.enemies.filter(e=>e.hp>0&&this.time>=(e.entryAt??e.bornAt)&&e.x>=this.x-30&&contactGap(this,e)<=590);return inRange.find(e=>e.type==='reaper'||ENEMIES[e.type].behavior==='heal')||inRange.find(e=>e.type!=='skirt')||inRange[0];}
