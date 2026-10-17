@@ -23,7 +23,7 @@ async function previewMotion(name){
  // Source time/ranges come from the same deployed clip, not a separate timing model.
  const range=['walk','run','runUrgent','attack'].includes(name)?spec.cycles?.[0]:null,start=range?.start||0,end=range?.end??spec.frames-1;
  try{
-  const key=spec.asset+':'+Math.floor(start/24);await scene.loadFiles([key],p=>{if(ticket===previewSerial)$('motion-progress').textContent='동작 준비 · '+(p.phase==='prepare'?'그림 처리':Math.round(p.percent||0)+'%');});await scene.decodeVideo(key);
+  const [key]=scene.videoFiles([spec.asset+':'+Math.floor(start/24)]);await scene.loadFiles([key],p=>{if(ticket===previewSerial)$('motion-progress').textContent='동작 준비 · '+(p.phase==='prepare'?'그림 처리':Math.round(p.percent||0)+'%');});await scene.decodeVideo(key);
   if(ticket!==previewSerial)return;
   restart();model.enemies=[];model.projectiles=[];model.wave=model.waves.length;model.auto=false;$('auto').checked=false;
   model.x=model.furthest=model.roadEnd-90;
