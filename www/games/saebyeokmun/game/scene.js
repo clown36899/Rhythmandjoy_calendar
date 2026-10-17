@@ -1,3 +1,4 @@
+import {ATLAS_SLICES} from './atlas-slices.js?v=144-opt';
 import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
 import {TRAVELLER_VIDEO} from './traveller-motion.js?v=144-open';
 import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=144-open';
@@ -125,17 +126,19 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.loadedFiles=new Set();this.processedRecipes=new Set();this.stageKeys=new Set();
    this.videoSources=new Map();this.videoFrames=new Map();this.videoRequests=new Map();this.videoFrameIndex=new Map();
    for(const [kind,clips]of Object.entries(VIDEO_MOTION))for(const spec of Object.values(clips))for(let i=0;i<spec.frames;i++)this.videoFrameIndex.set(spec.prefix+i,{spec,index:i,kind});
+   const areaKeys=this.areaKeys(),enemyKeys=this.enemySheetKeys();
+   this.commonKeys=[...this.files.keys()].filter(key=>!SUPERSEDED_SHEETS.has(key)&&!areaKeys.has(key)&&!enemyKeys.has(key)&&!OPTIONAL_SHEETS.has(key)&&!this.files.get(key).video);
+   onReady(null,this);
+  }
+  motionFiles(kinds){
    // Fast attacks/anticipation must be ready before combat. Long loops stream
    // their next 24 cels through the same loader, without preparing every variant.
-   const immediate=new Set(VIDEO_SHEETS.filter(s=>Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&!['dance','annoyed','sit','receiveHeal','death'].includes(name)))).flatMap(s=>{
+   return [...new Set(VIDEO_SHEETS.filter(s=>kinds.some(kind=>Object.entries(VIDEO_MOTION[kind]||{}).some(([name,c])=>c===s&&!['dance','annoyed','sit','receiveHeal','death'].includes(name)))).flatMap(s=>{
     const complete=Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&['attack','anticipation','combatCalm','anger','rageRun','rageHold','runUrgent','castHeal','castHealLight','castHealBless'].includes(name)));
     if(complete)return VIDEO_DELIVERY[s.asset].parts.map((_,i)=>s.asset+':'+i);
     const moving=Object.values(VIDEO_MOTION).some(clips=>clips.walk===s||clips.run===s),cycle=s.cycles?.[0],start=moving?cycle?.start??0:0,end=moving?Math.min(cycle?.end??s.frames-1,start+47):0;
     return Array.from({length:Math.floor(end/24)-Math.floor(start/24)+1},(_,i)=>s.asset+':'+(Math.floor(start/24)+i));
-   }));
-   const areaKeys=this.areaKeys(),enemyKeys=this.enemySheetKeys();
-   this.commonKeys=[...this.files.keys()].filter(key=>!SUPERSEDED_SHEETS.has(key)&&!areaKeys.has(key)&&!enemyKeys.has(key)&&!OPTIONAL_SHEETS.has(key)&&(!this.files.get(key).video||immediate.has(key)));
-   onReady(null,this);
+   }))];
   }
   areaKeys(index=null){
    const result=new Set();for(const a of index===null?AREAS:[AREAS[index]]){
@@ -146,9 +149,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }return result;
   }
   enemySheetKeys(){return new Set(Object.entries(ENEMIES).filter(([,s])=>s.atlas).map(([k,s])=>s.atlasGroups?'enemyAtlas:'+s.atlas:k+'Motion'));}
-  stageFiles(index){
+  stageFiles(index,tour=false){
    const keys=this.areaKeys(index);
-   for(const kind of new Set([...STAGES[index].waves,...STAGES[index].tour.waves].flatMap(w=>w.types))){const s=ENEMIES[kind];if(s?.atlas)keys.add(s.atlasGroups?'enemyAtlas:'+s.atlas:kind+'Motion');else for(const key of LEGACY_FOE_SHEETS[kind]||[])keys.add(key);}
+   for(const kind of new Set((tour?STAGES[index].tour.waves:STAGES[index].waves).flatMap(w=>w.types))){const s=ENEMIES[kind];if(s?.atlas)keys.add(s.atlasGroups?'enemyAtlas:'+s.atlas:kind+'Motion');else for(const key of LEGACY_FOE_SHEETS[kind]||[])keys.add(key);}
    if(index===1){keys.add('battle');keys.add('distantTroops');}
    const area=AREAS[index];if(!area.paintingSingle&&!area.roadTiles&&area.ground!=='water')keys.add(area.ground);
    return [...keys];
@@ -208,24 +211,27 @@ export function makeGame(model,onReady,onFrame,onEvents){
     // Running retains the registered floor so airborne poses do not stick to the ground.
     for(const clips of Object.values(VIDEO_MOTION))for(const [name,spec] of Object.entries(clips))for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;const planted=spec.planted??['idle','walk','death'].includes(name);if(!planted||!this.grounding.has(key))this.grounding.set(key,planted?VIDEO_DELIVERY[spec.asset].ground[i]:spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
     this.initializeWorld();
+    this.commonReady=true;
+   })();try{await this.commonPromise;}finally{this.commonPromise=null;}
+  }
+  async warmVideo(keys){
     // Prepare actual entry cels before controls become live. Decoding on the first
     // moving frame otherwise holds idle artwork while the model already travels.
     // Warm companions first and the two directly controlled bodies last. The
     // bounded LRU must retain their entry pages when controls become available.
-    const warmKinds=Object.entries(VIDEO_MOTION).sort(([a],[b])=>Number(!UNITS[a])-Number(!UNITS[b]));
+    const selected=new Set(this.videoFiles(keys)),warmKinds=Object.entries(VIDEO_MOTION).sort(([a],[b])=>Number(!UNITS[a])-Number(!UNITS[b]));
     if(this.videoFrameIndex)for(const [,clips] of warmKinds)for(const name of ['idle','walk','run','runUrgent']){
      const spec=clips[name];if(!spec)continue;
      const start=name==='idle'?0:spec.cycles?.[0]?.start??0,end=name==='idle'?0:Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+47),entries=name==='runUrgent'?[0,start]:[start];
      for(let i=(Math.floor(start/24)+1)*24;i<=end;i+=24)entries.push(i);
-     for(const i of entries){const key=this.videoPage(this.videoFrameIndex.get(spec.prefix+i)).sourceKey;if(!this.loadedFiles.has(key))continue;await this.decodeVideo(key);this.videoCel(spec.prefix+i);this.trimPresentationCache();}
+     for(const i of entries){const key=this.videoPage(this.videoFrameIndex.get(spec.prefix+i)).sourceKey;if(!selected.has(key)||!this.loadedFiles.has(key))continue;await this.decodeVideo(key);this.videoCel(spec.prefix+i);this.trimPresentationCache();}
     }
-    this.commonReady=true;
-   })();try{await this.commonPromise;}finally{this.commonPromise=null;}
   }
-  async prepareStage(index,onProgress){
+  async prepareStage(index,onProgress,tour=false,party=model.party){
    this.ready=false;
-   const keys=this.stageFiles(index);await this.loadFiles([...this.commonKeys,...keys],onProgress);
-   await this.ensureCommon();this.prepareArea(index);
+   const route=tour?STAGES[index].tour:STAGES[index],kinds=[...new Set(['girl','haetae',...party,...route.waves.map(w=>w.helper).filter(Boolean)])];
+   const keys=[...this.stageFiles(index,tour),...this.motionFiles(kinds)];await this.loadFiles([...this.commonKeys,...keys],onProgress);
+   await this.ensureCommon();await this.warmVideo(keys);this.prepareArea(index);
    this.releaseStage(keys);this.previewAreaIndex=index;this.ready=true;
   }
   prepareArea(index){
@@ -366,9 +372,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    let compressed=0;for(const s of this.videoSources?.values()||[])compressed+=s.blob?.size||0;
    for(const [key,s]of [...(this.videoSources||[])].sort((a,b)=>a[1].used-b[1].used)){if(compressed<=VIDEO_BLOB_BUDGET)break;if(s.image||activeParts.has(key)||this.videoRequests.has(key))continue;compressed-=s.blob?.size||0;this.videoSources.delete(key);this.loadedFiles.delete(key);}
   }
-  prefetchStage(index,onProgress){
+  prefetchStage(index,onProgress,tour=model.tour){
    if(!STAGES[index])return Promise.resolve();
-   return this.downloads.prefetch(this.stageFiles(index).filter(k=>!this.loadedFiles.has(k)).map(k=>this.files.get(k)),onProgress);
+   return this.downloads.prefetch(this.stageFiles(index,tour).filter(k=>!this.loadedFiles.has(k)).map(k=>this.files.get(k)),onProgress);
   }
   async ensurePreview(kind){
    // Collection portraits reuse the registered slicing recipe, without loading the battle bundle.
@@ -382,60 +388,77 @@ export function makeGame(model,onReady,onFrame,onEvents){
   sliceAtlas(sheet,names,columns=3,sharedBounds=false,rows=2,layout=null,scaleReference=null,atlasGroup=null,maxCell=null){
    if(this.recording){this.recipes.push([sheet,names,columns,sharedBounds,rows,layout,scaleReference,atlasGroup,maxCell]);return;}
    if(sheet==='hellgates')layout=this.cache.json.get('hellgateLayout');
-   const source=this.textures.get(sheet).getSourceImage(),sw=source.width/columns;let sh=source.height/rows;
-   const scratch=document.createElement('canvas');scratch.width=source.width;scratch.height=source.height;
-   const ctx=scratch.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,0,0);
-   const atlas=ctx.getImageData(0,0,source.width,source.height).data;
-   // Generated sheets have real gutters near, but not exactly on, equal-grid boundaries.
-   // Find those transparent bands before cropping so the previous row's shoes cannot leak in.
-   const gutters=(count,size,occupied)=>{
-    const result=[0],cell=size/count;
-    for(let i=1;i<count;i++){
-     const center=i*cell,lo=Math.max(0,Math.floor(center-cell*.18)),hi=Math.min(size,Math.ceil(center+cell*.18));
-     let best=Math.round(center),distance=Infinity,begin=-1;
-     for(let n=lo;n<=hi;n++){
-      if(n<hi&&!occupied[n]){if(begin<0)begin=n;}
-      else if(begin>=0){if(n-begin>=4){const mid=Math.round((begin+n)/2),d=Math.abs(mid-center);if(d<distance){best=mid;distance=d;}}begin=-1;}
+   const source=this.textures.get(sheet).getSourceImage();
+   const recipe=JSON.stringify([sheet,names,columns,sharedBounds,rows,layout,scaleReference,atlasGroup,maxCell]);
+   const prepared=!this.recordSlices&&ATLAS_SLICES[sheet]?.find(entry=>entry.recipe===recipe&&entry.width===source.width&&entry.height===source.height&&entry.bytes===ASSET_BYTES[this.files?.get(sheet)?.url]);
+   const scratch=document.createElement('canvas'),ctx=scratch.getContext('2d',{willReadFrequently:!prepared});
+   let cells,cw,ch,bounds;
+   if(prepared){({cells,cw,ch,bounds}=prepared);}else{
+    const sw=source.width/columns;let sh=source.height/rows;
+    scratch.width=source.width;scratch.height=source.height;ctx.drawImage(source,0,0);
+    const atlas=ctx.getImageData(0,0,source.width,source.height).data;
+    // Generated sheets have real gutters near, but not exactly on, equal-grid boundaries.
+    // Find those transparent bands before cropping so the previous row's shoes cannot leak in.
+    const gutters=(count,size,occupied)=>{
+     const result=[0],cell=size/count;
+     for(let i=1;i<count;i++){
+      const center=i*cell,lo=Math.max(0,Math.floor(center-cell*.18)),hi=Math.min(size,Math.ceil(center+cell*.18));
+      let best=Math.round(center),distance=Infinity,begin=-1;
+      for(let n=lo;n<=hi;n++){
+       if(n<hi&&!occupied[n]){if(begin<0)begin=n;}
+       else if(begin>=0){if(n-begin>=4){const mid=Math.round((begin+n)/2),d=Math.abs(mid-center);if(d<distance){best=mid;distance=d;}}begin=-1;}
+      }
+      result.push(best);
      }
-     result.push(best);
+     return [...result,size];
+    };
+    const rowInk=new Uint8Array(source.height);
+    for(let y=0;y<source.height;y++)for(let x=0;x<source.width;x++)if(atlas[(y*source.width+x)*4+3]>175){rowInk[y]=1;break;}
+    const groupStart=(atlasGroup?.index||0)*rows,allRows=rows*(atlasGroup?.count||1);
+    const fullRowCuts=layout?layout.y.map(v=>Math.round(v*source.height)):gutters(allRows,source.height,rowInk),rowCuts=fullRowCuts.slice(groupStart,groupStart+rows+1);cells=[];
+    sh=(rowCuts.at(-1)-rowCuts[0])/rows;
+    for(let row=0;row<rows;row++){
+     const colInk=new Uint8Array(source.width);
+     for(let x=0;x<source.width;x++)for(let y=rowCuts[row];y<rowCuts[row+1];y++)if(atlas[(y*source.width+x)*4+3]>175){colInk[x]=1;break;}
+     const cuts=layout?(Array.isArray(layout.x[0])?layout.x[row+groupStart]:layout.x).map(v=>Math.round(v*source.width)):gutters(columns,source.width,colInk);
+     // Padding owns no motion: integer placement avoids filtering native pixels during slicing.
+     for(let col=0;col<columns;col++)cells.push({x:cuts[col],y:rowCuts[row],w:cuts[col+1]-cuts[col],h:rowCuts[row+1]-rowCuts[row],dx:Math.round(sw*.25+cuts[col]-col*sw),dy:Math.round(sh*.25+rowCuts[row]-rowCuts[0]-row*sh)});
     }
-    return [...result,size];
-   };
-   const rowInk=new Uint8Array(source.height);
-   for(let y=0;y<source.height;y++)for(let x=0;x<source.width;x++)if(atlas[(y*source.width+x)*4+3]>175){rowInk[y]=1;break;}
-   const groupStart=(atlasGroup?.index||0)*rows,allRows=rows*(atlasGroup?.count||1);
-   const fullRowCuts=layout?layout.y.map(v=>Math.round(v*source.height)):gutters(allRows,source.height,rowInk),rowCuts=fullRowCuts.slice(groupStart,groupStart+rows+1),cells=[];
-   sh=(rowCuts.at(-1)-rowCuts[0])/rows;
-   for(let row=0;row<rows;row++){
-    const colInk=new Uint8Array(source.width);
-    for(let x=0;x<source.width;x++)for(let y=rowCuts[row];y<rowCuts[row+1];y++)if(atlas[(y*source.width+x)*4+3]>175){colInk[x]=1;break;}
-    const cuts=layout?(Array.isArray(layout.x[0])?layout.x[row+groupStart]:layout.x).map(v=>Math.round(v*source.width)):gutters(columns,source.width,colInk);
-    // Padding owns no motion: integer placement avoids filtering native pixels during slicing.
-    for(let col=0;col<columns;col++)cells.push({x:cuts[col],y:rowCuts[row],w:cuts[col+1]-cuts[col],h:rowCuts[row+1]-rowCuts[row],dx:Math.round(sw*.25+cuts[col]-col*sw),dy:Math.round(sh*.25+rowCuts[row]-rowCuts[0]-row*sh)});
+    cw=Math.ceil(Math.max(sw*1.5,...cells.map(c=>c.dx+c.w)));ch=Math.ceil(Math.max(sh*1.5,...cells.map(c=>c.dy+c.h)));scratch.width=cw;scratch.height=ch;
+    const drawCell=i=>{const c=cells[i];ctx.clearRect(0,0,cw,ch);ctx.drawImage(source,c.x,c.y,c.w,c.h,c.dx,c.dy,c.w,c.h);};
+    bounds=names.map((name,i)=>{
+     drawCell(i);
+     const rgba=ctx.getImageData(0,0,cw,ch).data;
+     let x0=cw,y0=ch,x1=0,y1=0;
+     // Read the visible character bounds inside each already generated atlas cell.
+     for(let y=0;y<ch;y++)for(let x=0;x<cw;x++)if(rgba[(y*cw+x)*4+3]>175){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
+     if(x1<=x0){x0=0;y0=0;x1=cw-1;y1=ch-1;}
+     const footY=y1;let footLeft=cw,footRight=0;
+     if(scaleReference)for(let y=Math.max(y0,footY-Math.max(4,Math.round((footY-y0)*.035)));y<=footY;y++)for(let x=x0;x<=x1;x++)if(rgba[(y*cw+x)*4+3]>175){footLeft=Math.min(footLeft,x);footRight=Math.max(footRight,x);}
+     const footX=footRight>=footLeft?(footLeft+footRight)/2:(x0+x1)/2;
+     x0=Math.max(0,x0-3);y0=Math.max(0,y0-3);x1=Math.min(cw-1,x1+3);y1=Math.min(ch-1,y1+3);
+     return {x0,y0,x1,y1,footY,footX};
+    });
+    if(this.recordSlices){this.recordSlices({recipe,width:source.width,height:source.height,bytes:ASSET_BYTES[this.files.get(sheet).url],cells,cw,ch,bounds});return;}
    }
-   const cw=Math.ceil(Math.max(sw*1.5,...cells.map(c=>c.dx+c.w))),ch=Math.ceil(Math.max(sh*1.5,...cells.map(c=>c.dy+c.h)));scratch.width=cw;scratch.height=ch;
+   if(!prepared){scratch.width=cw;scratch.height=ch;}
    const drawCell=i=>{const c=cells[i];ctx.clearRect(0,0,cw,ch);ctx.drawImage(source,c.x,c.y,c.w,c.h,c.dx,c.dy,c.w,c.h);};
-   const bounds=names.map((name,i)=>{
-    drawCell(i);
-    const rgba=ctx.getImageData(0,0,cw,ch).data;
-    let x0=cw,y0=ch,x1=0,y1=0;
-    // Read the visible character bounds inside each already generated atlas cell.
-    for(let y=0;y<ch;y++)for(let x=0;x<cw;x++)if(rgba[(y*cw+x)*4+3]>175){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
-    if(x1<=x0){x0=0;y0=0;x1=cw-1;y1=ch-1;}
-    const footY=y1;let footLeft=cw,footRight=0;
-    if(scaleReference)for(let y=Math.max(y0,footY-Math.max(4,Math.round((footY-y0)*.035)));y<=footY;y++)for(let x=x0;x<=x1;x++)if(rgba[(y*cw+x)*4+3]>175){footLeft=Math.min(footLeft,x);footRight=Math.max(footRight,x);}
-    const footX=footRight>=footLeft?(footLeft+footRight)/2:(x0+x1)/2;
-    x0=Math.max(0,x0-3);y0=Math.max(0,y0-3);x1=Math.min(cw-1,x1+3);y1=Math.min(ch-1,y1+3);
-    return {x0,y0,x1,y1,footY,footX};
-   });
    // Animation cells share one crop and one scale; per-frame trimming makes feet slide.
    names.forEach((name,i)=>{
     const groupSize=sharedBounds===true?names.length:sharedBounds||1,start=Math.floor(i/groupSize)*groupSize,group=bounds.slice(start,start+groupSize);
     const {x0,y0,x1,y1}={x0:Math.min(...group.map(b=>b.x0)),y0:Math.min(...group.map(b=>b.y0)),x1:Math.max(...group.map(b=>b.x1)),y1:Math.max(...group.map(b=>b.y1))};
-    drawCell(i);
     const nativeWidth=x1-x0+1,nativeHeight=y1-y0+1,reduction=maxCell?Math.min(1,maxCell/Math.max(nativeWidth,nativeHeight)):1;
     const texture=this.textures.createCanvas(name,Math.ceil(nativeWidth*reduction),Math.ceil(nativeHeight*reduction));
-    texture.getContext().drawImage(scratch,x0,y0,nativeWidth,nativeHeight,0,0,texture.width,texture.height);texture.refresh();
+    if(prepared&&reduction===1){
+     // Apply the same integer crop directly. Intersect with the original cell
+     // so its neighbour never leaks into the registered transparent padding.
+     const c=cells[i],left=Math.max(x0,c.dx),top=Math.max(y0,c.dy),right=Math.min(x1+1,c.dx+c.w),bottom=Math.min(y1+1,c.dy+c.h);
+     if(right>left&&bottom>top)texture.getContext().drawImage(source,c.x+left-c.dx,c.y+top-c.dy,right-left,bottom-top,left-x0,top-y0,right-left,bottom-top);
+    }else{
+     if(scratch.width!==cw||scratch.height!==ch){scratch.width=cw;scratch.height=ch;}
+     drawCell(i);texture.getContext().drawImage(scratch,x0,y0,nativeWidth,nativeHeight,0,0,texture.width,texture.height);
+    }
+    texture.refresh();
     // Preserve shared dimensions, but anchor each frame by its visible supporting foot.
     this.grounding.set(name,(bounds[i].footY-y0)/nativeHeight);
     if(scaleReference){const b=bounds[scaleReference[i]];this.celScale.set(name,nativeHeight/(b.footY-b.y0+4));this.registrationX.set(name,(bounds[i].footX-x0)/nativeWidth);}

@@ -1,7 +1,7 @@
 import {Campaign} from './game/campaign.js?v=144-open';
 import {Journey} from './game/model.js?v=144-open';
 import {Autoplay} from './game/autoplay.js?v=144-open';
-import {makeGame} from './game/scene.js?v=144-open';
+import {makeGame} from './game/scene.js?v=144-opt';
 import {Soundscape} from './game/audio.js?v=144-open';
 import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=144-open';
 const $=id=>document.getElementById(id);
@@ -144,7 +144,7 @@ async function start(testStage=null){
  if(!ready||preparing||fullscreenPending||(!testing&&Math.floor(selectedStage/STAGES_PER_COUNTRY)!==mapPage)||(!testing&&!canEnterStage(selectedStage)))return;
  if(testing)selectedStage=testStage;else stopAutoplay();
  const stage=selectedStage;
- if(!await prepareFor('불러오는 중',p=>scene.prepareStage(stage,p),()=>start(testing?stage:null)))return;
+ if(!await prepareFor('불러오는 중',p=>scene.prepareStage(stage,p,testing,testing?Object.keys(UNITS):campaign.party),()=>start(testing?stage:null)))return;
  infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();
  if(!testing){activeRun=campaign.begin();saveCampaign();}
  model.start(selectedStage,testing?DEFAULT_PARTY:campaign.party,scene?.vw,{tour:testing});
