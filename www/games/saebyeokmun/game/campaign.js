@@ -1,4 +1,4 @@
-import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=143-spearman';
+import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=144-open';
 // Local progression is separate from Journey's capped battle purse. No cash purchases.
 export class Campaign {
  constructor(saved={}){

@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=141-input';
-import {Journey} from './game/model.js?v=143-spearman';
-import {Autoplay} from './game/autoplay.js?v=141-input';
-import {makeGame} from './game/scene.js?v=143-spearman';
-import {Soundscape} from './game/audio.js?v=143-spearman';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=143-spearman';
+import {Campaign} from './game/campaign.js?v=144-open';
+import {Journey} from './game/model.js?v=144-open';
+import {Autoplay} from './game/autoplay.js?v=144-open';
+import {makeGame} from './game/scene.js?v=144-open';
+import {Soundscape} from './game/audio.js?v=144-open';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=144-open';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);

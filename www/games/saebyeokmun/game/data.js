@@ -90,8 +90,9 @@ export const TEAM_SKILLS={
  cavalryCharge:{name:'기병 일제돌진',unit:'cavalry',required:5,cost:0,cooldown:45,icon:'cavalry1',castTime:3.2,description:'기병 5명이 전방에 줄을 맞춰 돌진하고 같은 기병들이 돌아와 전투를 계속합니다.'}
 };
 export const DEFAULT_PARTY=['cow','keeper','rabbit','scholar','healer'];
-// Rebuilt companions are available from first play; girl/haetae are the base heroes.
-export const STARTER_PARTY=['cow','healer'];
+// Public playtest grants all eleven companions; girl/haetae remain the base heroes.
+// Campaign still owns the saved party, five-slot limit and ordinary stage rewards.
+export const STARTER_PARTY=['cow','healer','spearman','keeper','rabbit','archer','scholar','prince','minister','cavalry','king'];
 // One reward schedule shared by settlement, collection UI and stage tuning.
 export const STAGE_REWARDS=['keeper','rabbit','healer','spearman','archer','scholar','prince','minister','cavalry','king'];
 export function validParty(value){return Array.isArray(value)&&value.length>=1&&value.length<=5&&new Set(value).size===value.length&&value.every(k=>Object.hasOwn(UNITS,k));}
