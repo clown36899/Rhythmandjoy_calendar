@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=141-input';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=143-spearman';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -185,9 +185,10 @@ export class Journey {
  advanceAction(actor,dt){
   const action=actor.action;if(!action)return;
   if(action.kind==='team')return;
-  if(action.kind==='cow'&&action.phase==='anger'){
+  const anticipation=action.kind==='cow'&&action.phase==='anger'?MOTION.cow.angerFrames/MOTION.cow.angerFps:action.phase==='anticipation'?MOTION[action.kind]?.anticipation:0;
+  if(anticipation){
    action.elapsed+=dt;
-   if(action.elapsed>=MOTION.cow.angerFrames/MOTION.cow.angerFps)actor.action=null;
+   if(action.elapsed>=anticipation)actor.action=null;
    return; // Detection reaction never resolves a hit or changes the attack cooldown.
   }
   if(action.kind==='healer'){
@@ -386,11 +387,12 @@ export class Journey {
    const s=unitStats(a.type,this.keeperRank),oldAX=a.x;
    if(a.action?.kind==='team'){a.cd=Math.max(0,a.cd-dt);a.hit=Math.max(0,a.hit-dt);continue;}
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(this.advanceEntry(a,false,dt))continue;
-   if(a.type==='cow'){
+   const reactionPhase=a.type==='cow'?'anger':MOTION[a.type]?.anticipation?'anticipation':null;
+   if(reactionPhase){
     const threatened=this.enemies.some(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55&&contactGap(a,e)<=s.range+30);
-    if(!threatened){a.alerted=false;if(a.action?.phase==='anger')a.action=null;}
+    if(!threatened){a.alerted=false;if(a.action?.phase===reactionPhase)a.action=null;}
     else if(!a.alerted&&!a.action){
-     a.alerted=true;a.action={kind:'cow',phase:'anger',elapsed:0};
+     a.alerted=true;a.action={kind:a.type,phase:reactionPhase,elapsed:0};
     }
    }
    this.advanceAction(a,dt);

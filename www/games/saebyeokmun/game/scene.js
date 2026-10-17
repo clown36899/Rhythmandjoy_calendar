@@ -1,9 +1,9 @@
 import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected140-dangpa';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=141-input';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=143-spearman';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=143-spearman';
 import {AssetDownloads} from './downloads.js?v=70';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=142-performance';
-import {ASSET_BYTES} from './asset-sizes.js?v=142-performance';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=143-spearman';
+import {ASSET_BYTES} from './asset-sizes.js?v=143-spearman';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -128,7 +128,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // Fast attacks/anticipation must be ready before combat. Long loops stream
    // their next 24 cels through the same loader, without preparing every variant.
    const immediate=new Set(VIDEO_SHEETS.filter(s=>Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&!['dance','annoyed','sit','receiveHeal','death'].includes(name)))).flatMap(s=>{
-    const complete=Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&['attack','anger','rageRun','rageHold','runUrgent','castHeal','castHealLight','castHealBless'].includes(name)));
+    const complete=Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&['attack','anticipation','combatCalm','anger','rageRun','rageHold','runUrgent','castHeal','castHealLight','castHealBless'].includes(name)));
     if(complete)return VIDEO_DELIVERY[s.asset].parts.map((_,i)=>s.asset+':'+i);
     const moving=Object.values(VIDEO_MOTION).some(clips=>clips.walk===s||clips.run===s),cycle=s.cycles?.[0],start=moving?cycle?.start??0:0,end=moving?Math.min(cycle?.end??s.frames-1,start+47):0;
     return Array.from({length:Math.floor(end/24)-Math.floor(start/24)+1},(_,i)=>s.asset+':'+(Math.floor(start/24)+i));
@@ -203,9 +203,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const heal=this.cache.json.get('cowHealingMeta');
     for(let i=0;i<COW_HEAL.frames;i++){const key='cowRecoverVideo'+i;this.grounding.set(key,heal.ground);this.celScale.set(key,heal.scale);this.registrationX.set(key,heal.originX);}
     for(const spec of [COW_REST,...COW_IDLE]){const idle=this.cache.json.get(spec.asset+'Meta');for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;this.grounding.set(key,idle.ground);this.celScale.set(key,idle.scale);this.registrationX.set(key,idle.originX);}}}
-    // Idle, walking and death keep their measured supporting surface.
+    // Planted poses keep their measured supporting surface; clip metadata can
+    // opt a grounded attack in without pinning other characters' airborne attacks.
     // Running retains the registered floor so airborne poses do not stick to the ground.
-    for(const clips of Object.values(VIDEO_MOTION))for(const [name,spec] of Object.entries(clips))for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;const planted=['idle','walk','death'].includes(name);if(!planted||!this.grounding.has(key))this.grounding.set(key,planted?VIDEO_DELIVERY[spec.asset].ground[i]:spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
+    for(const clips of Object.values(VIDEO_MOTION))for(const [name,spec] of Object.entries(clips))for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;const planted=spec.planted??['idle','walk','death'].includes(name);if(!planted||!this.grounding.has(key))this.grounding.set(key,planted?VIDEO_DELIVERY[spec.asset].ground[i]:spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
     this.initializeWorld();
     // Prepare actual entry cels before controls become live. Decoding on the first
     // moving frame otherwise holds idle artwork while the model already travels.
@@ -341,6 +342,15 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // not just objects submitted to the GPU. Culling never destroys a live body.
    const referenced=[...this.sprites.values(),...this.wounds.values(),this.hero,this.girl,...this.effects.map(e=>e.sprite),...[...this.reflections.values()].flat()].filter(im=>im?.texture);
    const pinned=new Set(referenced.map(im=>im.texture.key));
+   // Warmup is a control-readiness promise, not just a recently-used hint.
+   // Retain the entry half-second of the controlled bodies inside the same
+   // GPU budget, even after idle/attack pages have aged those frames out of LRU.
+   // Resolve pages at the current density so rotation releases the old profile.
+   if(this.videoFrameIndex)for(const kind of ['girl','haetae'])for(const name of ['idle','walk','run']){
+    const spec=VIDEO_MOTION[kind][name],start=name==='idle'?0:spec.cycles?.[0]?.start??0;
+    const end=Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+VIDEO_PAGE_FRAMES-1);
+    for(let page=Math.floor(start/VIDEO_PAGE_FRAMES);page<=Math.floor(end/VIDEO_PAGE_FRAMES);page++)pinned.add(this.videoPage(this.videoFrameIndex.get(spec.prefix+Math.max(start,page*VIDEO_PAGE_FRAMES))).key);
+   }
    const trim=(cache,budget,bytes,remove)=>{
     let total=[...cache.values()].reduce((n,v)=>n+bytes(v),0);
     if(total<=budget)return;
@@ -1019,15 +1029,16 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    v.treating=treating;v.elapsed=action?.elapsed??0;
    if(moving||action||hit>0||!idleAllowed)v.idleSince=clock;
-   const actor=kind==='cow'?model.allies.find(a=>'a'+a.id===key):null;
+   const actor=kind==='cow'||clips.anticipation?model.allies.find(a=>'a'+a.id===key):null;
    const running=kind==='healer'?action?.phase==='approach':kind==='cow'?actor?.alerted||model.enemies.some(e=>e.hp>0&&e.x>=(actor?.x??0)-55&&e.x<(actor?.x??0)+550):model.direction!==0;
-   let name=hit>0&&kind!=='cow'?'hurt':action?.kind===kind&&kind!=='healer'?(action.phase==='anger'&&clips.anger?'anger':'attack'):moving?(running?(kind==='healer'&&clips.runUrgent?'runUrgent':'run'):'walk'):treating?v.cast:'idle';
+   let name=hit>0&&!['cow','spearman'].includes(kind)?'hurt':action?.kind===kind&&kind!=='healer'?(clips[action.phase]?action.phase:'attack'):moving?(running?(kind==='healer'&&clips.runUrgent?'runUrgent':'run'):'walk'):treating?v.cast:'idle';
    if(kind==='healer'&&action?.phase==='approach'&&clips.runUrgent)name=moving||(action.elapsed??0)<=MOTION.healer.notice?'runUrgent':'idle';
-   if(kind==='cow'){
-    if(actor?.alerted&&!action)name=moving&&clips.rageRun?'rageRun':'rageHold';
+   if(kind==='cow'||clips.anticipation){
+    if(actor?.alerted&&!action&&!moving)name=clips.rageHold?'rageHold':'attack';
+    if(actor?.alerted&&!action&&moving&&clips.rageRun)name='rageRun';
     if(v.alerted&&!actor?.alerted&&!moving&&!action)v.calmAt=clock;
     if(!actor?.alerted&&!moving&&!action&&clips.combatCalm&&clock-(v.calmAt??-Infinity)<clips.combatCalm.frames/clips.combatCalm.fps)name='combatCalm';
-    v.alerted=Boolean(actor?.alerted);
+    v.alerted=Boolean(actor?.alerted||clips.anticipation&&action&&v.alerted);
    }
    let recoveryFrame=null;
    if(name==='idle'&&!action&&hit<=0){
@@ -1047,8 +1058,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(kind==='healer'&&name==='runUrgent'&&!moving){const end=(spec.cycles?.[0]?.start??1)-1;frame=Math.min(end,Math.floor(Math.max(0,action.elapsed??0)/MOTION.healer.notice*(end+1)));}
    if(treating&&name===v.cast){const cue=spec.cycles[v.cycle],t=action.elapsed,clock=MOTION.healer;frame=Math.round(t<=clock.impact?cue.start+(cue.impact-cue.start)*Math.min(1,t/clock.impact):cue.impact+(cue.end-cue.impact)*Math.min(1,(t-clock.impact)/(clock.duration-clock.impact)));}
    if(name==='anger')frame=Math.round(Math.min(1,action.elapsed/(MOTION.cow.angerFrames/MOTION.cow.angerFps))*(spec.frames-1));
-   if(name==='attack'&&spec.cue){const cue=spec.cue,t=action.elapsed,span=kind==='girl'?{impact:0,duration:.85}:MOTION[kind];frame=Math.round(t<span.impact?cue.start+(cue.impact-cue.start)*t/span.impact:cue.impact+(cue.end-cue.impact)*Math.min(1,(t-span.impact)/(span.duration-span.impact)));}
-   const soundCycle=Math.floor(elapsed/(loopFrames/spec.fps)),playing=model.status==='playing';
+   if(name==='anticipation')frame=Math.min(spec.frames-1,Math.floor(Math.max(0,action.elapsed)*spec.fps));
+   if(name==='attack'&&spec.cue){const cue=spec.cue,t=action?.elapsed??0,span=kind==='girl'?{impact:0,duration:.85}:MOTION[kind];frame=Math.round(t<span.impact?cue.start+(cue.impact-cue.start)*t/span.impact:cue.impact+(cue.end-cue.impact)*Math.min(1,(t-span.impact)/(span.duration-span.impact)));}
+   const soundCycle=Math.floor(elapsed/(loopFrames/spec.fps)),playing=model.status==='playing'&&(name!=='attack'||Boolean(action));
    if(spec.audio&&(v.soundState!==name||v.soundCycle!==soundCycle||v.soundPlaying!==playing)){
     v.soundState=name;v.soundCycle=soundCycle;v.soundPlaying=playing;
     onEvents([{type:'motion-audio',actor:key,sound:playing?kind+'-'+name:null,offset:frame/spec.fps,x:UNITS[kind]?model.allies.find(a=>'a'+a.id===key)?.x:model.x}]);
@@ -1113,15 +1125,15 @@ export function makeGame(model,onReady,onFrame,onEvents){
     // Whole-body drawings carry the pose; do not distort or hinge individual limbs.
     if(p<impact){this.fx.lineStyle(2,0x9c6958,.35);this.fx.lineBetween(image.x-dir*20,groundY-height*.6,image.x-dir*43,groundY-height*.63);}
    }else if(enemy&&windup>0){image.setAngle(Math.sin(windup*8)*1.8+(type==='horse'?5:0));}
-   if(hit>0&&(enemy||type!=='cow')){
+   if(hit>0&&(enemy||!['cow','spearman'].includes(type))){
     const total=enemy?.26:ALLY_HIT_TIME,age=total-hit,response=age<.05?1:Math.max(0,1-(age-.05)/(total-.05))**2;
     image.x+=hitDir*response*(type==='boss'?5:10);
     image.setAngle(hitDir*response*(type==='boss'?2:5));
    }
    if(MOTION[type])this.trackContact(key,type,walk,moving,x,groundY);
-   // Calf hit feedback preserves its current action cel and position: color only.
-   if(!enemy&&type==='cow'&&hit>0){const fade=Math.min(1,hit/.14);image.setTint((255<<16)|(Math.round(255-120*fade)<<8)|Math.round(255-145*fade));}
-   else if(!enemy&&type==='cow')image.clearTint();
+   // Color-only actors retain their action, position and supporting feet on hit.
+   if(!enemy&&['cow','spearman'].includes(type)&&hit>0){const fade=Math.min(1,hit/.14);image.setTint((255<<16)|(Math.round(255-120*fade)<<8)|Math.round(255-145*fade));}
+   else if(!enemy&&['cow','spearman'].includes(type))image.clearTint();
    else if(hit>(enemy?.225:ALLY_HIT_TIME-.035))image.setTintFill(0xfff7dd);else if(hit>0)image.setTint(enemy?0xf3c9b9:0xffae99);else image.clearTint();
    if(!enemy&&type==='healer')this.drawHealerCastLight(image,action,action?.targetId==null?this.hero:this.sprites.get('a'+action.targetId));
    const arrival=this.effects.find(e=>e.type==='summon'&&e.actor===Number(key.slice(1))),entry=P.Math.Clamp((model.time-bornAt)/.8,0,1);
