@@ -9,10 +9,10 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./assets/app-icon.svg" type="image/svg+xml">
 <meta name="description" content="다섯개의 나라">
-<title>다섯개의 나라 · v138 소환 카드·접지 검수</title>
-<link rel="stylesheet" href="./style.css?v=138-cards">
+<title>다섯개의 나라 · v139 카드·전투 최적화</title>
+<link rel="stylesheet" href="./style.css?v=139-cards">
 <script defer src="./game/phaser.min.js"></script>
-<script type="module" src="./app.js?v=selected138-cards"></script>
+<script type="module" src="./app.js?v=selected139-cards"></script>
 </head>
 <body data-screen="map">
 <svg class="journey-icons" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -39,10 +39,10 @@
 <g id="dial-sun" opacity="0"><circle class="sun-halo" cx="32" cy="32" r="18"/><circle class="sun-core" cx="32" cy="32" r="10"/><path class="sun-rays" d="M32 15v3m0 28v3M15 32h3m28 0h3M20 20l2 2m20 20 2 2M20 44l2-2m20-20 2-2"/></g>
 <g id="dial-moon" opacity="1"><path class="moon-core" d="M38 18a15 15 0 1 0 9 24 16 16 0 0 1-9-24Z"/><path class="moon-star" d="m45 17 1.5 3.5L50 22l-3.5 1.5L45 27l-1.5-3.5L40 22l3.5-1.5Z"/></g>
 </svg>
-<div class="journey-destination"><b id="distance">0%</b><span>진행</span></div>
-<div class="route-track"><i id="route-fill"></i><span class="route-dot" aria-hidden="true"></span></div>
+<div class="journey-destination"><b id="distance">0%</b><span id="route-remaining">지옥문까지 100%</span></div>
+<div class="route-track"><span class="route-start" aria-hidden="true">출발</span><i id="route-fill"></i><span class="route-dot" aria-hidden="true"><img data-icon="girl0" alt="" draggable="false"></span><img class="route-gate" src="./assets/route-hellgate-v139.webp" alt="지옥문" draggable="false"></div>
 </div>
-<div class="hud-right"><div class="coin-bank" title="타격 +1 · 처치 보너스 · 기본 수급 · 주머니 최대 100"><i class="coin-symbol" aria-hidden="true"></i><b id="coins">70</b><small>엽전 <span>/ 100</span></small><div id="coin-gauge" role="progressbar" aria-label="소환에 사용할 엽전" aria-valuemin="0" aria-valuemax="100" aria-valuenow="70"><i id="coin-fill"></i></div></div></div>
+
 </div>
 <small id="next-map-loading" class="next-map-loading" hidden></small>
 <div class="callout" id="callout" role="status" hidden></div>
@@ -91,7 +91,7 @@
 <button class="action" id="action-rabbit" data-action="rabbit"><span class="action-role">공격</span><kbd>3</kbd><span class="action-art"><img data-icon="iconRabbit" alt="" draggable="false"></span><strong>달토끼</strong><small>◎ 24 <em>씨앗탄</em></small><span class="cooldown"></span></button>
 <button class="action" id="action-scholar" data-action="scholar"><span class="action-role magic">지원</span><kbd>4</kbd><span class="action-art"><img data-icon="scholar1" alt="" draggable="false"></span><strong>선비</strong><small>◎ 34</small><span class="cooldown"></span></button>
 <button class="action" id="action-healer" data-action="healer"><span class="action-role magic">회복</span><kbd>5</kbd><span class="action-art"><img data-icon="healer1" alt="" draggable="false"></span><strong>약방 의원</strong><small>◎ 36</small><span class="cooldown"></span></button>
-</div></div>
+</div><div class="hud-right"><div class="coin-bank" title="타격 +1 · 처치 보너스 · 기본 수급 · 주머니 최대 100"><i class="coin-symbol" aria-hidden="true"></i><b id="coins">70</b><small>엽전 <span>/ 100</span></small><div id="coin-gauge" role="progressbar" aria-label="소환에 사용할 엽전" aria-valuemin="0" aria-valuemax="100" aria-valuenow="70"><i id="coin-fill"></i></div></div></div></div>
 <div class="action-group skill-group" aria-label="필살기 기술"><span class="group-label">필살기</span><div class="action-row" id="skill-slots">
 <button class="action" id="action-charm" data-action="charm"><span class="action-role magic">마법</span><kbd>Q</kbd><span class="action-art"><img data-icon="iconCharm" alt="" draggable="false"></span><strong>날림부적</strong><small>◎ 12 <em>후열 공격</em></small><span class="cooldown"></span></button>
 <button class="action" id="action-stomp" data-action="stomp"><span class="action-role defense">제압</span><kbd>E</kbd><span class="action-art"><img data-icon="iconStomp" alt="" draggable="false"></span><strong>발구름</strong><small>◎ 20 <em>낮은 공격</em></small><span class="cooldown"></span></button>

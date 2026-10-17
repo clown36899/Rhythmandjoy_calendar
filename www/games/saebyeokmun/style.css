@@ -1802,3 +1802,46 @@ img,svg,canvas{-webkit-user-drag:none}button,img,svg{user-select:none}
 }
 
 .settings-footer .version-link{color:inherit;text-underline-offset:3px;font-size:12px;padding:12px 2px;display:inline-block}
+
+/* Painted summon fronts share live labels, cost, limits and cooldowns. */
+.summon-group .action[data-tier=beast]{--tier:#b69960;--tier-ink:#655033;--tier-wash:#eee2c8}
+.summon-group .action[data-card=painted]{border-width:1px;background:#eadfc9}
+.summon-group .action[data-card=painted] .action-art{inset:0;width:100%;height:100%;background:none}
+.summon-group .action[data-card=painted] .action-art img{object-fit:fill}
+.summon-group .action[data-card=painted] .unit-tier{top:3px;left:5px;right:5px;height:10px;padding:0;background:none;color:#3e362e;font-size:8px;line-height:10px;text-shadow:0 1px #fff3dd}
+.summon-group .action[data-card=painted] .unit-count{top:14px;right:4px;padding:1px 3px;line-height:10px;border-radius:3px;color:#fff5db;background:#253f38c9;z-index:3;font-size:7px}
+.summon-group .action[data-card=painted] strong{bottom:12px;line-height:12px;font-size:9px;z-index:3;color:#352f2a;text-shadow:0 1px #fff4dd}
+.summon-group .action[data-card=painted] small{inset:auto 4px 2px;background:none;color:#5b4325;line-height:10px;font-size:9px;z-index:3}
+.summon-group .action[data-state=cost] small{background:#6e302ce8;color:#fff0d4;border-radius:3px}
+.summon-group .hud-right{display:block;width:100%;margin:3px 0 0;padding:0 5px;box-sizing:border-box;pointer-events:none}
+.summon-group .coin-bank{min-width:0;display:grid;grid-template-columns:15px 30px 1fr;grid-template-rows:16px;align-items:center;gap:4px;padding:1px 6px;background:#17363ddd;border:1px solid #c5ad725e;border-radius:5px;color:#f5dda5}
+.summon-group .coin-bank b{font:600 11px/16px sans-serif;color:#f4dda4}
+.summon-group .coin-bank small{font:8px/12px sans-serif;color:#e7d8b8}
+.summon-group .coin-bank .coin-symbol{width:12px;height:12px}
+.summon-group .coin-bank #coin-gauge{position:relative;inset:auto;grid-column:3;grid-row:1;height:6px;background:#102d33;border-radius:3px}
+.summon-group .coin-bank small{position:absolute;right:8px;top:1px;transform:translateY(-100%);display:none}
+.summon-group .coin-bank #coin-fill{background:linear-gradient(90deg,#ba8d38,#f7d981);height:100%;border-radius:3px;transition:width .12s linear}
+.hud .journey--celestial{width:34%;min-width:190px;max-width:310px;height:58px;grid-template-columns:1fr 32px 1.2fr;padding-bottom:15px;left:50%}
+.journey--celestial .sky-dial{width:32px;height:32px}
+.journey-destination span{font-size:8px}
+.journey--celestial .route-track{left:22px;right:25px;bottom:3px;height:6px;border:1px solid #a6bdb475;background:#102a36;border-radius:5px}
+.journey--celestial .route-track i{height:100%;border-radius:4px;background:linear-gradient(90deg,#75b4ab,#d4e7b0)}
+.journey--celestial .route-dot{position:absolute;top:-8px;width:20px;height:20px;margin-left:-10px;border:1px solid #e9d798;background:#213e46;overflow:hidden;box-shadow:none;transform:none}
+.route-dot img{width:100%;height:100%;object-fit:contain;pointer-events:none;-webkit-user-drag:none}
+.route-start{position:absolute;left:-12px;top:8px;font:6px/8px sans-serif;color:#e1d9c0}
+.route-gate{position:absolute;right:-18px;bottom:-3px;width:28px;height:32px;object-fit:contain;pointer-events:none;-webkit-user-drag:none;filter:drop-shadow(0 1px 2px #061820)}
+@container (max-width:760px){
+ .hud .journey--celestial{width:37%;min-width:160px;max-width:220px;left:54%;height:46px;grid-template-columns:1fr 24px 1.3fr;gap:4px;padding:0 8px 13px}
+ .journey--celestial .sky-dial{width:24px;height:24px}
+ .journey-destination span{font-size:6px;white-space:nowrap}
+ .journey--celestial .route-track{left:14px;right:20px;height:5px;bottom:2px}
+ .route-gate{width:24px;height:27px;right:-17px}
+ .journey--celestial .route-dot{width:16px;height:16px;top:-6px;margin-left:-8px}
+ .summon-group .action[data-card=painted] strong{font-size:8px;bottom:11px;line-height:10px}
+ .summon-group .action[data-card=painted] small{font-size:8px;line-height:9px;bottom:2px}
+ .summon-group .action[data-card=painted] .unit-tier{font-size:7px;top:2px}
+ .summon-group .action[data-card=painted] .unit-count{top:12px;font-size:6px}
+ .summon-group .hud-right{margin-top:2px}
+ .summon-group .coin-bank{grid-template-rows:13px;padding:0 5px}
+ .summon-group .coin-bank b{font-size:9px;line-height:13px}
+}

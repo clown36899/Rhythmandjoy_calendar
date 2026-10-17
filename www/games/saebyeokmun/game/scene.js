@@ -1,15 +1,15 @@
-import {HEALER_VIDEO} from './healer-motion.js?v=selected138-cards';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected138-cards';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=138-cards';
+import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected139-cards';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=139-cards';
 import {AssetDownloads} from './downloads.js?v=70';
 import {VIDEO_DELIVERY} from './video-delivery.js?v=133';
-import {ASSET_BYTES} from './asset-sizes.js?v=selected138-cards';
+import {ASSET_BYTES} from './asset-sizes.js?v=selected139-cards';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
 const VIDEO_FRAME_BUDGET=48*1024*1024,VIDEO_SOURCE_BUDGET=64*1024*1024,VIDEO_BLOB_BUDGET=32*1024*1024,INJURY_BUDGET=24*1024*1024;
-// One shared 24-cel block per framebuffer-resolution profile, no per-actor copy.
-const VIDEO_PAGE_FRAMES=24,VIDEO_PAGE_COLUMNS=4;
+// Share twelve-cel GPU pages; downloads remain twenty-four-cel blocks.
+const VIDEO_PAGE_FRAMES=12,VIDEO_PAGE_COLUMNS=4;
 const SUPERSEDED_SHEETS=new Set(['cowVideo','cowVideoMeta','cowRest','cowRestMeta','cowIdle','cowIdleMeta','cowIdleSniff','cowIdleSniffMeta','cowHealing','cowHealingMeta','girlIdle','haetaeIdle','haetaeMotion','healerWalk','healerMovingCare']);
 const LEGACY_FOE_SHEETS={skirt:['enemyWalk','enemyAttacks','enemyDefeat'],horse:['enemyWalk','enemyAttacks','enemyDefeat'],reaper:['enemyWalk','enemyAttacks','reaperDeparture'],boss:['bossMotion','enemyDefeat'],warden:['wardenMotion'],ferryman:['ferrymanMotion'],waterghost:['waterghostMotion'],mangtae:['stageFoes','foeAttacks'],shadow:['stageFoes','foeAttacks']};
 const OPTIONAL_SHEETS=new Set([...Object.values(LEGACY_FOE_SHEETS).flat(),'battle','distantTroops','nightRoad','castleRoad','storybookRoad','gate']);
@@ -175,9 +175,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const heal=this.cache.json.get('cowHealingMeta');
     for(let i=0;i<COW_HEAL.frames;i++){const key='cowRecoverVideo'+i;this.grounding.set(key,heal.ground);this.celScale.set(key,heal.scale);this.registrationX.set(key,heal.originX);}
     for(const spec of [COW_REST,...COW_IDLE]){const idle=this.cache.json.get(spec.asset+'Meta');for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;this.grounding.set(key,idle.ground);this.celScale.set(key,idle.scale);this.registrationX.set(key,idle.originX);}}}
-    // Idle and walking always have a supporting foot: keep the measured per-cel contact.
+    // Idle, walking and death keep their measured supporting surface.
     // Running retains the registered floor so airborne poses do not stick to the ground.
-    for(const clips of Object.values(VIDEO_MOTION))for(const [name,spec] of Object.entries(clips))for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;const planted=name==='idle'||name==='walk';if(!planted||!this.grounding.has(key))this.grounding.set(key,planted?VIDEO_DELIVERY[spec.asset].ground[i]:spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
+    for(const clips of Object.values(VIDEO_MOTION))for(const [name,spec] of Object.entries(clips))for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;const planted=['idle','walk','death'].includes(name);if(!planted||!this.grounding.has(key))this.grounding.set(key,planted?VIDEO_DELIVERY[spec.asset].ground[i]:spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
     if(this.videoFrameIndex)for(const clips of Object.values(VIDEO_MOTION)){await this.decodeVideo(clips.idle.asset+':0');this.videoCel(clips.idle.prefix+'0');}
     this.initializeWorld();this.commonReady=true;
    })();try{await this.commonPromise;}finally{this.commonPromise=null;}
@@ -264,7 +264,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const delivery=VIDEO_DELIVERY[spec.asset],nw=source.w||delivery.crop[2],nh=source.h||delivery.crop[3];
    const start=Math.floor(index/VIDEO_PAGE_FRAMES)*VIDEO_PAGE_FRAMES,end=Math.min(spec.frames,start+VIDEO_PAGE_FRAMES);
    let gpuPixels=source.image;
-   if(source.w!==w||source.h!==h){
+   if(source.w!==w||source.h!==h||VIDEO_PAGE_FRAMES!==24){
     gpuPixels=document.createElement('canvas');gpuPixels.width=VIDEO_PAGE_COLUMNS*(w+g*2);gpuPixels.height=Math.ceil((end-start)/VIDEO_PAGE_COLUMNS)*(h+g*2);
     const ctx=gpuPixels.getContext('2d',{willReadFrequently:true});
     for(let i=start;i<end;i++){const from=i%24,to=i-start;ctx.drawImage(source.image,from%delivery.columns*(nw+g*2)+g,Math.floor(from/delivery.columns)*(nh+g*2)+g,nw,nh,to%VIDEO_PAGE_COLUMNS*(w+g*2)+g,Math.floor(to/VIDEO_PAGE_COLUMNS)*(h+g*2)+g,w,h);}
@@ -494,9 +494,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.game.canvas.dataset.viewHeight=String(Math.round(viewHeight));
    this.game.canvas.dataset.renderDensity=String(density);
   }
+  cameraStart(area){return area.cameraAnchor==null?0:Math.min(0,START-this.vw*area.cameraAnchor);}
   drawLandscape(region,blend,t){
    const vw=this.vw,g=this.sky,bottom=this.sceneBottom||780;g.clear();
-   const area=AREAS[region],panorama=area.panorama,painting=area.paintingFoot!==undefined;
+   const area=AREAS[region],panorama=area.panorama,painting=area.paintingFoot!==undefined,scroll=this.offset-this.cameraStart(area);
    const state=skyState(model.progress(),t,region),day=state.night===0,waterway=area.ground==='water';
    g.fillGradientStyle(day?0xa8d4e5:0x1b304d,day?0xc8e7ee:0x253e59,day?0xf5eacd:0x7994a2,day?0xd0dabb:0x5c7d90,1);g.fillRect(0,0,vw,bottom);
    const top=620-(this.viewHeight||620),moonY=top+(panorama?160:200)-state.moon.height*(panorama?85:140);
@@ -512,7 +513,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(area.paintingSingle){
     // One authored painting covers the short chapter; no mirrored or transparent terrain seams.
     const src=this.textures.get(area.texture).getSourceImage(),scale=Math.max((GROUND-top)/(src.height*area.paintingFoot),(vw+Math.max(4800,stageGateX(region))*PARALLAX.far+80)/src.width);
-    const left=-40-this.offset*PARALLAX.far,paintingTop=GROUND-src.height*area.paintingFoot*scale,floor=paintingTop+src.height*scale;
+    const left=-40-scroll*PARALLAX.far,paintingTop=GROUND-src.height*area.paintingFoot*scale,floor=paintingTop+src.height*scale;
     this.depths.far.forEach(im=>im.setVisible(false));this.mists.forEach(im=>im.setVisible(false));
     this.depths.middle[0].setTexture(area.texture).setOrigin(0,0).setPosition(left,paintingTop).setDisplaySize(src.width*scale,src.height*scale).setAlpha(1).setVisible(true).setFlipX(false);
     this.depths.middle.slice(1).forEach(im=>im.setVisible(false));this.detailJoin.setVisible(false);
@@ -525,12 +526,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(!painting)this.skyPlate.setTexture(area.texture+'Sky').setPosition(-40,top).setDisplaySize(w,h);
     if(!painting)this.mists[0].setTexture(area.texture+'Clouds').setOrigin(0,0).setPosition(-40+Math.sin(t/180)*120,top).setDisplaySize(w,h).setAlpha(.82).setVisible(true);else this.mists[0].setVisible(false);
     this.mists.slice(1).forEach(im=>im.setVisible(false));
-    this.depths.far[0].setTexture(area.texture).setOrigin(0,0).setFlipX(false).setPosition(-40-this.offset*PARALLAX.far,top).setDisplaySize(w,h).setTint(0xffffff).setAlpha(1).setVisible(!painting);
+    this.depths.far[0].setTexture(area.texture).setOrigin(0,0).setFlipX(false).setPosition(-40-scroll*PARALLAX.far,top).setDisplaySize(w,h).setTint(0xffffff).setAlpha(1).setVisible(!painting);
     const sources=area.detailFiles.map((_,i)=>this.textures.get(area.texture+'Detail'+i).getSourceImage()),overlap=area.detailOverlap;
     const total=sources.reduce((sum,image)=>sum+image.width,0)-overlap;
     // A complete landscape shares the mountain plane, rather than cropping its sky as near scenery.
     const parallax=painting?PARALLAX.far:PARALLAX.middle;
-    const scale=Math.max(painting?(GROUND-top)/(sources[0].height*area.paintingFoot):w/src.width,(vw+4800*parallax+80)/total),left=-40-this.offset*parallax;
+    const scale=Math.max(painting?(GROUND-top)/(sources[0].height*area.paintingFoot):w/src.width,(vw+4800*parallax+80)/total),left=-40-scroll*parallax;
     const detailTop=painting?GROUND-sources[0].height*area.paintingFoot*scale:top;
     // Extend only the river below the painting behind the controls; never enlarge its sky to fill the deck.
     if(painting){const floor=detailTop+sources[0].height*scale;this.skyPlate.setTexture(area.texture+'Detail0','waterFooter').setPosition(0,floor-.5).setDisplaySize(vw,Math.max(1,bottom-floor+1)).setVisible(bottom>floor);}
@@ -547,7 +548,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const sources=parts.map((_,i)=>this.textures.get(depth==='far'?area.texture:area.texture+'Detail'+i).getSourceImage());
     pool.forEach((im,i)=>im.setVisible(i<parts.length));
     const overlap=depth==='middle'?(area.detailOverlap??LANDSCAPE_OVERLAP):0,total=sources.reduce((sum,src)=>sum+src.width,0)-overlap*(parts.length-1),scale=w/total;
-    let x=-40-this.offset*PARALLAX[depth];
+    let x=-40-scroll*PARALLAX[depth];
     parts.forEach((im,i)=>{
      const src=sources[i],h=depth==='far'?Math.floor(src.height*area.split):src.height;
      const join=i?overlap:0;
@@ -558,9 +559,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
     });
    }
    this.drawBackgroundBattle(region,t);
-   this.mists.forEach((im,i)=>{if(panorama)return;im.setTexture('mist').setOrigin(.5).setVisible(true);const w=390+i*170,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(3+i)-this.offset*.07)%(vw+650)+vw+650)%(vw+650)-300,top+100+i*94).setTint(0xc4d2dd).setAlpha(day?.055:.12+i*.015);});
+   this.mists.forEach((im,i)=>{if(panorama)return;im.setTexture('mist').setOrigin(.5).setVisible(true);const w=390+i*170,src=im.texture.getSourceImage();im.setDisplaySize(w,w*src.height/src.width).setPosition(((i*670+t*(3+i)-scroll*.07)%(vw+650)+vw+650)%(vw+650)-300,top+100+i*94).setTint(0xc4d2dd).setAlpha(day?.055:.12+i*.015);});
    const fly=(t+8)%75,ds=this.dragon.texture.getSourceImage();this.dragon.setVisible(!panorama&&fly<18).setDisplaySize(140,140*ds.height/ds.width).setPosition(-170+(vw+340)*fly/18,top+95+Math.sin(fly*.55)*14).setAngle(Math.sin(fly*.8)*3);
-   this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-this.offset*.48-80,534).setVisible(!panorama&&!waterway&&region===0).setTint(day?0xb9c7a3:0x83969a).setAlpha(day?.16:.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
+   this.pines.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=230+(i%2)*55;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*1040-scroll*.48-80,534).setVisible(!panorama&&!waterway&&region===0).setTint(day?0xb9c7a3:0x83969a).setAlpha(day?.16:.78).setAngle(Math.sin(t*.6+i*2)*1.1);});
    const water=this.road;water.clear();
    if(!panorama){water.fillGradientStyle(day?0xc6b792:waterway?0x629eaa:0x7794a2,day?0xbca985:waterway?0x387b91:0x55798c,day?0x776e55:0x1b354a,day?0x68634e:0x152b3e,1);water.fillRect(0,535,vw,bottom-535);}
    // The lunar reflection widens toward the viewer; waves drift independently of solid ground.
@@ -571,7 +572,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     water.lineBetween(x-spread*.5,y,x+spread*.5+Math.sin(t+i)*9,y);
    }
    for(let i=0;i<(day||panorama?0:80);i++){
-    const x=((i*173-this.offset*.14+t*(i%3+1))%(vw+240)+vw+240)%(vw+240)-120,y=545+(i*37)%Math.max(1,bottom-545);
+    const x=((i*173-scroll*.14+t*(i%3+1))%(vw+240)+vw+240)%(vw+240)-120,y=545+(i*37)%Math.max(1,bottom-545);
     water.lineStyle(1,i%3?0xb3c9cb:0xeee8cf,.08+(i%4)*.027);water.lineBetween(x,y,x+17+i%5*8,y);
    }
    // Scenery only: authored surfaces wrap in order without mirroring.
@@ -588,7 +589,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    });
    // Endless water has no artificial walking boundary or decorative land islands.
    for(let i=0;i<(waterway?0:12);i++){const x=((i*181+t*5)%Math.max(1,vw)),y=GROUND-25+Math.sin(t*.8+i)*17;water.fillStyle(0xdceab3,.2+.3*Math.sin(t*2+i)**2);this.paintCircle(water,x,y,1.7);}
-   this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=64+(i%2)*31;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*560-this.offset*PARALLAX.near-100,bottom+8).setVisible(!panorama&&!waterway&&region===0).setTint(day?0xa9a478:0x9fb5bd).setAlpha(.8).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
+   this.near.forEach((im,i)=>{const src=im.texture.getSourceImage(),h=64+(i%2)*31;im.setDisplaySize(h*src.width/src.height,h).setPosition(i*560-scroll*PARALLAX.near-100,bottom+8).setVisible(!panorama&&!waterway&&region===0).setTint(day?0xa9a478:0x9fb5bd).setAlpha(.8).setAngle(Math.sin(t*.9+i)*.8);this.root.bringToTop(im);});
   }
   drawBackgroundBattle(region,t){
    if(!this.battleGroups)return;
@@ -607,7 +608,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(q>=.29&&q<.41){const p=(q-.29)/.12,ax=x-90+p*129,ay=base-39-Math.sin(p*Math.PI)*10;g.lineStyle(2,0x453c2c,.85);g.lineBetween(ax-12,ay,ax+7,ay-1);g.fillStyle(0xece0b1,.95);g.fillTriangle(ax+7,ay-1,ax+2,ay-4,ax+2,ay+2);}
     if(struck){const a=1-(q-.4)/.14;g.lineStyle(2,0xffecb1,a);for(let k=0;k<5;k++){const angle=k*1.26;g.lineBetween(x+36+Math.cos(angle)*3,base-36+Math.sin(angle)*3,x+36+Math.cos(angle)*14,base-36+Math.sin(angle)*14);}}
     if(reply){g.lineStyle(2,0x678b92,.55);g.beginPath();g.arc(x-6,base-38,20,-1.5,.8);g.strokePath();}
-    for(let k=0;k<3;k++){const phase=(t*.08+i*.21+k*.3)%1;g.fillStyle(0x574e45,(1-phase)*.12);g.fillEllipse(x+82+k*13+Math.sin(phase*5)*9,base-18-phase*78,17+phase*31,21+phase*40);}
+    for(let k=0;k<3;k++){const phase=(t*.08+i*.21+k*.3)%1;g.fillStyle(0x574e45,(1-phase)*.12);this.paintEllipse(g,x+82+k*13+Math.sin(phase*5)*9,base-18-phase*78,17+phase*31,21+phase*40);}
     const ember=(t*.4+i*.13)%1;g.fillStyle(0xe9af53,(1-ember)*.7);this.paintCircle(g,x+71,base-5-ember*28,1.5);
    });
   }
@@ -633,7 +634,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const g=this.fx,point=this.bodyPoint(patient,kind),w=patient.displayWidth,h=patient.displayHeight,dir=patient.flipX?-1:1;
    const styles={king:[0xffdd91,.1,.6,3],prince:[0xb9e8ed,.16,.58,2],minister:[0xa8edcd,.12,.62,3],cavalry:[0xe4d8a4,.28,.78,4],cow:[0xffd98b,.28,.72,3],haetae:[0xb8f1d8,.25,.69,4],girl:[0xffe3a6,.17,.62,2],keeper:[0xccf2cc,.12,.58,2],rabbit:[0xd7f3a8,.16,.78,3],scholar:[0xb0f0ce,.12,.60,2],healer:[0xb6e3fb,.16,.62,2]},style=styles[kind]||styles.haetae;
    const [color,side,vertical,count]=style,bandX=patient.x+dir*w*side,bandY=patient.y-(patient.originY-vertical)*h;
-   g.fillStyle(color,tail*.12);g.fillEllipse(point.x,point.y,Math.min(130,w*.7),h*.45);
+   g.fillStyle(color,tail*.12);this.paintEllipse(g,point.x,point.y,Math.min(130,w*.7),h*.45);
    // Floating crosses leave the body once emitted; store world space on this
    // existing effect so pose/recoil cannot shake them and camera movement stays correct.
    const origins=effect?(effect.recoveryOrigins??={}):{},origin=origins[kind]??(origins[kind]={x:point.x+this.offset,y:point.y-h*.23,spacing:Math.min(25,w*.18)});
@@ -698,11 +699,13 @@ export function makeGame(model,onReady,onFrame,onEvents){
    return {x:image.x+x*Math.cos(angle)-y*Math.sin(angle),y:image.y+x*Math.sin(angle)+y*Math.cos(angle)};
   }
   paintCircle(graphics,x,y,radius){
-   // Phaser 3 fillCircle tessellates every arc into 100 segments, even a 1px mote.
-   // Match the actual framebuffer radius within 0.35px, retaining the same disk.
-   const pixels=Math.max(1,Math.abs(radius)*(this.unit||1));
+   return this.paintEllipse(graphics,x,y,radius*2,radius*2);
+  }
+  paintEllipse(graphics,x,y,width,height){
+   // Bound silhouette error at the longest framebuffer radius, also for shadows.
+   const pixels=Math.max(1,Math.max(Math.abs(width),Math.abs(height))*.5*(this.unit||1));
    const sides=Math.min(96,Math.max(8,2*Math.ceil(Math.PI/Math.acos(Math.max(-1,1-.35/pixels))/2)));
-   return graphics.fillEllipse(x,y,radius*2,radius*2,sides);
+   return graphics.fillEllipse(x,y,width,height,sides);
   }
   drawHealerCastLight(image,action,patient=null){
    if(action?.phase!=='treat'||!image?.visible)return null;
@@ -784,15 +787,19 @@ export function makeGame(model,onReady,onFrame,onEvents){
    image.setOrigin(image.flipX?1-rx:rx,this.grounding.get(key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,groundY).setAngle(0);
    if(AREAS[model.stage].ground==='water'){const pulse=.5+.5*Math.sin(model.time*2+x*.02);this.shadows.lineStyle(1,0xeaf5ff,.28);this.shadows.strokeEllipse(x,groundY+2,Math.min(130,image.displayWidth*.8)+pulse*9,10+pulse*3);return;}
    const contactWidth=Math.min(image.displayWidth*.92,image.displayHeight*1.15);
-   this.shadows.fillStyle(0x18221f,.24);this.shadows.fillEllipse(x,groundY+1,contactWidth,12);
-   this.shadows.fillStyle(0x101916,.48);this.shadows.fillEllipse(x,groundY,contactWidth*.84,5);
+   this.shadows.fillStyle(0x18221f,.24);this.paintEllipse(this.shadows,x,groundY+1,contactWidth,12);
+   this.shadows.fillStyle(0x101916,.48);this.paintEllipse(this.shadows,x,groundY,contactWidth*.84,5);
   }
   actorGround(key){
    const area=AREAS[model.status==='ready'?this.previewAreaIndex:model.stage],lanes=area.actorFloors;
    if(!lanes)return GROUND;
    const shift=this.worldPixels(area.groundOffset||0);
-   if(key==='girl'||key==='hero')return (lanes[0]+lanes[lanes.length-1])/2+shift;
-   return lanes[(Number(String(key).slice(1))||0)%lanes.length]+shift;
+   const tile=area.roadTiles?.[0],scale=tile?tile.height/(tile.sourceHeight??tile.height):1;
+   const top=tile?GROUND-tile.foot+(tile.top||0)*scale+this.worldPixels((area.roadTopTrim||0)+4):-Infinity;
+   const bottom=tile?GROUND-tile.foot+tile.height-this.worldPixels(8):Infinity;
+   const span=Math.max(0,Math.min(lanes.at(-1)-lanes[0],bottom-top)),first=Math.min(Math.max(lanes[0],top),bottom-span);
+   if(key==='girl'||key==='hero')return first+span/2+shift;
+   const lane=(Number(String(key).slice(1))||0)%lanes.length;return first+lane/(lanes.length-1)*span+shift;
   }
   trackContact(key,kind,walk,moving,x,groundY=GROUND){
    const beat=Math.floor(walk*MOTION[kind].walkFps/(MOTION[kind].walkFrames||4)*2),previous=this.contacts.get(key);
@@ -885,7 +892,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     im.setTexture(style.texture).setOrigin(...origin).setVisible(visible&&broken).setCrop(...regions[i]).setDisplaySize(w,h).setPosition(x+dx,floor+dy).setAngle(angle).setAlpha(Math.max(0,alpha));
    });
    if(!visible)return;
-   g.fillStyle(0x233d42,.25);g.fillEllipse(x,plane+9,270,20);
+   g.fillStyle(0x233d42,.25);this.paintEllipse(g,x,plane+9,270,20);
    if(!broken){
     g.lineStyle(3,color,.45);g.strokeEllipse(x,plane-100,105,195);
     for(let i=0;i<7;i++){const q=(t*.3+i/7)%1;g.fillStyle(color,(1-q)*.7);this.paintCircle(g,x+Math.sin(i*2.4+q*3)*45,plane-15-q*190,2+q);}
@@ -1066,7 +1073,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     for(let i=0;i<5;i++){
      const xx=px+Math.sin(model.time*3+i)*28,yy=groundY-20-i*24;this.fx.fillStyle(color,(1-q)*.65);
      if(type==='skirt'){this.fx.lineStyle(2,color,(1-q)*.8);this.fx.lineBetween(xx,yy+45,xx+12,yy+25);}
-     else if(type==='horse')this.fx.fillEllipse(xx+20,groundY-4-i%2*6,18+q*25,7+q*6);
+     else if(type==='horse')this.paintEllipse(this.fx,xx+20,groundY-4-i%2*6,18+q*25,7+q*6);
      else if(type==='reaper')this.fx.fillTriangle(xx-4,yy+9,xx+4,yy+9,xx+Math.sin(model.time*4+i)*5,yy-12);
      else this.paintCircle(this.fx,xx,yy,2+i%3);
     }
@@ -1144,10 +1151,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
      if(!arrow)ribbon(Array.from({length:5},(_,i)=>at(Math.max(0,travel-.2+i*.05))),stone?3:ink?6:4,color,1);
      if(arrow&&e.finishOnScreen)ribbon(Array.from({length:5},(_,i)=>at(Math.max(0,travel-.12+i*.03))),5,0xffd788,.8);
      if(arrow){const next=at(Math.min(1,travel+.01)),angle=Math.atan2(next.y-head.y,next.x-head.x),point=(u,v)=>({x:head.x+Math.cos(angle)*u-Math.sin(angle)*v,y:head.y+Math.sin(angle)*u+Math.cos(angle)*v}),a=point(-19,0),b=point(12,0),tip=point(18,0),l=point(8,-5),r=point(8,5);g.lineStyle(3,0x433724,1);g.lineBetween(a.x,a.y,b.x,b.y);g.lineStyle(1.5,0xf6e3a9,.9);g.lineBetween(a.x,a.y,b.x,b.y);g.fillStyle(0xe9e6d6,1);g.fillTriangle(tip.x,tip.y,l.x,l.y,r.x,r.y);const tail=point(-24,-5),tail2=point(-24,5);g.lineStyle(2,0xbc6151,.9);g.lineBetween(a.x,a.y,tail.x,tail.y);g.lineBetween(a.x,a.y,tail2.x,tail2.y);}
-     else if(hex){g.fillStyle(0x6b3e91,1);g.fillEllipse(head.x,head.y,23,14);g.fillStyle(0xf3defb,1);g.fillEllipse(head.x-dir*3,head.y-2,12,6);}
-     else if(stone){g.fillStyle(0x574737,1);g.fillPoints([{x:head.x-12,y:head.y-5},{x:head.x-4,y:head.y-11},{x:head.x+11,y:head.y-6},{x:head.x+10,y:head.y+7},{x:head.x-8,y:head.y+9}],true);g.fillStyle(0xd5b479,1);g.fillEllipse(head.x-1,head.y-2,15,11);}
-     else if(seed){g.fillStyle(0x375840,1);g.fillEllipse(head.x,head.y,24,15);g.fillStyle(0xe6f4af,1);g.fillEllipse(head.x+dir*3,head.y-2,15,8);}
-     else if(ink){g.fillStyle(0x173e40,1);g.fillEllipse(head.x,head.y,31,18);g.lineStyle(3,0xa3efe0,1);g.lineBetween(head.x-dir*10,head.y-5,head.x+dir*11,head.y-1);}
+     else if(hex){g.fillStyle(0x6b3e91,1);this.paintEllipse(g,head.x,head.y,23,14);g.fillStyle(0xf3defb,1);this.paintEllipse(g,head.x-dir*3,head.y-2,12,6);}
+     else if(stone){g.fillStyle(0x574737,1);g.fillPoints([{x:head.x-12,y:head.y-5},{x:head.x-4,y:head.y-11},{x:head.x+11,y:head.y-6},{x:head.x+10,y:head.y+7},{x:head.x-8,y:head.y+9}],true);g.fillStyle(0xd5b479,1);this.paintEllipse(g,head.x-1,head.y-2,15,11);}
+     else if(seed){g.fillStyle(0x375840,1);this.paintEllipse(g,head.x,head.y,24,15);g.fillStyle(0xe6f4af,1);this.paintEllipse(g,head.x+dir*3,head.y-2,15,8);}
+     else if(ink){g.fillStyle(0x173e40,1);this.paintEllipse(g,head.x,head.y,31,18);g.lineStyle(3,0xa3efe0,1);g.lineBetween(head.x-dir*10,head.y-5,head.x+dir*11,head.y-1);}
      else{
       // An actual paper shape and vermilion stroke identify a talisman, even without color glow.
       const corners=[{x:head.x-dir*13,y:head.y-15},{x:head.x+dir*12,y:head.y-9},{x:head.x+dir*8,y:head.y+18},{x:head.x-dir*16,y:head.y+12}];
@@ -1204,10 +1211,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
       paint(e,cx-30,ground-12,160,65,0,tail*.7);flecks(cx,ground-3,p,0xd5b685,11,95,32);
       g.lineStyle(2,0xffd98f,tail);g.strokeEllipse(cx+20,ground-76,30+q*45,28+q*25);
      }else if(e.kind==='keeper'){
-      paint(e,cx-18,ground-8,88,48,0,tail*.55);for(let i=0;i<5;i++){const xx=cx-25+i*13-30*p,yy=ground-4-Math.sin(p*Math.PI)*(15+i*5);g.fillStyle(0xa59270,tail);g.fillEllipse(xx,yy,7,5);}
+      paint(e,cx-18,ground-8,88,48,0,tail*.55);for(let i=0;i<5;i++){const xx=cx-25+i*13-30*p,yy=ground-4-Math.sin(p*Math.PI)*(15+i*5);g.fillStyle(0xa59270,tail);this.paintEllipse(g,xx,yy,7,5);}
      }else if(e.kind==='rabbit'||e.kind==='healer'){
       paint(e,cx,ground-36-50*p,e.kind==='healer'?95:65,120,0,tail*.65);
-      for(let i=0;i<7;i++){const a=i*2.4+q*2,xx=cx+Math.cos(a)*(15+q*40),yy=ground-15-i*9-50*p;g.fillStyle(e.kind==='healer'?0x9fe9ca:0xd1e39a,tail);g.fillEllipse(xx,yy,10,4);}
+      for(let i=0;i<7;i++){const a=i*2.4+q*2,xx=cx+Math.cos(a)*(15+q*40),yy=ground-15-i*9-50*p;g.fillStyle(e.kind==='healer'?0x9fe9ca:0xd1e39a,tail);this.paintEllipse(g,xx,yy,10,4);}
      }else{
       paint(e,cx,ground-50,125,140,0,tail*.35);
       g.lineStyle(3,e.kind==='haetae'?0xf5d28a:0x8de1d4,tail);g.strokeEllipse(cx,ground-3,25+q*115,8+q*19);
@@ -1226,7 +1233,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     }
     if(e.type==='footstep'){
      if(AREAS[model.stage].ground==='water'){g.lineStyle(1.6,0xf3faff,fade*.72);g.strokeEllipse(x,ground+2,16+105*p,4+22*p);g.lineStyle(1,0xb4d6f4,fade*.55);g.strokeEllipse(x,ground+2,12+73*p,3+15*p);g.lineStyle(1,0xffffff,fade*.4);g.strokeEllipse(x,ground+2,8+40*p,2+9*p);}
-     else {const q=p*p;g.fillStyle(0x877653,fade*.32);g.fillEllipse(x-8*q,ground,18+30*p,5+5*p);flecks(x,ground-2,p,0xc2b08a,3,24,15);}
+     else {const q=p*p;g.fillStyle(0x877653,fade*.32);this.paintEllipse(g,x-8*q,ground,18+30*p,5+5*p);flecks(x,ground-2,p,0xc2b08a,3,24,15);}
     }
     if(e.type==='healingAmount'){
      const patient=e.targetActor==null?this.hero:this.sprites.get('a'+e.targetActor);
@@ -1297,10 +1304,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
      const x=e.x-this.offset,h=this.actorHeight(BODY_HEIGHT[e.kind]*(e.kind==='boss'?.64:1)),sprite=e.sprite;
      if(e.kind==='reaper'){
       // The same man lifts his chin and opens his arms; only light leaves the eyes.
-      const lift=Math.min(1,p/.46),rise=28*(lift*lift*(3-2*lift));
+      const rise=0; // The death pose changes, but feet remain on the road.
       const dissolve=Math.max(0,Math.min(1,(p-.55)/.45));
       const frame=reaperDepartureFrame(p);
-      sprite.setTexture('reaperDepart'+frame).setOrigin(.5,this.grounding.get('reaperDepart0'));
+      sprite.setTexture('reaperDepart'+frame).setOrigin(.5,this.grounding.get('reaperDepart'+frame));
       const src=sprite.texture.getSourceImage();sprite.setDisplaySize(h*src.width/src.height,h).setPosition(x,ground-rise).setAlpha(1-dissolve);
       this.root.bringToTop(sprite);
       // Black facial ink and the two eye flames are painted into each death cel.
@@ -1309,12 +1316,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
       for(let i=0;i<5;i++){
        const q=(p*1.8+i/5)%1;
        g.fillStyle(i%2?0xd5ffff:0x64d8e8,glow*(1-q)*.65);
-       g.fillEllipse(x-8+Math.sin(q*5+i)*10,ground-rise-h*(.91+q*.24),2+2*(1-q),4+5*(1-q));
+       this.paintEllipse(g,x-8+Math.sin(q*5+i)*10,ground-rise-h*(.91+q*.24),2+2*(1-q),4+5*(1-q));
       }
       if(dissolve>0)for(let i=0;i<18;i++){
        const q=i/18,swirl=Math.sin(i*2.7+p*7),xx=x+swirl*(18+36*dissolve),yy=ground-rise-20-q*150-55*dissolve;
        g.fillStyle(i%3?0x89999a:0xb8c6bb,Math.sin(dissolve*Math.PI)*.12);
-       g.fillEllipse(xx,yy,14+24*dissolve,8+14*dissolve);
+       this.paintEllipse(g,xx,yy,14+24*dissolve,8+14*dissolve);
       }
      }else if(e.enemy===false&&VIDEO_MOTION[e.kind]?.death){
       const spec=VIDEO_MOTION[e.kind].death,frame=Math.min(spec.holdFrom??spec.frames-1,Math.floor(e.t*spec.fps));
@@ -1346,10 +1353,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // No settling after stopping, and companions cannot move the camera.
    // Keep bounded simulation steps, including accelerated observer playback.
    const cameraArea=AREAS[model.stage],rightInset=cameraArea.gateFile?Math.max(model.portalInset,(cameraArea.gateHeight||350)*(1-(cameraArea.gateOrigin?.[0]??.5))+24):model.portalInset,cameraEnd=model.gateX-vw+rightInset;
+   // The authored centred view starts centred too; legacy areas keep world-zero.
+   const cameraStart=this.cameraStart(cameraArea);
    const steps=playing?Math.max(1,Math.ceil(dt/.05)):1,stepDt=dt/steps;
    for(let i=0;i<steps;i++){
     if(model.status==='playing'){model.setViewport(this.offset,vw);model.step(stepDt);}
-    const targetOffset=intro?(time/1000*30)%4800:Math.max(Math.min(0,cameraEnd),Math.min(cameraEnd,model.x-vw*(cameraArea.cameraAnchor??.28)));
+    const targetOffset=intro?(time/1000*30)%4800:Math.max(Math.min(cameraStart,cameraEnd),Math.min(cameraEnd,model.x-vw*(cameraArea.cameraAnchor??.28)));
     if(intro)this.offset+=(targetOffset-this.offset)*Math.min(1,stepDt*8);else this.offset=targetOffset;
     if(model.status==='playing')model.setViewport(this.offset,vw);
    }
@@ -1402,15 +1411,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // All summons finish ordering first: the traveller remains visible at every party size.
    this.root.bringToTop(this.hero);this.drawWounds('hero',this.hero,mounted?'mount':'haetae',intro?MAX_HP:model.hp,MAX_HP);
    this.root.bringToTop(this.girl);this.drawWounds('girl',this.girl,'girl',intro?MAX_HP:model.hp,MAX_HP);
-   if(AREAS[region].actorFloors){
-    // Depth follows the feet; damage overlays stay beside their own body.
-    const bodies=[...this.sprites,...[['hero',this.hero],['girl',this.girl]]].filter(([,im])=>im.visible).sort((a,b)=>a[1].y-b[1].y);
-    const front=[];for(const [key,body]of bodies){front.push(body);const wound=this.wounds.get(key);if(wound?.visible)front.push(wound);}
-    // Equivalent to bringing each ordered child to the top, without hundreds of
-    // linear removals. Preserve the same list object and every other child's order.
-    const moved=new Set(front),behind=this.root.list.filter(child=>!moved.has(child));
-    this.root.list.splice(0,this.root.list.length,...behind,...front);
-   }
+
    if(this.gateLip)this.root.bringToTop(this.gateLip);
    this.drawReflections(t);
    const boss=model.enemies.find(e=>e.type==='boss');
@@ -1425,7 +1426,20 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    // Effects render above the units.
    this.root.bringToTop(this.fx);
-   if(playing||['won','lost'].includes(model.status))this.drawEffects(dt);else this.drawEffects(0);this.root.bringToTop(this.fx);
+   if(playing||['won','lost'].includes(model.status))this.drawEffects(dt);else this.drawEffects(0);
+   if(AREAS[region].actorFloors){
+    // Depth follows the feet; damage overlays stay beside their own body.
+    const bodies=[...this.sprites,...[['hero',this.hero],['girl',this.girl]]].filter(([,im])=>im.visible).map(([key,im])=>[key,im,im.y]);
+    for(const e of this.effects)if(e.type==='depart'&&e.sprite?.visible)bodies.push(['',e.sprite,e.groundY]);
+    bodies.sort((a,b)=>a[2]-b[2]);
+    const front=[];for(const [key,body]of bodies){front.push(body);const wound=this.wounds.get(key);if(wound?.visible)front.push(wound);}
+    // Equivalent to bringing each ordered child to the top, without hundreds of
+    // linear removals. Preserve the same list object and every other child's order.
+    const moved=new Set(front),behind=this.root.list.filter(child=>!moved.has(child));
+    const overlays=new Set([this.gateLip,this.cloud,this.ward,this.waterWard,this.fx,...this.effects.filter(e=>e.type!=='depart').map(e=>e.sprite)]);
+    this.root.list.splice(0,this.root.list.length,...behind.filter(im=>!overlays.has(im)),...front,...behind.filter(im=>overlays.has(im)));
+   }
+   this.root.bringToTop(this.fx);
    // Values must remain legible above the painted motes, including while paused.
    for(const e of this.effects)if(e.sprite&&['damage','healingAmount','coin'].includes(e.type))this.root.bringToTop(e.sprite);
    this.trimPresentationCache();

@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=138-cards';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=139-cards';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -251,7 +251,7 @@ export class Journey {
    const before=action.elapsed;action.elapsed+=dt;
    const travel=Math.max(0,Math.min(action.elapsed,1.1)-Math.max(before,.18));
    if(travel>0){
-    const from=this.x;this.x=clamp(this.x+travel*420,START,this.roadEnd);
+    const from=this.x;this.x=clamp(this.x+travel*420,0,this.roadEnd);
     for(const e of this.enemies)if(e.hp>0&&e.x>=from-60&&e.x<=this.x+180){
      if(!action.hitIds.includes(e.id)){action.hitIds.push(e.id);this.hurtEnemy(e,65,from,'rush');this.pushEnemy(e,this.x+430);e.stun=1.2;e.windup=0;e.action=null;}
      else this.pushEnemy(e,this.x+145);
@@ -359,7 +359,7 @@ export class Journey {
   if(this.action||this.teamAction&&!this.direction)movement=0;
   const stopAt=this.direction?145:this.allies.some(a=>a.hp>0)?HERO_STANDOFF:145;
   if(movement>0&&front)movement=Math.min(movement,Math.max(0,contactGap(this,front)-stopAt));
-  this.x=clamp(this.x+movement,START,this.roadEnd);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/76;
+  this.x=clamp(this.x+movement,0,this.roadEnd);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/76;
   this.furthest=Math.max(this.furthest,this.x);
   this.advanceTeam(dt);
   // A full wave already spends the reference power budget. Distance unlocks the

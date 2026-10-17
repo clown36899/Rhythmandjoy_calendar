@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=138-cards';
-import {Journey} from './game/model.js?v=138-cards';
+import {Campaign} from './game/campaign.js?v=139-cards';
+import {Journey} from './game/model.js?v=139-cards';
 import {Autoplay} from './game/autoplay.js?v=70';
-import {makeGame} from './game/scene.js?v=selected138-cards';
-import {Soundscape} from './game/audio.js?v=selected138-cards';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=138-cards';
+import {makeGame} from './game/scene.js?v=selected139-cards';
+import {Soundscape} from './game/audio.js?v=selected139-cards';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=139-cards';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -281,7 +281,7 @@ function hydrateIcons(root=document){
  }
 }
 function renderSummonSlots(){
- $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-tier">${['Ⅰ','Ⅱ','Ⅲ','Ⅳ'][UNIT_TIERS[s.tier].level-1]} ${UNIT_TIERS[s.tier].label}</span><span class="unit-count">0/10</span><span class="action-art"><img data-icon="${icon}" src="${scene?.previewTexture(icon)||''}" alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
+ $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}" data-card="${s.cardArt?"painted":"native"}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-tier">${UNIT_TIERS[s.tier].level?['Ⅰ','Ⅱ','Ⅲ','Ⅳ'][UNIT_TIERS[s.tier].level-1]+' ':''}${UNIT_TIERS[s.tier].label}</span><span class="unit-count">0/10</span><span class="action-art"><img ${s.cardArt?'src="./assets/'+s.cardArt+'"':'data-icon="'+icon+'" src="'+(scene?.previewTexture(icon)||'')+'"'} alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
  lastKeeperRank=-1;hydrateIcons($('summon-slots'));
 }
 function renderRoster(){
@@ -399,7 +399,7 @@ function onFrame(m,s){
  $('sky-label').textContent=sky.name;$('journey-dial').style.setProperty('--celestial',moonMix>.5?'#b9d9f5':sky.name==='노을'?'#ffb18b':'#f4d18a');
  $('dial-sun').setAttribute('opacity',String(1-moonMix));$('dial-moon').setAttribute('opacity',String(moonMix));
  $('sky-ring-fill').setAttribute('stroke-dashoffset',String(100-fraction*100));
- $('journey-dial').setAttribute('aria-valuenow',String(progress));$('journey-dial').setAttribute('aria-valuetext',sky.name+' · 길의 '+progress+'%');
+ $('journey-dial').setAttribute('aria-valuenow',String(progress));$('journey-dial').setAttribute('aria-valuetext','지옥문까지 '+(100-progress)+'% 남음 · '+sky.name);$('route-remaining').textContent=m.bossDefeated?'문이 열렸어요':'지옥문까지 '+(100-progress)+'%';
  const shownCoins=Math.max(0,Math.floor(m.coins-(s.pendingCoinAmount?.()||0)));
  $('coins').textContent=shownCoins.toLocaleString('ko-KR');
  $('coins').classList[s.coinArrivalActive?.()?'add':'remove']('coin-arrival');
@@ -410,7 +410,7 @@ function onFrame(m,s){
  $('loadout-open').disabled=!ready||autoplay.active||['playing','paused'].includes(m.status);
  $('loadout-open').title=['playing','paused'].includes(m.status)?'이번 여정이 끝나면 편성을 바꿀 수 있어요.':'필살기 5개 중 3개 선택';
  $('upgrade').disabled=!(m.status==='playing'||m.status==='paused'&&infoPaused&&$('settings').open)||m.keeperRank>0||m.coins<UNITS.keeper.upgrade.price;
- if(lastKeeperRank!==m.keeperRank){lastKeeperRank=m.keeperRank;$('upgrade').innerHTML=m.keeperRank?'먹붓 수련 완료':'도령 수련 <small>◎ 45</small>';const keeperButton=$('action-keeper');if(keeperButton){keeperButton.querySelector('strong').textContent=m.keeperRank?'먹붓 도령':'도령';keeperButton.querySelector('img').src=s.previewTexture(m.keeperRank?'keeperBrush1':'keeper1');}}
+ if(lastKeeperRank!==m.keeperRank){lastKeeperRank=m.keeperRank;$('upgrade').innerHTML=m.keeperRank?'먹붓 수련 완료':'도령 수련 <small>◎ 45</small>';const keeperButton=$('action-keeper');if(keeperButton){keeperButton.querySelector('strong').textContent=m.keeperRank?'먹붓 도령':'도령';if(!UNITS.keeper.cardArt)keeperButton.querySelector('img').src=s.previewTexture(m.keeperRank?'keeperBrush1':'keeper1');}}
  const region=m.status==='ready'?s.previewAreaIndex:m.stage;
  $('area-label').textContent=m.bossDefeated?(m.stage===STAGES.length-1?'집 앞':'열린 길'):STAGES[region].place;
  $('edition-area').textContent=AREAS[region].name;document.body.dataset.area=String(region);
