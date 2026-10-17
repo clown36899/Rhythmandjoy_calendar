@@ -1,9 +1,9 @@
 import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected139-cards';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected140-dangpa';
 import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=139-cards';
 import {AssetDownloads} from './downloads.js?v=70';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=133';
-import {ASSET_BYTES} from './asset-sizes.js?v=selected139-cards';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=140';
+import {ASSET_BYTES} from './asset-sizes.js?v=selected140-dangpa';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -178,7 +178,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     // Idle, walking and death keep their measured supporting surface.
     // Running retains the registered floor so airborne poses do not stick to the ground.
     for(const clips of Object.values(VIDEO_MOTION))for(const [name,spec] of Object.entries(clips))for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;const planted=['idle','walk','death'].includes(name);if(!planted||!this.grounding.has(key))this.grounding.set(key,planted?VIDEO_DELIVERY[spec.asset].ground[i]:spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
-    if(this.videoFrameIndex)for(const clips of Object.values(VIDEO_MOTION)){await this.decodeVideo(clips.idle.asset+':0');this.videoCel(clips.idle.prefix+'0');}
+    if(this.videoFrameIndex)for(const clips of Object.values(VIDEO_MOTION)){const key=clips.idle.asset+':0';if(!this.loadedFiles.has(key))continue;await this.decodeVideo(key);this.videoCel(clips.idle.prefix+'0');}
     this.initializeWorld();this.commonReady=true;
    })();try{await this.commonPromise;}finally{this.commonPromise=null;}
   }
@@ -622,7 +622,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    ))||model.projectiles.some(p=>p.enemy&&p.targetId===targetActor);
   }
   recoveryCel(kind,targetActor){
-   if(!['girl','haetae','cow','keeper','rabbit','scholar','healer'].includes(kind))return null;
+   if(!VIDEO_MOTION[kind]?.receiveHeal&&!['girl','haetae','cow','keeper','rabbit','scholar','healer'].includes(kind))return null;
    const effect=this.effects.find(e=>e.type==='heal'&&!e.enemy&&e.amount>0&&e.targetActor===targetActor),age=effect?model.time-(effect.at??model.time-effect.t):Infinity;
    if((kind==='cow'||TRAVELLER_VIDEO[kind])&&this.patientUnderAttack(targetActor))return null;
    if(kind==='cow'&&!VIDEO_MOTION.cow?.receiveHeal)return age>=0&&age<COW_HEAL.duration?'cowRecoverVideo'+Math.min(COW_HEAL.frames-1,Math.floor(age*COW_HEAL.fps)):null;
