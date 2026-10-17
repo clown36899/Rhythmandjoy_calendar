@@ -330,7 +330,7 @@ export class Journey {
   // Healthy support follows the independent front line, never traveller input.
   const s=UNITS.healer,leaders=this.allies.filter(a=>a.hp>0&&a.type!=='healer'&&!a.entering);
   const formation=Math.min(this.roadEnd-90,leaders.length?Math.max(...leaders.map(a=>a.x))-s.spacing:this.roadEnd-90);
-  const front=this.enemies.filter(e=>e.hp>0&&e.x>actor.x-55).sort((a,b)=>(a.x-ENEMY_FRONT[a.type])-(b.x-ENEMY_FRONT[b.type]))[0];
+  const front=this.enemies.reduce((front,e)=>e.hp>0&&e.x>actor.x-55&&(!front||e.x-ENEMY_FRONT[e.type]<front.x-ENEMY_FRONT[front.type])?e:front,null);
   const engaged=front&&contactGap({...actor,x:Math.max(formation,actor.x)},front)<=HERO_STANDOFF-s.formation+180;
   return Math.max(START-130,engaged?actor.x+contactGap(actor,front)-HERO_STANDOFF+s.formation:formation);
  }
@@ -355,7 +355,7 @@ export class Journey {
   this.shield=Math.max(0,this.shield-dt);this.waterWard=Math.max(0,this.waterWard-dt);this.heroAttack-=dt;this.advanceAction(this,dt);
   for(const k of Object.keys(this.cooldowns))this.cooldowns[k]=Math.max(0,this.cooldowns[k]-dt);
   const active=this.enemies.filter(e=>e.hp>0&&this.time>=(e.entryAt??e.bornAt));
-  const front=active.filter(e=>e.x>=this.x-20).sort((a,b)=>(a.x-ENEMY_FRONT[a.type])-(b.x-ENEMY_FRONT[b.type]))[0];
+  const front=active.reduce((front,e)=>e.x>=this.x-20&&(!front||e.x-ENEMY_FRONT[e.type]<front.x-ENEMY_FRONT[front.type])?e:front,null);
   const manual=this.direction||this.pendingMove;this.pendingMove=0;
   let direction=manual|| (this.auto?1:0);
   let movement=direction*(manual?76:36)*dt;
@@ -387,15 +387,14 @@ export class Journey {
    if(a.action?.kind==='team'){a.cd=Math.max(0,a.cd-dt);a.hit=Math.max(0,a.hit-dt);continue;}
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(this.advanceEntry(a,false,dt))continue;
    if(a.type==='cow'){
-    const threats=this.enemies.filter(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55&&contactGap(a,e)<=s.range+30);
-    if(!threats.length){a.alerted=false;if(a.action?.phase==='anger')a.action=null;}
+    const threatened=this.enemies.some(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55&&contactGap(a,e)<=s.range+30);
+    if(!threatened){a.alerted=false;if(a.action?.phase==='anger')a.action=null;}
     else if(!a.alerted&&!a.action){
      a.alerted=true;a.action={kind:'cow',phase:'anger',elapsed:0};
     }
    }
    this.advanceAction(a,dt);
    if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
-   const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55).sort((b,c)=>(b.x-ENEMY_FRONT[b.type])-(c.x-ENEMY_FRONT[c.type]));
    if(s.heal){
     const patient=this.healerPatient(a);
     if(patient){
@@ -406,9 +405,10 @@ export class Journey {
     }
     const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;continue;
    }
+   const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55);
    const hittable=['rabbit','scholar'].includes(a.type)?ahead.filter(e=>e.type!=='skirt'):ahead;
    const target=this.selectContact(a,hittable.length?hittable:ahead,s.range);
-   const contactFront=ahead[0];
+   const contactFront=ahead.reduce((front,e)=>!front||e.x-ENEMY_FRONT[e.type]<front.x-ENEMY_FRONT[front.type]?e:front,null);
    // Companions march independently of traveller input, stopping at firing range.
    const goal=Math.min(this.roadEnd-90,contactFront?a.x+contactGap(a,contactFront)-s.range:this.roadEnd-90),gap=goal-a.x;
    if(target&&contactGap(a,target)<=s.range+1e-6&&a.cd<=0&&(a.type!=='cow'||a.alerted)){

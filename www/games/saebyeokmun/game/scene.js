@@ -2,14 +2,33 @@ import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
 import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected140-dangpa';
 import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=141-input';
 import {AssetDownloads} from './downloads.js?v=70';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=140';
-import {ASSET_BYTES} from './asset-sizes.js?v=141-input';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=142-performance';
+import {ASSET_BYTES} from './asset-sizes.js?v=142-performance';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
 const VIDEO_FRAME_BUDGET=48*1024*1024,VIDEO_SOURCE_BUDGET=64*1024*1024,VIDEO_BLOB_BUDGET=32*1024*1024,INJURY_BUDGET=24*1024*1024;
 // Share twelve-cel GPU pages; downloads remain twenty-four-cel blocks.
 const VIDEO_PAGE_FRAMES=12,VIDEO_PAGE_COLUMNS=4;
+// Phaser 3.90 TimeStep integration; see PHASER-LICENSE.md.
+// Keep Phaser's elapsed/smoothed game delta, but pace its existing 60Hz limiter
+// by deadlines. Resetting the elapsed accumulator alone discards pacing remainder.
+// One transient deadline belongs to this TimeStep; there is no second RAF/timer.
+function stepLimitedFPS(time){
+ this.now=time;
+ let delta=Math.max(0,time-this.lastTime);
+ this.rawDelta=delta;this.time+=delta;
+ if(this.smoothStep)delta=this.smoothDelta(delta);
+ this.delta+=delta;
+ if(time>=this.nextFpsUpdate)this.updateFPS(time);
+ this.framesThisSecond++;
+ if(this._nextLimitedStep===undefined||time<this.lastTime||time-this._nextLimitedStep>this._min)this._nextLimitedStep=time;
+ if(time+1>=this._nextLimitedStep){
+  this._nextLimitedStep+=Math.max(1,Math.floor((time+1-this._nextLimitedStep)/this._limitRate)+1)*this._limitRate;
+  this.callback(time,this.delta);this.delta=0;
+ }
+ this.lastTime=time;this.frame++;
+}
 const SUPERSEDED_SHEETS=new Set(['cowVideo','cowVideoMeta','cowRest','cowRestMeta','cowIdle','cowIdleMeta','cowIdleSniff','cowIdleSniffMeta','cowHealing','cowHealingMeta','girlIdle','haetaeIdle','haetaeMotion','healerWalk','healerMovingCare']);
 const LEGACY_FOE_SHEETS={skirt:['enemyWalk','enemyAttacks','enemyDefeat'],horse:['enemyWalk','enemyAttacks','enemyDefeat'],reaper:['enemyWalk','enemyAttacks','reaperDeparture'],boss:['bossMotion','enemyDefeat'],warden:['wardenMotion'],ferryman:['ferrymanMotion'],waterghost:['waterghostMotion'],mangtae:['stageFoes','foeAttacks'],shadow:['stageFoes','foeAttacks']};
 const OPTIONAL_SHEETS=new Set([...Object.values(LEGACY_FOE_SHEETS).flat(),'battle','distantTroops','nightRoad','castleRoad','storybookRoad','gate']);
@@ -78,8 +97,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    load.image('allyHurt','./assets/ally-hurt-v32.webp');
    load.image('healerMovingCare','./assets/healer-moving-care-v37.webp');load.image('healerWalk','./assets/healer-care-v36.webp');load.image('umbrellaMotion','./assets/umbrella-motion-v32.webp');
    load.image('healerPrayer','./assets/healer-prayer-v55.webp');load.image('cowVideo','./assets/cow-motion-v100.webp');load.json('cowVideoMeta','./assets/cow-motion-v100.json');
-   for(const spec of VIDEO_SHEETS)for(const [part,delivery] of VIDEO_DELIVERY[spec.asset].parts.entries()){
-    const key=spec.asset+':'+part;files.set(key,{key,url:'./assets/'+delivery.file,type:'image',video:spec.asset,part});
+   for(const spec of VIDEO_SHEETS)for(const profile of [{parts:VIDEO_DELIVERY[spec.asset].parts},...VIDEO_DELIVERY[spec.asset].profiles||[]])for(const [part,delivery] of profile.parts.entries()){
+    const key=spec.asset+':'+(profile.height?'h'+profile.height+':':'')+part;files.set(key,{key,url:'./assets/'+delivery.file,type:'image',video:spec.asset,part,width:profile.width,height:profile.height});
    }
    load.image('waterWard','./assets/haetae-water-ward-v101.webp');
    load.image('cowRest','./assets/cow-rest-v100.webp');load.json('cowRestMeta','./assets/cow-rest-v100.json');
@@ -99,7 +118,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   create(){
    this.files=this.registerAssets();
-   const urls=[...this.files.values()].map(f=>f.url),retainUrls=[...new Set(urls.filter((url,i)=>urls.indexOf(url)!==i))];
+   const urls=new Set(),retainUrls=new Set();for(const f of this.files.values()){if(urls.has(f.url))retainUrls.add(f.url);urls.add(f.url);}
    // New delivery bytes invalidate old browser/CDN copies; logical cache keys stay stable.
    this.downloads=new AssetDownloads(ASSET_BYTES,{retainUrls,fetcher:(url,options)=>fetch(url+(/-v10[01]\.(webp|json)$/.test(url)?'?delivery=102':'?delivery=64'),options)});
    this.recipes=[];this.recording=true;this.registerRecipes();this.recording=false;
@@ -114,7 +133,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const moving=Object.values(VIDEO_MOTION).some(clips=>clips.walk===s||clips.run===s),cycle=s.cycles?.[0],start=moving?cycle?.start??0:0,end=moving?Math.min(cycle?.end??s.frames-1,start+47):0;
     return Array.from({length:Math.floor(end/24)-Math.floor(start/24)+1},(_,i)=>s.asset+':'+(Math.floor(start/24)+i));
    }));
-   this.commonKeys=[...this.files.keys()].filter(key=>!SUPERSEDED_SHEETS.has(key)&&!this.areaKeys().has(key)&&!this.enemySheetKeys().has(key)&&!OPTIONAL_SHEETS.has(key)&&(!this.files.get(key).video||immediate.has(key)));
+   const areaKeys=this.areaKeys(),enemyKeys=this.enemySheetKeys();
+   this.commonKeys=[...this.files.keys()].filter(key=>!SUPERSEDED_SHEETS.has(key)&&!areaKeys.has(key)&&!enemyKeys.has(key)&&!OPTIONAL_SHEETS.has(key)&&(!this.files.get(key).video||immediate.has(key)));
    onReady(null,this);
   }
   areaKeys(index=null){
@@ -139,7 +159,13 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(this.loadProgress)onProgress(this.loadProgress);
    return job.finally(()=>observers.delete(onProgress));
   }
-  loadFiles(keys,onProgress){
+  videoFiles(keys,native=false){
+   // One resolution selector owns loading, prefetch and preview identities.
+   // Profile-specific keys reuse the established bounded source/request caches.
+   return keys.map(key=>{const file=this.files?.get(key);if(!file?.video)return key;const spec=VIDEO_SHEETS.find(s=>s.asset===file.video);return this.videoPage(this.videoFrameIndex.get(spec.prefix+file.part*24),native).sourceKey;});
+  }
+  loadFiles(keys,onProgress,native=false){
+   keys=this.videoFiles(keys,native);
    const job=(this.loadQueue||Promise.resolve()).catch(()=>{}).then(async()=>{
     try{return await this.consumeFiles(keys,p=>{this.loadProgress=p;for(const fn of this.loadObservers||[])fn(p);});}
     finally{this.loadProgress=null;}
@@ -190,7 +216,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
      const spec=clips[name];if(!spec)continue;
      const start=name==='idle'?0:spec.cycles?.[0]?.start??0,end=name==='idle'?0:Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+47),entries=name==='runUrgent'?[0,start]:[start];
      for(let i=(Math.floor(start/24)+1)*24;i<=end;i+=24)entries.push(i);
-     for(const i of entries){const key=spec.asset+':'+Math.floor(i/24);if(!this.loadedFiles.has(key))continue;await this.decodeVideo(key);this.videoCel(spec.prefix+i);this.trimPresentationCache();}
+     for(const i of entries){const key=this.videoPage(this.videoFrameIndex.get(spec.prefix+i)).sourceKey;if(!this.loadedFiles.has(key))continue;await this.decodeVideo(key);this.videoCel(spec.prefix+i);this.trimPresentationCache();}
     }
     this.commonReady=true;
    })();try{await this.commonPromise;}finally{this.commonPromise=null;}
@@ -228,21 +254,28 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   async decodeVideo(key,native=false){
    const source=this.videoSources.get(key),file=this.files.get(key),spec=VIDEO_SHEETS.find(s=>s.asset===file?.video),frame=spec?this.videoFrameIndex.get(spec.prefix+'0'):null,page=frame?this.videoPage(frame,native):null;
-   if(!source||source.image&&(!page||source.h>=page.h))return source?.image;
+   if(!source||source.image&&(!page||source.h>=(file.height||page.h)))return source?.image;
    if(source.decoding)return source.decoding;
-   source.decoding=(async()=>{const url=URL.createObjectURL(source.blob);try{const image=new Image();image.src=url;await image.decode();
+   // File preparation already owns this queue. Reuse it for decoded pixels so
+   // several transport blocks cannot expand their full native images at once.
+   source.decoding=(this.loadQueue||Promise.resolve()).catch(()=>{}).then(async()=>{let image,url;try{
+    // Decode away from the rendering path; retain the established browser path
+    // when ImageBitmap is absent or rejects this file. Release both on failure.
+    if(typeof createImageBitmap==='function')try{image=await createImageBitmap(source.blob);}catch{}
+    if(!image){url=URL.createObjectURL(source.blob);image=new Image();image.src=url;await image.decode();}
     // Keep the small decoded block in CPU memory. Cropping an HTMLImage into
     // GPU-backed canvases can upload that entire block again for every new cel.
     const pixels=document.createElement('canvas'),ctx=pixels.getContext('2d',{willReadFrequently:true});
-    if(page){const d=VIDEO_DELIVERY[spec.asset],[,,w,h]=d.crop,g=d.gutter,count=Math.min(24,spec.frames-file.part*24);pixels.width=d.columns*(page.w+g*2);pixels.height=Math.ceil(count/d.columns)*(page.h+g*2);
+    if(page&&(file.height||page.h===VIDEO_DELIVERY[spec.asset].crop[3])){const d=VIDEO_DELIVERY[spec.asset],g=d.gutter,count=Math.min(24,spec.frames-file.part*24),w=file.width||d.crop[2],h=file.height||d.crop[3];pixels.width=d.columns*(w+g*2);pixels.height=Math.ceil(count/d.columns)*(h+g*2);ctx.drawImage(image,0,0);source.w=w;source.h=h;
+    }else if(page){const d=VIDEO_DELIVERY[spec.asset],[,,w,h]=d.crop,g=d.gutter,count=Math.min(24,spec.frames-file.part*24);pixels.width=d.columns*(page.w+g*2);pixels.height=Math.ceil(count/d.columns)*(page.h+g*2);
      for(let i=0;i<count;i++)ctx.drawImage(image,i%d.columns*(w+g*2)+g,Math.floor(i/d.columns)*(h+g*2)+g,w,h,i%d.columns*(page.w+g*2)+g,Math.floor(i/d.columns)*(page.h+g*2)+g,page.w,page.h);source.w=page.w;source.h=page.h;
     }else{pixels.width=image.width;pixels.height=image.height;ctx.drawImage(image,0,0);}
     source.image=pixels;source.used=performance.now();return pixels;
-   }finally{URL.revokeObjectURL(url);source.decoding=null;}})();return source.decoding;
+   }finally{image?.close?.();if(url)URL.revokeObjectURL(url);}}).finally(()=>{source.decoding=null;});this.loadQueue=source.decoding;return source.decoding;
   }
   requestVideo(key,native=false){
    if(this.videoRequests.has(key)||this.videoSources.get(key)?.retryAt>performance.now())return;
-   const ready=this.loadedFiles.has(key)?Promise.resolve():this.downloads.request(this.files.get(key)).then(()=>this.loadFiles([key]));
+   const ready=this.loadedFiles.has(key)?Promise.resolve():this.downloads.request(this.files.get(key)).then(()=>this.loadFiles([key],null,native));
    const job=ready.then(()=>this.decodeVideo(key,native)).catch(()=>{
     // Existing successful bytes survive a failed request. Retry on the next use,
     // at most once per five seconds; never create another transport queue.
@@ -252,9 +285,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
   videoPage(frame,native=false){
    const d=VIDEO_DELIVERY[frame.spec.asset],[,,nativeWidth,nativeHeight]=d.crop;
    // Retain at least 1.25 source texels per framebuffer pixel, including density.
-   const target=this.actorHeight(BODY_HEIGHT[frame.kind]||188)*frame.spec.scale*(native?Infinity:this.unit||Infinity)*1.25;
+   const unit=this.unit||this.viewSize()?.unit||Infinity;
+   const target=this.actorHeight(BODY_HEIGHT[frame.kind]||188)*frame.spec.scale*(native?Infinity:unit)*1.25;
    const h=Math.min(nativeHeight,Math.ceil(target/32)*32),w=Math.ceil(nativeWidth*h/nativeHeight);
-   return {key:frame.spec.asset+':gpu:'+h+':'+Math.floor(frame.index/VIDEO_PAGE_FRAMES),w,h,g:d.gutter};
+   const profile=!native&&d.profiles?.find(p=>p.height===h);
+   return {key:frame.spec.asset+':gpu:'+h+':'+Math.floor(frame.index/VIDEO_PAGE_FRAMES),w,h,g:d.gutter,sourceKey:frame.spec.asset+':'+(profile?'h'+h+':':'')+Math.floor(frame.index/24)};
   }
   videoCel(key,fallback=null,native=false){
    const frame=this.videoFrameIndex?.get(key);if(!frame){
@@ -264,14 +299,19 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(old&&!this.textures.exists(key)){const kind=old[1],n=Number(old[2]),clips=VIDEO_MOTION[kind],walkFrames=kind==='cow'?48:4,spec=n<walkFrames?clips.walk:n<walkFrames*2?(clips.attack||clips.castHeal):clips.idle;return this.videoCel(spec.prefix+Math.min(spec.frames-1,n<walkFrames?Math.floor(n*spec.frames/walkFrames):n<walkFrames*2?Math.floor((n-walkFrames)*spec.frames/walkFrames):0),this.videoCel(clips.idle.prefix+'0',null,native),native);}
     return key;
    }
-   const now=performance.now(),{spec,index}=frame,part=Math.floor(index/24),sourceKey=spec.asset+':'+part;
-   const {key:pageKey,w,h,g}=this.videoPage(frame,native),cached=this.videoFrames.get(pageKey);
+   const now=performance.now(),{spec,index}=frame,part=Math.floor(index/24);
+   const {key:pageKey,w,h,g,sourceKey}=this.videoPage(frame,native),cached=this.videoFrames.get(pageKey);
    const source=this.videoSources.get(sourceKey);
    if(source)source.used=now;
    // Warm the next block before crossing its boundary. The game's motion clock
    // remains authoritative even if a slow connection temporarily holds a cel.
    const next=part+1<VIDEO_DELIVERY[spec.asset].parts.length?part+1:0;
-   if(index%24>=12&&!this.videoFrames.has(this.videoPage(this.videoFrameIndex.get(spec.prefix+next*24),native).key))this.requestVideo(spec.asset+':'+next,native);
+   if(index%24>=12){
+    const nextPage=this.videoPage(this.videoFrameIndex.get(spec.prefix+next*24),native),nextKey=nextPage.sourceKey,nextSource=this.videoSources.get(nextKey);
+    // Decoded CPU pixels already satisfy prefetch even before their GPU page is
+    // displayed. Re-enter only after eviction or when a larger profile is needed.
+    if((!nextSource?.image||nextSource.h&&nextSource.h<h)&&!this.videoFrames.has(nextPage.key))this.requestVideo(nextKey,native);
+   }
    if(cached){cached.used=now;return key;}
    if(!source?.image||source.h&&source.h<h){if(!(source?.retryAt>now))this.requestVideo(sourceKey,native);return fallback||key;}
    const delivery=VIDEO_DELIVERY[spec.asset],nw=source.w||delivery.crop[2],nh=source.h||delivery.crop[3];
@@ -288,7 +328,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   setCel(image,key){
    const frame=this.videoFrameIndex?.get(key);
-   if(frame){const atlas=this.videoPage(frame).key;image.celKey=key;if(this.textures.exists(atlas))image.setTexture(atlas,key);else image.setTexture('__WHITE').setVisible(false);}
+   if(frame){const atlas=this.videoPage(frame).key;image.celKey=key;if(this.textures.exists(atlas)){
+    // Positions, ground and tint still update each render. Rebind only when the
+    // real texture/frame changes, including density changes and recreated pages.
+    if(image.texture!==this.textures.get(atlas)||image.frame?.name!==key)image.setTexture(atlas,key);
+   }else image.setTexture('__WHITE').setVisible(false);}
    else {delete image.celKey;image.setTexture(key);}return image;
   }
   trimPresentationCache(){
@@ -318,7 +362,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   async ensurePreview(kind){
    // Collection portraits reuse the registered slicing recipe, without loading the battle bundle.
-   if(VIDEO_MOTION[kind]){const idle=VIDEO_MOTION[kind].idle,key=idle.asset+':0';await this.loadFiles([key]);await this.decodeVideo(key,true);this.videoCel(idle.prefix+'0',null,true);return;}
+   if(VIDEO_MOTION[kind]){const idle=VIDEO_MOTION[kind].idle,key=idle.asset+':0';await this.loadFiles([key],null,true);await this.decodeVideo(key,true);this.videoCel(idle.prefix+'0',null,true);return;}
    if(UNITS[kind]){const recipe=this.recipes.find(args=>args[1].includes(kind+'1'));if(recipe)await this.loadFiles([recipe[0]]);return;}
    const s=ENEMIES[kind];if(!s)return;
    const keys=s.atlas?[s.atlasGroups?'enemyAtlas:'+s.atlas:kind+'Motion']:LEGACY_FOE_SHEETS[kind]||[];await this.loadFiles(keys);
@@ -481,11 +525,21 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.events.once('shutdown',()=>this.stageObserver.disconnect());
    this.input.keyboard?.on('keydown',e=>{if(['ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();});
   }
+  viewSize(){
+   // Resolve the existing layout before artwork/containers exist, so cold
+   // loading selects the same pixels that resize will actually display.
+   const bounds=document.getElementById?.('game')?.getBoundingClientRect();if(!bounds)return null;
+   const density=Math.min(3,Math.max(1.5,window.devicePixelRatio||1));
+   const width=Math.round(bounds.width*density),height=Math.round(bounds.height*density);
+   if(width<=0||height<=0)return null;
+   const deck=document.querySelector?.('.control-deck')?.getBoundingClientRect().height||0;
+   const battleHeight=Math.max(1,bounds.height-deck),viewHeight=bounds.width<=760?Math.max(440,Math.min(620,620*2.35/(bounds.width/battleHeight))):620;
+   return {bounds,density,width,height,deck,battleHeight,viewHeight,unit:battleHeight*density/viewHeight};
+  }
   resize(syncScale=true){
    if(!this.root)return;
-   const bounds=document.getElementById('game').getBoundingClientRect(),density=Math.min(3,Math.max(1.5,window.devicePixelRatio||1));
-   const width=Math.round(bounds.width*density),height=Math.round(bounds.height*density);
-   if(width<=0||height<=0)return;
+   const size=this.viewSize();if(!size)return;
+   const {bounds,density,width,height,deck,battleHeight,viewHeight}=size;
    // ResizeObserver can run before Phaser polls the parent. FIT must consume the
    // current CSS bounds before it refreshes the high-density drawing surface.
    // Phaser refresh emits resize synchronously. Its listener only lays out the
@@ -495,10 +549,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(this.scale.gameSize.width!==width||this.scale.gameSize.height!==height)this.scale.setGameSize(width,height);
     else if(parentChanged)this.scale.refresh();
    }
-   const phone=bounds.width<=760;
    // Keep the old battle viewport and foot height while painting more river behind the deck.
-   const deck=document.querySelector('.control-deck').getBoundingClientRect().height;
-   const battleHeight=Math.max(1,bounds.height-deck),viewHeight=phone?Math.max(440,Math.min(620,620*2.35/(bounds.width/battleHeight))):620;
    const tiled=AREAS.find(area=>area.roadTiles)?.roadTiles;
    if(tiled){const cycle=tiled.reduce((sum,tile)=>sum+tile.width,0),needed=(Math.ceil(width/(battleHeight*density/viewHeight)/cycle)+1)*tiled.length;
     while(this.pathTiles.length<needed){const im=this.add.image(0,0,'__WHITE').setOrigin(0,0);this.pathTiles.push(im);this.root.addAt(im,this.root.getIndex(this.pathTiles[0]));}}
@@ -792,7 +843,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    image.setTexture(texture).setVisible(true).setOrigin(.5,.5).setFlipX(body.flipX).setDisplaySize(body.displayWidth*r[2],body.displayHeight*r[3]).setPosition(body.x+dx*Math.cos(a)-dy*Math.sin(a),body.y+dx*Math.sin(a)+dy*Math.cos(a)).setAngle(body.angle||0).setAlpha(body.alpha??1);
    if(body.isTinted)(body.tintFill?image.setTintFill(body.tintTopLeft):image.setTint(body.tintTopLeft));else image.clearTint();if(!AREAS[model.status==='ready'?this.previewAreaIndex:model.stage].actorFloors)this.root.bringToTop(image);
   }
-  worldPixels(pixels){return pixels*(Number(this.game?.canvas?.dataset?.renderDensity)||1)/(this.unit||1);}
+  worldPixels(pixels){const size=this.unit?null:this.viewSize();return pixels*(Number(this.game?.canvas?.dataset?.renderDensity)||size?.density||1)/(this.unit||size?.unit||1);}
   actorHeight(height){const area=AREAS[model.status==='ready'?(this.previewAreaIndex??model.stage):model.stage];return height*(area.actorScale||1)+this.worldPixels(area.actorHeightAdd||0);}
   placeOnGround(image,x,height,groundY=GROUND){
    const key=image.celKey||image.texture.key,frame=this.videoFrameIndex?.get(key),crop=frame?VIDEO_DELIVERY[frame.spec.asset].crop:null,src=crop?{width:crop[2],height:crop[3]}:image.texture.getSourceImage();height=this.actorHeight(height)*(this.celScale.get(key)??1);
@@ -1460,5 +1511,5 @@ export function makeGame(model,onReady,onFrame,onEvents){
    onFrame(model,this);
   }
  }
- return new P.Game({type:P.AUTO,parent:'game',width:1280,height:620,transparent:false,backgroundColor:'#eee8d9',antialias:true,scene:RoadScene,fps:{target:60,limit:60},scale:{mode:P.Scale.FIT,autoCenter:P.Scale.CENTER_BOTH},render:{roundPixels:false,powerPreference:'low-power'},audio:{noAudio:true},banner:false});
+ return new P.Game({type:P.AUTO,parent:'game',width:1280,height:620,transparent:false,backgroundColor:'#eee8d9',antialias:true,scene:RoadScene,fps:{target:60,limit:60},callbacks:{preBoot:game=>{game.loop.stepLimitFPS=stepLimitedFPS;}},scale:{mode:P.Scale.FIT,autoCenter:P.Scale.CENTER_BOTH},render:{roundPixels:false,powerPreference:'low-power'},audio:{noAudio:true},banner:false});
 }
