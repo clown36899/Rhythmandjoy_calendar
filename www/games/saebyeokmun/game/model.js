@@ -1,10 +1,10 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=139-cards';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=141-input';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
  reset(){
   this.status='ready';this.party=[...DEFAULT_PARTY];this.time=0;this.x=START;this.furthest=START;this.hp=MAX_HP;this.coins=70;
-  this.auto=false;this.invincible=false;this.tour=false;this.portal=null;this.direction=0;this.allies=[];this.enemies=[];this.projectiles=[];this.events=[];this.nextId=0;this.stage=0;this.gateBrokenAt=null;
+  this.auto=false;this.invincible=false;this.tour=false;this.portal=null;this.direction=0;this.pendingMove=0;this.allies=[];this.enemies=[];this.projectiles=[];this.events=[];this.nextId=0;this.stage=0;this.gateBrokenAt=null;
   this.viewport=null;this.helperArrivals=new Map();this.teamAction=null;this.wave=0;this.waveClearAt=null;this.heroAttack=0;this.shield=0;this.waterWard=0;this.shieldKind=null;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS),...Object.keys(TEAM_SKILLS)].map(k=>[k,0]));
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='집으로 가는 길을 동료와 함께 열어요.';
   delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
@@ -17,6 +17,8 @@ export class Journey {
  // Viewport geometry is input to the one combat model, never a separate display coordinate.
  setViewport(left,width){if(!Number.isFinite(left)||!Number.isFinite(width)||width<=0)return false;this.viewport={left,right:left+width,width};return true;}
  screenPadding(type){return (BODY_HEIGHT[type]||132)+24;}
+ get travelStart(){return Math.min(0,(this.viewport?.left??0)+this.screenPadding('girl'));}
+ setDirection(direction,{pressed=false,cancel=false}={}){this.direction=Math.sign(direction)||0;if(cancel||this.status!=='playing')this.pendingMove=0;else if(pressed&&this.direction)this.pendingMove=this.direction;}
  advanceEntry(actor,enemy,dt){
   if(enemy&&actor.entering&&Number.isFinite(actor.entryOrigin)){
    if(this.time<(actor.entryAt??actor.bornAt)){actor.x=actor.entryOrigin=this.portalX;return true;}
@@ -47,7 +49,7 @@ export class Journey {
  emit(type,data={}){this.events.push({type,at:this.time,...data});}
  say(message){this.hint=message;this.hintSerial++;this.lastHintAt=this.time;this.emit('hint',{message});}
  drainEvents(){const events=this.events;this.events=[];return events;}
- pause(){if(this.status==='playing'){this.status='paused';this.direction=0;}else if(this.status==='paused')this.status='playing';}
+ pause(){if(this.status==='playing'){this.status='paused';this.setDirection(0,{cancel:true});}else if(this.status==='paused')this.status='playing';}
  progress(){return clamp((this.furthest-START)/(this.roadEnd-START),0,1);}
  addAlly(type,x){const s=UNITS[type];if(!s||this.atSummonLimit(type))return null;
   // Same-kind companions share their slot; adding one never pushes an existing body.
@@ -251,7 +253,7 @@ export class Journey {
    const before=action.elapsed;action.elapsed+=dt;
    const travel=Math.max(0,Math.min(action.elapsed,1.1)-Math.max(before,.18));
    if(travel>0){
-    const from=this.x;this.x=clamp(this.x+travel*420,0,this.roadEnd);
+    const from=this.x;this.x=clamp(this.x+travel*420,this.travelStart,this.roadEnd);
     for(const e of this.enemies)if(e.hp>0&&e.x>=from-60&&e.x<=this.x+180){
      if(!action.hitIds.includes(e.id)){action.hitIds.push(e.id);this.hurtEnemy(e,65,from,'rush');this.pushEnemy(e,this.x+430);e.stun=1.2;e.windup=0;e.action=null;}
      else this.pushEnemy(e,this.x+145);
@@ -319,7 +321,7 @@ export class Journey {
   this.enemies=this.enemies.filter(e=>!e.dead);this.allies=this.allies.filter(a=>a.hp>0);
   if(this.bossDefeated&&this.wave>=this.waves.length&&this.gateBrokenAt===null&&(!this.viewport||this.route.deployment||this.portalX>=this.gateX-1)&&!this.enemies.some(e=>e.type==='gate')){const gate=this.spawn('gate',this.gateX);gate.hp=gate.maxHp=STAGES[this.stage].gateHp;}
  }
- finish(status){if(this.status!=='playing')return;this.status=status;this.direction=0;for(const a of this.allies)if(a.action?.kind==='team')a.action=null;this.teamAction=null;this.emit('finish',{status});}
+ finish(status){if(this.status!=='playing')return;this.status=status;this.setDirection(0,{cancel:true});for(const a of this.allies)if(a.action?.kind==='team')a.action=null;this.teamAction=null;this.emit('finish',{status});}
  healerPatient(actor){
   const s=UNITS.healer;
   return [this,...this.allies].filter(b=>b.hp>0&&b.hp<(b.maxHp??MAX_HP)&&Math.abs(b.x-actor.x)<=s.search).sort((b,c)=>b.hp/(b.maxHp??MAX_HP)-c.hp/(c.maxHp??MAX_HP)||Math.abs(b.x-actor.x)-Math.abs(c.x-actor.x))[0]||null;
@@ -354,12 +356,13 @@ export class Journey {
   for(const k of Object.keys(this.cooldowns))this.cooldowns[k]=Math.max(0,this.cooldowns[k]-dt);
   const active=this.enemies.filter(e=>e.hp>0&&this.time>=(e.entryAt??e.bornAt));
   const front=active.filter(e=>e.x>=this.x-20).sort((a,b)=>(a.x-ENEMY_FRONT[a.type])-(b.x-ENEMY_FRONT[b.type]))[0];
-  let direction=this.direction|| (this.auto?1:0);
-  let movement=direction*(this.direction?76:36)*dt;
-  if(this.action||this.teamAction&&!this.direction)movement=0;
-  const stopAt=this.direction?145:this.allies.some(a=>a.hp>0)?HERO_STANDOFF:145;
+  const manual=this.direction||this.pendingMove;this.pendingMove=0;
+  let direction=manual|| (this.auto?1:0);
+  let movement=direction*(manual?76:36)*dt;
+  if(this.action||this.teamAction&&!manual)movement=0;
+  const stopAt=manual?145:this.allies.some(a=>a.hp>0)?HERO_STANDOFF:145;
   if(movement>0&&front)movement=Math.min(movement,Math.max(0,contactGap(this,front)-stopAt));
-  this.x=clamp(this.x+movement,0,this.roadEnd);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/76;
+  this.x=clamp(this.x+movement,this.travelStart,this.roadEnd);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/76;
   this.furthest=Math.max(this.furthest,this.x);
   this.advanceTeam(dt);
   // A full wave already spends the reference power budget. Distance unlocks the

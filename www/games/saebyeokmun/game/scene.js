@@ -1,9 +1,9 @@
 import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
 import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected140-dangpa';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=139-cards';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=141-input';
 import {AssetDownloads} from './downloads.js?v=70';
 import {VIDEO_DELIVERY} from './video-delivery.js?v=140';
-import {ASSET_BYTES} from './asset-sizes.js?v=selected140-dangpa';
+import {ASSET_BYTES} from './asset-sizes.js?v=141-input';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -110,7 +110,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // their next 24 cels through the same loader, without preparing every variant.
    const immediate=new Set(VIDEO_SHEETS.filter(s=>Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&!['dance','annoyed','sit','receiveHeal','death'].includes(name)))).flatMap(s=>{
     const complete=Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&['attack','anger','rageRun','rageHold','runUrgent','castHeal','castHealLight','castHealBless'].includes(name)));
-    return (complete?VIDEO_DELIVERY[s.asset].parts:[VIDEO_DELIVERY[s.asset].parts[0]]).map((_,i)=>s.asset+':'+i);
+    if(complete)return VIDEO_DELIVERY[s.asset].parts.map((_,i)=>s.asset+':'+i);
+    const moving=Object.values(VIDEO_MOTION).some(clips=>clips.walk===s||clips.run===s),cycle=s.cycles?.[0],start=moving?cycle?.start??0:0,end=moving?Math.min(cycle?.end??s.frames-1,start+47):0;
+    return Array.from({length:Math.floor(end/24)-Math.floor(start/24)+1},(_,i)=>s.asset+':'+(Math.floor(start/24)+i));
    }));
    this.commonKeys=[...this.files.keys()].filter(key=>!SUPERSEDED_SHEETS.has(key)&&!this.areaKeys().has(key)&&!this.enemySheetKeys().has(key)&&!OPTIONAL_SHEETS.has(key)&&(!this.files.get(key).video||immediate.has(key)));
    onReady(null,this);
@@ -178,8 +180,19 @@ export function makeGame(model,onReady,onFrame,onEvents){
     // Idle, walking and death keep their measured supporting surface.
     // Running retains the registered floor so airborne poses do not stick to the ground.
     for(const clips of Object.values(VIDEO_MOTION))for(const [name,spec] of Object.entries(clips))for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;const planted=['idle','walk','death'].includes(name);if(!planted||!this.grounding.has(key))this.grounding.set(key,planted?VIDEO_DELIVERY[spec.asset].ground[i]:spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
-    if(this.videoFrameIndex)for(const clips of Object.values(VIDEO_MOTION)){const key=clips.idle.asset+':0';if(!this.loadedFiles.has(key))continue;await this.decodeVideo(key);this.videoCel(clips.idle.prefix+'0');}
-    this.initializeWorld();this.commonReady=true;
+    this.initializeWorld();
+    // Prepare actual entry cels before controls become live. Decoding on the first
+    // moving frame otherwise holds idle artwork while the model already travels.
+    // Warm companions first and the two directly controlled bodies last. The
+    // bounded LRU must retain their entry pages when controls become available.
+    const warmKinds=Object.entries(VIDEO_MOTION).sort(([a],[b])=>Number(!UNITS[a])-Number(!UNITS[b]));
+    if(this.videoFrameIndex)for(const [,clips] of warmKinds)for(const name of ['idle','walk','run','runUrgent']){
+     const spec=clips[name];if(!spec)continue;
+     const start=name==='idle'?0:spec.cycles?.[0]?.start??0,end=name==='idle'?0:Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+47),entries=name==='runUrgent'?[0,start]:[start];
+     for(let i=(Math.floor(start/24)+1)*24;i<=end;i+=24)entries.push(i);
+     for(const i of entries){const key=spec.asset+':'+Math.floor(i/24);if(!this.loadedFiles.has(key))continue;await this.decodeVideo(key);this.videoCel(spec.prefix+i);this.trimPresentationCache();}
+    }
+    this.commonReady=true;
    })();try{await this.commonPromise;}finally{this.commonPromise=null;}
   }
   async prepareStage(index,onProgress){

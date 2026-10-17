@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=139-cards';
-import {Journey} from './game/model.js?v=139-cards';
-import {Autoplay} from './game/autoplay.js?v=70';
-import {makeGame} from './game/scene.js?v=selected140-dangpa';
+import {Campaign} from './game/campaign.js?v=141-input';
+import {Journey} from './game/model.js?v=141-input';
+import {Autoplay} from './game/autoplay.js?v=141-input';
+import {makeGame} from './game/scene.js?v=141-input';
 import {Soundscape} from './game/audio.js?v=selected140-dangpa';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=139-cards';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=141-input';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -105,7 +105,7 @@ $('home-codex').addEventListener('click',openCodex);
 function showMap(){
  if(fullscreenPending)return;entryEpoch++;$('asset-loading').close();infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();
  stopAutoplay();
- keys.clear();model.reset();lastStatus='';resultReadyAt=Infinity;selectedStage=STAGES.findIndex((_,i)=>!campaign.cleared.includes(i));if(selectedStage<0)selectedStage=0;mapPage=Math.floor(selectedStage/STAGES_PER_COUNTRY);
+ keys.clear();model.setDirection(0,{cancel:true});model.reset();lastStatus='';resultReadyAt=Infinity;selectedStage=STAGES.findIndex((_,i)=>!campaign.cleared.includes(i));if(selectedStage<0)selectedStage=0;mapPage=Math.floor(selectedStage/STAGES_PER_COUNTRY);
  $('intro').hidden=false;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=true;$('callout').hidden=true;document.body.dataset.screen='map';
  scene?.resetPresentation();soundscape.stopVoices(true);soundscape.setPlaying(false);renderMap();setMapExpanded(true);openInfo($('journey-map'));
 }
@@ -149,10 +149,10 @@ async function start(testStage=null){
  if(!testing){activeRun=campaign.begin();saveCampaign();}
  model.start(selectedStage,testing?DEFAULT_PARTY:campaign.party,scene?.vw,{tour:testing});
  if(testing){autoplay.enter();scene.playbackRate=autoplay.rate;}
- renderSummonSlots();renderSkillSlots();renderAutoplay();keys.clear();lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
+ renderSummonSlots();renderSkillSlots();renderAutoplay();keys.clear();model.setDirection(0,{cancel:true});lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
  if(scene)scene.resetPresentation();prefetchNext(stage);updateAuto();soundscape.stopVoices(true);soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});
 }
-function pause(){if(!ready||fullscreenPending)return;if(autoplay.active){if(autoplay.complete)return;autoplay.paused=model.status==='paused'?false:!autoplay.paused;}model.pause();keys.clear();model.direction=0;renderAutoplay();soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
+function pause(){if(!ready||fullscreenPending)return;if(autoplay.active){if(autoplay.complete)return;autoplay.paused=model.status==='paused'?false:!autoplay.paused;}model.pause();keys.clear();model.setDirection(0,{cancel:true});renderAutoplay();soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
 function stopAutoplay(){autoplay.stop();if(scene)scene.playbackRate=1;renderAutoplay();renderSkillSlots();}
 function beginAutoplay(){if(!ready||preparing||fullscreenPending)return;lastAutoplayFrame=performance.now();start(autoplay.begin());}
 function renderAutoplay(){
@@ -182,11 +182,11 @@ function renderMinimap(m){
 }
 function updateAuto(){$('auto').setAttribute('aria-pressed',String(model.auto));}
 function callAction(name){if(UNITS[name])model.summon(name);else model.skill(name);}
-function setDirection(){model.direction=keys.has('right')?1:keys.has('left')?-1:0;}
+function setDirection(pressed,cancel=false){model.setDirection(keys.has('right')?1:keys.has('left')?-1:0,{pressed:Boolean(pressed),cancel});}
 function setupHold(button,direction){
- const release=e=>{keys.delete(direction);button.classList.remove('held');setDirection();if(e&&button.hasPointerCapture?.(e.pointerId))button.releasePointerCapture(e.pointerId);};
-  button.addEventListener('pointerdown',e=>{e.preventDefault();if(model.status!=='playing'||autoplay.active)return;button.setPointerCapture(e.pointerId);keys.add(direction);button.classList.add('held');setDirection();});
- button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',release);
+ const release=(e,cancel=false)=>{keys.delete(direction);button.classList.remove('held');setDirection(undefined,cancel);if(e&&button.hasPointerCapture?.(e.pointerId))button.releasePointerCapture(e.pointerId);};
+ button.addEventListener('pointerdown',e=>{e.preventDefault();if(model.status!=='playing'||autoplay.active)return;button.setPointerCapture(e.pointerId);keys.add(direction);button.classList.add('held');setDirection(direction);});
+ button.addEventListener('pointerup',release);button.addEventListener('pointercancel',e=>release(e,true));button.addEventListener('lostpointercapture',e=>{if(keys.has(direction))release(e,true);});
 }
 setupHold($('move-left'),'left');setupHold($('move-right'),'right');
 $('start').addEventListener('click',start);$('restart').addEventListener('click',start);$('restart-pause').addEventListener('click',start);
@@ -204,12 +204,12 @@ document.addEventListener('keydown',e=>{
  if(['arrowleft','arrowright',' ','a','d','q','e','r','1','2','3','4','5'].includes(k))e.preventDefault();
  if(k===' '){if(!e.repeat)pause();return;}
  if(k==='enter'&&model.status==='ready'&&ready)openInfo($('journey-map'));
- if(k==='arrowleft'||k==='a'){keys.add('left');setDirection();}
- if(k==='arrowright'||k==='d'){keys.add('right');setDirection();}
+ if(k==='arrowleft'||k==='a'){keys.add('left');setDirection('left');}
+ if(k==='arrowright'||k==='d'){keys.add('right');setDirection('right');}
  if(!e.repeat&&{'1':model.summonTypes[0],'2':model.summonTypes[1],'3':model.summonTypes[2],'4':model.summonTypes[3],'5':model.summonTypes[4],q:loadout[0],e:loadout[1],r:loadout[2]}[k])callAction({'1':model.summonTypes[0],'2':model.summonTypes[1],'3':model.summonTypes[2],'4':model.summonTypes[3],'5':model.summonTypes[4],q:loadout[0],e:loadout[1],r:loadout[2]}[k]);
 });
 document.addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(k==='arrowleft'||k==='a')keys.delete('left');if(k==='arrowright'||k==='d')keys.delete('right');setDirection();});
-function blurPause(){keys.clear();model.direction=0;infoPaused=false;if(autoplay.active&&!autoplay.complete)autoplay.paused=true;if(model.status==='playing')model.pause();renderAutoplay();soundscape.setPlaying(false);soundscape.stopVoices();stopNarration();}
+function blurPause(){keys.clear();model.setDirection(0,{cancel:true});infoPaused=false;if(autoplay.active&&!autoplay.complete)autoplay.paused=true;if(model.status==='playing')model.pause();renderAutoplay();soundscape.setPlaying(false);soundscape.stopVoices();stopNarration();}
 window.addEventListener('blur',blurPause);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)blurPause();});
 window.matchMedia('(max-width:600px) and (orientation:portrait)').addEventListener('change',e=>{if(e.matches)blurPause();});
@@ -245,7 +245,7 @@ $('install-confirm').addEventListener('click',async()=>{if(!installPrompt)return
 document.addEventListener('pointerdown',()=>{if(model.status==='playing'&&soundscape.enabled&&soundscape.context?.state!=='running')unlockSound();},{passive:true});
 function showNotice(message){$('callout').textContent=message;$('callout').hidden=false;noticeUntil=performance.now()+2400;}
 function loadDialogImages(dialog){dialog.querySelectorAll('img[data-src]').forEach(img=>{img.src=img.dataset.src;delete img.dataset.src;});}
-function openInfo(dialog){loadDialogImages(dialog);if(!fullscreenPending&&!infoDialogs.some(d=>d.open)){infoPaused=model.status==='playing';if(infoPaused)model.pause();}keys.clear();model.direction=0;soundscape.setPlaying(false);fitPhoneDialogs();dialog.showModal();}
+function openInfo(dialog){loadDialogImages(dialog);if(!fullscreenPending&&!infoDialogs.some(d=>d.open)){infoPaused=model.status==='playing';if(infoPaused)model.pause();}keys.clear();model.setDirection(0,{cancel:true});soundscape.setPlaying(false);fitPhoneDialogs();dialog.showModal();}
 function completeInfo(){if(fullscreenPending||infoDialogs.some(d=>d.open))return;soundscape.stopVoices();if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
 $('settings-open').addEventListener('click',()=>openInfo($('settings')));
 $('settings-return').addEventListener('click',()=>$('settings').close());
