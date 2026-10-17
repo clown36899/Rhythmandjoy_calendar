@@ -196,7 +196,11 @@ async function start(testStage=null,cinematic=false){
  if(testing)selectedStage=testStage;else stopAutoplay();
  const stage=selectedStage;
  if(cinematic)coverOpening();
- if(!await prepareFor('불러오는 중',p=>Promise.all([scene.prepareStage(stage,p,testing,testing?Object.keys(UNITS):campaign.party),cinematic?prepareOpeningFilm(stage):Promise.resolve()]),()=>start(testing?stage:null,cinematic),cinematic))return;
+ if(!await prepareFor('불러오는 중',async p=>{
+  const results=await Promise.allSettled([scene.prepareStage(stage,p,testing,testing?Object.keys(UNITS):campaign.party),cinematic?prepareOpeningFilm(stage):Promise.resolve()]);
+  // A failed film must not unlock a retry while the existing scene is still preparing.
+  const failed=results.find(result=>result.status==='rejected');if(failed)throw failed.reason;
+ },()=>start(testing?stage:null,cinematic),cinematic))return;
  infoPaused=false;for(const dialog of infoDialogs)if(dialog.open&&(!cinematic||dialog!==$('opening')))dialog.close();
  if(!testing){activeRun=campaign.begin();saveCampaign();}
  model.start(selectedStage,testing?DEFAULT_PARTY:campaign.party,scene?.vw,{tour:testing&&requestedStage===null});
