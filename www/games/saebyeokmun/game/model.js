@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=144-open';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=146-entry';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -26,7 +26,7 @@ export class Journey {
    if(gap<=0){actor.entering=false;return false;}const travel=Math.min(gap,speed*this.enemySpeedScale*dt);actor.x-=travel;actor.walk+=travel/speed;actor.moving=-1;if(travel>=gap)actor.entering=false;return true;
   }
   if(!this.viewport||!actor.entering)return false;const dir=enemy?-1:1,pad=this.screenPadding(actor.type)*.5,edge=enemy?this.viewport.right-pad:(actor.entryOrigin??this.viewport.left)+pad,gap=(edge-actor.x)*dir;
-  if(gap<=0){actor.entering=false;return false;}const speed=(enemy?ENEMIES:UNITS)[actor.type].speed,travel=Math.min(gap,speed*(enemy?this.enemySpeedScale:1)*dt);actor.x+=dir*travel;actor.moving=dir;actor.walk+=travel/speed;if(travel>=gap)actor.entering=false;return true;
+  if(gap<=0){actor.entering=false;return false;}const speed=enemy?ENEMIES[actor.type].speed:WALK_SPEED,travel=Math.min(gap,speed*(enemy?this.enemySpeedScale:1)*dt);actor.x+=dir*travel;actor.moving=dir;actor.walk+=travel/speed;if(travel>=gap)actor.entering=false;return true;
  }
  constrainScreen(){
   const bounds=this.viewport;if(!bounds||this.route.deployment)return;
@@ -59,7 +59,7 @@ export class Journey {
  summon(type){
   if(this.status!=='playing'||!UNITS[type]||!this.summonTypes.includes(type))return false;
   if(this.cooldowns[type]>0)return this.reject('조금만 기다려 주세요.');
-  if(this.atSummonLimit(type))return this.reject(this.summonCount>=ALLY_TOTAL_LIMIT?'동료는 총 50명까지 함께할 수 있어요.':'같은 동료는 10명까지 부를 수 있어요.');
+  if(this.atSummonLimit(type))return this.reject(this.summonCount>=ALLY_TOTAL_LIMIT?`동료는 총 ${ALLY_TOTAL_LIMIT}명까지 함께할 수 있어요.`:`같은 동료는 ${ALLY_TYPE_LIMIT}명까지 부를 수 있어요.`);
   if(this.coins<UNITS[type].cost)return this.reject('엽전이 조금 더 필요해요.');
   this.coins-=UNITS[type].cost;this.cooldowns[type]=UNITS[type].cooldown;
   const ally=this.addAlly(type);this.summons++;this.emit('summon',{actor:ally.id,kind:type,x:ally.x});return true;
@@ -75,6 +75,18 @@ export class Journey {
  // Action.targetId owns one strike. engagedId only retains contact between strikes.
  // Release on death/escape; ties use the same layer as the actual character drawing.
  selectContact(actor,candidates,range){
+  // A valid retained contact already wins over every nearer arrival. Resolve
+  // that id first so unrelated bodies do not need distance/layer calculations.
+  // Keep the same tie policy even if a diagnostic caller supplies duplicate ids.
+  if(actor.engagedId!==undefined){
+   let current,gap=Infinity,layer=-Infinity;
+   for(const candidate of candidates){
+    if(!(candidate.hp>0)||(candidate.id??null)!==actor.engagedId)continue;
+    const distance=contactGap(actor,candidate),depth=actorLayer(candidate);
+    if(distance<=range+18&&(!current||distance<gap||distance===gap&&depth>layer)){current=candidate;gap=distance;layer=depth;}
+   }
+   if(current)return current;
+  }
   let nearest,current,nearestGap=Infinity,currentGap=Infinity,nearestLayer=-Infinity,currentLayer=-Infinity;
   for(const candidate of candidates){
    if(!(candidate.hp>0))continue;
@@ -156,7 +168,7 @@ export class Journey {
   for(const {a}of living)if(a.action?.kind==='team')Object.assign(a.action,{phase:team.phase,elapsed:team.elapsed});
  }
  awardCoins(amount,e,reason){const before=Math.floor(this.coins);this.coins=clamp(this.coins+amount*3,0,MAX_COINS);const received=Math.floor(this.coins)-before;this.earnedCoins+=received;if(received>0)this.emit('coin',{amount:received,total:this.coins,x:e.x,kind:e.type,reason});}
- hurtEnemy(e,damage,sourceX=this.x,weapon='physical'){if(e.hp<=0||this.status!=='playing'||this.time<(e.entryAt??e.bornAt)||!Number.isFinite(damage)||damage<=0)return;e.hp-=damage;e.hit=.26;e.hitDir=Math.sign(e.x-sourceX)||1;this.emit('hit',{actor:e.id,x:e.x,from:sourceX,dir:e.hitDir,kind:e.type,weapon,damage,enemy:true});this.awardCoins(1,e,'hit');}
+ hurtEnemy(e,damage,sourceX=this.x,weapon='physical'){if(e.hp<=0||this.status!=='playing'||this.time<(e.entryAt??e.bornAt)||!Number.isFinite(damage)||damage<=0)return;e.hp-=damage;e.hit=.26;e.hitDir=Math.sign(e.x-sourceX)||1;this.emit('hit',{actor:e.id,x:e.x,from:sourceX,dir:e.hitDir,kind:e.type,weapon,damage,enemy:true});}
  // The gate is an entrance, never an escape route for displaced living enemies.
  // A not-yet-arrived unit keeps its position; knockback cannot pull it out early.
  pushEnemy(e,to){if(ENEMIES[e.type].stationary||this.viewport&&e.entering)return;const right=this.viewport&&!this.route.deployment&&!e.entering?Math.min(this.gateX-45,this.viewport.right-this.screenPadding(e.type)*.5):this.gateX-45;e.x=Math.max(e.x,Math.min(right,to));}
@@ -265,7 +277,7 @@ export class Journey {
    if(action.elapsed>=1.3)this.action=null;
    return;
   }
-  const spec=action.kind==='enemy'?ENEMY_STRIKE:MOTION[action.kind];action.elapsed+=dt;
+  const spec=action.kind==='enemy'?enemyStrike(actor.type):MOTION[action.kind];action.elapsed+=dt;
   if(!action.resolved&&action.elapsed>=spec.impact){
    action.resolved=true;
    if(action.kind==='enemy'){
@@ -332,8 +344,9 @@ export class Journey {
   const s=UNITS.healer,leaders=this.allies.filter(a=>a.hp>0&&a.type!=='healer'&&!a.entering);
   const formation=Math.min(this.roadEnd-90,leaders.length?Math.max(...leaders.map(a=>a.x))-s.spacing:this.roadEnd-90);
   const front=this.enemies.reduce((front,e)=>e.hp>0&&e.x>actor.x-55&&(!front||e.x-ENEMY_FRONT[e.type]<front.x-ENEMY_FRONT[front.type])?e:front,null);
-  const engaged=front&&contactGap({...actor,x:Math.max(formation,actor.x)},front)<=HERO_STANDOFF-s.formation+180;
-  return Math.max(START-130,engaged?actor.x+contactGap(actor,front)-HERO_STANDOFF+s.formation:formation);
+  // Rear spacing must be applied before the support can pass that slot.
+  // This remains a forward goal; it never pulls an already standing actor back.
+  return Math.max(START-130,Math.min(formation,front?actor.x+contactGap(actor,front)-HERO_STANDOFF+s.formation:formation));
  }
  // Stage placement and replenishment share the existing wave index and budget.
  deployWave(){
@@ -342,9 +355,9 @@ export class Journey {
   this.wave++;this.waveClearAt=null;
   if(!this.portal){this.portal={x:this.portalX,openedAt:this.time,style:STAGES[this.stage].gateStyle};this.emit('portal-open',{x:this.portal.x,style:this.portal.style});}
   if(d)this.portal.openedAt=this.time;
-  const initial=d&&index<d.initialWaves;
-  const centre=initial?(index?START+(this.roadEnd-START)*(.05+.9*index/d.initialWaves):START+480):this.portal.x;
-  w.types.forEach((type,i)=>{const e=this.spawn(type,centre+(initial?i*75:0),scale);e.entering=!initial;if(!initial){e.entryOrigin=this.portal.x;e.entryAt=this.time+i*.85;}});
+  // Opening groups occupy the middle of the whole road; reinforcements use its gate.
+  const initial=d&&index<d.initialWaves,centre=this.roadEnd/2;
+  w.types.forEach((type,i)=>{const e=this.spawn(type,initial?centre+index*300+i*75:this.portal.x,scale);e.entering=!initial;if(!initial){e.entryOrigin=this.portal.x;e.entryAt=this.time+i*.85;}});
   if(w.helper&&!d)this.helperArrivals.set(index,false);
   this.say(w.message);return true;
  }
@@ -359,11 +372,11 @@ export class Journey {
   const front=active.reduce((front,e)=>e.x>=this.x-20&&(!front||e.x-ENEMY_FRONT[e.type]<front.x-ENEMY_FRONT[front.type])?e:front,null);
   const manual=this.direction||this.pendingMove;this.pendingMove=0;
   let direction=manual|| (this.auto?1:0);
-  let movement=direction*(manual?76:36)*dt;
+  let movement=direction*WALK_SPEED*dt;
   if(this.action||this.teamAction&&!manual)movement=0;
   const stopAt=manual?145:this.allies.some(a=>a.hp>0)?HERO_STANDOFF:145;
   if(movement>0&&front)movement=Math.min(movement,Math.max(0,contactGap(this,front)-stopAt));
-  this.x=clamp(this.x+movement,this.travelStart,this.roadEnd);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/76;
+  this.x=clamp(this.x+movement,this.travelStart,this.roadEnd);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/WALK_SPEED;
   this.furthest=Math.max(this.furthest,this.x);
   this.advanceTeam(dt);
   // A full wave already spends the reference power budget. Distance unlocks the
@@ -389,7 +402,7 @@ export class Journey {
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(this.advanceEntry(a,false,dt))continue;
    const reactionPhase=a.type==='cow'?'anger':MOTION[a.type]?.anticipation?'anticipation':null;
    if(reactionPhase){
-    const threatened=this.enemies.some(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55&&contactGap(a,e)<=s.range+30);
+    const threatened=this.enemies.some(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55&&contactGap(a,e)<=s.range+30+1e-6);
     if(!threatened){a.alerted=false;if(a.action?.phase===reactionPhase)a.action=null;}
     else if(!a.alerted&&!a.action){
      a.alerted=true;a.action={kind:a.type,phase:reactionPhase,elapsed:0};
@@ -403,7 +416,7 @@ export class Journey {
      a.action={kind:'healer',phase:'approach',elapsed:0,resolved:false,targetId:patient.id??null,dir:Math.sign(patient.x-a.x)||1};
     }else{
      const goal=this.healerHome(a),gap=goal-a.x;
-     if(gap>0)a.x+=Math.min(gap,s.speed*.55*dt);
+     if(gap>0)a.x+=Math.min(gap,WALK_SPEED*dt);
     }
     const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;continue;
    }
@@ -415,7 +428,7 @@ export class Journey {
    const goal=Math.min(this.roadEnd-90,contactFront?a.x+contactGap(a,contactFront)-s.range:this.roadEnd-90),gap=goal-a.x;
    if(target&&contactGap(a,target)<=s.range+1e-6&&a.cd<=0&&(a.type!=='cow'||a.alerted)){
     a.cd=s.period;a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,dir:Math.sign(target.x-a.x)||1};
-   }else if(gap>1e-6){a.x+=Math.min(gap,s.speed*dt);}
+   }else if(gap>1e-6){a.x+=Math.min(gap,WALK_SPEED*dt);}
    const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;
   }
   for(const e of this.enemies){

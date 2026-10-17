@@ -1,10 +1,10 @@
-import {DEFAULT_PARTY,UNITS,STAGES,isBoss} from './data.js?v=144-open';
+import {DEFAULT_PARTY,UNITS,STAGES,isBoss} from './data.js?v=146-entry';
 
 // A disposable observer session: decisions call the ordinary combat API.
 // The app owns stage entry and saved rewards; this owner never writes a save.
 export class Autoplay {
  constructor(model){this.model=model;this.stop();}
- stop(){this.active=false;this.paused=false;this.complete=false;this.rate=4;this.elapsed=0;this.clears=[];this.wait=null;this.nextOrder=0;this.model.invincible=false;}
+ stop(){this.active=false;this.paused=false;this.complete=false;this.rate=1;this.elapsed=0;this.clears=[];this.wait=null;this.nextOrder=0;this.model.invincible=false;}
  begin(){this.stop();this.active=true;return 0;}
  enter(){this.model.invincible=true;this.wait=null;this.nextOrder=0;}
  setRate(rate){if([1,2,4,8].includes(Number(rate)))this.rate=Number(rate);}

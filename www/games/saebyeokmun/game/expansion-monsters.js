@@ -1172,7 +1172,7 @@ export const EXTRA_MONSTERS=[
     },
     "baseFolklore": "창귀",
     "source": "한국 전승 기반 · 게임 변형",
-    "sourceLabel": "국립민속박물관 『한국민속상징사전 寅』·창귀 / 게임 변형",
+    "sourceLabel": "국립민속박물관 『한국민속상징사전·호랑이』·창귀 / 게임 변형",
     "sourceUrl": "https://folkency.nfm.go.kr/api/file/download/dictionary/301"
   },
   {
@@ -1219,7 +1219,7 @@ export const EXTRA_MONSTERS=[
     },
     "baseFolklore": "창귀",
     "source": "한국 전승 기반 · 게임 변형",
-    "sourceLabel": "국립민속박물관 『한국민속상징사전 寅』·창귀 / 게임 변형",
+    "sourceLabel": "국립민속박물관 『한국민속상징사전·호랑이』·창귀 / 게임 변형",
     "sourceUrl": "https://folkency.nfm.go.kr/api/file/download/dictionary/301"
   },
   {
@@ -1266,7 +1266,7 @@ export const EXTRA_MONSTERS=[
     },
     "baseFolklore": "창귀",
     "source": "한국 전승 기반 · 게임 변형",
-    "sourceLabel": "국립민속박물관 『한국민속상징사전 寅』·창귀 / 게임 변형",
+    "sourceLabel": "국립민속박물관 『한국민속상징사전·호랑이』·창귀 / 게임 변형",
     "sourceUrl": "https://folkency.nfm.go.kr/api/file/download/dictionary/301"
   },
   {
@@ -1313,7 +1313,7 @@ export const EXTRA_MONSTERS=[
     },
     "baseFolklore": "창귀",
     "source": "한국 전승 기반 · 게임 변형",
-    "sourceLabel": "국립민속박물관 『한국민속상징사전 寅』·창귀 / 게임 변형",
+    "sourceLabel": "국립민속박물관 『한국민속상징사전·호랑이』·창귀 / 게임 변형",
     "sourceUrl": "https://folkency.nfm.go.kr/api/file/download/dictionary/301"
   },
   {

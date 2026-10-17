@@ -1,10 +1,10 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=144-opt';
+import {ATLAS_SLICES} from './atlas-slices.js?v=146-entry';
 import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=144-open';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=144-open';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=146-entry';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=146-entry';
 import {AssetDownloads} from './downloads.js?v=70';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=144-open';
-import {ASSET_BYTES} from './asset-sizes.js?v=144-open';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=146-entry';
+import {ASSET_BYTES} from './asset-sizes.js?v=146-entry';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -75,7 +75,8 @@ const WOUNDS={
  }},
  skirt:{materials:['Cloth','Cloth'],size:[.50,.47],poses:[[.49,.38,-.06],[.50,.37,.05],[.49,.38,-.04],[.50,.37,.05]],attack:[[.48,.38,-.08],[.47,.39,-.13],[.54,.40,.12],[.51,.38,.04]]},
  horse:{spots:[[-.1,.34],[.20,.48]],materials:['Dark','Cloth'],size:[.20,.29],poses:[[.51,.65,-.07],[.52,.65,-.02],[.50,.64,-.06],[.51,.65,-.03]],attack:[[.51,.63,-.08],[.55,.61,-.20],[.48,.66,.12],[.52,.65,.03]]},
- reaper:{spots:[[-.12,.34],[.18,.48]],muzzle:[.28,.57],materials:['Dark','Dark'],size:[.23,.35],poses:[[.53,.66,.04],[.52,.66,.02],[.53,.66,.04],[.52,.66,.02]],attack:[[.54,.67,0],[.55,.66,-.05],[.53,.67,.05],[.54,.67,0]]},
+ // The authored release cel places the open ledger at the upper centre of its crop.
+ reaper:{spots:[[-.12,.34],[.18,.48]],muzzle:[.5,.35],materials:['Dark','Dark'],size:[.23,.35],poses:[[.53,.66,.04],[.52,.66,.02],[.53,.66,.04],[.52,.66,.02]],attack:[[.54,.67,0],[.55,.66,-.05],[.53,.67,.05],[.54,.67,0]]},
  boss:{materials:['Fur','Scar'],size:[.40,.30],poses:[[.56,.64,-.02],[.57,.66,.03],[.56,.64,-.02],[.56,.65,.02],[.57,.67,.03],[.57,.63,-.02]],attack:[[.56,.64,0],[.58,.67,.06],[.58,.7,.1],[.57,.71,.06],[.57,.68,0],[.55,.62,-.05]],cast:[[.56,.68,.04],[.56,.49,-.3],[.58,.5,-.35],[.56,.63,0]]}
 };
 const IMPACT={horn:{size:95,stop:.035,shake:.055},stone:{size:72},seed:{size:58},ink:{size:85},seal:{size:90},charm:{size:84},hex:{size:90},stomp:{size:125,stop:.055,shake:.11},rush:{size:115,stop:.045,shake:.08},boss:{size:115,stop:.05,shake:.1},horse:{size:90,shake:.04},hail:{size:64},physical:{size:75}};
@@ -109,7 +110,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    load.image('allies','./assets/allies.webp');load.image('enemies','./assets/enemies.webp');
    load.image('haetaeMotion','./assets/haetae-motion-v10.webp');load.image('rabbitMotion','./assets/rabbit-motion-v10.webp');
    load.image('companionWalk','./assets/companions-walk-v11.webp');load.image('gate','./assets/underworld-gate-v17.webp');load.image('enemyWalk','./assets/enemy-walk-v17.webp');load.image('reaperDeparture','./assets/reaper-departure-v35.webp');load.image('actionIcons','./assets/action-icons-v11.webp');
-   for(const area of AREAS){if(area.gateFile)load.image(area.texture+'Gate','./assets/'+area.gateFile);load.image(area.texture,'./assets/'+area.file);for(const [suffix,file] of [['Sky',area.skyFile],['Clouds',area.cloudFile],['Moon',area.moonFile]])if(file)load.image(area.texture+suffix,'./assets/'+file);area.detailFiles.forEach((file,i)=>load.image(area.texture+'Detail'+i,'./assets/'+file));if(area.roadAtlas)load.image(area.texture+'RoadAtlas','./assets/'+area.roadAtlas);else area.roadTiles?.forEach((tile,i)=>load.image(area.texture+'Road'+i,'./assets/'+tile.file));}
+   for(const area of AREAS){if(area.gateFile)load.image(area.texture+'Gate','./assets/'+area.gateFile);load.image(area.texture,'./assets/'+area.file);for(const [suffix,file] of [['Sky',area.skyFile],['Clouds',area.cloudFile],['Moon',area.moonFile],['Sun',area.sunFile]])if(file)load.image(area.texture+suffix,'./assets/'+file);area.detailFiles.forEach((file,i)=>load.image(area.texture+'Detail'+i,'./assets/'+file));if(area.roadAtlas)load.image(area.texture+'RoadAtlas','./assets/'+area.roadAtlas);else area.roadTiles?.forEach((tile,i)=>{load.image(area.texture+'Road'+i,'./assets/'+tile.file);if(tile.maskFile)load.image(area.texture+'RoadMask'+i,'./assets/'+tile.maskFile);});}
    load.image('nightRoad','./assets/night-road-v32.webp');load.image('moon','./assets/moon-v32.webp');
    load.image('livingScenery','./assets/living-scenery-v11.webp');
    load.image('enemyAttacks','./assets/enemy-attacks-v17.webp');
@@ -134,7 +135,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // Fast attacks/anticipation must be ready before combat. Long loops stream
    // their next 24 cels through the same loader, without preparing every variant.
    return [...new Set(VIDEO_SHEETS.filter(s=>kinds.some(kind=>Object.entries(VIDEO_MOTION[kind]||{}).some(([name,c])=>c===s&&!['dance','annoyed','sit','receiveHeal','death'].includes(name)))).flatMap(s=>{
-    const complete=Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&['attack','anticipation','combatCalm','anger','rageRun','rageHold','runUrgent','castHeal','castHealLight','castHealBless'].includes(name)));
+    const complete=Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&['attack','ritual','projectile','anticipation','combatCalm','anger','rageRun','rageHold','runUrgent','castHeal','castHealLight','castHealBless'].includes(name)));
     if(complete)return VIDEO_DELIVERY[s.asset].parts.map((_,i)=>s.asset+':'+i);
     const moving=Object.values(VIDEO_MOTION).some(clips=>clips.walk===s||clips.run===s),cycle=s.cycles?.[0],start=moving?cycle?.start??0:0,end=moving?Math.min(cycle?.end??s.frames-1,start+47):0;
     return Array.from({length:Math.floor(end/24)-Math.floor(start/24)+1},(_,i)=>s.asset+':'+(Math.floor(start/24)+i));
@@ -142,17 +143,17 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   areaKeys(index=null){
    const result=new Set();for(const a of index===null?AREAS:[AREAS[index]]){
-    result.add(a.texture);for(const [suffix,file]of [['Sky',a.skyFile],['Clouds',a.cloudFile],['Moon',a.moonFile]])if(file)result.add(a.texture+suffix);
+    result.add(a.texture);for(const [suffix,file]of [['Sky',a.skyFile],['Clouds',a.cloudFile],['Moon',a.moonFile],['Sun',a.sunFile]])if(file)result.add(a.texture+suffix);
     a.detailFiles.forEach((_,i)=>result.add(a.texture+'Detail'+i));
-    if(a.roadAtlas)result.add(a.texture+'RoadAtlas');else a.roadTiles?.forEach((_,i)=>result.add(a.texture+'Road'+i));
+    if(a.roadAtlas)result.add(a.texture+'RoadAtlas');else a.roadTiles?.forEach((tile,i)=>{result.add(a.texture+'Road'+i);if(tile.maskFile)result.add(a.texture+'RoadMask'+i);});
     if(a.gateFile)result.add(a.texture+'Gate');
    }return result;
   }
   enemySheetKeys(){return new Set(Object.entries(ENEMIES).filter(([,s])=>s.atlas).map(([k,s])=>s.atlasGroups?'enemyAtlas:'+s.atlas:k+'Motion'));}
   stageFiles(index,tour=false){
    const keys=this.areaKeys(index);
-   for(const kind of new Set((tour?STAGES[index].tour.waves:STAGES[index].waves).flatMap(w=>w.types))){const s=ENEMIES[kind];if(s?.atlas)keys.add(s.atlasGroups?'enemyAtlas:'+s.atlas:kind+'Motion');else for(const key of LEGACY_FOE_SHEETS[kind]||[])keys.add(key);}
-   if(index===1){keys.add('battle');keys.add('distantTroops');}
+   for(const kind of new Set((tour?STAGES[index].tour.waves:STAGES[index].waves).flatMap(w=>w.types))){const s=ENEMIES[kind];if(VIDEO_MOTION[kind]){for(const key of this.motionFiles([kind]))keys.add(key);if(VIDEO_MOTION[kind].death)keys.add(VIDEO_MOTION[kind].death.asset+':0');}else if(s?.atlas)keys.add(s.atlasGroups?'enemyAtlas:'+s.atlas:kind+'Motion');else for(const key of LEGACY_FOE_SHEETS[kind]||[])keys.add(key);}
+   if(index===1&&!AREAS[index].roadFinite){keys.add('battle');keys.add('distantTroops');}
    const area=AREAS[index];if(!area.paintingSingle&&!area.roadTiles&&area.ground!=='water')keys.add(area.ground);
    return [...keys];
   }
@@ -220,7 +221,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     // Warm companions first and the two directly controlled bodies last. The
     // bounded LRU must retain their entry pages when controls become available.
     const selected=new Set(this.videoFiles(keys)),warmKinds=Object.entries(VIDEO_MOTION).sort(([a],[b])=>Number(!UNITS[a])-Number(!UNITS[b]));
-    if(this.videoFrameIndex)for(const [,clips] of warmKinds)for(const name of ['idle','walk','run','runUrgent']){
+   if(this.videoFrameIndex)for(const [kind,clips] of warmKinds)for(const name of ['idle','walk','run','runUrgent',...(ENEMIES[kind]?['attack','ritual','projectile','death']:[])]){
      const spec=clips[name];if(!spec)continue;
      const start=name==='idle'?0:spec.cycles?.[0]?.start??0,end=name==='idle'?0:Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+47),entries=name==='runUrgent'?[0,start]:[start];
      for(let i=(Math.floor(start/24)+1)*24;i<=end;i+=24)entries.push(i);
@@ -228,7 +229,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     }
   }
   async prepareStage(index,onProgress,tour=false,party=model.party){
-   this.ready=false;
+   this.ready=false;this.previewAreaIndex=index;
    const route=tour?STAGES[index].tour:STAGES[index],kinds=[...new Set(['girl','haetae',...party,...route.waves.map(w=>w.helper).filter(Boolean)])];
    const keys=[...this.stageFiles(index,tour),...this.motionFiles(kinds)];await this.loadFiles([...this.commonKeys,...keys],onProgress);
    await this.ensureCommon();await this.warmVideo(keys);this.prepareArea(index);
@@ -242,6 +243,51 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(area.roadAtlas){const t=this.textures.get(area.texture+'RoadAtlas');for(const part of area.roadTiles)if(!t.has(part.frame))t.add(part.frame,0,part.x,part.sourceY,part.width,part.sourceHeight);}
    if(area.panorama&&!area.paintingSingle){const t=this.textures.get(area.texture+'Detail0'),s=t.getSourceImage(),o=area.detailOverlap;if(!t.has('body')){t.add('body',0,0,0,s.width-o,s.height);t.add('tail',0,s.width-o,0,o,s.height);}}
    if(area.paintingFoot!==undefined){const t=this.textures.get(area.paintingSingle?area.texture:area.texture+'Detail0'),s=t.getSourceImage();if(!t.has('waterFooter'))t.add('waterFooter',0,Math.floor(s.width*.36),Math.floor(s.height*.91),Math.floor(s.width*.28),Math.floor(s.height*.09));}
+   this.prepareTerrain(area);
+  }
+  sampleTerrainLine(points,u){
+   u=Math.max(0,Math.min(1,u));
+   for(let i=1;i<points.length;i++)if(u<=points[i][0]){const a=points[i-1],b=points[i],q=(u-a[0])/(b[0]-a[0]);return a[1]+(b[1]-a[1])*q;}
+   return points.at(-1)[1];
+  }
+  terrainAlpha(pixels,width,height,walkLine){
+   // The generated matte owns the rear silhouette only. Flood from the sky to
+   // preserve ink inside solid rocks, then keep the foreground joined to bottom.
+   const count=width*height,state=new Uint8Array(count),queue=new Int32Array(count);
+   for(let x=0;x<width;x++){
+    const front=Math.floor((this.sampleTerrainLine(walkLine,x/Math.max(1,width-1))-.035)*height);
+    for(let y=0;y<height;y++){const at=y*width+x;state[at]=y>=front||pixels[at*4]+pixels[at*4+1]+pixels[at*4+2]>=384?1:0;}
+   }
+   let head=0,tail=0;
+   const sky=at=>{if(state[at]===0){state[at]=2;queue[tail++]=at;}};
+   for(let x=0;x<width;x++)sky(x);
+   for(let y=0;y<height;y++){sky(y*width);sky(y*width+width-1);}
+   while(head<tail){const at=queue[head++],x=at%width;if(x)sky(at-1);if(x<width-1)sky(at+1);if(at>=width)sky(at-width);if(at<count-width)sky(at+width);}
+   head=0;tail=0;
+   const ground=at=>{if(state[at]!==2&&state[at]!==3){state[at]=3;queue[tail++]=at;}};
+   for(let x=0;x<width;x++)ground(count-width+x);
+   while(head<tail){const at=queue[head++],x=at%width;if(x)ground(at-1);if(x<width-1)ground(at+1);if(at>=width)ground(at-width);if(at<count-width)ground(at+width);}
+   return Uint8ClampedArray.from(state,n=>n===3?255:0);
+  }
+  prepareTerrain(area){
+   area.roadTiles?.forEach((part,i)=>{
+    if(!part.maskFile)return;
+    const key=area.texture+'Road'+i,texture=this.textures.get(key);if(texture.terrainReady)return;
+    const source=texture.getSourceImage(),matte=document.createElement('canvas');matte.width=source.width;matte.height=source.height;
+    const m=matte.getContext('2d',{willReadFrequently:true});m.drawImage(this.textures.get(area.texture+'RoadMask'+i).getSourceImage(),0,0,matte.width,matte.height);
+    const alpha=this.terrainAlpha(m.getImageData(0,0,matte.width,matte.height).data,matte.width,matte.height,part.walkLine);
+    const canvas=document.createElement('canvas');canvas.width=source.width;canvas.height=source.height;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,0,0);const image=ctx.getImageData(0,0,canvas.width,canvas.height),[fadeIn,fadeOut]=part.fade||[0,0];
+    for(let x=0;x<canvas.width;x++){const u=x/Math.max(1,canvas.width-1),local=u*part.width,opacity=Math.min(1,fadeIn?local/fadeIn:1),rearOpacity=Math.min(1,fadeOut?(part.width-local)/fadeOut:1),front=(this.sampleTerrainLine(part.walkLine,u)+.025)*canvas.height;for(let y=0;y<canvas.height;y++){const at=y*canvas.width+x;image.data[at*4+3]=Math.round(alpha[at]*opacity*(y<front?rearOpacity:1));}}
+    ctx.putImageData(image,0,0);this.textures.remove(key);this.textures.addCanvas(key,canvas).terrainReady=true;
+   });
+  }
+  terrainGround(worldX,area=AREAS[model.stage]){
+   const parts=area.roadTiles?.filter(part=>part.walkLine&&!part.overlay);if(!parts?.length)return GROUND;
+   let result;
+   for(const part of parts){if(worldX<part.x||worldX>part.x+part.width)continue;const local=worldX-part.x,y=GROUND-part.foot+this.sampleTerrainLine(part.walkLine,local/part.width)*part.height,opacity=part.fade?.[0]?Math.min(1,local/part.fade[0]):1;result=result===undefined?y:result+(y-result)*opacity;}
+   if(result!==undefined)return result;
+   const part=worldX<parts[0].x?parts[0]:parts.at(-1);return GROUND-part.foot+this.sampleTerrainLine(part.walkLine,(worldX-part.x)/part.width)*part.height;
   }
   releaseStage(keys){
    for(const [id,image]of this.sprites){image.destroy();this.sprites.delete(id);}this.resetPresentation();
@@ -312,13 +358,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(source)source.used=now;
    // Warm the next block before crossing its boundary. The game's motion clock
    // remains authoritative even if a slow connection temporarily holds a cel.
-   const next=part+1<VIDEO_DELIVERY[spec.asset].parts.length?part+1:0;
-   if(index%24>=12){
-    const nextPage=this.videoPage(this.videoFrameIndex.get(spec.prefix+next*24),native),nextKey=nextPage.sourceKey,nextSource=this.videoSources.get(nextKey);
-    // Decoded CPU pixels already satisfy prefetch even before their GPU page is
-    // displayed. Re-enter only after eviction or when a larger profile is needed.
-    if((!nextSource?.image||nextSource.h&&nextSource.h<h)&&!this.videoFrames.has(nextPage.key))this.requestVideo(nextKey,native);
-   }
+   const cycle=spec.cycles?.find(c=>index>=c.start&&index<=c.end),ahead=Math.ceil(spec.fps/2),first=cycle?.start??0,length=cycle?cycle.end-cycle.start+1:spec.frames;
+   const nextIndex=first+(index-first+ahead)%length,nextPage=this.videoPage(this.videoFrameIndex.get(spec.prefix+nextIndex),native);
+   const nextKey=nextPage.sourceKey,nextSource=this.videoSources.get(nextKey);
+   // Twelve-cel GPU halves can share a 24-cel source whose CPU pixels were
+   // evicted. Warm that same source too; requestVideo still coalesces the job.
+   if((!nextSource?.image||nextSource.h&&nextSource.h<h)&&!this.videoFrames.has(nextPage.key))this.requestVideo(nextKey,native);
    if(cached){cached.used=now;return key;}
    if(!source?.image||source.h&&source.h<h){if(!(source?.retryAt>now))this.requestVideo(sourceKey,native);return fallback||key;}
    const delivery=VIDEO_DELIVERY[spec.asset],nw=source.w||delivery.crop[2],nh=source.h||delivery.crop[3];
@@ -583,8 +628,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
     else if(parentChanged)this.scale.refresh();
    }
    // Keep the old battle viewport and foot height while painting more river behind the deck.
-   const tiled=AREAS.find(area=>area.roadTiles)?.roadTiles;
-   if(tiled){const cycle=tiled.reduce((sum,tile)=>sum+tile.width,0),needed=(Math.ceil(width/(battleHeight*density/viewHeight)/cycle)+1)*tiled.length;
+   const tilePools=AREAS.filter(area=>area.roadTiles);
+   if(tilePools.length){const needed=Math.max(...tilePools.map(area=>{const tiles=area.roadTiles,cycle=tiles.reduce((sum,tile)=>sum+tile.width,0);return area.roadFinite?tiles.length:(Math.ceil(width/(battleHeight*density/viewHeight)/cycle)+1)*tiles.length;}));
     while(this.pathTiles.length<needed){const im=this.add.image(0,0,'__WHITE').setOrigin(0,0);this.pathTiles.push(im);this.root.addAt(im,this.root.getIndex(this.pathTiles[0]));}}
    this.viewHeight=viewHeight;this.unit=battleHeight*density/viewHeight;this.vw=width/this.unit;this.root.setScale(this.unit);this.root.y=(viewHeight-620)*this.unit;
    this.sceneBottom=620+deck*density/this.unit;
@@ -599,9 +644,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    g.fillGradientStyle(day?0xa8d4e5:0x1b304d,day?0xc8e7ee:0x253e59,day?0xf5eacd:0x7994a2,day?0xd0dabb:0x5c7d90,1);g.fillRect(0,0,vw,bottom);
    const top=620-(this.viewHeight||620),moonY=top+(panorama?160:200)-state.moon.height*(panorama?85:140);
    let moonX=(state.moon.x+(panorama?.29-skyState(0,0,region).moon.x:0))*vw;
-   g.fillStyle(0xf9df9e,.045);this.paintCircle(g,moonX,moonY,109);
-   this.moon.setTexture(area.moonFile?area.texture+'Moon':'moon').setPosition(moonX,moonY).setDisplaySize(panorama?190:145,panorama?190:145).setVisible(state.moon.visible);
-   if(day){g.fillStyle(0xfff4c5,.13);this.paintCircle(g,moonX,moonY,73);g.fillStyle(0xfff9dc,.95);this.paintCircle(g,moonX,moonY,39);}
+   if(!area.sunFile){g.fillStyle(0xf9df9e,.045);this.paintCircle(g,moonX,moonY,109);}
+   this.moon.setAlpha(1).setTexture(area.moonFile?area.texture+'Moon':'moon').setPosition(moonX,moonY).setDisplaySize(panorama?190:145,panorama?190:145).setVisible(state.moon.visible);
+   if(day&&!area.sunFile){g.fillStyle(0xfff4c5,.13);this.paintCircle(g,moonX,moonY,73);g.fillStyle(0xfff9dc,.95);this.paintCircle(g,moonX,moonY,39);}
    for(let i=0;i<(day||panorama?0:27);i++){const x=(i*197+43)%Math.max(1,vw),y=top+35+(i*79)%190;g.fillStyle(0xf4e9c9,.18+.23*(.5+.5*Math.sin(t*.45+i)));this.paintCircle(g,x,y,i%4===0?1.3:.8);}
    this.skyPlate.setVisible(!!panorama&&!painting);
    // Finished paintings keep their fine brushwork; the same moon stays on its existing clock.
@@ -609,15 +654,21 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(this.root.getIndex(this.moon)!==this.root.getIndex(moonBackdrop)+1)this.root.moveAbove(this.moon,moonBackdrop);
    if(area.paintingSingle){
     // One authored painting covers the short chapter; no mirrored or transparent terrain seams.
-    const src=this.textures.get(area.texture).getSourceImage(),scale=Math.max((GROUND-top)/(src.height*area.paintingFoot),(vw+Math.max(4800,stageGateX(region))*PARALLAX.far+80)/src.width);
-    const left=-40-scroll*PARALLAX.far,paintingTop=GROUND-src.height*area.paintingFoot*scale,floor=paintingTop+src.height*scale;
+    const src=this.textures.get(area.texture).getSourceImage(),scale=area.roadFinite?Math.max(1,(vw+160)/src.width):Math.max((GROUND-top)/(src.height*area.paintingFoot),(vw+Math.max(4800,stageGateX(region))*PARALLAX.far+80)/src.width);
+    // Keep the approved painting at source scale; its finite pan never exposes an edge.
+    const left=area.roadFinite?-Math.min(Math.max(0,scroll)*PARALLAX.far,Math.max(0,src.width*scale-vw)):-40-scroll*PARALLAX.far,paintingTop=GROUND-src.height*area.paintingFoot*scale+(this.cameraLift||0)*(1-PARALLAX.far),floor=paintingTop+src.height*scale;
     this.depths.far.forEach(im=>im.setVisible(false));this.mists.forEach(im=>im.setVisible(false));
     this.depths.middle[0].setTexture(area.texture).setOrigin(0,0).setPosition(left,paintingTop).setDisplaySize(src.width*scale,src.height*scale).setAlpha(1).setVisible(true).setFlipX(false);
     this.depths.middle.slice(1).forEach(im=>im.setVisible(false));this.detailJoin.setVisible(false);
     this.skyPlate.setTexture(area.texture,'waterFooter').setOrigin(0,0).setPosition(0,floor-.5).setDisplaySize(vw,Math.max(1,bottom-floor+1)).setVisible(bottom>floor);
     moonX=left+(state.moon.x+.29-skyState(0,0,region).moon.x)*src.width*scale;
     this.moon.setPosition(moonX,paintingTop+src.height*(.275-state.moon.height*.16)*scale).setDisplaySize(src.height*.225*scale,src.height*.225*scale);
-    if(area.skyInPainting)this.moon.setVisible(false);
+    if(area.sunFile){
+     const orb=day?state.sun:state.moon,initial=day?skyState(0,0,region).sun:skyState(0,0,region).moon;
+     moonX=vw*(.73+orb.x-initial.x)-scroll*PARALLAX.far*.1;
+     this.moon.setTexture(day?area.texture+'Sun':area.texture+'Moon').setPosition(moonX,top+135-orb.height*65+(this.cameraLift||0)).setDisplaySize(day?100:112,day?100:112).setVisible(true).setAlpha(day?.8:.9);
+     this.root.moveAbove(this.moon,this.depths.middle[0]);
+    }else if(area.skyInPainting)this.moon.setVisible(false);
    }else if(panorama){
     const src=this.textures.get(area.texture).getSourceImage(),w=Math.max(vw+stageGateX(region)*PARALLAX.far+80,(bottom-top)*src.width/src.height),h=w*src.height/src.width;
     if(!painting)this.skyPlate.setTexture(area.texture+'Sky').setPosition(-40,top).setDisplaySize(w,h);
@@ -676,9 +727,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.pathTiles.forEach((im,i)=>{
     if(area.paintingSingle&&!area.roadTiles){im.setVisible(false);return;}
     if(!area.roadTiles&&i>=ROAD_SECTIONS.length){im.setVisible(false);return;}
+    if(area.roadFinite&&i>=area.roadTiles.length){im.setVisible(false);return;}
     const tiles=area.roadTiles,part=tiles?tiles[i%tiles.length]:ROAD_SECTIONS[i];
     const total=tiles?tiles.reduce((sum,tile)=>sum+tile.width,0):1536*ROAD_SECTIONS.length;
     let x=tiles?part.x+Math.floor(i/tiles.length)*total-((this.offset*PARALLAX.ground%total)+total)%total:part.x-this.offset*PARALLAX.ground;
+    if(area.roadFinite)x=part.x-this.offset*PARALLAX.ground;
     if(!tiles&&model.status==='ready')x=((x+part.width)%total+total)%total-part.width;
     const foot=tiles?part.foot:area.roadFeet?.[i]??part.foot;
     im.setTexture(tiles?area.roadAtlas?area.texture+'RoadAtlas':area.texture+'Road'+i%tiles.length:waterway?'nightRoad':area.ground,tiles?area.roadAtlas?part.frame:'__BASE':part.frame).setFlipX(!!area.roadFlipX).setPosition(x,GROUND-foot+this.worldPixels(area.groundOffset||0)).setDisplaySize(part.width+(tiles?0:.5),part.height).setTint(tiles||day?0xffffff:0xd7e2e5).setVisible((!waterway||!!tiles)&&x<vw&&x+part.width>0);
@@ -693,7 +746,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const g=this.battleFX;g.clear();
    const panorama=Math.max(2800,this.vw+stageGateX(region)*PARALLAX.middle+80),left=-40-this.offset*PARALLAX.middle;
    this.battleGroups.forEach((group,i)=>{
-    const x=left+group.u*panorama,visible=region===1&&x>-220&&x<this.vw+220;
+    const x=left+group.u*panorama,visible=region===1&&!AREAS[region].roadFinite&&x>-220&&x<this.vw+220;
     group.actors.forEach(im=>im.setVisible(visible));if(!visible)return;
     const period=5.4+i*.6,q=((t+i*1.3)%period)/period;
     const spear=q<.15?0:q<.28?1:q<.44?2:3,archer=q<.14?0:q<.29?1:q<.49?2:3;
@@ -761,14 +814,24 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(const strips of this.reflections?.values()||[])strips.forEach(im=>im.destroy());this.reflections?.clear();
    for(const e of this.effects)e.sprite?.destroy();this.effects=[];this.offset=model.viewport?.left??0;this.heroPose=0;this.idleSince=null;this.shake=0;this.hitStop=0;this.impactCooldown=0;this.contacts.clear();
   }
+  previewIdleKey(kind,elapsed=0){
+   const idle=VIDEO_MOTION[kind]?.idle;
+   if(idle)return idle.prefix+Math.floor(Math.max(0,elapsed)*idle.fps)%idle.frames;
+   if(kind==='scholar')return 'scholarIdle'+Math.floor(Math.max(0,elapsed)/2.8)%2;
+   if(['king','prince','minister','cavalry'].includes(kind))return kind+'Idle0';
+   if(['keeper','rabbit'].includes(kind))return kind;
+   return kind+'1';
+  }
   previewTexture(key){
    key=this.videoCel(key,null,true);this.previewCache??=new Map();if(this.previewCache.has(key))return this.previewCache.get(key);
    const frame=this.videoFrameIndex?.get(key);let source;
    if(frame){const {w,h,g,key:textureKey}=this.videoPage(frame,true),local=frame.index%VIDEO_PAGE_FRAMES;if(!this.textures.exists(textureKey))return '';source=document.createElement('canvas');source.width=w;source.height=h;source.getContext('2d').drawImage(this.textures.get(textureKey).getSourceImage(),local%VIDEO_PAGE_COLUMNS*(w+2*g)+g,Math.floor(local/VIDEO_PAGE_COLUMNS)*(h+2*g)+g,w,h,0,0,w,h);}
    else {if(!this.textures.exists(key))return '';source=this.textures.get(key).getSourceImage();}
-   const result=source.toDataURL?.('image/png')||'';this.previewCache.set(key,result);return result;
+   // Unsliced common artwork is an Image; sliced/video artwork is already a canvas.
+   if(!source.toDataURL){const image=source;source=document.createElement('canvas');source.width=image.naturalWidth||image.width;source.height=image.naturalHeight||image.height;source.getContext('2d').drawImage(image,0,0);}
+   const result=source.toDataURL?.('image/png')||'';if(result)this.previewCache.set(key,result);return result;
   }
-  previewReady(kind){return (!ENEMIES[kind]?.atlas||this.textures.exists(kind+'Walk0'))&&(LEGACY_FOE_SHEETS[kind]||[]).every(k=>this.loadedFiles.has(k));}
+  previewReady(kind){if(VIDEO_MOTION[kind]){const spec=VIDEO_MOTION[kind].idle,frame=this.videoFrameIndex?.get(spec.prefix+'0');return !!(frame&&this.videoSources?.get(this.videoPage(frame,true).sourceKey)?.image);}return (!ENEMIES[kind]?.atlas||this.textures.exists(kind+'Walk0'))&&(LEGACY_FOE_SHEETS[kind]||[]).every(k=>this.loadedFiles.has(k));}
   bodyPose(base,kind){
    base=base.replace(/^injured[12]__/, '');
    const profile=WOUNDS[base.startsWith('keeperBrush')?'keeperBrush':kind];
@@ -877,18 +940,19 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(body.isTinted)(body.tintFill?image.setTintFill(body.tintTopLeft):image.setTint(body.tintTopLeft));else image.clearTint();if(!AREAS[model.status==='ready'?this.previewAreaIndex:model.stage].actorFloors)this.root.bringToTop(image);
   }
   worldPixels(pixels){const size=this.unit?null:this.viewSize();return pixels*(Number(this.game?.canvas?.dataset?.renderDensity)||size?.density||1)/(this.unit||size?.unit||1);}
-  actorHeight(height){const area=AREAS[model.status==='ready'?(this.previewAreaIndex??model.stage):model.stage];return height*(area.actorScale||1)+this.worldPixels(area.actorHeightAdd||0);}
+  actorHeight(height){const area=AREAS[this.ready===false||model.status==='ready'?(this.previewAreaIndex??model.stage):model.stage];return height*(area.actorScale||1)+this.worldPixels(area.actorHeightAdd||0);}
   placeOnGround(image,x,height,groundY=GROUND){
    const key=image.celKey||image.texture.key,frame=this.videoFrameIndex?.get(key),crop=frame?VIDEO_DELIVERY[frame.spec.asset].crop:null,src=crop?{width:crop[2],height:crop[3]}:image.texture.getSourceImage();height=this.actorHeight(height)*(this.celScale.get(key)??1);
    const rx=this.registrationX.get(key)??.5;
    image.setOrigin(image.flipX?1-rx:rx,this.grounding.get(key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,groundY).setAngle(0);
    if(AREAS[model.stage].ground==='water'){const pulse=.5+.5*Math.sin(model.time*2+x*.02);this.shadows.lineStyle(1,0xeaf5ff,.28);this.shadows.strokeEllipse(x,groundY+2,Math.min(130,image.displayWidth*.8)+pulse*9,10+pulse*3);return;}
-   const contactWidth=Math.min(image.displayWidth*.92,image.displayHeight*1.15);
-   this.shadows.fillStyle(0x18221f,.24);this.paintEllipse(this.shadows,x,groundY+1,contactWidth,12);
-   this.shadows.fillStyle(0x101916,.48);this.paintEllipse(this.shadows,x,groundY,contactWidth*.84,5);
+   const contactWidth=Math.min(image.displayWidth*.92,image.displayHeight*1.15),opacity=AREAS[model.stage].shadowOpacity??1;
+   this.shadows.fillStyle(0x18221f,.24*opacity);this.paintEllipse(this.shadows,x,groundY+1,contactWidth,12);
+   this.shadows.fillStyle(0x101916,.48*opacity);this.paintEllipse(this.shadows,x,groundY,contactWidth*.84,5);
   }
-  actorGround(key){
-   const area=AREAS[model.status==='ready'?this.previewAreaIndex:model.stage],lanes=area.actorFloors;
+  actorGround(key,worldX){
+   const area=AREAS[model.status==='ready'?(this.previewAreaIndex??model.stage):model.stage],lanes=area.actorFloors;
+   if(area.roadFinite){const actor=key==='hero'||key==='girl'?null:(key[0]==='e'?model.enemies:model.allies).find(a=>String(a.id)===String(key).slice(1));const x=worldX??actor?.x??model.x;return this.terrainGround(x+(key==='hero'?37:key==='girl'?-60:0),area);}
    if(!lanes)return GROUND;
    const shift=this.worldPixels(area.groundOffset||0);
    const tile=area.roadTiles?.[0],scale=tile?tile.height/(tile.sourceHeight??tile.height):1;
@@ -922,8 +986,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(const event of events){
     const e={...event};
     // Overlapping actors share the road; summon order must never change foot height.
-    e.groundY??=this.actorGround(e.actor==null?'hero':e.actor==='girl'||e.actor==='hero'?e.actor:(e.enemy?'e':'a')+e.actor);
-    e.targetGroundY=this.actorGround(e.targetActor==null?'hero':(e.enemy?'a':'e')+e.targetActor);
+    e.groundY??=this.actorGround(e.actor==null?'hero':e.actor==='girl'||e.actor==='hero'?e.actor:(e.enemy?'e':'a')+e.actor,e.x??e.from);
+    e.targetGroundY=this.actorGround(e.targetActor==null?'hero':(e.enemy?'a':'e')+e.targetActor,e.to);
     if(e.type==='heal'&&!e.enemy)e.groundY=e.targetGroundY;
     if(['hit','guard','hurt'].includes(e.type)){
      const profile=IMPACT[e.weapon]||IMPACT.physical;
@@ -935,12 +999,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(e.type==='projectile'&&e.actor==='girl')this.heroPose=.85;
     if(e.type==='vanish'){
      const living=e.actor==='hero'?this.hero:e.actor==='girl'?this.girl:this.sprites.get((e.enemy===false?'a':'e')+e.actor);
-     const death=e.enemy===false?VIDEO_MOTION[e.kind]?.death:null;
+     const death=VIDEO_MOTION[e.kind]?.death;
      const key=death?death.prefix+'0':e.enemy===false?'defeat'+e.kind+'0':e.kind==='reaper'?'reaperDepart0':'depart'+e.kind+'0';
      const cel=this.videoCel(key,living?.celKey||living?.texture.key||VIDEO_MOTION[e.kind]?.idle.prefix+'0');
      const sprite=this.setCel(this.add.image(0,0,'__WHITE'),cel).setOrigin(.5,this.grounding.get(cel)??1).setFlipX(living?.flipX||false);
      this.placeOnGround(sprite,e.x-this.offset,BODY_HEIGHT[e.kind]);this.root.add(sprite);
-     this.effects.push({...e,groundY:living?.y??e.groundY,type:'depart',sprite,t:0,duration:e.kind==='reaper'?REAPER_DEPARTURE_TIME:death?death.frames/death.fps:e.enemy===false?1.8:isBoss(e.kind)?2.7:2.1});
+     this.effects.push({...e,groundY:living?.y??e.groundY,type:'depart',sprite,t:0,duration:death?death.frames/death.fps:e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.enemy===false?1.8:isBoss(e.kind)?2.7:2.1});
      if(death?.audio)onEvents([{type:'motion-audio',actor:e.actor,sound:e.kind+'-death',x:e.x}]);
 
     }
@@ -959,7 +1023,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
     }
     if(FX_LIFE[e.type]&&!(e.type==='vanish'&&e.enemy===false)){
      const art=e.art||(e.type==='summon'?({cow:'Dust',keeper:'Dust',rabbit:'Leaf',scholar:'Seal',healer:'Leaf',haetae:'Seal'}[e.kind]||'Seal'):e.type==='heal'&&e.enemy?'Smoke':FX_ART[e.type]);
-     const sprite=art?this.add.image(0,0,'fx'+art+'0').setVisible(false):null;
+     const projectile=e.type==='projectile'?VIDEO_MOTION[e.sourceKind]?.projectile:null;
+     const sprite=projectile?this.setCel(this.add.image(0,0,'__WHITE'),this.videoCel(projectile.prefix+'0')).setVisible(false):art?this.add.image(0,0,'fx'+art+'0').setVisible(false):null;
      if(sprite)this.root.add(sprite);
      const recovery=e.type==='heal'&&!e.enemy&&e.amount>0?VIDEO_MOTION[e.kind]?.receiveHeal:null;
      this.effects.push({...e,art,sprite,t:0,duration:recovery?recovery.frames/recovery.fps:e.type==='heal'&&!e.enemy&&e.kind==='cow'&&e.amount>0?COW_HEAL.duration:e.type==='projectile'?e.duration:e.type==='vanish'&&e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.type==='vanish'?(isBoss(e.kind)?2.7:2.1):e.type==='hit'&&e.enemy===false?ALLY_HIT_TIME:FX_LIFE[e.type]});
@@ -970,7 +1035,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const g=this.decor,front=this.fx,area=AREAS[model.stage],baseStyle=GATE_STYLES[STAGES[model.stage].gateStyle],style=area.gateFile?{...baseStyle,texture:area.texture+'Gate',color:area.gateColor??baseStyle.color}:baseStyle,gate=model.enemies.find(e=>e.type==='gate');
    const endedAt=model.gateBrokenAt,broken=endedAt!==undefined&&endedAt!==null;
    const p=broken?Math.min(1,(model.time-endedAt)/GATE_BREAK_TIME):0,ratio=gate?Math.max(0,gate.hp/gate.maxHp):broken?0:1;
-   const visible=!!model.portal&&p<1&&x>-330&&x<this.vw+330,h=area.gateHeight||350,plane=(area.gateGround??GROUND)+this.worldPixels(area.groundOffset||0),floor=area.gateOrigin?plane:plane+13,origin=area.gateOrigin||[.5,1],color=style.color,mode=style.destruction;
+   const visible=!!model.portal&&p<1&&x>-330&&x<this.vw+330,h=area.gateHeight||350,plane=(area.roadFinite?this.terrainGround(model.gateX,area):area.gateGround??GROUND)+this.worldPixels(area.groundOffset||0),floor=area.gateOrigin?plane:plane+13,origin=area.gateOrigin||[.5,1],color=style.color,mode=style.destruction;
    this.gate.setTexture(style.texture);const source=this.gate.texture.getSourceImage(),w=h*source.width/source.height;
    const tremor=gate?.hit>0?Math.sin(t*95)*4:0;
    this.gate.setOrigin(...origin).setPosition(x+tremor,floor).setDisplaySize(w,h).setVisible(visible&&!broken).setAlpha(1).setTint(ratio<.34?0xc0bbb0:0xffffff);
@@ -1042,7 +1107,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(flash){g.lineStyle(7,0x968bcc,.35*fade);g.lineBetween(x-48,y-127,x-15,y-95);g.lineBetween(x-15,y-95,x-38,y-68);g.lineStyle(2,0xf2edff,fade);g.lineBetween(x-48,y-127,x-15,y-95);g.lineBetween(x-15,y-95,x-38,y-68);}
    if(charge>0)for(let i=0;i<5;i++){const q=(t*.85+i*.2)%1;g.fillStyle(0xdaebfc,fade*charge*(1-q)*.7);this.paintCircle(g,x-115+i*57,y+q*35,2+i%2);}
   }
-  videoPose(image,walk,moving,action,hit,key,kind='healer',clock=model.time,idleAllowed=true){
+  videoPose(image,walk,moving,action,hit,key,kind='healer',clock=model.time,idleAllowed=true,enemyActor=null){
    // Presentation is attached to the existing sprite and discarded with it.
    const clips=VIDEO_MOTION[kind],field=kind==='healer'?'healerVideo':'travellerVideo';
    let v=image[field];if(!v||v.at>clock)v=image[field]={at:clock,since:clock,idleSince:clock,state:'idle',cast:'castHeal',cycle:-1};
@@ -1053,8 +1118,14 @@ export function makeGame(model,onReady,onFrame,onEvents){
    v.treating=treating;v.elapsed=action?.elapsed??0;
    if(moving||action||hit>0||!idleAllowed)v.idleSince=clock;
    const actor=kind==='cow'||clips.anticipation?model.allies.find(a=>'a'+a.id===key):null;
-   const running=kind==='healer'?action?.phase==='approach':kind==='cow'?actor?.alerted||model.enemies.some(e=>e.hp>0&&e.x>=(actor?.x??0)-55&&e.x<(actor?.x??0)+550):model.direction!==0;
+   const running=kind==='healer'?action?.phase==='approach':kind==='cow'?actor?.alerted||model.enemies.some(e=>e.hp>0&&e.x>=(actor?.x??0)-55&&e.x<(actor?.x??0)+550):(kind==='girl'||kind==='haetae')&&model.direction!==0;
    let name=hit>0&&!['cow','spearman'].includes(kind)?'hurt':action?.kind===kind&&kind!=='healer'?(clips[action.phase]?action.phase:'attack'):moving?(running?(kind==='healer'&&clips.runUrgent?'runUrgent':'run'):'walk'):treating?v.cast:'idle';
+   if(enemyActor){
+    if(hit>(v.hit??0))v.hurtAt=clock;
+    if(v.hp!==undefined&&enemyActor.hp>v.hp)v.recoveryAt=clock;
+    v.hit=hit;v.hp=enemyActor.hp;
+    name=action?.kind==='enemy'?'attack':enemyActor.windup>0&&clips.ritual?'ritual':moving?'walk':clips.hurt&&clock-(v.hurtAt??-Infinity)<clips.hurt.frames/clips.hurt.fps?'hurt':clips.receiveHeal&&clock-(v.recoveryAt??-Infinity)<clips.receiveHeal.frames/clips.receiveHeal.fps?'receiveHeal':'idle';
+   }
    if(kind==='healer'&&action?.phase==='approach'&&clips.runUrgent)name=moving||(action.elapsed??0)<=MOTION.healer.notice?'runUrgent':'idle';
    if(kind==='cow'||clips.anticipation){
     if(actor?.alerted&&!action&&!moving)name=clips.rageHold?'rageHold':'attack';
@@ -1064,7 +1135,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     v.alerted=Boolean(actor?.alerted||clips.anticipation&&action&&v.alerted);
    }
    let recoveryFrame=null;
-   if(name==='idle'&&!action&&hit<=0){
+   if(name==='idle'&&!action&&hit<=0&&!enemyActor){
     const recovery=this.recoveryCel(kind,UNITS[kind]?Number(key.slice(1)):null);
     if(recovery){name='receiveHeal';recoveryFrame=Number(recovery.slice(clips.receiveHeal.prefix.length));}
     const age=clock-v.idleSince,slot=Math.floor((age-8)/14),within=(age-8)%14;
@@ -1082,11 +1153,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(treating&&name===v.cast){const cue=spec.cycles[v.cycle],t=action.elapsed,clock=MOTION.healer;frame=Math.round(t<=clock.impact?cue.start+(cue.impact-cue.start)*Math.min(1,t/clock.impact):cue.impact+(cue.end-cue.impact)*Math.min(1,(t-clock.impact)/(clock.duration-clock.impact)));}
    if(name==='anger')frame=Math.round(Math.min(1,action.elapsed/(MOTION.cow.angerFrames/MOTION.cow.angerFps))*(spec.frames-1));
    if(name==='anticipation')frame=Math.min(spec.frames-1,Math.floor(Math.max(0,action.elapsed)*spec.fps));
-   if(name==='attack'&&spec.cue){const cue=spec.cue,t=action?.elapsed??0,span=kind==='girl'?{impact:0,duration:.85}:MOTION[kind];frame=Math.round(t<span.impact?cue.start+(cue.impact-cue.start)*t/span.impact:cue.impact+(cue.end-cue.impact)*Math.min(1,(t-span.impact)/(span.duration-span.impact)));}
+   if(name==='attack'&&spec.cue){const cue=spec.cue,t=action?.elapsed??0,span=enemyActor?enemyStrike(kind):kind==='girl'?{impact:0,duration:.85}:MOTION[kind];frame=Math.round(t<span.impact?cue.start+(cue.impact-cue.start)*t/span.impact:cue.impact+(cue.end-cue.impact)*Math.min(1,(t-span.impact)/(span.duration-span.impact)));}
+   if(enemyActor&&name==='ritual')frame=Math.min(spec.frames-1,Math.floor(Math.max(0,ENEMIES[kind].ability.windup-enemyActor.windup)*spec.fps));
    const soundCycle=Math.floor(elapsed/(loopFrames/spec.fps)),playing=model.status==='playing'&&(name!=='attack'||Boolean(action));
    if(spec.audio&&(v.soundState!==name||v.soundCycle!==soundCycle||v.soundPlaying!==playing)){
     v.soundState=name;v.soundCycle=soundCycle;v.soundPlaying=playing;
-    onEvents([{type:'motion-audio',actor:key,sound:playing?kind+'-'+name:null,offset:frame/spec.fps,x:UNITS[kind]?model.allies.find(a=>'a'+a.id===key)?.x:model.x}]);
+    onEvents([{type:'motion-audio',actor:key,sound:playing?kind+'-'+name:null,offset:frame/spec.fps,x:enemyActor?.x??(UNITS[kind]?model.allies.find(a=>'a'+a.id===key)?.x:model.x)}]);
    }
    const fallback=(image.celKey||image.texture?.key)?.replace(/^injured[12]__/,'');
    return this.videoCel(spec.prefix+Math.max(0,Math.min(spec.frames-1,frame)),fallback);
@@ -1101,8 +1173,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(!image){const idle=VIDEO_MOTION[type]?.idle;image=this.setCel(this.add.image(0,0,'__WHITE'),idle?this.videoCel(idle.prefix+'0'):MODEL_MAP[type]||type).setOrigin(.5,1);this.root.add(image);this.sprites.set(key,image);}
    if(enemy&&model.time<bornAt){image.setVisible(false);return;}image.setVisible(true).setCrop();
    const teamPose=action?.kind==='team',poseAction=teamPose?null:action;
-   if(!enemy&&VIDEO_MOTION[type]&&!teamPose){
-    this.setCel(image,this.videoPose(image,walk,moving,action,hit,key,type)).setFlipX(type==='healer'&&action?.kind==='healer'?false:action?false:moving?moving<0:image.flipX);
+   if(VIDEO_MOTION[type]&&!teamPose){
+    this.setCel(image,this.videoPose(image,walk,moving,action,hit,key,type,model.time,true,enemy?{hp,windup,x}:null)).setFlipX(enemy?false:type==='healer'&&action?.kind==='healer'?false:action?false:moving?moving<0:image.flipX);
    }else{
    delete image.celKey;
    if(enemy)image.setTexture(isBoss(type)?bossPose(walk,moving,action,windup,type):type+(action||windup>0?'Strike':'Walk')+(action?enemyAttackFrame(action.elapsed):windup>0?1:motionFrame(type,walk,moving,null))).setFlipX(action? action.dir>0 : moving>0);
@@ -1141,14 +1213,14 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const baseHeight=BODY_HEIGHT[type]||130,height=this.actorHeight(baseHeight);
    this.placeOnGround(image,x-this.offset,baseHeight,groundY);
    if(!AREAS[model.status==='ready'?this.previewAreaIndex:model.stage].actorFloors)this.root.bringToTop(image);
-   if(enemy&&action?.kind==='enemy'){
+   if(enemy&&!VIDEO_MOTION[type]&&action?.kind==='enemy'){
     const p=Math.min(1,action.elapsed/ENEMY_STRIKE.duration),impact=ENEMY_STRIKE.impact/ENEMY_STRIKE.duration,dir=action.dir??-1;
     const thrust=p<impact?-Math.sin(p/impact*Math.PI)*7:22*(1-(p-impact)/(1-impact))**2;
     image.x+=dir*thrust;image.setAngle(dir*(p<impact?-4*Math.sin(p/impact*Math.PI):5*(1-p)/(1-impact)));
     // Whole-body drawings carry the pose; do not distort or hinge individual limbs.
     if(p<impact){this.fx.lineStyle(2,0x9c6958,.35);this.fx.lineBetween(image.x-dir*20,groundY-height*.6,image.x-dir*43,groundY-height*.63);}
-   }else if(enemy&&windup>0){image.setAngle(Math.sin(windup*8)*1.8+(type==='horse'?5:0));}
-   if(hit>0&&(enemy||!['cow','spearman'].includes(type))){
+   }else if(enemy&&!VIDEO_MOTION[type]&&windup>0){image.setAngle(Math.sin(windup*8)*1.8+(type==='horse'?5:0));}
+   if(hit>0&&(enemy?!VIDEO_MOTION[type]:!['cow','spearman'].includes(type))){
     const total=enemy?.26:ALLY_HIT_TIME,age=total-hit,response=age<.05?1:Math.max(0,1-(age-.05)/(total-.05))**2;
     image.x+=hitDir*response*(type==='boss'?5:10);
     image.setAngle(hitDir*response*(type==='boss'?2:5));
@@ -1236,7 +1308,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    for(const e of this.effects){
     e.t=Math.min(e.duration,['won','lost'].includes(model.status)?e.t+dt:e.flight?e.flight.t:e.at!==undefined?Math.max(0,model.time-e.at):e.t+dt);const p=e.t/e.duration,fade=1-p,tail=p<.48?1:(1-p)/.52,x=(e.x??e.from??model.x)-this.offset,ground=e.groundY??GROUND;
     if(e.type==='projectile'){
-     if(p>=1)continue; // The contact flash replaces the projectile on the same model tick.
+     // Contact replaces the projectile on this tick. Dispose its visual before
+     // removing the effect, so cache eviction never leaves an unowned live sprite.
+     if(p>=1){e.sprite?.destroy();continue;}
      const stone=e.kind==='stone',seed=e.kind==='seed',ink=e.kind==='ink',seal=e.kind==='seal',hex=e.kind==='hex',arrow=e.kind==='arrow',dir=Math.sign(e.to-e.from)||1;
      const source=e.actor==='girl'?this.girl:this.sprites.get((e.enemy?'e':'a')+e.actor);
      const target=e.areaRadius?null:e.targetActor===null?this.hero:this.sprites.get((e.enemy?'a':'e')+e.targetActor);
@@ -1246,6 +1320,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
      if(e.hit===false)end.y=(e.targetGroundY??GROUND)-145;
      const from=e.launchPoint.x,fy=e.launchPoint.y,ty=end.y,travel=p;
      const at=q=>({x:(from-this.offset)+(end.x-(from-this.offset))*q,y:fy+(ty-fy)*q-Math.sin(q*Math.PI)*(e.arc|| (stone?28:seed?8:16))}),head=at(travel);
+     const authored=VIDEO_MOTION[e.sourceKind]?.projectile;
+     if(authored&&e.sprite){
+      const frame=Math.min(authored.frames-1,Math.floor(p*authored.frames)),key=this.videoCel(authored.prefix+frame,e.sprite.celKey),page=this.videoPage(this.videoFrameIndex.get(authored.prefix+frame));
+      this.setCel(e.sprite,key);const width=this.actorHeight(BODY_HEIGHT[e.sourceKind])*.72;
+      e.sprite.setVisible(this.textures.exists(page.key)).setOrigin(.5,.5).setPosition(head.x,head.y).setDisplaySize(width,width*page.h/page.w).setFlipX(dir>0).setAlpha(1);continue;
+     }
      const color=hex?0xc49ae6:stone?0xeac276:seed?0xc3e975:ink?0x53c1b2:0x8fe6d5;
      if(!arrow)ribbon(Array.from({length:5},(_,i)=>at(Math.max(0,travel-.2+i*.05))),stone?3:ink?6:4,color,1);
      if(arrow&&e.finishOnScreen)ribbon(Array.from({length:5},(_,i)=>at(Math.max(0,travel-.12+i*.03))),5,0xffd788,.8);
@@ -1401,7 +1481,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
     }
     if(e.type==='depart'){
      const x=e.x-this.offset,h=this.actorHeight(BODY_HEIGHT[e.kind]*(e.kind==='boss'?.64:1)),sprite=e.sprite;
-     if(e.kind==='reaper'){
+     if(e.enemy!==false&&VIDEO_MOTION[e.kind]?.death){
+      const spec=VIDEO_MOTION[e.kind].death,frame=Math.min(spec.holdFrom??spec.frames-1,Math.floor(e.t*spec.fps));
+      this.setCel(sprite,this.videoCel(spec.prefix+frame,sprite.celKey||sprite.texture.key));this.placeOnGround(sprite,x,BODY_HEIGHT[e.kind],ground);sprite.setVisible(sprite.texture.key!=='__WHITE').setAngle(0).setFlipX(false).setAlpha(Math.max(0,Math.min(1,(e.duration-e.t)/.5)));
+     }else if(e.kind==='reaper'){
       // The same man lifts his chin and opens his arms; only light leaves the eyes.
       const rise=0; // The death pose changes, but feet remain on the road.
       const dissolve=Math.max(0,Math.min(1,(p-.55)/.45));
@@ -1461,17 +1544,19 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(intro)this.offset+=(targetOffset-this.offset)*Math.min(1,stepDt*8);else this.offset=targetOffset;
     if(model.status==='playing')model.setViewport(this.offset,vw);
    }
+   this.cameraLift=cameraArea.roadFinite&&!intro?this.terrainGround(model.x,cameraArea)-this.terrainGround(START,cameraArea):0;
+   if(this.unit)this.root.y=((this.viewHeight||620)-620-this.cameraLift)*this.unit;
    const events=model.drainEvents();this.playEvents(events);onEvents(events);
    const t=intro?time/1000:model.time;
    const region=intro?this.previewAreaIndex:model.stage,blend=1;
    this.drawLandscape(region,blend,t);
    if(this.game?.canvas)Object.assign(this.game.canvas.dataset,{cameraX:String(this.offset),travellerX:String(model.x),roadX:String(this.pathTiles.find(im=>im.visible)?.x??''),landscapeX:String(this.depths.middle[0].x)});
    this.decor.clear();this.shadows.clear();this.fx.clear();if(this.game?.canvas)this.game.canvas.dataset.healLight='';
-   this.drawGate((model.portal?.x??model.gateX)-this.offset,t);this.drawBossTelegraphs();
+   if(!this.entryPreview){this.drawGate((model.portal?.x??model.gateX)-this.offset,t);this.drawBossTelegraphs();}else{this.gate?.setVisible(false);this.gateLip?.setVisible(false);}
    // Small distance markers make scrolling legible, rather than a static left-side base.
-   for(let p=800;p<model.roadEnd&&AREAS[model.stage].ground!=='water';p+=800){
+   for(let p=800;!this.entryPreview&&p<model.roadEnd&&AREAS[model.stage].ground!=='water';p+=800){
     const x=p-this.offset;if(x<-50||x>vw+50)continue;
-    const floor=GROUND+this.worldPixels(AREAS[region].groundOffset||0);
+    const floor=this.terrainGround(p,AREAS[region])+this.worldPixels(AREAS[region].groundOffset||0);
     this.decor.fillStyle(0x978367,.5);this.decor.fillRect(x,floor-35,4,35);
     this.decor.lineStyle(1,0xb19b75,.65);this.decor.lineBetween(x-12,floor-35,x+19,floor-35);
    }
@@ -1502,7 +1587,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     this.renderEntity('previewRabbit','rabbit',vw*.86+this.offset,t*.6,1,1,0,0,false,1);present.add('previewRabbit');
     this.renderEntity('previewKeeper','keeper',vw*.54+this.offset,t*.65,1,1,0,0,false,1);present.add('previewKeeper');
     this.renderEntity('previewCow','cow',vw*.78+this.offset,t*.5,1,1,0,0,false,1);present.add('previewCow');
-   }else{
+   }else if(!this.entryPreview){
     for(const e of model.enemies.filter(e=>e.type!=='gate').sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,e.moving,e.action,e.hitDir,this.actorGround(key),e.entryAt??e.bornAt,e.entryOrigin,e.entering);}
     for(const a of [...model.allies].sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='a'+a.id;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir,this.actorGround(key));}
    }

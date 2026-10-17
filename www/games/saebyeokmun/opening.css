@@ -1,0 +1,17 @@
+/* The generated film hands its last frame to the existing game canvas. */
+#opening.opening{padding:0;border:0;border-radius:0;overflow:hidden;background:#f4ead7;color:#382b20}
+#opening::backdrop{background:transparent;backdrop-filter:none}
+#opening .entry-poster,#opening .entry-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;user-select:none;-webkit-user-drag:none}
+#opening .entry-video{opacity:0}
+#opening[data-phase="preparing"] .entry-video,#opening[data-phase="playing"] .entry-video,#opening[data-phase="reveal"] .entry-video{opacity:1}
+#opening[data-phase="preparing"] .entry-poster,#opening[data-phase="playing"] .entry-poster,#opening[data-phase="reveal"] .entry-poster{opacity:0}
+#opening[data-phase="reveal"]{animation:entry-world .55s ease-in-out forwards}
+#opening #opening-loading{position:absolute;bottom:5%;left:0;right:0;text-align:center;font:12px sans-serif;color:#514631;text-shadow:0 1px #fff8e8}
+#opening:not([data-phase="loading"]) #opening-loading{display:none}
+body[data-entry-phase] :is(.hud,.stage-tools,.control-deck,#pause-overlay,#callout){opacity:0;pointer-events:none}
+body[data-entry-phase="ui"] :is(.hud,.stage-tools,.control-deck){animation:entry-hud .7s ease-out forwards}
+body[data-entry-phase] :is(.hud,.stage-tools,.control-deck) button{pointer-events:none}
+@keyframes entry-world{to{opacity:0}}
+@keyframes entry-hud{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+
+#opening #opening-loading{display:none}

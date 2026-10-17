@@ -1,4 +1,5 @@
 import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=70';
+import {STAGE2_ART} from './stage2-art.js?v=146-entry';
 import {EXTRA_MONSTERS} from './expansion-monsters.js?v=70';
 export {GATE_STYLES};
 // Single source of sample tuning. All folklore-derived combat roles are game inventions.
@@ -6,13 +7,15 @@ export const ROAD=4200;
 // The final world seal is separate from each wave’s authored entrance position.
 export const GATE=ROAD+80;
 export const START=220;
+// Ordinary party travel shares one pace; treatment and combat actions keep their own speeds.
+export const WALK_SPEED=76;
 export const MAX_HP=200;
 export const MAX_COINS=100;
 export const ALLY_HP_SCALE=.7*1.15*1.1;
 export const ALLY_OUTPUT=1.1;
-export const ALLY_TYPE_LIMIT=10;
+export const ALLY_TYPE_LIMIT=5;
 export const ALLY_TOTAL_LIMIT=50;
-export const BODY_HEIGHT={king:165,prince:156,minister:165,cavalry:205,umbrella:185,mount:188,haetae:132,girl:117,keeper:133,cow:141,scholar:156,healer:165,rabbit:124,skirt:102,horse:198,reaper:202,boss:300,warden:230,ferryman:245,waterghost:180,spearman:158,archer:154,mangtae:148,shadow:140,dokkaebi:160,bulgasari:205,changgwi:180,gumiho:142,bandit:166,pirate:170,gate:350};
+export const BODY_HEIGHT={king:165,prince:156,minister:165,cavalry:205,umbrella:185,mount:188,haetae:132,girl:117,keeper:133,cow:141,scholar:156,healer:165,rabbit:124,skirt:102,horse:198,reaper:174,boss:300,warden:230,ferryman:245,waterghost:180,spearman:158,archer:154,mangtae:148,shadow:140,dokkaebi:160,bulgasari:205,changgwi:180,gumiho:142,bandit:166,pirate:170,gate:350};
 const CORE_AREAS=[
  {at:0,name:'몽유도원 · 달빛 산수',texture:'inwang',detailFiles:['inwang-near0-v44.webp','inwang-near1-v44.webp'],detailOverlap:160,file:'inwang-far-v44.webp',skyFile:'inwang-sky-v44.webp',cloudFile:'inwang-clouds-v44.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,roadAtlas:'mongyudowon-terrain-v54.webp',roadTiles:[[0,680],[680,1000],[1680,340],[2020,200],[2220,800],[3020,260],[3280,356],[3636,680],[4316,1000],[5316,1212],[6528,744]].map(([x,width],i)=>({frame:'path'+i,x,width,height:720,foot:500,sourceY:0,sourceHeight:720}))},
  {at:1,name:'수원 · 높은 버들숲',texture:'home1',detailFiles:[],detailOverlap:0,file:'homecoming-02-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.68}, {at:2,name:'공주 · 금강의 기와다리',texture:'home2',detailFiles:[],detailOverlap:0,file:'homecoming-03-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.59}, {at:3,name:'부여 · 사막의 꿈',texture:'home3',detailFiles:[],detailOverlap:0,file:'homecoming-04-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.62}, {at:4,name:'군산 · 푸른 바닷가',texture:'home4',detailFiles:[],detailOverlap:0,file:'homecoming-05-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'water',panorama:true,paintingSingle:true,paintingFoot:.70}, {at:5,name:'전주 · 돌아오는 장터',texture:'home5',detailFiles:[],detailOverlap:0,file:'homecoming-06-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.70}, {at:6,name:'남원 · 전쟁의 꿈',texture:'home6',detailFiles:[],detailOverlap:0,file:'homecoming-07-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.70}, {at:7,name:'광양 · 지옥의 꿈',texture:'home7',detailFiles:[],detailOverlap:0,file:'homecoming-08-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.70}, {at:8,name:'여수 · 끝없는 물길',texture:'home8',detailFiles:[],detailOverlap:0,file:'homecoming-09-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'water',panorama:true,paintingSingle:true,paintingFoot:.70}, {at:9,name:'순천 · 갈대늪 너머 집',texture:'home9',detailFiles:[],detailOverlap:0,file:'homecoming-10-v59.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,paintingSingle:true,paintingFoot:.70}
@@ -25,6 +28,7 @@ Object.assign(CORE_AREAS[0],{roadAtlas:null,roadFlipX:true,roadTopTrim:15,actorS
 for(const [i,scale,foot] of [[1,1.4,550],[2,2.4,469],[3,1.4,497],[4,1.4,566]]){
  Object.assign(CORE_AREAS[i],{file:`home${i}-background-v131.webp`,roadTiles:[{file:`home${i}-terrain-v131.webp`,x:0,width:Math.round(1942*scale),height:Math.round((i===4?809:810)*scale),foot:foot*scale}]});
 }
+Object.assign(CORE_AREAS[1],STAGE2_ART);
 export const AREAS=[...CORE_AREAS.slice(0,9),...EXTRA_CHAPTERS.map((s,i)=>({at:i+9,name:s.place+' · '+s.name,texture:'journey'+(i+10),detailFiles:[],detailOverlap:0,file:s.asset,skyInPainting:true,split:1,ground:s.ground,panorama:true,paintingSingle:true,paintingFoot:s.paintingFoot})),{...CORE_AREAS[9],at:39}];
 for(const s of EXTRA_MONSTERS)BODY_HEIGHT[s.key]=s.height;
 // One presentation size table serves every cel, wound and departure.
@@ -58,6 +62,8 @@ export const PARALLAX={far:.035,middle:.34,ground:1,near:1.18};
 // Keep wave HP/arrival budgets; reduce all hostile damage and restoration together.
 export const ENEMY_OUTPUT=.85;
 export const ENEMY_STRIKE={duration:.6,impact:.28};
+// Per-character authored timing shares the same target/impact contract as legacy strikes.
+export function enemyStrike(kind){return MOTION[kind]?.duration?MOTION[kind]:ENEMY_STRIKE;}
 export const REAPER_DEPARTURE_TIME=3.1;
 export const ALLY_HIT_TIME=.42;
 export const GATE_BREAK_TIME=1.7;
@@ -99,18 +105,19 @@ export function validParty(value){return Array.isArray(value)&&value.length>=1&&
 // Apply companion tuning once at its owner, including healing and trained attacks.
 // Exact multipliers keep the authored enemy budget independent of companion buffs.
 export const UNIT_TIERS={beast:{label:"짐승",level:0},bond:{label:"노비",level:1},common:{label:"평민",level:2},noble:{label:"귀족",level:3},legendary:{label:"전설",level:4}};
+// Roster presentation from the approved sample; no combat or saved progression.
 export const UNITS=Object.fromEntries(Object.entries({
- cow:{cardArt:"summon-card-cow-v139.webp",tier:"beast",price:0,name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:95,damage:12,period:1.35,cost:30,cooldown:4,formation:305,spacing:0,guard:.6,weapon:'horn'},
- keeper:{cardArt:"summon-card-keeper-v139.webp",tier:"bond",price:0,name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:275,damage:17,period:1.15,cost:18,cooldown:3.5,formation:125,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:295,weapon:'ink'}}},
- rabbit:{cardArt:"summon-card-rabbit-v139.webp",tier:"beast",price:0,name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:185,damage:24,period:1.35,cost:24,cooldown:4,formation:215,spacing:0,guard:0,weapon:'seed'},
- scholar:{cardArt:"summon-card-scholar-v139.webp",tier:"noble",price:0,name:'선비',role:'지원 · 붓과 부채로 봉인',hp:56,speed:68,range:540,damage:16,period:2.1,cost:34,cooldown:5,formation:-140,spacing:0,guard:0,weapon:'seal'},
- spearman:{cardArt:"summon-card-spearman-v141.webp",tier:"common",name:'조선 창병',role:'조력 · 전방 창 찌르기',price:80,hp:130,speed:74,range:120,damage:10,period:1.8,cost:26,cooldown:4.5,formation:270,spacing:0,guard:.15,weapon:'spear'},
- archer:{tier:"common",name:'조선 궁병',role:'조력 · 후열 화살',price:100,hp:72,speed:70,range:420,damage:10,period:2.3,cost:24,cooldown:4.5,formation:20,spacing:0,guard:0,weapon:'arrow'},
- king:{tier:"legendary",name:'조선 왕',role:'지원 · 어보 봉인',price:260,hp:95,speed:65,range:380,damage:20,period:2.4,cost:38,cooldown:5.5,formation:0,spacing:0,guard:.1,weapon:'seal'},
- prince:{tier:"noble",name:'세자',role:'공격 · 활 사격',price:180,hp:65,speed:82,range:330,damage:22,period:1.5,cost:30,cooldown:4.5,formation:90,spacing:0,guard:0,weapon:'arrow'},
- minister:{tier:"noble",name:'영의정',role:'지원 · 교지 봉인',price:220,hp:85,speed:62,range:500,damage:14,period:2.2,cost:32,cooldown:5,formation:-80,spacing:0,guard:.05,weapon:'seal'},
- cavalry:{tier:"noble",name:'기마 무관',role:'돌파 · 기마 검격',price:240,hp:170,speed:90,range:100,damage:18,period:1.7,cost:40,cooldown:6,formation:295,spacing:0,guard:.3,weapon:'sword'},
- healer:{cardArt:"summon-card-healer-v139.webp",tier:"common",price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:240,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:170,guard:0,weapon:'medicine'}
+ cow:{rosterCard:{rarity:"일반",stars:1},cardArt:"summon-card-cow-v139.webp",tier:"beast",price:0,name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:95,damage:12,period:1.35,cost:30,cooldown:4,formation:305,spacing:0,guard:.6,weapon:'horn'},
+ keeper:{rosterCard:{rarity:"일반",stars:2},cardArt:"summon-card-keeper-v139.webp",tier:"bond",price:0,name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:275,damage:17,period:1.15,cost:18,cooldown:3.5,formation:125,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:295,weapon:'ink'}}},
+ rabbit:{rosterCard:{rarity:"일반",stars:2},cardArt:"summon-card-rabbit-v139.webp",tier:"beast",price:0,name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:185,damage:24,period:1.35,cost:24,cooldown:4,formation:215,spacing:0,guard:0,weapon:'seed'},
+ scholar:{rosterCard:{rarity:"영웅",stars:3},cardArt:"summon-card-scholar-v139.webp",tier:"noble",price:0,name:'선비',role:'지원 · 붓과 부채로 봉인',hp:56,speed:68,range:540,damage:16,period:2.1,cost:34,cooldown:5,formation:-140,spacing:0,guard:0,weapon:'seal'},
+ spearman:{rosterCard:{rarity:"일반",stars:2},cardArt:"summon-card-spearman-v141.webp",tier:"common",name:'조선 창병',role:'조력 · 전방 창 찌르기',price:80,hp:130,speed:74,range:120,damage:10,period:1.8,cost:26,cooldown:4.5,formation:270,spacing:0,guard:.15,weapon:'spear'},
+ archer:{rosterCard:{rarity:"희귀",stars:3},tier:"common",name:'조선 궁병',role:'조력 · 후열 화살',price:100,hp:72,speed:70,range:420,damage:10,period:2.3,cost:24,cooldown:4.5,formation:20,spacing:0,guard:0,weapon:'arrow'},
+ king:{rosterCard:{rarity:"전설",stars:5},tier:"legendary",name:'조선 왕',role:'지원 · 어보 봉인',price:260,hp:95,speed:65,range:380,damage:20,period:2.4,cost:38,cooldown:5.5,formation:0,spacing:0,guard:.1,weapon:'seal'},
+ prince:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'세자',role:'공격 · 활 사격',price:180,hp:65,speed:82,range:330,damage:22,period:1.5,cost:30,cooldown:4.5,formation:90,spacing:0,guard:0,weapon:'arrow'},
+ minister:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'영의정',role:'지원 · 교지 봉인',price:220,hp:85,speed:62,range:500,damage:14,period:2.2,cost:32,cooldown:5,formation:-80,spacing:0,guard:.05,weapon:'seal'},
+ cavalry:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'기마 무관',role:'돌파 · 기마 검격',price:240,hp:170,speed:90,range:100,damage:18,period:1.7,cost:40,cooldown:6,formation:295,spacing:0,guard:.3,weapon:'sword'},
+ healer:{rosterCard:{rarity:"희귀",stars:3},cardArt:"summon-card-healer-v139.webp",tier:"common",price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:240,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:170,guard:0,weapon:'medicine'}
 }).map(([kind,stats])=>[kind,{...stats,hp:stats.hp*ALLY_HP_SCALE,damage:stats.damage*ALLY_OUTPUT,...(stats.heal?{heal:stats.heal*ALLY_OUTPUT}:{}),...(stats.upgrade?{upgrade:{...stats.upgrade,stats:{...stats.upgrade.stats,damage:stats.upgrade.stats.damage*ALLY_OUTPUT}}}:{})}]));
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
 // One shared party clearance preserves the authored differences between
@@ -120,7 +127,7 @@ ENEMY_FRONT.hero=90;
 for(const kind of Object.keys(UNITS))ENEMY_FRONT[kind]=ENEMY_FRONT.hero;
 // The ox uses the supplied video: 48 walk, 48 run and 48 retimed attack cels.
 // Its 74-unit stride / 1.44s cadence stays coupled to actual travel; other bodies stay four cels.
-export const MOTION={dokkaebi:{walkFps:5,walkFrames:4},bulgasari:{walkFps:5,walkFrames:4},changgwi:{walkFps:5,walkFrames:4},gumiho:{walkFps:5,walkFrames:4},bandit:{walkFps:5,walkFrames:4},pirate:{walkFps:5,walkFrames:4},king:{duration:.9,impact:.45,walkFps:5,walkFrames:4},prince:{duration:.8,impact:.4,walkFps:6,walkFrames:4},minister:{duration:1,impact:.5,walkFps:5,walkFrames:4},cavalry:{duration:.8,impact:.4,walkFps:6,walkFrames:4},haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,angerFrames:98,angerFps:48,walkFps:48/1.44,walkFrames:48,runFps:48/1.05,runFrames:48,attackFrames:48,idleFrame:96},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},healer:{duration:3.2,impact:1.45,notice:29/24,walkFps:8,walkFrames:4},warden:{walkFps:4,walkFrames:4},ferryman:{walkFps:4,walkFrames:4},waterghost:{walkFps:4,walkFrames:4},spearman:{duration:35/24,impact:8/24,anticipation:29/24,walkFps:5,walkFrames:4},archer:{duration:1,impact:.5,walkFps:5,walkFrames:4},mangtae:{walkFps:6,walkFrames:4},shadow:{walkFps:7,walkFrames:4},skirt:{walkFps:106/72*4,walkFrames:4},horse:{walkFps:66/94*4,walkFrames:4},reaper:{walkFps:58/78*4,walkFrames:4},boss:{walkFps:16/40*6,walkFrames:6,idleFrame:0}};
+export const MOTION={dokkaebi:{walkFps:5,walkFrames:4},bulgasari:{walkFps:5,walkFrames:4},changgwi:{walkFps:5,walkFrames:4},gumiho:{walkFps:5,walkFrames:4},bandit:{walkFps:5,walkFrames:4},pirate:{walkFps:5,walkFrames:4},king:{duration:.9,impact:.45,walkFps:5,walkFrames:4},prince:{duration:.8,impact:.4,walkFps:6,walkFrames:4},minister:{duration:1,impact:.5,walkFps:5,walkFrames:4},cavalry:{duration:.8,impact:.4,walkFps:6,walkFrames:4},haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,angerFrames:98,angerFps:48,walkFps:48/1.44,walkFrames:48,runFps:48/1.05,runFrames:48,attackFrames:48,idleFrame:96},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},healer:{duration:3.2,impact:1.45,notice:29/24,walkFps:8,walkFrames:4},warden:{walkFps:4,walkFrames:4},ferryman:{walkFps:4,walkFrames:4},waterghost:{walkFps:4,walkFrames:4},spearman:{duration:35/24,impact:8/24,anticipation:29/24,walkFps:5,walkFrames:4},archer:{duration:1,impact:.5,walkFps:5,walkFrames:4},mangtae:{walkFps:6,walkFrames:4},shadow:{walkFps:7,walkFrames:4},skirt:{walkFps:106/72*4,walkFrames:4},horse:{walkFps:66/94*4,walkFrames:4},reaper:{duration:2,impact:28/24,walkFps:58/78*4,walkFrames:4},boss:{walkFps:16/40*6,walkFrames:6,idleFrame:0}};
 export function motionFrame(kind,walk,moving,action){
  const s=MOTION[kind],walkFrames=s.walkFrames||4,attackFrames=s.attackFrames||4;
  return action?walkFrames+Math.min(attackFrames-1,Math.floor(action.elapsed/s.duration*attackFrames)):(moving||walk>0)?Math.floor(walk*s.walkFps)%walkFrames:(s.idleFrame??1);
@@ -167,7 +174,7 @@ export const ENEMIES={...addedEnemies,
  gate:{name:'길을 막는 봉인',hp:360,speed:0,range:0,damage:0,period:Infinity,reward:0,stationary:true},
  skirt:{name:'지하지인',hp:58,speed:106,range:45,damage:7,period:1.15,reward:9},
  horse:{name:'갓 쓴 말',hp:155,speed:66,range:65,damage:12,period:1.5,reward:15,ability:{initial:4.5,cooldown:6,windup:1.7,range:350,damage:23}},
- reaper:{name:'저승사자',hp:120,speed:58,range:290,damage:8,period:2,reward:18,ability:{initial:5,cooldown:8,windup:1.7,range:570,heal:15}},
+ reaper:{name:'저승사자',hp:120,speed:58,range:290,damage:8,period:2,reward:18,ability:{initial:5,cooldown:8,windup:3.75,range:570,heal:15}},
  boss:{name:'강철',boss:true,hp:1900,speed:16,stopAt:ROAD-180,range:140,damage:14,period:1.4,reward:40,ability:{kind:'hail',initial:3,cooldown:9,windup:2.6,range:720,damage:24,splash:15,impact:.7,duration:1.15}},
  warden:{name:'성곽 수문장',boss:true,hp:1750,speed:22,stopAt:ROAD-200,range:135,damage:16,period:1.8,reward:44,ability:{kind:'quake',initial:3,cooldown:7,windup:1.8,range:650,damage:19,splash:13,impact:.75,duration:1.25}},
  ferryman:{name:'망각의 나루지기',boss:true,hp:1650,speed:20,stopAt:ROAD-200,range:200,damage:12,period:1.6,reward:48,ability:{kind:'tide',initial:4,cooldown:8,windup:2.1,range:920,damage:22,splash:12,impact:.85,duration:1.45}},
@@ -181,7 +188,7 @@ export const SKILLS={
  charm:{name:'날림부적',cost:12,cooldown:3.2,icon:'iconCharm',role:'봉인',description:'저승사자를 먼저 겨냥해 술법을 끊어요.'},
  stomp:{name:'합동 발구름',cost:20,cooldown:7,icon:'iconStomp',role:'제압',description:'가까운 적을 밀고 돌진 준비를 끊어요.'},
  rush:{name:'해태 타고 돌진',cost:32,cooldown:12,icon:'mount1',role:'돌파',description:'잠깐 해태에 올라타 돌진하며 길을 열어요.'},
- shelter:{name:'비막이',cost:16,cooldown:11,icon:'umbrella3',role:'보호',description:'해태에 올라 우산을 전방 45도로 펼쳐요. 6초 동안 앞쪽 공격과 우박을 막고, 뒤쪽 공격은 막지 못해요.'},
+ shelter:{name:'비막이',cost:16,cooldown:11,icon:'iconShelter',role:'보호',description:'해태에 올라 우산을 전방 45도로 펼쳐요. 6초 동안 앞쪽 공격과 우박을 막고, 뒤쪽 공격은 막지 못해요.'},
  waterWard:{name:'물의 수호막',cost:16,cooldown:11,radius:340,icon:'waterWard',role:'범위 보호',description:'해태가 넓은 물 보호막을 펼쳐 6초 동안 안에 있는 동료를 지켜요. 비막이와 따로 사용할 수 있어요.'},
  mend:{name:'숨 돌리기',cost:30,cooldown:18,icon:'iconSound',role:'회복',description:'행렬의 기운 45, 동료 체력 15를 회복해요.'}
 };
@@ -215,7 +222,7 @@ export const STAGES=[...CORE_STAGES.slice(0,9),...EXTRA_CHAPTERS,CORE_STAGES[9]]
  const fallback=stage.waves?.slice(0,3).map(w=>w.types)||[['dokkaebi','bandit'],['pirate','waterghost'],['changgwi','gumiho']];
  const boss=family.find(s=>s.boss)?.key||addedBosses[i%Math.max(1,addedBosses.length)]?.key||['boss','warden','ferryman'][i%3];
  const endTypes=stage.waves?.at(-1).types||[boss,ordinary.at(-1)||'shadow'];
- const roadEnd=i<5?[3300,6000,6900,7200,8400][i]:i<10?1500+i*150:stage.waves?3600+i%5*480:stage.roadEnd;
+ const roadEnd=i<5?[3300,STAGE2_ART.roadEnd,6900,7200,8400][i]:i<10?1500+i*150:stage.waves?3600+i%5*480:stage.roadEnd;
  // A bounded stream of four keeps the requested total without spawning a crowd.
  // The final boss is included; the exit gate is scenery, not a monster quota.
  const total=i<5?50+i*10:null,count=total?Math.ceil((total-1)/4)+1:i<10?3+Math.ceil(i/2):2*Math.max(6+i%4,Math.ceil(ordinary.length/2)+1);

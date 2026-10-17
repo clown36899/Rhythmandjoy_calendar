@@ -1,13 +1,15 @@
-import {Campaign} from './game/campaign.js?v=144-open';
-import {Journey} from './game/model.js?v=144-open';
-import {Autoplay} from './game/autoplay.js?v=144-open';
-import {makeGame} from './game/scene.js?v=144-opt';
-import {Soundscape} from './game/audio.js?v=144-open';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=144-open';
+import {Campaign} from './game/campaign.js?v=146-entry';
+import {Journey} from './game/model.js?v=146-entry';
+import {Autoplay} from './game/autoplay.js?v=146-entry';
+import {makeGame} from './game/scene.js?v=146-entry';
+import {Soundscape} from './game/audio.js?v=146-entry';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=146-entry';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
 const requestedAutoplay=/(?:^|[?&])autoplay=1(?:&|$)/.test(window.location?.search||'');
+const stageLink=/(?:^|[?&])stage=(\d+)(?:&|$)/.exec(window.location?.search||'');
+const requestedStage=stageLink?Number(stageLink[1])-1:null;
 let lastAutoplayFrame=0,preparing=false,entryEpoch=0,retryAssets=null;
 let installPrompt=null,fullscreenPending=false;
 let scene,ready=false,lastStatus='',lastHint=0,noticeUntil=0,lastFrame=0,infoPaused=false,coinAnimation,lastKeeperRank=-1,resultReadyAt=Infinity;
@@ -103,7 +105,7 @@ for(const id of ['map-expand','map-fold'])$(id).addEventListener('click',()=>set
 for(const id of ['map-settings','home-settings'])$(id).addEventListener('click',()=>openInfo($('settings')));
 $('home-codex').addEventListener('click',openCodex);
 function showMap(){
- if(fullscreenPending)return;entryEpoch++;$('asset-loading').close();infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();
+ if(fullscreenPending)return;openingAutomatic=false;openingEpoch++;delete document.body.dataset.entryPhase;if(scene)scene.entryPreview=false;entryEpoch++;$('asset-loading').close();infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();
  stopAutoplay();
  keys.clear();model.setDirection(0,{cancel:true});model.reset();lastStatus='';resultReadyAt=Infinity;selectedStage=STAGES.findIndex((_,i)=>!campaign.cleared.includes(i));if(selectedStage<0)selectedStage=0;mapPage=Math.floor(selectedStage/STAGES_PER_COUNTRY);
  $('intro').hidden=false;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=true;$('callout').hidden=true;document.body.dataset.screen='map';
@@ -127,34 +129,81 @@ function updateSound(){for(const channel of ['music','effects']){const on=sounds
 function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify({music:soundscape.musicEnabled,effects:soundscape.effectsEnabled,volume:soundscape.volume}));}catch{}}
 updateSound();
 // Opening preferences are separate from campaign rewards; the existing modal owns pause/resume.
-let openingEnabled=false;try{openingEnabled=localStorage.getItem('saebyeokmun-opening')==='true';}catch{}
+let openingEnabled=true;try{openingEnabled=localStorage.getItem('saebyeokmun-opening')!=='false';}catch{}
+let openingEpoch=0,openingAutomatic=false,openingPreparing=false,openingStage=0;
 function updateOpening(){const b=$('opening-toggle');b.setAttribute('aria-pressed',String(openingEnabled));b.querySelector('.switch-state').textContent=openingEnabled?'켬':'끔';}
-function stopNarration(){$('opening-voice').pause();$('opening-voice').currentTime=0;$('opening-narrate').setAttribute('aria-pressed','false');$('opening-narrate').textContent='나레이션 듣기 ♫';}
-function showOpening(){if(fullscreenPending)return;loadDialogImages($('opening'));stopNarration();openInfo($('opening'));for(const d of infoDialogs)if(d!==$('opening')&&d.open)d.close();$('opening-continue').disabled=!ready;$('opening-skip').disabled=!ready;}
+function stopNarration(){$('opening-voice').pause();$('opening-video').pause();}
+function coverOpening(){
+ if($('opening').open&&$('opening-video').dataset.clip==='prelude')return;
+ openingAutomatic=true;openingPreparing=true;
+ const video=$('opening-video');video.dataset.clip='prelude';video.src='./assets/entry-prelude-v146.mp4';video.currentTime=0;
+ $('opening').dataset.phase='preparing';openInfo($('opening'));document.body.dataset.entryPhase='loading';
+ video.play().catch(()=>{});
+}
+async function prepareOpeningFilm(stage){
+ const video=$('opening-video'),file=`./assets/entry-stage${stage===1?2:1}-v146.mp4`;
+ if(video.dataset.nextFile===file)return;
+ await scene.downloads.request({url:file});const blob=scene.downloads.take(file);
+ if(video.dataset.nextSrc)URL.revokeObjectURL(video.dataset.nextSrc);
+ video.dataset.nextSrc=URL.createObjectURL(blob);video.dataset.nextFile=file;
+}
+function playOpening(stage,automatic=false){
+ openingStage=stage;openingAutomatic=automatic;openingPreparing=false;
+ const video=$('opening-video');
+ // Finish the ink-writing prelude before moving into the already prepared field.
+ if(automatic&&video.dataset.clip==='prelude'&&!video.ended)return;
+ const token=++openingEpoch;video.dataset.clip='transition';video.src=video.dataset.nextFile===`./assets/entry-stage${stage===1?2:1}-v146.mp4`?video.dataset.nextSrc:`./assets/entry-stage${stage===1?2:1}-v146.mp4`;video.currentTime=automatic?1.7:0;
+ $('opening').dataset.phase='playing';video.play().catch(()=>{if(token===openingEpoch)finishOpeningFilm();});
+}
+function showOpening(){
+ if(fullscreenPending||preparing)return;
+ $('opening').dataset.phase='loading';openInfo($('opening'));for(const d of infoDialogs)if(d!==$('opening')&&d.open)d.close();
+ playOpening(model.stage,false);
+}
+function finishOpeningFilm(event){
+ if(!$('opening').open)return;
+ const video=$('opening-video');
+ if(video.dataset.clip==='prelude'){if(openingPreparing){if(event?.type==='error'){video.dataset.clip='prelude-failed';$('opening').dataset.phase='loading';}else{video.currentTime=1.25;video.play().catch(()=>{});}}else{video.dataset.clip='';playOpening(openingStage,true);}return;}
+ if(openingPreparing)return;
+ if(openingAutomatic){$('opening').dataset.phase='reveal';document.body.dataset.entryPhase='world';}
+ else $('opening').close();
+}
+function finishOpeningUI(){
+ if(document.body.dataset.entryPhase!=='ui')return;
+ delete document.body.dataset.entryPhase;scene.entryPreview=false;openingAutomatic=false;
+ completeInfo();
+}
 updateOpening();
 $('opening-toggle').addEventListener('click',()=>{openingEnabled=!openingEnabled;try{localStorage.setItem('saebyeokmun-opening',String(openingEnabled));}catch{}updateOpening();if(openingEnabled)showOpening();});
 $('opening-replay').addEventListener('click',showOpening);
-for(const id of ['opening-continue','opening-skip'])$(id).addEventListener('click',()=>{if(ready){$('opening').close();}});
-$('opening').addEventListener('close',stopNarration);
-$('opening-narrate').addEventListener('click',async()=>{const voice=$('opening-voice');if(!voice.paused){stopNarration();return;}voice.volume=soundscape.volume;try{await voice.play();$('opening-narrate').setAttribute('aria-pressed','true');$('opening-narrate').textContent='나레이션 멈추기 ■';}catch{$('opening-loading').textContent='음성을 시작하지 못했어요. 이야기는 화면에서 읽을 수 있어요.';}});
-$('opening-voice').addEventListener('ended',stopNarration);
+$('opening-video').addEventListener('ended',finishOpeningFilm);
+$('opening-video').addEventListener('error',finishOpeningFilm);
+$('opening').addEventListener('animationend',e=>{if(e.target!==$('opening')||e.animationName!=='entry-world'||!openingAutomatic)return;$('opening').close();document.body.dataset.entryPhase='ui';});
+document.querySelector('.control-deck').addEventListener('animationend',e=>{if(e.target===document.querySelector('.control-deck')&&e.animationName==='entry-hud')finishOpeningUI();});
+$('opening').addEventListener('cancel',e=>{if(openingAutomatic)e.preventDefault();});
+$('opening').addEventListener('close',()=>{openingEpoch++;stopNarration();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&$('opening').open&&['playing','preparing'].includes($('opening').dataset.phase))$('opening-video').play().catch(finishOpeningFilm);});
 function updateBest(){const n=Math.floor(model.progress()*100);best=Math.max(best,n);$('best').textContent=best+'%';try{localStorage.setItem('saebyeokmun-best',String(best));}catch{}}
-async function start(testStage=null){
+async function start(testStage=null,cinematic=false){
  const testing=Number.isInteger(testStage)&&autoplay.active;
  if(!ready||preparing||fullscreenPending||(!testing&&Math.floor(selectedStage/STAGES_PER_COUNTRY)!==mapPage)||(!testing&&!canEnterStage(selectedStage)))return;
  if(testing)selectedStage=testStage;else stopAutoplay();
  const stage=selectedStage;
- if(!await prepareFor('불러오는 중',p=>scene.prepareStage(stage,p,testing,testing?Object.keys(UNITS):campaign.party),()=>start(testing?stage:null)))return;
- infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();
+ if(cinematic)coverOpening();
+ if(!await prepareFor('불러오는 중',p=>Promise.all([scene.prepareStage(stage,p,testing,testing?Object.keys(UNITS):campaign.party),cinematic?prepareOpeningFilm(stage):Promise.resolve()]),()=>start(testing?stage:null,cinematic),cinematic))return;
+ infoPaused=false;for(const dialog of infoDialogs)if(dialog.open&&(!cinematic||dialog!==$('opening')))dialog.close();
  if(!testing){activeRun=campaign.begin();saveCampaign();}
- model.start(selectedStage,testing?DEFAULT_PARTY:campaign.party,scene?.vw,{tour:testing});
+ model.start(selectedStage,testing?DEFAULT_PARTY:campaign.party,scene?.vw,{tour:testing&&requestedStage===null});
  if(testing){autoplay.enter();scene.playbackRate=autoplay.rate;}
  renderSummonSlots();renderSkillSlots();renderAutoplay();keys.clear();model.setDirection(0,{cancel:true});lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
- if(scene)scene.resetPresentation();prefetchNext(stage);updateAuto();soundscape.stopVoices(true);soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});
+ if(scene)scene.resetPresentation();updateAuto();soundscape.stopVoices(true);
+ if(cinematic){scene.entryPreview=true;model.drainEvents();model.pause();infoPaused=!document.hidden;soundscape.setPlaying(false);playOpening(stage,true);}
+ else{scene.entryPreview=false;delete document.body.dataset.entryPhase;soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});}
+ prefetchNext(stage);
 }
 function pause(){if(!ready||fullscreenPending)return;if(autoplay.active){if(autoplay.complete)return;autoplay.paused=model.status==='paused'?false:!autoplay.paused;}model.pause();keys.clear();model.setDirection(0,{cancel:true});renderAutoplay();soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
 function stopAutoplay(){autoplay.stop();if(scene)scene.playbackRate=1;renderAutoplay();renderSkillSlots();}
-function beginAutoplay(){if(!ready||preparing||fullscreenPending)return;lastAutoplayFrame=performance.now();start(autoplay.begin());}
+function beginAutoplay(){if(!ready||preparing||fullscreenPending)return;lastAutoplayFrame=performance.now();const first=autoplay.begin();start(requestedStage??first);}
 function renderAutoplay(){
  const a=autoplay,m=model;document.body.dataset.autoplay=String(a.active);$('autoplay-panel').hidden=!a.active;
  for(const id of ['move-left','move-right','auto'])$(id).disabled=a.active;
@@ -162,9 +211,9 @@ function renderAutoplay(){
  if(!a.active)return;
  $('autoplay-title').textContent=a.complete?'전체 맵 테스트 완료':`${m.stage+1} / ${STAGES.length} · ${STAGES[m.stage].name}`;
  const paused=a.paused||m.status==='paused',seconds=Math.floor(a.elapsed);
- $('autoplay-state').textContent=(a.complete?`${a.clears.length}개 맵 완주`:paused?'일시정지 · 주인공 무적':m.status==='won'?'길을 열었어요 · 다음 맵 준비':'짧은 코스 · 주인공 무적')+` · ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
+ $('autoplay-state').textContent=(a.complete?`${a.clears.length}개 맵 완주`:paused?'일시정지 · 주인공 무적':m.status==='won'?'길을 열었어요 · 다음 맵 준비':(requestedStage===null?'짧은 코스 · 주인공 무적':'전체 길 · 주인공 무적'))+` · ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
  $('autoplay-pause').textContent=paused?'계속':'일시정지';$('autoplay-pause').disabled=a.complete;
- $('autoplay-stop').textContent=a.complete?'돌아가기':'중지';$('autoplay-speed').value=String(a.rate);
+ $('autoplay-stop').textContent=a.complete?'돌아가기':'중지';if(document.activeElement!==$('autoplay-speed'))$('autoplay-speed').value=String(a.rate);
  const progress=(a.clears.length+(m.status==='won'?0:m.progress()))/STAGES.length;
  $('autoplay-progress').value=progress;$('autoplay-progress').setAttribute('aria-label',`전체 맵 테스트 ${a.clears.length} / ${STAGES.length} 완료`);
 }
@@ -246,16 +295,24 @@ document.addEventListener('pointerdown',()=>{if(model.status==='playing'&&sounds
 function showNotice(message){$('callout').textContent=message;$('callout').hidden=false;noticeUntil=performance.now()+2400;}
 function loadDialogImages(dialog){dialog.querySelectorAll('img[data-src]').forEach(img=>{img.src=img.dataset.src;delete img.dataset.src;});}
 function openInfo(dialog){loadDialogImages(dialog);if(!fullscreenPending&&!infoDialogs.some(d=>d.open)){infoPaused=model.status==='playing';if(infoPaused)model.pause();}keys.clear();model.setDirection(0,{cancel:true});soundscape.setPlaying(false);fitPhoneDialogs();dialog.showModal();}
-function completeInfo(){if(fullscreenPending||infoDialogs.some(d=>d.open))return;soundscape.stopVoices();if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
+function completeInfo(){if(fullscreenPending||document.body.dataset.entryPhase||infoDialogs.some(d=>d.open))return;soundscape.stopVoices();if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
 $('settings-open').addEventListener('click',()=>openInfo($('settings')));
 $('settings-return').addEventListener('click',()=>$('settings').close());
 $('settings').querySelector('.dialog-close').addEventListener('click',()=>$('settings').close());
+// Tabs change only the existing notes' visibility; pause and storage keep their owners.
+for(const kind of ['companions','enemies','sources'])$('codex-tab-'+kind).addEventListener('click',()=>{
+ for(const key of ['companions','enemies','sources']){
+  $('codex-'+key).hidden=key!==kind;$('codex-tab-'+key).setAttribute('aria-selected',String(key===kind));
+ }
+ $('codex').querySelector('.codex-body').scrollTop=0;
+});
 async function openCodex(){if(!ready||preparing)return;if(!scene.commonReady&&!await prepareFor('동료와 귀물 도감',p=>scene.ensureCommon(p),openCodex))return;openInfo($('codex'));}
 $('codex-open').addEventListener('click',openCodex);$('result-codex').addEventListener('click',openCodex);$('sources-open').addEventListener('click',openCodex);
 $('codex').querySelector('.dialog-close').addEventListener('click',()=>$('codex').close());
 $('codex').addEventListener('close',()=>{for(const p of motionPreviews){p.variants.clear();p.frame=-1;p.img.removeAttribute('src');}if(scene?.commonReady)scene.retainFiles([...scene.stageKeys]);});
 $('codex').addEventListener('click',e=>{if(e.target===$('codex')){const r=$('codex').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)$('codex').close();}});
 for(const dialog of infoDialogs)dialog.addEventListener('close',completeInfo);
+for(const id of ['roster','loadout','codex'])$(id).addEventListener('dragstart',e=>e.preventDefault());
 function renderSkillSlots(){
  $('team-skills').innerHTML=Object.entries(TEAM_SKILLS).map(([key,s])=>`<button class="action team-action" id="action-${key}" data-action="${key}" hidden><span class="action-art"><img data-icon="${s.icon}" alt="" draggable="false"></span><strong>${s.name}</strong><small>5인 합동</small><span class="cooldown"></span></button>`).join('');
  $('skill-slots').innerHTML=(autoplay.active?['charm','stomp','shelter']:loadout).map((key,i)=>{const s=SKILLS[key];return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}"><span class="action-role magic">${s.role}</span><kbd>${['Q','E','R'][i]}</kbd><span class="action-art"><img data-icon="${s.icon}" alt="" draggable="false"></span><strong>${key==='rush'?'해태 돌진':key==='stomp'?'발구름':s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
@@ -275,43 +332,47 @@ function renderTeamSkills(m,s){
 function hydrateIcons(root=document){
  if(!scene)return;
  for(const img of root.querySelectorAll('[data-icon]')){
-  const key=img.dataset.icon,src=scene.previewTexture(key);if(src){img.src=src;continue;}
-  const kind=key.replace(/\d+$/,'');if(!scene.commonReady)continue;
-  scene.ensurePreview(kind).then(()=>{if(img.isConnected===false||img.dataset.icon!==key)return;const ready=scene.previewTexture(key);if(ready)img.src=ready;}).catch(()=>{});
+  const key=img.dataset.icon,src=scene.previewTexture(key);if(src){img.src=src;img.hidden=false;continue;}img.hidden=true;
+  const kind=img.dataset.previewKind||key.replace(/\d+$/,'');if(!scene.commonReady)continue;
+  scene.ensurePreview(kind).then(()=>{if(img.isConnected===false||img.dataset.icon!==key)return;const ready=scene.previewTexture(key);if(ready){img.src=ready;img.hidden=false;}}).catch(()=>{});
  }
 }
 function renderSummonSlots(){
- $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}" data-card="${s.cardArt?"painted":"native"}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-tier">${UNIT_TIERS[s.tier].level?['Ⅰ','Ⅱ','Ⅲ','Ⅳ'][UNIT_TIERS[s.tier].level-1]+' ':''}${UNIT_TIERS[s.tier].label}</span><span class="unit-count">0/10</span><span class="action-art"><img ${s.cardArt?'src="./assets/'+s.cardArt+'"':'data-icon="'+icon+'" src="'+(scene?.previewTexture(icon)||'')+'"'} alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
+ $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}" data-card="${s.cardArt?"painted":"native"}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-tier">${UNIT_TIERS[s.tier].level?['Ⅰ','Ⅱ','Ⅲ','Ⅳ'][UNIT_TIERS[s.tier].level-1]+' ':''}${UNIT_TIERS[s.tier].label}</span><span class="unit-count">0/${ALLY_TYPE_LIMIT}</span><span class="action-art"><img ${s.cardArt?'src="./assets/'+s.cardArt+'"':'data-icon="'+icon+'" src="'+(scene?.previewTexture(icon)||'')+'"'} alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
  lastKeeperRank=-1;hydrateIcons($('summon-slots'));
 }
+function rosterStars(count){
+ const star='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 15 8.4 22 9.4 17 14.5 18.2 21.8 12 18.3 5.8 21.8 7 14.5 2 9.4 9 8.4Z" fill="#ffbc25" stroke="#613b11" stroke-width="1.6" stroke-linejoin="round"/><path d="m12 4-2.4 5.8-5.2.7 7.6 2Z" fill="#ffe68a"/></svg>';
+ return '<span class="roster-stars" aria-label="별 '+count+'개">'+star.repeat(count)+'</span>';
+}
 function renderRoster(){
+ const rosterKinds=['cow',...STAGE_REWARDS],portraitScene=kind=>{const i=rosterKinds.indexOf(kind);return (i%4/3*100)+'% '+(Math.floor(i/4)/2*100)+'%';};
  $('roster-balance').textContent='◎ '+campaign.balance.toLocaleString('ko-KR');
- $('roster-count').textContent=draftParty.length+' / 5';$('roster-save').disabled=!validParty(draftParty);
- $('roster-slots').innerHTML=Array.from({length:5},(_,i)=>`<button data-party-remove="${i}" ${draftParty[i]?'':'disabled'} aria-label="${i+1}번 ${UNITS[draftParty[i]]?.name||'빈 자리'} 편성 해제"><small>${i+1}</small>${draftParty[i]?`<img src="${scene.previewTexture(draftParty[i]+'1')}" alt="" draggable="false"><span>${UNITS[draftParty[i]].name}</span>`:'<span>+</span>'}</button>`).join('');
- $('roster-choices').innerHTML=['cow',...STAGE_REWARDS].map(key=>[key,UNITS[key]]).map(([key,s])=>`<button class="roster-card" data-tier="${s.tier}" data-owned="${campaign.owned.includes(key)}" data-character="${key}" aria-label="${s.name} 살펴보기" aria-pressed="${rosterFocus===key}"><img src="${scene.previewTexture(key+'1')}" alt="" draggable="false"><strong>${s.name}</strong><small>${UNIT_TIERS[s.tier].label} · ${s.role.split(' · ')[0]}</small><em>${draftParty.includes(key)?'편성 중':campaign.owned.includes(key)?'보유':'🔒 '+(STAGE_REWARDS.indexOf(key)+1)}</em></button>`).join('');
- const s=UNITS[rosterFocus];$('roster-name').textContent=s.name;$('roster-role').textContent=s.role;$('roster-stats').textContent='♥ '+Math.round(s.hp)+' · ⚔ '+Math.round(s.damage)+' · ◎ '+s.cost;
+ $('roster-count').textContent=draftParty.length+' / 5';
+ $('roster-slots').innerHTML=Array.from({length:5},(_,i)=>`<button data-party-remove="${i}" data-tier="${UNITS[draftParty[i]]?.tier||'beast'}" data-rarity="${UNITS[draftParty[i]]?.rosterCard.rarity||'일반'}" ${draftParty[i]&&draftParty.length>1?'':'disabled'} aria-label="${i+1}번 ${UNITS[draftParty[i]]?.name||'빈 자리'} 편성 해제"><small>${i+1}</small>${draftParty[i]?`<span class="roster-card-art" style="--portrait-scene:${portraitScene(draftParty[i])}" aria-hidden="true"><img src="${scene.previewTexture(scene.previewIdleKey(draftParty[i]))}" data-icon="${scene.previewIdleKey(draftParty[i])}" data-preview-kind="${draftParty[i]}" alt="" draggable="false"></span><span class="roster-slot-name">${UNITS[draftParty[i]].name}</span>${rosterStars(UNITS[draftParty[i]].rosterCard.stars)}`:'<span class="roster-slot-name">+</span>'}</button>`).join('');
+ $('roster-choices').innerHTML=rosterKinds.map(key=>[key,UNITS[key]]).map(([key,s])=>`<button class="roster-card" style="--portrait-scene:${portraitScene(key)}" data-focused="${rosterFocus===key}" data-tier="${s.tier}" data-rarity="${s.rosterCard.rarity}" data-owned="${campaign.owned.includes(key)}" data-character="${key}" aria-label="${s.name} · ${s.rosterCard.rarity} · 별 ${s.rosterCard.stars}개 편성 ${draftParty.includes(key)?'해제':'선택'}" aria-pressed="${draftParty.includes(key)}"><span class="roster-card-art" aria-hidden="true"><img src="${scene.previewTexture(scene.previewIdleKey(key))}" data-icon="${scene.previewIdleKey(key)}" data-preview-kind="${key}" alt="" draggable="false"></span><strong>${s.name}</strong>${rosterStars(s.rosterCard.stars)}<small>${s.rosterCard.rarity}</small><em>${draftParty.includes(key)?'✓':campaign.owned.includes(key)?'':'🔒'}</em></button>`).join('')+'<div class="roster-card roster-card-empty" data-tier="beast" style="--portrait-scene:100% 100%" aria-hidden="true"><span class="roster-card-art"></span></div>';
+ const s=UNITS[rosterFocus];$('roster').dataset.tier=s.tier;$('roster').dataset.rarity=s.rosterCard.rarity;$('roster-stars').innerHTML=rosterStars(s.rosterCard.stars);$('roster-name').textContent=s.name;$('roster-role').textContent=s.rosterCard.rarity+' · '+s.role.split(' · ')[0];$('roster-stats').innerHTML='<span>체력 <b>'+Math.round(s.hp)+'</b></span><span>공격 <b>'+Math.round(s.damage)+'</b></span><span>소환 <b>'+s.cost+'</b></span>';
  $('roster-description').textContent='';
- const owned=campaign.owned.includes(rosterFocus),selected=draftParty.includes(rosterFocus),buy=$('roster-buy');buy.disabled=true;buy.textContent=owned?'✓ 보유':(STAGE_REWARDS.indexOf(rosterFocus)+1)+' 클리어';
- const select=$('roster-select');select.disabled=selected||draftParty.length===5||!owned;select.textContent=selected?'편성 중':owned?'편성':'🔒';
- const img=$('roster-preview');img.src=scene.previewTexture(rosterFocus+'1');rosterMotion={kind:rosterFocus,enemy:false,img,keys:Array.from({length:rosterFocus==='cow'?97:8},(_,i)=>rosterFocus+i),variants:new Map(),health:1,mode:'walk',started:performance.now(),frame:-1};
+ const img=$('roster-preview');img.src=scene.previewTexture(scene.previewIdleKey(rosterFocus));img.dataset.icon=scene.previewIdleKey(rosterFocus);img.dataset.previewKind=rosterFocus;rosterMotion={kind:rosterFocus,enemy:false,img,keys:Array.from({length:rosterFocus==='cow'?97:8},(_,i)=>rosterFocus+i),variants:new Map(),health:1,mode:'idle',started:performance.now(),frame:-1};hydrateIcons($('roster'));
 }
-async function openRoster(){if(!ready||preparing||['playing','paused'].includes(model.status))return;if(!scene.commonReady&&!await prepareFor('동료 편성',p=>scene.ensureCommon(p),openRoster))return;draftParty=[...campaign.party];renderRoster();openInfo($('roster'));}
+async function openRoster(){if(!ready||preparing||['playing','paused'].includes(model.status))return;if(!scene.commonReady&&!await prepareFor('동료 편성',p=>scene.ensureCommon(p),openRoster))return;draftParty=[...campaign.party];$('roster-motion-menu').open=false;renderRoster();openInfo($('roster'));}
 for(const id of ['roster-open','result-roster'])$(id).addEventListener('click',openRoster);
-$('roster-choices').addEventListener('click',e=>{const b=e.target.closest('[data-character]');if(!b)return;rosterFocus=b.dataset.character;renderRoster();});
-$('roster-slots').addEventListener('click',e=>{const b=e.target.closest('[data-party-remove]');if(!b||b.disabled)return;draftParty.splice(Number(b.dataset.partyRemove),1);renderRoster();});
-$('roster-select').addEventListener('click',()=>{if(draftParty.length<5&&!draftParty.includes(rosterFocus)&&campaign.owned.includes(rosterFocus)){draftParty.push(rosterFocus);renderRoster();}});
-$('roster-buy').addEventListener('click',()=>{if(campaign.buy(rosterFocus)){saveCampaign();renderRoster();}});
-$('roster-save').addEventListener('click',()=>{if(campaign.select(draftParty)){saveCampaign();renderSummonSlots();renderMap();$('roster').close();}});
+$('roster-choices').addEventListener('click',e=>{const b=e.target.closest('[data-character]');if(!b)return;rosterFocus=b.dataset.character;const index=draftParty.indexOf(rosterFocus);if(index>=0){if(draftParty.length>1)draftParty.splice(index,1);}else if(draftParty.length<5&&campaign.owned.includes(rosterFocus))draftParty.push(rosterFocus);renderRoster();});
+$('roster-slots').addEventListener('click',e=>{const b=e.target.closest('[data-party-remove]');if(!b||b.disabled||draftParty.length<=1)return;draftParty.splice(Number(b.dataset.partyRemove),1);renderRoster();});
+// The existing Campaign owns validation and persistence; closing commits only a changed draft.
+$('roster').addEventListener('close',()=>{if(draftParty.length===campaign.party.length&&draftParty.every((key,i)=>key===campaign.party[i]))return;if(campaign.select(draftParty)){saveCampaign();renderSummonSlots();renderMap();}});
 $('roster').querySelector('.dialog-close').addEventListener('click',()=>$('roster').close());
-$('roster-motions').addEventListener('click',e=>{const b=e.target.closest('[data-roster-motion]');if(b&&rosterMotion){rosterMotion.mode=b.dataset.rosterMotion;rosterMotion.started=performance.now();}});
-function renderLoadout(){
- $('loadout-slots').innerHTML=[0,1,2].map(i=>`<button data-remove="${i}" ${draftLoadout[i]?'':'disabled'}><kbd>${['Q','E','R'][i]}</kbd>${SKILLS[draftLoadout[i]]?.name||'비어 있는 자리'}${draftLoadout[i]?'<span>×</span>':''}</button>`).join('');
- $('loadout-choices').innerHTML=Object.entries(SKILLS).map(([key,s])=>{const i=draftLoadout.indexOf(key);return `<button class="skill-choice" data-skill="${key}" aria-pressed="${i>=0}" ${i<0&&draftLoadout.length===3?'disabled':''}><img src="${scene?.previewTexture(s.icon)||''}" alt="" draggable="false"><span class="choice-role">${s.role} ${i>=0?'· '+['Q','E','R'][i]+' 장착':''}</span><strong>${s.name}</strong><p>${s.description}</p><small>◎ ${s.cost} · 대기 ${s.cooldown}초</small></button>`;}).join('');
- $('loadout-count').textContent=draftLoadout.length+' / 3 선택';$('loadout-save').disabled=!validLoadout(draftLoadout);
+$('roster-motions').addEventListener('click',e=>{const b=e.target.closest('[data-roster-motion]');if(b&&rosterMotion){rosterMotion.mode=b.dataset.rosterMotion;rosterMotion.started=performance.now();$('roster-motion-menu').open=false;}});
+function renderLoadout(focusKey=draftLoadout[0]){
+ const focused=SKILLS[focusKey];$('loadout-detail-label').textContent=focused?.description||'기술을 눌러 장착하거나 해제하세요.';$('loadout-detail-label').setAttribute('aria-label',focused?focused.name+' 설명 펼치기':'기술 설명');
+ $('loadout-detail').textContent=focused?.description||'기술을 눌러 장착하거나 해제하세요.';
+ $('loadout-slots').innerHTML=[0,1,2].map(i=>`<button data-remove="${i}" ${draftLoadout[i]?'':'disabled'} aria-label="${i+1}번 ${SKILLS[draftLoadout[i]]?.name||'빈 자리'}${draftLoadout[i]?' 장착 해제':''}"><kbd>${i+1}</kbd>${draftLoadout[i]?`<img src="${scene?.previewTexture(SKILLS[draftLoadout[i]].icon)||''}" alt="" draggable="false">`:''}<span class="loadout-slot-name">${SKILLS[draftLoadout[i]]?.name||'빈 자리'}</span>${draftLoadout[i]?'<span class="loadout-slot-remove">×</span>':''}</button>`).join('');
+ $('loadout-choices').innerHTML=Object.entries(SKILLS).map(([key,s])=>{const i=draftLoadout.indexOf(key);return `<button class="skill-choice" data-skill="${key}" aria-pressed="${i>=0}" ${i<0&&draftLoadout.length===3?'disabled':''}><img src="${scene?.previewTexture(s.icon)||''}" alt="" draggable="false"><span class="choice-role">${s.role}</span><strong>${s.name}</strong><p>${s.description}</p><small>◎ ${s.cost} · ${s.cooldown}초</small></button>`;}).join('');
+ $('loadout-count').textContent=draftLoadout.length+' / 3 장착 · '+Object.keys(SKILLS).length+'가지';$('loadout-save').disabled=!validLoadout(draftLoadout);
 }
-async function openLoadout(){if(!ready||preparing||['playing','paused'].includes(model.status))return;if(!scene.commonReady&&!await prepareFor('필살기 편성',p=>scene.ensureCommon(p),openLoadout))return;draftLoadout=[...loadout];renderLoadout();openInfo($('loadout'));}
+async function openLoadout(){if(!ready||preparing||['playing','paused'].includes(model.status))return;if(!scene.commonReady&&!await prepareFor('필살기 편성',p=>scene.ensureCommon(p),openLoadout))return;draftLoadout=[...loadout];$('loadout-inspect').open=false;renderLoadout();openInfo($('loadout'));}
 for(const id of ['loadout-open','home-loadout'])$(id).addEventListener('click',openLoadout);
-$('loadout-choices').addEventListener('click',e=>{const b=e.target.closest('[data-skill]');if(!b||b.disabled)return;const k=b.dataset.skill;if(draftLoadout.includes(k))draftLoadout=draftLoadout.filter(v=>v!==k);else if(draftLoadout.length<3)draftLoadout.push(k);renderLoadout();});
+$('loadout-choices').addEventListener('click',e=>{const b=e.target.closest('[data-skill]');if(!b||b.disabled)return;const k=b.dataset.skill;if(draftLoadout.includes(k))draftLoadout=draftLoadout.filter(v=>v!==k);else if(draftLoadout.length<3)draftLoadout.push(k);renderLoadout(k);});
 $('loadout-slots').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(!b||b.disabled)return;draftLoadout.splice(Number(b.dataset.remove),1);renderLoadout();});
 $('loadout-save').addEventListener('click',()=>{if(!validLoadout(draftLoadout))return;loadout=[...draftLoadout];try{localStorage.setItem('saebyeokmun-loadout',JSON.stringify(loadout));}catch{}renderSkillSlots();if(model.status==='ready')renderMap();$('loadout').close();});
 $('loadout').querySelector('.dialog-close').addEventListener('click',()=>$('loadout').close());
@@ -330,8 +391,8 @@ function onReady(error,s){
   const title=document.createElement('h3');title.textContent=item.name;
   const body=document.createElement('p');body.textContent=item.text;
   const counter=document.createElement('p');counter.className='counter';counter.textContent=item.counter;
-  article.append(img,tag,title,body,counter);
-  if(item.source){const url=item.sourceUrl||item.url,source=document.createElement(url?'a':'p');source.className='source-note';source.textContent=item.source;if(url){source.href=url;source.target='_blank';source.rel='noreferrer';source.draggable=false;}article.append(source);}
+  const details=document.createElement('details'),summary=document.createElement('summary');details.setAttribute('name','codex-entry');summary.setAttribute('aria-label',item.name+' 설명·동작');summary.textContent='설명·동작';details.append(summary,body,counter);article.append(img,tag,title,details);
+  if(item.source){const url=item.sourceUrl||item.url,source=document.createElement(url?'a':'p');source.className='source-note';source.textContent=item.source;if(url){source.href=url;source.target='_blank';source.rel='noreferrer';source.draggable=false;}details.append(source);}
   if(item.motion||CODEX.includes(item)){
    const row=document.createElement('div');row.className='motion-controls';row.setAttribute('role','group');row.setAttribute('aria-label',item.name+' 동작 시험');
    const enemy=CODEX.includes(item),defaultMode='walk';
@@ -343,14 +404,14 @@ function onReady(error,s){
     const button=document.createElement('button');button.type='button';button.textContent=label;button.setAttribute('aria-label',item.name+' '+label);button.setAttribute('aria-pressed',String(mode===defaultMode));
     button.addEventListener('click',()=>{state.mode=mode;state.frame=-1;state.started=performance.now();state.buttons.forEach(b=>b.setAttribute('aria-pressed',String(b===button)));});state.buttons.push(button);row.append(button);
    }
-   article.append(row);
+   details.append(row);
    const healthRow=document.createElement('div');healthRow.className='motion-controls';healthRow.setAttribute('role','group');healthRow.setAttribute('aria-label',item.name+' 피해 상태');
    const healthButtons=[];
    for(const [health,label] of [[1,'멀쩡함'],[.7,'상처'],[.3,'큰 상처']]){
     const b=document.createElement('button');b.type='button';b.textContent=label;b.setAttribute('aria-label',item.name+' '+label);b.setAttribute('aria-pressed',String(health===1));
     b.addEventListener('click',()=>{state.health=health;state.frame=-1;healthButtons.forEach(other=>other.setAttribute('aria-pressed',String(other===b)));});healthButtons.push(b);healthRow.append(b);
    }
-   article.append(healthRow);motionPreviews.push(state);previewObserver?.observe(img);
+   details.append(healthRow);motionPreviews.push(state);previewObserver?.observe(img);
   }
   $(COMPANIONS.includes(item)?'companions-grid':'codex-grid').append(article);
  }
@@ -359,6 +420,8 @@ function onReady(error,s){
  scene.ensureCommon().then(()=>{renderSkillSlots();renderSummonSlots();}).catch(()=>{});
  renderAutoplay();
  if(requestedAutoplay)beginAutoplay();
+ else if(requestedStage!==null&&canEnterStage(requestedStage)){selectStage(requestedStage);start(null,openingEnabled&&requestedStage<2);}
+ else if(openingEnabled&&requestedStage===null){selectStage(0);start(null,true);}
 }
 function onEvents(events){
  if(events.some(e=>e.type==='coin')){coinAnimation?.cancel();coinAnimation=$('coins').animate([{transform:'scale(1)'},{transform:'scale(1.16)',color:'#be8f36'},{transform:'scale(1)'}],{duration:260});}
@@ -375,20 +438,20 @@ function onFrame(m,s){
  if($('codex').open||$('roster').open)for(const p of [...($('codex').open?motionPreviews:[]),...($('roster').open&&rosterMotion?[rosterMotion]:[])]){
   if(previewObserver&&p!==rosterMotion&&!visiblePreviews.has(p.img)){if(p.variants.size){p.variants.clear();p.frame=-1;p.img.removeAttribute('src');}continue;}
   if(ENEMIES[p.kind]&&!scene.previewReady(p.kind)){
-   if(!p.loading&&now>=(p.retryAt||0)){p.img.alt=p.kind+' · 그림 준비 중';p.loading=scene.ensurePreview(p.kind).then(()=>{p.frame=-1;p.variants.clear();p.img.alt=ENEMIES[p.kind].name;}).catch(()=>{p.retryAt=performance.now()+5000;p.img.alt='그림을 다시 준비합니다';}).finally(()=>{p.loading=null;});}continue;
+   if(!p.loading&&now>=(p.retryAt||0)){p.img.alt=ENEMIES[p.kind].name+' · 그림 준비 중';p.loading=scene.ensurePreview(p.kind).then(()=>{p.frame=-1;p.variants.clear();p.img.alt=ENEMIES[p.kind].name;}).catch(()=>{p.retryAt=performance.now()+5000;p.img.alt='그림을 다시 준비합니다';}).finally(()=>{p.loading=null;});}continue;
   }
-  const spec=p.enemy?ENEMY_STRIKE:MOTION[p.kind],elapsed=(now-p.started)/1000,phase=elapsed%((spec.duration||.64)+.7);
+  const spec=p.enemy?ENEMY_STRIKE:MOTION[p.kind],elapsed=(now-p.started)/1000*.4,phase=elapsed%((spec.duration||.64)+.7);
   const action=p.mode==='attack'&&phase<spec.duration?{elapsed:phase}:null;
   const dying=p.mode==='depart',deathDuration=p.kind==='reaper'?REAPER_DEPARTURE_TIME:p.enemy?(isBoss(p.kind)?2.7:2.1):1.8,deathProgress=Math.min(1,(elapsed%(deathDuration+1))/deathDuration);
   const frame=p.enemy?(action?4+enemyAttackFrame(phase):motionFrame(p.kind,elapsed,p.mode==='walk',null)):motionFrame(p.kind,p.mode==='walk'?elapsed:0,p.mode==='walk',action);
   const ability=isBoss(p.kind)?ENEMIES[p.kind].ability:null,castPhase=elapsed%((ability?.windup??2.6)+(ability?.duration??1.15)+.7);
   const bossKey=ability?bossPose(elapsed,p.mode==='walk',p.mode==='cast'&&castPhase>=ability.windup&&castPhase<ability.windup+ability.duration?{kind:ability.kind,elapsed:castPhase-ability.windup}:action?{...action,kind:'enemy'}:null,p.mode==='cast'&&castPhase<ability.windup?ability.windup-castPhase:0,p.kind):null;
-  const pose=['king','prince','minister','cavalry'].includes(p.kind)&&p.mode==='idle'?p.kind+'Idle0':p.kind==='healer'?healerPose(elapsed,p.mode==='walk',action?{...action,kind:'healer',phase:'treat'}:null,elapsed):bossKey||p.keys[frame];
+  const pose=!p.enemy&&p.mode==='idle'?scene.previewIdleKey(p.kind,elapsed):p.kind==='healer'?healerPose(elapsed,p.mode==='walk',action?{...action,kind:'healer',phase:'treat'}:null,elapsed):bossKey||p.keys[frame];
   const key=dying?(p.kind==='reaper'?'reaperDepart'+reaperDepartureFrame(deathProgress):p.enemy?'depart'+p.kind+enemyDepartureFrame(deathProgress,ENEMIES[p.kind]?.departureFrames):'defeat'+p.kind+(deathProgress<.32?0:1)):scene.injuryTexture(pose,p.kind,p.health,1);
 
   p.img.style.opacity=dying?String(1-Math.max(0,(deathProgress-.55)/.45)):'1';
   p.img.style.transform=dying&&p.kind==='reaper'?'translateY(-'+Math.min(1,deathProgress/.46)*9+'px)':'';
-  if(key!==p.frame){if(!p.variants.has(key))p.variants.set(key,scene.previewTexture(key));p.img.src=p.variants.get(key);p.frame=key;}
+  if(key!==p.frame){const src=p.variants.get(key)||scene.previewTexture(key);if(src){p.variants.set(key,src);p.img.src=src;p.img.hidden=false;p.frame=key;}}
  }
  if(now-lastFrame<70)return;lastFrame=now;
  renderAutoplay();
@@ -456,13 +519,13 @@ function updateDownload(p){
  $('download-bytes').textContent=p.total?`${mb(p.loaded)} / ${mb(p.total)} MB · 남은 용량 ${mb(Math.max(0,p.total-p.loaded))} MB`:'필요한 그림을 확인하고 있어요.';
  $('download-state').textContent=p.phase==='prepare'?`그림·동작 준비 ${p.prepared} / ${p.prepareTotal}`:p.phase==='waiting'?'준비 중':'다운로드';
 }
-async function prepareFor(title,work,retry){
+async function prepareFor(title,work,retry,covered=false){
  if(preparing)return false;preparing=true;const epoch=++entryEpoch;retryAssets=retry;
  $('download-title').textContent=title;$('download-retry').hidden=true;$('download-state').textContent='확인 중';
  updateDownload({loaded:0,total:0,percent:0,phase:'waiting'});
- fitPhoneDialogs();$('asset-loading').showModal();
+ fitPhoneDialogs();if(!covered)$('asset-loading').showModal();
  try{await work(p=>{if(epoch===entryEpoch)updateDownload(p);});if(epoch!==entryEpoch)return false;$('asset-loading').close();hydrateIcons();return true;}
- catch(error){if(epoch===entryEpoch){$('download-state').textContent=error.message;$('download-retry').hidden=false;}return false;}
+ catch(error){if(epoch===entryEpoch){$('download-state').textContent=error.message;$('download-retry').hidden=false;if(covered)$('asset-loading').showModal();}return false;}
  finally{preparing=false;}
 }
 function prefetchNext(stage){
@@ -476,4 +539,6 @@ $('asset-loading').addEventListener('cancel',e=>{e.preventDefault();showMap();})
 document.querySelector('.phone-screen').append($('asset-loading'));
 renderMap();renderSummonSlots();
 makeGame(model,onReady,onFrame,onEvents);
-if(openingEnabled&&!requestedAutoplay)showOpening();
+
+
+if(openingEnabled&&!requestedAutoplay&&(requestedStage===null||requestedStage<2))coverOpening();

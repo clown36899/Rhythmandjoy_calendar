@@ -1,0 +1,107 @@
+/* Stage-two illustration skin. Existing live buttons, labels and gauges remain owners. */
+body[data-area="1"][data-screen="game"] {--ink:#244842;--paper:#f5e9ce}
+body[data-area="1"][data-screen="game"] .game-shell{background:#f3e5cc}
+body[data-area="1"][data-screen="game"] img{user-select:none;-webkit-user-drag:none;pointer-events:none}
+body[data-area="1"][data-screen="game"] .hud{inset:3% 3% auto;height:12%;padding:0}
+body[data-area="1"][data-screen="game"] .hud .vital{width:22%;min-height:42px;padding:3px 9px 3px 3px;gap:7px;border:1px solid #8c9d84;border-radius:32px 7px 7px 32px;background:#203e3deb;box-shadow:inset 0 0 0 2px #e9ddbd24}
+body[data-area="1"][data-screen="game"] .hero-portrait{width:clamp(34px,4.8cqw,58px);height:clamp(34px,4.8cqw,58px);border:1px solid #e9c77d;background:#143735}
+body[data-area="1"][data-screen="game"] .vital .hud-label,body[data-area="1"][data-screen="game"] #hero-state{display:none}
+body[data-area="1"][data-screen="game"] .vital-copy .bar{height:7px;border:1px solid #2b665e;background:#162e2d}
+body[data-area="1"][data-screen="game"] .vital-values #hp-text{font:600 clamp(9px,1.25cqw,16px)/1.2 sans-serif;color:#fff5df}
+body[data-area="1"][data-screen="game"] .hud .journey--celestial{position:absolute;left:50%;top:0;transform:translateX(-50%);width:30%;min-width:150px;max-width:none;height:38px;padding:0;border:0;background:none;box-shadow:none;display:block}
+body[data-area="1"][data-screen="game"] .journey-place,body[data-area="1"][data-screen="game"] .sky-dial,body[data-area="1"][data-screen="game"] .journey-destination,body[data-area="1"][data-screen="game"] .route-start{display:none}
+body[data-area="1"][data-screen="game"] .journey--celestial .route-track{left:5px;right:17px;bottom:14px;height:3px;border:0;border-radius:1px;background:#365044}
+body[data-area="1"][data-screen="game"] .route-track::before{content:"";position:absolute;inset:-5px 0;pointer-events:none;background:radial-gradient(circle at 25% 50%,#d8c7a6 0 3px,#3c5043 3px 4px,transparent 4.5px),radial-gradient(circle at 50% 50%,#d8c7a6 0 3px,#3c5043 3px 4px,transparent 4.5px),radial-gradient(circle at 75% 50%,#d8c7a6 0 3px,#3c5043 3px 4px,transparent 4.5px)}
+body[data-area="1"][data-screen="game"] .journey--celestial .route-track i{height:3px;background:#55978b;box-shadow:none}
+body[data-area="1"][data-screen="game"] .journey--celestial .route-dot{width:23px;height:23px;top:-10px;margin-left:-11px;border:1px solid #bb9e61;border-radius:50%;background:#f1dfbd}
+body[data-area="1"][data-screen="game"] .route-gate{width:29px;height:34px;right:-23px;bottom:-8px;filter:none}
+body[data-area="1"][data-screen="game"] .stage-tools{top:3%;right:3%;gap:8px}
+body[data-area="1"][data-screen="game"] .stage-tools .small-round{width:clamp(44px,4.6cqw,60px);height:clamp(44px,4.6cqw,60px);min-width:44px;padding:10px;border:1px solid #e3d8b7;border-radius:50%;background:#284641;color:#fff5dc;box-shadow:inset 0 0 0 2px #8294878a,0 0 0 1px #456053}
+body[data-area="1"][data-screen="game"] .control-deck{display:block;inset:auto 0 0;height:24%;min-height:88px;padding:0;background:none;pointer-events:none}
+body[data-area="1"][data-screen="game"] .control-deck .movement{position:absolute;left:4%;bottom:8%;width:17%;min-width:0;display:flex;gap:3px;pointer-events:auto}
+body[data-area="1"][data-screen="game"] .movement .move-pair{gap:10px}
+body[data-area="1"][data-screen="game"] .move-pair button{width:clamp(44px,6.6cqw,80px);height:clamp(44px,6.6cqw,80px);min-height:44px;border:1px solid #e0d5b7;border-radius:50%;background:#274a44eb;color:#fff4d8;font:600 clamp(27px,3.9cqw,44px)/1 sans-serif;text-shadow:none;box-shadow:inset 0 0 0 3px #82918475,0 0 0 1px #46675c}
+body[data-area="1"][data-screen="game"] .movement .auto-button{order:1;min-height:20px;height:20px;padding:0 9px;border:1px solid #87978588;background:#f2e4cdbf;color:#31564c;font-size:8px;text-shadow:none}
+body[data-area="1"][data-screen="game"] .movement .auto-button[aria-pressed="true"]{background:#305c50;color:#fff2d0}
+body[data-area="1"][data-screen="game"] .party-count,body[data-area="1"][data-screen="game"] .battle-minimap{display:none}
+body[data-area="1"][data-screen="game"] .control-deck .actions{position:absolute;inset:0;display:block;pointer-events:none}
+body[data-area="1"][data-screen="game"] .summon-group{position:absolute;left:50%;bottom:3%;transform:translateX(-50%);width:40%;max-width:none;--summon-size:7.65cqw;pointer-events:auto}
+body[data-area="1"][data-screen="game"] .summon-picker{display:none}
+body[data-area="1"][data-screen="game"] .summon-group .action-row{display:flex;width:100%;gap:3px;padding:0 3px;overflow-x:auto;overscroll-behavior-x:contain;touch-action:pan-x}
+body[data-area="1"][data-screen="game"] .summon-group .action{flex:0 0 calc((100% - 12px)/5);width:calc((100% - 12px)/5);min-width:44px;height:calc(var(--summon-size) + 5px);border:1px solid #a9a87b;border-radius:5px;background:#eee2c7;box-shadow:inset 0 0 0 2px #e6d1a6,0 2px 3px #3d52312b;filter:none}
+body[data-area="1"][data-screen="game"] .summon-group .action[data-state="ready"]{border-color:#6b8a6e;box-shadow:inset 0 0 0 1px #ebd6a6}
+body[data-area="1"][data-screen="game"] .summon-group .action-art{inset:0;width:100%;height:100%;background:none}
+body[data-area="1"][data-screen="game"] .summon-group .action:not([data-card="painted"]) .action-art{inset:7px 4px 17px;width:auto;height:auto}
+body[data-area="1"][data-screen="game"] .summon-group .action strong{color:#303c2e;text-shadow:0 1px #fff0d5;font-size:clamp(7px,.82cqw,10px)}
+body[data-area="1"][data-screen="game"] .summon-group .unit-tier{display:none}
+body[data-area="1"][data-screen="game"] .summon-group .unit-count{font-size:6px;top:3px;right:3px;line-height:9px;background:#244d41a6;border:0;color:#f4e2ba}
+body[data-area="1"][data-screen="game"] .summon-group .coin-bank{min-height:18px;border:1px solid #82927b;border-radius:6px;background:#24423fed;box-shadow:inset 0 0 0 1px #a7ac835e;color:#ffdfa0}
+body[data-area="1"][data-screen="game"] .coin-bank #coin-fill{background:linear-gradient(90deg,#d4a44b,#ffe09a)}
+body[data-area="1"][data-screen="game"] .skill-group{position:absolute;right:3%;bottom:12%;width:23%;height:auto;pointer-events:none}
+body[data-area="1"][data-screen="game"] .skill-group .action-row{display:flex;justify-content:flex-end;align-items:center;gap:7px}
+body[data-area="1"][data-screen="game"] .skill-group .action,body[data-area="1"][data-screen="game"] .skill-group .action:nth-child(n){position:relative;inset:auto;flex:none;width:clamp(44px,6.6cqw,80px);height:clamp(44px,6.6cqw,80px);min-width:44px;margin:0;padding:0;border:1px solid #d7cda7;border-radius:50%;outline:1px solid #476a5d;outline-offset:1px;background:#1e4949;box-shadow:inset 0 0 0 3px #6d9d8d66}
+body[data-area="1"][data-screen="game"] .skill-group .action-art,body[data-area="1"][data-screen="game"] .skill-group .action:nth-child(n) .action-art{inset:5px 6px 13px;height:auto;width:auto}
+body[data-area="1"][data-screen="game"] .skill-group .action strong,body[data-area="1"][data-screen="game"] .skill-group .action:nth-child(n) strong{inset:auto 0 5px;font-size:clamp(6px,.75cqw,9px);line-height:10px;color:#f2e9ca;text-shadow:none}
+body[data-area="1"][data-screen="game"] .skill-group .action small{top:-5px;right:0;font-size:7px;background:#23493ed9;color:#ffdea0;border-color:#c6c18c88}
+body[data-area="1"][data-screen="game"] #team-skills{right:3%;bottom:calc(100% + 7px)}
+body[data-area="1"][data-screen="game"] #callout{display:none}
+@container battle (max-width:600px){body[data-area="1"][data-screen="game"] .summon-group{width:43%;--summon-size:8.1cqw}body[data-area="1"][data-screen="game"] .skill-group{right:2%;width:25%}body[data-area="1"][data-screen="game"] .skill-group .action-row{gap:4px}body[data-area="1"][data-screen="game"] .move-pair{gap:4px}}
+/* Rosewood skin: retain existing control positions and the wallet beneath cards. */
+body[data-area="1"][data-screen="game"] .hud .vital{position:relative;width:26%;height:clamp(44px,7cqw,68px);min-height:0;padding:0;gap:0;border:0;border-radius:0;background:transparent url("./assets/stage2-wood-hp-v145.webp") center/100% 100% no-repeat;box-shadow:none}
+body[data-area="1"][data-screen="game"] .hero-portrait{position:absolute;left:11%;top:50%;transform:translateY(-50%);width:22%;height:auto;aspect-ratio:1;border:0;background:none;box-shadow:none}
+body[data-area="1"][data-screen="game"] .hero-portrait img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+body[data-area="1"][data-screen="game"] .vital-copy{position:absolute;left:38%;right:11%;top:37%;height:28%;padding:0}
+body[data-area="1"][data-screen="game"] .vital-copy .bar{position:absolute;inset:0;height:100%;margin:0;border:1px solid #130d08;border-radius:3px;background:#240e0a;overflow:hidden}
+body[data-area="1"][data-screen="game"] #health-fill{background:linear-gradient(#e74b35,#ba211c 58%,#8d1915);box-shadow:inset 0 1px #fbab78a0}
+body[data-area="1"][data-screen="game"] .vital-values{position:absolute;inset:0;display:grid;place-items:center}
+body[data-area="1"][data-screen="game"] .vital-values #hp-text{font:700 clamp(9px,1.35cqw,16px)/1 sans-serif;color:#fff2d0;text-shadow:0 1px 2px #2a0f08}
+body[data-area="1"][data-screen="game"] .hud .journey--celestial{height:clamp(44px,7cqw,68px);background:transparent url("./assets/stage2-wood-route-v145.webp") center/100% 100% no-repeat}
+body[data-area="1"][data-screen="game"] .journey-destination{display:block;position:absolute;inset:24% 25% auto;text-align:center}
+body[data-area="1"][data-screen="game"] .journey-destination #distance{font:700 clamp(10px,1.6cqw,19px)/1 sans-serif;color:#f5ddad;text-shadow:0 1px #0c0805}
+body[data-area="1"][data-screen="game"] #route-remaining{display:none}
+body[data-area="1"][data-screen="game"] .journey--celestial .route-track{left:22%;right:25%;bottom:27%;background:#0c0907}
+body[data-area="1"][data-screen="game"] .journey--celestial .route-track i{background:#d5a149}
+body[data-area="1"][data-screen="game"] .journey--celestial .route-dot{width:15px;height:15px;top:-6px;margin-left:-7px;border:1px solid #f9dfa0;background:#e2ad47;box-shadow:inset 0 0 0 2px #9c692e}
+body[data-area="1"][data-screen="game"] .route-dot img{display:none}
+body[data-area="1"][data-screen="game"] .route-gate{width:22px;height:27px;right:-21px;bottom:-7px;filter:sepia(.65) brightness(1.3)}
+body[data-area="1"][data-screen="game"] .stage-tools .small-round,body[data-area="1"][data-screen="game"] .move-pair button{border:0;border-radius:0;background:transparent url("./assets/stage2-wood-button-v145.webp") center/100% 100% no-repeat;color:#f6dfad;box-shadow:none;text-shadow:0 1px 2px #140b05}
+body[data-area="1"][data-screen="game"] .movement .auto-button{border-color:#997144;border-radius:3px;background:#352017ed;color:#e4c594}
+body[data-area="1"][data-screen="game"] .movement .auto-button[aria-pressed="true"]{background:#785022;color:#fff0c3}
+body[data-area="1"][data-screen="game"] .summon-group .action,body[data-area="1"][data-screen="game"] .summon-group .action[data-state="ready"]{padding:0;border:0;border-radius:0;background:transparent url("./assets/stage2-wood-card-v145.webp") center/100% 100% no-repeat;box-shadow:none;filter:none;overflow:hidden}
+body[data-area="1"][data-screen="game"] .summon-group .action .action-art,body[data-area="1"][data-screen="game"] .summon-group .action:not([data-card="painted"]) .action-art{inset:11% 12% auto;width:76%;height:61%;transform:none;background:none;overflow:hidden}
+body[data-area="1"][data-screen="game"] .summon-group .action[data-card="painted"] .action-art img{position:absolute;left:-7%;top:-17%;width:114%;height:150%;max-width:none;object-fit:fill}
+body[data-area="1"][data-screen="game"] .summon-group .action:not([data-card="painted"]) .action-art img{width:100%;height:100%;object-fit:contain}
+body[data-area="1"][data-screen="game"] .summon-group .action strong{position:absolute;inset:auto 13% 26%;margin:0;line-height:9px;text-align:center;white-space:nowrap;color:#2d1b0d;text-shadow:0 1px #fff0d5;font-size:clamp(6px,.75cqw,9px);background:#f5e1bca8}
+body[data-area="1"][data-screen="game"] .summon-group .action .unit-count{font-size:6px;top:12%;right:15%;line-height:9px;padding:0 2px;background:#3a271bd9;border:0;color:#fbe5bb;z-index:3}
+body[data-area="1"][data-screen="game"] .summon-group .action small,body[data-area="1"][data-screen="game"] .summon-group .action[data-card="painted"] small{inset:auto 13% 8%;margin:0;border:0;border-radius:0;line-height:10px;font-size:clamp(7px,.95cqw,11px);background:none;color:#34200e;text-shadow:none;text-align:center}
+body[data-area="1"][data-screen="game"] .summon-group .action[data-state="cost"] small::after{content:none}
+body[data-area="1"][data-screen="game"] .summon-group .action[data-state="cost"] small{color:#953d27}
+body[data-area="1"][data-screen="game"] .summon-group .action[data-state="full"]::after{inset:38% 16% auto;background:#2c1a12cc;color:#f8deaa;border:1px solid #ae8148;border-radius:2px;font-size:8px;padding:1px 0}
+body[data-area="1"][data-screen="game"] .summon-group .action .cooldown{inset:auto 12% 8%;width:76%;max-height:80%;border-radius:0;background:#20130d66}
+body[data-area="1"][data-screen="game"] .summon-group .hud-right{margin:2px 0 0;padding:0 3px}
+body[data-area="1"][data-screen="game"] .summon-group .coin-bank{min-height:20px;height:20px;padding:3px 16%;grid-template-columns:11px 25px 1fr;gap:3px;border:0;border-radius:0;background:transparent url("./assets/stage2-coin-v2-v146.webp") center/100% 100% no-repeat;box-shadow:none;color:#f8d694}
+body[data-area="1"][data-screen="game"] .coin-bank #coins{font:700 10px/14px sans-serif;color:#f7dfb1}
+body[data-area="1"][data-screen="game"] .coin-bank #coin-gauge{height:5px;background:#130c07;border:1px solid #a57938;border-radius:2px}
+body[data-area="1"][data-screen="game"] .coin-bank #coin-fill{background:linear-gradient(#ffe3a1,#ca8c28);border-radius:1px}
+body[data-area="1"][data-screen="game"] .skill-group .action,body[data-area="1"][data-screen="game"] .skill-group .action:nth-child(n){border:0;border-radius:0;outline:0;background:transparent url("./assets/stage2-wood-skill-v145.webp") center/100% 100% no-repeat;box-shadow:none}
+body[data-area="1"][data-screen="game"] .skill-group .action-art,body[data-area="1"][data-screen="game"] .skill-group .action:nth-child(n) .action-art{inset:16% 18% 27%;height:auto;width:auto}
+body[data-area="1"][data-screen="game"] .skill-group .action-art img{filter:drop-shadow(0 2px 2px #170d0866)}
+body[data-area="1"][data-screen="game"] .skill-group .action strong,body[data-area="1"][data-screen="game"] .skill-group .action:nth-child(n) strong{inset:auto 9% 12%;font-size:clamp(6px,.75cqw,9px);line-height:10px;color:#f7dfab;text-shadow:0 1px #000}
+body[data-area="1"][data-screen="game"] .skill-group .action small{background:#332014ed;color:#ffdfa0;border:1px solid #b58b51}
+body[data-area="1"][data-screen="game"] .actions .action:hover:not(:disabled),body[data-area="1"][data-screen="game"] .move-pair button:hover,body[data-area="1"][data-screen="game"] .stage-tools .small-round:hover{filter:brightness(1.13)}
+body[data-area="1"][data-screen="game"] .actions .action:active:not(:disabled),body[data-area="1"][data-screen="game"] .move-pair button:active{filter:brightness(.85)}
+body[data-area="1"][data-screen="game"] .skill-group .action:hover:not(:disabled),body[data-area="1"][data-screen="game"] .skill-group .action:active:not(:disabled){filter:none}
+
+
+body[data-area="1"][data-screen="game"] .next-map-loading{display:none}
+body[data-area="1"][data-screen="game"] .autoplay-panel{background:#2b1c15ed;border-color:#9c784a;color:#f7deb3;box-shadow:inset 0 0 0 1px #ad75452e;border-radius:3px}
+body[data-area="1"][data-screen="game"] .autoplay-panel button,body[data-area="1"][data-screen="game"] .autoplay-panel select{background:#453022;color:#f7ddb0;border-color:#a47b4d}
+
+/* The regenerated long strip retains its authored proportions. */
+body[data-area="1"][data-screen="game"] .summon-group .coin-bank{height:auto;min-height:24px;aspect-ratio:10/1;padding:0 6% 0 5%;grid-template-columns:16px 27px 1fr;gap:4px;background-image:url("./assets/stage2-coin-v2-v146.webp");background-size:100% auto}
+body[data-area="1"][data-screen="game"] .coin-bank #coin-gauge{height:7px;margin:0 2% 0 5%}
+/* Place live values inside the new artwork's actual recessed channel. */
+body[data-area="1"][data-screen="game"] .summon-group .coin-bank{aspect-ratio:1960/219;padding:0;display:block;background-size:100% 100%}
+body[data-area="1"][data-screen="game"] .coin-bank .coin-symbol{display:none}
+body[data-area="1"][data-screen="game"] .coin-bank #coins{position:absolute;left:3.5%;width:12%;top:50%;transform:translateY(-50%);text-align:center;font-size:clamp(9px,1.3cqw,15px);line-height:1}
+body[data-area="1"][data-screen="game"] .coin-bank #coin-gauge{position:absolute;inset:35% 8% auto 16%;height:30%;margin:0;border:1px solid #221207;background:#130c07}
