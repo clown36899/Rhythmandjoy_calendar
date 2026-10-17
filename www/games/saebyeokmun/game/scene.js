@@ -1,9 +1,9 @@
-import {HEALER_VIDEO} from './healer-motion.js?v=selected137-flow';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected137-flow';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=137-flow';
+import {HEALER_VIDEO} from './healer-motion.js?v=selected138-cards';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=selected138-cards';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=138-cards';
 import {AssetDownloads} from './downloads.js?v=70';
 import {VIDEO_DELIVERY} from './video-delivery.js?v=133';
-import {ASSET_BYTES} from './asset-sizes.js?v=selected137-flow';
+import {ASSET_BYTES} from './asset-sizes.js?v=selected138-cards';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -175,9 +175,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const heal=this.cache.json.get('cowHealingMeta');
     for(let i=0;i<COW_HEAL.frames;i++){const key='cowRecoverVideo'+i;this.grounding.set(key,heal.ground);this.celScale.set(key,heal.scale);this.registrationX.set(key,heal.originX);}
     for(const spec of [COW_REST,...COW_IDLE]){const idle=this.cache.json.get(spec.asset+'Meta');for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;this.grounding.set(key,idle.ground);this.celScale.set(key,idle.scale);this.registrationX.set(key,idle.originX);}}}
-    // Walking always has a supporting foot: keep the slicer's per-cel measurement.
+    // Idle and walking always have a supporting foot: keep the measured per-cel contact.
     // Running retains the registered floor so airborne poses do not stick to the ground.
-    for(const clips of Object.values(VIDEO_MOTION))for(const [name,spec] of Object.entries(clips))for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;if(name!=='walk'||!this.grounding.has(key))this.grounding.set(key,name==='walk'?VIDEO_DELIVERY[spec.asset].ground[i]:spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
+    for(const clips of Object.values(VIDEO_MOTION))for(const [name,spec] of Object.entries(clips))for(let i=0;i<spec.frames;i++){const key=spec.prefix+i;const planted=name==='idle'||name==='walk';if(!planted||!this.grounding.has(key))this.grounding.set(key,planted?VIDEO_DELIVERY[spec.asset].ground[i]:spec.ground);this.celScale.set(key,spec.scale);this.registrationX.set(key,spec.originX);}
     if(this.videoFrameIndex)for(const clips of Object.values(VIDEO_MOTION)){await this.decodeVideo(clips.idle.asset+':0');this.videoCel(clips.idle.prefix+'0');}
     this.initializeWorld();this.commonReady=true;
    })();try{await this.commonPromise;}finally{this.commonPromise=null;}
@@ -239,7 +239,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   videoPage(frame,native=false){
    const d=VIDEO_DELIVERY[frame.spec.asset],[,,nativeWidth,nativeHeight]=d.crop;
    // Retain at least 1.25 source texels per framebuffer pixel, including density.
-   const target=(BODY_HEIGHT[frame.kind]||188)*(AREAS[model.stage].actorScale||1)*frame.spec.scale*(native?Infinity:this.unit||Infinity)*1.25;
+   const target=this.actorHeight(BODY_HEIGHT[frame.kind]||188)*frame.spec.scale*(native?Infinity:this.unit||Infinity)*1.25;
    const h=Math.min(nativeHeight,Math.ceil(target/32)*32),w=Math.ceil(nativeWidth*h/nativeHeight);
    return {key:frame.spec.asset+':gpu:'+h+':'+Math.floor(frame.index/VIDEO_PAGE_FRAMES),w,h,g:d.gutter};
   }
@@ -583,8 +583,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
     let x=tiles?part.x+Math.floor(i/tiles.length)*total-((this.offset*PARALLAX.ground%total)+total)%total:part.x-this.offset*PARALLAX.ground;
     if(!tiles&&model.status==='ready')x=((x+part.width)%total+total)%total-part.width;
     const foot=tiles?part.foot:area.roadFeet?.[i]??part.foot;
-    im.setTexture(tiles?area.roadAtlas?area.texture+'RoadAtlas':area.texture+'Road'+i%tiles.length:waterway?'nightRoad':area.ground,tiles?area.roadAtlas?part.frame:'__BASE':part.frame).setFlipX(!!area.roadFlipX).setPosition(x,GROUND-foot).setDisplaySize(part.width+(tiles?0:.5),part.height).setTint(tiles||day?0xffffff:0xd7e2e5).setVisible((!waterway||!!tiles)&&x<vw&&x+part.width>0);
-    im.setCrop();if(area.roadTopTrim&&tiles){const sourceHeight=part.sourceHeight??part.height,scaleY=part.height/sourceHeight,cut=Math.round(part.top+area.roadTopTrim*(Number(this.game?.canvas?.dataset?.renderDensity)||1)/((this.unit||1)*scaleY));im.setCrop(0,cut,part.width,sourceHeight-cut);}
+    im.setTexture(tiles?area.roadAtlas?area.texture+'RoadAtlas':area.texture+'Road'+i%tiles.length:waterway?'nightRoad':area.ground,tiles?area.roadAtlas?part.frame:'__BASE':part.frame).setFlipX(!!area.roadFlipX).setPosition(x,GROUND-foot+this.worldPixels(area.groundOffset||0)).setDisplaySize(part.width+(tiles?0:.5),part.height).setTint(tiles||day?0xffffff:0xd7e2e5).setVisible((!waterway||!!tiles)&&x<vw&&x+part.width>0);
+    im.setCrop();if(area.roadTopTrim&&tiles){const sourceHeight=part.sourceHeight??part.height,scaleY=part.height/sourceHeight,cut=Math.round(part.top+this.worldPixels(area.roadTopTrim)/scaleY);im.setCrop(0,cut,part.width,sourceHeight-cut);}
    });
    // Endless water has no artificial walking boundary or decorative land islands.
    for(let i=0;i<(waterway?0:12);i++){const x=((i*181+t*5)%Math.max(1,vw)),y=GROUND-25+Math.sin(t*.8+i)*17;water.fillStyle(0xdceab3,.2+.3*Math.sin(t*2+i)**2);this.paintCircle(water,x,y,1.7);}
@@ -727,7 +727,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const level=injuryLevel(hp,maxHp);if(!level||!WOUNDS[kind])return base;
    const frame=this.videoFrameIndex?.get(base),d=frame?VIDEO_DELIVERY[frame.spec.asset]:null,page=frame?this.videoPage(frame):null,source=this.textures.get(page?.key||base).getSourceImage();
    const nativeWidth=d?.crop[2]??source.width,nativeHeight=d?.crop[3]??source.height;
-   const target=overlay?(page?.h??Math.ceil((BODY_HEIGHT[kind]||188)*(AREAS[model.stage].actorScale||1)*(this.unit||2)*1.25/32)*32):Math.ceil((BODY_HEIGHT[kind]||188)*2);
+   const target=overlay?(page?.h??Math.ceil(this.actorHeight(BODY_HEIGHT[kind]||188)*(this.unit||2)*1.25/32)*32):Math.ceil((BODY_HEIGHT[kind]||188)*2);
    const height=Math.min(nativeHeight,target),width=Math.max(1,Math.round(height*nativeWidth/nativeHeight));
    // Battle overlays follow the same framebuffer profile as their body. Native
    // collection portraits retain their original path; resizing never reuses a smaller stain.
@@ -776,20 +776,23 @@ export function makeGame(model,onReady,onFrame,onEvents){
    image.setTexture(texture).setVisible(true).setOrigin(.5,.5).setFlipX(body.flipX).setDisplaySize(body.displayWidth*r[2],body.displayHeight*r[3]).setPosition(body.x+dx*Math.cos(a)-dy*Math.sin(a),body.y+dx*Math.sin(a)+dy*Math.cos(a)).setAngle(body.angle||0).setAlpha(body.alpha??1);
    if(body.isTinted)(body.tintFill?image.setTintFill(body.tintTopLeft):image.setTint(body.tintTopLeft));else image.clearTint();if(!AREAS[model.status==='ready'?this.previewAreaIndex:model.stage].actorFloors)this.root.bringToTop(image);
   }
+  worldPixels(pixels){return pixels*(Number(this.game?.canvas?.dataset?.renderDensity)||1)/(this.unit||1);}
+  actorHeight(height){const area=AREAS[model.status==='ready'?(this.previewAreaIndex??model.stage):model.stage];return height*(area.actorScale||1)+this.worldPixels(area.actorHeightAdd||0);}
   placeOnGround(image,x,height,groundY=GROUND){
-   const key=image.celKey||image.texture.key,frame=this.videoFrameIndex?.get(key),crop=frame?VIDEO_DELIVERY[frame.spec.asset].crop:null,src=crop?{width:crop[2],height:crop[3]}:image.texture.getSourceImage();height*=(this.celScale.get(key)??1)*(AREAS[model.stage].actorScale||1);
+   const key=image.celKey||image.texture.key,frame=this.videoFrameIndex?.get(key),crop=frame?VIDEO_DELIVERY[frame.spec.asset].crop:null,src=crop?{width:crop[2],height:crop[3]}:image.texture.getSourceImage();height=this.actorHeight(height)*(this.celScale.get(key)??1);
    const rx=this.registrationX.get(key)??.5;
    image.setOrigin(image.flipX?1-rx:rx,this.grounding.get(key)??1).setDisplaySize(height*src.width/src.height,height).setPosition(x,groundY).setAngle(0);
    if(AREAS[model.stage].ground==='water'){const pulse=.5+.5*Math.sin(model.time*2+x*.02);this.shadows.lineStyle(1,0xeaf5ff,.28);this.shadows.strokeEllipse(x,groundY+2,Math.min(130,image.displayWidth*.8)+pulse*9,10+pulse*3);return;}
    const contactWidth=Math.min(image.displayWidth*.92,image.displayHeight*1.15);
-   this.shadows.fillStyle(0x18221f,.24);this.shadows.fillEllipse(x,groundY+3,contactWidth,12);
-   this.shadows.fillStyle(0x101916,.48);this.shadows.fillEllipse(x,groundY+1,contactWidth*.84,5);
+   this.shadows.fillStyle(0x18221f,.24);this.shadows.fillEllipse(x,groundY+1,contactWidth,12);
+   this.shadows.fillStyle(0x101916,.48);this.shadows.fillEllipse(x,groundY,contactWidth*.84,5);
   }
   actorGround(key){
-   const lanes=AREAS[model.status==='ready'?this.previewAreaIndex:model.stage].actorFloors;
+   const area=AREAS[model.status==='ready'?this.previewAreaIndex:model.stage],lanes=area.actorFloors;
    if(!lanes)return GROUND;
-   if(key==='girl'||key==='hero')return (lanes[0]+lanes[lanes.length-1])/2;
-   return lanes[(Number(String(key).slice(1))||0)%lanes.length];
+   const shift=this.worldPixels(area.groundOffset||0);
+   if(key==='girl'||key==='hero')return (lanes[0]+lanes[lanes.length-1])/2+shift;
+   return lanes[(Number(String(key).slice(1))||0)%lanes.length]+shift;
   }
   trackContact(key,kind,walk,moving,x,groundY=GROUND){
    const beat=Math.floor(walk*MOTION[kind].walkFps/(MOTION[kind].walkFrames||4)*2),previous=this.contacts.get(key);
@@ -863,7 +866,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const g=this.decor,front=this.fx,area=AREAS[model.stage],baseStyle=GATE_STYLES[STAGES[model.stage].gateStyle],style=area.gateFile?{...baseStyle,texture:area.texture+'Gate',color:area.gateColor??baseStyle.color}:baseStyle,gate=model.enemies.find(e=>e.type==='gate');
    const endedAt=model.gateBrokenAt,broken=endedAt!==undefined&&endedAt!==null;
    const p=broken?Math.min(1,(model.time-endedAt)/GATE_BREAK_TIME):0,ratio=gate?Math.max(0,gate.hp/gate.maxHp):broken?0:1;
-   const visible=!!model.portal&&p<1&&x>-330&&x<this.vw+330,h=area.gateHeight||350,plane=area.gateGround??GROUND,floor=area.gateOrigin?plane:plane+13,origin=area.gateOrigin||[.5,1],color=style.color,mode=style.destruction;
+   const visible=!!model.portal&&p<1&&x>-330&&x<this.vw+330,h=area.gateHeight||350,plane=(area.gateGround??GROUND)+this.worldPixels(area.groundOffset||0),floor=area.gateOrigin?plane:plane+13,origin=area.gateOrigin||[.5,1],color=style.color,mode=style.destruction;
    this.gate.setTexture(style.texture);const source=this.gate.texture.getSourceImage(),w=h*source.width/source.height;
    const tremor=gate?.hit>0?Math.sin(t*95)*4:0;
    this.gate.setOrigin(...origin).setPosition(x+tremor,floor).setDisplaySize(w,h).setVisible(visible&&!broken).setAlpha(1).setTint(ratio<.34?0xc0bbb0:0xffffff);
@@ -1029,7 +1032,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(!enemy&&!moving&&!action&&hit<=0&&!(type==='keeper'&&model.keeperRank)){const recovery=this.recoveryCel(type,Number(key.slice(1)));if(recovery)image.setTexture(recovery);}
    if(!enemy&&hit>0&&!['cow','spearman','archer'].includes(type))image.setTexture('hurt'+(type==='keeper'&&model.keeperRank?'keeperBrush':type));
    }
-   const baseHeight=BODY_HEIGHT[type]||130,height=baseHeight*(AREAS[model.stage].actorScale||1);
+   const baseHeight=BODY_HEIGHT[type]||130,height=this.actorHeight(baseHeight);
    this.placeOnGround(image,x-this.offset,baseHeight,groundY);
    if(!AREAS[model.status==='ready'?this.previewAreaIndex:model.stage].actorFloors)this.root.bringToTop(image);
    if(enemy&&action?.kind==='enemy'){
@@ -1291,7 +1294,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
      for(let i=0;i<6;i++){g.lineStyle(2,0xc8f6f4,tail*.8);g.lineBetween(xx+i*17,yy+4+i%2*4,xx+110+i*19,yy+4+i%2*4);}
     }
     if(e.type==='depart'){
-     const x=e.x-this.offset,h=BODY_HEIGHT[e.kind]*(e.kind==='boss'?.64:1)*(AREAS[model.stage].actorScale||1),sprite=e.sprite;
+     const x=e.x-this.offset,h=this.actorHeight(BODY_HEIGHT[e.kind]*(e.kind==='boss'?.64:1)),sprite=e.sprite;
      if(e.kind==='reaper'){
       // The same man lifts his chin and opens his arms; only light leaves the eyes.
       const lift=Math.min(1,p/.46),rise=28*(lift*lift*(3-2*lift));
@@ -1360,8 +1363,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // Small distance markers make scrolling legible, rather than a static left-side base.
    for(let p=800;p<model.roadEnd&&AREAS[model.stage].ground!=='water';p+=800){
     const x=p-this.offset;if(x<-50||x>vw+50)continue;
-    this.decor.fillStyle(0x978367,.5);this.decor.fillRect(x,GROUND-35,4,35);
-    this.decor.lineStyle(1,0xb19b75,.65);this.decor.lineBetween(x-12,GROUND-35,x+19,GROUND-35);
+    const floor=GROUND+this.worldPixels(AREAS[region].groundOffset||0);
+    this.decor.fillStyle(0x978367,.5);this.decor.fillRect(x,floor-35,4,35);
+    this.decor.lineStyle(1,0xb19b75,.65);this.decor.lineBetween(x-12,floor-35,x+19,floor-35);
    }
    const heroX=intro?vw*.68:model.x-this.offset;
    const walking=intro||model.moving!==0;

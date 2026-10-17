@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=137-flow';
-import {Journey} from './game/model.js?v=137-flow';
+import {Campaign} from './game/campaign.js?v=138-cards';
+import {Journey} from './game/model.js?v=138-cards';
 import {Autoplay} from './game/autoplay.js?v=70';
-import {makeGame} from './game/scene.js?v=selected137-flow';
-import {Soundscape} from './game/audio.js?v=selected137-flow';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=137-flow';
+import {makeGame} from './game/scene.js?v=selected138-cards';
+import {Soundscape} from './game/audio.js?v=selected138-cards';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=138-cards';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -258,7 +258,7 @@ $('codex').addEventListener('click',e=>{if(e.target===$('codex')){const r=$('cod
 for(const dialog of infoDialogs)dialog.addEventListener('close',completeInfo);
 function renderSkillSlots(){
  $('team-skills').innerHTML=Object.entries(TEAM_SKILLS).map(([key,s])=>`<button class="action team-action" id="action-${key}" data-action="${key}" hidden><span class="action-art"><img data-icon="${s.icon}" alt="" draggable="false"></span><strong>${s.name}</strong><small>5인 합동</small><span class="cooldown"></span></button>`).join('');
- $('skill-slots').innerHTML=(autoplay.active?['charm','stomp','shelter']:loadout).map((key,i)=>{const s=SKILLS[key];return `<button class="action" id="action-${key}" data-action="${key}"><span class="action-role magic">${s.role}</span><kbd>${['Q','E','R'][i]}</kbd><span class="action-art"><img data-icon="${s.icon}" alt="" draggable="false"></span><strong>${key==='rush'?'해태 돌진':key==='stomp'?'발구름':s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
+ $('skill-slots').innerHTML=(autoplay.active?['charm','stomp','shelter']:loadout).map((key,i)=>{const s=SKILLS[key];return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}"><span class="action-role magic">${s.role}</span><kbd>${['Q','E','R'][i]}</kbd><span class="action-art"><img data-icon="${s.icon}" alt="" draggable="false"></span><strong>${key==='rush'?'해태 돌진':key==='stomp'?'발구름':s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
  if(scene)for(const id of ['skill-slots','team-skills'])$(id).querySelectorAll('[data-icon]').forEach(img=>{img.src=scene.previewTexture(img.dataset.icon);});
 }
 function renderTeamSkills(m,s){
@@ -281,14 +281,14 @@ function hydrateIcons(root=document){
  }
 }
 function renderSummonSlots(){
- $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-count">0/10</span><span class="action-art"><img data-icon="${icon}" src="${scene?.previewTexture(icon)||''}" alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
+ $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-tier">${['Ⅰ','Ⅱ','Ⅲ','Ⅳ'][UNIT_TIERS[s.tier].level-1]} ${UNIT_TIERS[s.tier].label}</span><span class="unit-count">0/10</span><span class="action-art"><img data-icon="${icon}" src="${scene?.previewTexture(icon)||''}" alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
  lastKeeperRank=-1;hydrateIcons($('summon-slots'));
 }
 function renderRoster(){
  $('roster-balance').textContent='◎ '+campaign.balance.toLocaleString('ko-KR');
  $('roster-count').textContent=draftParty.length+' / 5';$('roster-save').disabled=!validParty(draftParty);
  $('roster-slots').innerHTML=Array.from({length:5},(_,i)=>`<button data-party-remove="${i}" ${draftParty[i]?'':'disabled'} aria-label="${i+1}번 ${UNITS[draftParty[i]]?.name||'빈 자리'} 편성 해제"><small>${i+1}</small>${draftParty[i]?`<img src="${scene.previewTexture(draftParty[i]+'1')}" alt="" draggable="false"><span>${UNITS[draftParty[i]].name}</span>`:'<span>+</span>'}</button>`).join('');
- $('roster-choices').innerHTML=['cow',...STAGE_REWARDS].map(key=>[key,UNITS[key]]).map(([key,s])=>`<button class="roster-card" data-owned="${campaign.owned.includes(key)}" data-character="${key}" aria-label="${s.name} 살펴보기" aria-pressed="${rosterFocus===key}"><img src="${scene.previewTexture(key+'1')}" alt="" draggable="false"><strong>${s.name}</strong><small>${s.role.split(' · ')[0]}</small><em>${draftParty.includes(key)?'편성 중':campaign.owned.includes(key)?'보유':'🔒 '+(STAGE_REWARDS.indexOf(key)+1)}</em></button>`).join('');
+ $('roster-choices').innerHTML=['cow',...STAGE_REWARDS].map(key=>[key,UNITS[key]]).map(([key,s])=>`<button class="roster-card" data-tier="${s.tier}" data-owned="${campaign.owned.includes(key)}" data-character="${key}" aria-label="${s.name} 살펴보기" aria-pressed="${rosterFocus===key}"><img src="${scene.previewTexture(key+'1')}" alt="" draggable="false"><strong>${s.name}</strong><small>${UNIT_TIERS[s.tier].label} · ${s.role.split(' · ')[0]}</small><em>${draftParty.includes(key)?'편성 중':campaign.owned.includes(key)?'보유':'🔒 '+(STAGE_REWARDS.indexOf(key)+1)}</em></button>`).join('');
  const s=UNITS[rosterFocus];$('roster-name').textContent=s.name;$('roster-role').textContent=s.role;$('roster-stats').textContent='♥ '+Math.round(s.hp)+' · ⚔ '+Math.round(s.damage)+' · ◎ '+s.cost;
  $('roster-description').textContent='';
  const owned=campaign.owned.includes(rosterFocus),selected=draftParty.includes(rosterFocus),buy=$('roster-buy');buy.disabled=true;buy.textContent=owned?'✓ 보유':(STAGE_REWARDS.indexOf(rosterFocus)+1)+' 클리어';
@@ -421,7 +421,7 @@ function onFrame(m,s){
   const button=$('action-'+name),cd=m.cooldowns[name],full=!!UNITS[name]&&m.atSummonLimit(name);if(!button)continue;button.disabled=m.status!=='playing'||cd>0||m.coins<spec.cost||full||(name==='charm'&&!!m.moving)||(['rush','stomp'].includes(name)&&!!m.action);
   button.dataset.state=m.status!=='playing'?'idle':full?'full':cd>0?'cooldown':m.coins<spec.cost?'cost':button.disabled?'idle':'ready';
   button.querySelector('.cooldown').style.height=(cd/spec.cooldown*100)+'%';button.style.setProperty('--cooldown-turn',Math.max(0,Math.min(1,cd/spec.cooldown))+'turn');
-  button.title=spec.name+(spec.role?' · '+spec.role:'')+' · '+(name==='charm'&&m.moving?'멈춘 뒤 사용 가능':button.dataset.state==='full'?'동료가 가득해요':cd>0?cd.toFixed(1)+'초 뒤':button.dataset.state==='cost'?'엽전 '+Math.ceil(spec.cost-m.coins)+' 부족 · 필요 '+spec.cost:spec.cost+' 엽전');
+  button.title=(UNITS[name]?UNIT_TIERS[spec.tier].label+' · ':'')+spec.name+(spec.role?' · '+spec.role:'')+' · '+(name==='charm'&&m.moving?'멈춘 뒤 사용 가능':button.dataset.state==='full'?'동료가 가득해요':cd>0?cd.toFixed(1)+'초 뒤':button.dataset.state==='cost'?'엽전 '+Math.ceil(spec.cost-m.coins)+' 부족 · 필요 '+spec.cost:spec.cost+' 엽전');
   button.setAttribute('aria-label',button.title);if(UNITS[name])button.querySelector('.unit-count').textContent=m.countAllies(name)+'/'+ALLY_TYPE_LIMIT;
   let badge=button.querySelector('.countdown');
   if(cd>0&&!full){if(!badge){badge=document.createElement('span');badge.className='countdown';button.append(badge);}badge.textContent=Math.ceil(cd);}

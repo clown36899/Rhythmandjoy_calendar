@@ -19,7 +19,7 @@ const CORE_AREAS=[
 ];
 // v134 viewpoint trial: one broad painted deck, four stable presentation depths.
 // Journey retains its existing horizontal combat and travel coordinates.
-Object.assign(CORE_AREAS[0],{roadAtlas:null,roadFlipX:true,roadTopTrim:5,actorScale:.8775,actorFloors:[425,455,485,515],cameraAnchor:.5,gateFile:'stage1-gate-isometric-v134.webp',gateOrigin:[.48,.83],gateGround:470,gateHeight:650,gateColor:0xd34e31,gateLipStart:.63,roadTiles:[{file:'stage1-isometric-road-v137.webp',x:0,width:1983,height:396.5,sourceHeight:793,foot:286,top:300}]});
+Object.assign(CORE_AREAS[0],{roadAtlas:null,roadFlipX:true,roadTopTrim:15,actorScale:.8775,actorHeightAdd:5,groundOffset:10,actorFloors:[425,455,485,515],cameraAnchor:.5,gateFile:'stage1-gate-isometric-v134.webp',gateOrigin:[.48,.83],gateGround:470,gateHeight:650,gateColor:0xd34e31,gateLipStart:.63,roadTiles:[{file:'stage1-isometric-road-v137.webp',x:0,width:1983,height:396.5,sourceHeight:793,foot:286,top:300}]});
 // These authored foregrounds match their own clean plates, including the sea's
 // near water. Later paintings keep their original no-generic-ground protection.
 for(const [i,scale,foot] of [[1,1.4,550],[2,2.4,469],[3,1.4,497],[4,1.4,566]]){
@@ -97,18 +97,19 @@ export const STAGE_REWARDS=['keeper','rabbit','healer','spearman','archer','scho
 export function validParty(value){return Array.isArray(value)&&value.length>=1&&value.length<=5&&new Set(value).size===value.length&&value.every(k=>Object.hasOwn(UNITS,k));}
 // Apply companion tuning once at its owner, including healing and trained attacks.
 // Exact multipliers keep the authored enemy budget independent of companion buffs.
+export const UNIT_TIERS={bond:{label:"노비",level:1},common:{label:"평민",level:2},noble:{label:"귀족",level:3},legendary:{label:"전설",level:4}};
 export const UNITS=Object.fromEntries(Object.entries({
- cow:{price:0,name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:95,damage:12,period:1.35,cost:30,cooldown:4,formation:305,spacing:0,guard:.6,weapon:'horn'},
- keeper:{price:0,name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:275,damage:17,period:1.15,cost:18,cooldown:3.5,formation:125,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:295,weapon:'ink'}}},
- rabbit:{price:0,name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:185,damage:24,period:1.35,cost:24,cooldown:4,formation:215,spacing:0,guard:0,weapon:'seed'},
- scholar:{price:0,name:'선비',role:'지원 · 붓과 부채로 봉인',hp:56,speed:68,range:540,damage:16,period:2.1,cost:34,cooldown:5,formation:-140,spacing:0,guard:0,weapon:'seal'},
- spearman:{name:'조선 창병',role:'조력 · 전방 창 찌르기',price:80,hp:130,speed:74,range:120,damage:10,period:1.8,cost:26,cooldown:4.5,formation:270,spacing:0,guard:.15,weapon:'spear'},
- archer:{name:'조선 궁병',role:'조력 · 후열 화살',price:100,hp:72,speed:70,range:420,damage:10,period:2.3,cost:24,cooldown:4.5,formation:20,spacing:0,guard:0,weapon:'arrow'},
- king:{name:'조선 왕',role:'지원 · 어보 봉인',price:260,hp:95,speed:65,range:380,damage:20,period:2.4,cost:38,cooldown:5.5,formation:0,spacing:0,guard:.1,weapon:'seal'},
- prince:{name:'세자',role:'공격 · 활 사격',price:180,hp:65,speed:82,range:330,damage:22,period:1.5,cost:30,cooldown:4.5,formation:90,spacing:0,guard:0,weapon:'arrow'},
- minister:{name:'영의정',role:'지원 · 교지 봉인',price:220,hp:85,speed:62,range:500,damage:14,period:2.2,cost:32,cooldown:5,formation:-80,spacing:0,guard:.05,weapon:'seal'},
- cavalry:{name:'기마 무관',role:'돌파 · 기마 검격',price:240,hp:170,speed:90,range:100,damage:18,period:1.7,cost:40,cooldown:6,formation:295,spacing:0,guard:.3,weapon:'sword'},
- healer:{price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:240,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:170,guard:0,weapon:'medicine'}
+ cow:{tier:"common",price:0,name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:95,damage:12,period:1.35,cost:30,cooldown:4,formation:305,spacing:0,guard:.6,weapon:'horn'},
+ keeper:{tier:"bond",price:0,name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:275,damage:17,period:1.15,cost:18,cooldown:3.5,formation:125,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:295,weapon:'ink'}}},
+ rabbit:{tier:"legendary",price:0,name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:185,damage:24,period:1.35,cost:24,cooldown:4,formation:215,spacing:0,guard:0,weapon:'seed'},
+ scholar:{tier:"noble",price:0,name:'선비',role:'지원 · 붓과 부채로 봉인',hp:56,speed:68,range:540,damage:16,period:2.1,cost:34,cooldown:5,formation:-140,spacing:0,guard:0,weapon:'seal'},
+ spearman:{tier:"common",name:'조선 창병',role:'조력 · 전방 창 찌르기',price:80,hp:130,speed:74,range:120,damage:10,period:1.8,cost:26,cooldown:4.5,formation:270,spacing:0,guard:.15,weapon:'spear'},
+ archer:{tier:"common",name:'조선 궁병',role:'조력 · 후열 화살',price:100,hp:72,speed:70,range:420,damage:10,period:2.3,cost:24,cooldown:4.5,formation:20,spacing:0,guard:0,weapon:'arrow'},
+ king:{tier:"legendary",name:'조선 왕',role:'지원 · 어보 봉인',price:260,hp:95,speed:65,range:380,damage:20,period:2.4,cost:38,cooldown:5.5,formation:0,spacing:0,guard:.1,weapon:'seal'},
+ prince:{tier:"noble",name:'세자',role:'공격 · 활 사격',price:180,hp:65,speed:82,range:330,damage:22,period:1.5,cost:30,cooldown:4.5,formation:90,spacing:0,guard:0,weapon:'arrow'},
+ minister:{tier:"noble",name:'영의정',role:'지원 · 교지 봉인',price:220,hp:85,speed:62,range:500,damage:14,period:2.2,cost:32,cooldown:5,formation:-80,spacing:0,guard:.05,weapon:'seal'},
+ cavalry:{tier:"noble",name:'기마 무관',role:'돌파 · 기마 검격',price:240,hp:170,speed:90,range:100,damage:18,period:1.7,cost:40,cooldown:6,formation:295,spacing:0,guard:.3,weapon:'sword'},
+ healer:{tier:"common",price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:240,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:170,guard:0,weapon:'medicine'}
 }).map(([kind,stats])=>[kind,{...stats,hp:stats.hp*ALLY_HP_SCALE,damage:stats.damage*ALLY_OUTPUT,...(stats.heal?{heal:stats.heal*ALLY_OUTPUT}:{}),...(stats.upgrade?{upgrade:{...stats.upgrade,stats:{...stats.upgrade.stats,damage:stats.upgrade.stats.damage*ALLY_OUTPUT}}}:{})}]));
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
 // One shared party clearance preserves the authored differences between
