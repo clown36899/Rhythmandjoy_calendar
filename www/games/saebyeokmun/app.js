@@ -130,15 +130,13 @@ function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify
 updateSound();
 // Opening preferences are separate from campaign rewards; the existing modal owns pause/resume.
 let openingEnabled=true;try{openingEnabled=localStorage.getItem('saebyeokmun-opening')!=='false';}catch{}
-let openingEpoch=0,openingAutomatic=false,openingPreparing=false,openingStage=0;
+let openingEpoch=0,openingAutomatic=false,openingPreparing=false;
 function updateOpening(){const b=$('opening-toggle');b.setAttribute('aria-pressed',String(openingEnabled));b.querySelector('.switch-state').textContent=openingEnabled?'켬':'끔';}
 function stopNarration(){$('opening-voice').pause();$('opening-video').pause();}
 function coverOpening(){
- if($('opening').open&&$('opening-video').dataset.clip==='prelude')return;
+ if($('opening').open&&openingPreparing)return;
  openingAutomatic=true;openingPreparing=true;
- const video=$('opening-video');video.dataset.clip='prelude';video.src='./assets/entry-prelude-v146.mp4';video.currentTime=0;
  $('opening').dataset.phase='preparing';openInfo($('opening'));document.body.dataset.entryPhase='loading';
- video.play().catch(()=>{});
 }
 async function prepareOpeningFilm(stage){
  const epoch=entryEpoch,video=$('opening-video'),file=`./assets/entry-stage${stage===1?2:1}-v146.mp4`;
@@ -148,22 +146,21 @@ async function prepareOpeningFilm(stage){
  video.dataset.nextSrc=URL.createObjectURL(blob);video.dataset.nextFile=file;
 }
 function playOpening(stage,automatic=false){
- openingStage=stage;openingAutomatic=automatic;openingPreparing=false;
+ openingAutomatic=automatic;openingPreparing=false;
  const video=$('opening-video');
- // Finish the ink-writing prelude before moving into the already prepared field.
- if(automatic&&video.dataset.clip==='prelude'&&!video.ended)return;
- const token=++openingEpoch;video.dataset.clip='transition';video.src=video.dataset.nextFile===`./assets/entry-stage${stage===1?2:1}-v146.mp4`?video.dataset.nextSrc:`./assets/entry-stage${stage===1?2:1}-v146.mp4`;video.currentTime=automatic?1.7:0;
- $('opening').dataset.phase='playing';video.play().catch(()=>{if(token===openingEpoch)finishOpeningFilm();});
+ // This film already contains the generated title and the camera move into the
+ // native field. Play it once, from zero, only after that field is prepared.
+ // Keep the poster visible until playback has an actual decoded first frame.
+ const token=++openingEpoch;video.dataset.clip='transition';video.src=video.dataset.nextFile===`./assets/entry-stage${stage===1?2:1}-v146.mp4`?video.dataset.nextSrc:`./assets/entry-stage${stage===1?2:1}-v146.mp4`;video.currentTime=0;
+ video.play().then(()=>{if(token===openingEpoch&&$('opening').open&&['preparing','loading'].includes($('opening').dataset.phase))$('opening').dataset.phase='playing';}).catch(()=>{if(token===openingEpoch)finishOpeningFilm();});
 }
 function showOpening(){
  if(fullscreenPending||preparing)return;
  $('opening').dataset.phase='loading';openInfo($('opening'));for(const d of infoDialogs)if(d!==$('opening')&&d.open)d.close();
  playOpening(model.stage,false);
 }
-function finishOpeningFilm(event){
+function finishOpeningFilm(){
  if(!$('opening').open)return;
- const video=$('opening-video');
- if(video.dataset.clip==='prelude'){if(openingPreparing){if(event?.type==='error'){video.dataset.clip='prelude-failed';$('opening').dataset.phase='loading';}else{video.currentTime=1.25;video.play().catch(()=>{});}}else{video.dataset.clip='';playOpening(openingStage,true);}return;}
  if(openingPreparing)return;
  if(openingAutomatic){$('opening').dataset.phase='reveal';document.body.dataset.entryPhase='world';}
  else $('opening').close();
@@ -188,7 +185,7 @@ $('opening').addEventListener('close',()=>{
  if(video.dataset.nextSrc)URL.revokeObjectURL(video.dataset.nextSrc);
  delete video.dataset.nextSrc;delete video.dataset.nextFile;delete video.dataset.clip;
 });
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&$('opening').open&&['playing','preparing'].includes($('opening').dataset.phase))$('opening-video').play().catch(finishOpeningFilm);});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!openingPreparing&&$('opening').open&&['playing','preparing'].includes($('opening').dataset.phase))$('opening-video').play().catch(finishOpeningFilm);});
 function updateBest(){const n=Math.floor(model.progress()*100);best=Math.max(best,n);$('best').textContent=best+'%';try{localStorage.setItem('saebyeokmun-best',String(best));}catch{}}
 async function start(testStage=null,cinematic=false){
  const testing=Number.isInteger(testStage)&&autoplay.active;
@@ -431,7 +428,7 @@ function onReady(error,s){
  renderAutoplay();
  if(requestedAutoplay)beginAutoplay();
  else if(requestedStage!==null&&canEnterStage(requestedStage)){selectStage(requestedStage);start(null,openingEnabled&&requestedStage<2);}
- else if(openingEnabled&&requestedStage===null){selectStage(0);start(null,true);}
+ else if(openingEnabled&&requestedStage===null){selectStage(1);start(null,true);}
 }
 function onEvents(events){
  if(events.some(e=>e.type==='coin')){coinAnimation?.cancel();coinAnimation=$('coins').animate([{transform:'scale(1)'},{transform:'scale(1.16)',color:'#be8f36'},{transform:'scale(1)'}],{duration:260});}
