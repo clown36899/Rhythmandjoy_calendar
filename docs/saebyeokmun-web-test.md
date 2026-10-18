@@ -1,3 +1,9 @@
+# v144 / 2026-10-18 Road-height display and shared motion readiness v150
+
+Restore Stage2 to the existing Stage1 horizontal combat/display-slot policy, follow each authored road height, reduce Stage2 bodies by5 CSSpx, and match the opening tail to the actual game firstframe. Keep completed mobile roster and reaper v149 integration. Repair placeholder fallback and display-profile request identity; prepare both the next GPU half and one second ahead through the existing bounded loader/cache. All171 tests pass. Local ordinary Stage2 play recorded no white or missing textures. Public Stage1/2 repeated gameplay follows deployment; physical-device performance is not claimed.
+
+소스 `398249b9a9ede60d93074792a1230905aaefa948`. 원장: /Users/inteyeo/Documents/Codex/다섯개의나라/관리/카페24_배포-v144-entry-once.json
+
 # v144 / 2026-10-18 Completed cross-chat integration v149
 
 Integrated verified reaper9-clips, matching native delivery profiles/audio/sizes and master-scale projectile tail/death. Preserve completed roster framing and current generated entry, terrain masks, GPU-page handoff, one loading display and three road depths. Medicine and ranged attacks use horizontal reach across depth; nearby melee interception supersedes wandering timers while body clearance and one-impact target ownership remain.

@@ -1,10 +1,10 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=149-cross-chat';
+import {ATLAS_SLICES} from './atlas-slices.js?v=150-road-height';
 import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=149-cross-chat';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=149-cross-chat';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=150-road-height';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=150-road-height';
 import {AssetDownloads} from './downloads.js?v=70';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=149-cross-chat';
-import {ASSET_BYTES} from './asset-sizes.js?v=149-cross-chat';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=150-road-height';
+import {ASSET_BYTES} from './asset-sizes.js?v=150-road-height';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -135,9 +135,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // Fast attacks/anticipation must be ready before combat. Long loops stream
    // their next 24 cels through the same loader, without preparing every variant.
    return [...new Set(VIDEO_SHEETS.filter(s=>kinds.some(kind=>Object.entries(VIDEO_MOTION[kind]||{}).some(([name,c])=>c===s&&!['dance','annoyed','sit','receiveHeal','death'].includes(name)))).flatMap(s=>{
-    const complete=Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&['attack','ritual','projectile','anticipation','combatCalm','anger','rageRun','rageHold','runUrgent','castHeal','castHealLight','castHealBless'].includes(name)));
+    const complete=Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&['attack','projectile','anticipation','combatCalm','anger','rageRun','rageHold','runUrgent','castHeal','castHealLight','castHealBless'].includes(name)));
     if(complete)return VIDEO_DELIVERY[s.asset].parts.map((_,i)=>s.asset+':'+i);
-    const moving=Object.values(VIDEO_MOTION).some(clips=>clips.walk===s||clips.run===s),cycle=s.cycles?.[0],start=moving?cycle?.start??0:0,end=moving?Math.min(cycle?.end??s.frames-1,start+47):0;
+    const moving=Object.values(VIDEO_MOTION).some(clips=>clips.walk===s||clips.run===s),streamed=moving||Object.values(VIDEO_MOTION).some(clips=>clips.ritual===s),cycle=s.cycles?.[0],start=moving?cycle?.start??0:0,end=streamed?Math.min(cycle?.end??s.frames-1,start+47):0;
     return Array.from({length:Math.floor(end/24)-Math.floor(start/24)+1},(_,i)=>s.asset+':'+(Math.floor(start/24)+i));
    }))];
   }
@@ -336,6 +336,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }finally{image?.close?.();if(url)URL.revokeObjectURL(url);}}).finally(()=>{source.decoding=null;});this.loadQueue=source.decoding;return source.decoding;
   }
   requestVideo(key,native=false){
+   key=this.videoFiles([key],native)[0];
    if(this.videoRequests.has(key)||this.videoSources.get(key)?.retryAt>performance.now())return;
    const ready=this.loadedFiles.has(key)?Promise.resolve():this.downloads.request(this.files.get(key)).then(()=>this.loadFiles([key],null,native));
    const job=ready.then(()=>this.decodeVideo(key,native)).catch(()=>{
@@ -367,14 +368,18 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(source)source.used=now;
    // Warm the next block before crossing its boundary. The game's motion clock
    // remains authoritative even if a slow connection temporarily holds a cel.
-   const cycle=spec.cycles?.find(c=>index>=c.start&&index<=c.end),ahead=Math.ceil(spec.fps/2),first=cycle?.start??0,length=cycle?cycle.end-cycle.start+1:spec.frames;
-   const nextIndex=first+(index-first+ahead)%length,nextPage=this.videoPage(this.videoFrameIndex.get(spec.prefix+nextIndex),native);
-   const nextKey=nextPage.sourceKey,nextSource=this.videoSources.get(nextKey);
-   // Twelve-cel GPU halves can share a 24-cel source whose CPU pixels were
-   // evicted. Warm that same source too; requestVideo still coalesces the job.
-   if((!nextSource?.image||nextSource.h&&nextSource.h<h)&&!this.videoFrames.has(nextPage.key))this.requestVideo(nextKey,native);
+   const cycle=spec.cycles?.find(c=>index>=c.start&&index<=c.end),ahead=Math.ceil(spec.fps),first=cycle?.start??0,length=cycle?cycle.end-cycle.start+1:spec.frames;
+   const pendingSources=new Set();
+   for(const nextIndex of new Set([first+(index-first+ahead)%length,first+(index-first+VIDEO_PAGE_FRAMES)%length])){
+    const nextPage=this.videoPage(this.videoFrameIndex.get(spec.prefix+nextIndex),native),nextKey=nextPage.sourceKey,nextSource=this.videoSources.get(nextKey);
+    if(nextSource)nextSource.used=now;
+    // Preserve both the immediate GPU half and a second of transport lead.
+    // They can share an evicted CPU block; the existing request map coalesces it.
+    if((!nextSource?.image||nextSource.h&&nextSource.h<h)&&!this.videoFrames.has(nextPage.key))pendingSources.add(nextKey);
+   }
+   for(const nextKey of pendingSources)this.requestVideo(nextKey,native);
    if(cached){cached.used=now;return key;}
-   if(!source?.image||source.h&&source.h<h){if(!(source?.retryAt>now))this.requestVideo(sourceKey,native);return fallback||key;}
+   if(!source?.image||source.h&&source.h<h){if(!(source?.retryAt>now))this.requestVideo(sourceKey,native);return fallback&&(this.videoFrameIndex.has(fallback)||!fallback.startsWith('__')&&this.textures.exists(fallback))?fallback:key;}
    const delivery=VIDEO_DELIVERY[spec.asset],nw=source.w||delivery.crop[2],nh=source.h||delivery.crop[3];
    const start=Math.floor(index/VIDEO_PAGE_FRAMES)*VIDEO_PAGE_FRAMES,end=Math.min(spec.frames,start+VIDEO_PAGE_FRAMES);
    let gpuPixels=source.image;
@@ -989,7 +994,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   actorGround(key,worldX,depth){
    const area=AREAS[model.status==='ready'?(this.previewAreaIndex??model.stage):model.stage],lanes=area.actorFloors;
-   if(area.roadFinite){const actor=key==='hero'||key==='girl'?null:(key[0]==='e'?model.enemies:model.allies).find(a=>String(a.id)===String(key).slice(1));const x=worldX??actor?.x??model.x;const lane=depth??actor?.lane??0,offset=STAGES[model.stage].combatLanes;return this.terrainGround(x+(key==='hero'?37:key==='girl'?-60:0),area)+(offset?offset[0]+lane*(offset[1]-offset[0]):0);}
+   if(area.roadFinite){const actor=key==='hero'||key==='girl'?null:(key[0]==='e'?model.enemies:model.allies).find(a=>String(a.id)===String(key).slice(1));const x=worldX??actor?.x??model.x;const player=key==='hero'||key==='girl',slot=(Number(String(key).slice(1))||0)%(lanes?.length||1),offset=lanes?(player?(lanes[0]+lanes.at(-1))/2:lanes[slot]):0;return this.terrainGround(x+(key==='hero'?37:key==='girl'?-60:0),area)+offset;}
    if(!lanes)return GROUND;
    const shift=this.worldPixels(area.groundOffset||0);
    const tile=area.roadTiles?.[0],scale=tile?tile.height/(tile.sourceHeight??tile.height):1;
@@ -1178,7 +1183,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(recovery){name='receiveHeal';recoveryFrame=Number(recovery.slice(clips.receiveHeal.prefix.length));}
     const age=clock-v.idleSince,slot=Math.floor((age-8)/14),within=(age-8)%14;
     const variants=['dance','annoyed','sit'].filter(n=>clips[n]);
-    if(this.videoFrameIndex&&age>6&&variants.length){const warm=Math.floor((age-6)/14);if(v.warmSlot!==warm){v.warmSlot=warm;v.slot=warm;v.idle=variants[Math.floor(Math.random()*variants.length)];this.requestVideo(clips[v.idle].asset+':0');}}
+    if(this.videoFrameIndex&&age>6&&variants.length){const warm=Math.floor((age-6)/14);if(v.warmSlot!==warm){v.warmSlot=warm;v.slot=warm;v.idle=variants[Math.floor(Math.random()*variants.length)];}if((age-6)%14<2)this.videoCel(clips[v.idle].prefix+'0');}
     if(!recovery&&age>8&&variants.length){if(v.slot!==slot){v.slot=slot;v.idle=variants[Math.floor(Math.random()*variants.length)];}if(within<clips[v.idle].frames/clips[v.idle].fps)name=v.idle;}
    }
    if(v.state!==name||moving&&!v.moving){v.state=name;v.since=clock;}

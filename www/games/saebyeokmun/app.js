@@ -1,9 +1,9 @@
 import {Campaign} from './game/campaign.js?v=146-entry';
-import {Journey} from './game/model.js?v=149-cross-chat';
+import {Journey} from './game/model.js?v=150-road-height';
 import {Autoplay} from './game/autoplay.js?v=146-entry';
-import {makeGame} from './game/scene.js?v=149-cross-chat';
-import {Soundscape} from './game/audio.js?v=149-cross-chat';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=149-cross-chat';
+import {makeGame} from './game/scene.js?v=150-road-height';
+import {Soundscape} from './game/audio.js?v=150-road-height';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=150-road-height';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -140,7 +140,7 @@ function coverOpening(){
  $('opening').dataset.phase='preparing';document.body.dataset.entryPhase='loading';
  $('download-title').textContent='로딩 중';$('download-retry').hidden=true;updateDownload({phase:'waiting'});fitPhoneDialogs();$('asset-loading').showModal();
 }
-function openingFile(stage){return stage===1?'./assets/entry-stage2-v147.mp4':'./assets/entry-stage1-v146.mp4';}
+function openingFile(stage){return stage===1?'./assets/entry-stage2-v150.mp4':'./assets/entry-stage1-v146.mp4';}
 async function prepareOpeningFilm(stage){
  const epoch=entryEpoch,video=$('opening-video'),file=openingFile(stage);
  if(video.dataset.nextFile!==file){

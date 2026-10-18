@@ -4,7 +4,7 @@ const line=points=>points.map(([x,y])=>[x/1916,y/821]);
 const tile=(n,x,walkLine,fade=0,foot=542)=>({file:`stage2-ink-ground-${n}-v145.webp`,maskFile:`stage2-ink-mask-${n}-v147.webp`,readyFile:`stage2-ink-ground-${n}-ready-v147.webp`,x,width:n===1?1915:1916,height:821,foot,walkLine:line(walkLine),fade:[fade,216]});
 export const STAGE2_ART={
  file:'stage2-entry-field-far-v147.webp',detailFiles:[],skyInPainting:false,sunFile:'stage2-sun-v1-v146.webp',paintingFoot:540/821,
- roadAtlas:null,roadFinite:true,actorScale:1.02,shadowOpacity:.65,
+ roadAtlas:null,roadFinite:true,actorScale:1.02,actorHeightAdd:-5,actorFloors:[0,16,32,48],shadowOpacity:.65,
  roadEnd:7600,
  roadTiles:[
   tile(2,0,[[0,566],[450,573],[900,587],[1300,594],[1600,578],[1916,569]],0,540),
