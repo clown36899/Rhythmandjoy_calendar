@@ -389,11 +389,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   setCel(image,key){
    const frame=this.videoFrameIndex?.get(key);
-   if(frame){const atlas=this.videoPage(frame).key;image.celKey=key;if(this.textures.exists(atlas)){
+   if(frame){const atlas=this.videoPage(frame).key;if(this.textures.exists(atlas)){image.celKey=key;
     // Positions, ground and tint still update each render. Rebind only when the
     // real texture/frame changes, including density changes and recreated pages.
     if(image.texture!==this.textures.get(atlas)||image.frame?.name!==key)image.setTexture(atlas,key);
-   }else image.setTexture('__WHITE').setVisible(false);}
+   }else if(!image.celKey||image.texture.key==='__WHITE'||!this.textures.exists(image.texture.key)){image.setTexture('__WHITE').setVisible(false);} // Keep a registered real page until its replacement is ready.
+   }
    else {delete image.celKey;image.setTexture(key);}return image;
   }
   trimPresentationCache(){
@@ -1615,7 +1616,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.placeOnGround(this.hero,heroX+37,sheltering?BODY_HEIGHT.umbrella:mounted?BODY_HEIGHT.mount:intro?150:BODY_HEIGHT.haetae,this.actorGround('hero'));
    this.setCel(this.girl,girlBase).setFlipX(intro||this.heroPose>0?false:model.moving?model.moving<0:this.girl.flipX);
    this.placeOnGround(this.girl,heroX-60,intro?145:BODY_HEIGHT.girl,this.actorGround('girl'));
-   this.hero.setVisible(model.hp>0);this.girl.setVisible(!mounted&&model.hp>0);
+   this.hero.setVisible(model.hp>0&&this.hero.texture.key!=='__WHITE');this.girl.setVisible(!mounted&&model.hp>0&&this.girl.texture.key!=='__WHITE');
    if(heroHurt){this.hero.setTint(0xffb39c);this.girl.setTint(0xffb39c);}else{this.hero.clearTint();this.girl.clearTint();}
    if(!intro){this.trackContact('haetae','haetae',model.walk,model.moving,model.x+37,this.actorGround('hero'));if(!mounted)this.trackContact('girl','girl',model.walk,model.moving,model.x-60,this.actorGround('girl'));}
    this.lastX=model.x;

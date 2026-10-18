@@ -1,7 +1,7 @@
 import {Campaign} from './game/campaign.js?v=146-entry';
 import {Journey} from './game/model.js?v=147-entry-match';
 import {Autoplay} from './game/autoplay.js?v=146-entry';
-import {makeGame} from './game/scene.js?v=147-entry-match';
+import {makeGame} from './game/scene.js?v=147-entry-match2';
 import {Soundscape} from './game/audio.js?v=146-entry';
 import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=147-entry-match';
 const $=id=>document.getElementById(id);

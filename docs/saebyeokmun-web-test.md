@@ -1,5 +1,13 @@
 # v144 · 2026-10-18 Stage2 entry, terrain and depth combat
 
+Post-deployment sequence found and repaired a pending framebuffer-profile white placeholder: keep a registered real body page until its replacement is ready; original missing-page/cache safety remains. Targeted4 and local64-frame handoff checks passed. Original vertical title uses generated first/middle/last-keyframe motion. One prepared film ends on the native Stage2 field, then HUD appears. Loading is one continuously moving readiness bar and percentage, with no second counters or premature100. Five rear masks are baked before deployment; complete foreground is retained. Stage2 uses three road depths, front-lane player, free friendly forward passage, depth-crossing clearance, cross-depth enemy interception and basic monster test roster without bandits. No free initial companions; first foes enter after2 game seconds. Run128/walk76 and completed roster interactions/art are integrated.
+
+Before latest scope request171 checks passed. Latest targeted8 checks and Stage2-only legal-action full-road clear286.9s passed. Desktop and844x390 Chrome entry, terrain9positions, manual/run/auto/summon/protect/heal/pause were reviewed. No physical-phone or DB/service changes. Public browser review after this swap is still required.
+
+소스 `d077d4f7d280f559572b0fc1031696e5fee2ad9f`. 원장: /Users/inteyeo/Documents/Codex/다섯개의나라/관리/카페24_배포-v144-entry-once.json
+
+# v144 · 2026-10-18 Stage2 entry, terrain and depth combat
+
 Original vertical title uses generated first/middle/last-keyframe motion. One prepared film ends on the native Stage2 field, then HUD appears. Loading is one continuously moving readiness bar and percentage, with no second counters or premature100. Five rear masks are baked before deployment; complete foreground is retained. Stage2 uses three road depths, front-lane player, free friendly forward passage, depth-crossing clearance, cross-depth enemy interception and basic monster test roster without bandits. No free initial companions; first foes enter after2 game seconds. Run128/walk76 and completed roster interactions/art are integrated.
 
 Before latest scope request171 checks passed. Latest targeted8 checks and Stage2-only legal-action full-road clear286.9s passed. Desktop and844x390 Chrome entry, terrain9positions, manual/run/auto/summon/protect/heal/pause were reviewed. No physical-phone or DB/service changes. Public browser review after this swap is still required.
