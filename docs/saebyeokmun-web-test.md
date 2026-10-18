@@ -1,3 +1,7 @@
+# 2026-10-19 Road opacity v153
+
+길 이음의 걷는 대역까지 outgoing 도로를 불투명하게 유지해 source-over 이중 페이드를 제거했다. 기존 Scene/제작기를 재사용하고 native 5장 전달본·자산 크기·모듈 캐시를 맞췄다. 원본 RGB, 뒤 윤곽, 좌표/발 높이, 전투/저장, 이전19공개버전은 보존한다. 기존 검사63개 통과,87,264위치 비침0,실제 Canvas48조건 알파255,잘못된 입력4개 거절. 소스0cc4e09를 먼저 푸시하고 이 미러도 푸시한 뒤 기존 카페24 게임 폴더만 교체한다. 다른 채팅의 미완성 카드 작업과 운영 문서는 제외한다. 서버 화면 검수는 배포 후 별도 기록한다. 상세: 관리/카페24_배포-v153-road-opacity.json.
+
 # v144 / 2026-10-18 Shared motion readiness and contact v151
 
 Prioritize current motion pages, reuse display-profile prefetch, reserve one foreground transfer slot, and retain native quality/cadence with six-cel GPU pages and a measured96MiB decoded cache. Start all sound off without audio downloads. Reduce Stage2 bodies another10CSSpx (15 cumulative), widen its fixed vertical display slots, and match the film tail to the real firstframe. Stage1 visual settings remain unchanged. Align the reaper head contact, native body sockets and strike/launch reach. All172 tests pass. Repeated local Stage1/2 field and actual Stage2 entry/play reviewed; public repeat tests follow deployment. Original assets, integrated reaper/mobile cards and19 prior versions preserved.

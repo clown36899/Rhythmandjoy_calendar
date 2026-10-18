@@ -1,10 +1,10 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=151-motion-ready';
+import {ATLAS_SLICES} from './atlas-slices.js?v=153-road-opacity';
 import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=151-motion-ready';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=151-motion-ready';
-import {AssetDownloads} from './downloads.js?v=151-motion-ready';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=151-motion-ready';
-import {ASSET_BYTES} from './asset-sizes.js?v=151-motion-ready';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=153-road-opacity';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=153-road-opacity';
+import {AssetDownloads} from './downloads.js?v=153-road-opacity';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=153-road-opacity';
+import {ASSET_BYTES} from './asset-sizes.js?v=153-road-opacity';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -34,7 +34,7 @@ const SUPERSEDED_SHEETS=new Set(['cowVideo','cowVideoMeta','cowRest','cowRestMet
 const LEGACY_FOE_SHEETS={skirt:['enemyWalk','enemyAttacks','enemyDefeat'],horse:['enemyWalk','enemyAttacks','enemyDefeat'],reaper:['enemyWalk','enemyAttacks','reaperDeparture'],boss:['bossMotion','enemyDefeat'],warden:['wardenMotion'],ferryman:['ferrymanMotion'],waterghost:['waterghostMotion'],mangtae:['stageFoes','foeAttacks'],shadow:['stageFoes','foeAttacks']};
 const OPTIONAL_SHEETS=new Set([...Object.values(LEGACY_FOE_SHEETS).flat(),'battle','distantTroops','nightRoad','castleRoad','storybookRoad','gate']);
 // Feet stand inside the painted road, not on its distant top edge.
-const GROUND=542;
+const GROUND=542,TERRAIN_SOLID_REAR=.035;
 const COIN_FLIGHT_TIME=.72;
 const COW_REST={asset:'cowRest',prefix:'cowRestVideo',frames:72,fps:12,rows:9};
 const COW_IDLE=[{asset:'cowIdle',prefix:'cowIdleVideo',frames:77,fps:12,rows:10},{asset:'cowIdleSniff',prefix:'cowIdleSniffVideo',frames:133,fps:12,rows:17}];
@@ -257,7 +257,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // preserve ink inside solid rocks, then keep the foreground joined to bottom.
    const count=width*height,state=new Uint8Array(count),queue=new Int32Array(count);
    for(let x=0;x<width;x++){
-    const front=Math.floor((this.sampleTerrainLine(walkLine,x/Math.max(1,width-1))-.035)*height);
+    const front=Math.floor((this.sampleTerrainLine(walkLine,x/Math.max(1,width-1))-TERRAIN_SOLID_REAR)*height);
     for(let y=0;y<height;y++){const at=y*width+x;state[at]=y>=front||pixels[at*4]+pixels[at*4+1]+pixels[at*4+2]>=384?1:0;}
    }
    let head=0,tail=0;
@@ -274,9 +274,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
   terrainPixels(pixels,matte,width,height,part){
    if(pixels.length!==width*height*4||matte.length!==pixels.length)throw new RangeError('Terrain RGBA geometry differs');
    const alpha=this.terrainAlpha(matte,width,height,part.walkLine),[fadeIn,fadeOut]=part.fade||[0,0];
-   // Outgoing scenery fades above the road only. Its road and entire foreground
-   // remain solid while the incoming plate covers them, so far art cannot leak.
-   for(let x=0;x<width;x++){const u=x/Math.max(1,width-1),local=u*part.width,opacity=fadeIn?Math.min(1,local/fadeIn):1,rear=fadeOut?Math.min(1,(part.width-local)/fadeOut):1,front=(this.sampleTerrainLine(part.walkLine,u)+.025)*height;
+   // The matte and join share the SAME solid rear edge. Fading the outgoing
+   // walking surface as well as the incoming one leaks far art under source-over.
+   for(let x=0;x<width;x++){const u=x/Math.max(1,width-1),local=u*part.width,opacity=fadeIn?Math.min(1,local/fadeIn):1,rear=fadeOut?Math.min(1,(part.width-local)/fadeOut):1,front=Math.floor((this.sampleTerrainLine(part.walkLine,u)-TERRAIN_SOLID_REAR)*height);
     for(let y=0;y<height;y++){const at=y*width+x;pixels[at*4+3]=Math.round(alpha[at]*opacity*(y<front?rear:1));}}
    return pixels;
   }

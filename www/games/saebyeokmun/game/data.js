@@ -1,5 +1,5 @@
 import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=70';
-import {STAGE2_ART} from './stage2-art.js?v=151-motion-ready';
+import {STAGE2_ART} from './stage2-art.js?v=153-road-opacity';
 import {EXTRA_MONSTERS} from './expansion-monsters.js?v=70';
 export {GATE_STYLES};
 // Single source of sample tuning. All folklore-derived combat roles are game inventions.
