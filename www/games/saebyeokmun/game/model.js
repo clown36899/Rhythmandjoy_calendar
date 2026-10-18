@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=147-entry-match';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=149-cross-chat';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -13,8 +13,8 @@ export class Journey {
  // Journey owns continuous depth and body clearance; Scene only projects it.
  get lanes(){return STAGES[this.stage].combatLanes;}
  sameLane(a,b){return !this.lanes||b.type==='gate'||!Number.isFinite(a.lane)||!Number.isFinite(b.lane)||Math.abs(a.lane-b.lane)<.18;}
- canStrike(a,b){return this.sameLane(a,b)||this.lanes&&((a.x-b.x)/this.bodyClearance(a,b))**2+(((a.lane??0)-(b.lane??0))/.65)**2<=1.01;}
- contactDistance(a,b){return !this.lanes||b.type==='gate'?contactGap(a,b):Math.hypot(a.x-b.x,((a.lane??0)-(b.lane??0))*100)-(ENEMY_FRONT[a.type??'hero']??0)-(ENEMY_FRONT[b.type??'hero']??0);}
+ canStrike(a,b){const weapon=UNITS[a.type]?.weapon,ranged=a===this||['stone','seed','ink','seal','charm','arrow'].includes(weapon)||a.type==='reaper'||['ranged','heal'].includes(ENEMIES[a.type]?.behavior);return ranged||this.sameLane(a,b)||this.lanes&&((a.x-b.x)/this.bodyClearance(a,b))**2+(((a.lane??0)-(b.lane??0))/.65)**2<=1.01;}
+ contactDistance(a,b){return !this.lanes||b.type==='gate'||this.canStrike(a,b)?contactGap(a,b):Math.hypot(a.x-b.x,((a.lane??0)-(b.lane??0))*100)-(ENEMY_FRONT[a.type??'hero']??0)-(ENEMY_FRONT[b.type??'hero']??0);}
  placeLane(actor,side){
   if(!this.lanes||ENEMIES[actor.type]?.stationary)return;
   const bodies=[this,...this.allies,...this.enemies].filter(b=>b!==actor&&b.hp>0),seed=actor.id%3;
@@ -27,8 +27,9 @@ export class Journey {
  planLane(actor,target){
   if(!this.lanes)return;
   if(ENEMIES[actor.type]&&target===this&&Math.abs(actor.x-this.x)<480){actor.laneGoal=0;actor.laneNextAt=this.time;return;}
-  if(this.time<(actor.laneNextAt??0))return;
+  // Nearby combat supersedes wandering, while body clearance still owns travel.
   if(target&&target.type!=='gate'&&Math.abs(target.x-actor.x)<650){actor.laneGoal=Math.round(target.lane??0);return;}
+  if(this.time<(actor.laneNextAt??0))return;
   const noise=Math.sin(actor.id*12.9898+Math.floor(this.time/3)*78.233)*43758.5453;
   actor.laneGoal=Math.floor((noise-Math.floor(noise))*3);actor.laneNextAt=this.time+2+(actor.id%5)*.4;
  }
@@ -264,8 +265,8 @@ export class Journey {
    const moveTo=goal=>{
     // Rear spacing is a preferred approach slot, never a reason to retreat
     // from an already reachable patient (including an overlapping/left one).
-    if(actor.x>=goal&&Math.abs(target.x-actor.x)<=s.range&&this.sameLane(actor,target))return true;
-    const gap=goal-actor.x;this.moveBody(actor,Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt),dt,s.speed,target);return Math.abs(goal-actor.x)<1&&this.sameLane(actor,target);
+    if(Math.abs(target.x-actor.x)<=s.range)return true;
+    const gap=goal-actor.x;this.moveBody(actor,Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt),dt,s.speed,target);return Math.abs(goal-actor.x)<1;
    };
    // Lock each wrap to one patient. Reconsider only between wraps or after cancellation.
    if(!target||target.hp<=0||Math.abs(target.x-actor.x)>s.search||(!valid&&!action.resolved))action.phase='return';
@@ -290,7 +291,7 @@ export class Journey {
    }
    // Walking patients keep their treatment clock while the physician follows.
    if(target!==actor)moveTo(target.x-s.spacing);
-   if(Math.abs(target.x-actor.x)>s.range||!this.sameLane(actor,target))return;
+   if(Math.abs(target.x-actor.x)>s.range)return;
    action.elapsed+=dt;
    if(!action.resolved&&action.elapsed>=spec.impact){
     action.resolved=true;const amount=Math.min(s.heal,(target.maxHp??MAX_HP)-target.hp);
@@ -338,7 +339,7 @@ export class Journey {
     const ally=action.targetId===null?null:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
     const valid=action.targetId===null||!!ally,targetX=ally?.x??this.x;
     if(valid&&this.canStrike(actor,ally||this)&&contactGap(actor,ally||this)<=ENEMIES[actor.type].range+24){
-     if(actor.type==='reaper'||['ranged','heal'].includes(ENEMIES[actor.type].behavior))this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:'hex',from:actor.x,target:ally||this,damage:ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
+     if(actor.type==='reaper'||['ranged','heal'].includes(ENEMIES[actor.type].behavior))this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:'hex',duration:MOTION[actor.type]?.projectileTravel??SHOT_TIME,from:actor.x,target:ally||this,damage:ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
      else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);
      this.emit('claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});}
     }
@@ -457,7 +458,7 @@ export class Journey {
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(this.advanceEntry(a,false,dt))continue;
    const reactionPhase=a.type==='cow'?'anger':MOTION[a.type]?.anticipation?'anticipation':null;
    if(reactionPhase){
-    const threatened=this.enemies.some(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55&&contactGap(a,e)<=s.range+30+1e-6);
+    const threatened=this.enemies.some(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55&&this.canStrike(a,e)&&contactGap(a,e)<=s.range+30+1e-6);
     if(!threatened){a.alerted=false;if(a.action?.phase===reactionPhase)a.action=null;}
     else if(!a.alerted&&!a.action){
      a.alerted=true;a.action={kind:a.type,phase:reactionPhase,elapsed:0};

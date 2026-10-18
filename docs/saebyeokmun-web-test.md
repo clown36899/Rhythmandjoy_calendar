@@ -1,3 +1,11 @@
+# v144 / 2026-10-18 Completed cross-chat integration v149
+
+Integrated verified reaper9-clips, matching native delivery profiles/audio/sizes and master-scale projectile tail/death. Preserve completed roster framing and current generated entry, terrain masks, GPU-page handoff, one loading display and three road depths. Medicine and ranged attacks use horizontal reach across depth; nearby melee interception supersedes wandering timers while body clearance and one-impact target ownership remain.
+
+Selected25 engine/app/save/menu/entry checks and4 audio checks passed. Existing Stage2-only observer used ordinary summon/skill APIs with test invincibility and cleared60 enemies in162.85s. Actual local Stage2 browser verifies healer atdepth2 restoring a depth0 cow, ranged cross-depth damage and cow/spear interception. No physical-phone or DB/service changes. Other worktrees are unchanged; per-file provenance is recorded in management integration evidence. Public browser verification after this swap remains required.
+
+소스 `c7d4df1360b737ab5ca4d4111c2017b4c95d0cf9`. 원장: /Users/inteyeo/Documents/Codex/다섯개의나라/관리/카페24_배포-v144-entry-once.json
+
 # v144 · 2026-10-18 Stage2 entry, terrain and depth combat
 
 Post-deployment sequence found and repaired a pending framebuffer-profile white placeholder: keep a registered real body page until its replacement is ready; original missing-page/cache safety remains. Targeted4 and local64-frame handoff checks passed. Original vertical title uses generated first/middle/last-keyframe motion. One prepared film ends on the native Stage2 field, then HUD appears. Loading is one continuously moving readiness bar and percentage, with no second counters or premature100. Five rear masks are baked before deployment; complete foreground is retained. Stage2 uses three road depths, front-lane player, free friendly forward passage, depth-crossing clearance, cross-depth enemy interception and basic monster test roster without bandits. No free initial companions; first foes enter after2 game seconds. Run128/walk76 and completed roster interactions/art are integrated.
