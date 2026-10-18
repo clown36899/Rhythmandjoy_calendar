@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=150-road-height';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=151-motion-ready';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -338,7 +338,7 @@ export class Journey {
    if(action.kind==='enemy'){
     const ally=action.targetId===null?null:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
     const valid=action.targetId===null||!!ally,targetX=ally?.x??this.x;
-    if(valid&&this.canStrike(actor,ally||this)&&contactGap(actor,ally||this)<=ENEMIES[actor.type].range+24){
+    if(valid&&this.canStrike(actor,ally||this)&&contactGap(actor,ally||this)<=ENEMIES[actor.type].range+1e-6){
      if(actor.type==='reaper'||['ranged','heal'].includes(ENEMIES[actor.type].behavior))this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:'hex',duration:MOTION[actor.type]?.projectileTravel??SHOT_TIME,from:actor.x,target:ally||this,damage:ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
      else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);
      this.emit('claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});}

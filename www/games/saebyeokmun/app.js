@@ -1,9 +1,9 @@
 import {Campaign} from './game/campaign.js?v=146-entry';
-import {Journey} from './game/model.js?v=150-road-height';
+import {Journey} from './game/model.js?v=151-motion-ready';
 import {Autoplay} from './game/autoplay.js?v=146-entry';
-import {makeGame} from './game/scene.js?v=150-road-height';
-import {Soundscape} from './game/audio.js?v=150-road-height';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=150-road-height';
+import {makeGame} from './game/scene.js?v=151-motion-ready';
+import {Soundscape} from './game/audio.js?v=151-motion-ready';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=151-motion-ready';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -127,7 +127,9 @@ function unlockSound(){return soundscape.unlock().catch(()=>{showNotice('소리�
 try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-audio'));for(const channel of ['music','effects'])if(typeof saved?.[channel]==='boolean')soundscape.setChannelEnabled(channel,saved[channel]);if(typeof saved?.volume==='number'&&Number.isFinite(saved.volume))soundscape.setVolume(saved.volume);}catch{}
 function updateSound(){for(const channel of ['music','effects']){const on=soundscape[channel+'Enabled'],b=$(channel+'-toggle');b.setAttribute('aria-pressed',String(on));b.querySelector('.switch-state').textContent=on?'켬':'끔';}$('sound-volume').value=Math.round(soundscape.volume*100);$('volume-value').textContent=Math.round(soundscape.volume*100)+'%';}
 function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify({music:soundscape.musicEnabled,effects:soundscape.effectsEnabled,volume:soundscape.volume}));}catch{}}
-updateSound();
+// Current art/motion review starts silent, including older saved on settings.
+for(const channel of ['music','effects'])soundscape.setChannelEnabled(channel,false);
+saveSound();updateSound();
 // Opening preferences are separate from campaign rewards; the existing modal owns pause/resume.
 let openingEnabled=true;try{openingEnabled=localStorage.getItem('saebyeokmun-opening')!=='false';}catch{}
 let openingEpoch=0,openingAutomatic=false,openingPreparing=false;
@@ -140,7 +142,7 @@ function coverOpening(){
  $('opening').dataset.phase='preparing';document.body.dataset.entryPhase='loading';
  $('download-title').textContent='로딩 중';$('download-retry').hidden=true;updateDownload({phase:'waiting'});fitPhoneDialogs();$('asset-loading').showModal();
 }
-function openingFile(stage){return stage===1?'./assets/entry-stage2-v150.mp4':'./assets/entry-stage1-v146.mp4';}
+function openingFile(stage){return stage===1?'./assets/entry-stage2-v151.mp4':'./assets/entry-stage1-v146.mp4';}
 async function prepareOpeningFilm(stage){
  const epoch=entryEpoch,video=$('opening-video'),file=openingFile(stage);
  if(video.dataset.nextFile!==file){

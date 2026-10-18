@@ -1,5 +1,5 @@
 // One audio owner. User-provided music + credited effects; see assets/audio/LICENSES.txt.
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=149-cross-chat';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=151-motion-ready';
 const MOTION_AUDIO=Object.fromEntries(Object.entries(TRAVELLER_VIDEO).flatMap(([kind,clips])=>Object.entries(clips).filter(([,c])=>c.audio).map(([name,c])=>[kind+'-'+name,c.audio])));
 const NAMES=['step-heavy','step-light','stomp','seed','charm','guard','swipe','hurt','summon','heal','shelter','hail','warning','charge','hex','win','lose','coin','stone','ink','seal','horn','ascend','ambience',...Object.keys(MOTION_AUDIO)];
 const LEVELS={'step-heavy':.18,'step-light':.13,coin:.32,swipe:.38,guard:.62,warning:.8,summon:.65,heal:.55,seal:.68,charm:.68,hex:.7,ascend:.6};
@@ -8,6 +8,7 @@ export class Soundscape {
   this.contextFactory=contextFactory;this.fetcher=fetcher;this.onState=onState;this.enabled=true;this.musicEnabled=true;this.effectsEnabled=true;this.playing=false;this.volume=.55;this.buffers=new Map();this.voices=new Set();this.lastPlayed=new Map();this.ambient=null;this.ambientOffset=0;this.loaded=null;this.missing=[];
  }
  async unlock(){
+  if(!this.enabled||!this.musicEnabled&&!this.effectsEnabled)return;
   if(!this.context){this.context=this.contextFactory();this.master=this.context.createGain();this.master.gain.value=this.enabled?this.volume:0;
    if(this.context.createDynamicsCompressor){this.limiter=this.context.createDynamicsCompressor();this.limiter.threshold.value=-5;this.limiter.knee.value=6;this.limiter.ratio.value=12;this.limiter.attack.value=.003;this.limiter.release.value=.16;this.master.connect(this.limiter);this.limiter.connect(this.context.destination);}else this.master.connect(this.context.destination);
    this.context.onstatechange=()=>{if(this.context.state==='running')this.syncAmbience();this.onState(this.context.state==='running'?(this.missing.length?'partial':'ready'):'locked');};}

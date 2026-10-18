@@ -1,16 +1,16 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=150-road-height';
+import {ATLAS_SLICES} from './atlas-slices.js?v=151-motion-ready';
 import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=150-road-height';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=150-road-height';
-import {AssetDownloads} from './downloads.js?v=70';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=150-road-height';
-import {ASSET_BYTES} from './asset-sizes.js?v=150-road-height';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=151-motion-ready';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=151-motion-ready';
+import {AssetDownloads} from './downloads.js?v=151-motion-ready';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=151-motion-ready';
+import {ASSET_BYTES} from './asset-sizes.js?v=151-motion-ready';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
-const VIDEO_FRAME_BUDGET=48*1024*1024,VIDEO_SOURCE_BUDGET=64*1024*1024,VIDEO_BLOB_BUDGET=32*1024*1024,INJURY_BUDGET=24*1024*1024;
-// Share twelve-cel GPU pages; downloads remain twenty-four-cel blocks.
-const VIDEO_PAGE_FRAMES=12,VIDEO_PAGE_COLUMNS=4;
+const VIDEO_FRAME_BUDGET=48*1024*1024,VIDEO_SOURCE_BUDGET=96*1024*1024,VIDEO_BLOB_BUDGET=32*1024*1024,INJURY_BUDGET=24*1024*1024;
+// Small GPU pages retain independent poses; transport stays twenty-four cels.
+const VIDEO_PAGE_FRAMES=6,VIDEO_PAGE_COLUMNS=3;
 // Phaser 3.90 TimeStep integration; see PHASER-LICENSE.md.
 // Keep Phaser's elapsed/smoothed game delta, but pace its existing 60Hz limiter
 // by deadlines. Resetting the elapsed accumulator alone discards pacing remainder.
@@ -53,7 +53,7 @@ const WOUNDS={
  prince:{muzzle:[.87,.5],materials:['Cloth','Scar'],size:[.25,.3],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
  minister:{muzzle:[.85,.52],materials:['Cloth','Scar'],size:[.25,.3],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
  cavalry:{muzzle:[.84,.4],materials:['Fur','Cloth'],size:[.25,.3],poses:[[.5,.65,0]],attack:[[.5,.65,0]]},
- spearman:{muzzle:[.83,.57],materials:['Dark','Cloth'],size:[.25,.3],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
+ spearman:{muzzle:[.83,.57],materials:['Dark','Cloth'],size:[.22,.28],poses:[[.43,.57,0]],attack:[[.36,.55,0]]},
  archer:{muzzle:[.84,.44],materials:['Dark','Cloth'],size:[.25,.3],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
  mangtae:{materials:['Fur','Scar'],size:[.45,.5],poses:[[.5,.5,0]],attack:[[.5,.5,0]]},
  shadow:{materials:['Fur','Scar'],size:[.5,.35],poses:[[.5,.6,0]],attack:[[.5,.6,0]]},
@@ -163,10 +163,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(this.loadProgress)onProgress(this.loadProgress);
    return job.finally(()=>observers.delete(onProgress));
   }
-  videoFiles(keys,native=false){
+  videoFiles(keys,native=false,index){
    // One resolution selector owns loading, prefetch and preview identities.
    // Profile-specific keys reuse the established bounded source/request caches.
-   return keys.map(key=>{const file=this.files?.get(key);if(!file?.video)return key;const spec=VIDEO_SHEETS.find(s=>s.asset===file.video);return this.videoPage(this.videoFrameIndex.get(spec.prefix+file.part*24),native).sourceKey;});
+   return keys.map(key=>{const file=this.files?.get(key);if(!file?.video)return key;const spec=VIDEO_SHEETS.find(s=>s.asset===file.video);return this.videoPage(this.videoFrameIndex.get(spec.prefix+file.part*24),native,index).sourceKey;});
   }
   loadFiles(keys,onProgress,native=false){
    keys=this.videoFiles(keys,native);
@@ -225,7 +225,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
      const spec=clips[name];if(!spec)continue;
      const start=name==='idle'?0:spec.cycles?.[0]?.start??0,end=name==='idle'?0:Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+47),entries=name==='runUrgent'?[0,start]:[start];
      for(let i=(Math.floor(start/24)+1)*24;i<=end;i+=24)entries.push(i);
-     for(const i of entries){const key=this.videoPage(this.videoFrameIndex.get(spec.prefix+i)).sourceKey;if(!selected.has(key)||!this.loadedFiles.has(key))continue;await this.decodeVideo(key);this.videoCel(spec.prefix+i);this.trimPresentationCache();}
+     for(let i=(Math.floor(start/VIDEO_PAGE_FRAMES)+1)*VIDEO_PAGE_FRAMES;i<=Math.min(spec.frames-1,start+11);i+=VIDEO_PAGE_FRAMES)entries.push(i);
+     for(const i of new Set(entries)){const key=this.videoPage(this.videoFrameIndex.get(spec.prefix+i)).sourceKey;if(!selected.has(key)||!this.loadedFiles.has(key))continue;await this.decodeVideo(key);this.videoCel(spec.prefix+i);this.trimPresentationCache();}
     }
   }
   async prepareStage(index,onProgress,tour=false,party=model.party){
@@ -345,11 +346,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const source=this.videoSources.get(key)||{image:null};source.retryAt=performance.now()+5000;this.videoSources.set(key,source);
    }).finally(()=>{this.videoRequests.delete(key);});this.videoRequests.set(key,job);
   }
-  videoPage(frame,native=false){
+  videoPage(frame,native=false,index){
    const d=VIDEO_DELIVERY[frame.spec.asset],[,,nativeWidth,nativeHeight]=d.crop;
    // Retain at least 1.25 source texels per framebuffer pixel, including density.
    const unit=this.unit||this.viewSize()?.unit||Infinity;
-   const target=this.actorHeight(BODY_HEIGHT[frame.kind]||188)*frame.spec.scale*(native?Infinity:unit)*1.25;
+   const target=this.actorHeight(BODY_HEIGHT[frame.kind]||188,index)*frame.spec.scale*(native?Infinity:unit)*1.25;
    const h=Math.min(nativeHeight,Math.ceil(target/32)*32),w=Math.ceil(nativeWidth*h/nativeHeight);
    const profile=!native&&d.profiles?.find(p=>p.height===h);
    return {key:frame.spec.asset+':gpu:'+h+':'+Math.floor(frame.index/VIDEO_PAGE_FRAMES),w,h,g:d.gutter,sourceKey:frame.spec.asset+':'+(profile?'h'+h+':':'')+Math.floor(frame.index/24)};
@@ -366,11 +367,13 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const {key:pageKey,w,h,g,sourceKey}=this.videoPage(frame,native),cached=this.videoFrames.get(pageKey);
    const source=this.videoSources.get(sourceKey);
    if(source)source.used=now;
+   // A missing visible cel owns the queue before speculative future blocks.
+   if(!cached&&(!source?.image||source.h&&source.h<h)){if(!(source?.retryAt>now))this.requestVideo(sourceKey,native);return fallback&&(this.videoFrameIndex.has(fallback)||!fallback.startsWith('__')&&this.textures.exists(fallback))?fallback:key;}
    // Warm the next block before crossing its boundary. The game's motion clock
    // remains authoritative even if a slow connection temporarily holds a cel.
    const cycle=spec.cycles?.find(c=>index>=c.start&&index<=c.end),ahead=Math.ceil(spec.fps),first=cycle?.start??0,length=cycle?cycle.end-cycle.start+1:spec.frames;
    const pendingSources=new Set();
-   for(const nextIndex of new Set([first+(index-first+ahead)%length,first+(index-first+VIDEO_PAGE_FRAMES)%length])){
+   for(const nextIndex of this.ready===false?[]:new Set([first+(index-first+ahead)%length,first+(index-first+VIDEO_PAGE_FRAMES)%length])){
     const nextPage=this.videoPage(this.videoFrameIndex.get(spec.prefix+nextIndex),native),nextKey=nextPage.sourceKey,nextSource=this.videoSources.get(nextKey);
     if(nextSource)nextSource.used=now;
     // Preserve both the immediate GPU half and a second of transport lead.
@@ -379,7 +382,6 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    for(const nextKey of pendingSources)this.requestVideo(nextKey,native);
    if(cached){cached.used=now;return key;}
-   if(!source?.image||source.h&&source.h<h){if(!(source?.retryAt>now))this.requestVideo(sourceKey,native);return fallback&&(this.videoFrameIndex.has(fallback)||!fallback.startsWith('__')&&this.textures.exists(fallback))?fallback:key;}
    const delivery=VIDEO_DELIVERY[spec.asset],nw=source.w||delivery.crop[2],nh=source.h||delivery.crop[3];
    const start=Math.floor(index/VIDEO_PAGE_FRAMES)*VIDEO_PAGE_FRAMES,end=Math.min(spec.frames,start+VIDEO_PAGE_FRAMES);
    let gpuPixels=source.image;
@@ -414,7 +416,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // Resolve pages at the current density so rotation releases the old profile.
    if(this.videoFrameIndex)for(const kind of ['girl','haetae'])for(const name of ['idle','walk','run']){
     const spec=VIDEO_MOTION[kind][name],start=name==='idle'?0:spec.cycles?.[0]?.start??0;
-    const end=Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+VIDEO_PAGE_FRAMES-1);
+    const end=Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+11);
     for(let page=Math.floor(start/VIDEO_PAGE_FRAMES);page<=Math.floor(end/VIDEO_PAGE_FRAMES);page++)pinned.add(this.videoPage(this.videoFrameIndex.get(spec.prefix+Math.max(start,page*VIDEO_PAGE_FRAMES))).key);
    }
    const trim=(cache,budget,bytes,remove)=>{
@@ -434,7 +436,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   prefetchStage(index,onProgress,tour=model.tour){
    if(!STAGES[index])return Promise.resolve();
-   return this.downloads.prefetch(this.stageFiles(index,tour).filter(k=>!this.loadedFiles.has(k)).map(k=>this.files.get(k)),onProgress);
+   return this.downloads.prefetch(this.videoFiles(this.stageFiles(index,tour),false,index).filter(k=>!this.loadedFiles.has(k)).map(k=>this.files.get(k)),onProgress);
   }
   async ensurePreview(kind,mode='idle'){
    // Collection portraits reuse the registered slicing recipe, without loading the battle bundle.
@@ -878,6 +880,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    base=base.replace(/^injured[12]__/, '');
    const profile=WOUNDS[base.startsWith('keeperBrush')?'keeperBrush':kind];
    if(!profile)return {x:.5,y:.5,w:.4,h:.4,angle:0};
+   const frame=this.videoFrameIndex?.get(base);
+   if(frame){const name=Object.entries(VIDEO_MOTION[kind]||{}).find(([,spec])=>spec===frame.spec)?.[0],attack=['attack','anticipation','anger'].includes(name),poses=attack?profile.attack:profile.poses,cycle=frame.spec.cycles?.find(c=>frame.index>=c.start&&frame.index<=c.end),phase=(frame.index-(cycle?.start??0))/(cycle?cycle.end-cycle.start+1:frame.spec.frames)*poses.length,i=Math.floor(phase)%poses.length,j=(i+1)%poses.length,q=phase%1,a=poses[i],b=poses[j];return {x:a[0]+(b[0]-a[0])*q,y:a[1]+(b[1]-a[1])*q,angle:a[2]+(b[2]-a[2])*q,w:profile.size[0],h:profile.size[1]};}
    let n=Number(base.match(/(\d+)$/)?.[1]||0),poses=profile.poses;
    if(base.includes('Idle')||base.includes('Recover')){const a=profile.poses[0];return {x:a[0],y:a[1],angle:0,w:profile.size[0],h:profile.size[1]};}
    if(base.includes('Cast')&&profile.cast){const a=profile.cast[n%profile.cast.length];return {x:a[0],y:a[1],angle:a[2],w:profile.size[0],h:profile.size[1]};}
@@ -982,7 +986,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(body.isTinted)(body.tintFill?image.setTintFill(body.tintTopLeft):image.setTint(body.tintTopLeft));else image.clearTint();if(!AREAS[model.status==='ready'?this.previewAreaIndex:model.stage].actorFloors)this.root.bringToTop(image);
   }
   worldPixels(pixels){const size=this.unit?null:this.viewSize();return pixels*(Number(this.game?.canvas?.dataset?.renderDensity)||size?.density||1)/(this.unit||size?.unit||1);}
-  actorHeight(height){const area=AREAS[this.ready===false||model.status==='ready'?(this.previewAreaIndex??model.stage):model.stage];return height*(area.actorScale||1)+this.worldPixels(area.actorHeightAdd||0);}
+  actorHeight(height,index){const area=AREAS[index??(this.ready===false||model.status==='ready'?(this.previewAreaIndex??model.stage):model.stage)];return height*(area.actorScale||1)+this.worldPixels(area.actorHeightAdd||0);}
   placeOnGround(image,x,height,groundY=GROUND){
    const key=image.celKey||image.texture.key,frame=this.videoFrameIndex?.get(key),crop=frame?VIDEO_DELIVERY[frame.spec.asset].crop:null,src=crop?{width:crop[2],height:crop[3]}:image.texture.getSourceImage();height=this.actorHeight(height)*(this.celScale.get(key)??1);
    const rx=this.registrationX.get(key)??.5;
@@ -1372,7 +1376,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
       // The same master-to-game scale owns body and effect. Never fit a tail
       // into an arbitrary small box or resize a changing pose frame by frame.
       this.setCel(e.sprite,key);const height=this.actorHeight(BODY_HEIGHT[e.sourceKind])*authored.scale;
-      e.sprite.setVisible(this.textures.exists(page.key)).setOrigin(.5,.5).setPosition(head.x,head.y).setDisplaySize(height*page.w/page.h,height).setFlipX(dir>0).setAlpha(1);continue;
+      const point=authored.cue?.point||[.5,.5];e.sprite.setVisible(this.textures.exists(page.key)).setOrigin(dir>0?1-point[0]:point[0],point[1]).setPosition(head.x,head.y).setDisplaySize(height*page.w/page.h,height).setFlipX(dir>0).setAlpha(1);continue;
      }
      const color=hex?0xc49ae6:stone?0xeac276:seed?0xc3e975:ink?0x53c1b2:0x8fe6d5;
      if(!arrow)ribbon(Array.from({length:5},(_,i)=>at(Math.max(0,travel-.2+i*.05))),stone?3:ink?6:4,color,1);

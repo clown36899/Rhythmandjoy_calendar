@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="./stage2.css?v=146-stage2">
 <link rel="stylesheet" href="./opening.css?v=147-entry-match">
 <script defer src="./game/phaser.min.js"></script>
-<script type="module" src="./app.js?v=150-road-height"></script>
+<script type="module" src="./app.js?v=151-motion-ready"></script>
 </head>
 <body data-screen="map">
 <svg class="journey-icons" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -117,8 +117,8 @@
 <div class="dialog-head"><div><span class="eyebrow">A MOMENT ON THE ROAD</span><h2 id="settings-title">잠시, 쉬어 가기.</h2></div><button class="dialog-close" aria-label="설정 닫기">×</button></div>
 <div class="settings-layout">
 <section class="settings-audio" aria-labelledby="settings-sound-title"><h3 id="settings-sound-title">밤길의 소리</h3>
-<button id="music-toggle" class="setting-switch" aria-pressed="true"><span>배경음악<small>Yokai Battle Theme</small></span><b class="switch-state">켬</b><i aria-hidden="true"></i></button>
-<button id="effects-toggle" class="setting-switch" aria-pressed="true"><span>효과음<small>발걸음 · 타격 · 필살기</small></span><b class="switch-state">켬</b><i aria-hidden="true"></i></button>
+<button id="music-toggle" class="setting-switch" aria-pressed="false"><span>배경음악<small>Yokai Battle Theme</small></span><b class="switch-state">끔</b><i aria-hidden="true"></i></button>
+<button id="effects-toggle" class="setting-switch" aria-pressed="false"><span>효과음<small>발걸음 · 타격 · 필살기</small></span><b class="switch-state">끔</b><i aria-hidden="true"></i></button>
 <label class="setting-volume" for="sound-volume"><span>전체 음량</span><output id="volume-value">55%</output><input type="range" id="sound-volume" min="0" max="100" value="55"></label></section>
 <section class="settings-menu" aria-labelledby="settings-menu-title"><h3 id="settings-menu-title">메뉴 <small id="edition-area">몽유도원</small></h3>
 <button id="opening-toggle" class="setting-switch" aria-pressed="true"><span>시작 오프닝<small>켜면 시작할 때 이야기를 보여줘요</small></span><b class="switch-state">켬</b><i aria-hidden="true"></i></button><nav aria-label="게임 메뉴"><button id="opening-replay">오프닝 다시 보기</button><button id="upgrade" class="upgrade-button" title="도령 수련: 옷과 무기 강화">도령 수련 <small>◎ 45</small></button><button id="loadout-open">필살기 편성</button><button id="codex-open">동작과 도감</button><button id="fullscreen" aria-label="전체 화면">⤢ 전체 화면</button><button id="install" aria-label="홈 화면에 추가 안내">홈 화면에 추가</button><button id="settings-map">지도로 돌아가기</button></nav></section>

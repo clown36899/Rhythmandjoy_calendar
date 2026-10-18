@@ -1,3 +1,9 @@
+# v144 / 2026-10-18 Shared motion readiness and contact v151
+
+Prioritize current motion pages, reuse display-profile prefetch, reserve one foreground transfer slot, and retain native quality/cadence with six-cel GPU pages and a measured96MiB decoded cache. Start all sound off without audio downloads. Reduce Stage2 bodies another10CSSpx (15 cumulative), widen its fixed vertical display slots, and match the film tail to the real firstframe. Stage1 visual settings remain unchanged. Align the reaper head contact, native body sockets and strike/launch reach. All172 tests pass. Repeated local Stage1/2 field and actual Stage2 entry/play reviewed; public repeat tests follow deployment. Original assets, integrated reaper/mobile cards and19 prior versions preserved.
+
+소스 `f6a34dc3d46f192ae0433ec774c3a620dd5c5aa5`. 원장: /Users/inteyeo/Documents/Codex/다섯개의나라/관리/카페24_배포-v144-entry-once.json
+
 # v144 / 2026-10-18 Road-height display and shared motion readiness v150
 
 Restore Stage2 to the existing Stage1 horizontal combat/display-slot policy, follow each authored road height, reduce Stage2 bodies by5 CSSpx, and match the opening tail to the actual game firstframe. Keep completed mobile roster and reaper v149 integration. Repair placeholder fallback and display-profile request identity; prepare both the next GPU half and one second ahead through the existing bounded loader/cache. All171 tests pass. Local ordinary Stage2 play recorded no white or missing textures. Public Stage1/2 repeated gameplay follows deployment; physical-device performance is not claimed.
