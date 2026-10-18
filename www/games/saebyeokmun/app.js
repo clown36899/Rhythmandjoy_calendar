@@ -1,9 +1,9 @@
 import {Campaign} from './game/campaign.js?v=146-entry';
-import {Journey} from './game/model.js?v=146-entry';
+import {Journey} from './game/model.js?v=147-entry-match';
 import {Autoplay} from './game/autoplay.js?v=146-entry';
-import {makeGame} from './game/scene.js?v=146-entry-opt';
+import {makeGame} from './game/scene.js?v=147-entry-match';
 import {Soundscape} from './game/audio.js?v=146-entry';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=146-entry';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=147-entry-match';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -105,7 +105,7 @@ for(const id of ['map-expand','map-fold'])$(id).addEventListener('click',()=>set
 for(const id of ['map-settings','home-settings'])$(id).addEventListener('click',()=>openInfo($('settings')));
 $('home-codex').addEventListener('click',openCodex);
 function showMap(){
- if(fullscreenPending)return;openingAutomatic=false;openingEpoch++;delete document.body.dataset.entryPhase;if(scene)scene.entryPreview=false;entryEpoch++;$('asset-loading').close();infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();
+ if(fullscreenPending)return;openingAutomatic=false;openingEpoch++;delete document.body.dataset.entryPhase;if(scene){scene.entryPreview=false;delete scene.entryViewStarted;scene.resize();}entryEpoch++;stopLoadingDisplay();$('asset-loading').close();if(!$('opening').open)releaseOpeningFilm();infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();
  stopAutoplay();
  keys.clear();model.setDirection(0,{cancel:true});model.reset();lastStatus='';resultReadyAt=Infinity;selectedStage=STAGES.findIndex((_,i)=>!campaign.cleared.includes(i));if(selectedStage<0)selectedStage=0;mapPage=Math.floor(selectedStage/STAGES_PER_COUNTRY);
  $('intro').hidden=false;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=true;$('callout').hidden=true;document.body.dataset.screen='map';
@@ -131,27 +131,32 @@ updateSound();
 // Opening preferences are separate from campaign rewards; the existing modal owns pause/resume.
 let openingEnabled=true;try{openingEnabled=localStorage.getItem('saebyeokmun-opening')!=='false';}catch{}
 let openingEpoch=0,openingAutomatic=false,openingPreparing=false;
+let loadingDisplay={active:false,value:0,target:0,last:0,frame:0};
 function updateOpening(){const b=$('opening-toggle');b.setAttribute('aria-pressed',String(openingEnabled));b.querySelector('.switch-state').textContent=openingEnabled?'켬':'끔';}
 function stopNarration(){$('opening-voice').pause();$('opening-video').pause();}
 function coverOpening(){
- if($('opening').open&&openingPreparing)return;
+ if($('asset-loading').open&&openingPreparing)return;
  openingAutomatic=true;openingPreparing=true;
- $('opening').dataset.phase='preparing';openInfo($('opening'));document.body.dataset.entryPhase='loading';
+ $('opening').dataset.phase='preparing';document.body.dataset.entryPhase='loading';
+ $('download-title').textContent='로딩 중';$('download-retry').hidden=true;updateDownload({phase:'waiting'});fitPhoneDialogs();$('asset-loading').showModal();
 }
+function openingFile(stage){return stage===1?'./assets/entry-stage2-v147.mp4':'./assets/entry-stage1-v146.mp4';}
 async function prepareOpeningFilm(stage){
- const epoch=entryEpoch,video=$('opening-video'),file=`./assets/entry-stage${stage===1?2:1}-v146.mp4`;
- if(video.dataset.nextFile===file)return;
- await scene.downloads.request({url:file});const blob=scene.downloads.take(file);if(epoch!==entryEpoch)return;
- if(video.dataset.nextSrc)URL.revokeObjectURL(video.dataset.nextSrc);
- video.dataset.nextSrc=URL.createObjectURL(blob);video.dataset.nextFile=file;
+ const epoch=entryEpoch,video=$('opening-video'),file=openingFile(stage);
+ if(video.dataset.nextFile!==file){
+  await scene.downloads.request({url:file});const blob=scene.downloads.take(file);if(epoch!==entryEpoch)return;
+  if(video.dataset.nextSrc)URL.revokeObjectURL(video.dataset.nextSrc);
+  video.dataset.nextSrc=URL.createObjectURL(blob);video.dataset.nextFile=file;video.src=video.dataset.nextSrc;
+ }
+ // Prime the same muted decoder behind the loading dialog, before displaying it.
+ await video.play();if(epoch!==entryEpoch)return;video.pause();video.currentTime=0;
 }
 function playOpening(stage,automatic=false){
- openingAutomatic=automatic;openingPreparing=false;
+ openingAutomatic=automatic;openingPreparing=false;$('opening').dataset.stage=String(stage);
  const video=$('opening-video');
  // This film already contains the generated title and the camera move into the
  // native field. Play it once, from zero, only after that field is prepared.
- // Keep the poster visible until playback has an actual decoded first frame.
- const token=++openingEpoch;video.dataset.clip='transition';video.src=video.dataset.nextFile===`./assets/entry-stage${stage===1?2:1}-v146.mp4`?video.dataset.nextSrc:`./assets/entry-stage${stage===1?2:1}-v146.mp4`;video.currentTime=0;
+ const token=++openingEpoch;video.dataset.clip='transition';const src=video.dataset.nextFile===openingFile(stage)?video.dataset.nextSrc:openingFile(stage);if(video.src!==src)video.src=src;video.currentTime=0;
  video.play().then(()=>{if(token===openingEpoch&&$('opening').open&&['preparing','loading'].includes($('opening').dataset.phase))$('opening').dataset.phase='playing';}).catch(()=>{if(token===openingEpoch)finishOpeningFilm();});
 }
 function showOpening(){
@@ -162,12 +167,12 @@ function showOpening(){
 function finishOpeningFilm(){
  if(!$('opening').open)return;
  if(openingPreparing)return;
- if(openingAutomatic){$('opening').dataset.phase='reveal';document.body.dataset.entryPhase='world';}
- else $('opening').close();
+ if(openingAutomatic){scene.entryViewStarted=performance.now();document.body.dataset.entryPhase='ui';}
+ $('opening').close();
 }
 function finishOpeningUI(){
  if(document.body.dataset.entryPhase!=='ui')return;
- delete document.body.dataset.entryPhase;scene.entryPreview=false;openingAutomatic=false;
+ delete document.body.dataset.entryPhase;scene.entryPreview=false;delete scene.entryViewStarted;scene.resize();openingAutomatic=false;
  completeInfo();
 }
 updateOpening();
@@ -175,16 +180,16 @@ $('opening-toggle').addEventListener('click',()=>{openingEnabled=!openingEnabled
 $('opening-replay').addEventListener('click',showOpening);
 $('opening-video').addEventListener('ended',finishOpeningFilm);
 $('opening-video').addEventListener('error',finishOpeningFilm);
-$('opening').addEventListener('animationend',e=>{if(e.target!==$('opening')||e.animationName!=='entry-world'||!openingAutomatic)return;$('opening').close();document.body.dataset.entryPhase='ui';});
 document.querySelector('.control-deck').addEventListener('animationend',e=>{if(e.target===document.querySelector('.control-deck')&&e.animationName==='entry-hud')finishOpeningUI();});
 $('opening').addEventListener('cancel',e=>{if(openingAutomatic)e.preventDefault();});
-$('opening').addEventListener('close',()=>{
+function releaseOpeningFilm(){
  openingEpoch++;stopNarration();const video=$('opening-video');
  // Closing releases movie buffers; backgrounding only pauses the current film.
  video.removeAttribute('src');video.load();
  if(video.dataset.nextSrc)URL.revokeObjectURL(video.dataset.nextSrc);
  delete video.dataset.nextSrc;delete video.dataset.nextFile;delete video.dataset.clip;
-});
+}
+$('opening').addEventListener('close',releaseOpeningFilm);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!openingPreparing&&$('opening').open&&['playing','preparing'].includes($('opening').dataset.phase))$('opening-video').play().catch(finishOpeningFilm);});
 function updateBest(){const n=Math.floor(model.progress()*100);best=Math.max(best,n);$('best').textContent=best+'%';try{localStorage.setItem('saebyeokmun-best',String(best));}catch{}}
 async function start(testStage=null,cinematic=false){
@@ -193,19 +198,20 @@ async function start(testStage=null,cinematic=false){
  if(testing)selectedStage=testStage;else stopAutoplay();
  const stage=selectedStage;
  if(cinematic)coverOpening();
- if(!await prepareFor('불러오는 중',async p=>{
+ if(!await prepareFor(cinematic?'로딩 중':'불러오는 중',async p=>{
   const results=await Promise.allSettled([scene.prepareStage(stage,p,testing,testing?Object.keys(UNITS):campaign.party),cinematic?prepareOpeningFilm(stage):Promise.resolve()]);
   // A failed film must not unlock a retry while the existing scene is still preparing.
   const failed=results.find(result=>result.status==='rejected');if(failed)throw failed.reason;
  },()=>start(testing?stage:null,cinematic),cinematic))return;
  infoPaused=false;for(const dialog of infoDialogs)if(dialog.open&&(!cinematic||dialog!==$('opening')))dialog.close();
+ if(cinematic)openInfo($('opening'));
  if(!testing){activeRun=campaign.begin();saveCampaign();}
  model.start(selectedStage,testing?DEFAULT_PARTY:campaign.party,scene?.vw,{tour:testing&&requestedStage===null});
  if(testing){autoplay.enter();scene.playbackRate=autoplay.rate;}
  renderSummonSlots();renderSkillSlots();renderAutoplay();keys.clear();model.setDirection(0,{cancel:true});lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
  if(scene)scene.resetPresentation();updateAuto();soundscape.stopVoices(true);
- if(cinematic){scene.entryPreview=true;model.drainEvents();model.pause();infoPaused=!document.hidden;soundscape.setPlaying(false);playOpening(stage,true);}
- else{scene.entryPreview=false;delete document.body.dataset.entryPhase;soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});}
+ if(cinematic){scene.entryPreview=true;scene.entryBlend=0;delete scene.entryViewStarted;scene.resize();model.drainEvents();model.pause();infoPaused=!document.hidden;soundscape.setPlaying(false);playOpening(stage,true);}
+ else{scene.entryPreview=false;delete scene.entryViewStarted;scene.resize();delete document.body.dataset.entryPhase;soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});}
  prefetchNext(stage);
 }
 function pause(){if(!ready||fullscreenPending)return;if(autoplay.active){if(autoplay.complete)return;autoplay.paused=model.status==='paused'?false:!autoplay.paused;}model.pause();keys.clear();model.setDirection(0,{cancel:true});renderAutoplay();soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
@@ -254,7 +260,7 @@ for(const [id,dir]of [['summon-prev',-1],['summon-next',1]])$(id).addEventListen
 $('upgrade').addEventListener('click',()=>{if($('settings').open){$('settings').close();completeInfo();}model.upgradeKeeper();});
 document.addEventListener('dragstart',e=>e.preventDefault());
 document.addEventListener('keydown',e=>{
- if(fullscreenPending||infoDialogs.some(d=>d.open))return;
+ if(fullscreenPending||document.body.dataset.entryPhase||$('asset-loading').open||infoDialogs.some(d=>d.open))return;
  const k=e.key.toLowerCase();
  if(autoplay.active&&k!==' ')return;
  if(['arrowleft','arrowright',' ','a','d','q','e','r','1','2','3','4','5'].includes(k))e.preventDefault();
@@ -339,9 +345,9 @@ function renderTeamSkills(m,s){
 function hydrateIcons(root=document){
  if(!scene)return;
  for(const img of root.querySelectorAll('[data-icon]')){
-  const key=img.dataset.icon,src=scene.previewTexture(key);if(src){img.src=src;img.hidden=false;continue;}img.hidden=true;
+  const key=img.dataset.icon,src=scene.previewTexture(key,img.dataset.previewAlign);if(src){img.src=src;img.hidden=false;continue;}img.hidden=true;
   const kind=img.dataset.previewKind||key.replace(/\d+$/,'');if(!scene.commonReady)continue;
-  scene.ensurePreview(kind).then(()=>{if(img.isConnected===false||img.dataset.icon!==key)return;const ready=scene.previewTexture(key);if(ready){img.src=ready;img.hidden=false;}}).catch(()=>{});
+  scene.ensurePreview(kind).then(()=>{if(img.isConnected===false||img.dataset.icon!==key)return;const ready=scene.previewTexture(key,img.dataset.previewAlign);if(ready){img.src=ready;img.hidden=false;}}).catch(()=>{});
  }
 }
 function renderSummonSlots(){
@@ -352,24 +358,43 @@ function rosterStars(count){
  const star='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 15 8.4 22 9.4 17 14.5 18.2 21.8 12 18.3 5.8 21.8 7 14.5 2 9.4 9 8.4Z" fill="#ffbc25" stroke="#613b11" stroke-width="1.6" stroke-linejoin="round"/><path d="m12 4-2.4 5.8-5.2.7 7.6 2Z" fill="#ffe68a"/></svg>';
  return '<span class="roster-stars" aria-label="별 '+count+'개">'+star.repeat(count)+'</span>';
 }
-function renderRoster(){
- const rosterKinds=['cow',...STAGE_REWARDS],portraitScene=kind=>{const i=rosterKinds.indexOf(kind);return (i%4/3*100)+'% '+(Math.floor(i/4)/2*100)+'%';};
+function renderRoster(status='닫으면 저장'){
+ const rosterKinds=['cow',...STAGE_REWARDS];
  $('roster-balance').textContent='◎ '+campaign.balance.toLocaleString('ko-KR');
  $('roster-count').textContent=draftParty.length+' / 5';
- $('roster-slots').innerHTML=Array.from({length:5},(_,i)=>`<button data-party-remove="${i}" data-tier="${UNITS[draftParty[i]]?.tier||'beast'}" data-rarity="${UNITS[draftParty[i]]?.rosterCard.rarity||'일반'}" ${draftParty[i]&&draftParty.length>1?'':'disabled'} aria-label="${i+1}번 ${UNITS[draftParty[i]]?.name||'빈 자리'} 편성 해제"><small>${i+1}</small>${draftParty[i]?`<span class="roster-card-art" style="--portrait-scene:${portraitScene(draftParty[i])}" aria-hidden="true"><img src="${scene.previewTexture(scene.previewIdleKey(draftParty[i]))}" data-icon="${scene.previewIdleKey(draftParty[i])}" data-preview-kind="${draftParty[i]}" alt="" draggable="false"></span><span class="roster-slot-name">${UNITS[draftParty[i]].name}</span>${rosterStars(UNITS[draftParty[i]].rosterCard.stars)}`:'<span class="roster-slot-name">+</span>'}</button>`).join('');
- $('roster-choices').innerHTML=rosterKinds.map(key=>[key,UNITS[key]]).map(([key,s])=>`<button class="roster-card" style="--portrait-scene:${portraitScene(key)}" data-focused="${rosterFocus===key}" data-tier="${s.tier}" data-rarity="${s.rosterCard.rarity}" data-owned="${campaign.owned.includes(key)}" data-character="${key}" aria-label="${s.name} · ${s.rosterCard.rarity} · 별 ${s.rosterCard.stars}개 편성 ${draftParty.includes(key)?'해제':'선택'}" aria-pressed="${draftParty.includes(key)}"><span class="roster-card-art" aria-hidden="true"><img src="${scene.previewTexture(scene.previewIdleKey(key))}" data-icon="${scene.previewIdleKey(key)}" data-preview-kind="${key}" alt="" draggable="false"></span><strong>${s.name}</strong>${rosterStars(s.rosterCard.stars)}<small>${s.rosterCard.rarity}</small><em>${draftParty.includes(key)?'✓':campaign.owned.includes(key)?'':'🔒'}</em></button>`).join('')+'<div class="roster-card roster-card-empty" data-tier="beast" style="--portrait-scene:100% 100%" aria-hidden="true"><span class="roster-card-art"></span></div>';
+ $('roster-status').textContent=status;
+ $('roster-slots').innerHTML=Array.from({length:5},(_,i)=>`<button data-party-remove="${i}" data-tier="${UNITS[draftParty[i]]?.tier||'beast'}" data-rarity="${UNITS[draftParty[i]]?.rosterCard.rarity||'일반'}" ${draftParty[i]?'':'disabled'} aria-label="${i+1}번 ${UNITS[draftParty[i]]?.name||'빈 자리'} 보기${draftParty.length>1?'·편성 해제':''}"><small>${i+1}</small>${draftParty[i]?`<span class="roster-card-art" aria-hidden="true"><img src="${scene.previewTexture(scene.previewIdleKey(draftParty[i]),'roster')}" data-icon="${scene.previewIdleKey(draftParty[i])}" data-preview-kind="${draftParty[i]}" data-preview-align="roster" alt="" draggable="false"></span><span class="roster-slot-name">${UNITS[draftParty[i]].name}</span>${rosterStars(UNITS[draftParty[i]].rosterCard.stars)}`:'<span class="roster-slot-name">+</span>'}</button>`).join('');
+ $('roster-choices').innerHTML=rosterKinds.map(key=>[key,UNITS[key]]).map(([key,s])=>`<button class="roster-card" data-focused="${rosterFocus===key}" data-tier="${s.tier}" data-rarity="${s.rosterCard.rarity}" data-owned="${campaign.owned.includes(key)}" data-character="${key}" aria-label="${s.name} · ${s.rosterCard.rarity} · 별 ${s.rosterCard.stars}개 편성 ${draftParty.includes(key)?'해제':'선택'}" aria-pressed="${draftParty.includes(key)}"><span class="roster-card-art" aria-hidden="true"><img src="${scene.previewTexture(scene.previewIdleKey(key),'roster')}" data-icon="${scene.previewIdleKey(key)}" data-preview-kind="${key}" data-preview-align="roster" alt="" draggable="false"></span><strong>${s.name}</strong>${rosterStars(s.rosterCard.stars)}<small>${s.rosterCard.rarity}</small><em>${draftParty.includes(key)?'✓':campaign.owned.includes(key)?'':'🔒'}</em></button>`).join('')+'<div class="roster-card roster-card-empty" data-tier="beast" aria-hidden="true"><span class="roster-card-art"></span></div>';
  const s=UNITS[rosterFocus];$('roster').dataset.tier=s.tier;$('roster').dataset.rarity=s.rosterCard.rarity;$('roster-stars').innerHTML=rosterStars(s.rosterCard.stars);$('roster-name').textContent=s.name;$('roster-role').textContent=s.rosterCard.rarity+' · '+s.role.split(' · ')[0];$('roster-stats').innerHTML='<span>체력 <b>'+Math.round(s.hp)+'</b></span><span>공격 <b>'+Math.round(s.damage)+'</b></span><span>소환 <b>'+s.cost+'</b></span>';
  $('roster-description').textContent='';
- const img=$('roster-preview');img.src=scene.previewTexture(scene.previewIdleKey(rosterFocus));img.dataset.icon=scene.previewIdleKey(rosterFocus);img.dataset.previewKind=rosterFocus;rosterMotion={kind:rosterFocus,enemy:false,img,keys:Array.from({length:rosterFocus==='cow'?97:8},(_,i)=>rosterFocus+i),variants:new Map(),health:1,mode:'idle',started:performance.now(),frame:-1};hydrateIcons($('roster'));
+ const img=$('roster-preview');img.src=scene.previewTexture(scene.previewIdleKey(rosterFocus),'roster');img.dataset.icon=scene.previewIdleKey(rosterFocus);img.dataset.previewKind=rosterFocus;img.dataset.previewAlign='roster';rosterMotion={kind:rosterFocus,enemy:false,img,keys:Array.from({length:rosterFocus==='cow'?97:8},(_,i)=>rosterFocus+i),variants:new Map(),health:1,mode:'idle',started:performance.now(),frame:-1};
+ $('roster-motion-menu').open=false;
+ for(const button of $('roster-motions').querySelectorAll('[data-roster-motion]')){button.setAttribute('aria-pressed',String(button.dataset.rosterMotion==='idle'));if(button.dataset.rosterMotion==='attack')button.textContent=rosterFocus==='healer'?'치료':'공격';}
+ hydrateIcons($('roster'));
 }
 async function openRoster(){if(!ready||preparing||['playing','paused'].includes(model.status))return;if(!scene.commonReady&&!await prepareFor('동료 편성',p=>scene.ensureCommon(p),openRoster))return;draftParty=[...campaign.party];$('roster-motion-menu').open=false;renderRoster();openInfo($('roster'));}
 for(const id of ['roster-open','result-roster'])$(id).addEventListener('click',openRoster);
-$('roster-choices').addEventListener('click',e=>{const b=e.target.closest('[data-character]');if(!b)return;rosterFocus=b.dataset.character;const index=draftParty.indexOf(rosterFocus);if(index>=0){if(draftParty.length>1)draftParty.splice(index,1);}else if(draftParty.length<5&&campaign.owned.includes(rosterFocus))draftParty.push(rosterFocus);renderRoster();});
-$('roster-slots').addEventListener('click',e=>{const b=e.target.closest('[data-party-remove]');if(!b||b.disabled||draftParty.length<=1)return;draftParty.splice(Number(b.dataset.partyRemove),1);renderRoster();});
+for(const id of ['roster-choices','roster-slots'])$(id).addEventListener('click',e=>{
+ const b=e.target.closest('[data-character],[data-party-remove]');if(!b||b.disabled)return;
+ const kind=b.dataset.character??draftParty[Number(b.dataset.partyRemove)];if(!UNITS[kind])return;
+ rosterFocus=kind;const index=draftParty.indexOf(kind);let status='닫으면 저장';
+ if(index>=0){if(draftParty.length>1)draftParty.splice(index,1);else status='최소 1명 필요';}
+ else if(!campaign.owned.includes(kind))status='획득 후 편성';
+ else if(draftParty.length>=5)status='최대 5명 편성';
+ else draftParty.push(kind);
+ renderRoster(status);
+});
 // The existing Campaign owns validation and persistence; closing commits only a changed draft.
 $('roster').addEventListener('close',()=>{if(draftParty.length===campaign.party.length&&draftParty.every((key,i)=>key===campaign.party[i]))return;if(campaign.select(draftParty)){saveCampaign();renderSummonSlots();renderMap();}});
 $('roster').querySelector('.dialog-close').addEventListener('click',()=>$('roster').close());
-$('roster-motions').addEventListener('click',e=>{const b=e.target.closest('[data-roster-motion]');if(b&&rosterMotion){rosterMotion.mode=b.dataset.rosterMotion;rosterMotion.started=performance.now();$('roster-motion-menu').open=false;}});
+$('roster-motions').addEventListener('click',e=>{
+ const b=e.target.closest('[data-roster-motion]');if(!b||!rosterMotion)return;
+ const preview=rosterMotion,mode=b.dataset.rosterMotion;preview.mode=mode;preview.started=performance.now();preview.frame=-1;preview.variants.clear();delete preview.img.dataset.icon;$('roster-motion-menu').open=false;
+ for(const button of $('roster-motions').querySelectorAll('[data-roster-motion]'))button.setAttribute('aria-pressed',String(button===b));
+ $('roster-status').textContent='동작 준비 중';
+ const pending=scene.ensurePreview(preview.kind,mode);preview.loading=pending;
+ pending.then(()=>{if(rosterMotion===preview&&preview.loading===pending){preview.started=performance.now();preview.frame=-1;$('roster-status').textContent='닫으면 저장';}}).catch(()=>{if(rosterMotion===preview&&preview.loading===pending)$('roster-status').textContent='다시 눌러주세요';}).finally(()=>{if(preview.loading===pending)preview.loading=null;});
+});
 function renderLoadout(focusKey=draftLoadout[0]){
  const focused=SKILLS[focusKey];$('loadout-detail-label').textContent=focused?.description||'기술을 눌러 장착하거나 해제하세요.';$('loadout-detail-label').setAttribute('aria-label',focused?focused.name+' 설명 펼치기':'기술 설명');
  $('loadout-detail').textContent=focused?.description||'기술을 눌러 장착하거나 해제하세요.';
@@ -424,7 +449,7 @@ function onReady(error,s){
  }
  // Warm the existing shared bundle while the home remains interactive. Failed files
  // retain the normal foreground retry path; ensureCommon coalesces concurrent opens.
- scene.ensureCommon().then(()=>{renderSkillSlots();renderSummonSlots();}).catch(()=>{});
+ if(!requestedAutoplay&&!(requestedStage!==null&&canEnterStage(requestedStage))&&!(openingEnabled&&requestedStage===null))scene.ensureCommon().then(()=>{renderSkillSlots();renderSummonSlots();}).catch(()=>{});
  renderAutoplay();
  if(requestedAutoplay)beginAutoplay();
  else if(requestedStage!==null&&canEnterStage(requestedStage)){selectStage(requestedStage);start(null,openingEnabled&&requestedStage<2);}
@@ -453,12 +478,13 @@ function onFrame(m,s){
   const frame=p.enemy?(action?4+enemyAttackFrame(phase):motionFrame(p.kind,elapsed,p.mode==='walk',null)):motionFrame(p.kind,p.mode==='walk'?elapsed:0,p.mode==='walk',action);
   const ability=isBoss(p.kind)?ENEMIES[p.kind].ability:null,castPhase=elapsed%((ability?.windup??2.6)+(ability?.duration??1.15)+.7);
   const bossKey=ability?bossPose(elapsed,p.mode==='walk',p.mode==='cast'&&castPhase>=ability.windup&&castPhase<ability.windup+ability.duration?{kind:ability.kind,elapsed:castPhase-ability.windup}:action?{...action,kind:'enemy'}:null,p.mode==='cast'&&castPhase<ability.windup?ability.windup-castPhase:0,p.kind):null;
-  const pose=!p.enemy&&p.mode==='idle'?scene.previewIdleKey(p.kind,elapsed):p.kind==='healer'?healerPose(elapsed,p.mode==='walk',action?{...action,kind:'healer',phase:'treat'}:null,elapsed):bossKey||p.keys[frame];
-  const key=dying?(p.kind==='reaper'?'reaperDepart'+reaperDepartureFrame(deathProgress):p.enemy?'depart'+p.kind+enemyDepartureFrame(deathProgress,ENEMIES[p.kind]?.departureFrames):'defeat'+p.kind+(deathProgress<.32?0:1)):scene.injuryTexture(pose,p.kind,p.health,1);
+  const nativePose=!p.enemy?scene.previewMotionKey?.(p.kind,p.mode,elapsed):null;
+  const pose=nativePose||(!p.enemy&&p.mode==='idle'?scene.previewIdleKey(p.kind,elapsed):p.kind==='healer'?healerPose(elapsed,p.mode==='walk',action?{...action,kind:'healer',phase:'treat'}:null,elapsed):bossKey||p.keys[frame]);
+  const key=dying&&!nativePose?(p.kind==='reaper'?'reaperDepart'+reaperDepartureFrame(deathProgress):p.enemy?'depart'+p.kind+enemyDepartureFrame(deathProgress,ENEMIES[p.kind]?.departureFrames):'defeat'+p.kind+(deathProgress<.32?0:1)):scene.injuryTexture(pose,p.kind,p.health,1);
 
-  p.img.style.opacity=dying?String(1-Math.max(0,(deathProgress-.55)/.45)):'1';
+  p.img.style.opacity=dying&&!nativePose?String(1-Math.max(0,(deathProgress-.55)/.45)):'1';
   p.img.style.transform=dying&&p.kind==='reaper'?'translateY(-'+Math.min(1,deathProgress/.46)*9+'px)':'';
-  if(key!==p.frame){const src=p.variants.get(key)||scene.previewTexture(key);if(src){p.variants.set(key,src);p.img.src=src;p.img.hidden=false;p.frame=key;}}
+  if(key!==p.frame){const src=p.variants.get(key)||scene.previewTexture(key,p===rosterMotion?'roster':undefined);if(src){p.variants.set(key,src);p.img.src=src;p.img.hidden=false;p.frame=key;}}
  }
  if(now-lastFrame<70)return;lastFrame=now;
  renderAutoplay();
@@ -519,20 +545,33 @@ function onFrame(m,s){
  }
  if(['won','lost'].includes(m.status))$('result').hidden=autoplay.active||now<resultReadyAt;
 }
+function stopLoadingDisplay(complete=false){
+ loadingDisplay.active=false;window.cancelAnimationFrame(loadingDisplay.frame);
+ if(complete){loadingDisplay.value=100;$('download-progress').value=100;$('download-percent').textContent='100%';}
+}
+function paintLoading(now){
+ if(!loadingDisplay.active)return;
+ const dt=Math.max(0,(now-loadingDisplay.last)/1000);loadingDisplay.last=now;
+ // Readiness callbacks set the target. The remaining preparation keeps making
+ // visible progress, approaching 100 without ever announcing readiness early.
+ const v=loadingDisplay.value,target=loadingDisplay.target;
+ loadingDisplay.value=Math.min(99.999,Math.max(100-(100-v)*Math.exp(-dt*.09),target-(target-v)*Math.exp(-dt*3)));
+ const places=2,scale=100;
+ $('download-progress').value=loadingDisplay.value;$('download-percent').textContent=(Math.floor(loadingDisplay.value*scale)/scale).toFixed(places)+'%';
+ loadingDisplay.frame=window.requestAnimationFrame(paintLoading);
+}
 function updateDownload(p){
- const mb=n=>(n/1048576).toFixed(1);
- if(p.phase==='waiting'){$('download-progress').removeAttribute('value');$('download-percent').textContent='준비 중';}
- else{$('download-progress').value=p.percent;$('download-percent').textContent=p.percent+'%';}
- $('download-bytes').textContent=p.total?`${mb(p.loaded)} / ${mb(p.total)} MB · 남은 용량 ${mb(Math.max(0,p.total-p.loaded))} MB`:'필요한 그림을 확인하고 있어요.';
- $('download-state').textContent=p.phase==='prepare'?`그림·동작 준비 ${p.prepared} / ${p.prepareTotal}`:p.phase==='waiting'?'준비 중':'다운로드';
+ $('download-percent').hidden=false;$('download-bytes').hidden=true;$('download-state').hidden=true;
+ if(!loadingDisplay.active){loadingDisplay={active:true,value:0,target:0,last:performance.now(),frame:0};$('download-progress').value=0;$('download-percent').textContent='0.00%';loadingDisplay.frame=window.requestAnimationFrame(paintLoading);}
+ if(p.phase!=='waiting')loadingDisplay.target=Math.max(loadingDisplay.target,Math.min(95,p.phase==='prepare'?75+20*p.prepared/Math.max(1,p.prepareTotal):p.percent*.75));
 }
 async function prepareFor(title,work,retry,covered=false){
  if(preparing)return false;preparing=true;const epoch=++entryEpoch;retryAssets=retry;
- $('download-title').textContent=title;$('download-retry').hidden=true;$('download-state').textContent='확인 중';
+ $('download-title').textContent=title;$('download-retry').hidden=true;$('download-state').textContent='확인 중';$('download-state').hidden=true;
  updateDownload({loaded:0,total:0,percent:0,phase:'waiting'});
  fitPhoneDialogs();if(!covered)$('asset-loading').showModal();
- try{await work(p=>{if(epoch===entryEpoch)updateDownload(p);});if(epoch!==entryEpoch)return false;$('asset-loading').close();hydrateIcons();return true;}
- catch(error){if(epoch===entryEpoch){$('download-state').textContent=error.message;$('download-retry').hidden=false;if(covered)$('asset-loading').showModal();}return false;}
+ try{await work(p=>{if(epoch===entryEpoch)updateDownload(p);});if(epoch!==entryEpoch)return false;stopLoadingDisplay(true);$('asset-loading').close();hydrateIcons();return true;}
+ catch(error){if(epoch===entryEpoch){stopLoadingDisplay();$('download-state').textContent=error.message;$('download-state').hidden=false;$('download-retry').hidden=false;if(covered)$('asset-loading').showModal();}return false;}
  finally{preparing=false;}
 }
 function prefetchNext(stage){

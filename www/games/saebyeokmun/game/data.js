@@ -1,5 +1,5 @@
 import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=70';
-import {STAGE2_ART} from './stage2-art.js?v=146-entry';
+import {STAGE2_ART} from './stage2-art.js?v=147-entry-match';
 import {EXTRA_MONSTERS} from './expansion-monsters.js?v=70';
 export {GATE_STYLES};
 // Single source of sample tuning. All folklore-derived combat roles are game inventions.
@@ -9,6 +9,7 @@ export const GATE=ROAD+80;
 export const START=220;
 // Ordinary party travel shares one pace; treatment and combat actions keep their own speeds.
 export const WALK_SPEED=76;
+export const RUN_SPEED=128;
 export const MAX_HP=200;
 export const MAX_COINS=100;
 export const ALLY_HP_SCALE=.7*1.15*1.1;
@@ -49,7 +50,7 @@ export function skyState(progress,time=0,stage=0){
 export const ROAD_SECTIONS=['bank','bridge','causeway','approach'].map((frame,i)=>({frame,x:-650+i*1536,width:1536,height:256,foot:70}));
 export const SHOT_TIME=.18;
 // One overlap order for painting and equal-distance target selection. The player stays visible.
-export const actorLayer=actor=>actor.id??Number.MAX_SAFE_INTEGER;
+export const actorLayer=actor=>actor.id===undefined?Number.MAX_SAFE_INTEGER:(actor.id-(Number.isFinite(actor.lane)?actor.lane*1000000:0));
 export const HERO_STANDOFF=400;
 // Painted frontage in road units. Keep the legacy export name; both sides of
 // contact use this one owner, including companion cels populated below.
@@ -205,7 +206,7 @@ export const WAVES=[
 // Campaign and battle share these authored stage definitions. No second wave scheduler.
 const CORE_STAGES=[
  {name:'손을 놓친 달빛길',place:'한양',time:'밤',mapX:40.7,mapY:55.8,subtitle:'1장 · 집을 기억하는 아이',brief:'장터에서 부모님의 손을 놓쳤다. 몽유도원 같은 산수 속에서 해태와 동료를 만나, 귀물이 가린 첫 이정표를 되찾는다.',clue:'돌등 아래 남쪽을 가리키는 작은 표식. 부모님이 향하던 고향은 남쪽이었다.',hint:'집으로 가는 이정표가 가려졌어요. 함께 앞길을 열어요.',encounters:[['dokkaebi','skirt','mangtae'],['bandit','horse','shadow'],['reaper','dokkaebi','shadow'],['warden','mangtae']]},
- {name:'높은 버들가지 아래',place:'수원',time:'낮',mapX:41.3,mapY:58.4,subtitle:'2장 · 숲이 알려 준 방향',brief:'머리 위로 길게 늘어진 버들숲. 길을 막는 산적과 장난꾸러기 도깨비를 지나며 도움을 주는 조선 군사들을 만난다.',clue:'“금강의 다리를 건너면 고향길로 이어진단다.” 창병이 다음 길을 알려 주었다.',hint:'버들가지 아래 길을 막는 산적이 보여요.',encounters:[['dokkaebi','bandit'],['mangtae','shadow'],['bandit','dokkaebi'],['warden']]},
+ {name:'높은 버들가지 아래',place:'수원',time:'낮',mapX:41.3,mapY:58.4,subtitle:'2장 · 숲이 알려 준 방향',brief:'머리 위로 길게 늘어진 버들숲. 길을 막는 귀물들을 지나며 집으로 이어지는 다음 표식을 찾는다.',clue:'“금강의 다리를 건너면 고향길로 이어진단다.” 창병이 다음 길을 알려 주었다.',hint:'귀물들이 앞길을 막고 있어요.',encounters:[['skirt','horse','reaper','mangtae'],['shadow','waterghost'],['dokkaebi','skirt'],['warden']]},
  {name:'금강의 기와 나무다리',place:'공주',time:'밤',mapX:40.5,mapY:64.2,subtitle:'3장 · 강을 건너는 약속',brief:'기와 지붕을 얹은 나무다리를 건너 금강 너머로 간다. 나루를 빼앗은 수적과 귀물이 다리의 등불을 가리고 있다.',clue:'강 건너 등롱의 종이에 부여로 가는 길이 그려져 있었다.',hint:'수적이 다리를 막아요. 나루의 등불을 되찾아요.',encounters:[['pirate','dokkaebi'],['pirate','waterghost'],['reaper','pirate'],['ferryman','pirate']]},
  {name:'모래로 덮인 이정표',place:'부여',time:'밤',mapX:38.7,mapY:66.2,subtitle:'4장 · 사막의 꿈',brief:'두려움이 익숙한 길을 사막처럼 바꾸었다. 조선의 실제 사막이 아닌 아이의 꿈. 구미호가 보여 주는 가짜 집 불빛을 지나 진짜 표식을 찾는다.',clue:'모래가 걷히자 바다 냄새가 났다. 다음 표식은 군산의 포구를 가리켰다.',hint:'이곳은 사막의 꿈이에요. 가짜 집 불빛에 흔들리지 말아요.',encounters:[['gumiho','bandit'],['gumiho','shadow'],['changgwi','gumiho'],['boss','gumiho']]},
  {name:'하얀 파문과 푸른 바다',place:'군산',time:'밤',mapX:35.8,mapY:69.1,subtitle:'5장 · 바닷가의 발자국',brief:'파랑과 흰색으로 열린 바닷가. 발을 디딜 때 생기는 하얀 파문을 따라 포구를 지나간다. 물길을 막는 수적과 물귀신을 물리친다.',clue:'포구의 노인이 전주 장터에 부모님을 닮은 사람을 보았다고 말했다.',hint:'하얀 파문을 따라 걸어요. 물길에도 동료가 함께해요.',encounters:[['pirate','waterghost'],['waterghost','dokkaebi'],['pirate','waterghost','reaper'],['ferryman','waterghost']]},
@@ -214,7 +215,7 @@ const CORE_STAGES=[
  {name:'붉은 안개 너머',place:'광양',time:'밤',mapX:53,mapY:78.9,subtitle:'8장 · 지옥의 꿈',brief:'붉은 안개와 타오르는 듯한 봉우리. 지옥은 실제 지역이 아닌 아이의 악몽이다. 창귀가 만든 두려움을 걷어 내고 길을 되찾는다.',clue:'붉은 안개 뒤에서 바다에 비친 고향집 불빛이 보였다. 여수 쪽 물길이 남아 있었다.',hint:'지옥의 꿈이에요. 붉은 안개를 지나 진짜 길을 찾아요.',encounters:[['changgwi','reaper'],['gumiho','changgwi'],['bulgasari','reaper'],['boss','changgwi']]},
  {name:'끝없는 물 위를 걷다',place:'여수',time:'밤',mapX:54.4,mapY:81.8,subtitle:'9장 · 물길의 꿈',brief:'땅도 다리도 없는 끝없는 푸른 수면. 발밑의 하얀 파문만 길을 보여 준다. 수적과 구미호의 환영을 지나, 순천으로 돌아가는 등불을 찾는다.',clue:'물결 위의 빛이 갈대숲으로 이어졌다. 집은 이제 멀지 않다.',hint:'끝없는 물 위에서도 발밑 파문이 길을 보여 줘요.',encounters:[['pirate','gumiho'],['waterghost','pirate'],['gumiho','waterghost'],['ferryman','gumiho']]},
  {name:'갈대늪 너머, 집',place:'순천',time:'밤',mapX:50.7,mapY:79,subtitle:'10장 · 돌아갈 곳',brief:'갈대늪 너머 작은 집의 따뜻한 불빛. 마지막 환영을 걷어 내고 부모님의 품으로 돌아간다. 아이와 동료가 되찾은 길의 끝이다.',clue:'집에 도착했다. 부모님의 손을 다시 꼭 잡았다. 길을 잃어도, 함께라면 돌아올 수 있다.',hint:'갈대 너머 집 불빛이 보여요. 마지막 길을 함께 열어요.',encounters:[['gumiho','dokkaebi'],['changgwi','gumiho'],['dokkaebi','bulgasari'],['boss','gumiho']]}
-].map(({encounters,...stage},i)=>({...stage,roadEnd:1800,enemySpeedScale:.8,gateHp:260+Math.min(i,5)*18,waves:encounters.map((types,j)=>({...WAVES[j],types,x:[START,600,980,1380][j],balanceIndex:j,helper:i===1&&j===1?'spearman':i===1&&j===3?'archer':null,message:i===1&&j===1?'창병이 금강으로 가는 길을 알려 주며 합류했어요.':i===1&&j===3?'궁병도 동행해요. 귀물을 지나 봉인을 열어요.':j===3?'길을 막는 큰 귀물이에요. 비막이와 동료를 준비해요!':stage.hint}))}));
+].map(({encounters,...stage},i)=>({...stage,roadEnd:1800,enemySpeedScale:.8,gateHp:260+Math.min(i,5)*18,waves:encounters.map((types,j)=>({...WAVES[j],types,x:[START,600,980,1380][j],balanceIndex:j,helper:null,message:j===3?'길을 막는 큰 귀물이에요. 비막이와 동료를 준비해요!':stage.hint}))}));
 // Region assignments connect the same bestiary to its landscape; every family has a home.
 const stageFamilies=[['a07','a02'],['a02'],['b05'],['c04'],['b04'],['a04'],['c01'],['c02','c05','c07'],['b04'],['a05'],['a01'],['a07'],['b07'],['b07'],['a04'],['a01'],['a05'],['b05'],['a02'],['b02'],['b02'],['b04'],['b02'],['a08'],['b05'],['a08'],['c05'],['a03'],['c01'],['c03'],['a06'],['a06'],['c06'],['a05'],['b03'],['c04'],['a03'],['c05','c02','c07'],['b01'],['b01','b06']];
 export const STAGES=[...CORE_STAGES.slice(0,9),...EXTRA_CHAPTERS,CORE_STAGES[9]].map((stage,i)=>{
@@ -227,12 +228,12 @@ export const STAGES=[...CORE_STAGES.slice(0,9),...EXTRA_CHAPTERS,CORE_STAGES[9]]
  // The final boss is included; the exit gate is scenery, not a monster quota.
  const total=i<5?50+i*10:null,count=total?Math.ceil((total-1)/4)+1:i<10?3+Math.ceil(i/2):2*Math.max(6+i%4,Math.ceil(ordinary.length/2)+1);
  const finale=[...new Set([...endTypes,...family.filter(s=>s.boss).map(s=>s.key)])];
- const waves=Array.from({length:count},(_,j)=>({x:Math.round(START+j*(roadEnd-START-420)/(count-1)),types:i<10?(j===count-1?[endTypes.find(isBoss)||boss]:Array.from({length:total?Math.min(4,total-1-j*4):Math.min(2+Math.floor(i/3),4)},(_,n)=>(stage.waves?.[j%3].types.filter(k=>!isBoss(k))||fallback[j%fallback.length])[n%(stage.waves?.[j%3].types.filter(k=>!isBoss(k)).length||fallback[j%fallback.length].length)])):j===count-1?finale:ordinary.length?Array.from({length:4},(_,n)=>ordinary[(j*4+n)%ordinary.length]):fallback[j%fallback.length],balanceIndex:j===count-1?3:total?Math.min(2,Math.floor(j*3/(count-1))):Math.min(j,4),helper:i===1&&j===1?'spearman':i===1&&j===3?'archer':null,message:j===count-1?'지옥문 안에서 큰 귀물이 나와요. 예고를 살펴 함께 막아요.':stage.hint}));
+ const waves=Array.from({length:count},(_,j)=>({x:Math.round(START+j*(roadEnd-START-420)/(count-1)),types:i<10?(j===count-1?[endTypes.find(isBoss)||boss]:Array.from({length:total?Math.min(4,total-1-j*4):Math.min(2+Math.floor(i/3),4)},(_,n)=>(stage.waves?.[j%3].types.filter(k=>!isBoss(k))||fallback[j%fallback.length])[n%(stage.waves?.[j%3].types.filter(k=>!isBoss(k)).length||fallback[j%fallback.length].length)])):j===count-1?finale:ordinary.length?Array.from({length:4},(_,n)=>ordinary[(j*4+n)%ordinary.length]):fallback[j%fallback.length],balanceIndex:j===count-1?3:total?Math.min(2,Math.floor(j*3/(count-1))):Math.min(j,4),helper:null,message:j===count-1?'지옥문 안에서 큰 귀물이 나와요. 예고를 살펴 함께 막아요.':stage.hint}));
  // The short observer route covers every regional identity, not just first/last waves.
  const tourEnd=980,tourTypes=[...new Set([...ordinary,...finale.filter(k=>!isBoss(k))])],tourGroups=Array.from({length:Math.ceil(tourTypes.length/4)},(_,j)=>tourTypes.slice(j*4,j*4+4));
  tourGroups.push(finale.filter(isBoss));
  const tourWaves=tourGroups.map((types,j)=>({...waves[Math.min(j,waves.length-1)],types,x:Math.round(START+j*(tourEnd-START-320)/(tourGroups.length-1)),balanceIndex:j===tourGroups.length-1?3:Math.min(j,4)}));
- return{...stage,deployment:i<5?{initialWaves:3,interval:6,limit:12}:undefined,reward:STAGE_REWARDS[i]||null,pressure:i<10?.40+i*.045:1,subtitle:stage.subtitle.replace(/^\d+장/,i+1+'장'),roadEnd,enemySpeedScale:.8,gateHp:i<10?100+i*20:300+i%6*24,waves,gateStyle:i%GATE_STYLES.length,tour:{roadEnd:tourEnd,waves:tourWaves},act:Math.floor(i/10)};
+ return{...stage,combatLanes:i===1?[24,8,-8]:undefined,deployment:i<5?{initialWaves:i<2?1:3,initialDelay:i<2?2:0,initialAtScreenEdge:i<2,interval:6,limit:12}:undefined,reward:STAGE_REWARDS[i]||null,pressure:i<10?.40+i*.045:1,subtitle:stage.subtitle.replace(/^\d+장/,i+1+'장'),roadEnd,enemySpeedScale:.8,gateHp:i<10?100+i*20:300+i%6*24,waves,gateStyle:i%GATE_STYLES.length,tour:{roadEnd:tourEnd,waves:tourWaves},act:Math.floor(i/10)};
 });
 
 // Stage definitions own travel bounds; previews, HUD and simulation share these derived coordinates.

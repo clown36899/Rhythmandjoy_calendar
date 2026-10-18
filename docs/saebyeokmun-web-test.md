@@ -1,3 +1,11 @@
+# v144 · 2026-10-18 Stage2 entry, terrain and depth combat
+
+Original vertical title uses generated first/middle/last-keyframe motion. One prepared film ends on the native Stage2 field, then HUD appears. Loading is one continuously moving readiness bar and percentage, with no second counters or premature100. Five rear masks are baked before deployment; complete foreground is retained. Stage2 uses three road depths, front-lane player, free friendly forward passage, depth-crossing clearance, cross-depth enemy interception and basic monster test roster without bandits. No free initial companions; first foes enter after2 game seconds. Run128/walk76 and completed roster interactions/art are integrated.
+
+Before latest scope request171 checks passed. Latest targeted8 checks and Stage2-only legal-action full-road clear286.9s passed. Desktop and844x390 Chrome entry, terrain9positions, manual/run/auto/summon/protect/heal/pause were reviewed. No physical-phone or DB/service changes. Public browser review after this swap is still required.
+
+소스 `57b509cb034fdbfea2e4ee68af66b372e48a0791`. 원장: /Users/inteyeo/Documents/Codex/다섯개의나라/관리/카페24_배포-v144-entry-once.json
+
 # v144 · 2026-10-18 오프닝 반복 제거·기본 스테이지2 연결
 
 별도 대기영상과 1.25초 되감기를 제거했다. 승인 원화를 보이는 동안 기존 Scene/영상 준비를 모두 끝낸 뒤, 제목과 게임 진입이 함께 생성된 본 영상을 0초부터 한 번만 재생한다. 기본 주소는 스테이지2로 연결하고 명시적 stage1/2, 기존 준비 잠금·취소·재시도·일시정지·저장/보상 보호는 유지한다. 최종170검사 통과, 이전 코드에서 신규 재현 실패 확인. 실제 Chrome에서 원화→영상전체0.18~6.0초(단조증가)→동일필드→HUD를78회 연속 관측하고 이동0→1%·정지·오류0을 확인했다. 공개 교체 후 같은 연속 화면 검증을 다시 수행해야 완료이며, 진행 중인 다른 채팅의 미완성 변경은 배포하지 않는다.

@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=146-entry';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=147-entry-match';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -7,9 +7,61 @@ export class Journey {
   this.auto=false;this.invincible=false;this.tour=false;this.portal=null;this.direction=0;this.pendingMove=0;this.allies=[];this.enemies=[];this.projectiles=[];this.events=[];this.nextId=0;this.stage=0;this.gateBrokenAt=null;
   this.viewport=null;this.helperArrivals=new Map();this.teamAction=null;this.wave=0;this.waveClearAt=null;this.heroAttack=0;this.shield=0;this.waterWard=0;this.shieldKind=null;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS),...Object.keys(TEAM_SKILLS)].map(k=>[k,0]));
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='집으로 가는 길을 동료와 함께 열어요.';
-  delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;
+  delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;this.lane=0;
  }
- start(stage=this.stage,party=DEFAULT_PARTY,viewportWidth=null,options={}){this.reset();this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.tour=options.tour===true;if(Number.isFinite(viewportWidth)&&viewportWidth>0){this.setViewport(0,viewportWidth);this.setViewport(Math.min(0,this.gateX-viewportWidth+this.portalInset),viewportWidth);}this.status='playing';const first=this.addAlly(this.party[0],this.viewport&&!this.route.deployment?undefined:this.x+130);this.emit('summon',{actor:first.id,kind:first.type,x:first.x});this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('');if(this.route.deployment)for(let i=0;i<this.route.deployment.initialWaves;i++)this.deployWave();}
+ start(stage=this.stage,party=DEFAULT_PARTY,viewportWidth=null,options={}){this.reset();this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.tour=options.tour===true;if(Number.isFinite(viewportWidth)&&viewportWidth>0){this.setViewport(0,viewportWidth);this.setViewport(Math.min(0,this.gateX-viewportWidth+this.portalInset),viewportWidth);}this.status='playing';this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('');if(this.route.deployment&&!this.route.deployment.initialDelay)for(let i=0;i<this.route.deployment.initialWaves;i++)this.deployWave();}
+ // Journey owns continuous depth and body clearance; Scene only projects it.
+ get lanes(){return STAGES[this.stage].combatLanes;}
+ sameLane(a,b){return !this.lanes||b.type==='gate'||!Number.isFinite(a.lane)||!Number.isFinite(b.lane)||Math.abs(a.lane-b.lane)<.18;}
+ canStrike(a,b){return this.sameLane(a,b)||this.lanes&&((a.x-b.x)/this.bodyClearance(a,b))**2+(((a.lane??0)-(b.lane??0))/.65)**2<=1.01;}
+ contactDistance(a,b){return !this.lanes||b.type==='gate'?contactGap(a,b):Math.hypot(a.x-b.x,((a.lane??0)-(b.lane??0))*100)-(ENEMY_FRONT[a.type??'hero']??0)-(ENEMY_FRONT[b.type??'hero']??0);}
+ placeLane(actor,side){
+  if(!this.lanes||ENEMIES[actor.type]?.stationary)return;
+  const bodies=[this,...this.allies,...this.enemies].filter(b=>b!==actor&&b.hp>0),seed=actor.id%3;
+  const lanes=[0,1,2].sort((a,b)=>{const cost=k=>bodies.reduce((n,b)=>n+(Math.abs((b.lane??0)-k)<.6?Math.max(0,220-Math.abs(actor.x-b.x)):0),0);return cost(a)-cost(b)||(a-seed+3)%3-(b-seed+3)%3;});
+  actor.lane=actor.laneGoal=lanes[0];actor.laneNextAt=this.time+2+(actor.id%7)*.37;
+  // Queue a new body behind occupied arrival slots, without displacing a live one.
+  for(let i=0;i<bodies.length+1;i++){const b=bodies.find(b=>Math.abs((b.lane??0)-actor.lane)<.65&&Math.abs(actor.x-b.x)<this.bodyClearance(actor,b));if(!b)break;actor.x=b.x+side*this.bodyClearance(actor,b);}
+ }
+ bodyClearance(a,b){return Math.max(42,((ENEMY_FRONT[a.type??'hero']??45)+(ENEMY_FRONT[b.type??'hero']??45))*.65);}
+ planLane(actor,target){
+  if(!this.lanes)return;
+  if(ENEMIES[actor.type]&&target===this&&Math.abs(actor.x-this.x)<480){actor.laneGoal=0;actor.laneNextAt=this.time;return;}
+  if(this.time<(actor.laneNextAt??0))return;
+  if(target&&target.type!=='gate'&&Math.abs(target.x-actor.x)<650){actor.laneGoal=Math.round(target.lane??0);return;}
+  const noise=Math.sin(actor.id*12.9898+Math.floor(this.time/3)*78.233)*43758.5453;
+  actor.laneGoal=Math.floor((noise-Math.floor(noise))*3);actor.laneNextAt=this.time+2+(actor.id%5)*.4;
+ }
+ moveBody(actor,dx,dt,speed,target=null){
+  if(!this.lanes){actor.x+=dx;return;}
+  if(actor!==this)this.planLane(actor,target);
+  const from=actor.lane??0,goal=actor===this?0:actor.laneGoal??from;
+  let dy=clamp(goal-from,-dt*.8,dt*.8),travel=Math.hypot(dx,dy*52),budget=speed*dt;
+  if(travel>budget){dx*=budget/travel;dy*=budget/travel;}
+  const enemy=!!ENEMIES[actor.type],living=[this,...this.allies,...this.enemies].filter(b=>b!==actor&&b.hp>0&&!ENEMIES[b.type]?.stationary&&this.time>=(b.entryAt??b.bornAt??0));
+  // Same-depth passing stays free. A lateral crossing waits until the painted
+  // bodies have separated horizontally, so depth never cuts through a friend.
+  if(dy&&living.some(b=>!!ENEMIES[b.type]===enemy&&Math.abs(actor.x-b.x)<this.bodyClearance(actor,b)&&Math.min(from,from+dy)<(b.lane??0)+.65&&Math.max(from,from+dy)>(b.lane??0)-.65))dy=0;
+  const bodies=living.filter(b=>!!ENEMIES[b.type]!==enemy);
+  // Friendly bodies share the road so reinforcements never queue behind a long-range ally.
+  // Opposing bodies keep swept clearance; depth is presentation, not a traffic gate.
+  const fraction=(mx,my)=>{let t=1;for(const b of bodies){const rx=this.bodyClearance(actor,b),x=(actor.x-b.x)/rx,y=(from-(b.lane??0))/.65,vx=mx/rx,vy=my/.65,c=x*x+y*y-1,aa=vx*vx+vy*vy,bb=x*vx+y*vy;
+    if(aa<1e-12)continue;if(c<-.001){if(bb<0)t=0;continue;}const disc=bb*bb-aa*c;if(bb>=0||disc<=0)continue;const hit=(-bb-Math.sqrt(disc))/aa;if(hit>=0&&hit<t)t=Math.max(0,hit-.0001);}
+   return t;};
+  let f=fraction(dx,dy);
+  if(f<.999){
+   const sideways=fraction(0,dy),forward=fraction(dx,0);
+   if(Math.abs(dy)>.00001&&sideways>.99){dx=0;f=sideways;}
+   else if(forward>.99){dy=0;f=forward;}
+   else if(actor!==this&&Math.abs(dx)>.00001){
+    const choices=[0,1,2].filter(k=>Math.abs(k-from)>.2).sort((a,b)=>Math.abs(a-from)-Math.abs(b-from));
+    const lane=choices.find(k=>fraction(0,Math.sign(k-from)*dt*.8)>.99);
+    if(lane!==undefined){actor.laneGoal=lane;actor.laneNextAt=this.time+1.8;dy=clamp(lane-from,-dt*.8,dt*.8);dx=0;f=fraction(0,dy);}
+   }
+  }
+  actor.x+=dx*f;actor.lane=clamp(from+dy*f,0,2);
+ }
+ walkBody(actor,oldX,oldLane,speed){const dx=actor.x-oldX,distance=Math.hypot(dx,((actor.lane??0)-(oldLane??0))*52);actor.moving=distance>1e-5?(Math.sign(dx)||actor.moving||(ENEMIES[actor.type]?-1:1)):0;actor.walk+=distance/speed;}
  get summonTypes(){return this.tour?Object.keys(UNITS):this.party;}
  get summonCount(){return this.allies.filter(a=>a.hp>0).length;}
  countAllies(type){return this.allies.filter(a=>a.hp>0&&a.type===type).length;}
@@ -21,12 +73,12 @@ export class Journey {
  setDirection(direction,{pressed=false,cancel=false}={}){this.direction=Math.sign(direction)||0;if(cancel||this.status!=='playing')this.pendingMove=0;else if(pressed&&this.direction)this.pendingMove=this.direction;}
  advanceEntry(actor,enemy,dt){
   if(enemy&&actor.entering&&Number.isFinite(actor.entryOrigin)){
-   if(this.time<(actor.entryAt??actor.bornAt)){actor.x=actor.entryOrigin=this.portalX;return true;}
+   if(this.time<(actor.entryAt??actor.bornAt)){if(!this.route.deployment)actor.x=actor.entryOrigin=this.portalX;return true;}
    const speed=ENEMIES[actor.type].speed,edge=actor.entryOrigin-this.screenPadding(actor.type)*.5,gap=actor.x-edge;
-   if(gap<=0){actor.entering=false;return false;}const travel=Math.min(gap,speed*this.enemySpeedScale*dt);actor.x-=travel;actor.walk+=travel/speed;actor.moving=-1;if(travel>=gap)actor.entering=false;return true;
+   if(gap<=0){actor.entering=false;return false;}const travel=Math.min(gap,speed*this.enemySpeedScale*dt);const oldX=actor.x,oldLane=actor.lane;this.moveBody(actor,-travel,dt,speed*this.enemySpeedScale);this.walkBody(actor,oldX,oldLane,speed);if(actor.x<=edge+1e-6)actor.entering=false;return true;
   }
   if(!this.viewport||!actor.entering)return false;const dir=enemy?-1:1,pad=this.screenPadding(actor.type)*.5,edge=enemy?this.viewport.right-pad:(actor.entryOrigin??this.viewport.left)+pad,gap=(edge-actor.x)*dir;
-  if(gap<=0){actor.entering=false;return false;}const speed=enemy?ENEMIES[actor.type].speed:WALK_SPEED,travel=Math.min(gap,speed*(enemy?this.enemySpeedScale:1)*dt);actor.x+=dir*travel;actor.moving=dir;actor.walk+=travel/speed;if(travel>=gap)actor.entering=false;return true;
+  if(gap<=0){actor.entering=false;return false;}const speed=enemy?ENEMIES[actor.type].speed:WALK_SPEED,travel=Math.min(gap,speed*(enemy?this.enemySpeedScale:1)*dt);const oldX=actor.x,oldLane=actor.lane;this.moveBody(actor,dir*travel,dt,speed*(enemy?this.enemySpeedScale:1));this.walkBody(actor,oldX,oldLane,speed);if((edge-actor.x)*dir<=1e-6)actor.entering=false;return true;
  }
  constrainScreen(){
   const bounds=this.viewport;if(!bounds||this.route.deployment)return;
@@ -52,9 +104,9 @@ export class Journey {
  pause(){if(this.status==='playing'){this.status='paused';this.setDirection(0,{cancel:true});}else if(this.status==='paused')this.status='playing';}
  progress(){return clamp((this.furthest-START)/(this.roadEnd-START),0,1);}
  addAlly(type,x){const s=UNITS[type];if(!s||this.atSummonLimit(type))return null;
-  // Same-kind companions share their slot; adding one never pushes an existing body.
-  const entering=x===undefined&&!!this.viewport;if(x===undefined)x=entering?this.viewport.left-this.screenPadding(type):this.x-65;const a={entering,entryOrigin:entering?this.viewport.left:null,bornAt:this.time,id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);return a;}
- spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={entering:!!this.viewport&&x>this.viewport.right,id:++this.nextId,type,x,bornAt:this.time,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:s.ability?.initial??Infinity,walk:0,moving:0};this.enemies.push(a);if(isBoss(type)){this.bossSpawned=true;this.bossDefeated=false;}return a;}
+  // Arrival slots queue in the combat lanes; a new call never pushes a live body.
+  const entering=x===undefined&&!!this.viewport;if(x===undefined)x=entering?this.viewport.left-this.screenPadding(type):this.x-65;const a={entering,entryOrigin:entering?this.viewport.left:null,bornAt:this.time,id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);this.placeLane(a,-1);return a;}
+ spawn(type,x,powerScale=1){const s=ENEMIES[type];const a={entering:!!this.viewport&&x>this.viewport.right,id:++this.nextId,type,x,bornAt:this.time,powerScale,hp:s.hp*powerScale,maxHp:s.hp*powerScale,cd:0,stun:0,hit:0,windup:0,action:null,ability:s.ability?.initial??Infinity,walk:0,moving:0};this.enemies.push(a);this.placeLane(a,1);if(isBoss(type)){this.bossSpawned=true;this.bossDefeated=false;}return a;}
  reject(message){this.emit('notice',{message});return false;}
  summon(type){
   if(this.status!=='playing'||!UNITS[type]||!this.summonTypes.includes(type))return false;
@@ -75,6 +127,8 @@ export class Journey {
  // Action.targetId owns one strike. engagedId only retains contact between strikes.
  // Release on death/escape; ties use the same layer as the actual character drawing.
  selectContact(actor,candidates,range){
+  if(this.lanes&&actor!==this){const reachable=candidates.filter(b=>this.canStrike(actor,b)&&contactGap(actor,b)<=range+18);if(reachable.length)candidates=reachable;}
+
   // A valid retained contact already wins over every nearer arrival. Resolve
   // that id first so unrelated bodies do not need distance/layer calculations.
   // Keep the same tie policy even if a diagnostic caller supplies duplicate ids.
@@ -82,7 +136,7 @@ export class Journey {
    let current,gap=Infinity,layer=-Infinity;
    for(const candidate of candidates){
     if(!(candidate.hp>0)||(candidate.id??null)!==actor.engagedId)continue;
-    const distance=contactGap(actor,candidate),depth=actorLayer(candidate);
+    const distance=this.contactDistance(actor,candidate),depth=actorLayer(candidate);
     if(distance<=range+18&&(!current||distance<gap||distance===gap&&depth>layer)){current=candidate;gap=distance;layer=depth;}
    }
    if(current)return current;
@@ -90,7 +144,7 @@ export class Journey {
   let nearest,current,nearestGap=Infinity,currentGap=Infinity,nearestLayer=-Infinity,currentLayer=-Infinity;
   for(const candidate of candidates){
    if(!(candidate.hp>0))continue;
-   const gap=contactGap(actor,candidate),layer=actorLayer(candidate);
+   const gap=this.contactDistance(actor,candidate),layer=actorLayer(candidate);
    if(!nearest||gap<nearestGap||gap===nearestGap&&layer>nearestLayer){nearest=candidate;nearestGap=gap;nearestLayer=layer;}
    if((candidate.id??null)===actor.engagedId&&gap<=range+18&&(!current||gap<currentGap||gap===currentGap&&layer>currentLayer)){current=candidate;currentGap=gap;currentLayer=layer;}
   }
@@ -210,8 +264,8 @@ export class Journey {
    const moveTo=goal=>{
     // Rear spacing is a preferred approach slot, never a reason to retreat
     // from an already reachable patient (including an overlapping/left one).
-    if(actor.x>=goal&&Math.abs(target.x-actor.x)<=s.range)return true;
-    const gap=goal-actor.x;actor.x+=Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt);return Math.abs(goal-actor.x)<1;
+    if(actor.x>=goal&&Math.abs(target.x-actor.x)<=s.range&&this.sameLane(actor,target))return true;
+    const gap=goal-actor.x;this.moveBody(actor,Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt),dt,s.speed,target);return Math.abs(goal-actor.x)<1&&this.sameLane(actor,target);
    };
    // Lock each wrap to one patient. Reconsider only between wraps or after cancellation.
    if(!target||target.hp<=0||Math.abs(target.x-actor.x)>s.search||(!valid&&!action.resolved))action.phase='return';
@@ -236,7 +290,7 @@ export class Journey {
    }
    // Walking patients keep their treatment clock while the physician follows.
    if(target!==actor)moveTo(target.x-s.spacing);
-   if(Math.abs(target.x-actor.x)>s.range)return;
+   if(Math.abs(target.x-actor.x)>s.range||!this.sameLane(actor,target))return;
    action.elapsed+=dt;
    if(!action.resolved&&action.elapsed>=spec.impact){
     action.resolved=true;const amount=Math.min(s.heal,(target.maxHp??MAX_HP)-target.hp);
@@ -283,7 +337,7 @@ export class Journey {
    if(action.kind==='enemy'){
     const ally=action.targetId===null?null:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
     const valid=action.targetId===null||!!ally,targetX=ally?.x??this.x;
-    if(valid&&contactGap(actor,ally||this)<=ENEMIES[actor.type].range+24){
+    if(valid&&this.canStrike(actor,ally||this)&&contactGap(actor,ally||this)<=ENEMIES[actor.type].range+24){
      if(actor.type==='reaper'||['ranged','heal'].includes(ENEMIES[actor.type].behavior))this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:'hex',from:actor.x,target:ally||this,damage:ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
      else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);
      this.emit('claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});}
@@ -293,7 +347,7 @@ export class Journey {
     for(const e of this.enemies)if(e.hp>0&&e.x>=this.x-70&&contactGap(this,e)<=390){this.hurtEnemy(e,44,this.x,'stomp');this.pushEnemy(e,e.x+85);e.stun=2.1;e.windup=0;e.action=null;}
    }else{
     const target=this.enemies.find(e=>e.id===action.targetId&&e.hp>0),unit=unitStats(actor.type,this.keeperRank);
-    if(target&&target.x>=actor.x-55&&contactGap(actor,target)<=unit.range+1e-6){
+    if(target&&this.canStrike(actor,target)&&(this.lanes||target.x>=actor.x-55)&&contactGap(actor,target)<=unit.range+1e-6){
      const high=unit.weapon==='seed'||unit.weapon==='seal',hit=!high||target.type!=='skirt';
      if(['horn','spear','sword'].includes(unit.weapon)){this.emit('swipe',{actor:actor.id,kind:unit.weapon,sourceKind:actor.type,targetKind:target.type,targetActor:target.id,x:actor.x,from:actor.x,to:target.x});this.hurtEnemy(target,unit.damage,actor.x,unit.weapon);}
      else this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:unit.weapon,from:actor.x,target,damage:unit.damage,high,stun:unit.weapon==='seal'?.65:0});
@@ -329,8 +383,8 @@ export class Journey {
   this.hp=clamp(this.hp-damage,0,MAX_HP);this.emit('hurt',{x:this.x+37,from:sourceX,dir:Math.sign(this.x-sourceX)||-1,kind:'haetae',weapon,damage});if(this.hp<=0){const mounted=this.action?.kind==='rush'||this.shield>0&&this.shieldKind!=='water';this.emit('vanish',{actor:'hero',x:this.x+37,kind:mounted?'mount':'haetae',enemy:false});if(!mounted)this.emit('vanish',{actor:'girl',x:this.x-60,kind:'girl',enemy:false});this.finish('lost');}
  }
  cleanup(){
-  for(const e of this.enemies)if(e.hp<=0&&!e.dead){e.dead=true;if(e.type==='gate'){this.gateBrokenAt=this.time;this.furthest=this.roadEnd;this.emit('gate-break',{x:e.x,kind:'gate',style:STAGES[this.stage].gateStyle});continue;}this.kills++;this.awardCoins(ENEMIES[e.type].reward,e,'defeat');this.emit('vanish',{actor:e.id,x:e.x,kind:e.type,enemy:true,dir:e.hitDir||1});if(isBoss(e.type)){this.bossDefeated=!this.enemies.some(other=>other.hp>0&&isBoss(other.type));if(this.bossDefeated)this.say('');}}
-  for(const a of this.allies)if(a.hp<=0)this.emit('vanish',{actor:a.id,x:a.x,kind:a.type,enemy:false,dir:a.hitDir||-1});
+  for(const e of this.enemies)if(e.hp<=0&&!e.dead){e.dead=true;if(e.type==='gate'){this.gateBrokenAt=this.time;this.furthest=this.roadEnd;this.emit('gate-break',{x:e.x,kind:'gate',style:STAGES[this.stage].gateStyle});continue;}this.kills++;this.awardCoins(ENEMIES[e.type].reward,e,'defeat');this.emit('vanish',{actor:e.id,x:e.x,kind:e.type,lane:e.lane,enemy:true,dir:e.hitDir||1});if(isBoss(e.type)){this.bossDefeated=!this.enemies.some(other=>other.hp>0&&isBoss(other.type));if(this.bossDefeated)this.say('');}}
+  for(const a of this.allies)if(a.hp<=0)this.emit('vanish',{actor:a.id,x:a.x,kind:a.type,lane:a.lane,enemy:false,dir:a.hitDir||-1});
   this.enemies=this.enemies.filter(e=>!e.dead);this.allies=this.allies.filter(a=>a.hp>0);
   if(this.bossDefeated&&this.wave>=this.waves.length&&this.gateBrokenAt===null&&(!this.viewport||this.route.deployment||this.portalX>=this.gateX-1)&&!this.enemies.some(e=>e.type==='gate')){const gate=this.spawn('gate',this.gateX);gate.hp=gate.maxHp=STAGES[this.stage].gateHp;}
  }
@@ -357,7 +411,7 @@ export class Journey {
   if(d)this.portal.openedAt=this.time;
   // Opening groups occupy the middle of the whole road; reinforcements use its gate.
   const initial=d&&index<d.initialWaves,centre=this.roadEnd/2;
-  w.types.forEach((type,i)=>{const e=this.spawn(type,initial?centre+index*300+i*75:this.portal.x,scale);e.entering=!initial;if(!initial){e.entryOrigin=this.portal.x;e.entryAt=this.time+i*.85;}});
+  w.types.forEach((type,i)=>{const origin=initial&&d.initialAtScreenEdge?(this.viewport?.right??this.x+1200)+this.screenPadding(type)*.5:centre,e=this.spawn(type,initial?origin+index*300+i*75:this.portal.x,scale);e.entering=!initial||!!d?.initialAtScreenEdge&&initial;if(e.entering){e.entryOrigin=initial?origin:this.portal.x;e.entryAt=this.time+i*.85;}});
   if(w.helper&&!d)this.helperArrivals.set(index,false);
   this.say(w.message);return true;
  }
@@ -369,14 +423,14 @@ export class Journey {
   this.shield=Math.max(0,this.shield-dt);this.waterWard=Math.max(0,this.waterWard-dt);this.heroAttack-=dt;this.advanceAction(this,dt);
   for(const k of Object.keys(this.cooldowns))this.cooldowns[k]=Math.max(0,this.cooldowns[k]-dt);
   const active=this.enemies.filter(e=>e.hp>0&&this.time>=(e.entryAt??e.bornAt));
-  const front=active.reduce((front,e)=>e.x>=this.x-20&&(!front||e.x-ENEMY_FRONT[e.type]<front.x-ENEMY_FRONT[front.type])?e:front,null);
+  const front=active.reduce((front,e)=>e.x>=this.x-20&&this.sameLane(this,e)&&(!front||e.x-ENEMY_FRONT[e.type]<front.x-ENEMY_FRONT[front.type])?e:front,null);
   const manual=this.direction||this.pendingMove;this.pendingMove=0;
   let direction=manual|| (this.auto?1:0);
-  let movement=direction*WALK_SPEED*dt;
+  let movement=direction*(manual?RUN_SPEED:WALK_SPEED)*dt;
   if(this.action||this.teamAction&&!manual)movement=0;
   const stopAt=manual?145:this.allies.some(a=>a.hp>0)?HERO_STANDOFF:145;
   if(movement>0&&front)movement=Math.min(movement,Math.max(0,contactGap(this,front)-stopAt));
-  this.x=clamp(this.x+movement,this.travelStart,this.roadEnd);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/WALK_SPEED;
+  this.moveBody(this,clamp(this.x+movement,this.travelStart,this.roadEnd)-this.x,dt,manual?RUN_SPEED:WALK_SPEED);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/WALK_SPEED;
   this.furthest=Math.max(this.furthest,this.x);
   this.advanceTeam(dt);
   // A full wave already spends the reference power budget. Distance unlocks the
@@ -387,7 +441,8 @@ export class Journey {
   const deployment=this.route.deployment;
   if(deployment){
    const next=this.waves[this.wave];
-   if(next&&this.time-(this.portal?.openedAt??0)>=deployment.interval&&this.enemies.filter(e=>e.hp>0).length+next.types.length<=deployment.limit)this.deployWave();
+   if(this.wave===0&&this.time>=(deployment.initialDelay||0)){for(let i=0;i<deployment.initialWaves;i++)this.deployWave();}
+   else if(next&&this.wave>0&&this.time-(this.portal?.openedAt??0)>=deployment.interval&&this.enemies.filter(e=>e.hp>0).length+next.types.length<=deployment.limit)this.deployWave();
    const reached=Math.max(this.furthest,...this.allies.filter(a=>a.hp>0).map(a=>a.x));
    this.waves.forEach((w,i)=>{if(w.helper&&reached>=w.x&&!this.helperArrivals.has(i))this.helperArrivals.set(i,false);});
   }else if(this.wave<this.waves.length&&waveEmpty&&(this.furthest>=this.waves[this.wave].x||this.waveClearAt!==null&&this.time-this.waveClearAt>=(this.waves[this.wave].afterClear??Infinity)))this.deployWave();
@@ -397,7 +452,7 @@ export class Journey {
   if(!this.moving&&!this.shield&&this.action?.kind!=='rush'&&this.heroAttack<=0&&heroTarget&&contactGap(this,heroTarget)<480){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:heroTarget,damage:10,high:true});}
   for(const a of [...this.allies].sort((a,b)=>a.id-b.id)){
    if(a.hp<=0)continue;
-   const s=unitStats(a.type,this.keeperRank),oldAX=a.x;
+   const s=unitStats(a.type,this.keeperRank),oldAX=a.x,oldLane=a.lane;
    if(a.action?.kind==='team'){a.cd=Math.max(0,a.cd-dt);a.hit=Math.max(0,a.hit-dt);continue;}
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(this.advanceEntry(a,false,dt))continue;
    const reactionPhase=a.type==='cow'?'anger':MOTION[a.type]?.anticipation?'anticipation':null;
@@ -409,27 +464,27 @@ export class Journey {
     }
    }
    this.advanceAction(a,dt);
-   if(a.action){const dx=a.x-oldAX;a.moving=Math.sign(dx);a.walk+=Math.abs(dx)/s.speed;continue;}
+   if(a.action){this.walkBody(a,oldAX,oldLane,s.speed);continue;}
    if(s.heal){
     const patient=this.healerPatient(a);
     if(patient){
      a.action={kind:'healer',phase:'approach',elapsed:0,resolved:false,targetId:patient.id??null,dir:Math.sign(patient.x-a.x)||1};
     }else{
      const goal=this.healerHome(a),gap=goal-a.x;
-     if(gap>0)a.x+=Math.min(gap,WALK_SPEED*dt);
+     this.moveBody(a,Math.max(0,Math.min(gap,WALK_SPEED*dt)),dt,WALK_SPEED);
     }
-    const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;continue;
+    this.walkBody(a,oldAX,oldLane,s.speed);continue;
    }
-   const ahead=this.enemies.filter(e=>e.hp>0&&e.x>a.x-55);
+   const ahead=this.enemies.filter(e=>e.hp>0&&(this.lanes?this.time>=(e.entryAt??e.bornAt):e.x>a.x-55));
    const hittable=['rabbit','scholar'].includes(a.type)?ahead.filter(e=>e.type!=='skirt'):ahead;
    const target=this.selectContact(a,hittable.length?hittable:ahead,s.range);
-   const contactFront=ahead.reduce((front,e)=>!front||e.x-ENEMY_FRONT[e.type]<front.x-ENEMY_FRONT[front.type]?e:front,null);
+   const contactFront=ahead.filter(e=>this.sameLane(a,e)).reduce((front,e)=>!front||e.x-ENEMY_FRONT[e.type]<front.x-ENEMY_FRONT[front.type]?e:front,null);
    // Companions march independently of traveller input, stopping at firing range.
    const goal=Math.min(this.roadEnd-90,contactFront?a.x+contactGap(a,contactFront)-s.range:this.roadEnd-90),gap=goal-a.x;
-   if(target&&contactGap(a,target)<=s.range+1e-6&&a.cd<=0&&(a.type!=='cow'||a.alerted)){
+   if(target&&this.canStrike(a,target)&&contactGap(a,target)<=s.range+1e-6&&a.cd<=0&&(a.type!=='cow'||a.alerted)){
     a.cd=s.period;a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,dir:Math.sign(target.x-a.x)||1};
-   }else if(gap>1e-6){a.x+=Math.min(gap,WALK_SPEED*dt);}
-   const dx=a.x-oldAX;a.moving=Math.abs(dx)>.00001?Math.sign(dx):0;a.walk+=Math.abs(dx)/s.speed;
+   }else{const travel=this.lanes&&target?(contactGap(a,target)>s.range?Math.sign(target.x-a.x)*Math.min(contactGap(a,target)-s.range,WALK_SPEED*dt):0):Math.max(0,Math.min(gap,WALK_SPEED*dt));this.moveBody(a,travel,dt,WALK_SPEED,target);}
+   this.walkBody(a,oldAX,oldLane,s.speed);
   }
   for(const e of this.enemies){
    if(e.hp<=0)continue;
@@ -438,8 +493,10 @@ export class Journey {
    if(e.stun>0){e.stun-=dt;e.action=null;continue;}
    if(this.advanceEntry(e,true,dt))continue;
    if(e.action){this.advanceAction(e,dt);if(this.status!=='playing')break;continue;}
-   const candidates=[...this.allies.filter(a=>a.hp>0&&a.x<e.x+50),this];
-   const chosen=this.selectContact(e,candidates,e.windup>0&&s.ability?s.ability.range:s.range);
+   const candidates=[...this.allies.filter(a=>a.hp>0&&(this.lanes||a.x<e.x+50)),this];
+   const intercept=this.lanes&&(this.moving>0||this.auto)&&Math.abs(e.x-this.x)<480;
+   const touching=this.lanes?candidates.filter(a=>this.canStrike(e,a)&&contactGap(e,a)<=s.range+18):[];
+   const chosen=this.selectContact(e,touching.length?touching:intercept?[this]:candidates,e.windup>0&&s.ability?s.ability.range:s.range);
    const target={x:chosen.x,a:chosen===this?null:chosen},gap=contactGap(e,chosen);
    const attackTarget=(amount)=>{
     if(target.a)this.hurtAlly(target.a,amount*(e.powerScale??1)*ENEMY_OUTPUT,e.x,e.type);
@@ -470,7 +527,7 @@ export class Journey {
     else if(e.type==='horse')this.say('말이 돌진을 준비해요. 발구름!');
     continue;
    }
-   if(gap>s.range){const dx=Math.min(s.speed*this.enemySpeedScale*dt,gap-s.range,Math.max(0,e.x-((s.stopAt===undefined?undefined:this.roadEnd-(ROAD-s.stopAt))??(this.viewport&&!this.route.deployment?this.viewport.left-this.screenPadding(e.type)-1:START-120))));e.x-=dx;e.moving=dx>0?-1:0;e.walk+=dx/s.speed;}
+   if(gap>s.range||!this.canStrike(e,chosen)){const oldEX=e.x,oldLane=e.lane,dx=Math.min(s.speed*this.enemySpeedScale*dt,Math.max(0,gap-s.range),Math.max(0,e.x-((s.stopAt===undefined?undefined:this.roadEnd-(ROAD-s.stopAt))??(this.viewport&&!this.route.deployment?this.viewport.left-this.screenPadding(e.type)-1:START-120))));this.moveBody(e,this.lanes&&chosen.x>e.x?Math.min(s.speed*this.enemySpeedScale*dt,Math.max(0,gap-s.range),this.gateX-e.x):-dx,dt,s.speed*this.enemySpeedScale,chosen);this.walkBody(e,oldEX,oldLane,s.speed);}
    else if(e.cd<=0){e.cd=s.period;e.action={kind:'enemy',elapsed:0,resolved:false,targetId:target.a?.id??null,dir:Math.sign(target.x-e.x)||-1};}
    if(this.status!=='playing')break;
   }
