@@ -1,10 +1,10 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=167-healer-music';
-import {HEALER_VIDEO} from './healer-motion.js?v=167-healer-music';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=167-healer-music';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=167-healer-music';
-import {AssetDownloads} from './downloads.js?v=167-healer-music';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=167-healer-music';
-import {ASSET_BYTES} from './asset-sizes.js?v=167-healer-music';
+import {ATLAS_SLICES} from './atlas-slices.js?v=168-sound-party';
+import {HEALER_VIDEO} from './healer-motion.js?v=168-sound-party';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=168-sound-party';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=168-sound-party';
+import {AssetDownloads} from './downloads.js?v=168-sound-party';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=168-sound-party';
+import {ASSET_BYTES} from './asset-sizes.js?v=168-sound-party';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -367,6 +367,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const {key:pageKey,w,h,g,sourceKey}=this.videoPage(frame,native),cached=this.videoFrames.get(pageKey);
    const source=this.videoSources.get(sourceKey);
    if(source)source.used=now;
+   if(cached&&this.renderTick!==undefined&&cached.warmTick===this.renderTick&&cached.warmIndex===index){cached.used=now;return key;}
    // A missing visible cel owns the queue before speculative future blocks.
    if(!cached&&(!source?.image||source.h&&source.h<h)){if(!(source?.retryAt>now))this.requestVideo(sourceKey,native);return fallback&&(this.videoFrameIndex.has(fallback)||!fallback.startsWith('__')&&this.textures.exists(fallback))?fallback:key;}
    // Warm the next block before crossing its boundary. The game's motion clock
@@ -381,7 +382,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if((!nextSource?.image||nextSource.h&&nextSource.h<h)&&!this.videoFrames.has(nextPage.key))pendingSources.add(nextKey);
    }
    for(const nextKey of pendingSources)this.requestVideo(nextKey,native);
-   if(cached){cached.used=now;return key;}
+   if(cached){cached.used=now;cached.warmTick=this.renderTick;cached.warmIndex=index;return key;}
    const delivery=VIDEO_DELIVERY[spec.asset],nw=source.w||delivery.crop[2],nh=source.h||delivery.crop[3];
    const start=Math.floor(index/VIDEO_PAGE_FRAMES)*VIDEO_PAGE_FRAMES,end=Math.min(spec.frames,start+VIDEO_PAGE_FRAMES);
    let gpuPixels=source.image;
@@ -392,7 +393,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    const texture=this.textures.addCanvas(pageKey,gpuPixels);
    for(let i=start;i<end;i++){const local=i-start;texture.add(spec.prefix+i,0,local%VIDEO_PAGE_COLUMNS*(w+g*2)+g,Math.floor(local/VIDEO_PAGE_COLUMNS)*(h+g*2)+g,w,h);}
-   this.videoFrames.set(pageKey,{bytes:gpuPixels.width*gpuPixels.height*4,used:now,sourceKey});return key;
+   this.videoFrames.set(pageKey,{bytes:gpuPixels.width*gpuPixels.height*4,used:now,sourceKey,warmTick:this.renderTick,warmIndex:index});return key;
   }
   setCel(image,key){
    const frame=this.videoFrameIndex?.get(key);
@@ -1605,6 +1606,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.effects=this.effects.filter(e=>e.t<e.duration);
   }
   update(time,delta){
+   this.renderTick=(this.renderTick||0)+1;
    if(!this.ready){if(this.commonReady)onFrame(model,this);return;}
    if(this.entryPreview&&this.entryViewStarted!==undefined){const p=Math.min(1,Math.max(0,(performance.now()-this.entryViewStarted)/700)),mix=1-(1-p)**3;if(mix!==this.entryBlend){this.entryBlend=mix;this.resize(false);}}
    const rawDt=Math.min(delta/1000,.05),playing=model.status==='playing',rate=playing&&[1,2,4,8].includes(this.playbackRate)?this.playbackRate:1;

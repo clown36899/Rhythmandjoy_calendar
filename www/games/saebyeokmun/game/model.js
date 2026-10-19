@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=167-healer-music';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=168-sound-party';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -180,17 +180,17 @@ export class Journey {
  teamCandidates(type){return this.allies.filter(a=>a.hp>0&&a.type===type&&!a.entering).sort((a,b)=>a.id-b.id);}
  teamReady(key){const spec=TEAM_SKILLS[key];return !!spec&&this.status==='playing'&&!this.teamAction&&this.cooldowns[key]<=0&&this.teamCandidates(spec.unit).length>=spec.required;}
  teamSkill(key){
-  const spec=TEAM_SKILLS[key];if(!this.teamReady(key))return this.reject('입장을 마친 동료 5명과 기술 준비가 필요해요.');
+  const spec=TEAM_SKILLS[key];if(!this.teamReady(key))return this.reject(`입장을 마친 동료 ${spec?.required??ALLY_TYPE_LIMIT}명과 기술 준비가 필요해요.`);
   const foes=this.enemies.filter(e=>e.hp>0&&e.type!=='gate'&&e.x>=this.x-70);
   if(key!=='prayer'&&!foes.length)return this.reject('전방에 공격할 적이 없어요.');
   if(key==='prayer'&&![this,...this.allies].some(a=>a.hp>0&&a.hp<(a.maxHp??MAX_HP)))return this.reject('모두 건강해요. 부상한 동료가 생기면 기도해요.');
   const members=this.teamCandidates(spec.unit).slice(0,spec.required),pad=this.screenPadding(spec.unit)*.5,left=this.viewport?this.viewport.left+pad:START-130,right=this.viewport?this.viewport.right-pad:this.gateX-pad;
-  const spacing=Math.min(50,(right-left)/(spec.required-1)),base=clamp(this.x+(key==='cavalryCharge'?160:-240),left,Math.max(left,right-spacing*4));
+  const spacing=Math.min(50,(right-left)/(spec.required-1)),base=clamp(this.x+(key==='cavalryCharge'?160:-240),left,Math.max(left,right-spacing*(spec.required-1)));
   const rainStart=Math.max(this.x+80,Math.min(...foes.map(e=>e.x))-90),rainEnd=Math.min(this.gateX+90,Math.max(rainStart+640,...foes.map(e=>e.x+90)));
   const phase=key==='prayer'?'perform':'gather';
   this.teamAction={key,phase,elapsed:0,launched:0,resolved:false,rainStart,rainEnd,members:members.map((a,i)=>({id:a.id,home:a.x,slot:key==='prayer'?a.x:base+i*spacing,chargeEnd:Math.min(right,base+i*spacing+650),hitIds:[]}))};
   for(const a of members){a.action={kind:'team',skill:key,phase,elapsed:0};a.moving=0;delete a.engagedId;}
-  this.cooldowns[key]=spec.cooldown;this.casts++;this.emit('team-start',{key,x:this.x,members:members.map(a=>a.id)});if(phase==='perform')this.emit('team-cast',{key,x:this.x});this.say(spec.name+(key==='prayer'?' · 그 자리에서 기도해요.':' · 다섯 명이 대형을 갖춰요.'));return true;
+  this.cooldowns[key]=spec.cooldown;this.casts++;this.emit('team-start',{key,x:this.x,members:members.map(a=>a.id)});if(phase==='perform')this.emit('team-cast',{key,x:this.x});this.say(spec.name+(key==='prayer'?' · 그 자리에서 기도해요.':` · ${spec.required}명이 대형을 갖춰요.`));return true;
  }
  advanceTeam(dt){
   const team=this.teamAction;if(!team)return;const spec=TEAM_SKILLS[team.key];

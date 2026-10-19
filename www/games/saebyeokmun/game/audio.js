@@ -1,5 +1,5 @@
 // One audio owner. User-provided music + credited effects; see assets/audio/LICENSES-v167.txt.
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=167-healer-music';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=168-sound-party';
 const MOTION_AUDIO=Object.fromEntries(Object.entries(TRAVELLER_VIDEO).flatMap(([kind,clips])=>Object.entries(clips).filter(([,c])=>c.audio).map(([name,c])=>[kind+'-'+name,c.audio])));
 const NAMES=['step-heavy','step-light','stomp','seed','charm','guard','swipe','hurt','summon','heal','shelter','hail','warning','charge','hex','win','lose','coin','stone','ink','seal','horn','ascend','ambience',...Object.keys(MOTION_AUDIO)];
 const LEVELS={'step-heavy':.18,'step-light':.13,coin:.32,swipe:.38,guard:.62,warning:.8,summon:.65,heal:.55,seal:.68,charm:.68,hex:.7,ascend:.6};

@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=167-healer-music';
-import {Journey} from './game/model.js?v=167-healer-music';
-import {Autoplay} from './game/autoplay.js?v=167-healer-music';
-import {makeGame} from './game/scene.js?v=167-healer-music';
-import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=167-healer-music';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=167-healer-music';
+import {Campaign} from './game/campaign.js?v=168-sound-party';
+import {Journey} from './game/model.js?v=168-sound-party';
+import {Autoplay} from './game/autoplay.js?v=168-sound-party';
+import {makeGame} from './game/scene.js?v=168-sound-party';
+import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=168-sound-party';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=168-sound-party';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -125,11 +125,11 @@ const soundscape=new Soundscape({onState:state=>{
  $('audio-status').textContent=state==='locked'?'설정에서 효과음을 켜 주세요.':state==='loading'?'밤길의 소리를 준비하고 있어요.':state==='partial'?'일부 소리를 불러오지 못했어요. 새로고침하면 다시 준비합니다.':'소의 뿔 · 돌팔매 · 먹붓 · 씨앗탄 · 선비의 봉인 · 승천';
 }});
 function unlockSound(){return soundscape.unlock().catch(()=>{showNotice('소리를 시작하지 못했어요. 설정에서 소리를 다시 켜 주세요.');});}
-try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-audio'));for(const channel of ['music','effects'])if(typeof saved?.[channel]==='boolean'&&(channel!=='music'||saved.musicTrack===MUSIC_TRACK))soundscape.setChannelEnabled(channel,saved[channel]);if(typeof saved?.volume==='number'&&Number.isFinite(saved.volume))soundscape.setVolume(saved.volume);}catch{}
-function updateSound(){for(const channel of ['music','effects']){const on=soundscape[channel+'Enabled'],b=$(channel+'-toggle');b.setAttribute('aria-pressed',String(on));b.querySelector('.switch-state').textContent=on?'켬':'끔';}$('sound-volume').value=Math.round(soundscape.volume*100);$('volume-value').textContent=Math.round(soundscape.volume*100)+'%';}
-function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify({music:soundscape.musicEnabled,effects:soundscape.effectsEnabled,volume:soundscape.volume,musicTrack:MUSIC_TRACK}));}catch{}}
-// Retain silent effects; the requested music replaces the old review mute once.
 soundscape.setChannelEnabled('effects',false);
+try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-audio'));for(const channel of ['music','effects'])if(typeof saved?.[channel]==='boolean'&&saved.musicTrack===MUSIC_TRACK)soundscape.setChannelEnabled(channel,saved[channel]);if(typeof saved?.volume==='number'&&Number.isFinite(saved.volume))soundscape.setVolume(saved.volume);}catch{}
+function updateSound(){for(const channel of ['music','effects']){const on=soundscape[channel+'Enabled'],b=$(channel+'-toggle');b.setAttribute('aria-pressed',String(on));b.querySelector('.switch-state').textContent=on?'켬':'끔';const hud=$('hud-'+channel);hud.setAttribute('aria-pressed',String(on));hud.setAttribute('aria-label',(channel==='music'?'음악':'효과음')+(on?' 끄기':' 켜기'));hud.title=(channel==='music'?'음악':'효과음')+' '+(on?'켬':'끔');}$('sound-volume').value=Math.round(soundscape.volume*100);$('volume-value').textContent=Math.round(soundscape.volume*100)+'%';}
+function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify({music:soundscape.musicEnabled,effects:soundscape.effectsEnabled,volume:soundscape.volume,musicTrack:MUSIC_TRACK}));}catch{}}
+// Current-track preferences persist; old review settings migrate only once.
 saveSound();updateSound();
 // Opening preferences are separate from campaign rewards; the existing modal owns pause/resume.
 let openingEnabled=true;try{openingEnabled=localStorage.getItem('saebyeokmun-opening')!=='false';}catch{}
@@ -283,7 +283,7 @@ function blurPause(){keys.clear();model.setDirection(0,{cancel:true});infoPaused
 window.addEventListener('blur',blurPause);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)blurPause();});
 window.matchMedia('(max-width:600px) and (orientation:portrait)').addEventListener('change',e=>{if(e.matches)blurPause();});
-for(const channel of ['music','effects'])$(channel+'-toggle').addEventListener('click',()=>{soundscape.setChannelEnabled(channel,!soundscape[channel+'Enabled']);updateSound();saveSound();if(soundscape[channel+'Enabled'])unlockSound().then(()=>{if(channel==='effects')soundscape.play('guard',{allowIdle:true});});});
+for(const channel of ['music','effects'])for(const id of [channel+'-toggle','hud-'+channel])$(id).addEventListener('click',()=>{soundscape.setChannelEnabled(channel,!soundscape[channel+'Enabled']);updateSound();saveSound();if(soundscape[channel+'Enabled'])unlockSound().then(()=>{if(channel==='effects')soundscape.play('guard',{allowIdle:true});});});
 $('sound-volume').addEventListener('input',e=>{soundscape.setVolume(e.target.value/100);updateSound();saveSound();});
 document.querySelectorAll('[data-sound]').forEach(button=>button.addEventListener('click',async()=>{
  if(!soundscape.effectsEnabled){$('audio-status').textContent='설정에서 효과음을 켜면 미리 들을 수 있어요.';return;}await unlockSound();soundscape.play(button.dataset.sound,{allowIdle:true});
@@ -532,7 +532,7 @@ function onFrame(m,s){
   else badge?.remove();
  }
  const boss=m.enemies.find(e=>isBoss(e.type))||m.enemies.find(e=>e.type==='gate');$('boss-bar').hidden=!boss||m.status!=='playing';if(boss){$('boss-fill').style.width=(boss.hp/boss.maxHp*100)+'%';$('boss-label').textContent=boss.type==='gate'?'문':ENEMIES[boss.type].name;}
- $('pause').hidden=!['playing','paused'].includes(m.status);
+ $('pause').hidden=!['playing','paused'].includes(m.status);for(const channel of ['music','effects'])$('hud-'+channel).hidden=$('pause').hidden;
  $('pause-overlay').hidden=autoplay.active||m.status!=='paused'||fullscreenPending||infoDialogs.some(d=>d.open);
  if(m.status!==lastStatus){
   lastStatus=m.status;

@@ -1,6 +1,6 @@
-import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=167-healer-music';
-import {STAGE2_ART} from './stage2-art.js?v=167-healer-music';
-import {EXTRA_MONSTERS} from './expansion-monsters.js?v=167-healer-music';
+import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=168-sound-party';
+import {STAGE2_ART} from './stage2-art.js?v=168-sound-party';
+import {EXTRA_MONSTERS} from './expansion-monsters.js?v=168-sound-party';
 export {GATE_STYLES};
 // Single source of sample tuning. All folklore-derived combat roles are game inventions.
 export const ROAD=4200;
@@ -14,8 +14,8 @@ export const MAX_HP=200;
 export const MAX_COINS=100;
 export const ALLY_HP_SCALE=.7*1.15*1.1;
 export const ALLY_OUTPUT=1.1;
-export const ALLY_TYPE_LIMIT=5;
-export const ALLY_TOTAL_LIMIT=50;
+export const ALLY_TYPE_LIMIT=3;
+export const ALLY_TOTAL_LIMIT=ALLY_TYPE_LIMIT*5;
 export const BODY_HEIGHT={king:165,prince:156,minister:165,cavalry:205,umbrella:185,mount:188,haetae:132,girl:117,keeper:133,cow:141,scholar:156,healer:165,rabbit:124,skirt:102,horse:198,reaper:210,boss:300,warden:230,ferryman:245,waterghost:180,spearman:158,archer:154,mangtae:148,shadow:140,dokkaebi:160,bulgasari:205,changgwi:180,gumiho:142,bandit:166,pirate:170,gate:350};
 const CORE_AREAS=[
  {at:0,name:'몽유도원 · 달빛 산수',texture:'inwang',detailFiles:['inwang-near0-v44.webp','inwang-near1-v44.webp'],detailOverlap:160,file:'inwang-far-v44.webp',skyFile:'inwang-sky-v44.webp',cloudFile:'inwang-clouds-v44.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,roadAtlas:'mongyudowon-terrain-v54.webp',roadTiles:[[0,680],[680,1000],[1680,340],[2020,200],[2220,800],[3020,260],[3280,356],[3636,680],[4316,1000],[5316,1212],[6528,744]].map(([x,width],i)=>({frame:'path'+i,x,width,height:720,foot:500,sourceY:0,sourceHeight:720}))},
@@ -92,9 +92,9 @@ export function bossPose(walk,moving,action=null,windup=0,kind='boss'){
 export const TEST_MODE=false;
 // Conditional formations live outside the three equipped hero skills; the existing clock/cooldowns own them.
 export const TEAM_SKILLS={
- arrowRain:{name:'궁병 화살비',unit:'archer',required:5,cost:0,cooldown:40,icon:'archer1',castTime:5.5,volleys:5,firstRelease:.7,volleyInterval:.6,description:'궁병 5명이 후열에 모여 5번 사격합니다. 다섯 번째 화살에 실제로 맞은 화면 안의 적은 즉사하고 궁병은 사격한 위치에서 전투를 계속합니다.'},
- prayer:{name:'의녀 합동기도',unit:'healer',required:5,cost:0,cooldown:50,icon:'healerPray1',castTime:2.5,description:'의녀 5명이 현재 위치에서 기도해 주인공과 살아 있는 동료 전원을 한 번에 완전히 치료하고 일반 치료를 재개합니다.'},
- cavalryCharge:{name:'기병 일제돌진',unit:'cavalry',required:5,cost:0,cooldown:45,icon:'cavalry1',castTime:3.2,description:'기병 5명이 전방에 줄을 맞춰 돌진하고 같은 기병들이 돌아와 전투를 계속합니다.'}
+ arrowRain:{name:'궁병 화살비',unit:'archer',required:ALLY_TYPE_LIMIT,cost:0,cooldown:40,icon:'archer1',castTime:5.5,volleys:5,firstRelease:.7,volleyInterval:.6,description:'궁병 3명이 후열에 모여 5번 사격합니다. 다섯 번째 화살에 실제로 맞은 화면 안의 적은 즉사하고 궁병은 사격한 위치에서 전투를 계속합니다.'},
+ prayer:{name:'의녀 합동기도',unit:'healer',required:ALLY_TYPE_LIMIT,cost:0,cooldown:50,icon:'healerPray1',castTime:2.5,description:'의녀 3명이 현재 위치에서 기도해 주인공과 살아 있는 동료 전원을 한 번에 완전히 치료하고 일반 치료를 재개합니다.'},
+ cavalryCharge:{name:'기병 일제돌진',unit:'cavalry',required:ALLY_TYPE_LIMIT,cost:0,cooldown:45,icon:'cavalry1',castTime:3.2,description:'기병 3명이 전방에 줄을 맞춰 돌진하고 같은 기병들이 돌아와 전투를 계속합니다.'}
 };
 export const DEFAULT_PARTY=['cow','keeper','rabbit','scholar','healer'];
 // Public playtest grants all eleven companions; girl/haetae remain the base heroes.

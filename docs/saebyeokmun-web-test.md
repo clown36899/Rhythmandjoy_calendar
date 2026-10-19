@@ -528,3 +528,10 @@ Chrome 실제 Scene의 비교 도구에서 +14와 상한+1, 찡그린 전신, �
 ## v37 — 선명한 근경과 이동 치료
 
 소스 `49d44c99d26695d4cb2a15e28df3295d3cdaa6cd`. 실행81파일 약97.7MB. 세 단계의 근경을 두 원화 구간으로 분리하고 안개를 그 뒤로 배치하여 기준 화면 원본 확대 약1.95배→1.01배. 원경/지면/카메라/입력/DPR 소유 유지, 구간은 반전 없이 원본 픽셀을 겹쳐 합성. 의녀는 움직이는 환자를 따라 치료하고 환자가 없을 때만 복귀, 돌아오다 환자가 생기면 즉시 재추적. 회복14/간격3.4초/HP상한/생존자/1회 명중 보호 유지. 이동 치료 전신4셀 추가, 발542/높이165 유지. 새 대상 선택 책임은 Journey의 기존 정렬을 한 메서드로 재사용한다. 자동74검사 및 Chrome844×300/667×280 일반 이동·교전·소환, 실제 Scene 이동회복/복귀중재출동 검증. 전체화면은 검증환경에서 안내 대체 복구까지만 확인; 실물 Android GPU/발열/전체화면 제외. 운영DB/캘린더 설정 변경 없음. 원화·미채택시안·프롬프트·비교자료는 로컬보존, 커밋/푸시된 실행파일만 이전해시 확인 후 복구가능 배포.
+
+
+## 2026-10-19: v168 sound and companion limit
+
+Source commit: 3ff936731f4a3e960c8cf1747ec13c9e583e5b38. This scoped runtime delta includes the v167 approved healer light, closer range150/spacing120 and supplied music; v168 adds independent music/effects HUD controls and persisted settings, a3-per-type/15-total summon limit including free helpers,3-member existing formations, and shared same-cel motion lookahead within a synchronous render. Five arrow volleys, action clocks, damage/heal events, missing-page fallback and next-render retry stay authoritative. No new loader/player/store is introduced.
+
+Validation:133 runtime tests and24 preserved-release/observer tests passed. Desktop mobile viewport844x390 confirms44px sound buttons to the left of pause and independent settings. Physical-device GPU/thermal FPS has not been measured. Deployment uses the existing Cafe24 destination, with a verified local backup, exact pushed-file hashes, and preserved19 public releases. Other chats' local work and site services/DB are excluded.

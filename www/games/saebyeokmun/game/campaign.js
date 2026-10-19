@@ -1,4 +1,4 @@
-import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=167-healer-music';
+import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=168-sound-party';
 // Local progression is separate from Journey's capped battle purse. No cash purchases.
 export class Campaign {
  constructor(saved={}){

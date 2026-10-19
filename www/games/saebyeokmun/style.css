@@ -1996,3 +1996,13 @@ img,svg,canvas{-webkit-user-drag:none}button,img,svg{user-select:none}
 #download-percent[hidden],#download-bytes[hidden],#download-state[hidden]{display:none}
 
 #download-progress::-webkit-progress-value{transition:width .18s linear}
+
+/* Independent game sound controls share the existing audio settings. */
+.stage-tools .sound-toggle{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;width:44px;height:44px;min-width:44px;padding:4px;color:#fff2cc;border:0;border-radius:0;background:transparent url("./assets/stage2-wood-button-v145.webp") center/100% 100% no-repeat;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.stage-tools .sound-toggle[hidden]{display:none}
+.stage-tools .sound-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.stage-tools .sound-toggle span{font:600 9px/1.1 sans-serif;pointer-events:none}
+.stage-tools .sound-toggle .sound-off{display:none;stroke:#f2a27b;stroke-width:2.6}
+.stage-tools .sound-toggle[aria-pressed="false"] .sound-off{display:block}
+.stage-tools .sound-toggle[aria-pressed="false"]{color:#baa78b}
+body[data-area="1"][data-screen="game"] .stage-tools .sound-toggle{padding:4px}
