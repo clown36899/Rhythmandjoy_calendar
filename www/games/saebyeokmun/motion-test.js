@@ -1,8 +1,8 @@
-import {Journey} from './game/model.js?v=188-archer720';
-import {makeGame} from './game/scene.js?v=188-archer720';
-import {HEALER_VIDEO} from './game/healer-motion.js?v=188-archer720';
-import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=188-archer720';
-import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=188-archer720';
+import {Journey} from './game/model.js?v=189-motion-cache';
+import {makeGame} from './game/scene.js?v=189-motion-cache';
+import {HEALER_VIDEO} from './game/healer-motion.js?v=189-motion-cache';
+import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=189-motion-cache';
+import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=189-motion-cache';
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const $=id=>document.getElementById(id),model=new Journey(),keys=new Set();let scene,ready=false,totalDamage=0,totalHealed=0,lastUI=-Infinity,pausedByHidden=false,healerConfig=null,fieldPreview=null;
 

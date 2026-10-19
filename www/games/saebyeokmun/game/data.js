@@ -1,6 +1,6 @@
-import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=188-archer720';
-import {STAGE2_ART} from './stage2-art.js?v=188-archer720';
-import {EXTRA_MONSTERS} from './expansion-monsters.js?v=188-archer720';
+import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=189-motion-cache';
+import {STAGE2_ART} from './stage2-art.js?v=189-motion-cache';
+import {EXTRA_MONSTERS} from './expansion-monsters.js?v=189-motion-cache';
 export {GATE_STYLES};
 // Single source of sample tuning. All folklore-derived combat roles are game inventions.
 export const ROAD=4200;

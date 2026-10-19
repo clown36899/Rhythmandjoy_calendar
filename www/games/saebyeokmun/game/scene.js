@@ -1,10 +1,10 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=188-archer720';
-import {HEALER_VIDEO} from './healer-motion.js?v=188-archer720';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=188-archer720';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=188-archer720';
-import {AssetDownloads} from './downloads.js?v=188-archer720';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=188-archer720';
-import {ASSET_BYTES} from './asset-sizes.js?v=188-archer720';
+import {ATLAS_SLICES} from './atlas-slices.js?v=189-motion-cache';
+import {HEALER_VIDEO} from './healer-motion.js?v=189-motion-cache';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=189-motion-cache';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=189-motion-cache';
+import {AssetDownloads} from './downloads.js?v=189-motion-cache';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=189-motion-cache';
+import {ASSET_BYTES} from './asset-sizes.js?v=189-motion-cache';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -384,10 +384,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
     source.image=pixels;source.used=performance.now();return pixels;
    }finally{image?.close?.();if(url)URL.revokeObjectURL(url);}},background,[key]).finally(()=>{source.decoding=null;});return source.decoding;
   }
-  requestVideo(key,native=false,background=false){
+  requestVideo(key,native=false,background=false,pixels=true){
    key=this.videoFiles([key],native)[0];
    const file=this.files.get(key);
    if(this.videoRequests.has(key)){
+    if(pixels)this.videoRequests.get(key).pixels=true;
     if(!background)this.videoRequests.get(key).background=false;
     if(!background)for(const job of this.loadQueue?.jobs||[])if(job.keys.includes(key))job.background=false;
     // The transport owner already supports promotion. A visible cel must not
@@ -398,11 +399,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(this.videoSources.get(key)?.retryAt>performance.now())return;
    const priority=()=>this.videoRequests.get(key)?.background??background;
    const ready=this.loadedFiles.has(key)?Promise.resolve():this.downloads.request(file,background,background).then(()=>this.loadFiles([key],null,native,priority()));
-   const job=ready.then(()=>this.decodeVideo(key,native,priority())).catch(()=>{
+   const job=ready.then(()=>{if(this.videoRequests.get(key)?.pixels)return this.decodeVideo(key,native,priority());}).catch(()=>{
     // Existing successful bytes survive a failed request. Retry on the next use,
     // at most once per five seconds; never create another transport queue.
     const source=this.videoSources.get(key)||{image:null};source.retryAt=performance.now()+5000;this.videoSources.set(key,source);
-   }).finally(()=>{this.videoRequests.delete(key);});job.background=background;this.videoRequests.set(key,job);
+   }).finally(()=>{this.videoRequests.delete(key);});job.background=background;job.pixels=pixels;this.videoRequests.set(key,job);
   }
   videoPage(frame,native=false,index){
    const d=VIDEO_DELIVERY[frame.spec.asset],[,,nativeWidth,nativeHeight]=d.crop;
@@ -431,15 +432,17 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // Warm the next block before crossing its boundary. The game's motion clock
    // remains authoritative even if a slow connection temporarily holds a cel.
    const cycle=spec.cycles?.find(c=>index>=c.start&&index<=c.end),ahead=Math.ceil(spec.fps),first=cycle?.start??0,length=cycle?cycle.end-cycle.start+1:spec.frames;
-   const pendingSources=new Set();
-   for(const nextIndex of this.ready===false||warm?[]:new Set([first+(index-first+ahead)%length,first+(index-first+VIDEO_PAGE_FRAMES)%length])){
-    const nextPage=this.videoPage(this.videoFrameIndex.get(spec.prefix+nextIndex),native),nextKey=nextPage.sourceKey,nextSource=this.videoSources.get(nextKey);
+   const pendingSources=new Map();
+   for(const lead of this.ready===false||warm?[]:[ahead,VIDEO_PAGE_FRAMES]){
+    const nextIndex=first+(index-first+lead)%length,nextPage=this.videoPage(this.videoFrameIndex.get(spec.prefix+nextIndex),native),nextKey=nextPage.sourceKey,nextSource=this.videoSources.get(nextKey);
+    // Keep a second of compressed transport lead, but expand only the imminent
+    // GPU page. Far-future pixels competed with current motion in the CPU LRU.
+    if(this.videoFrames.has(nextPage.key))continue;
     if(nextSource)nextSource.used=now;
-    // Preserve both the immediate GPU half and a second of transport lead.
-    // They can share an evicted CPU block; the existing request map coalesces it.
-    if((!nextSource?.image||nextSource.h&&nextSource.h<h)&&!this.videoFrames.has(nextPage.key))pendingSources.add(nextKey);
+    const pixels=lead===VIDEO_PAGE_FRAMES;
+    if(pixels?(!nextSource?.image||nextSource.h&&nextSource.h<h):!nextSource?.blob&&!nextSource?.image)pendingSources.set(nextKey,pixels||pendingSources.get(nextKey)||false);
    }
-   for(const nextKey of pendingSources)this.requestVideo(nextKey,native,true);
+   for(const [nextKey,pixels] of pendingSources)this.requestVideo(nextKey,native,true,pixels);
    if(cached){
     // CPU transport readiness does not prepare a GPU page. Build the next six
     // cels while the current half is still displayed, at most one warm page per
