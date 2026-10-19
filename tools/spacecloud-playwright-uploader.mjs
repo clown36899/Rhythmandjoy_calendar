@@ -2980,6 +2980,7 @@ export async function checkSpacecloudLogin(context, {
   let apiResult = null;
   let currentUrl = '';
   let refreshAttempt = null;
+  let maintenanceCheck = null;
   try {
     let productId = '108674';
     try {
@@ -2996,10 +2997,27 @@ export async function checkSpacecloudLogin(context, {
       }
       await route.abort('blockedbyclient');
     });
-    await page.goto(url, { waitUntil: 'commit', timeout: timeoutMs });
+    const documentResponse = await page.goto(url, { waitUntil: 'commit', timeout: timeoutMs });
     currentUrl = page.url();
+    // A healthy authentication API does not make the booking site usable when
+    // its document is the official maintenance page. Ordinary 503s stay errors.
+    if (documentResponse?.status?.() === 503) {
+      let documentTimer;
+      const documentText = await Promise.race([
+        documentResponse.text(),
+        new Promise((_, reject) => {
+          documentTimer = setTimeout(() => reject(new Error('SpaceCloud maintenance document read timed out')), timeoutMs);
+        }),
+      ]).finally(() => clearTimeout(documentTimer));
+      const classification = classifySpacecloudSessionCheck({
+        url: currentUrl,
+        documentStatus: 503,
+        documentText,
+      });
+      if (classification.probe === 'maintenance-page') maintenanceCheck = classification;
+    }
     const explicitLogin = classifySpacecloudSessionCheck({ url: currentUrl });
-    if (explicitLogin.status !== 'login_required') {
+    if (!maintenanceCheck && explicitLogin.status !== 'login_required') {
       const nowKst = new Date(Date.now() + (9 * 60 * 60 * 1000));
       apiResult = await fetchSpacecloudCalendarApi(page, {
         productId,
@@ -3048,7 +3066,7 @@ export async function checkSpacecloudLogin(context, {
     currentUrl = page.url();
   }
   try {
-    const classification = classifySpacecloudSessionCheck({
+    const classification = maintenanceCheck || classifySpacecloudSessionCheck({
       url: currentUrl || page.url(),
       navigationError,
       apiStatus: apiResult?.status ?? null,
@@ -3062,7 +3080,7 @@ export async function checkSpacecloudLogin(context, {
       url: currentUrl || page.url(),
       title: await page.title().catch(() => ''),
       navigationError,
-      probe: refreshAttempt ? 'calendar-api+spa-refresh' : 'calendar-api',
+      probe: maintenanceCheck ? 'maintenance-page' : refreshAttempt ? 'calendar-api+spa-refresh' : 'calendar-api',
       apiStatus: apiResult?.status ?? null,
       refreshAttempted: Boolean(refreshAttempt),
       refreshOutcome: refreshAttempt?.status || '',
@@ -3081,6 +3099,8 @@ export function classifySpacecloudSessionCheck({
   accessTokenPresent = null,
   apiError = '',
   probeAttempted = false,
+  documentStatus = null,
+  documentText = '',
 } = {}) {
   const currentUrl = String(url || '');
   let location = null;
@@ -3098,6 +3118,23 @@ export function classifySpacecloudSessionCheck({
   }
 
   const expectedUrl = /^https:\/\/partner\.spacecloud\.kr\/reservation-calendar(?:[/?#]|$)/.test(currentUrl);
+  const noticeText = String(documentText)
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (expectedUrl && Number(documentStatus) === 503
+    && /스페이스클라우드\s*(?:서버|서비스)\s*점검\s*안내/.test(noticeText)
+    && /점검\s*기간\s*동안\s*서비스\s*이용\s*불가/.test(noticeText)
+    && /점검\s*중/.test(noticeText)) {
+    return {
+      ok: false,
+      status: 'needs_check',
+      loginRequired: false,
+      probe: 'maintenance-page',
+      reason: '스페이스클라우드 공식 서버 점검 중 · 종료 후 자동 재확인',
+    };
+  }
   if (accessTokenPresent === false || [401, 403].includes(Number(apiStatus))) {
     return {
       ok: false,

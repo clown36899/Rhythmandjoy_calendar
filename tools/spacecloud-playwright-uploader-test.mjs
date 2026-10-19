@@ -130,6 +130,54 @@ test('checks a current SpaceCloud token through the calendar API without loading
   assert.equal(calls.some((call) => call.type === 'route'), true);
 });
 
+test('official SpaceCloud maintenance pauses the probe even if its authentication API could succeed', async () => {
+  const targetUrl = 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056';
+  const notice = '<h1>스페이스클라우드 서버 점검 안내</h1><p>서버 업데이트 및 점검 중입니다.</p>'
+    + '<h2>점검 기간 동안 서비스 이용 불가</h2>';
+  let apiReads = 0;
+  let closes = 0;
+  const page = {
+    route: async () => {},
+    goto: async () => ({ status: () => 503, text: async () => notice }),
+    url: () => targetUrl,
+    evaluate: async () => { apiReads += 1; return { ok: true, status: 200, tokenPresent: true }; },
+    title: async () => 'spacecloud',
+    close: async () => { closes += 1; },
+  };
+  const maintenance = await checkSpacecloudLogin({ newPage: async () => page });
+  assert.equal(maintenance.status, 'needs_check');
+  assert.equal(maintenance.probe, 'maintenance-page');
+  assert.equal(maintenance.loginRequired, false);
+  assert.equal(apiReads, 0);
+  assert.equal(closes, 1);
+
+  for (const [url, status, text] of [
+    [targetUrl, 503, 'Service Unavailable'],
+    [targetUrl, 503, `<script>${notice}</script>`],
+    [targetUrl, 503, `<!--${notice}-->`],
+    [targetUrl, 200, notice],
+    ['https://example.org/reservation-calendar', 503, notice],
+    ['https://partner.spacecloud.kr/auth/login', 503, notice],
+  ]) {
+    assert.notEqual(classifySpacecloudSessionCheck({
+      url, documentStatus: status, documentText: text,
+    }).probe, 'maintenance-page', 'only the live official unavailable document may suppress work');
+  }
+
+  page.goto = async () => ({ status: () => 200 });
+  const recovered = await checkSpacecloudLogin({ newPage: async () => page });
+  assert.equal(recovered.status, 'ready');
+  assert.equal(recovered.probe, 'calendar-api');
+  assert.equal(apiReads, 1);
+  assert.equal(closes, 2);
+  page.goto = async () => ({ status: () => 503, text: async () => new Promise(() => {}) });
+  const incomplete = await checkSpacecloudLogin({ newPage: async () => page }, { timeoutMs: 10 });
+  assert.equal(incomplete.status, 'needs_check');
+  assert.notEqual(incomplete.probe, 'maintenance-page');
+  assert.match(incomplete.navigationError, /document read timed out/);
+  assert.equal(closes, 3);
+});
+
 test('lets the SpaceCloud SPA restore a missing access token before declaring logout', async () => {
   const targetUrl = 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056';
   const calendarUrl = 'https://api.spacecloud.kr/partner/reservations/calendar?year=2026&month=08&product_id=108674';

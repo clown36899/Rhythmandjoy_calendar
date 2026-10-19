@@ -38,6 +38,39 @@ def sample_result(issues, ingestion_gaps=None):
 
 
 def main():
+    maintenance = {'spacecloud'}
+    pending = {'status': 'pending', 'age_minutes': 180}
+    expected = {'task_type': 'upload', 'target_platform': 'spacecloud'}
+    assert audit.classify_task(pending, {}, expected, 10, maintenance)[0] == 'waiting'
+    assert audit.classify_task(pending, {}, expected, 10)[0] == 'issue'
+    assert audit.classify_task(pending, {}, {**expected, 'target_platform': 'naver'}, 10, maintenance)[0] == 'issue'
+    assert audit.classify_task(None, {'ledger_age_minutes': 180}, expected, 10, maintenance)[0] == 'issue'
+    for status in ('running', 'claimed', 'failed', 'needs_review'):
+        assert audit.classify_task({**pending, 'status': status}, {}, expected, 10, maintenance)[0] == 'issue'
+    assert audit.classify_task({'status': 'done'}, {}, expected, 10, maintenance)[0] == 'ok'
+    inbox = {
+        'event_type': 'reservation', 'parse_status': 'parsed',
+        'processing_status': 'spacecloud_upload_pending', 'ledger_status': 'confirmed',
+        'task_status': 'pending', 'age_minutes': 180,
+    }
+    assert audit.ingestion_gap_reason(inbox, True, True, 10, maintenance) == ''
+    assert audit.ingestion_gap_reason(inbox, True, True, 10)
+    assert audit.ingestion_gap_reason({**inbox, 'event_type': 'cancellation', 'ledger_status': 'canceled'}, True, True, 10, maintenance) == ''
+    for change in ({'parse_status': 'failed'}, {'ledger_status': 'canceled'}, {'task_status': ''}, {'task_status': 'failed'}, {'task_status': 'running'}, {'event_type': 'spacecloud_reservation'}):
+        assert audit.ingestion_gap_reason({**inbox, **change}, True, True, 10, maintenance)
+    cursor = mock.Mock()
+    cursor.fetchone.return_value = {'exists': 1}
+    cursor.fetchall.return_value = [
+        {'platform': 'spacecloud', 'diagnostic_json': '{"failureCategory":"platform_maintenance"}'},
+        {'platform': 'naver', 'diagnostic_json': '{"failureCategory":"session_probe_unavailable"}'},
+        {'platform': 'legacy', 'diagnostic_json': 'invalid'},
+    ]
+    assert audit.active_platform_maintenance(cursor) == {'spacecloud'}
+    assert "status='needs_check'" in cursor.execute.call_args[0][0]
+    assert 'INTERVAL 10 MINUTE) AND NOW()' in cursor.execute.call_args[0][0]
+    cursor.fetchone.return_value = None
+    assert audit.active_platform_maintenance(cursor) == set()
+
     assert audit.operator_customer_cancellation_payload(json.dumps({
         'source': 'sync-admin-customer-request',
         'reason': 'customer-request',
@@ -222,6 +255,17 @@ def main():
     assert quiet == {'sent': False, 'reason': 'no_issues'}
     assert len(sent_messages) == 2
     assert sent_messages[1].startswith('✅ 자동검사 경고 해제')
+
+    with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(audit, 'send_telegram', fake_send):
+        state_path = str(Path(temp_dir) / 'maintenance-state.json')
+        audit.write_json(state_path, {'hasIssues': True, 'summary': {'uniqueIssueCount': 1}})
+        deferred = {**sample_result([]), 'waitingCount': 1, 'maintenancePlatforms': ['spacecloud']}
+        assert audit.notify_if_needed(deferred, state_path, logger)['sent'] is False
+        assert audit.notify_if_needed(deferred, state_path, logger)['sent'] is False
+        assert audit.notify_if_needed(sample_result([]), state_path, logger)['sent'] is False
+        assert len(sent_messages) == 2, 'maintenance and its quiet recovery send no messages'
+        actual_issue = {**sample_result([platform_issue]), 'maintenancePlatforms': ['spacecloud']}
+        assert audit.notify_if_needed(actual_issue, state_path, logger)['sent'] is True
 
     gap_messages = []
 

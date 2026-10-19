@@ -725,6 +725,7 @@ function sessionCookieIsExpired(snapshot, now = Date.now()) {
 }
 
 function classifySessionDiagnostic({ platform, status, before, after, previous, result, error }) {
+  if (platform === 'spacecloud' && status === 'needs_check' && result?.probe === 'maintenance-page') return 'platform_maintenance';
   if (status === 'needs_check') return 'session_probe_unavailable';
   if (status === 'check_failed' || error) return 'browser_check_failed';
   if (before?.captureError || after?.captureError) return 'cookie_observation_failed';
@@ -864,6 +865,7 @@ function sessionDiagnosticLabel(category) {
     server_rejected_cookie_validity_unknown: '네이버 서버가 쿠키를 거부 · 표시 만료시각 기록 없음',
     cookie_observation_failed: '인증 쿠키 상태를 읽지 못함',
     session_probe_unavailable: '인증 판정 보류 · 플랫폼 응답 불확실',
+    platform_maintenance: '플랫폼 공식 점검 중 · 자동 작업 대기',
     browser_check_failed: '브라우저 화면 검사 실패',
     login_required_unknown: '로그인 해제 · 기록만으로 원인 미분류',
   }[category] || '원인 분류 대기';
@@ -7207,8 +7209,8 @@ PY
 function classifyAdminPlatformInspection(task, inspection) {
   const taskType = task.taskType || task.task_type || '';
   if (!taskType) return { ok: false, status: 'check_failed', reason: 'DB 동기화 작업 기록 없음' };
-  if (inspection?.status === 'failed') {
-    return { ok: false, status: 'check_failed', reason: inspection.error || '플랫폼 조회 실패' };
+  if (['failed', 'read-failed'].includes(inspection?.status)) {
+    return { ok: false, status: 'check_failed', reason: inspection.error || inspection.verification?.apiError || '플랫폼 조회 실패' };
   }
   if (inspection?.status === 'elapsed-no-action' && ['naver_block', 'naver_restore'].includes(taskType)) {
     return { ok: true, status: 'ok', reason: '이미 시작된 네이버 시간칸 검사 생략' };
@@ -12643,6 +12645,33 @@ async function runNowModeSelfTest() {
   const failedPlatformRead = [{ classification: { ok: false, status: 'check_failed' } }];
   assert.equal(platformAuditStatusForRows(failedPlatformRead, '').auditStatus, 'recheck_pending');
   assert.equal(platformAuditStatusForRows(failedPlatformRead, 'recheck_pending').auditStatus, 'check_failed');
+  for (const taskType of ['upload', 'delete']) {
+    for (const inspection of [
+      { status: 'failed', error: 'calendar response timed out' },
+      { status: 'read-failed', verification: { apiStatus: 401, apiError: 'calendar-api-http-401' } },
+      { status: 'read-failed', verification: { apiStatus: 503, apiError: 'calendar-api-http-503' } },
+      { status: 'read-failed' },
+    ]) {
+      const classification = classifyAdminPlatformInspection({ taskType }, inspection);
+      assert.deepEqual(classification, {
+        ok: false,
+        status: 'check_failed',
+        reason: inspection.error || inspection.verification?.apiError || '플랫폼 조회 실패',
+      }, `${taskType} must preserve failed reads as inconclusive, not a live-platform mismatch`);
+      const rows = [{ classification }];
+      assert.equal(platformAuditStatusForRows(rows, 'ok').auditStatus, 'recheck_pending');
+      assert.equal(platformAuditStatusForRows(rows, 'recheck_pending').auditStatus, 'check_failed');
+      const recovered = [{ classification: classifyAdminPlatformInspection({ taskType }, {
+        status: taskType === 'upload' ? 'identity-matched' : 'absent',
+      }) }];
+      assert.equal(platformAuditStatusForRows(recovered, 'check_failed').auditStatus, 'ok');
+    }
+    const mismatch = classifyAdminPlatformInspection({ taskType }, {
+      status: taskType === 'upload' ? 'absent' : 'identity-matched',
+    });
+    assert.equal(platformAuditStatusForRows([{ classification: mismatch }], '').auditStatus, 'mismatch',
+      'verified absence or presence must still report a real discrepancy immediately');
+  }
   assert.equal(
     adminPlatformAuditIntervalMs({ adminPlatformAuditIntervalMinutes: 30 }, {
       reservations: { 2: { auditStatus: 'recheck_pending' } },
@@ -13495,6 +13524,26 @@ async function runNowModeSelfTest() {
   assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'login_required' }], 'naver'), true);
   assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'ready' }], 'naver'), false);
   assert.equal(platformSessionBlocked([{ platform: 'naver', status: 'needs_check' }], 'naver'), false);
+  const maintenanceSession = {
+    platform: 'spacecloud', status: 'needs_check',
+    diagnostic: { failureCategory: 'platform_maintenance' },
+  };
+  assert.equal(classifySessionDiagnostic({
+    platform: 'spacecloud', status: 'needs_check', result: { probe: 'maintenance-page' },
+  }), 'platform_maintenance');
+  assert.equal(platformSessionBlocked([maintenanceSession], 'spacecloud'), true);
+  assert.equal(platformSessionBlocked([maintenanceSession], 'naver'), false);
+  assert.equal(platformSessionBlocked([{ ...maintenanceSession, status: 'ready' }], 'spacecloud'), false);
+  assert.equal(sessionProblemNotificationEligible(maintenanceSession), false);
+  assert.equal((await maybeRunAdminPlatformAudit({}, null, [maintenanceSession])).skipped, true);
+  assert.equal((await maybeRunCustomerPlatformAudit({}, null, [maintenanceSession])).skipped, true);
+  const maintenanceCycle = { status: 'planned', failed: [] };
+  await runNowModeCycleTasks({ dryRun: true }, maintenanceCycle, null, [maintenanceSession]);
+  assert.equal(maintenanceCycle.uploadTasks.sessionBlocked, true);
+  assert.equal(maintenanceCycle.deleteTasks.sessionBlocked, true);
+  assert.equal(maintenanceCycle.spacecloudCancelTasks.attempted, 0);
+  assert.equal(maintenanceCycle.naverAvailabilityTasks.status, 'naver-availability-dry-run',
+    'independent Naver availability work remains enabled');
   assert.equal(sessionBlockedTaskResult('naver').attempted, 0);
   assert.equal(automationSessionCheckStatus({ ok: false, status: 'check_failed' }), 'check_failed');
   assert.equal(automationSessionCheckStatus({ ok: false, status: 'needs_check' }), 'needs_check');
@@ -13645,6 +13694,15 @@ async function runNowModeSelfTest() {
     assert.equal(deliveries.length, 3);
     notifyState = await readJsonObject(notifyArgs.notifyState);
     assert.deepEqual(notifyState['reservation:fixture'], initialState['reservation:fixture']);
+    const quietMaintenanceStatuses = [
+      expiryRow('naver', new Date(now + 30 * DAY_MS).toISOString()), maintenanceSession,
+    ];
+    await notifySessionStateChanges(notifyArgs, quietMaintenanceStatuses);
+    await notifySessionStateChanges(notifyArgs, quietMaintenanceStatuses.map((row) => ({ ...row, cached: true })));
+    await notifySessionStateChanges(notifyArgs, quietMaintenanceStatuses.map((row) => (
+      row.platform === 'spacecloud' ? { platform: 'spacecloud', status: 'ready' } : row
+    )));
+    assert.equal(deliveries.length, 3, 'official maintenance and its recovery must remain silent');
   } finally {
     globalThis.fetch = originalFetch;
     for (const name of telegramEnvNames) {
@@ -13973,7 +14031,8 @@ function sessionFailureObservation(previous, status) {
 
 function platformSessionBlocked(statuses, platform) {
   const row = sessionStatusForPlatform(statuses, platform);
-  return Boolean(row && ['login_required', 'check_failed'].includes(String(row.status || '')));
+  return Boolean(row && (['login_required', 'check_failed'].includes(String(row.status || ''))
+    || (row.status === 'needs_check' && row.diagnostic?.failureCategory === 'platform_maintenance')));
 }
 
 function blockedSessionPlatforms(statuses, platforms = ['naver', 'spacecloud']) {
@@ -14790,7 +14849,8 @@ ${kstNowText()}
         headless: args.headless,
       });
       try {
-        return await runAdminPlatformAudit(args, context, { force: true });
+        const statuses = await maybeCheckAutomationSessionStatuses({ ...args, nowMode: false }, context, args.workDir);
+        return await maybeRunAdminPlatformAudit(args, context, statuses, { force: true });
       } finally {
         await context.close();
       }
@@ -14807,7 +14867,8 @@ ${kstNowText()}
         headless: args.headless,
       });
       try {
-        return await runCustomerPlatformAudit(args, context, { force: true });
+        const statuses = await maybeCheckAutomationSessionStatuses({ ...args, nowMode: false }, context, args.workDir);
+        return await maybeRunCustomerPlatformAudit(args, context, statuses, { force: true });
       } finally {
         await context.close();
       }

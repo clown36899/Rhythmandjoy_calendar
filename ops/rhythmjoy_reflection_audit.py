@@ -491,7 +491,7 @@ def recent_ingestion_rows(cur, lookback_days):
     return cur.fetchall()
 
 
-def ingestion_gap_reason(row, upload_enabled, block_enabled, grace_minutes):
+def ingestion_gap_reason(row, upload_enabled, block_enabled, grace_minutes, maintenance_platforms=()):
     event_type = row.get('event_type') or ''
     expected_status = (
         'confirmed'
@@ -523,6 +523,9 @@ def ingestion_gap_reason(row, upload_enabled, block_enabled, grace_minutes):
         return '최신 예약 메일의 필수 상대 플랫폼 작업이 없음'
     if task_status in ('failed', 'needs_review', 'needs-review'):
         return f'최신 예약 메일의 상대 플랫폼 작업 {task_status}'
+    target_platform = 'spacecloud' if event_type in ('reservation', 'cancellation') else 'naver'
+    if task_status == 'pending' and target_platform in maintenance_platforms:
+        return ''
     if (
         task_status in ('pending', 'running', 'claimed', 'google_pending')
         and int(row.get('age_minutes') or 0) > max(1, int(grace_minutes))
@@ -611,7 +614,7 @@ def latest_task(cur, event_id, task_type, row):
     return cur.fetchone()
 
 
-def classify_task(task, row, expected, grace_minutes):
+def classify_task(task, row, expected, grace_minutes, maintenance_platforms=()):
     task_type = expected['task_type']
     if not task:
         age = int(row.get('ledger_age_minutes') or 0)
@@ -621,6 +624,8 @@ def classify_task(task, row, expected, grace_minutes):
     status = task.get('status') or ''
     if status in ('done', 'google_pending'):
         return 'ok', 'info', '반대 플랫폼 반영 완료'
+    if status == 'pending' and expected.get('target_platform') in maintenance_platforms:
+        return 'waiting', 'info', '플랫폼 공식 점검 중 · 종료 후 자동 반영 대기'
     if status in ('pending', 'running', 'claimed'):
         age = int(task.get('age_minutes') or 0)
         if age <= grace_minutes:
@@ -629,6 +634,32 @@ def classify_task(task, row, expected, grace_minutes):
     if status in ('failed', 'needs_review', 'needs-review'):
         return 'issue', 'critical', f'반영 작업 {status}'
     return 'issue', 'warning', f'알 수 없는 작업 상태 {status}'
+
+
+def active_platform_maintenance(cur):
+    # The watcher owns live platform detection. Reuse its existing diagnostic,
+    # and never suppress delays using an old or missing watcher observation.
+    cur.execute("SHOW TABLES LIKE 'rhythmjoy_admin_sessions'")
+    if not cur.fetchone():
+        return set()
+    cur.execute("SHOW COLUMNS FROM rhythmjoy_admin_sessions LIKE 'diagnostic_json'")
+    if not cur.fetchone():
+        return set()
+    cur.execute("""
+        SELECT platform, diagnostic_json
+        FROM rhythmjoy_admin_sessions
+        WHERE status='needs_check'
+          AND last_checked_at BETWEEN DATE_SUB(NOW(), INTERVAL 10 MINUTE) AND NOW()
+    """)
+    platforms = set()
+    for session in cur.fetchall():
+        try:
+            diagnostic = json.loads(session.get('diagnostic_json') or '{}')
+        except (TypeError, ValueError):
+            continue
+        if isinstance(diagnostic, dict) and diagnostic.get('failureCategory') == 'platform_maintenance':
+            platforms.add(session['platform'])
+    return platforms
 
 
 def upsert_item(cur, item):
@@ -707,6 +738,8 @@ def run_audit(
     try:
         with conn.cursor() as cur:
             ensure_schema(cur)
+            maintenance_platforms = active_platform_maintenance(cur)
+            out['maintenancePlatforms'] = sorted(maintenance_platforms)
             ingestion_rows = recent_ingestion_rows(
                 cur,
                 int(os.environ.get('RHYTHMJOY_REFLECTION_INGESTION_LOOKBACK_DAYS', '10')),
@@ -720,7 +753,7 @@ def run_audit(
             ).lower() in ('1', 'true', 'yes', 'on')
             for row in ingestion_rows:
                 reason = ingestion_gap_reason(
-                    row, upload_enabled, block_enabled, grace_minutes
+                    row, upload_enabled, block_enabled, grace_minutes, maintenance_platforms
                 )
                 if not reason:
                     continue
@@ -809,7 +842,7 @@ def run_audit(
                 if not expected:
                     continue
                 task = latest_task(cur, expected.get('event_id'), expected['task_type'], row)
-                audit_status, severity, reason = classify_task(task, row, expected, grace_minutes)
+                audit_status, severity, reason = classify_task(task, row, expected, grace_minutes, maintenance_platforms)
                 out['checked'] += 1
                 if audit_status == 'ok':
                     out['okCount'] += 1
@@ -1514,7 +1547,7 @@ def notify_if_needed(result, state_path, logger):
             next_state['lastNotification'] = state['lastNotification']
     if not has_issues:
         resolved = None
-        if state.get('hasIssues'):
+        if state.get('hasIssues') and not result.get('maintenancePlatforms'):
             try:
                 resolved = send_telegram(
                     audit_resolved_message(state),
