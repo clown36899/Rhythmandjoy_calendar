@@ -1,6 +1,6 @@
-import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=70';
-import {STAGE2_ART} from './stage2-art.js?v=153-road-opacity';
-import {EXTRA_MONSTERS} from './expansion-monsters.js?v=70';
+import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=169-video-restore';
+import {STAGE2_ART} from './stage2-art.js?v=169-video-restore';
+import {EXTRA_MONSTERS} from './expansion-monsters.js?v=169-video-restore';
 export {GATE_STYLES};
 // Single source of sample tuning. All folklore-derived combat roles are game inventions.
 export const ROAD=4200;
@@ -14,8 +14,8 @@ export const MAX_HP=200;
 export const MAX_COINS=100;
 export const ALLY_HP_SCALE=.7*1.15*1.1;
 export const ALLY_OUTPUT=1.1;
-export const ALLY_TYPE_LIMIT=5;
-export const ALLY_TOTAL_LIMIT=50;
+export const ALLY_TYPE_LIMIT=3;
+export const ALLY_TOTAL_LIMIT=ALLY_TYPE_LIMIT*5;
 export const BODY_HEIGHT={king:165,prince:156,minister:165,cavalry:205,umbrella:185,mount:188,haetae:132,girl:117,keeper:133,cow:141,scholar:156,healer:165,rabbit:124,skirt:102,horse:198,reaper:210,boss:300,warden:230,ferryman:245,waterghost:180,spearman:158,archer:154,mangtae:148,shadow:140,dokkaebi:160,bulgasari:205,changgwi:180,gumiho:142,bandit:166,pirate:170,gate:350};
 const CORE_AREAS=[
  {at:0,name:'몽유도원 · 달빛 산수',texture:'inwang',detailFiles:['inwang-near0-v44.webp','inwang-near1-v44.webp'],detailOverlap:160,file:'inwang-far-v44.webp',skyFile:'inwang-sky-v44.webp',cloudFile:'inwang-clouds-v44.webp',moonFile:'inwang-moon-v44.webp',split:1,ground:'nightRoad',panorama:true,roadAtlas:'mongyudowon-terrain-v54.webp',roadTiles:[[0,680],[680,1000],[1680,340],[2020,200],[2220,800],[3020,260],[3280,356],[3636,680],[4316,1000],[5316,1212],[6528,744]].map(([x,width],i)=>({frame:'path'+i,x,width,height:720,foot:500,sourceY:0,sourceHeight:720}))},
@@ -92,9 +92,9 @@ export function bossPose(walk,moving,action=null,windup=0,kind='boss'){
 export const TEST_MODE=false;
 // Conditional formations live outside the three equipped hero skills; the existing clock/cooldowns own them.
 export const TEAM_SKILLS={
- arrowRain:{name:'궁병 화살비',unit:'archer',required:5,cost:0,cooldown:40,icon:'archer1',castTime:5.5,volleys:5,firstRelease:.7,volleyInterval:.6,description:'궁병 5명이 후열에 모여 5번 사격합니다. 다섯 번째 화살에 실제로 맞은 화면 안의 적은 즉사하고 궁병은 사격한 위치에서 전투를 계속합니다.'},
- prayer:{name:'의녀 합동기도',unit:'healer',required:5,cost:0,cooldown:50,icon:'healerPray1',castTime:2.5,description:'의녀 5명이 현재 위치에서 기도해 주인공과 살아 있는 동료 전원을 한 번에 완전히 치료하고 일반 치료를 재개합니다.'},
- cavalryCharge:{name:'기병 일제돌진',unit:'cavalry',required:5,cost:0,cooldown:45,icon:'cavalry1',castTime:3.2,description:'기병 5명이 전방에 줄을 맞춰 돌진하고 같은 기병들이 돌아와 전투를 계속합니다.'}
+ arrowRain:{name:'궁병 화살비',unit:'archer',required:ALLY_TYPE_LIMIT,cost:0,cooldown:40,icon:'archer1',castTime:5.5,volleys:5,firstRelease:.7,volleyInterval:.6,description:'궁병 3명이 후열에 모여 5번 사격합니다. 다섯 번째 화살에 실제로 맞은 화면 안의 적은 즉사하고 궁병은 사격한 위치에서 전투를 계속합니다.'},
+ prayer:{name:'의녀 합동기도',unit:'healer',required:ALLY_TYPE_LIMIT,cost:0,cooldown:50,icon:'healerPray1',castTime:2.5,description:'의녀 3명이 현재 위치에서 기도해 주인공과 살아 있는 동료 전원을 한 번에 완전히 치료하고 일반 치료를 재개합니다.'},
+ cavalryCharge:{name:'기병 일제돌진',unit:'cavalry',required:ALLY_TYPE_LIMIT,cost:0,cooldown:45,icon:'cavalry1',castTime:3.2,description:'기병 3명이 전방에 줄을 맞춰 돌진하고 같은 기병들이 돌아와 전투를 계속합니다.'}
 };
 export const DEFAULT_PARTY=['cow','keeper','rabbit','scholar','healer'];
 // Public playtest grants all eleven companions; girl/haetae remain the base heroes.
@@ -118,7 +118,7 @@ export const UNITS=Object.fromEntries(Object.entries({
  prince:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'세자',role:'공격 · 활 사격',price:180,hp:65,speed:82,range:330,damage:22,period:1.5,cost:30,cooldown:4.5,formation:90,spacing:0,guard:0,weapon:'arrow'},
  minister:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'영의정',role:'지원 · 교지 봉인',price:220,hp:85,speed:62,range:500,damage:14,period:2.2,cost:32,cooldown:5,formation:-80,spacing:0,guard:.05,weapon:'seal'},
  cavalry:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'기마 무관',role:'돌파 · 기마 검격',price:240,hp:170,speed:90,range:100,damage:18,period:1.7,cost:40,cooldown:6,formation:295,spacing:0,guard:.3,weapon:'sword'},
- healer:{rosterCard:{rarity:"희귀",stars:3},cardArt:"summon-card-healer-v139.webp",tier:"common",price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:240,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:170,guard:0,weapon:'medicine'}
+ healer:{rosterCard:{rarity:"희귀",stars:3},cardArt:"summon-card-healer-v139.webp",tier:"common",price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:150,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:120,guard:0,weapon:'medicine'}
 }).map(([kind,stats])=>[kind,{...stats,hp:stats.hp*ALLY_HP_SCALE,damage:stats.damage*ALLY_OUTPUT,...(stats.heal?{heal:stats.heal*ALLY_OUTPUT}:{}),...(stats.upgrade?{upgrade:{...stats.upgrade,stats:{...stats.upgrade.stats,damage:stats.upgrade.stats.damage*ALLY_OUTPUT}}}:{})}]));
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
 // One shared party clearance preserves the authored differences between
@@ -234,7 +234,7 @@ export const STAGES=[...CORE_STAGES.slice(0,9),...EXTRA_CHAPTERS,CORE_STAGES[9]]
  const tourEnd=980,tourTypes=[...new Set([...ordinary,...finale.filter(k=>!isBoss(k))])],tourGroups=Array.from({length:Math.ceil(tourTypes.length/4)},(_,j)=>tourTypes.slice(j*4,j*4+4));
  tourGroups.push(finale.filter(isBoss));
  const tourWaves=tourGroups.map((types,j)=>({...waves[Math.min(j,waves.length-1)],types,x:Math.round(START+j*(tourEnd-START-320)/(tourGroups.length-1)),balanceIndex:j===tourGroups.length-1?3:Math.min(j,4)}));
- return{...stage,deployment:i<5?{initialWaves:i<2?1:3,initialDelay:i<2?2:0,initialAtScreenEdge:i<2,interval:6,limit:12}:undefined,reward:STAGE_REWARDS[i]||null,pressure:i<10?.40+i*.045:1,subtitle:stage.subtitle.replace(/^\d+장/,i+1+'장'),roadEnd,enemySpeedScale:.8,gateHp:i<10?100+i*20:300+i%6*24,waves,gateStyle:i%GATE_STYLES.length,tour:{roadEnd:tourEnd,waves:tourWaves},act:Math.floor(i/10)};
+ return{...stage,startX:i===1?360:START,deployment:i<5?{initialWaves:i<2?1:3,initialDelay:i<2?2:0,initialAtScreenEdge:i<2,interval:6,limit:12}:undefined,reward:STAGE_REWARDS[i]||null,pressure:i<10?.40+i*.045:1,subtitle:stage.subtitle.replace(/^\d+장/,i+1+'장'),roadEnd,enemySpeedScale:.8,gateHp:i<10?100+i*20:300+i%6*24,waves,gateStyle:i%GATE_STYLES.length,tour:{roadEnd:tourEnd,waves:tourWaves},act:Math.floor(i/10)};
 });
 
 // Stage definitions own travel bounds; previews, HUD and simulation share these derived coordinates.

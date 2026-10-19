@@ -1,8 +1,9 @@
-// One audio owner. User-provided music + credited effects; see assets/audio/LICENSES.txt.
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=153-road-opacity';
+// One audio owner. User-provided music + credited effects; see assets/audio/LICENSES-v167.txt.
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=169-video-restore';
 const MOTION_AUDIO=Object.fromEntries(Object.entries(TRAVELLER_VIDEO).flatMap(([kind,clips])=>Object.entries(clips).filter(([,c])=>c.audio).map(([name,c])=>[kind+'-'+name,c.audio])));
 const NAMES=['step-heavy','step-light','stomp','seed','charm','guard','swipe','hurt','summon','heal','shelter','hail','warning','charge','hex','win','lose','coin','stone','ink','seal','horn','ascend','ambience',...Object.keys(MOTION_AUDIO)];
 const LEVELS={'step-heavy':.18,'step-light':.13,coin:.32,swipe:.38,guard:.62,warning:.8,summon:.65,heal:.55,seal:.68,charm:.68,hex:.7,ascend:.6};
+export const MUSIC_TRACK='sweeping-string-theme-v167.mp3';
 export class Soundscape {
  constructor({contextFactory=()=>new (window.AudioContext||window.webkitAudioContext)(),fetcher=(url)=>fetch(url),onState=()=>{}}={}){
   this.contextFactory=contextFactory;this.fetcher=fetcher;this.onState=onState;this.enabled=true;this.musicEnabled=true;this.effectsEnabled=true;this.playing=false;this.volume=.55;this.buffers=new Map();this.voices=new Set();this.lastPlayed=new Map();this.ambient=null;this.ambientOffset=0;this.loaded=null;this.missing=[];
@@ -18,7 +19,7 @@ export class Soundscape {
   if(!this.loaded&&pending.length){
    this.onState('loading');this.missing=[];
    this.loaded=Promise.all(pending.map(async name=>{
-    try{const response=await this.fetcher('./assets/audio/'+(MOTION_AUDIO[name]||name+(name==='ambience'?'.mp3?v=39':name==='coin'?'.wav?v=67':'.wav?v=31')));if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));if(name==='ambience')this.syncAmbience();}
+    try{const response=await this.fetcher('./assets/audio/'+(MOTION_AUDIO[name]||(name==='ambience'?MUSIC_TRACK:name+(name==='coin'?'.wav?v=67':'.wav?v=31'))));if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));if(name==='ambience')this.syncAmbience();}
     catch{this.missing.push(name);}
    })).then(()=>{this.onState(this.missing.length?'partial':'ready');this.syncAmbience();}).finally(()=>{this.loaded=null;});
   }

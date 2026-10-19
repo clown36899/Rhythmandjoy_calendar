@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=146-entry';
-import {Journey} from './game/model.js?v=153-road-opacity';
-import {Autoplay} from './game/autoplay.js?v=146-entry';
-import {makeGame} from './game/scene.js?v=153-road-opacity';
-import {Soundscape} from './game/audio.js?v=153-road-opacity';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=153-road-opacity';
+import {Campaign} from './game/campaign.js?v=169-video-restore';
+import {Journey} from './game/model.js?v=169-video-restore';
+import {Autoplay} from './game/autoplay.js?v=169-video-restore';
+import {makeGame} from './game/scene.js?v=169-video-restore';
+import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=169-video-restore';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=169-video-restore';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -121,14 +121,15 @@ try{best=Number(localStorage.getItem('saebyeokmun-best')||0)||0;}catch{}
 $('best').textContent=best?best+'%':'아직 걷지 않은 길';
 const soundscape=new Soundscape({onState:state=>{
  $('settings-open').dataset.audioState=state;
+ $('opening-narrate').hidden=state!=='locked'||!$('opening').open||!soundscape.musicEnabled;
  $('audio-status').textContent=state==='locked'?'설정에서 효과음을 켜 주세요.':state==='loading'?'밤길의 소리를 준비하고 있어요.':state==='partial'?'일부 소리를 불러오지 못했어요. 새로고침하면 다시 준비합니다.':'소의 뿔 · 돌팔매 · 먹붓 · 씨앗탄 · 선비의 봉인 · 승천';
 }});
 function unlockSound(){return soundscape.unlock().catch(()=>{showNotice('소리를 시작하지 못했어요. 설정에서 소리를 다시 켜 주세요.');});}
-try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-audio'));for(const channel of ['music','effects'])if(typeof saved?.[channel]==='boolean')soundscape.setChannelEnabled(channel,saved[channel]);if(typeof saved?.volume==='number'&&Number.isFinite(saved.volume))soundscape.setVolume(saved.volume);}catch{}
-function updateSound(){for(const channel of ['music','effects']){const on=soundscape[channel+'Enabled'],b=$(channel+'-toggle');b.setAttribute('aria-pressed',String(on));b.querySelector('.switch-state').textContent=on?'켬':'끔';}$('sound-volume').value=Math.round(soundscape.volume*100);$('volume-value').textContent=Math.round(soundscape.volume*100)+'%';}
-function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify({music:soundscape.musicEnabled,effects:soundscape.effectsEnabled,volume:soundscape.volume}));}catch{}}
-// Current art/motion review starts silent, including older saved on settings.
-for(const channel of ['music','effects'])soundscape.setChannelEnabled(channel,false);
+soundscape.setChannelEnabled('effects',false);
+try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-audio'));for(const channel of ['music','effects'])if(typeof saved?.[channel]==='boolean'&&saved.musicTrack===MUSIC_TRACK)soundscape.setChannelEnabled(channel,saved[channel]);if(typeof saved?.volume==='number'&&Number.isFinite(saved.volume))soundscape.setVolume(saved.volume);}catch{}
+function updateSound(){for(const channel of ['music','effects']){const on=soundscape[channel+'Enabled'],b=$(channel+'-toggle');b.setAttribute('aria-pressed',String(on));b.querySelector('.switch-state').textContent=on?'켬':'끔';const hud=$('hud-'+channel);hud.setAttribute('aria-pressed',String(on));hud.setAttribute('aria-label',(channel==='music'?'음악':'효과음')+(on?' 끄기':' 켜기'));hud.title=(channel==='music'?'음악':'효과음')+' '+(on?'켬':'끔');}$('sound-volume').value=Math.round(soundscape.volume*100);$('volume-value').textContent=Math.round(soundscape.volume*100)+'%';}
+function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify({music:soundscape.musicEnabled,effects:soundscape.effectsEnabled,volume:soundscape.volume,musicTrack:MUSIC_TRACK}));}catch{}}
+// Current-track preferences persist; old review settings migrate only once.
 saveSound();updateSound();
 // Opening preferences are separate from campaign rewards; the existing modal owns pause/resume.
 let openingEnabled=true;try{openingEnabled=localStorage.getItem('saebyeokmun-opening')!=='false';}catch{}
@@ -142,7 +143,7 @@ function coverOpening(){
  $('opening').dataset.phase='preparing';document.body.dataset.entryPhase='loading';
  $('download-title').textContent='로딩 중';$('download-retry').hidden=true;updateDownload({phase:'waiting'});fitPhoneDialogs();$('asset-loading').showModal();
 }
-function openingFile(stage){return stage===1?'./assets/entry-stage2-v151.mp4':'./assets/entry-stage1-v146.mp4';}
+function openingFile(stage){return stage===1?'./assets/entry-stage2-v160.mp4':'./assets/entry-stage1-v146.mp4';}
 async function prepareOpeningFilm(stage){
  const epoch=entryEpoch,video=$('opening-video'),file=openingFile(stage);
  if(video.dataset.nextFile!==file){
@@ -159,7 +160,10 @@ function playOpening(stage,automatic=false){
  // This film already contains the generated title and the camera move into the
  // native field. Play it once, from zero, only after that field is prepared.
  const token=++openingEpoch;video.dataset.clip='transition';const src=video.dataset.nextFile===openingFile(stage)?video.dataset.nextSrc:openingFile(stage);if(video.src!==src)video.src=src;video.currentTime=0;
- video.play().then(()=>{if(token===openingEpoch&&$('opening').open&&['preparing','loading'].includes($('opening').dataset.phase))$('opening').dataset.phase='playing';}).catch(()=>{if(token===openingEpoch)finishOpeningFilm();});
+ $('opening-narrate').hidden=!soundscape.musicEnabled||soundscape.context?.state==='running';
+ // Decode behind the existing cover, then start the title and the one music
+ // loop together. A browser gesture resumes this same pending preparation.
+ unlockSound().then(()=>{if(token!==openingEpoch||!$('opening').open)return;return video.play().then(()=>{if(token===openingEpoch&&$('opening').open&&['preparing','loading'].includes($('opening').dataset.phase)){$('opening').dataset.phase='playing';$('opening-narrate').hidden=true;soundscape.setPlaying(!document.hidden);}});}).catch(()=>{if(token===openingEpoch)finishOpeningFilm();});
 }
 function showOpening(){
  if(fullscreenPending||preparing)return;
@@ -182,6 +186,8 @@ $('opening-toggle').addEventListener('click',()=>{openingEnabled=!openingEnabled
 $('opening-replay').addEventListener('click',showOpening);
 $('opening-video').addEventListener('ended',finishOpeningFilm);
 $('opening-video').addEventListener('error',finishOpeningFilm);
+$('opening-skip').addEventListener('click',finishOpeningFilm);
+$('opening-narrate').addEventListener('click',unlockSound);
 document.querySelector('.control-deck').addEventListener('animationend',e=>{if(e.target===document.querySelector('.control-deck')&&e.animationName==='entry-hud')finishOpeningUI();});
 $('opening').addEventListener('cancel',e=>{if(openingAutomatic)e.preventDefault();});
 function releaseOpeningFilm(){
@@ -212,7 +218,7 @@ async function start(testStage=null,cinematic=false){
  if(testing){autoplay.enter();scene.playbackRate=autoplay.rate;}
  renderSummonSlots();renderSkillSlots();renderAutoplay();keys.clear();model.setDirection(0,{cancel:true});lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
  if(scene)scene.resetPresentation();updateAuto();soundscape.stopVoices(true);
- if(cinematic){scene.entryPreview=true;scene.entryBlend=0;delete scene.entryViewStarted;scene.resize();model.drainEvents();model.pause();infoPaused=!document.hidden;soundscape.setPlaying(false);playOpening(stage,true);}
+ if(cinematic){document.body.style.setProperty('--entry-zoom-ms',(AREAS[stage].entryView?.duration??700)+'ms');scene.entryPreview=true;scene.entryBlend=0;delete scene.entryViewStarted;scene.resize();model.drainEvents();model.pause();infoPaused=!document.hidden;soundscape.setPlaying(false);playOpening(stage,true);}
  else{scene.entryPreview=false;delete scene.entryViewStarted;scene.resize();delete document.body.dataset.entryPhase;soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});}
  prefetchNext(stage);
 }
@@ -277,7 +283,7 @@ function blurPause(){keys.clear();model.setDirection(0,{cancel:true});infoPaused
 window.addEventListener('blur',blurPause);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)blurPause();});
 window.matchMedia('(max-width:600px) and (orientation:portrait)').addEventListener('change',e=>{if(e.matches)blurPause();});
-for(const channel of ['music','effects'])$(channel+'-toggle').addEventListener('click',()=>{soundscape.setChannelEnabled(channel,!soundscape[channel+'Enabled']);updateSound();saveSound();if(soundscape[channel+'Enabled'])unlockSound().then(()=>{if(channel==='effects')soundscape.play('guard',{allowIdle:true});});});
+for(const channel of ['music','effects'])for(const id of [channel+'-toggle','hud-'+channel])$(id).addEventListener('click',()=>{soundscape.setChannelEnabled(channel,!soundscape[channel+'Enabled']);updateSound();saveSound();if(soundscape[channel+'Enabled'])unlockSound().then(()=>{if(channel==='effects')soundscape.play('guard',{allowIdle:true});});});
 $('sound-volume').addEventListener('input',e=>{soundscape.setVolume(e.target.value/100);updateSound();saveSound();});
 document.querySelectorAll('[data-sound]').forEach(button=>button.addEventListener('click',async()=>{
  if(!soundscape.effectsEnabled){$('audio-status').textContent='설정에서 효과음을 켜면 미리 들을 수 있어요.';return;}await unlockSound();soundscape.play(button.dataset.sound,{allowIdle:true});
@@ -306,11 +312,11 @@ $('install').addEventListener('click',()=>openInfo($('app-help')));
 $('app-help').querySelector('.dialog-close').addEventListener('click',()=>$('app-help').close());
 $('install-confirm').addEventListener('click',async()=>{if(!installPrompt)return;const prompt=installPrompt;installPrompt=null;$('install-confirm').hidden=true;await prompt.prompt();await prompt.userChoice;});
 // Every combat gesture can recover mobile audio after an OS interruption.
-document.addEventListener('pointerdown',()=>{if(model.status==='playing'&&soundscape.enabled&&soundscape.context?.state!=='running')unlockSound();},{passive:true});
+document.addEventListener('pointerdown',()=>{if((model.status==='playing'||$('opening').open)&&soundscape.enabled&&soundscape.context?.state!=='running')unlockSound();},{passive:true});
 function showNotice(message){$('callout').textContent=message;$('callout').hidden=false;noticeUntil=performance.now()+2400;}
 function loadDialogImages(dialog){dialog.querySelectorAll('img[data-src]').forEach(img=>{img.src=img.dataset.src;delete img.dataset.src;});}
 function openInfo(dialog){loadDialogImages(dialog);if(!fullscreenPending&&!infoDialogs.some(d=>d.open)){infoPaused=model.status==='playing';if(infoPaused)model.pause();}keys.clear();model.setDirection(0,{cancel:true});soundscape.setPlaying(false);fitPhoneDialogs();dialog.showModal();}
-function completeInfo(){if(fullscreenPending||document.body.dataset.entryPhase||infoDialogs.some(d=>d.open))return;soundscape.stopVoices();if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
+function completeInfo(){if(fullscreenPending||document.body.dataset.entryPhase||infoDialogs.some(d=>d.open))return;soundscape.stopVoices(false,'effects');if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
 $('settings-open').addEventListener('click',()=>openInfo($('settings')));
 $('settings-return').addEventListener('click',()=>$('settings').close());
 $('settings').querySelector('.dialog-close').addEventListener('click',()=>$('settings').close());
@@ -465,7 +471,7 @@ function onEvents(events){
  }
 }
 function onFrame(m,s){
- soundscape.setPlaying(m.status==='playing');
+ soundscape.setPlaying(!document.hidden&&(m.status==='playing'||$('opening').open&&$('opening').dataset.phase==='playing'&&!$('opening-video').paused||document.body.dataset.entryPhase==='ui'&&infoPaused));
  const now=performance.now();
  const next=autoplay.update(lastAutoplayFrame?Math.max(0,(now-lastAutoplayFrame)/1000):0,preparing||fullscreenPending||document.hidden||infoDialogs.some(d=>d.open));lastAutoplayFrame=now;
  if(next!==null)start(next);
@@ -526,7 +532,7 @@ function onFrame(m,s){
   else badge?.remove();
  }
  const boss=m.enemies.find(e=>isBoss(e.type))||m.enemies.find(e=>e.type==='gate');$('boss-bar').hidden=!boss||m.status!=='playing';if(boss){$('boss-fill').style.width=(boss.hp/boss.maxHp*100)+'%';$('boss-label').textContent=boss.type==='gate'?'문':ENEMIES[boss.type].name;}
- $('pause').hidden=!['playing','paused'].includes(m.status);
+ $('pause').hidden=!['playing','paused'].includes(m.status);for(const channel of ['music','effects'])$('hud-'+channel).hidden=$('pause').hidden;
  $('pause-overlay').hidden=autoplay.active||m.status!=='paused'||fullscreenPending||infoDialogs.some(d=>d.open);
  if(m.status!==lastStatus){
   lastStatus=m.status;
