@@ -1,4 +1,4 @@
-import {DEFAULT_PARTY,UNITS,STAGES,isBoss} from './data.js?v=170-road-loading';
+import {DEFAULT_PARTY,UNITS,STAGES,isBoss} from './data.js?v=188-archer720';
 
 // A disposable observer session: decisions call the ordinary combat API.
 // The app owns stage entry and saved rewards; this owner never writes a save.

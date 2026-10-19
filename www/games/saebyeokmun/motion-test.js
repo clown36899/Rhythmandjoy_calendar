@@ -1,8 +1,8 @@
-import {Journey} from './game/model.js?v=170-road-loading';
-import {makeGame} from './game/scene.js?v=170-road-loading';
-import {HEALER_VIDEO} from './game/healer-motion.js?v=170-road-loading';
-import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=170-road-loading';
-import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=170-road-loading';
+import {Journey} from './game/model.js?v=188-archer720';
+import {makeGame} from './game/scene.js?v=188-archer720';
+import {HEALER_VIDEO} from './game/healer-motion.js?v=188-archer720';
+import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=188-archer720';
+import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=188-archer720';
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const $=id=>document.getElementById(id),model=new Journey(),keys=new Set();let scene,ready=false,totalDamage=0,totalHealed=0,lastUI=-Infinity,pausedByHidden=false,healerConfig=null,fieldPreview=null;
 
@@ -53,6 +53,8 @@ function drawMotionPreview(){
  $('game').dataset.previewMotion=p.motion;$('game').dataset.previewCharacter=p.kind;$('game').dataset.previewFrame=String(frame);$('game').dataset.previewVisible=String(image.visible);
  $('motion-progress').textContent=(motionLabels[p.kind]?.[p.motion]||motionLabels[p.motion]||p.motion)+' · '+(frame+1)+' / '+p.spec.frames+' · '+p.spec.fps+'fps';
 }
+const initialCharacter=new URLSearchParams(location.search).get('character');
+if(VIDEO_MOTION[initialCharacter]&&[...$('motion-character').options].some(o=>o.value===initialCharacter)){$('motion-character').value=initialCharacter;if(UNITS[initialCharacter])$('field-character').value=initialCharacter;}
 $('motion-character').disabled=true;
 $('motion-character').onchange=()=>{if(!ENEMIES[$('motion-character').value])$('field-character').value=$('motion-character').value;motionButtons();previewMotion('idle');};
 $('motion-battle').onclick=()=>{previewSerial++;selectFieldCharacter();$('motion-progress').textContent='실전 전투 · 준비 완료';for(const b of $('motion-buttons').children)b.setAttribute('aria-pressed','false');};

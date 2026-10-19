@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=170-road-loading';
-import {Journey} from './game/model.js?v=170-road-loading';
-import {Autoplay} from './game/autoplay.js?v=170-road-loading';
-import {makeGame} from './game/scene.js?v=170-road-loading';
-import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=170-road-loading';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=170-road-loading';
+import {Campaign} from './game/campaign.js?v=188-archer720';
+import {Journey} from './game/model.js?v=188-archer720';
+import {Autoplay} from './game/autoplay.js?v=188-archer720';
+import {makeGame} from './game/scene.js?v=188-archer720';
+import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=188-archer720';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=188-archer720';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);

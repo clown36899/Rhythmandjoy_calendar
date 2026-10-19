@@ -1,10 +1,10 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=170-road-loading';
-import {HEALER_VIDEO} from './healer-motion.js?v=170-road-loading';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=170-road-loading';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=170-road-loading';
-import {AssetDownloads} from './downloads.js?v=170-road-loading';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=170-road-loading';
-import {ASSET_BYTES} from './asset-sizes.js?v=170-road-loading';
+import {ATLAS_SLICES} from './atlas-slices.js?v=188-archer720';
+import {HEALER_VIDEO} from './healer-motion.js?v=188-archer720';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=188-archer720';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=188-archer720';
+import {AssetDownloads} from './downloads.js?v=188-archer720';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=188-archer720';
+import {ASSET_BYTES} from './asset-sizes.js?v=188-archer720';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -995,6 +995,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
   bodyPoint(image,kind,side=0,weapon=false,castFrame=null){
    const base=(image.celKey||image.texture.key).replace(/^injured[12]__/, ''),profile=WOUNDS[base.startsWith('keeperBrush')?'keeperBrush':kind];
    let body=weapon&&profile?.muzzle?{x:profile.muzzle[0],y:profile.muzzle[1],w:0}:this.bodyPose(base,kind);
+   const frame=weapon?this.videoFrameIndex?.get(base):null,muzzle=frame?.spec.cue?.muzzle;
+   if(muzzle){const d=VIDEO_DELIVERY[frame.spec.asset];body={x:(muzzle[0]*d.cellWidth-d.crop[0])/d.crop[2],y:(muzzle[1]*d.cellHeight-d.crop[1])/d.crop[3],w:0};}
    if(weapon&&profile?.castHands){
     const cast=Object.keys(profile.castHands).find(name=>base.startsWith(HEALER_VIDEO[name].prefix)&&/^\d+$/.test(base.slice(HEALER_VIDEO[name].prefix.length)));
     if(cast){
@@ -1164,12 +1166,13 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(e.type==='projectile'&&e.actor==='girl')this.heroPose=.85;
     if(e.type==='vanish'){
      const living=e.actor==='hero'?this.hero:e.actor==='girl'?this.girl:this.sprites.get((e.enemy===false?'a':'e')+e.actor);
+     const fadeOnly=Boolean(VIDEO_MOTION[e.kind]&&!VIDEO_MOTION[e.kind].death);
      const death=VIDEO_MOTION[e.kind]?.death;
-     const key=death?death.prefix+'0':e.enemy===false?'defeat'+e.kind+'0':e.kind==='reaper'?'reaperDepart0':'depart'+e.kind+'0';
+     const key=fadeOnly?(living?.celKey||living?.texture?.key||VIDEO_MOTION[e.kind].idle.prefix+'0'):death?death.prefix+'0':e.enemy===false?'defeat'+e.kind+'0':e.kind==='reaper'?'reaperDepart0':'depart'+e.kind+'0';
      const cel=this.videoCel(key,living?.celKey||living?.texture.key||VIDEO_MOTION[e.kind]?.idle.prefix+'0');
      const sprite=this.setCel(this.add.image(0,0,'__WHITE'),cel).setOrigin(.5,this.grounding.get(cel)??1).setFlipX(living?.flipX||false);
      this.placeOnGround(sprite,e.x-this.offset,BODY_HEIGHT[e.kind]);this.root.add(sprite);
-     this.effects.push({...e,groundY:e.groundY,type:'depart',sprite,t:0,duration:death?death.frames/death.fps:e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.enemy===false?1.8:isBoss(e.kind)?2.7:2.1});
+     this.effects.push({...e,groundY:e.groundY,type:'depart',sprite,fadeOnly,t:0,duration:death?death.frames/death.fps:e.kind==='reaper'?REAPER_DEPARTURE_TIME:e.enemy===false?1.8:isBoss(e.kind)?2.7:2.1});
      if(death?.audio)onEvents([{type:'motion-audio',actor:e.actor,sound:e.kind+'-death',x:e.x}]);
 
     }
@@ -1284,8 +1287,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    v.treating=treating;v.elapsed=action?.elapsed??0;
    if(moving||action||hit>0||!idleAllowed)v.idleSince=clock;
    const actor=kind==='cow'||clips.anticipation?model.allies.find(a=>'a'+a.id===key):null;
-   const running=kind==='healer'?action?.phase==='approach':kind==='cow'?actor?.alerted||model.enemies.some(e=>e.hp>0&&e.x>=(actor?.x??0)-55&&e.x<(actor?.x??0)+550):(kind==='girl'||kind==='haetae')&&model.direction!==0;
-   let name=hit>0&&!['cow','spearman'].includes(kind)?'hurt':action?.kind===kind&&kind!=='healer'?(clips[action.phase]?action.phase:'attack'):moving?(running?(kind==='healer'&&clips.runUrgent?'runUrgent':'run'):'walk'):treating?v.cast:'idle';
+   const running=kind==='healer'?action?.phase==='approach':kind==='cow'?actor?.alerted||model.enemies.some(e=>e.hp>0&&e.x>=(actor?.x??0)-55&&e.x<(actor?.x??0)+550):(kind==='girl'||kind==='haetae'||kind==='archer')&&model.direction!==0;
+   let name=hit>0&&clips.hurt&&!['cow','spearman'].includes(kind)?'hurt':action?.kind===kind&&kind!=='healer'?(clips[action.phase]?action.phase:'attack'):moving?(running?(kind==='healer'&&clips.runUrgent?'runUrgent':'run'):'walk'):treating?v.cast:'idle';
    if(enemyActor){
     if(hit>(v.hit??0))v.hurtAt=clock;
     if(v.hp!==undefined&&enemyActor.hp>v.hp)v.recoveryAt=clock;
@@ -1302,7 +1305,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    let recoveryFrame=null;
    if(name==='idle'&&!action&&hit<=0&&!enemyActor){
-    const recovery=this.recoveryCel(kind,UNITS[kind]?Number(key.slice(1)):null);
+    const recovery=clips.receiveHeal&&this.recoveryCel(kind,UNITS[kind]?Number(key.slice(1)):null);
     if(recovery){name='receiveHeal';recoveryFrame=Number(recovery.slice(clips.receiveHeal.prefix.length));}
     const age=clock-v.idleSince,slot=Math.floor((age-8)/14),within=(age-8)%14;
     const variants=['dance','annoyed','sit'].filter(n=>clips[n]);
@@ -1388,15 +1391,15 @@ export function makeGame(model,onReady,onFrame,onEvents){
     // Whole-body drawings carry the pose; do not distort or hinge individual limbs.
     if(p<impact){this.fx.lineStyle(2,0x9c6958,.35);this.fx.lineBetween(image.x-dir*20,groundY-height*.6,image.x-dir*43,groundY-height*.63);}
    }else if(enemy&&!VIDEO_MOTION[type]&&windup>0){image.setAngle(Math.sin(windup*8)*1.8+(type==='horse'?5:0));}
-   if(hit>0&&(enemy?!VIDEO_MOTION[type]:!['cow','spearman'].includes(type))){
+   if(hit>0&&(enemy?!VIDEO_MOTION[type]:!['cow','spearman','archer'].includes(type))){
     const total=enemy?.26:ALLY_HIT_TIME,age=total-hit,response=age<.05?1:Math.max(0,1-(age-.05)/(total-.05))**2;
     image.x+=hitDir*response*(type==='boss'?5:10);
     image.setAngle(hitDir*response*(type==='boss'?2:5));
    }
    if(MOTION[type]&&!hover)this.trackContact(key,type,walk,moving,x,groundY);
    // Color-only actors retain their action, position and supporting feet on hit.
-   if(!enemy&&['cow','spearman'].includes(type)&&hit>0){const fade=Math.min(1,hit/.14);image.setTint((255<<16)|(Math.round(255-120*fade)<<8)|Math.round(255-145*fade));}
-   else if(!enemy&&['cow','spearman'].includes(type))image.clearTint();
+   if(!enemy&&['cow','spearman','archer'].includes(type)&&hit>0){const fade=Math.min(1,hit/.14);image.setTint((255<<16)|(Math.round(255-120*fade)<<8)|Math.round(255-145*fade));}
+   else if(!enemy&&['cow','spearman','archer'].includes(type))image.clearTint();
    else if(hit>(enemy?.225:ALLY_HIT_TIME-.035))image.setTintFill(0xfff7dd);else if(hit>0)image.setTint(enemy?0xf3c9b9:0xffae99);else image.clearTint();
    if(!enemy&&type==='healer')this.drawHealerCastLight(image,action,action?.targetId==null?this.hero:this.sprites.get('a'+action.targetId));
    const arrival=this.effects.find(e=>e.type==='summon'&&e.actor===Number(key.slice(1))),entry=P.Math.Clamp((model.time-bornAt)/.8,0,1);
@@ -1652,7 +1655,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
     }
     if(e.type==='depart'){
      const x=e.x-this.offset,h=this.actorHeight(BODY_HEIGHT[e.kind]*(e.kind==='boss'?.64:1)),sprite=e.sprite;
-     if(e.enemy!==false&&VIDEO_MOTION[e.kind]?.death){
+     if(e.fadeOnly){
+      this.placeOnGround(sprite,x,BODY_HEIGHT[e.kind],ground);sprite.setAngle(0).setAlpha(Math.max(0,1-e.t/e.duration));
+     }else if(e.enemy!==false&&VIDEO_MOTION[e.kind]?.death){
       const spec=VIDEO_MOTION[e.kind].death,frame=Math.min(spec.holdFrom??spec.frames-1,Math.floor(e.t*spec.fps));
       this.setCel(sprite,this.videoCel(spec.prefix+frame,sprite.celKey||sprite.texture.key));this.placeOnGround(sprite,x,BODY_HEIGHT[e.kind],ground);sprite.setVisible(sprite.texture.key!=='__WHITE').setAngle(0).setFlipX(false).setAlpha(Math.max(0,Math.min(1,(e.duration-e.t)/.5)));
       if(spec.cue?.grounded)sprite.y-=(MOTION[e.kind]?.hover||0)*h*Math.max(0,1-e.t/(spec.cue.grounded/spec.fps));
