@@ -1,3 +1,9 @@
+# 2026-10-19 Close healer care and title music v167
+
+Approved native hand glow follows smooth authored paths with unchanged timing and upright blessing return. Patient crosses are rounded and thicker with short glints, sorted with their recipient. Healer range150/preferred spacing120 share the existing approach and treatment logic. User-provided Sweeping String Game Theme (Ver.2) starts with the title at0 and continues through entry; skip/no intro starts the same music owner at game entry. Existing mute/pause/background protections and prior19releases are retained. The shared legacy LICENSES file stays byte-identical; new credits are versioned. Selected103checks pass; local/public browser evidence is recorded in the game management audit. Only these changes are copied from the v153 production base.
+
+Source `54d4eed1d8bb80eea13b152d90b0c1eab57bbe5a`. Cafe24 game directory only; DB, calendar/services and other chats’ pending entry/collection work are excluded.
+
 # 2026-10-19 Road opacity v153
 
 길 이음의 걷는 대역까지 outgoing 도로를 불투명하게 유지해 source-over 이중 페이드를 제거했다. 기존 Scene/제작기를 재사용하고 native 5장 전달본·자산 크기·모듈 캐시를 맞췄다. 원본 RGB, 뒤 윤곽, 좌표/발 높이, 전투/저장, 이전19공개버전은 보존한다. 기존 검사63개 통과,87,264위치 비침0,실제 Canvas48조건 알파255,잘못된 입력4개 거절. 소스0cc4e09를 먼저 푸시하고 이 미러도 푸시한 뒤 기존 카페24 게임 폴더만 교체한다. 다른 채팅의 미완성 카드 작업과 운영 문서는 제외한다. 서버 화면 검수는 배포 후 별도 기록한다. 상세: 관리/카페24_배포-v153-road-opacity.json.

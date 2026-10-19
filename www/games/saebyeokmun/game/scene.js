@@ -1,10 +1,10 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=153-road-opacity';
-import {HEALER_VIDEO} from './healer-motion.js?v=selected139-cards';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=153-road-opacity';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=153-road-opacity';
-import {AssetDownloads} from './downloads.js?v=153-road-opacity';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=153-road-opacity';
-import {ASSET_BYTES} from './asset-sizes.js?v=153-road-opacity';
+import {ATLAS_SLICES} from './atlas-slices.js?v=167-healer-music';
+import {HEALER_VIDEO} from './healer-motion.js?v=167-healer-music';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=167-healer-music';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=167-healer-music';
+import {AssetDownloads} from './downloads.js?v=167-healer-music';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=167-healer-music';
+import {ASSET_BYTES} from './asset-sizes.js?v=167-healer-music';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -66,12 +66,12 @@ const WOUNDS={
  keeperBrush:{muzzle:[.84,.53],materials:['Cloth','Cloth'],size:[.22,.25],poses:[[.50,0.67,-.07],[.51,0.67,0],[.50,0.68,-.08],[.51,0.67,-.03]],attack:[[.51,0.67,0],[.47,0.66,-.16],[.47,0.67,.14],[.49,0.67,.04]]},
  scholar:{spots:[[-.12,.18],[.20,.38]],muzzle:[.79,.51],materials:['Cloth','Cloth'],size:[.25,.32],poses:[[.54,.70,.02],[.55,.69,.02],[.54,.70,.03],[.55,.69,.01]],attack:[[.52,.71,0],[.49,.72,.10],[.47,.72,.16],[.51,.71,.04]]},
  healer:{muzzle:[.87,.43],materials:['Cloth','Cloth'],size:[.26,.25],poses:[[.54,.55,0],[.54,.55,.03],[.54,.55,0],[.54,.55,-.03]],attack:[[.54,.55,0],[.52,.57,-.09],[.53,.57,-.12],[.54,.55,0]],castHands:{
-  // Measured on the selected v106 casting cels, after their shared atlas crop.
-  // These are light sockets only; the character art is never deformed.
+  // Authored phase anchors from the selected v106 cels, after their shared crop.
+  // Keep the hand timing and broad path, not individual landmark jitter.
   walk:[[0,.77542,.45251],[143,.77542,.45251]],
-  castHeal:[[0,.76589,.44759],[12,.8194,.42493],[24,.85284,.41926],[42,.82274,.42776],[60,.76589,.44759],[72,.76589,.44759],[84,.8194,.42493],[96,.85284,.41926],[114,.82274,.42776],[132,.76589,.44759],[143,.76589,.44759]],
-  castHealLight:[[0,.7605,.45352],[21,.84454,.36056],[42,.88655,.25634],[60,.84874,.33239],[78,.79832,.3831],[84,.79832,.3831],[96,.84874,.30986],[108,.88655,.25634],[126,.82773,.36056],[143,.7605,.45352]],
-  castHealBless:[[0,.70301,.45658],[9,.72556,.2465],[18,.72556,.11204],[36,.74436,.2381],[60,.70301,.45658],[72,.70301,.45658],[80,.72556,.2465],[88,.72556,.11204],[112,.74436,.2381],[143,.70301,.45658]]
+  castHeal:[[0,0.735,0.405],[4,0.735,0.405],[12,0.755,0.405],[24,0.867,0.405],[30,0.885,0.405],[44,0.765,0.405],[60,0.735,0.405],[72,0.735,0.405],[76,0.735,0.405],[84,0.755,0.405],[96,0.875,0.405],[102,0.885,0.405],[116,0.765,0.405],[132,0.735,0.405],[143,0.735,0.405]],
+  castHealLight:[[0,0.875,0.456],[8,0.875,0.456],[12,0.875,0.445],[20,0.875,0.338],[28,0.875,0.288],[38,0.875,0.24],[42,0.875,0.235],[46,0.875,0.235],[60,0.875,0.268],[78,0.875,0.414],[84,0.875,0.414],[90,0.875,0.365],[100,0.875,0.27],[108,0.875,0.237],[112,0.875,0.237],[143,0.875,0.456]],
+  castHealBless:[[0,0.705,0.457],[4,0.705,0.457],[6,0.8,0.446],[8,0.89,0.403],[10,0.953,0.317],[12,0.9,0.204],[14,0.78,0.148],[16,0.722,0.132],[18,0.722,0.132],[36,0.744,0.238],[60,0.705,0.457],[72,0.705,0.457],[76,0.705,0.457],[78,0.8,0.446],[80,0.89,0.405],[82,0.947,0.322],[84,0.865,0.24],[86,0.8,0.154],[88,0.725,0.134],[112,0.744,0.238],[143,0.705,0.457]]
  }},
  skirt:{materials:['Cloth','Cloth'],size:[.50,.47],poses:[[.49,.38,-.06],[.50,.37,.05],[.49,.38,-.04],[.50,.37,.05]],attack:[[.48,.38,-.08],[.47,.39,-.13],[.54,.40,.12],[.51,.38,.04]]},
  horse:{spots:[[-.1,.34],[.20,.48]],materials:['Dark','Cloth'],size:[.20,.29],poses:[[.51,.65,-.07],[.52,.65,-.02],[.50,.64,-.06],[.51,.65,-.03]],attack:[[.51,.63,-.08],[.55,.61,-.20],[.48,.66,.12],[.52,.65,.03]]},
@@ -805,23 +805,37 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(VIDEO_MOTION[kind]){const spec=VIDEO_MOTION[kind].receiveHeal;return age>=0&&age<spec.frames/spec.fps?spec.prefix+Math.min(spec.frames-1,Math.floor(age*spec.fps)):null;}
    return age>=0&&age<.9?kind+'Recover'+(age<.24?0:1):null;
   }
-  drawPatientRecovery(patient,kind,p,tail,effect){
-   if(!patient)return;
-   const g=this.fx,point=this.bodyPoint(patient,kind),w=patient.displayWidth,h=patient.displayHeight,dir=patient.flipX?-1:1;
+  healingGraphics(body){
+   // One reusable layer per body: the shared screen overlay cannot be occluded
+   // by a foreground actor. This layer shares its owner's existing lifetime.
+   let g=body.healingFX;
+   if(!g){g=body.healingFX=this.add.graphics();this.root.add(g);}
+   g.setVisible(true);this.root.moveAbove(g,body);return g;
+  }
+
+  drawPatientRecovery(patient,kind,p,tail,effect,onlyCrosses=false){
+   if(!patient||patient.visible===false)return;
+   const healer=effect?.sourceKind==='healer';onlyCrosses||=healer;
+   const g=this.healingGraphics(patient),point=this.bodyPoint(patient,kind),w=patient.displayWidth,h=patient.displayHeight,dir=patient.flipX?-1:1;
    const styles={king:[0xffdd91,.1,.6,3],prince:[0xb9e8ed,.16,.58,2],minister:[0xa8edcd,.12,.62,3],cavalry:[0xe4d8a4,.28,.78,4],cow:[0xffd98b,.28,.72,3],haetae:[0xb8f1d8,.25,.69,4],girl:[0xffe3a6,.17,.62,2],keeper:[0xccf2cc,.12,.58,2],rabbit:[0xd7f3a8,.16,.78,3],scholar:[0xb0f0ce,.12,.60,2],healer:[0xb6e3fb,.16,.62,2]},style=styles[kind]||styles.haetae;
    const [color,side,vertical,count]=style,bandX=patient.x+dir*w*side,bandY=patient.y-(patient.originY-vertical)*h;
-   g.fillStyle(color,tail*.12);this.paintEllipse(g,point.x,point.y,Math.min(130,w*.7),h*.45);
+   if(!onlyCrosses){g.fillStyle(color,tail*.12);this.paintEllipse(g,point.x,point.y,Math.min(130,w*.7),h*.45);}
    // Floating crosses leave the body once emitted; store world space on this
    // existing effect so pose/recoil cannot shake them and camera movement stays correct.
-   const origins=effect?(effect.recoveryOrigins??={}):{},origin=origins[kind]??(origins[kind]={x:point.x+this.offset,y:point.y-h*.23,spacing:Math.min(25,w*.18)});
-   // The source video contains only the character. Transparent green light and
-   // warm flecks share the real healing event, never an independent HP clock.
-   if(effect?.sourceKind==='healer'){
-    const glowX=origin.x-this.offset,glowY=origin.y+24-12*p,pulse=Math.sin(Math.PI*Math.min(1,p*3));
-    for(let radius=32;radius>=8;radius-=4){g.fillStyle(0x8bea91,Math.max(0,pulse)*.025);this.paintCircle(g,glowX,glowY,radius*(1+p*.25));}
-    for(let i=0;i<9;i++){const a=i*2.399,reach=10+30*p;g.fillStyle(i%2?0xf3d28c:0x9aebac,tail*.7);this.paintCircle(g,glowX+Math.cos(a)*reach,glowY+Math.sin(a)*reach-28*p,1.4+tail);}
+   const origins=effect?(effect.recoveryOrigins??={}):{},origin=origins[kind]??(origins[kind]={x:point.x+this.offset,y:point.y-h*.23,spacing:Math.min(healer?36:25,w*(healer?.22:.18))});
+   for(let i=0;i<count;i++){
+    const xx=origin.x-this.offset+(i-(count-1)/2)*origin.spacing,yy=origin.y-40*p-i%2*12,r=(5+(1-p)*2)*(healer?1.8:1);
+    if(healer){for(const [width,ink]of [[10,0x215747],[6.5,color]]){g.fillStyle(ink,tail);g.fillRoundedRect(xx-r,yy-width/2,r*2,width,width/2);g.fillRoundedRect(xx-width/2,yy-r,width,r*2,width/2);}}
+    else{g.lineStyle(6,0x215747,tail);g.lineBetween(xx-r,yy,xx+r,yy);g.lineBetween(xx,yy-r,xx,yy+r);g.lineStyle(3,color,tail);g.lineBetween(xx-r,yy,xx+r,yy);g.lineBetween(xx,yy-r,xx,yy+r);}
    }
-   for(let i=0;i<count;i++){const xx=origin.x-this.offset+(i-(count-1)/2)*origin.spacing,yy=origin.y-40*p-i%2*12,r=5+(1-p)*2;g.lineStyle(6,0x215747,tail);g.lineBetween(xx-r,yy,xx+r,yy);g.lineBetween(xx,yy-r,xx,yy+r);g.lineStyle(3,color,tail);g.lineBetween(xx-r,yy,xx+r,yy);g.lineBetween(xx,yy-r,xx,yy+r);}
+   // Four short glints follow the same recovery age, with no projectile or aura.
+   if(healer)for(let i=0;i<4;i++){
+    const age=p*(effect.duration??(MOTION.healer.duration-MOTION.healer.impact)),q=(age-i*.08)/.65;if(q<=0||q>=1)continue;
+    const pulse=Math.sin(q*Math.PI),x=point.x+(i%2?1:-1)*w*(i<2?.24:.13),y=point.y-h*(i<2?.17:.04)-q*12,r=(12+i%2*4)*pulse;
+    g.fillStyle(0xc8f2c0,pulse*.18);this.paintCircle(g,x,y,r*.8);
+    g.fillStyle(0xfff8d8,pulse);g.fillPoints([{x,y:y-r},{x:x+r*.16,y:y-r*.16},{x:x+r,y},{x:x+r*.16,y:y+r*.16},{x,y:y+r},{x:x-r*.16,y:y+r*.16},{x:x-r,y},{x:x-r*.16,y:y-r*.16}],true);
+   }
+   if(onlyCrosses)return;
    // Cloth wraps the specific sleeve/paw, rather than a common cloud hiding the face.
    for(let i=0;i<3;i++){g.lineStyle(2.5,0xfff7db,tail*.85);g.beginPath();g.arc(bandX,bandY+i*3,Math.min(12,w*.075),-.35,Math.PI+.2);g.strokePath();}
    if(kind==='haetae'||kind==='cow'){g.lineStyle(2,color,tail*.65);for(let i=0;i<2;i++){g.beginPath();g.arc(point.x+(i?1:-1)*w*.19,point.y-10-12*p,8+10*p,-p*3,p*3+2.7);g.strokePath();}}
@@ -835,6 +849,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.reflections.clear();
   }
   resetPresentation(){
+   for(const body of [...this.sprites.values(),this.hero,this.girl].filter(Boolean)){body.healingFX?.destroy();delete body.healingFX;}
    for(const image of this.wounds.values())image.destroy();this.wounds.clear();
    for(const image of [...this.sprites.values(),this.hero,this.girl].filter(Boolean)){delete image.healerVideo;delete image.travellerVideo;}
    for(const strips of this.reflections?.values()||[])strips.forEach(im=>im.destroy());this.reflections?.clear();
@@ -893,12 +908,19 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const a=poses[i],b=poses[j];
    return {x:a[0]+(b[0]-a[0])*q,y:a[1]+(b[1]-a[1])*q,angle:a[2]+(b[2]-a[2])*q,w:profile.size[0],h:profile.size[1]};
   }
-  bodyPoint(image,kind,side=0,weapon=false){
+  bodyPoint(image,kind,side=0,weapon=false,castFrame=null){
    const base=(image.celKey||image.texture.key).replace(/^injured[12]__/, ''),profile=WOUNDS[base.startsWith('keeperBrush')?'keeperBrush':kind];
    let body=weapon&&profile?.muzzle?{x:profile.muzzle[0],y:profile.muzzle[1],w:0}:this.bodyPose(base,kind);
    if(weapon&&profile?.castHands){
     const cast=Object.keys(profile.castHands).find(name=>base.startsWith(HEALER_VIDEO[name].prefix)&&/^\d+$/.test(base.slice(HEALER_VIDEO[name].prefix.length)));
-    if(cast){const points=profile.castHands[cast],frame=Number(base.slice(HEALER_VIDEO[cast].prefix.length)),right=points.findIndex(p=>p[0]>=frame),b=points[right<0?points.length-1:right],a=points[Math.max(0,(right<0?points.length:right)-1)],q=b[0]===a[0]?0:Math.max(0,Math.min(1,(frame-a[0])/(b[0]-a[0])));body={x:a[1]+(b[1]-a[1])*q,y:a[2]+(b[2]-a[2])*q,w:0};}
+    if(cast){
+     const points=profile.castHands[cast],frame=cast!=='walk'&&Number.isFinite(castFrame)?castFrame:Number(base.slice(HEALER_VIDEO[cast].prefix.length)),right=points.findIndex(p=>p[0]>=frame),j=right<0?points.length-1:right,i=Math.max(0,j-1),a=points[i],b=points[j],span=b[0]-a[0],q=span?Math.max(0,Math.min(1,(frame-a[0])/span)):0;
+     // Shape-preserving tangents: authored turns stay smooth, without overshoot
+     // or frame-to-frame landmark noise. Walking keeps its original sockets.
+     const tangent=(n,axis)=>{if(!n||n===points.length-1)return 0;const h0=points[n][0]-points[n-1][0],h1=points[n+1][0]-points[n][0],d0=(points[n][axis]-points[n-1][axis])/h0,d1=(points[n+1][axis]-points[n][axis])/h1;return d0*d1<=0?0:3*(h0+h1)/((2*h1+h0)/d0+(h1+2*h0)/d1);};
+     const sample=axis=>cast==='walk'?a[axis]+(b[axis]-a[axis])*q:(2*q**3-3*q*q+1)*a[axis]+(q**3-2*q*q+q)*span*tangent(i,axis)+(-2*q**3+3*q*q)*b[axis]+(q**3-q*q)*span*tangent(j,axis);
+     body={x:sample(1),y:sample(2),w:0};
+    }
    }
    const sx=(image.flipX?-1:1),angle=image.rotation||0;
    const x=((sx<0?1-body.x:body.x)-(image.originX??.5)+side*body.w*.38)*image.displayWidth,y=(body.y-(image.originY??1))*image.displayHeight;
@@ -919,15 +941,20 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(!name||name==='walk')return null;
    const t=action.elapsed??0,impact=MOTION.healer.impact;
    if(t<0||t>=MOTION.healer.duration)return null;
-   const strength=t<=impact?Math.pow(t/impact,1.6):Math.exp(-(t-impact)*5),at=this.bodyPoint(image,'healer',0,true),g=this.fx;
+   const spec=HEALER_VIDEO[name],shown=Number(base.slice(spec.prefix.length)),cue=pose==='walk'?null:spec.cycles.find(c=>shown>=c.start&&shown<=Math.max(c.impact,c.end));
+   const frame=cue?(t<=impact?cue.start+(cue.impact-cue.start)*t/impact:cue.impact+(cue.end-cue.impact)*(t-impact)/(MOTION.healer.duration-impact)):null;
+   // Use the same action clock between source cels, without a lagging filter.
+   // A page still loading retains the actual displayed hand, as before.
+   const castFrame=frame!==null&&Math.abs(Math.round(frame)-shown)<=1?frame:null;
+   const strength=t<=impact?Math.pow(t/impact,1.6):Math.exp(-(t-impact)*5),at=this.bodyPoint(image,'healer',0,true,castFrame),g=this.healingGraphics(image);
+   const native=!this.healerEffectPreview||this.healerEffectPreview.style==='original',size=native?Math.max(.5,Math.min(3,this.healerEffectPreview?.strength||2)):1,glowX=at.x+(native?(image.flipX?-12:12):0);
    const color=name==='castHeal'?0xbce7a5:name==='castHealLight'?0xffe6a3:0xe9e6bb;
    const radius=name==='castHealLight'?30:24;
-   if(this.game?.canvas)this.game.canvas.dataset.healLight=JSON.stringify({name,x:at.x,y:at.y,strength});
-   for(let r=radius*2;r>=4;r-=4){g.fillStyle(color,strength*.07);this.paintCircle(g,at.x,at.y,r);}
-   g.fillStyle(0xfff7d9,strength*.98);this.paintCircle(g,at.x,at.y,4.5+strength*3.5);
-   for(let i=0;i<10;i++){const q=(t*.7+i/10)%1,a=i*2.399+t*.8,r=(1-q)*(radius+10);g.fillStyle(i%2?color:0xfff3c6,strength*(1-q)*.95);this.paintCircle(g,at.x+Math.cos(a)*r,at.y+Math.sin(a)*r-10*q,1.8+q*1.2);}
-   // The last gathering mote reaches the recipient on the actual HP impact tick.
-   if(patient&&t>impact-.28&&t<=impact){const end=this.bodyPoint(patient,action.targetId==null?'haetae':model.allies.find(a=>a.id===action.targetId)?.type||'cow'),q=(t-impact+.28)/.28,xx=at.x+(end.x-at.x)*q,yy=at.y+(end.y-at.y)*q-Math.sin(q*Math.PI)*24;g.fillStyle(color,.38);this.paintCircle(g,xx,yy,13);g.fillStyle(0xfff7dc,.98);this.paintCircle(g,xx,yy,4.2);}
+   if(this.game?.canvas)this.game.canvas.dataset.healLight=JSON.stringify({name,cel:base,frame:castFrame??shown,x:glowX,y:at.y,handX:at.x,strength,size});
+   for(let r=radius*2;r>=4;r-=4){g.fillStyle(color,strength*.07);this.paintCircle(g,glowX,at.y,r*size);}
+   g.fillStyle(0xfff7d9,strength*.98);this.paintCircle(g,glowX,at.y,(4.5+strength*3.5)*size);
+   for(let i=0;i<10;i++){const q=(t*.7+i/10)%1,a=i*2.399+t*.8,r=(1-q)*(radius+10)*size;g.fillStyle(i%2?color:0xfff3c6,strength*(1-q)*.95);this.paintCircle(g,glowX+Math.cos(a)*r,at.y+Math.sin(a)*r-10*q*size,1.8+q*1.2);}
+   // Gathering stays at the hands. The real heal event owns the patient's +++.
    return {...at,strength};
   }
   injuryTexture(base,kind,hp,maxHp,overlay=false){
@@ -1605,7 +1632,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const region=intro?this.previewAreaIndex:model.stage,blend=1;
    this.drawLandscape(region,blend,t);
    if(this.game?.canvas)Object.assign(this.game.canvas.dataset,{cameraX:String(this.offset),travellerX:String(model.x),roadX:String(this.pathTiles.find(im=>im.visible)?.x??''),landscapeX:String(this.depths.middle[0].x)});
-   this.decor.clear();this.shadows.clear();this.fx.clear();if(this.game?.canvas)this.game.canvas.dataset.healLight='';
+   this.decor.clear();this.shadows.clear();this.fx.clear();for(const body of [...this.sprites.values(),this.hero,this.girl].filter(Boolean))body.healingFX?.clear().setVisible(false);if(this.game?.canvas)this.game.canvas.dataset.healLight='';
    if(!this.entryPreview){this.drawGate((model.portal?.x??model.gateX)-this.offset,t);this.drawBossTelegraphs();}else{this.gate?.setVisible(false);this.gateLip?.setVisible(false);this.exitLabel?.setVisible(false);this.gateMist?.setVisible(false);}
    // Small distance markers make scrolling legible, rather than a static left-side base.
    for(let p=800;!this.entryPreview&&p<model.roadEnd&&AREAS[model.stage].ground!=='water';p+=800){
@@ -1645,7 +1672,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     for(const e of model.enemies.filter(e=>e.type!=='gate').sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='e'+e.id;present.add(key);this.renderEntity(key,e.type,e.x,e.walk,e.hp,e.maxHp,e.hit,e.windup,true,e.moving,e.action,e.hitDir,this.actorGround(key),e.entryAt??e.bornAt,e.entryOrigin,e.entering);}
     for(const a of [...model.allies].sort((a,b)=>actorLayer(a)-actorLayer(b))){const key='a'+a.id;present.add(key);this.renderEntity(key,a.type,a.x,a.walk,a.hp,a.maxHp,a.hit,0,false,a.moving,a.action,a.hitDir,this.actorGround(key));}
    }
-   for(const [key,obj] of this.sprites)if(!present.has(key)){obj.destroy();this.sprites.delete(key);this.wounds.get(key)?.destroy();this.wounds.delete(key);this.contacts.delete(key);}
+   for(const [key,obj] of this.sprites)if(!present.has(key)){obj.healingFX?.destroy();obj.destroy();this.sprites.delete(key);this.wounds.get(key)?.destroy();this.wounds.delete(key);this.contacts.delete(key);}
    // All summons finish ordering first: the traveller remains visible at every party size.
    this.root.bringToTop(this.hero);this.drawWounds('hero',this.hero,mounted?'mount':'haetae',intro?MAX_HP:model.hp,MAX_HP);
    this.root.bringToTop(this.girl);this.drawWounds('girl',this.girl,'girl',intro?MAX_HP:model.hp,MAX_HP);
@@ -1670,7 +1697,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const bodies=[...this.sprites,...[['hero',this.hero],['girl',this.girl]]].filter(([,im])=>im.visible).map(([key,im])=>[key,im,this.actorGround(key)]);
     for(const e of this.effects)if(e.type==='depart'&&e.sprite?.visible)bodies.push(['',e.sprite,e.groundY]);
     bodies.sort((a,b)=>STAGES[region].combatLanes?(a[0]==='girl'?2:a[0]==='hero'?1:0)-(b[0]==='girl'?2:b[0]==='hero'?1:0)||a[2]-b[2]:a[2]-b[2]);
-    const front=[];for(const [key,body]of bodies){front.push(body);const wound=this.wounds.get(key);if(wound?.visible)front.push(wound);}
+    const front=[];for(const [key,body]of bodies){front.push(body);const wound=this.wounds.get(key);if(wound?.visible)front.push(wound);if(body.healingFX?.visible)front.push(body.healingFX);}
     // Equivalent to bringing each ordered child to the top, without hundreds of
     // linear removals. Preserve the same list object and every other child's order.
     const moved=new Set(front),behind=this.root.list.filter(child=>!moved.has(child));

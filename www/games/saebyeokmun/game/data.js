@@ -1,6 +1,6 @@
-import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=70';
-import {STAGE2_ART} from './stage2-art.js?v=153-road-opacity';
-import {EXTRA_MONSTERS} from './expansion-monsters.js?v=70';
+import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=167-healer-music';
+import {STAGE2_ART} from './stage2-art.js?v=167-healer-music';
+import {EXTRA_MONSTERS} from './expansion-monsters.js?v=167-healer-music';
 export {GATE_STYLES};
 // Single source of sample tuning. All folklore-derived combat roles are game inventions.
 export const ROAD=4200;
@@ -118,7 +118,7 @@ export const UNITS=Object.fromEntries(Object.entries({
  prince:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'세자',role:'공격 · 활 사격',price:180,hp:65,speed:82,range:330,damage:22,period:1.5,cost:30,cooldown:4.5,formation:90,spacing:0,guard:0,weapon:'arrow'},
  minister:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'영의정',role:'지원 · 교지 봉인',price:220,hp:85,speed:62,range:500,damage:14,period:2.2,cost:32,cooldown:5,formation:-80,spacing:0,guard:.05,weapon:'seal'},
  cavalry:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'기마 무관',role:'돌파 · 기마 검격',price:240,hp:170,speed:90,range:100,damage:18,period:1.7,cost:40,cooldown:6,formation:295,spacing:0,guard:.3,weapon:'sword'},
- healer:{rosterCard:{rarity:"희귀",stars:3},cardArt:"summon-card-healer-v139.webp",tier:"common",price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:240,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:170,guard:0,weapon:'medicine'}
+ healer:{rosterCard:{rarity:"희귀",stars:3},cardArt:"summon-card-healer-v139.webp",tier:"common",price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:150,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:120,guard:0,weapon:'medicine'}
 }).map(([kind,stats])=>[kind,{...stats,hp:stats.hp*ALLY_HP_SCALE,damage:stats.damage*ALLY_OUTPUT,...(stats.heal?{heal:stats.heal*ALLY_OUTPUT}:{}),...(stats.upgrade?{upgrade:{...stats.upgrade,stats:{...stats.upgrade.stats,damage:stats.upgrade.stats.damage*ALLY_OUTPUT}}}:{})}]));
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
 // One shared party clearance preserves the authored differences between

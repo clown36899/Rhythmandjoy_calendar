@@ -16,3 +16,6 @@ body[data-entry-phase] :is(.hud,.stage-tools,.control-deck) button{pointer-event
 #opening:focus{outline:none}
 
 #opening[data-stage="1"] .entry-video{object-fit:fill;inset:auto;left:50%;top:50%;width:max(100%,calc(var(--phone-height) * 1713 / 747));height:max(100%,calc(var(--phone-width) * 747 / 1713));transform:translate(-50%,-50%)}
+
+/* Existing opening controls share the film pause and close boundary. */
+#opening-narrate{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:14px 24px;border:1px solid #a78a52;border-radius:6px;background:#302b20e8;color:#fff4d9;font:600 16px sans-serif;z-index:2}#opening-narrate[hidden]{display:none}#opening-skip{position:absolute;right:3%;bottom:5%;padding:10px 16px;border:1px solid #eadbbb66;border-radius:5px;background:#25261dcc;color:#fff4d9;font:13px sans-serif;z-index:2}

@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=153-road-opacity';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=167-healer-music';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -265,8 +265,11 @@ export class Journey {
    const moveTo=goal=>{
     // Rear spacing is a preferred approach slot, never a reason to retreat
     // from an already reachable patient (including an overlapping/left one).
-    if(Math.abs(target.x-actor.x)<=s.range)return true;
-    const gap=goal-actor.x;this.moveBody(actor,Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt),dt,s.speed,target);return Math.abs(goal-actor.x)<1;
+    const inRange=Math.abs(target.x-actor.x)<=s.range,gap=goal-actor.x;
+    // Follow a walking patient toward the preferred slot continuously; waiting
+    // for each range crossing alternates walk/cast on successive frames.
+    if(inRange&&!(target.moving>0&&gap>0))return true;
+    this.moveBody(actor,Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt),dt,s.speed,target);return inRange||Math.abs(goal-actor.x)<1;
    };
    // Lock each wrap to one patient. Reconsider only between wraps or after cancellation.
    if(!target||target.hp<=0||Math.abs(target.x-actor.x)>s.search||(!valid&&!action.resolved))action.phase='return';

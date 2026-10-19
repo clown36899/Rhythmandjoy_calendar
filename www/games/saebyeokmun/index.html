@@ -12,9 +12,9 @@
 <title>다섯개의 나라</title>
 <link rel="stylesheet" href="./style.css?v=147-entry-match">
 <link rel="stylesheet" href="./stage2.css?v=146-stage2">
-<link rel="stylesheet" href="./opening.css?v=147-entry-match">
+<link rel="stylesheet" href="./opening.css?v=167-healer-music">
 <script defer src="./game/phaser.min.js"></script>
-<script type="module" src="./app.js?v=153-road-opacity"></script>
+<script type="module" src="./app.js?v=167-healer-music"></script>
 </head>
 <body data-screen="map">
 <svg class="journey-icons" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -112,12 +112,12 @@
 </section>
 <footer><span>다섯개의 나라 <i>·</i> 산수화 속으로 걷는 길</span><span>원화의 결을 따라 걷는 작은 실험</span><button id="sources-open">그림과 이야기의 출처</button></footer>
 </div>
-<dialog id="opening" class="opening" aria-label="다섯개의 나라" data-phase="loading"><video id="opening-video" class="entry-video" muted playsinline preload="none" disablepictureinpicture aria-label="다섯개의 나라, 그림 속으로 이어지는 길"></video><small id="opening-loading" role="status">로딩 중</small><div hidden><button id="opening-skip" disabled>닫기</button><button id="opening-continue" disabled>시작</button><button id="opening-narrate">음성</button><audio id="opening-voice" preload="none"></audio></div></dialog>
+<dialog id="opening" class="opening" aria-label="다섯개의 나라" data-phase="loading"><video id="opening-video" class="entry-video" muted playsinline preload="none" disablepictureinpicture aria-label="다섯개의 나라, 그림 속으로 이어지는 길"></video><small id="opening-loading" role="status">로딩 중</small><button id="opening-narrate" hidden>소리와 함께 시작</button><button id="opening-skip">건너뛰기</button><div hidden><button id="opening-continue" disabled>시작</button><audio id="opening-voice" preload="none"></audio></div></dialog>
 <dialog id="settings" aria-labelledby="settings-title">
 <div class="dialog-head"><div><span class="eyebrow">A MOMENT ON THE ROAD</span><h2 id="settings-title">잠시, 쉬어 가기.</h2></div><button class="dialog-close" aria-label="설정 닫기">×</button></div>
 <div class="settings-layout">
 <section class="settings-audio" aria-labelledby="settings-sound-title"><h3 id="settings-sound-title">밤길의 소리</h3>
-<button id="music-toggle" class="setting-switch" aria-pressed="false"><span>배경음악<small>Yokai Battle Theme</small></span><b class="switch-state">끔</b><i aria-hidden="true"></i></button>
+<button id="music-toggle" class="setting-switch" aria-pressed="false"><span>배경음악<small>Sweeping String Game Theme</small></span><b class="switch-state">끔</b><i aria-hidden="true"></i></button>
 <button id="effects-toggle" class="setting-switch" aria-pressed="false"><span>효과음<small>발걸음 · 타격 · 필살기</small></span><b class="switch-state">끔</b><i aria-hidden="true"></i></button>
 <label class="setting-volume" for="sound-volume"><span>전체 음량</span><output id="volume-value">55%</output><input type="range" id="sound-volume" min="0" max="100" value="55"></label></section>
 <section class="settings-menu" aria-labelledby="settings-menu-title"><h3 id="settings-menu-title">메뉴 <small id="edition-area">몽유도원</small></h3>

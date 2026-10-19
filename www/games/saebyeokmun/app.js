@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=146-entry';
-import {Journey} from './game/model.js?v=153-road-opacity';
-import {Autoplay} from './game/autoplay.js?v=146-entry';
-import {makeGame} from './game/scene.js?v=153-road-opacity';
-import {Soundscape} from './game/audio.js?v=153-road-opacity';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=153-road-opacity';
+import {Campaign} from './game/campaign.js?v=167-healer-music';
+import {Journey} from './game/model.js?v=167-healer-music';
+import {Autoplay} from './game/autoplay.js?v=167-healer-music';
+import {makeGame} from './game/scene.js?v=167-healer-music';
+import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=167-healer-music';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=167-healer-music';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -121,14 +121,15 @@ try{best=Number(localStorage.getItem('saebyeokmun-best')||0)||0;}catch{}
 $('best').textContent=best?best+'%':'아직 걷지 않은 길';
 const soundscape=new Soundscape({onState:state=>{
  $('settings-open').dataset.audioState=state;
+ $('opening-narrate').hidden=state!=='locked'||!$('opening').open||!soundscape.musicEnabled;
  $('audio-status').textContent=state==='locked'?'설정에서 효과음을 켜 주세요.':state==='loading'?'밤길의 소리를 준비하고 있어요.':state==='partial'?'일부 소리를 불러오지 못했어요. 새로고침하면 다시 준비합니다.':'소의 뿔 · 돌팔매 · 먹붓 · 씨앗탄 · 선비의 봉인 · 승천';
 }});
 function unlockSound(){return soundscape.unlock().catch(()=>{showNotice('소리를 시작하지 못했어요. 설정에서 소리를 다시 켜 주세요.');});}
-try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-audio'));for(const channel of ['music','effects'])if(typeof saved?.[channel]==='boolean')soundscape.setChannelEnabled(channel,saved[channel]);if(typeof saved?.volume==='number'&&Number.isFinite(saved.volume))soundscape.setVolume(saved.volume);}catch{}
+try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-audio'));for(const channel of ['music','effects'])if(typeof saved?.[channel]==='boolean'&&(channel!=='music'||saved.musicTrack===MUSIC_TRACK))soundscape.setChannelEnabled(channel,saved[channel]);if(typeof saved?.volume==='number'&&Number.isFinite(saved.volume))soundscape.setVolume(saved.volume);}catch{}
 function updateSound(){for(const channel of ['music','effects']){const on=soundscape[channel+'Enabled'],b=$(channel+'-toggle');b.setAttribute('aria-pressed',String(on));b.querySelector('.switch-state').textContent=on?'켬':'끔';}$('sound-volume').value=Math.round(soundscape.volume*100);$('volume-value').textContent=Math.round(soundscape.volume*100)+'%';}
-function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify({music:soundscape.musicEnabled,effects:soundscape.effectsEnabled,volume:soundscape.volume}));}catch{}}
-// Current art/motion review starts silent, including older saved on settings.
-for(const channel of ['music','effects'])soundscape.setChannelEnabled(channel,false);
+function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify({music:soundscape.musicEnabled,effects:soundscape.effectsEnabled,volume:soundscape.volume,musicTrack:MUSIC_TRACK}));}catch{}}
+// Retain silent effects; the requested music replaces the old review mute once.
+soundscape.setChannelEnabled('effects',false);
 saveSound();updateSound();
 // Opening preferences are separate from campaign rewards; the existing modal owns pause/resume.
 let openingEnabled=true;try{openingEnabled=localStorage.getItem('saebyeokmun-opening')!=='false';}catch{}
@@ -159,7 +160,10 @@ function playOpening(stage,automatic=false){
  // This film already contains the generated title and the camera move into the
  // native field. Play it once, from zero, only after that field is prepared.
  const token=++openingEpoch;video.dataset.clip='transition';const src=video.dataset.nextFile===openingFile(stage)?video.dataset.nextSrc:openingFile(stage);if(video.src!==src)video.src=src;video.currentTime=0;
- video.play().then(()=>{if(token===openingEpoch&&$('opening').open&&['preparing','loading'].includes($('opening').dataset.phase))$('opening').dataset.phase='playing';}).catch(()=>{if(token===openingEpoch)finishOpeningFilm();});
+ $('opening-narrate').hidden=!soundscape.musicEnabled||soundscape.context?.state==='running';
+ // Decode behind the existing cover, then start the title and the one music
+ // loop together. A browser gesture resumes this same pending preparation.
+ unlockSound().then(()=>{if(token!==openingEpoch||!$('opening').open)return;return video.play().then(()=>{if(token===openingEpoch&&$('opening').open&&['preparing','loading'].includes($('opening').dataset.phase)){$('opening').dataset.phase='playing';$('opening-narrate').hidden=true;soundscape.setPlaying(!document.hidden);}});}).catch(()=>{if(token===openingEpoch)finishOpeningFilm();});
 }
 function showOpening(){
  if(fullscreenPending||preparing)return;
@@ -182,6 +186,8 @@ $('opening-toggle').addEventListener('click',()=>{openingEnabled=!openingEnabled
 $('opening-replay').addEventListener('click',showOpening);
 $('opening-video').addEventListener('ended',finishOpeningFilm);
 $('opening-video').addEventListener('error',finishOpeningFilm);
+$('opening-skip').addEventListener('click',finishOpeningFilm);
+$('opening-narrate').addEventListener('click',unlockSound);
 document.querySelector('.control-deck').addEventListener('animationend',e=>{if(e.target===document.querySelector('.control-deck')&&e.animationName==='entry-hud')finishOpeningUI();});
 $('opening').addEventListener('cancel',e=>{if(openingAutomatic)e.preventDefault();});
 function releaseOpeningFilm(){
@@ -306,11 +312,11 @@ $('install').addEventListener('click',()=>openInfo($('app-help')));
 $('app-help').querySelector('.dialog-close').addEventListener('click',()=>$('app-help').close());
 $('install-confirm').addEventListener('click',async()=>{if(!installPrompt)return;const prompt=installPrompt;installPrompt=null;$('install-confirm').hidden=true;await prompt.prompt();await prompt.userChoice;});
 // Every combat gesture can recover mobile audio after an OS interruption.
-document.addEventListener('pointerdown',()=>{if(model.status==='playing'&&soundscape.enabled&&soundscape.context?.state!=='running')unlockSound();},{passive:true});
+document.addEventListener('pointerdown',()=>{if((model.status==='playing'||$('opening').open)&&soundscape.enabled&&soundscape.context?.state!=='running')unlockSound();},{passive:true});
 function showNotice(message){$('callout').textContent=message;$('callout').hidden=false;noticeUntil=performance.now()+2400;}
 function loadDialogImages(dialog){dialog.querySelectorAll('img[data-src]').forEach(img=>{img.src=img.dataset.src;delete img.dataset.src;});}
 function openInfo(dialog){loadDialogImages(dialog);if(!fullscreenPending&&!infoDialogs.some(d=>d.open)){infoPaused=model.status==='playing';if(infoPaused)model.pause();}keys.clear();model.setDirection(0,{cancel:true});soundscape.setPlaying(false);fitPhoneDialogs();dialog.showModal();}
-function completeInfo(){if(fullscreenPending||document.body.dataset.entryPhase||infoDialogs.some(d=>d.open))return;soundscape.stopVoices();if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
+function completeInfo(){if(fullscreenPending||document.body.dataset.entryPhase||infoDialogs.some(d=>d.open))return;soundscape.stopVoices(false,'effects');if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
 $('settings-open').addEventListener('click',()=>openInfo($('settings')));
 $('settings-return').addEventListener('click',()=>$('settings').close());
 $('settings').querySelector('.dialog-close').addEventListener('click',()=>$('settings').close());
@@ -465,7 +471,7 @@ function onEvents(events){
  }
 }
 function onFrame(m,s){
- soundscape.setPlaying(m.status==='playing');
+ soundscape.setPlaying(!document.hidden&&(m.status==='playing'||$('opening').open&&$('opening').dataset.phase==='playing'&&!$('opening-video').paused||document.body.dataset.entryPhase==='ui'&&infoPaused));
  const now=performance.now();
  const next=autoplay.update(lastAutoplayFrame?Math.max(0,(now-lastAutoplayFrame)/1000):0,preparing||fullscreenPending||document.hidden||infoDialogs.some(d=>d.open));lastAutoplayFrame=now;
  if(next!==null)start(next);
