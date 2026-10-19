@@ -336,10 +336,17 @@ export function makeGame(model,onReady,onFrame,onEvents){
     source.image=pixels;source.used=performance.now();return pixels;
    }finally{image?.close?.();if(url)URL.revokeObjectURL(url);}}).finally(()=>{source.decoding=null;});this.loadQueue=source.decoding;return source.decoding;
   }
-  requestVideo(key,native=false){
+  requestVideo(key,native=false,background=false){
    key=this.videoFiles([key],native)[0];
-   if(this.videoRequests.has(key)||this.videoSources.get(key)?.retryAt>performance.now())return;
-   const ready=this.loadedFiles.has(key)?Promise.resolve():this.downloads.request(this.files.get(key)).then(()=>this.loadFiles([key],null,native));
+   const file=this.files.get(key);
+   if(this.videoRequests.has(key)){
+    // The transport owner already supports promotion. A visible cel must not
+    // remain behind the same request's speculative background priority.
+    if(!background&&this.downloads.records?.get(file.url)?.foreground===false)this.downloads.request(file,false).catch(()=>{});
+    return;
+   }
+   if(this.videoSources.get(key)?.retryAt>performance.now())return;
+   const ready=this.loadedFiles.has(key)?Promise.resolve():this.downloads.request(file,background,background).then(()=>this.loadFiles([key],null,native));
    const job=ready.then(()=>this.decodeVideo(key,native)).catch(()=>{
     // Existing successful bytes survive a failed request. Retry on the next use,
     // at most once per five seconds; never create another transport queue.
@@ -355,7 +362,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const profile=!native&&d.profiles?.find(p=>p.height===h);
    return {key:frame.spec.asset+':gpu:'+h+':'+Math.floor(frame.index/VIDEO_PAGE_FRAMES),w,h,g:d.gutter,sourceKey:frame.spec.asset+':'+(profile?'h'+h+':':'')+Math.floor(frame.index/24)};
   }
-  videoCel(key,fallback=null,native=false){
+  videoCel(key,fallback=null,native=false,warm=false){
    const frame=this.videoFrameIndex?.get(key);if(!frame){
     // Collection/roster still request the established cow0..96 names. Resolve
     // those presentation aliases instead of downloading the replaced master.
@@ -369,20 +376,32 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(source)source.used=now;
    if(cached&&this.renderTick!==undefined&&cached.warmTick===this.renderTick&&cached.warmIndex===index){cached.used=now;return key;}
    // A missing visible cel owns the queue before speculative future blocks.
-   if(!cached&&(!source?.image||source.h&&source.h<h)){if(!(source?.retryAt>now))this.requestVideo(sourceKey,native);return fallback&&(this.videoFrameIndex.has(fallback)||!fallback.startsWith('__')&&this.textures.exists(fallback))?fallback:key;}
+   if(!cached&&(!source?.image||source.h&&source.h<h)){if(!(source?.retryAt>now))this.requestVideo(sourceKey,native,warm);return fallback&&(this.videoFrameIndex.has(fallback)||!fallback.startsWith('__')&&this.textures.exists(fallback))?fallback:key;}
    // Warm the next block before crossing its boundary. The game's motion clock
    // remains authoritative even if a slow connection temporarily holds a cel.
    const cycle=spec.cycles?.find(c=>index>=c.start&&index<=c.end),ahead=Math.ceil(spec.fps),first=cycle?.start??0,length=cycle?cycle.end-cycle.start+1:spec.frames;
    const pendingSources=new Set();
-   for(const nextIndex of this.ready===false?[]:new Set([first+(index-first+ahead)%length,first+(index-first+VIDEO_PAGE_FRAMES)%length])){
+   for(const nextIndex of this.ready===false||warm?[]:new Set([first+(index-first+ahead)%length,first+(index-first+VIDEO_PAGE_FRAMES)%length])){
     const nextPage=this.videoPage(this.videoFrameIndex.get(spec.prefix+nextIndex),native),nextKey=nextPage.sourceKey,nextSource=this.videoSources.get(nextKey);
     if(nextSource)nextSource.used=now;
     // Preserve both the immediate GPU half and a second of transport lead.
     // They can share an evicted CPU block; the existing request map coalesces it.
     if((!nextSource?.image||nextSource.h&&nextSource.h<h)&&!this.videoFrames.has(nextPage.key))pendingSources.add(nextKey);
    }
-   for(const nextKey of pendingSources)this.requestVideo(nextKey,native);
-   if(cached){cached.used=now;cached.warmTick=this.renderTick;cached.warmIndex=index;return key;}
+   for(const nextKey of pendingSources)this.requestVideo(nextKey,native,true);
+   if(cached){
+    // CPU transport readiness does not prepare a GPU page. Build the next six
+    // cels while the current half is still displayed, at most one warm page per
+    // render. Visible pages retain priority and use the original fallback path.
+    if(!warm&&!native&&this.renderTick!==undefined){
+     const boundary=(Math.floor(index/VIDEO_PAGE_FRAMES)+1)*VIDEO_PAGE_FRAMES;
+     const nextIndex=boundary>=first+length?first:boundary;
+     const nextFrame=this.videoFrameIndex.get(spec.prefix+nextIndex),next=this.videoPage(nextFrame,native),pixels=this.videoSources.get(next.sourceKey);
+     cached.nextPage=next.key;
+     if(!this.videoFrames.has(next.key)&&pixels?.image&&(!pixels.h||pixels.h>=next.h)&&this.warmPageTick!==this.renderTick){this.warmPageTick=this.renderTick;this.videoCel(spec.prefix+nextIndex,null,native,true);}
+    }
+    cached.used=now;cached.warmTick=this.renderTick;cached.warmIndex=index;return key;
+   }
    const delivery=VIDEO_DELIVERY[spec.asset],nw=source.w||delivery.crop[2],nh=source.h||delivery.crop[3];
    const start=Math.floor(index/VIDEO_PAGE_FRAMES)*VIDEO_PAGE_FRAMES,end=Math.min(spec.frames,start+VIDEO_PAGE_FRAMES);
    let gpuPixels=source.image;
@@ -411,6 +430,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // not just objects submitted to the GPU. Culling never destroys a live body.
    const referenced=[...this.sprites.values(),...this.wounds.values(),this.hero,this.girl,...this.effects.map(e=>e.sprite),...[...this.reflections.values()].flat()].filter(im=>im?.texture);
    const pinned=new Set(referenced.map(im=>im.texture.key));
+   // Retain only the immediate prepared successor of each displayed page.
+   // This shares the existing bounded GPU cache; retired poses do not pin chains.
+   for(const im of referenced){const next=this.videoFrames?.get(im.texture.key)?.nextPage;if(next)pinned.add(next);}
    // Warmup is a control-readiness promise, not just a recently-used hint.
    // Retain the entry half-second of the controlled bodies inside the same
    // GPU budget, even after idle/attack pages have aged those frames out of LRU.
@@ -1215,7 +1237,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     if(recovery){name='receiveHeal';recoveryFrame=Number(recovery.slice(clips.receiveHeal.prefix.length));}
     const age=clock-v.idleSince,slot=Math.floor((age-8)/14),within=(age-8)%14;
     const variants=['dance','annoyed','sit'].filter(n=>clips[n]);
-    if(this.videoFrameIndex&&age>6&&variants.length){const warm=Math.floor((age-6)/14);if(v.warmSlot!==warm){v.warmSlot=warm;v.slot=warm;v.idle=variants[Math.floor(Math.random()*variants.length)];}if((age-6)%14<2)this.videoCel(clips[v.idle].prefix+'0');}
+    if(this.videoFrameIndex&&age>6&&variants.length){const warm=Math.floor((age-6)/14);if(v.warmSlot!==warm){v.warmSlot=warm;v.slot=warm;v.idle=variants[Math.floor(Math.random()*variants.length)];}if((age-6)%14<2)this.videoCel(clips[v.idle].prefix+'0',null,false,true);}
     if(!recovery&&age>8&&variants.length){if(v.slot!==slot){v.slot=slot;v.idle=variants[Math.floor(Math.random()*variants.length)];}if(within<clips[v.idle].frames/clips[v.idle].fps)name=v.idle;}
    }
    if(v.state!==name||moving&&!v.moving){v.state=name;v.since=clock;}
@@ -1714,5 +1736,5 @@ export function makeGame(model,onReady,onFrame,onEvents){
    onFrame(model,this);
   }
  }
- return new P.Game({type:P.AUTO,parent:'game',width:1280,height:620,transparent:false,backgroundColor:'#eee8d9',antialias:true,scene:RoadScene,fps:{target:60,limit:60},callbacks:{preBoot:game=>{game.loop.stepLimitFPS=stepLimitedFPS;}},scale:{mode:P.Scale.FIT,autoCenter:P.Scale.CENTER_BOTH},render:{roundPixels:false,powerPreference:'low-power'},audio:{noAudio:true},banner:false});
+ return new P.Game({type:P.AUTO,parent:'game',width:1280,height:620,transparent:false,backgroundColor:'#eee8d9',antialias:true,scene:RoadScene,fps:{target:60,limit:60},callbacks:{preBoot:game=>{game.loop.stepLimitFPS=stepLimitedFPS;}},scale:{mode:P.Scale.FIT,autoCenter:P.Scale.CENTER_BOTH},render:{roundPixels:false,powerPreference:'high-performance'},audio:{noAudio:true},banner:false});
 }
