@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=169-video-restore';
-import {Journey} from './game/model.js?v=169-video-restore';
-import {Autoplay} from './game/autoplay.js?v=169-video-restore';
-import {makeGame} from './game/scene.js?v=169-video-restore';
-import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=169-video-restore';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=169-video-restore';
+import {Campaign} from './game/campaign.js?v=170-road-loading';
+import {Journey} from './game/model.js?v=170-road-loading';
+import {Autoplay} from './game/autoplay.js?v=170-road-loading';
+import {makeGame} from './game/scene.js?v=170-road-loading';
+import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=170-road-loading';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=170-road-loading';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -119,7 +119,7 @@ for(const id of ['result-map','pause-map','settings-map'])$(id).addEventListener
 try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-loadout'));if(validLoadout(saved))loadout=saved;}catch{}
 try{best=Number(localStorage.getItem('saebyeokmun-best')||0)||0;}catch{}
 $('best').textContent=best?best+'%':'아직 걷지 않은 길';
-const soundscape=new Soundscape({onState:state=>{
+const soundscape=new Soundscape({fetcher:async url=>{await scene.downloads.request({url});const blob=scene.downloads.take(url);return {ok:!!blob,arrayBuffer:()=>blob.arrayBuffer()};},onState:state=>{
  $('settings-open').dataset.audioState=state;
  $('opening-narrate').hidden=state!=='locked'||!$('opening').open||!soundscape.musicEnabled;
  $('audio-status').textContent=state==='locked'?'설정에서 효과음을 켜 주세요.':state==='loading'?'밤길의 소리를 준비하고 있어요.':state==='partial'?'일부 소리를 불러오지 못했어요. 새로고침하면 다시 준비합니다.':'소의 뿔 · 돌팔매 · 먹붓 · 씨앗탄 · 선비의 봉인 · 승천';
@@ -207,7 +207,23 @@ async function start(testStage=null,cinematic=false){
  const stage=selectedStage;
  if(cinematic)coverOpening();
  if(!await prepareFor(cinematic?'로딩 중':'불러오는 중',async p=>{
-  const results=await Promise.allSettled([scene.prepareStage(stage,p,testing,testing?Object.keys(UNITS):campaign.party),cinematic?prepareOpeningFilm(stage):Promise.resolve()]);
+  const party=testing?Object.keys(UNITS):campaign.party,keys=scene.videoFiles([...scene.commonKeys,...scene.stageFiles(stage,testing,party)],false,stage),files=keys.filter(k=>!scene.loadedFiles.has(k)).map(k=>scene.files.get(k));
+  const started=performance.now();let transfer=null,audioPrepared=0,audioTotal=soundscape.assetFiles().length,fieldReady=false,filmReady=!cinematic;
+  let fieldPhase='download',fieldRemaining=files.filter(f=>!f.video).length*60+2150;
+  files.push(...soundscape.assetFiles());if(cinematic&&$('opening-video').dataset.nextFile!==openingFile(stage))files.push({url:openingFile(stage)});
+  const report=()=>{
+   const elapsed=Math.max(1,performance.now()-started),rate=transfer?.loaded?transfer.loaded/elapsed:2*1048576/1000;
+   const network=transfer?.total?Math.max(0,transfer.total-transfer.loaded)/rate:files.reduce((n,f)=>n+(scene.downloads.sizes?.[f.url.split('?')[0]]||0),0)/rate;
+   const audio=audioPrepared<audioTotal?Math.max(250,(audioTotal-audioPrepared)*12):0;
+   p({...transfer,phase:'entry',remainingMs:Math.max(network+(fieldReady?0:fieldRemaining),network+audio,filmReady?0:network+250),state:fieldReady?(audio?'소리 준비 중':'시작 화면 준비 중'):fieldPhase==='warm'?'첫 동작 준비 중':fieldPhase==='world'?'화면 준비 중':fieldPhase==='prepare'?'그림 준비 중':'그림과 소리 불러오는 중'});
+  };
+  const transferTask=scene.downloads.batch(files,progress=>{transfer=progress;report();});
+  const fieldTask=scene.prepareStage(stage,progress=>{
+   if(['prepare','world','warm'].includes(progress.phase)){fieldPhase=progress.phase;fieldRemaining=(progress.remainingMs??Math.max(0,progress.prepareTotal-progress.prepared)*60)+(fieldPhase==='prepare'?2150:fieldPhase==='world'?1800:0);}report();
+  },testing,party).then(()=>{fieldReady=true;report();});
+  const audioTask=soundscape.prepare(progress=>{audioPrepared=progress.prepared;audioTotal=progress.prepareTotal;report();}).then(()=>{if(soundscape.missing.length)throw new Error('소리 준비가 끝나지 않았어요. 다시 시도해 주세요.');audioPrepared=audioTotal;report();});
+  const filmTask=cinematic?prepareOpeningFilm(stage).then(()=>{filmReady=true;report();}):Promise.resolve();
+  const results=await Promise.allSettled([transferTask,fieldTask,audioTask,filmTask]);
   // A failed film must not unlock a retry while the existing scene is still preparing.
   const failed=results.find(result=>result.status==='rejected');if(failed)throw failed.reason;
  },()=>start(testing?stage:null,cinematic),cinematic))return;
@@ -220,7 +236,8 @@ async function start(testStage=null,cinematic=false){
  if(scene)scene.resetPresentation();updateAuto();soundscape.stopVoices(true);
  if(cinematic){document.body.style.setProperty('--entry-zoom-ms',(AREAS[stage].entryView?.duration??700)+'ms');scene.entryPreview=true;scene.entryBlend=0;delete scene.entryViewStarted;scene.resize();model.drainEvents();model.pause();infoPaused=!document.hidden;soundscape.setPlaying(false);playOpening(stage,true);}
  else{scene.entryPreview=false;delete scene.entryViewStarted;scene.resize();delete document.body.dataset.entryPhase;soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});}
- prefetchNext(stage);
+ // A focused stage link stays scoped to that stage. Background next-map
+ // downloads also compete with combat decoding, so entry does not start them.
 }
 function pause(){if(!ready||fullscreenPending)return;if(autoplay.active){if(autoplay.complete)return;autoplay.paused=model.status==='paused'?false:!autoplay.paused;}model.pause();keys.clear();model.setDirection(0,{cancel:true});renderAutoplay();soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
 function stopAutoplay(){autoplay.stop();if(scene)scene.playbackRate=1;renderAutoplay();renderSkillSlots();}
@@ -474,7 +491,7 @@ function onFrame(m,s){
  soundscape.setPlaying(!document.hidden&&(m.status==='playing'||$('opening').open&&$('opening').dataset.phase==='playing'&&!$('opening-video').paused||document.body.dataset.entryPhase==='ui'&&infoPaused));
  const now=performance.now();
  const next=autoplay.update(lastAutoplayFrame?Math.max(0,(now-lastAutoplayFrame)/1000):0,preparing||fullscreenPending||document.hidden||infoDialogs.some(d=>d.open));lastAutoplayFrame=now;
- if(next!==null)start(next);
+ if(next!==null){if(requestedStage!==null){autoplay.complete=true;model.invincible=false;renderAutoplay();}else start(next);}
  if($('codex').open||$('roster').open)for(const p of [...($('codex').open?motionPreviews:[]),...($('roster').open&&rosterMotion?[rosterMotion]:[])]){
   if(previewObserver&&p!==rosterMotion&&!visiblePreviews.has(p.img)){if(p.variants.size){p.variants.clear();p.frame=-1;p.img.removeAttribute('src');}continue;}
   if(ENEMIES[p.kind]&&!scene.previewReady(p.kind)){
@@ -555,23 +572,32 @@ function onFrame(m,s){
 }
 function stopLoadingDisplay(complete=false){
  loadingDisplay.active=false;window.cancelAnimationFrame(loadingDisplay.frame);
+ $('download-progress').dataset.elapsedMs=String(Math.round(performance.now()-loadingDisplay.started));
  if(complete){loadingDisplay.value=100;$('download-progress').value=100;$('download-percent').textContent='100%';}
 }
 function paintLoading(now){
- if(!loadingDisplay.active)return;
- const dt=Math.max(0,(now-loadingDisplay.last)/1000);loadingDisplay.last=now;
- // Readiness callbacks set the target. The remaining preparation keeps making
- // visible progress, approaching 100 without ever announcing readiness early.
- const v=loadingDisplay.value,target=loadingDisplay.target;
- loadingDisplay.value=Math.min(99.999,Math.max(100-(100-v)*Math.exp(-dt*.09),target-(target-v)*Math.exp(-dt*3)));
- const places=2,scale=100;
- $('download-progress').value=loadingDisplay.value;$('download-percent').textContent=(Math.floor(loadingDisplay.value*scale)/scale).toFixed(places)+'%';
- loadingDisplay.frame=window.requestAnimationFrame(paintLoading);
+ const s=loadingDisplay;if(!s.active)return;
+ const dt=Math.min(100,Math.max(0,now-s.last));s.last=now;
+ // Predict between measured work callbacks. Re-estimate from this connection's
+ // throughput and this device's decode times, rather than a fixed byte weight.
+ // An overdue operation slows the forecast instead of freezing at its last byte.
+ const age=Math.max(0,now-s.updated),remaining=Math.max(250,s.remaining-age,s.remaining*.35/(1+age/Math.max(1,s.remaining)));
+ s.value=Math.min(99.9,s.value+(100-s.value)*(1-Math.exp(-dt/Math.max(500,remaining))));
+ $('download-progress').value=s.value;$('download-percent').textContent=s.value.toFixed(2)+'%';
+ $('download-progress').dataset.elapsedMs=String(Math.max(0,Math.round(now-s.started)));
+ $('download-state').textContent=s.state+' · '+(age>5000?Math.floor((now-s.started)/1000)+'초 경과':'약 '+Math.max(1,Math.ceil(remaining/1000))+'초 남음');
+ s.frame=window.requestAnimationFrame(paintLoading);
 }
 function updateDownload(p){
- $('download-percent').hidden=false;$('download-bytes').hidden=true;$('download-state').hidden=true;
- if(!loadingDisplay.active){loadingDisplay={active:true,value:0,target:0,last:performance.now(),frame:0};$('download-progress').value=0;$('download-percent').textContent='0.00%';loadingDisplay.frame=window.requestAnimationFrame(paintLoading);}
- if(p.phase!=='waiting')loadingDisplay.target=Math.max(loadingDisplay.target,Math.min(95,p.phase==='prepare'?75+20*p.prepared/Math.max(1,p.prepareTotal):p.percent*.75));
+ const now=performance.now();
+ $('download-percent').hidden=false;$('download-bytes').hidden=!p.total;$('download-state').hidden=false;
+ if(p.total)$('download-bytes').textContent=`${(p.loaded/1048576).toFixed(1)} / ${(p.total/1048576).toFixed(1)} MB`;
+ if(!loadingDisplay.active){loadingDisplay={active:true,value:0,started:now,last:now,updated:now,remaining:10000,frame:0};$('download-progress').value=0;$('download-progress').setAttribute('aria-label','예상 게임 준비 진행률');$('download-percent').textContent='0.00%';loadingDisplay.frame=window.requestAnimationFrame(paintLoading);}
+ const s=loadingDisplay;s.state=p.state||(p.phase==='prepare'?'그림 준비 중':p.phase==='waiting'?'준비할 파일 확인 중':'파일 받는 중');$('download-state').textContent=s.state;
+ if(p.phase!=='waiting'){
+  const elapsed=Math.max(1,now-s.started),rate=p.loaded?p.loaded/elapsed:2*1048576/1000;
+  s.remaining=Math.max(250,p.remainingMs??(p.phase==='prepare'?Math.max(0,p.prepareTotal-p.prepared)*60:Math.max(0,(p.total||0)-(p.loaded||0))/rate+2000));s.updated=now;
+ }
 }
 async function prepareFor(title,work,retry,covered=false){
  if(preparing)return false;preparing=true;const epoch=++entryEpoch;retryAssets=retry;
@@ -581,11 +607,6 @@ async function prepareFor(title,work,retry,covered=false){
  try{await work(p=>{if(epoch===entryEpoch)updateDownload(p);});if(epoch!==entryEpoch)return false;stopLoadingDisplay(true);$('asset-loading').close();hydrateIcons();return true;}
  catch(error){if(epoch===entryEpoch){stopLoadingDisplay();$('download-state').textContent=error.message;$('download-state').hidden=false;$('download-retry').hidden=false;if(covered)$('asset-loading').showModal();}return false;}
  finally{preparing=false;}
-}
-function prefetchNext(stage){
- const next=stage+1,badge=$('next-map-loading');if(!STAGES[next]){badge.hidden=true;return;}
- badge.hidden=false;badge.textContent=`${next+1}장 미리 준비 중`;
- scene.prefetchStage(next,p=>{if(model.stage!==stage)return;badge.textContent=p.percent===100?`${next+1}장 다운로드 완료`:`${next+1}장 미리 받는 중 · ${p.percent}%`;}).catch(()=>{if(model.stage===stage)badge.textContent=`${next+1}장은 이동할 때 다시 받습니다`;});
 }
 $('download-retry').addEventListener('click',()=>{if(!preparing)retryAssets?.();});
 $('download-back').addEventListener('click',showMap);

@@ -1,8 +1,8 @@
-import {Journey} from './game/model.js?v=149-cross-chat';
-import {makeGame} from './game/scene.js?v=149-cross-chat';
-import {HEALER_VIDEO} from './game/healer-motion.js?v=selected139-cards';
-import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=149-cross-chat';
-import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=149-cross-chat';
+import {Journey} from './game/model.js?v=170-road-loading';
+import {makeGame} from './game/scene.js?v=170-road-loading';
+import {HEALER_VIDEO} from './game/healer-motion.js?v=170-road-loading';
+import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=170-road-loading';
+import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=170-road-loading';
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const $=id=>document.getElementById(id),model=new Journey(),keys=new Set();let scene,ready=false,totalDamage=0,totalHealed=0,lastUI=-Infinity,pausedByHidden=false,healerConfig=null,fieldPreview=null;
 

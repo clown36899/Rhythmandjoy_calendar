@@ -1,3 +1,9 @@
+# v170 · 2026-10-20 길 마스킹과 실제 준비 시간 기반 로딩
+
+원본 크기와 모션69개를 유지하고, 나무의 닫힌 하늘 틈과 전경 전체 높이의 겹침 비침을 수정했다. 동일한 이미지 준비 큐를 사용해 디코딩 지연을 줄이고 음악·효과음을 진입 전에 준비한다. 로딩은 실제 전송/준비 속도에 따른 예상 진행률과 남은 시간을 표시하며 완료 전100%를 표시하지 않는다. 기존104검사 통과, 실제 스테이지2 서버 검수. v169도 공개 보존한다. 실물폰 속도 보장은 아니며 다른 채팅 원화·궁병v187과 운영 변경은 포함하지 않는다.
+
+소스 `d357754ff025fa891fbe7df17881efbcecf829b3`. 카페24 결과 원장: 관리/카페24_배포-v170-road-loading.json
+
 # 2026-10-19 Close healer care and title music v167
 
 Approved native hand glow follows smooth authored paths with unchanged timing and upright blessing return. Patient crosses are rounded and thicker with short glints, sorted with their recipient. Healer range150/preferred spacing120 share the existing approach and treatment logic. User-provided Sweeping String Game Theme (Ver.2) starts with the title at0 and continues through entry; skip/no intro starts the same music owner at game entry. Existing mute/pause/background protections and prior19releases are retained. The shared legacy LICENSES file stays byte-identical; new credits are versioned. Selected103checks pass; local/public browser evidence is recorded in the game management audit. Only these changes are copied from the v153 production base.

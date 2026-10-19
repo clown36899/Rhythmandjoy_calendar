@@ -1,10 +1,10 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=169-video-restore';
-import {HEALER_VIDEO} from './healer-motion.js?v=169-video-restore';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=169-video-restore';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=169-video-restore';
-import {AssetDownloads} from './downloads.js?v=169-video-restore';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=169-video-restore';
-import {ASSET_BYTES} from './asset-sizes.js?v=169-video-restore';
+import {ATLAS_SLICES} from './atlas-slices.js?v=170-road-loading';
+import {HEALER_VIDEO} from './healer-motion.js?v=170-road-loading';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=170-road-loading';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=170-road-loading';
+import {AssetDownloads} from './downloads.js?v=170-road-loading';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=170-road-loading';
+import {ASSET_BYTES} from './asset-sizes.js?v=170-road-loading';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -122,7 +122,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.files=this.registerAssets();
    const urls=new Set(),retainUrls=new Set();for(const f of this.files.values()){if(urls.has(f.url))retainUrls.add(f.url);urls.add(f.url);}
    // New delivery bytes invalidate old browser/CDN copies; logical cache keys stay stable.
-   this.downloads=new AssetDownloads(ASSET_BYTES,{retainUrls,fetcher:(url,options)=>fetch(url+(/-v10[01]\.(webp|json)$/.test(url)?'?delivery=102':'?delivery=64'),options)});
+   this.downloads=new AssetDownloads(ASSET_BYTES,{retainUrls,fetcher:(url,options)=>fetch(url+(url.includes('?')?'&':'?')+(/-v10[01]\.(webp|json)$/.test(url)?'delivery=102':'delivery=64'),options)});
    this.recipes=[];this.recording=true;this.registerRecipes();this.recording=false;
    this.loadedFiles=new Set();this.processedRecipes=new Set();this.stageKeys=new Set();
    this.videoSources=new Map();this.videoFrames=new Map();this.videoRequests=new Map();this.videoFrameIndex=new Map();
@@ -150,11 +150,12 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }return result;
   }
   enemySheetKeys(){return new Set(Object.entries(ENEMIES).filter(([,s])=>s.atlas).map(([k,s])=>s.atlasGroups?'enemyAtlas:'+s.atlas:k+'Motion'));}
-  stageFiles(index,tour=false){
+  stageFiles(index,tour=false,party=null){
    const keys=this.areaKeys(index);
    for(const kind of new Set((tour?STAGES[index].tour.waves:STAGES[index].waves).flatMap(w=>w.types))){const s=ENEMIES[kind];if(VIDEO_MOTION[kind]){for(const key of this.motionFiles([kind]))keys.add(key);if(VIDEO_MOTION[kind].death)keys.add(VIDEO_MOTION[kind].death.asset+':0');}else if(s?.atlas)keys.add(s.atlasGroups?'enemyAtlas:'+s.atlas:kind+'Motion');else for(const key of LEGACY_FOE_SHEETS[kind]||[])keys.add(key);}
    if(index===1&&!AREAS[index].roadFinite){keys.add('battle');keys.add('distantTroops');}
    const area=AREAS[index];if(!area.paintingSingle&&!area.roadTiles&&area.ground!=='water')keys.add(area.ground);
+   if(party){const route=tour?STAGES[index].tour:STAGES[index];for(const key of this.motionFiles([...new Set(['girl','haetae',...party,...route.waves.map(w=>w.helper).filter(Boolean)])]))keys.add(key);}
    return [...keys];
   }
   observeLoad(job,onProgress){
@@ -193,20 +194,27 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const missing=[...new Set(keys)].filter(k=>!this.loadedFiles.has(k)),files=missing.map(k=>this.files.get(k)).sort((a,b)=>(a.type==='json'?0:1)-(b.type==='json'?0:1));
    await this.downloads.batch(files,onProgress,background);
    const blobs=new Map([...new Set(files.map(f=>f.url))].map(url=>[url,this.downloads.take(url)]));
+   let imageTime=0,imagesDone=0,imagesLeft=files.filter(f=>!f.video).length;
+   onProgress({...this.downloads.lastProgress,phase:'prepare',prepared:0,prepareTotal:files.length,remainingMs:imagesLeft*60});
    for(let i=0;i<files.length;i++){
-    const f=files[i],blob=blobs.get(f.url);
+    const started=performance.now(),f=files[i],blob=blobs.get(f.url);
     if(!blob)throw new Error('그림 준비가 중단됐어요. 다시 시도해 주세요.');
     if(f.video)this.videoSources.set(f.key,{blob,image:null,used:performance.now()});
     else if(f.type==='json')this.cache.json.add(f.key,JSON.parse(await blob.text()));
-    else {const url=URL.createObjectURL(blob);try{const image=new Image();image.src=url;await image.decode();this.textures.addImage(f.key,image);}finally{URL.revokeObjectURL(url);}}
+    else {
+     let bitmap;if(typeof createImageBitmap==='function')try{bitmap=await createImageBitmap(blob);}catch{}
+     if(bitmap){try{const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;canvas.getContext('2d').drawImage(bitmap,0,0);this.textures.addCanvas(f.key,canvas);}finally{bitmap.close();}}
+     else {const url=URL.createObjectURL(blob);try{const image=new Image();image.src=url;await image.decode();this.textures.addImage(f.key,image);}finally{URL.revokeObjectURL(url);}}
+    }
     // Decode and split one sheet at a time instead of holding every full-size source on the GPU.
     for(const [recipe,args]of this.recipes.entries())if(!f.video&&args[0]===f.key&&!this.processedRecipes.has(recipe)){
      this.sliceAtlas(...args);this.processedRecipes.add(recipe);
     }
     if(this.recipes.some(args=>args[0]===f.key)&&this.textures.exists(f.key))this.textures.remove(f.key);
     this.loadedFiles.add(f.key);if(!files.slice(i+1).some(next=>next.url===f.url))blobs.delete(f.url);
-    onProgress({...this.downloads.lastProgress,phase:'prepare',prepared:i+1,prepareTotal:files.length});
-    await new Promise(resolve=>setTimeout(resolve,0));
+    if(!f.video){imageTime+=performance.now()-started;imagesDone++;imagesLeft--;}
+    onProgress({...this.downloads.lastProgress,phase:'prepare',prepared:i+1,prepareTotal:files.length,remainingMs:imagesLeft*(imagesDone?imageTime/imagesDone:60)});
+    if(!f.video)await new Promise(resolve=>setTimeout(resolve,0));
    }
   }
 
@@ -229,7 +237,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
     this.commonReady=true;
    })();try{await this.commonPromise;}finally{this.commonPromise=null;}
   }
-  async warmVideo(keys){
+  async warmVideo(keys,onProgress=()=>{}){
+   onProgress??=()=>{};const jobs=[];
     // Prepare actual entry cels before controls become live. Decoding on the first
     // moving frame otherwise holds idle artwork while the model already travels.
     // Warm companions first and the two directly controlled bodies last. The
@@ -240,14 +249,17 @@ export function makeGame(model,onReady,onFrame,onEvents){
      const start=name==='idle'?0:spec.cycles?.[0]?.start??0,end=name==='idle'?0:Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+47),entries=name==='runUrgent'?[0,start]:[start];
      for(let i=(Math.floor(start/24)+1)*24;i<=end;i+=24)entries.push(i);
      for(let i=(Math.floor(start/VIDEO_PAGE_FRAMES)+1)*VIDEO_PAGE_FRAMES;i<=Math.min(spec.frames-1,start+11);i+=VIDEO_PAGE_FRAMES)entries.push(i);
-     for(const i of new Set(entries)){const key=this.videoPage(this.videoFrameIndex.get(spec.prefix+i)).sourceKey;if(!selected.has(key)||!this.loadedFiles.has(key))continue;await this.decodeVideo(key);this.videoCel(spec.prefix+i);this.trimPresentationCache();}
+     for(const i of new Set(entries)){const key=this.videoPage(this.videoFrameIndex.get(spec.prefix+i)).sourceKey;if(selected.has(key)&&this.loadedFiles.has(key))jobs.push({key,cel:spec.prefix+i});}
     }
+   const started=performance.now();let prepared=0;
+   const report=()=>onProgress({phase:'warm',prepared,prepareTotal:jobs.length,remainingMs:(jobs.length-prepared)*(prepared?(performance.now()-started)/prepared:35)});
+   report();for(const {key,cel} of jobs){await this.decodeVideo(key);this.videoCel(cel);this.trimPresentationCache();prepared++;report();}
+
   }
   async prepareStage(index,onProgress,tour=false,party=model.party){
    this.ready=false;this.previewAreaIndex=index;
-   const route=tour?STAGES[index].tour:STAGES[index],kinds=[...new Set(['girl','haetae',...party,...route.waves.map(w=>w.helper).filter(Boolean)])];
-   const keys=[...this.stageFiles(index,tour),...this.motionFiles(kinds)];await this.loadFiles([...this.commonKeys,...keys],onProgress);
-   await this.ensureCommon();await this.warmVideo(keys);this.prepareArea(index);
+   const keys=this.stageFiles(index,tour,party);await this.loadFiles([...this.commonKeys,...keys],onProgress);
+   onProgress?.({phase:'world',remainingMs:350});await this.ensureCommon();await this.warmVideo(keys,onProgress);this.prepareArea(index);
    this.releaseStage(keys);this.previewAreaIndex=index;this.ready=true;
   }
   prepareArea(index){
@@ -285,8 +297,28 @@ export function makeGame(model,onReady,onFrame,onEvents){
    while(head<tail){const at=queue[head++],x=at%width;if(x)ground(at-1);if(x<width-1)ground(at+1);if(at>=width)ground(at-width);if(at<count-width)ground(at+width);}
    return Uint8ClampedArray.from(state,n=>n===3?255:0);
   }
-  terrainPixels(pixels,matte,width,height,part){
+  terrainPixels(pixels,matte,width,height,part,underlay=null){
    if(pixels.length!==width*height*4||matte.length!==pixels.length)throw new RangeError('Terrain RGBA geometry differs');
+   if(part.maskMode==='coverage'){
+    // A reviewed coverage matte distinguishes empty branch gaps from dark ink.
+    // Never fill its enclosed holes. Fade only over actual opaque foreground:
+    // otherwise a fading tree would expose the distant landscape through itself.
+    const fadeIn=part.fade?.[0]||0;
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+     const at=y*width+x,local=(x+.5)*part.width/width;
+     let base=0;
+     if(underlay&&local<fadeIn){const p=underlay.part,sx=Math.floor((part.x+local-p.x)*underlay.width/p.width),sy=Math.floor(((y+.5)*part.height/height-part.foot+p.foot)*underlay.height/p.height);
+      // Filtering and fractional camera positions also sample neighbour pixels.
+      if(sx>0&&sx<underlay.width-1&&sy>0&&sy<underlay.height-1){base=1;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)base=Math.min(base,underlay.data[((sy+dy)*underlay.width+sx+dx)*4+3]/255);}}
+     // Partial underlay alpha is not a backing surface. Fading over it would
+     // expose the distant plate even when this foreground pixel is solid.
+     base=base===1?1:0;
+     const blend=fadeIn?Math.min(1,local/fadeIn):1;
+     const front=Math.floor((this.sampleTerrainLine(part.walkLine,x/Math.max(1,width-1))-TERRAIN_SOLID_REAR)*height),coverage=y>=front?255:matte[at*4];
+     pixels[at*4+3]=Math.round(coverage*(1-base*(1-blend)));
+    }
+    return pixels;
+   }
    const alpha=this.terrainAlpha(matte,width,height,part.walkLine),[fadeIn,fadeOut]=part.fade||[0,0];
    // The matte and join share the SAME solid rear edge. Fading the outgoing
    // walking surface as well as the incoming one leaks far art under source-over.
@@ -302,7 +334,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const m=matte.getContext('2d',{willReadFrequently:true});m.drawImage(this.textures.get(area.texture+'RoadMask'+i).getSourceImage(),0,0,matte.width,matte.height);
     const canvas=document.createElement('canvas');canvas.width=source.width;canvas.height=source.height;
     const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,0,0);const image=ctx.getImageData(0,0,canvas.width,canvas.height);
-    this.terrainPixels(image.data,m.getImageData(0,0,matte.width,matte.height).data,canvas.width,canvas.height,part);
+    let underlay=null;
+    if(part.maskMode==='coverage'&&i){const previous=area.roadTiles[i-1],source=this.textures.get(area.texture+'Road'+(i-1)).getSourceImage(),base=document.createElement('canvas');base.width=source.width;base.height=source.height;const b=base.getContext('2d',{willReadFrequently:true});b.drawImage(source,0,0);underlay={part:previous,width:base.width,height:base.height,data:b.getImageData(0,0,base.width,base.height).data};}
+    this.terrainPixels(image.data,m.getImageData(0,0,matte.width,matte.height).data,canvas.width,canvas.height,part,underlay);
     ctx.putImageData(image,0,0);this.textures.remove(key);this.textures.addCanvas(key,canvas).terrainReady=true;
    });
   }

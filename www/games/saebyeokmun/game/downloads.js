@@ -6,7 +6,7 @@ export class AssetDownloads {
  pump(){while(this.active<this.limit&&this.queue.length){if(this.active>=Math.max(1,this.limit-1)&&!this.records.get(this.queue[0].url)?.foreground)break;const job=this.queue.shift();this.active++;job.run().then(job.resolve,job.reject).finally(()=>{this.active--;this.pump();});}}
  request(file,background=false,playback=false){
   const old=this.records.get(file.url);if(old){if(playback)old.playback=true;if(!background){old.foreground=true;const queued=this.queue.find(j=>j.url===file.url);if(queued){this.queue.splice(this.queue.indexOf(queued),1);this.queue.unshift(queued);}this.pump();}return old.promise;}
-  const record={loaded:0,total:this.sizes[file.url]||0,done:false,blob:null,foreground:!background,playback};this.records.set(file.url,record);
+  const record={loaded:0,total:this.sizes[file.url]||this.sizes[file.url.split('?')[0]]||0,done:false,blob:null,foreground:!background,playback};this.records.set(file.url,record);
   record.promise=new Promise((resolve,reject)=>{
    const job={url:file.url,resolve,reject,run:async()=>{
     const abort=new AbortController();record.abort=abort;let timer;const touch=()=>{clearTimeout(timer);timer=setTimeout(()=>abort.abort(),45000);};
@@ -25,8 +25,8 @@ export class AssetDownloads {
   });return record.promise;
  }
  async batch(files,onProgress=()=>{},background=false){
-  const unique=[...new Map(files.map(f=>[f.url,f])).values()];
-  const report=()=>{let loaded=0,total=0,complete=0;for(const f of unique){const r=this.records.get(f.url);loaded+=r?.loaded||0;total+=r?.total||this.sizes[f.url]||0;if(r?.done)complete++;}
+  const unique=[...new Map(files.map(f=>[f.url,f])).values()],observed=new Map();
+  const report=()=>{let loaded=0,total=0,complete=0;for(const f of unique){const current=this.records.get(f.url);if(current)observed.set(f.url,{loaded:current.loaded,total:current.total,done:current.done});const r=current||observed.get(f.url);loaded+=r?.loaded||0;total+=r?.total||this.sizes[f.url]||this.sizes[f.url.split('?')[0]]||0;if(r?.done)complete++;}
    const progress={loaded,total,percent:total?Math.min(100,Math.floor(loaded/total*100)):unique.length?0:100,complete,count:unique.length,phase:'download'};
    if(!background)this.lastProgress=progress;onProgress(progress);
   };
