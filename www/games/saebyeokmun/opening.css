@@ -7,7 +7,7 @@
 #opening #opening-loading{position:absolute;bottom:5%;left:0;right:0;text-align:center;font:12px sans-serif;color:#514631;text-shadow:0 1px #fff8e8}
 #opening:not([data-phase="loading"]) #opening-loading{display:none}
 body[data-entry-phase] :is(.hud,.stage-tools,.control-deck,#pause-overlay,#callout){opacity:0;pointer-events:none}
-body[data-entry-phase="ui"] :is(.hud,.stage-tools,.control-deck){animation:entry-hud .7s ease-out forwards}
+body[data-entry-phase="ui"] :is(.hud,.stage-tools,.control-deck){animation:entry-hud .7s ease-out max(0ms,calc(var(--entry-zoom-ms,700ms) - 700ms)) forwards}
 body[data-entry-phase] :is(.hud,.stage-tools,.control-deck) button{pointer-events:none}
 @keyframes entry-hud{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
 

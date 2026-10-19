@@ -1,9 +1,9 @@
-import {Campaign} from './game/campaign.js?v=168-sound-party';
-import {Journey} from './game/model.js?v=168-sound-party';
-import {Autoplay} from './game/autoplay.js?v=168-sound-party';
-import {makeGame} from './game/scene.js?v=168-sound-party';
-import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=168-sound-party';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=168-sound-party';
+import {Campaign} from './game/campaign.js?v=169-video-restore';
+import {Journey} from './game/model.js?v=169-video-restore';
+import {Autoplay} from './game/autoplay.js?v=169-video-restore';
+import {makeGame} from './game/scene.js?v=169-video-restore';
+import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=169-video-restore';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=169-video-restore';
 const $=id=>document.getElementById(id);
 const model=new Journey();
 const autoplay=new Autoplay(model);
@@ -143,7 +143,7 @@ function coverOpening(){
  $('opening').dataset.phase='preparing';document.body.dataset.entryPhase='loading';
  $('download-title').textContent='로딩 중';$('download-retry').hidden=true;updateDownload({phase:'waiting'});fitPhoneDialogs();$('asset-loading').showModal();
 }
-function openingFile(stage){return stage===1?'./assets/entry-stage2-v151.mp4':'./assets/entry-stage1-v146.mp4';}
+function openingFile(stage){return stage===1?'./assets/entry-stage2-v160.mp4':'./assets/entry-stage1-v146.mp4';}
 async function prepareOpeningFilm(stage){
  const epoch=entryEpoch,video=$('opening-video'),file=openingFile(stage);
  if(video.dataset.nextFile!==file){
@@ -218,7 +218,7 @@ async function start(testStage=null,cinematic=false){
  if(testing){autoplay.enter();scene.playbackRate=autoplay.rate;}
  renderSummonSlots();renderSkillSlots();renderAutoplay();keys.clear();model.setDirection(0,{cancel:true});lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
  if(scene)scene.resetPresentation();updateAuto();soundscape.stopVoices(true);
- if(cinematic){scene.entryPreview=true;scene.entryBlend=0;delete scene.entryViewStarted;scene.resize();model.drainEvents();model.pause();infoPaused=!document.hidden;soundscape.setPlaying(false);playOpening(stage,true);}
+ if(cinematic){document.body.style.setProperty('--entry-zoom-ms',(AREAS[stage].entryView?.duration??700)+'ms');scene.entryPreview=true;scene.entryBlend=0;delete scene.entryViewStarted;scene.resize();model.drainEvents();model.pause();infoPaused=!document.hidden;soundscape.setPlaying(false);playOpening(stage,true);}
  else{scene.entryPreview=false;delete scene.entryViewStarted;scene.resize();delete document.body.dataset.entryPhase;soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});}
  prefetchNext(stage);
 }

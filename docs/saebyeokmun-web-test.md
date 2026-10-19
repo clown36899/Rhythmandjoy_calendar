@@ -537,3 +537,8 @@ Source commit: 3ff936731f4a3e960c8cf1747ec13c9e583e5b38. This scoped runtime del
 Validation:133 runtime tests and24 preserved-release/observer tests passed. Desktop mobile viewport844x390 confirms44px sound buttons to the left of pause and independent settings. Physical-device GPU/thermal FPS has not been measured. Deployment uses the existing Cafe24 destination, with a verified local backup, exact pushed-file hashes, and preserved19 public releases. Other chats' local work and site services/DB are excluded.
 
 Stage2-only follow-up: reuse transport foreground promotion and protect current-playback lookahead from next-map cleanup; prepare one immediate GPU page per draw and pin it with the current page. Keep original fps, source resolution and action clocks. Use the existing high-performance renderer preference.73 effects/download/app checks plus5 final boundary checks and4 legacy checks passed. The same30s local stage2 comparison observed83->61 unavailable-cel lookups at up to8 allies/12 enemies; this is not an FPS gain claim. Profiling instrumentation is excluded.
+
+
+## v169 — 영상 연결 복구와 현재 동작 우선 준비
+
+소스 `95d1d9fc3630efb38609bc9e668811d7f3a4505c`. v160 스테이지2 영상·1.4초 단일 줌/실제 출발점과 해태 보행12..86·달리기12..39 연결을 복구했다. 기존69개 영상 동작·24fps·출력 밀도·전투/저장·3명/총15명 상한 유지. Scene 기존 단일 준비 대기열의 현재 프레임 우선순위/승격과 LRU 캔버스 픽셀 즉시 해제를 연결했다. 2셀 묶음 실험은 제외하고6셀·GPU48MiB/CPU96MiB 유지. 자동130개/공개 이력21개 통과, Stage2 정상영상48화면·줌→조작과 동시 아군15/적12, 실제 공격/걷기/치유 재생 확인. 150초 누적 사용불가 cel 조회8496→5133은 FPS 수치가 아니며 실물폰 검증 제외. 이전 v168 실행본을 기존 versions 비교에 보존했고 다른19개 공개본과 공유 자산은 유지했다. 다른 채팅의 collection/마법/원화 WIP는 덮어쓰지 않았다. 이 소스·미러를 푸시한 뒤 Cafe24 기존 게임 디렉터리에만 이전 해시·백업·전체 후보/보호 파일 검증 후 교체한다.

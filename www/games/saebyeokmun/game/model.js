@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=168-sound-party';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=169-video-restore';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -9,8 +9,9 @@ export class Journey {
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='집으로 가는 길을 동료와 함께 열어요.';
   delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;this.lane=0;
  }
- start(stage=this.stage,party=DEFAULT_PARTY,viewportWidth=null,options={}){this.reset();this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.tour=options.tour===true;if(Number.isFinite(viewportWidth)&&viewportWidth>0){this.setViewport(0,viewportWidth);this.setViewport(Math.min(0,this.gateX-viewportWidth+this.portalInset),viewportWidth);}this.status='playing';this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('');if(this.route.deployment&&!this.route.deployment.initialDelay)for(let i=0;i<this.route.deployment.initialWaves;i++)this.deployWave();}
+ start(stage=this.stage,party=DEFAULT_PARTY,viewportWidth=null,options={}){this.reset();this.party=validParty(party)?[...party]:[...DEFAULT_PARTY];this.stage=Number.isInteger(stage)&&STAGES[stage]?stage:0;this.tour=options.tour===true;this.x=this.furthest=this.startX;if(Number.isFinite(viewportWidth)&&viewportWidth>0){this.setViewport(0,viewportWidth);this.setViewport(Math.min(0,this.gateX-viewportWidth+this.portalInset),viewportWidth);}this.status='playing';this.emit('summon',{actor:'hero',kind:'haetae',x:this.x});this.say('');if(this.route.deployment&&!this.route.deployment.initialDelay)for(let i=0;i<this.route.deployment.initialWaves;i++)this.deployWave();}
  // Journey owns continuous depth and body clearance; Scene only projects it.
+ get startX(){return this.tour?START:STAGES[this.stage].startX??START;}
  get lanes(){return STAGES[this.stage].combatLanes;}
  sameLane(a,b){return !this.lanes||b.type==='gate'||!Number.isFinite(a.lane)||!Number.isFinite(b.lane)||Math.abs(a.lane-b.lane)<.18;}
  canStrike(a,b){const weapon=UNITS[a.type]?.weapon,ranged=a===this||['stone','seed','ink','seal','charm','arrow'].includes(weapon)||a.type==='reaper'||['ranged','heal'].includes(ENEMIES[a.type]?.behavior);return ranged||this.sameLane(a,b)||this.lanes&&((a.x-b.x)/this.bodyClearance(a,b))**2+(((a.lane??0)-(b.lane??0))/.65)**2<=1.01;}
@@ -103,7 +104,7 @@ export class Journey {
  say(message){this.hint=message;this.hintSerial++;this.lastHintAt=this.time;this.emit('hint',{message});}
  drainEvents(){const events=this.events;this.events=[];return events;}
  pause(){if(this.status==='playing'){this.status='paused';this.setDirection(0,{cancel:true});}else if(this.status==='paused')this.status='playing';}
- progress(){return clamp((this.furthest-START)/(this.roadEnd-START),0,1);}
+ progress(){return clamp((this.furthest-this.startX)/(this.roadEnd-this.startX),0,1);}
  addAlly(type,x){const s=UNITS[type];if(!s||this.atSummonLimit(type))return null;
   // Arrival slots queue in the combat lanes; a new call never pushes a live body.
   const entering=x===undefined&&!!this.viewport;if(x===undefined)x=entering?this.viewport.left-this.screenPadding(type):this.x-65;const a={entering,entryOrigin:entering?this.viewport.left:null,bornAt:this.time,id:++this.nextId,type,x,hp:s.hp,maxHp:s.hp,cd:0,hit:0,walk:0,moving:0,action:null};this.allies.push(a);this.placeLane(a,-1);return a;}
@@ -415,7 +416,7 @@ export class Journey {
   if(d)this.portal.openedAt=this.time;
   // Opening groups occupy the middle of the whole road; reinforcements use its gate.
   const initial=d&&index<d.initialWaves,centre=this.roadEnd/2;
-  w.types.forEach((type,i)=>{const origin=initial&&d.initialAtScreenEdge?(this.viewport?.right??this.x+1200)+this.screenPadding(type)*.5:centre,e=this.spawn(type,initial?origin+index*300+i*75:this.portal.x,scale);e.entering=!initial||!!d?.initialAtScreenEdge&&initial;if(e.entering){e.entryOrigin=initial?origin:this.portal.x;e.entryAt=this.time+i*.85;}});
+  w.types.forEach((type,i)=>{const origin=initial&&d.initialAtScreenEdge?(this.viewport?this.viewport.right+(this.startX-START):this.x+1200)+this.screenPadding(type)*.5:centre,e=this.spawn(type,initial?origin+index*300+i*75:this.portal.x,scale);e.entering=!initial||!!d?.initialAtScreenEdge&&initial;if(e.entering){e.entryOrigin=initial?origin:this.portal.x;e.entryAt=this.time+i*.85;}});
   if(w.helper&&!d)this.helperArrivals.set(index,false);
   this.say(w.message);return true;
  }
