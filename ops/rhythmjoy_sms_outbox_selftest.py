@@ -160,7 +160,7 @@ class SmsOutboxInvariantTests(unittest.TestCase):
         )
         self.assertIn('provider-result-uncertain-no-auto-resend', watcher)
 
-    def test_admin_generation_guard_and_recipient_boundaries(self):
+    def test_confirmation_generation_guard_and_recipient_boundaries(self):
         watcher = (Path(__file__).resolve().parents[1] / 'tools' / 'spacecloud-watch.mjs').read_text(encoding='utf-8')
         guard_source = watcher.split('def lock_confirmation_generation(cur):', 1)[1].split('\ndb_config = dict(', 1)[0]
         phone = '01012345678'
@@ -236,6 +236,56 @@ class SmsOutboxInvariantTests(unittest.TestCase):
         self.assertTrue(check(admin=dict(reservation, end_hour=24), linked=[
             dict(upload, end_time=timedelta(hours=24)), dict(block, end_time=timedelta(hours=24)),
         ])['approved'])
+
+        # The same provider gate must suppress overdue customer confirmations,
+        # including retry/backlog delivery and legacy email-based ledger lookup.
+        class CustomerCursor:
+            def __init__(self, ledger, task, legacy=False):
+                self.ledger, self.task, self.legacy = ledger, task, legacy
+                self.row = None
+                self.queries = []
+
+            def execute(self, query, args=None):
+                self.queries.append(query)
+                if 'FROM rhythmjoy_naver_email_events' in query:
+                    self.row = None
+                elif 'FROM rhythmjoy_booking_ledger' in query:
+                    self.row = self.ledger
+                elif 'FROM rhythmjoy_spacecloud_tasks' in query:
+                    self.row = dict(self.task)
+                    if self.legacy and 'FOR UPDATE' not in query:
+                        self.row['booking_ledger_id'] = None
+                else:
+                    raise AssertionError(query)
+
+            def fetchone(self):
+                return self.row
+
+        for kind in ('upload', 'naver_block'):
+            namespace['task_type'] = kind
+            for legacy in (False, True):
+                ledger = dict(id=91, current_status='confirmed', confirmed_email_event_id=101, not_ended=1)
+                task = dict(id=81, task_type=kind, status='done', email_event_id=101,
+                            booking_ledger_id=91, side_effect_state='finalized',
+                            result_text=json.dumps({'status':'submitted' if kind=='upload' else 'blocked'}),
+                            payload_json='{}')
+                cur = CustomerCursor(ledger, task, legacy)
+                self.assertTrue(namespace['lock_confirmation_generation'](cur)['approved'])
+                query = next(q for q in cur.queries if 'AS not_ended' in q)
+                self.assertIn('IF(end_time <= start_time, 86400, 0)', query)
+                self.assertIn(') > NOW()', query)
+                for ended in (0, None):
+                    result = namespace['lock_confirmation_generation'](
+                        CustomerCursor(dict(ledger, not_ended=ended), task, legacy))
+                    self.assertFalse(result['approved'])
+                    self.assertNotIn('retryable', result)
+                    self.assertIn('ended', result['reason'])
+                self.assertFalse(namespace['lock_confirmation_generation'](
+                    CustomerCursor(dict(ledger, current_status='canceled'), task, legacy))['approved'])
+                self.assertFalse(namespace['lock_confirmation_generation'](
+                    CustomerCursor(dict(ledger, confirmed_email_event_id=102), task, legacy))['approved'])
+                self.assertTrue(namespace['lock_confirmation_generation'](
+                    CustomerCursor(ledger, dict(task, status='pending'), legacy))['retryable'])
 
     def test_admin_sender_reuses_durable_claim_and_erases_terminal_recipient(self):
         import aligo_sms

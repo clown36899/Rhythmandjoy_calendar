@@ -1560,7 +1560,13 @@ def lock_confirmation_generation(cur):
             }
     # Serialize the final provider decision with cancellation: ledger first,
     # then task, matching the importer/checkpoint lock order.
-    cur.execute('SELECT * FROM rhythmjoy_booking_ledger WHERE id=%s FOR UPDATE', (ledger_id,))
+    cur.execute("""
+        SELECT *, DATE_ADD(
+            TIMESTAMP(reservation_date, '00:00:00'),
+            INTERVAL (TIME_TO_SEC(end_time) + IF(end_time <= start_time, 86400, 0)) SECOND
+        ) > NOW() AS not_ended
+        FROM rhythmjoy_booking_ledger WHERE id=%s FOR UPDATE
+    """, (ledger_id,))
     ledger = cur.fetchone()
     cur.execute(
         """
@@ -1580,6 +1586,12 @@ def lock_confirmation_generation(cur):
         and task.get('email_event_id')
         and int(task.get('email_event_id') or 0) == int(ledger.get('confirmed_email_event_id') or 0)
     )
+    if ledger and not ledger.get('not_ended'):
+        return {
+            'approved': False,
+            'reason': 'reservation ended or use time is missing before confirmation SMS',
+            'ledgerId': ledger_id,
+        }
     if task_type == 'upload':
         platform_done = bool(
             task and task.get('status') == 'done'
