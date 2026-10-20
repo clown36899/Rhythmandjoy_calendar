@@ -1103,9 +1103,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
    this.grounding.set(key,this.grounding.get(base)??1);if(this.celScale.has(base))this.celScale.set(key,this.celScale.get(base));if(this.registrationX.has(base))this.registrationX.set(key,this.registrationX.get(base));this.injuryTextures.set(key,{bytes:patch.width*patch.height*4,used:performance.now(),rect:[left/width,top/height,patch.width/width,patch.height/height]});return key;
   }
   drawOutline(key,body,kind){
+   kind=this.videoFrameIndex?.get(body.celKey)?.spec.bodyKind||kind;
    const slot='outline:'+key;let image=this.wounds.get(slot);const radius=BODY_OUTLINE[kind]||0;
    if(!radius||!body.visible||body.texture.key==='__WHITE'){image?.setVisible(false);return;}
-   const base=body.celKey||body.texture.key,frame=this.videoFrameIndex?.get(base),page=frame?this.videoPage(frame):null;
+   const base=body.celKey||body.texture.key,frame=this.videoFrameIndex?.get(base);
    const source=body.texture.getSourceImage(),f=body.frame;
    const crop=frame?[f.cutX,f.cutY,f.cutWidth,f.cutHeight]:null;
    const w=frame?f.cutWidth:source.width,h=frame?f.cutHeight:source.height;
