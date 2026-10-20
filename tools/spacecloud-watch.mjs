@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import {
   cancelSpacecloudConfirmedReservation,
   checkSpacecloudLogin,
+  isSpacecloudAuthenticationUrl,
   deleteSpacecloudDirectReservation,
   fetchSpacecloudReservationPhone,
   inspectSpacecloudConfirmedReservation,
@@ -11950,7 +11951,8 @@ async function runLogin(args) {
 
     // Do not navigate while the user is inside the Naver/SpaceCloud auth flow.
     // Restarting these URLs can invalidate the active OAuth token and force a new login page.
-    const isAuthFlow = /nid\.naver\.com|partner\.spacecloud\.kr\/auth\//.test(currentUrl);
+    const isAuthFlow = /nid\.naver\.com/.test(currentUrl)
+      || isSpacecloudAuthenticationUrl(currentUrl);
     const expectedPlatformHost = platform === 'spacecloud'
       ? /partner\.spacecloud\.kr/.test(currentUrl)
       : /(?:nid|partner\.booking)\.naver\.com/.test(currentUrl);

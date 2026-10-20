@@ -143,11 +143,12 @@ function isSpacecloudTokenRefreshApiUrl(value) {
   }
 }
 
-function isSpacecloudAuthenticationUrl(value) {
+export function isSpacecloudAuthenticationUrl(value) {
   try {
     const url = new URL(String(value || ''));
     return url.hostname.toLowerCase() === 'partner.spacecloud.kr'
-      && /^\/auth(?:\/|$)/.test(url.pathname);
+      && /^\/auth(?:\/|$)/.test(url.pathname)
+      && !/^\/auth\/mypage(?:\/|$)/.test(url.pathname);
   } catch {
     return false;
   }
@@ -2944,14 +2945,13 @@ async function recoverSpacecloudSessionThroughSpa(page, {
     error: `SpaceCloud automatic token refresh did not reach the calendar API: ${String(error?.message || error).replace(/\s+/g, ' ').slice(0, 200)}`,
   }));
 
-  const authOutcome = page.waitForURL(
-    (candidate) => isSpacecloudAuthenticationUrl(candidate.toString()),
+  // The host site can redirect a saved session through login while its SPA
+  // recreates the document-routing cookie. Account landing is not logout.
+  const accountOutcome = page.waitForURL(
+    (candidate) => candidate.origin === 'https://partner.spacecloud.kr'
+      && candidate.pathname === '/auth/mypage',
     { timeout: timeoutMs },
-  ).then(() => ({
-    status: 'auth-page',
-    apiStatus: 401,
-    error: 'SpaceCloud authentication page is visible after token refresh',
-  })).catch(() => null);
+  ).then(() => ({ status: 'account-page' })).catch(() => null);
 
   let navigationError = '';
   try {
@@ -2960,7 +2960,33 @@ async function recoverSpacecloudSessionThroughSpa(page, {
     navigationError = String(error?.message || error).replace(/\s+/g, ' ').trim().slice(0, 240);
   }
 
-  const outcome = await Promise.race([responseOutcome, authOutcome]);
+  let outcome = await Promise.race([
+    responseOutcome,
+    accountOutcome.then((account) => account || responseOutcome),
+  ]);
+  if (outcome?.status === 'account-page') {
+    try {
+      await page.goto(url, { waitUntil: 'commit', timeout: timeoutMs });
+    } catch (error) {
+      navigationError = String(error?.message || error).replace(/\s+/g, ' ').trim().slice(0, 240);
+    }
+    outcome = await responseOutcome;
+  }
+  if (outcome?.status === 'inconclusive' && isSpacecloudAuthenticationUrl(page.url())) {
+    // A routing URL alone proves nothing. A fully rendered sign-in screen with
+    // no saved account, after allowing the site's own recovery, is actionable.
+    const signedOut = await page.evaluate(() => {
+      let account = {};
+      try { account = JSON.parse(localStorage.getItem('spacecloud__userInfo') || '{}'); } catch {}
+      const heading = document.querySelector('h2.login');
+      return !account.id && Boolean(heading?.getClientRects().length);
+    }).catch(() => false);
+    if (signedOut) outcome = {
+      status: 'auth-page',
+      apiStatus: 401,
+      error: 'SpaceCloud sign-in screen remained visible after session recovery',
+    };
+  }
   return {
     ...(outcome || {
       status: 'inconclusive',
@@ -3016,10 +3042,10 @@ export async function checkSpacecloudLogin(context, {
       });
       if (classification.probe === 'maintenance-page') maintenanceCheck = classification;
     }
-    const explicitLogin = classifySpacecloudSessionCheck({ url: currentUrl });
-    if (!maintenanceCheck && explicitLogin.status !== 'login_required') {
+    const explicitLogin = isSpacecloudAuthenticationUrl(currentUrl);
+    if (!maintenanceCheck) {
       const nowKst = new Date(Date.now() + (9 * 60 * 60 * 1000));
-      apiResult = await fetchSpacecloudCalendarApi(page, {
+      apiResult = explicitLogin ? null : await fetchSpacecloudCalendarApi(page, {
         productId,
         year: nowKst.getUTCFullYear(),
         month: nowKst.getUTCMonth() + 1,
@@ -3027,7 +3053,8 @@ export async function checkSpacecloudLogin(context, {
         summaryOnly: true,
       });
       if (
-        apiResult?.tokenPresent === false
+        explicitLogin
+        || apiResult?.tokenPresent === false
         || [401, 403].includes(Number(apiResult?.status))
       ) {
         refreshAttempt = await recoverSpacecloudSessionThroughSpa(page, {
@@ -3108,7 +3135,7 @@ export function classifySpacecloudSessionCheck({
     location = new URL(currentUrl);
   } catch {}
   const loginRequired = Boolean(location && isSpacecloudAuthenticationUrl(location.toString()));
-  if (loginRequired) {
+  if (loginRequired && !probeAttempted) {
     return {
       ok: false,
       status: 'login_required',

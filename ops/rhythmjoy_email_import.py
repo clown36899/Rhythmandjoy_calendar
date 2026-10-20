@@ -3481,8 +3481,12 @@ def spacecloud_candidate_event_order(candidate):
 def match_spacecloud_cancellation_generation(
         cursor, event_data, calendar_key, cancellation_event_order_key,
         cancellation_received_at=None):
-    """Select one prior active SpaceCloud generation or fail closed with evidence."""
+    """Match one prior generation, retaining proven automatic-cancel echoes."""
     enriched = dict(event_data or {})
+    for key in (
+            'matched_booking_ledger_id', 'matched_booking_ledger_key',
+            'matched_reservation_email_event_id', 'matched_automation_cancel_task_id'):
+        enriched.pop(key, None)
     business_identity = spacecloud_business_identity(enriched, calendar_key)
     reservation_date = clean_date_or_none(enriched.get('date'))
     start_time = clean_time_or_none(enriched.get('start_time'))
@@ -3506,6 +3510,12 @@ def match_spacecloud_cancellation_generation(
     cursor.execute(
         """
         SELECT ledger.id, ledger.ledger_key,
+               ledger.current_status, ledger.payload_json,
+               ledger.automation_cancel_task_id,
+               auto_cancel.status AS auto_cancel_status,
+               auto_cancel.booking_ledger_id AS auto_cancel_ledger_id,
+               auto_cancel.payload_json AS auto_cancel_payload,
+               auto_cancel.result_text AS auto_cancel_result,
                ledger.confirmed_email_event_id,
                ledger.confirmed_email_received_at,
                ledger.last_event_at,
@@ -3513,8 +3523,13 @@ def match_spacecloud_cancellation_generation(
         FROM rhythmjoy_booking_ledger AS ledger
         LEFT JOIN rhythmjoy_naver_email_events AS confirmed_event
                ON confirmed_event.id=ledger.confirmed_email_event_id
+        LEFT JOIN rhythmjoy_spacecloud_tasks AS auto_cancel
+               ON auto_cancel.id=ledger.automation_cancel_task_id
+              AND auto_cancel.task_type='spacecloud_cancel'
         WHERE ledger.source_platform='spacecloud'
-          AND ledger.current_status='confirmed'
+          AND (ledger.current_status='confirmed'
+               OR (ledger.current_status='canceled'
+                   AND ledger.automation_cancel_task_id IS NOT NULL))
           AND ledger.room_key=%s
           AND ledger.reservation_date=%s
           AND ledger.start_time=%s
@@ -3543,6 +3558,36 @@ def match_spacecloud_cancellation_generation(
     same_order = []
     unverifiable = []
     for candidate in candidates:
+        if candidate.get('current_status') == 'canceled':
+            try:
+                proof = json.loads(candidate.get('auto_cancel_result') or '{}')
+                command = json.loads(candidate.get('auto_cancel_payload') or '{}')
+                original = json.loads(candidate.get('payload_json') or '{}')
+            except (TypeError, ValueError):
+                proof, command, original = {}, {}, {}
+            if not all(isinstance(value, dict) for value in (proof, command, original)):
+                proof, command, original = {}, {}, {}
+            original_id = spacecloud_internal_reservation_id(original)
+            completed_order = received_at_epoch_ms(
+                str(proof.get('finishedAt') or '').replace('Z', '+00:00')
+            )
+            if not (
+                    candidate.get('auto_cancel_status') == 'done'
+                    and candidate.get('auto_cancel_ledger_id') == candidate.get('id')
+                    and command.get('source') == 'spacecloud-later-reservation-conflict'
+                    and original_id
+                    and str(proof.get('reservationId') or '') == original_id
+                    and proof.get('status') == 'canceled'
+                    and proof.get('submissionConfirmed') is True
+                    and proof.get('beforeStatusCode') == 'RSCMP'
+                    and proof.get('afterStatusCode') == 'RCCMP'
+                    and completed_order
+                    and int(completed_order) < int(cancellation_order)
+                    and (not spacecloud_internal_reservation_id(enriched)
+                         or spacecloud_internal_reservation_id(enriched) == original_id)
+            ):
+                unverifiable.append(candidate)
+                continue
         candidate_order = spacecloud_candidate_event_order(candidate)
         if not candidate_order:
             unverifiable.append(candidate)
@@ -3563,11 +3608,17 @@ def match_spacecloud_cancellation_generation(
     if len(prior) == 1:
         matched = prior[0]
         enriched.update({
-            'spacecloud_match_status': 'matched-active-generation',
+            'spacecloud_match_status': (
+                'matched-canceled-generation'
+                if matched.get('current_status') == 'canceled'
+                else 'matched-active-generation'
+            ),
             'matched_booking_ledger_id': matched.get('id'),
             'matched_booking_ledger_key': matched.get('ledger_key') or '',
             'matched_reservation_email_event_id': matched.get('confirmed_email_event_id'),
         })
+        if matched.get('current_status') == 'canceled':
+            enriched['matched_automation_cancel_task_id'] = matched['automation_cancel_task_id']
         return enriched
 
     # Historical event evidence is retained for diagnosis, but without an
@@ -3629,7 +3680,9 @@ def enrich_spacecloud_cancellation_from_db(
             )
         status = enriched.get('spacecloud_match_status') or 'unknown'
         matched_id = enriched.get('matched_booking_ledger_id')
-        log = logger.info if status == 'matched-active-generation' else logger.warning
+        log = logger.info if status in (
+            'matched-active-generation', 'matched-canceled-generation'
+        ) else logger.warning
         log(
             'SpaceCloud cancellation generation match status=%s ledger_id=%s '
             'calendar=%s date=%s time=%s-%s candidates=%s prior=%s',
@@ -5276,7 +5329,9 @@ def upsert_spacecloud_naver_restore_task(
     ledger_id = matched_ledger_id or spacecloud_task_event_identity(booking_ledger_id)
     match_status = str(event_data.get('spacecloud_match_status') or '').strip()
     identity_ready = bool(
-        match_status == 'matched-active-generation'
+        (match_status == 'matched-active-generation'
+         or (match_status == 'matched-canceled-generation'
+             and spacecloud_task_event_identity(event_data.get('matched_automation_cancel_task_id'))))
         and matched_ledger_id
         and ledger_id == matched_ledger_id
     )

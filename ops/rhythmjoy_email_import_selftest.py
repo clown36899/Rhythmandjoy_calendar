@@ -304,6 +304,49 @@ class EmailPipelineSelfTest(unittest.TestCase):
         )
         self.assertNotIn('matched_booking_ledger_id', ambiguous)
 
+        completed_at = '2026-08-20T01:01:00.000Z'
+        cancel_order = email_import.received_at_epoch_ms('2026-08-20 10:02:00')
+        proof = {
+            'reservationId': '12345678', 'status': 'canceled',
+            'submissionConfirmed': True, 'beforeStatusCode': 'RSCMP',
+            'afterStatusCode': 'RCCMP', 'finishedAt': completed_at,
+        }
+        canceled = {
+            **candidate, 'current_status': 'canceled',
+            'automation_cancel_task_id': 901,
+            'auto_cancel_status': 'done', 'auto_cancel_ledger_id': 77,
+            'payload_json': json.dumps({'spacecloud_reservation_id': '12345678'}),
+            'auto_cancel_payload': json.dumps({'source': 'spacecloud-later-reservation-conflict'}),
+            'auto_cancel_result': json.dumps(proof),
+        }
+        echo = email_import.match_spacecloud_cancellation_generation(
+            MatchCursor([canceled]), cancellation, 'Bhall', cancel_order,
+        )
+        self.assertEqual(echo['spacecloud_match_status'], 'matched-canceled-generation')
+        self.assertEqual(echo['matched_booking_ledger_id'], 77)
+        self.assertEqual(echo['matched_automation_cancel_task_id'], 901)
+        for invalid in [
+            {**canceled, 'auto_cancel_status': 'running'},
+            {**canceled, 'auto_cancel_ledger_id': 78},
+            {**canceled, 'auto_cancel_payload': '{"source":"admin-customer-cancel"}'},
+            {**canceled, 'auto_cancel_result': json.dumps({**proof, 'submissionConfirmed': False})},
+            {**canceled, 'auto_cancel_result': json.dumps({**proof, 'reservationId': '99999999'})},
+            {**canceled, 'auto_cancel_result': json.dumps({**proof, 'finishedAt': '2026-08-20T01:03:00Z'})},
+            {**canceled, 'auto_cancel_result': '[]'},
+        ]:
+            rejected = email_import.match_spacecloud_cancellation_generation(
+                MatchCursor([invalid]), {**cancellation, **echo}, 'Bhall', cancel_order,
+            )
+            self.assertEqual(rejected['spacecloud_match_status'], 'candidate-order-unverifiable')
+            self.assertNotIn('matched_booking_ledger_id', rejected)
+            self.assertNotIn('matched_automation_cancel_task_id', rejected)
+        ambiguous_echo = email_import.match_spacecloud_cancellation_generation(
+            MatchCursor([canceled, {**candidate, 'id': 78}]),
+            cancellation, 'Bhall', cancel_order,
+        )
+        self.assertEqual(ambiguous_echo['spacecloud_match_status'], 'ambiguous-prior-generation')
+        self.assertNotIn('matched_booking_ledger_id', ambiguous_echo)
+
     def test_spacecloud_cancellation_without_active_ledger_is_diagnostic_only(self):
         class EventOnlyCursor:
             def __init__(self):
@@ -461,6 +504,23 @@ class EmailPipelineSelfTest(unittest.TestCase):
         self.assertEqual(matched_task['status'], 'pending')
         self.assertEqual(matched_connection.capture.insert['booking_ledger_id'], 77)
         self.assertEqual(matched_connection.capture.insert['result_text'], '')
+
+        for has_proof in [False, True]:
+            echo_connection = TaskConnection()
+            echo_task = email_import.upsert_spacecloud_naver_restore_task(
+                {'db_enabled': True, 'spacecloud_naver_block_enabled': True},
+                logging.getLogger(__name__), 904,
+                {
+                    'spacecloud_match_status': 'matched-canceled-generation',
+                    'matched_booking_ledger_id': 77,
+                    'matched_automation_cancel_task_id': 901 if has_proof else None,
+                    'name': '황*연님', 'date': '2026-09-04',
+                    'start_time': '20:00', 'end_time': '22:00',
+                },
+                'Bhall', conn=echo_connection, booking_ledger_id=77,
+            )
+            self.assertEqual(echo_task['status'], 'pending' if has_proof else 'needs_review')
+            self.assertEqual(echo_connection.capture.insert['booking_ledger_id'], 77)
 
         matched_key = 'spacecloud|' + ('c' * 64)
         self.assertEqual(

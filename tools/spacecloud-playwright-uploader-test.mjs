@@ -13,6 +13,7 @@ import {
   directUploadVerificationTarget,
   inspectSpacecloudConfirmedReservation,
   inspectSpacecloudReservationStatus,
+  isSpacecloudAuthenticationUrl,
   pollForSpacecloudCalendarAbsence,
   pollForSpacecloudCalendarIdentity,
   popupDeleteVerification,
@@ -281,6 +282,80 @@ test('keeps an inconclusive SpaceCloud refresh neutral instead of sending a fals
   assert.equal(result.loginRequired, false);
   assert.equal(result.refreshAttempted, true);
   assert.equal(result.refreshOutcome, 'inconclusive');
+});
+
+test('restores a saved account through the login and profile routing pages before deciding readiness', async () => {
+  const target = 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056';
+  const calendarResponse = {
+    url: () => 'https://api.spacecloud.kr/partner/reservations/calendar?product_id=108674',
+    status: () => 200,
+    finished: async () => {},
+    json: async () => [],
+  };
+  let currentUrl = target;
+  let navigations = 0;
+  let restoreAssets = false;
+  let resolveCalendar;
+  const calendar = new Promise(resolve => { resolveCalendar = resolve; });
+  const page = {
+    route: async () => {},
+    unroute: async () => { restoreAssets = true; },
+    goto: async () => {
+      navigations += 1;
+      if (navigations === 1) currentUrl = 'https://partner.spacecloud.kr/auth/login';
+      else if (navigations === 2) {
+        assert.equal(restoreAssets, true);
+        currentUrl = 'https://partner.spacecloud.kr/auth/mypage';
+      } else {
+        currentUrl = target;
+        resolveCalendar(calendarResponse);
+      }
+    },
+    url: () => currentUrl,
+    evaluate: async () => { throw new Error('must allow the site to initialize before probing'); },
+    waitForResponse: async predicate => {
+      assert.equal(predicate(calendarResponse), true);
+      return calendar;
+    },
+    waitForURL: async predicate => {
+      assert.equal(predicate(new URL('https://partner.spacecloud.kr/auth/login')), false);
+      assert.equal(predicate(new URL('https://example.org/auth/mypage')), false);
+      assert.equal(predicate(new URL('https://partner.spacecloud.kr/auth/mypage')), true);
+    },
+    title: async () => 'SpaceCloud',
+    close: async () => {},
+  };
+  const result = await checkSpacecloudLogin({ newPage: async () => page });
+  assert.equal(navigations, 3);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.apiStatus, 200);
+  assert.equal(result.refreshAttempted, true);
+  assert.equal(isSpacecloudAuthenticationUrl('https://partner.spacecloud.kr/auth/login'), true);
+  assert.equal(isSpacecloudAuthenticationUrl('https://partner.spacecloud.kr/auth/callback/naver'), true);
+  assert.equal(isSpacecloudAuthenticationUrl('https://partner.spacecloud.kr/auth/mypage'), false);
+  assert.notEqual(classifySpacecloudSessionCheck({
+    url: 'https://partner.spacecloud.kr/auth/mypage',
+  }).status, 'ready', 'an account page alone must not prove booking API access');
+});
+
+test('a login routing URL stays inconclusive unless the loaded site proves sign-out', async () => {
+  for (const signedOut of [false, true]) {
+    const page = {
+      route: async () => {},
+      unroute: async () => {},
+      goto: async () => {},
+      url: () => 'https://partner.spacecloud.kr/auth/login',
+      waitForResponse: async () => { throw new Error('response timed out'); },
+      waitForURL: async () => { throw new Error('account navigation timed out'); },
+      evaluate: async () => signedOut,
+      title: async () => 'SpaceCloud',
+      close: async () => {},
+    };
+    const result = await checkSpacecloudLogin({ newPage: async () => page });
+    assert.equal(result.status, signedOut ? 'login_required' : 'needs_check');
+    assert.equal(result.refreshAttempted, true);
+    assert.equal(result.refreshOutcome, signedOut ? 'auth-page' : 'inconclusive');
+  }
 });
 
 function calendarSnapshot(year, month, cellCount) {
