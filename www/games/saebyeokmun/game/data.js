@@ -1,6 +1,6 @@
-import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=189-motion-cache';
-import {STAGE2_ART} from './stage2-art.js?v=189-motion-cache';
-import {EXTRA_MONSTERS} from './expansion-monsters.js?v=189-motion-cache';
+import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=218-integrated';
+import {STAGE2_ART} from './stage2-art.js?v=218-integrated';
+import {EXTRA_MONSTERS} from './expansion-monsters.js?v=218-integrated';
 export {GATE_STYLES};
 // Single source of sample tuning. All folklore-derived combat roles are game inventions.
 export const ROAD=4200;
@@ -49,6 +49,8 @@ export function skyState(progress,time=0,stage=0){
 // These are scenery coordinates, never a second collision or travel model.
 export const ROAD_SECTIONS=['bank','bridge','causeway','approach'].map((frame,i)=>({frame,x:-650+i*1536,width:1536,height:256,foot:70}));
 export const SHOT_TIME=.18;
+// World-space impact footprint, shared by allied and enemy spell projectiles.
+export const SPELL_AREAS={charm:120,ink:120,seal:120,hex:120};
 // One overlap order for painting and equal-distance target selection. The player stays visible.
 export const actorLayer=actor=>actor.id===undefined?Number.MAX_SAFE_INTEGER:(actor.id-(Number.isFinite(actor.lane)?actor.lane*1000000:0));
 export const HERO_STANDOFF=400;
@@ -108,18 +110,18 @@ export function validParty(value){return Array.isArray(value)&&value.length>=1&&
 export const UNIT_TIERS={beast:{label:"짐승",level:0},bond:{label:"노비",level:1},common:{label:"평민",level:2},noble:{label:"귀족",level:3},legendary:{label:"전설",level:4}};
 // Roster presentation from the approved sample; no combat or saved progression.
 export const UNITS=Object.fromEntries(Object.entries({
- cow:{rosterCard:{rarity:"일반",stars:1},cardArt:"summon-card-cow-v139.webp",tier:"beast",price:0,name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,speed:74/1.44,range:30,damage:12,period:1.35,cost:30,cooldown:4,formation:305,spacing:0,guard:.6,weapon:'horn'},
+ cow:{rosterCard:{rarity:"일반",stars:1},cardArt:"summon-card-cow-v139.webp",tier:"beast",price:0,name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,hpScale:.7,speed:74/1.44,range:30,damage:12,period:1.35,cost:30,cooldown:4,formation:305,spacing:0,guard:.6,weapon:'horn'},
  keeper:{rosterCard:{rarity:"일반",stars:2},cardArt:"summon-card-keeper-v139.webp",tier:"bond",price:0,name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:275,damage:17,period:1.15,cost:18,cooldown:3.5,formation:125,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:295,weapon:'ink'}}},
  rabbit:{rosterCard:{rarity:"일반",stars:2},cardArt:"summon-card-rabbit-v139.webp",tier:"beast",price:0,name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:185,damage:24,period:1.35,cost:24,cooldown:4,formation:215,spacing:0,guard:0,weapon:'seed'},
  scholar:{rosterCard:{rarity:"영웅",stars:3},cardArt:"summon-card-scholar-v139.webp",tier:"noble",price:0,name:'선비',role:'지원 · 붓과 부채로 봉인',hp:56,speed:68,range:540,damage:16,period:2.1,cost:34,cooldown:5,formation:-140,spacing:0,guard:0,weapon:'seal'},
  spearman:{rosterCard:{rarity:"일반",stars:2},cardArt:"summon-card-spearman-v141.webp",tier:"common",name:'조선 창병',role:'조력 · 전방 창 찌르기',price:80,hp:130,speed:74,range:75,damage:10,period:1.8,cost:26,cooldown:4.5,formation:270,spacing:0,guard:.15,weapon:'spear'},
- archer:{rosterCard:{rarity:"희귀",stars:3},tier:"common",name:'조선 궁병',role:'조력 · 후열 화살',price:100,hp:72,speed:70,range:420,damage:10,period:2.3,cost:24,cooldown:4.5,formation:20,spacing:0,guard:0,weapon:'arrow'},
+ archer:{rosterCard:{rarity:"희귀",stars:3},tier:"common",name:'조선 궁병',role:'조력 · 후열 화살',price:100,hp:72,speed:70,runSpeed:73.5,search:700,range:420,damage:10,period:2.3,cost:24,cooldown:4.5,formation:20,spacing:0,guard:0,weapon:'arrow'},
  king:{rosterCard:{rarity:"전설",stars:5},tier:"legendary",name:'조선 왕',role:'지원 · 어보 봉인',price:260,hp:95,speed:65,range:380,damage:20,period:2.4,cost:38,cooldown:5.5,formation:0,spacing:0,guard:.1,weapon:'seal'},
  prince:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'세자',role:'공격 · 활 사격',price:180,hp:65,speed:82,range:330,damage:22,period:1.5,cost:30,cooldown:4.5,formation:90,spacing:0,guard:0,weapon:'arrow'},
  minister:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'영의정',role:'지원 · 교지 봉인',price:220,hp:85,speed:62,range:500,damage:14,period:2.2,cost:32,cooldown:5,formation:-80,spacing:0,guard:.05,weapon:'seal'},
  cavalry:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'기마 무관',role:'돌파 · 기마 검격',price:240,hp:170,speed:90,range:100,damage:18,period:1.7,cost:40,cooldown:6,formation:295,spacing:0,guard:.3,weapon:'sword'},
  healer:{rosterCard:{rarity:"희귀",stars:3},cardArt:"summon-card-healer-v139.webp",tier:"common",price:0,name:'약방 의원',role:'회복 · 뒤에서 치유 시전',hp:62,speed:115,range:150,search:980,damage:0,heal:14,period:3.4,cost:36,cooldown:6,formation:-230,spacing:120,guard:0,weapon:'medicine'}
-}).map(([kind,stats])=>[kind,{...stats,hp:stats.hp*ALLY_HP_SCALE,damage:stats.damage*ALLY_OUTPUT,...(stats.heal?{heal:stats.heal*ALLY_OUTPUT}:{}),...(stats.upgrade?{upgrade:{...stats.upgrade,stats:{...stats.upgrade.stats,damage:stats.upgrade.stats.damage*ALLY_OUTPUT}}}:{})}]));
+}).map(([kind,stats])=>[kind,{...stats,hp:stats.hp*ALLY_HP_SCALE*(stats.hpScale??1),damage:stats.damage*ALLY_OUTPUT,...(stats.heal?{heal:stats.heal*ALLY_OUTPUT}:{}),...(stats.upgrade?{upgrade:{...stats.upgrade,stats:{...stats.upgrade.stats,damage:stats.upgrade.stats.damage*ALLY_OUTPUT}}}:{})}]));
 export function unitStats(type,keeperRank=0){const s=UNITS[type];return type==='keeper'&&keeperRank?{...s,...s.upgrade.stats}:s;}
 // One shared party clearance preserves the authored differences between
 // firing slots. Visual combat review selects90: close without hiding faces.
@@ -129,7 +131,7 @@ for(const kind of Object.keys(UNITS))ENEMY_FRONT[kind]=ENEMY_FRONT.hero;
 // The ox uses the supplied video: 48 walk, 48 run and 48 retimed attack cels.
 // Its 74-unit stride / 1.44s cadence stays coupled to actual travel; other bodies stay four cels.
 // Hover is a body-height ratio, so the shared presentation scale also scales the air gap.
-export const MOTION={dokkaebi:{walkFps:5,walkFrames:4},bulgasari:{walkFps:5,walkFrames:4},changgwi:{walkFps:5,walkFrames:4},gumiho:{walkFps:5,walkFrames:4},bandit:{walkFps:5,walkFrames:4},pirate:{walkFps:5,walkFrames:4},king:{duration:.9,impact:.45,walkFps:5,walkFrames:4},prince:{duration:.8,impact:.4,walkFps:6,walkFrames:4},minister:{duration:1,impact:.5,walkFps:5,walkFrames:4},cavalry:{duration:.8,impact:.4,walkFps:6,walkFrames:4},haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,angerFrames:98,angerFps:48,walkFps:48/1.44,walkFrames:48,runFps:48/1.05,runFrames:48,attackFrames:48,idleFrame:96},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},healer:{duration:3.2,impact:1.45,notice:29/24,walkFps:8,walkFrames:4},warden:{walkFps:4,walkFrames:4},ferryman:{walkFps:4,walkFrames:4},waterghost:{walkFps:4,walkFrames:4},spearman:{duration:35/24,impact:8/24,anticipation:29/24,walkFps:5,walkFrames:4},archer:{duration:81/24,impact:75/24,walkFps:5,walkFrames:4},mangtae:{walkFps:6,walkFrames:4},shadow:{walkFps:7,walkFrames:4},skirt:{walkFps:106/72*4,walkFrames:4},horse:{walkFps:66/94*4,walkFrames:4},reaper:{duration:45/24,impact:28/24,projectileTravel:13/24,hover:12/210,walkFps:58/78*4,walkFrames:4},boss:{walkFps:16/40*6,walkFrames:6,idleFrame:0}};
+export const MOTION={dokkaebi:{walkFps:5,walkFrames:4},bulgasari:{walkFps:5,walkFrames:4},changgwi:{walkFps:5,walkFrames:4},gumiho:{walkFps:5,walkFrames:4},bandit:{walkFps:5,walkFrames:4},pirate:{walkFps:5,walkFrames:4},king:{duration:.9,impact:.45,walkFps:5,walkFrames:4},prince:{duration:.8,impact:.4,walkFps:6,walkFrames:4},minister:{duration:1,impact:.5,walkFps:5,walkFrames:4},cavalry:{duration:.8,impact:.4,walkFps:6,walkFrames:4},haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,angerFrames:98,angerFps:48,walkFps:48/1.44,walkFrames:48,runFps:48/1.05,runFrames:48,attackFrames:48,idleFrame:96},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},healer:{duration:3.2,impact:1.45,notice:29/24,walkFps:8,walkFrames:4},warden:{walkFps:4,walkFrames:4},ferryman:{walkFps:4,walkFrames:4},waterghost:{walkFps:4,walkFrames:4},spearman:{duration:35/24,impact:8/24,anticipation:29/24,walkFps:5,walkFrames:4},archer:{duration:97/24,impact:79/24,walkFps:5,walkFrames:4},mangtae:{walkFps:6,walkFrames:4},shadow:{walkFps:7,walkFrames:4},skirt:{walkFps:106/72*4,walkFrames:4},horse:{walkFps:66/94*4,walkFrames:4},reaper:{duration:45/24,impact:28/24,projectileTravel:13/24,hover:12/210,walkFps:58/78*4,walkFrames:4},boss:{walkFps:16/40*6,walkFrames:6,idleFrame:0}};
 export function motionFrame(kind,walk,moving,action){
  const s=MOTION[kind],walkFrames=s.walkFrames||4,attackFrames=s.attackFrames||4;
  return action?walkFrames+Math.min(attackFrames-1,Math.floor(action.elapsed/s.duration*attackFrames)):(moving||walk>0)?Math.floor(walk*s.walkFps)%walkFrames:(s.idleFrame??1);
@@ -255,13 +257,15 @@ export function waveBalance(index,stage=0,routeWaves=null){
  const waves=routeWaves||STAGES[stage]?.waves||WAVES,i=Math.max(0,Math.min(waves.length-1,index)),authored=BALANCE_REFERENCE[waves[i].balanceIndex??i],available=['cow',...STAGE_REWARDS.slice(0,stage)],ref=stage<10?{party:authored.party.map(k=>available.includes(k)?k:'cow'),rank:0}:authored;
  const budget=ref.party.reduce((n,k)=>n+UNITS[k].cost,0)+(ref.rank?UNITS.keeper.upgrade.price:0);
  const allies=ref.party.reduce((n,k)=>n+combatPower(unitStats(k,ref.rank)),0);
+ // Remove per-unit live HP tuning only from the authored enemy budget.
+ const referenceAllies=ref.party.reduce((n,k)=>{const s=unitStats(k,ref.rank);return n+combatPower({...s,hp:s.hp/(s.hpScale??1)});},0);
  const enemyStats=waves[i].types.map(k=>{
   const s=ENEMIES[k],a=s.ability;
   if(!a)return s;
   const cycle=a.cooldown+a.windup+(a.duration||0),hits=a.impacts?.length??1,output=((a.damage||0)+(a.splash||0)*ref.party.length)*hits+(a.heal||0)*waves[i].types.length;
   return {...s,damage:s.damage*a.cooldown/cycle+output*s.period/cycle};
  });
- const baseEnemy=enemyStats.reduce((n,s)=>n+combatPower(s),0),pressure=STAGES[stage]?.pressure??1,scale=allies/Math.sqrt(ALLY_HP_SCALE*ALLY_OUTPUT)/baseEnemy/1.03*pressure;
+ const baseEnemy=enemyStats.reduce((n,s)=>n+combatPower(s),0),pressure=STAGES[stage]?.pressure??1,scale=referenceAllies/Math.sqrt(ALLY_HP_SCALE*ALLY_OUTPUT)/baseEnemy/1.03*pressure;
  const enemies=baseEnemy*scale*Math.sqrt(ENEMY_OUTPUT);
  return {budget,allies,enemies,scale,enemyStats,pressure,reference:ref,advantage:allies/enemies-1};
 }

@@ -1,10 +1,10 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=189-motion-cache';
-import {HEALER_VIDEO} from './healer-motion.js?v=189-motion-cache';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=189-motion-cache';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=189-motion-cache';
-import {AssetDownloads} from './downloads.js?v=189-motion-cache';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=189-motion-cache';
-import {ASSET_BYTES} from './asset-sizes.js?v=189-motion-cache';
+import {ATLAS_SLICES} from './atlas-slices.js?v=218-integrated';
+import {HEALER_VIDEO} from './healer-motion.js?v=218-integrated';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=218-integrated';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=218-integrated';
+import {AssetDownloads} from './downloads.js?v=218-integrated';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=218-integrated';
+import {ASSET_BYTES} from './asset-sizes.js?v=218-integrated';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -487,13 +487,16 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // Retain only the immediate prepared successor of each displayed page.
    // This shares the existing bounded GPU cache; retired poses do not pin chains.
    for(const im of referenced){const next=this.videoFrames?.get(im.texture.key)?.nextPage;if(next)pinned.add(next);}
-   // Warmup is a control-readiness promise, not just a recently-used hint.
-   // Retain the entry half-second of the controlled bodies inside the same
-   // GPU budget, even after idle/attack pages have aged those frames out of LRU.
-   // Resolve pages at the current density so rotation releases the old profile.
-   if(this.videoFrameIndex)for(const kind of ['girl','haetae'])for(const name of ['idle','walk','run']){
-    const spec=VIDEO_MOTION[kind][name],start=name==='idle'?0:spec.cycles?.[0]?.start??0;
-    const end=Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+11);
+   // Preserve control readiness and selected/live companions' return to walking.
+   // Otherwise combat can evict its entry stride, leaving a rage/attack cel
+   // sliding until decoding finishes. Same-kind bodies share the entry six cels.
+   // Controlled bodies retain their existing half-second; companions retain
+   // only the entry walking pages. Selected party covers warmup before spawn;
+   // removed companions/party and density changes release obsolete pins.
+   if(this.videoFrameIndex)for(const kind of new Set(['girl','haetae',...(model.party||[]),...model.allies.filter(a=>a.hp>0).map(a=>a.type)]))for(const name of (['girl','haetae'].includes(kind)?['idle','walk','run']:['walk'])){
+    const spec=VIDEO_MOTION[kind]?.[name];if(!spec)continue;
+    const start=name==='idle'?0:spec.cycles?.[0]?.start??0;
+    const end=Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+(['girl','haetae'].includes(kind)?11:VIDEO_PAGE_FRAMES-1));
     for(let page=Math.floor(start/VIDEO_PAGE_FRAMES);page<=Math.floor(end/VIDEO_PAGE_FRAMES);page++)pinned.add(this.videoPage(this.videoFrameIndex.get(spec.prefix+Math.max(start,page*VIDEO_PAGE_FRAMES))).key);
    }
    const trim=(cache,budget,bytes,remove)=>{
@@ -1289,8 +1292,8 @@ export function makeGame(model,onReady,onFrame,onEvents){
    }
    v.treating=treating;v.elapsed=action?.elapsed??0;
    if(moving||action||hit>0||!idleAllowed)v.idleSince=clock;
-   const actor=kind==='cow'||clips.anticipation?model.allies.find(a=>'a'+a.id===key):null;
-   const running=kind==='healer'?action?.phase==='approach':kind==='cow'?actor?.alerted||model.enemies.some(e=>e.hp>0&&e.x>=(actor?.x??0)-55&&e.x<(actor?.x??0)+550):(kind==='girl'||kind==='haetae'||kind==='archer')&&model.direction!==0;
+   const actor=kind==='cow'||clips.anticipation||UNITS[kind]?.runSpeed?model.allies.find(a=>'a'+a.id===key):null;
+   const running=kind==='healer'?action?.phase==='approach':UNITS[kind]?.runSpeed?actor?.alerted:kind==='cow'?actor?.alerted||model.enemies.some(e=>e.hp>0&&e.x>=(actor?.x??0)-55&&e.x<(actor?.x??0)+550):(kind==='girl'||kind==='haetae'||kind==='archer')&&model.direction!==0;
    let name=hit>0&&clips.hurt&&!['cow','spearman'].includes(kind)?'hurt':action?.kind===kind&&kind!=='healer'?(clips[action.phase]?action.phase:'attack'):moving?(running?(kind==='healer'&&clips.runUrgent?'runUrgent':'run'):'walk'):treating?v.cast:'idle';
    if(enemyActor){
     if(hit>(v.hit??0))v.hurtAt=clock;
@@ -1311,7 +1314,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
     const recovery=clips.receiveHeal&&this.recoveryCel(kind,UNITS[kind]?Number(key.slice(1)):null);
     if(recovery){name='receiveHeal';recoveryFrame=Number(recovery.slice(clips.receiveHeal.prefix.length));}
     const age=clock-v.idleSince,slot=Math.floor((age-8)/14),within=(age-8)%14;
-    const variants=['dance','annoyed','sit'].filter(n=>clips[n]);
+    const variants=(clips.idle.variants||['dance','annoyed','sit']).filter(n=>clips[n]);
     if(this.videoFrameIndex&&age>6&&variants.length){const warm=Math.floor((age-6)/14);if(v.warmSlot!==warm){v.warmSlot=warm;v.slot=warm;v.idle=variants[Math.floor(Math.random()*variants.length)];}if((age-6)%14<2)this.videoCel(clips[v.idle].prefix+'0',null,false,true);}
     if(!recovery&&age>8&&variants.length){if(v.slot!==slot){v.slot=slot;v.idle=variants[Math.floor(Math.random()*variants.length)];}if(within<clips[v.idle].frames/clips[v.idle].fps)name=v.idle;}
    }
@@ -1487,10 +1490,10 @@ export function makeGame(model,onReady,onFrame,onEvents){
      if(p>=1){e.sprite?.destroy();continue;}
      const stone=e.kind==='stone',seed=e.kind==='seed',ink=e.kind==='ink',seal=e.kind==='seal',hex=e.kind==='hex',arrow=e.kind==='arrow',dir=Math.sign(e.to-e.from)||1;
      const source=e.actor==='girl'?this.girl:this.sprites.get((e.enemy?'e':'a')+e.actor);
-     const target=e.areaRadius?null:e.targetActor===null?this.hero:this.sprites.get((e.enemy?'a':'e')+e.targetActor);
+     const target=e.areaRadius&&arrow?null:e.targetActor===null?this.hero:this.sprites.get((e.enemy?'a':'e')+e.targetActor);
      if(!e.launchPoint){const at=source?this.bodyPoint(source,e.sourceKind,0,true):{x:e.from-this.offset+dir*18,y:ground-78};e.launchPoint={x:at.x+this.offset,y:at.y};}
      const close=target&&Math.abs((target.x+this.offset)-(e.to+(e.targetActor===null?this.travellerOffset('hero'):0)))<=55;
-     const end=close?this.bodyPoint(target,e.targetKind,-dir):{x:e.to-this.offset,y:e.areaRadius?GROUND-8:(e.targetGroundY??GROUND)-(BODY_HEIGHT[e.targetKind]||132)*.52};
+     const end=close?this.bodyPoint(target,e.targetKind,-dir):{x:e.to-this.offset,y:e.areaRadius&&arrow?GROUND-8:(e.targetGroundY??GROUND)-(BODY_HEIGHT[e.targetKind]||132)*.52};
      if(e.hit===false)end.y=(e.targetGroundY??GROUND)-145;
      if(e.flightDuration&&e.t>=e.flightDuration){e.impactPoint??={x:end.x+this.offset,y:end.y};end.x=e.impactPoint.x-this.offset;end.y=e.impactPoint.y;}
      const from=e.launchPoint.x,fy=e.launchPoint.y,ty=end.y,travel=e.flightDuration?Math.min(1,e.t/e.flightDuration):p;

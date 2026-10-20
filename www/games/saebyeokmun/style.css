@@ -1337,7 +1337,7 @@ body[data-screen="map"] .next-map-loading{display:none}
 .journey-fireflies i:nth-child(6){left:12%;top:74%;animation-delay:-4s}
 @keyframes journey-firefly{0%,100%{opacity:.1;transform:translate(0,4px)}50%{opacity:1;transform:translate(12px,-12px)}}
 .home-screen{background:#eee6d5;color:#353c37;overflow:hidden}
-.home-screen .journey-backdrop{background:#eee6d5 url('./assets/home-landscape-v77.png') left center/cover no-repeat}
+.home-screen .journey-backdrop{background:#eee6d5 url('./assets/home-landscape-v157.png') left center/cover no-repeat}
 .home-screen .journey-mist,.home-screen .journey-party,.home-screen .journey-fireflies{display:none}
 .home-copy{position:absolute;left:5%;top:6%;width:36%;text-shadow:0 1px 6px #fff8dc70}
 .home-copy .eyebrow,.map-heading .eyebrow{color:#354b4f;font-size:12px;letter-spacing:2px}
@@ -1949,6 +1949,14 @@ img,svg,canvas{-webkit-user-drag:none}button,img,svg{user-select:none}
 }
 
 .settings-footer .version-link{color:inherit;text-underline-offset:3px;font-size:12px;padding:12px 2px;display:inline-block}
+
+/* Price fill shares the purse's presentation clock; cooldown remains vertical. */
+#summon-slots .summon-cost{overflow:hidden;isolation:isolate;background:#2d1a10;color:#ffedc2;border-radius:2px;box-shadow:inset 0 0 0 1px #9b703b;z-index:3;pointer-events:none;text-shadow:0 1px 1px #1b0e05;font-weight:700}
+#summon-slots .summon-cost::before{content:'';position:absolute;inset:0 auto 0 0;width:var(--cost-fill,0%);background:linear-gradient(#ffe3a1,#ca8c28);box-shadow:inset 0 1px #fff1c866;transition:width .12s linear;pointer-events:none;z-index:-1}
+#summon-slots .summon-cost::after{content:none}
+#summon-slots .summon-cost span{position:relative;white-space:nowrap}
+#summon-slots .action[data-state=ready] .summon-cost{color:#321c09;text-shadow:0 1px #ffeac3;box-shadow:inset 0 0 0 1px #ffe5a6}
+@media(prefers-reduced-motion:reduce){#summon-slots .summon-cost::before{transition:none}}
 
 /* Painted summon fronts share live labels, cost, limits and cooldowns. */
 .summon-group .action[data-tier=beast]{--tier:#b69960;--tier-ink:#655033;--tier-wash:#eee2c8}

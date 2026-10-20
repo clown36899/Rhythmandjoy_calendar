@@ -1,4 +1,4 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=189-motion-cache';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,SPELL_AREAS,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=218-integrated';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
@@ -88,7 +88,7 @@ export class Journey {
    if(e.entering){if(Number.isFinite(e.entryOrigin)||e.x>bounds.right-pad*.5)continue;e.entering=false;}
    if(e.x<bounds.left-pad){
     // A portal crossing cancels the old contact, even if the new position is close to the old aim point.
-    for(const shot of this.projectiles)if(!shot.enemy&&shot.targetId===e.id)shot.targetId=null;
+    for(const shot of this.projectiles)if(!shot.enemy&&shot.targetId===e.id){shot.targetId=null;shot.areaRadius=0;}
     e.x=e.entryOrigin=this.portalX;e.entryAt=this.time;e.entering=true;e.action=null;e.windup=0;delete e.engagedId;}
    else e.x=Math.min(e.x,bounds.right-pad*.5);
   }
@@ -229,7 +229,7 @@ export class Journey {
  // A not-yet-arrived unit keeps its position; knockback cannot pull it out early.
  pushEnemy(e,to){if(ENEMIES[e.type].stationary||this.viewport&&e.entering)return;const right=this.viewport&&!this.route.deployment&&!e.entering?Math.min(this.gateX-45,this.viewport.right-this.screenPadding(e.type)*.5):this.gateX-45;e.x=Math.max(e.x,Math.min(right,to));}
  // A flying attack outlives its launch pose. Journey alone owns contact and rewards.
- launchShot({actor,sourceKind,weapon,from,target,to=target?.x,damage,high=false,stun=0,enemy=false,duration=SHOT_TIME,arc=0,areaRadius=0,finishOnScreen=false}){
+ launchShot({actor,sourceKind,weapon,from,target,to=target?.x,damage,high=false,stun=0,enemy=false,duration=SHOT_TIME,arc=0,areaRadius=SPELL_AREAS[weapon]??0,finishOnScreen=false}){
   const shot={actor,sourceKind,weapon,from,to,targetId:target?.id??null,targetKind:target?.type||'haetae',damage,high,stun,enemy,t:0,duration,arc,areaRadius,finishOnScreen};
   this.projectiles.push(shot);this.emit('projectile',{...shot,flight:shot,kind:weapon,targetActor:target?.id??null,hit:!high||target?.type!=='skirt'});
  }
@@ -237,9 +237,12 @@ export class Journey {
   for(const shot of this.projectiles){
    if(this.status!=='playing')break;
    shot.t+=dt;if(shot.t+1e-9<shot.duration)continue;
-   if(shot.areaRadius){for(const e of this.enemies)if(e.hp>0&&e.type!=='gate'&&Math.abs(e.x-shot.to)<=shot.areaRadius){
-    if(shot.finishOnScreen&&this.viewport&&(e.x<this.viewport.left||e.x>this.viewport.right))continue;
-    this.hurtEnemy(e,shot.finishOnScreen?e.hp:shot.damage,shot.from,'arrow');
+   if(shot.areaRadius){for(const target of shot.enemy?[this,...this.allies]:this.enemies){
+    if(this.status!=='playing')break;
+    if(target.hp<=0||Math.abs(target.x-shot.to)>shot.areaRadius||(target.type==='gate'&&!SPELL_AREAS[shot.weapon])||(shot.high&&target.type==='skirt'))continue;
+    if(shot.finishOnScreen&&this.viewport&&(target.x<this.viewport.left||target.x>this.viewport.right))continue;
+    if(shot.enemy){if(target===this)this.hurtHero(shot.damage,shot.from,shot.weapon);else this.hurtAlly(target,shot.damage,shot.from,shot.weapon);}
+    else{this.hurtEnemy(target,shot.finishOnScreen?target.hp:shot.damage,shot.from,shot.weapon);if(shot.stun){target.stun=shot.stun;target.windup=0;target.action=null;}}
    }continue;}
    const target=shot.enemy?(shot.targetId===null?this:this.allies.find(a=>a.id===shot.targetId&&a.hp>0)):this.enemies.find(e=>e.id===shot.targetId&&e.hp>0);
    // Keep the original selected target, with a finite contact envelope; no retarget on death.
@@ -342,7 +345,9 @@ export class Journey {
    if(action.kind==='enemy'){
     const ally=action.targetId===null?null:this.allies.find(a=>a.id===action.targetId&&a.hp>0);
     const valid=action.targetId===null||!!ally,targetX=ally?.x??this.x;
-    if(valid&&this.canStrike(actor,ally||this)&&contactGap(actor,ally||this)<=ENEMIES[actor.type].range+1e-6){
+    const spell=actor.type==='reaper'||['ranged','heal'].includes(ENEMIES[actor.type].behavior);
+    if(spell&&Number.isFinite(action.x))this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:'hex',duration:MOTION[actor.type]?.projectileTravel??SHOT_TIME,from:actor.x,target:ally||(action.targetId===null?this:undefined),to:action.x,damage:ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
+    else if(valid&&this.canStrike(actor,ally||this)&&contactGap(actor,ally||this)<=ENEMIES[actor.type].range+1e-6){
      if(actor.type==='reaper'||['ranged','heal'].includes(ENEMIES[actor.type].behavior))this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:'hex',duration:MOTION[actor.type]?.projectileTravel??SHOT_TIME,from:actor.x,target:ally||this,damage:ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
      else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);
      this.emit('claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});}
@@ -352,7 +357,8 @@ export class Journey {
     for(const e of this.enemies)if(e.hp>0&&e.x>=this.x-70&&contactGap(this,e)<=390){this.hurtEnemy(e,44,this.x,'stomp');this.pushEnemy(e,e.x+85);e.stun=2.1;e.windup=0;e.action=null;}
    }else{
     const target=this.enemies.find(e=>e.id===action.targetId&&e.hp>0),unit=unitStats(actor.type,this.keeperRank);
-    if(target&&this.canStrike(actor,target)&&(this.lanes||target.x>=actor.x-55)&&contactGap(actor,target)<=unit.range+1e-6){
+    if(SPELL_AREAS[unit.weapon]&&Number.isFinite(action.x))this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:unit.weapon,from:actor.x,target,to:action.x,damage:unit.damage,high:unit.weapon==='seal',stun:unit.weapon==='seal'?.65:0});
+    else if(target&&this.canStrike(actor,target)&&(this.lanes||target.x>=actor.x-55)&&contactGap(actor,target)<=unit.range+1e-6){
      const high=unit.weapon==='seed'||unit.weapon==='seal',hit=!high||target.type!=='skirt';
      if(['horn','spear','sword'].includes(unit.weapon)){this.emit('swipe',{actor:actor.id,kind:unit.weapon,sourceKind:actor.type,targetKind:target.type,targetActor:target.id,x:actor.x,from:actor.x,to:target.x});this.hurtEnemy(target,unit.damage,actor.x,unit.weapon);}
      else this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:unit.weapon,from:actor.x,target,damage:unit.damage,high,stun:unit.weapon==='seal'?.65:0});
@@ -460,6 +466,8 @@ export class Journey {
    const s=unitStats(a.type,this.keeperRank),oldAX=a.x,oldLane=a.lane;
    if(a.action?.kind==='team'){a.cd=Math.max(0,a.cd-dt);a.hit=Math.max(0,a.hit-dt);continue;}
    a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(this.advanceEntry(a,false,dt))continue;
+   // Detection and run speed belong to the companion, independent of player input.
+   if(s.runSpeed)a.alerted=this.enemies.some(e=>e.hp>0&&!e.entering&&this.time>=(e.entryAt??e.bornAt)&&e.x>=a.x-55&&contactGap(a,e)<=s.search);
    const reactionPhase=a.type==='cow'?'anger':MOTION[a.type]?.anticipation?'anticipation':null;
    if(reactionPhase){
     const threatened=this.enemies.some(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55&&this.canStrike(a,e)&&contactGap(a,e)<=s.range+30+1e-6);
@@ -487,8 +495,8 @@ export class Journey {
    // Companions march independently of traveller input, stopping at firing range.
    const goal=Math.min(this.roadEnd-90,contactFront?a.x+contactGap(a,contactFront)-s.range:this.roadEnd-90),gap=goal-a.x;
    if(target&&this.canStrike(a,target)&&contactGap(a,target)<=s.range+1e-6&&a.cd<=0&&(a.type!=='cow'||a.alerted)){
-    a.cd=s.period;a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,dir:Math.sign(target.x-a.x)||1};
-   }else{const travel=this.lanes&&target?(contactGap(a,target)>s.range?Math.sign(target.x-a.x)*Math.min(contactGap(a,target)-s.range,WALK_SPEED*dt):0):Math.max(0,Math.min(gap,WALK_SPEED*dt));this.moveBody(a,travel,dt,WALK_SPEED,target);}
+    a.cd=s.period;a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,x:target.x,dir:Math.sign(target.x-a.x)||1};
+   }else{const speed=s.runSpeed?(a.alerted?s.runSpeed:s.speed):WALK_SPEED,travel=this.lanes&&target?(contactGap(a,target)>s.range?Math.sign(target.x-a.x)*Math.min(contactGap(a,target)-s.range,speed*dt):0):Math.max(0,Math.min(gap,speed*dt));this.moveBody(a,travel,dt,speed,target);}
    this.walkBody(a,oldAX,oldLane,s.speed);
   }
   for(const e of this.enemies){
@@ -508,6 +516,8 @@ export class Journey {
     else this.hurtHero(amount*(e.powerScale??1)*ENEMY_OUTPUT,e.x,e.type);
    };
    e.ability-=dt;
+   // One eligible recipient set owns both ritual admission and restoration.
+   const patients=s.ability&&(e.type==='reaper'||s.behavior==='heal')?this.enemies.filter(other=>other.hp>0&&other.hp<other.maxHp&&!ENEMIES[other.type].stationary&&(!this.route.deployment||Math.abs(other.x-e.x)<=s.ability.range)):null;
    if(e.windup>0){
     e.windup-=dt;
     if(e.windup<=0){
@@ -517,14 +527,14 @@ export class Journey {
       e.ability=s.ability.cooldown;
      }else if(e.type==='horse'||s.behavior==='charge'){e.x=Math.min(e.x,Math.max(e.x-gap+s.range,e.x-150));attackTarget(s.ability.damage);e.ability=s.ability.cooldown;this.emit('charge',{x:e.x,to:target.x,kind:e.type});}
      else if(e.type==='reaper'||s.behavior==='heal'){
-      for(const other of this.enemies.filter(other=>!ENEMIES[other.type].stationary&&(!this.route.deployment||Math.abs(other.x-e.x)<=s.ability.range)))other.hp=Math.min(other.maxHp,other.hp+s.ability.heal*(e.powerScale??1)*ENEMY_OUTPUT);
+      for(const other of patients)other.hp=Math.min(other.maxHp,other.hp+s.ability.heal*(e.powerScale??1)*ENEMY_OUTPUT);
       this.emit('heal',{x:e.x,enemy:true,kind:e.type});e.ability=s.ability.cooldown;
      }
     }
     if(this.status!=='playing')break;
     continue;
    }
-   if(s.ability&&e.ability<=0&&gap<s.ability.range){
+   if(s.ability&&e.ability<=0&&gap<s.ability.range&&(!patients||patients.length)){
     e.windup=s.ability.windup;
     e.focus=target.x;
     this.emit('warning',{x:e.x,kind:e.type});
@@ -532,8 +542,8 @@ export class Journey {
     else if(e.type==='horse')this.say('말이 돌진을 준비해요. 발구름!');
     continue;
    }
-   if(gap>s.range||!this.canStrike(e,chosen)){const oldEX=e.x,oldLane=e.lane,dx=Math.min(s.speed*this.enemySpeedScale*dt,Math.max(0,gap-s.range),Math.max(0,e.x-((s.stopAt===undefined?undefined:this.roadEnd-(ROAD-s.stopAt))??(this.viewport&&!this.route.deployment?this.viewport.left-this.screenPadding(e.type)-1:START-120))));this.moveBody(e,this.lanes&&chosen.x>e.x?Math.min(s.speed*this.enemySpeedScale*dt,Math.max(0,gap-s.range),this.gateX-e.x):-dx,dt,s.speed*this.enemySpeedScale,chosen);this.walkBody(e,oldEX,oldLane,s.speed);}
-   else if(e.cd<=0){e.cd=s.period;e.action={kind:'enemy',elapsed:0,resolved:false,targetId:target.a?.id??null,dir:Math.sign(target.x-e.x)||-1};}
+   if(gap>s.range+1e-6||!this.canStrike(e,chosen)){const oldEX=e.x,oldLane=e.lane,dx=Math.min(s.speed*this.enemySpeedScale*dt,Math.max(0,gap-s.range),Math.max(0,e.x-((s.stopAt===undefined?undefined:this.roadEnd-(ROAD-s.stopAt))??(this.viewport&&!this.route.deployment?this.viewport.left-this.screenPadding(e.type)-1:START-120))));this.moveBody(e,this.lanes&&chosen.x>e.x?Math.min(s.speed*this.enemySpeedScale*dt,Math.max(0,gap-s.range),this.gateX-e.x):-dx,dt,s.speed*this.enemySpeedScale,chosen);this.walkBody(e,oldEX,oldLane,s.speed);}
+   else if(e.cd<=0){e.cd=s.period;e.action={kind:'enemy',elapsed:0,resolved:false,targetId:target.a?.id??null,x:target.x,dir:Math.sign(target.x-e.x)||-1};}
    if(this.status!=='playing')break;
   }
   if(this.status==='playing')this.constrainScreen();

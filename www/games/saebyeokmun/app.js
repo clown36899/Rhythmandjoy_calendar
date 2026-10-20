@@ -1,10 +1,12 @@
-import {Campaign} from './game/campaign.js?v=189-motion-cache';
-import {Journey} from './game/model.js?v=189-motion-cache';
-import {Autoplay} from './game/autoplay.js?v=189-motion-cache';
-import {makeGame} from './game/scene.js?v=189-motion-cache';
-import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=189-motion-cache';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=189-motion-cache';
+import {Campaign} from './game/campaign.js?v=218-integrated';
+import {mountCollection} from './game/collection.js?v=218-integrated';
+import {Journey} from './game/model.js?v=218-integrated';
+import {Autoplay} from './game/autoplay.js?v=218-integrated';
+import {makeGame} from './game/scene.js?v=218-integrated';
+import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=218-integrated';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=218-integrated';
 const $=id=>document.getElementById(id);
+const collection=mountCollection(document,{stateFor:id=>campaign.cardState(id),claim:claimCollectionCard});
 const model=new Journey();
 const autoplay=new Autoplay(model);
 const requestedAutoplay=/(?:^|[?&])autoplay=1(?:&|$)/.test(window.location?.search||'');
@@ -41,6 +43,7 @@ const campaign=new Campaign(savedCampaign);
 clearedStages=0;while(campaign.cleared.includes(clearedStages))clearedStages++;
 let activeRun=0,draftParty=[],rosterFocus=campaign.party[0],rosterMotion=null;
 function saveCampaign(){try{localStorage.setItem('saebyeokmun-campaign',JSON.stringify(campaign.snapshot()));return true;}catch{showNotice('이 브라우저에서 저장할 수 없어요. 현재 화면에서만 유지됩니다.');return false;}}
+function claimCollectionCard(id){const before=campaign.snapshot().cards;if(!campaign.claimCard(id))return false;if(saveCampaign())return true;campaign.cards=before;return false;}
 let selectedStage=STAGES.findIndex((_,i)=>!campaign.cleared.includes(i));if(selectedStage<0)selectedStage=0;
 // View-only country browsing never writes Campaign or unlocks a stage.
 const STAGES_PER_COUNTRY=15,PREVIEW_STAGE_COUNT=5;
@@ -337,16 +340,22 @@ function completeInfo(){if(fullscreenPending||document.body.dataset.entryPhase||
 $('settings-open').addEventListener('click',()=>openInfo($('settings')));
 $('settings-return').addEventListener('click',()=>$('settings').close());
 $('settings').querySelector('.dialog-close').addEventListener('click',()=>$('settings').close());
-// Tabs change only the existing notes' visibility; pause and storage keep their owners.
-for(const kind of ['companions','enemies','sources'])$('codex-tab-'+kind).addEventListener('click',()=>{
- for(const key of ['companions','enemies','sources']){
+// Static collection cards join the same modal; pause, native previews and storage keep their owners.
+const codexTabs=['collection','companions','enemies','sources'];let codexTab='collection';
+function selectCodexTab(kind){
+ codexTab=kind;
+ $('codex').dataset.panel=kind;$('codex-library').open=false;$('codex-title').textContent=kind==='collection'?'인연첩':'도감';
+ for(const key of codexTabs){
   $('codex-'+key).hidden=key!==kind;$('codex-tab-'+key).setAttribute('aria-selected',String(key===kind));
  }
  $('codex').querySelector('.codex-body').scrollTop=0;
-});
-async function openCodex(){if(!ready||preparing)return;if(!scene.commonReady&&!await prepareFor('동료와 귀물 도감',p=>scene.ensureCommon(p),openCodex))return;openInfo($('codex'));}
+ if(kind==='collection')collection.open();
+}
+for(const kind of codexTabs)$('codex-tab-'+kind).addEventListener('click',()=>selectCodexTab(kind));
+async function openCodex(){if(!ready||preparing)return;if(!scene.commonReady&&!await prepareFor('동료와 귀물 도감',p=>scene.ensureCommon(p),openCodex))return;openInfo($('codex'));selectCodexTab(codexTab);}
 $('codex-open').addEventListener('click',openCodex);$('result-codex').addEventListener('click',openCodex);$('sources-open').addEventListener('click',openCodex);
 $('codex').querySelector('.dialog-close').addEventListener('click',()=>$('codex').close());
+$('codex-return').addEventListener('click',()=>$('codex').close());
 $('codex').addEventListener('close',()=>{for(const p of motionPreviews){p.variants.clear();p.frame=-1;p.img.removeAttribute('src');}if(scene?.commonReady)scene.retainFiles([...scene.stageKeys]);});
 $('codex').addEventListener('click',e=>{if(e.target===$('codex')){const r=$('codex').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)$('codex').close();}});
 for(const dialog of infoDialogs)dialog.addEventListener('close',completeInfo);
@@ -376,7 +385,7 @@ function hydrateIcons(root=document){
  }
 }
 function renderSummonSlots(){
- $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}" data-card="${s.cardArt?"painted":"native"}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-tier">${UNIT_TIERS[s.tier].level?['Ⅰ','Ⅱ','Ⅲ','Ⅳ'][UNIT_TIERS[s.tier].level-1]+' ':''}${UNIT_TIERS[s.tier].label}</span><span class="unit-count">0/${ALLY_TYPE_LIMIT}</span><span class="action-art"><img ${s.cardArt?'src="./assets/'+s.cardArt+'"':'data-icon="'+icon+'" src="'+(scene?.previewTexture(icon)||'')+'"'} alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
+ $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}" data-card="${s.cardArt?"painted":"native"}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-tier">${UNIT_TIERS[s.tier].level?['Ⅰ','Ⅱ','Ⅲ','Ⅳ'][UNIT_TIERS[s.tier].level-1]+' ':''}${UNIT_TIERS[s.tier].label}</span><span class="unit-count">0/${ALLY_TYPE_LIMIT}</span><span class="action-art"><img ${s.cardArt?'src="./assets/'+s.cardArt+'"':'data-icon="'+icon+'" src="'+(scene?.previewTexture(icon)||'')+'"'} alt="" draggable="false"></span><strong>${s.name}</strong><small class="summon-cost"><span>◎ ${s.cost}</span></small><span class="cooldown"></span></button>`;}).join('');
  lastKeeperRank=-1;hydrateIcons($('summon-slots'));
 }
 function rosterStars(count){
@@ -541,6 +550,8 @@ function onFrame(m,s){
   const spec=UNITS[name]?unitStats(name,m.keeperRank):baseSpec;
   const button=$('action-'+name),cd=m.cooldowns[name],full=!!UNITS[name]&&m.atSummonLimit(name);if(!button)continue;button.disabled=m.status!=='playing'||cd>0||m.coins<spec.cost||full||(name==='charm'&&!!m.moving)||(['rush','stomp'].includes(name)&&!!m.action);
   button.dataset.state=m.status!=='playing'?'idle':full?'full':cd>0?'cooldown':m.coins<spec.cost?'cost':button.disabled?'idle':'ready';
+  // The price strip mirrors the visible shared purse; only Journey owns spending/readiness.
+  if(UNITS[name])button.style.setProperty('--cost-fill',(Math.min(1,shownCoins/spec.cost)*100)+'%');
   button.querySelector('.cooldown').style.height=(cd/spec.cooldown*100)+'%';button.style.setProperty('--cooldown-turn',Math.max(0,Math.min(1,cd/spec.cooldown))+'turn');
   button.title=(UNITS[name]?UNIT_TIERS[spec.tier].label+' · ':'')+spec.name+(spec.role?' · '+spec.role:'')+' · '+(name==='charm'&&m.moving?'멈춘 뒤 사용 가능':button.dataset.state==='full'?'동료가 가득해요':cd>0?cd.toFixed(1)+'초 뒤':button.dataset.state==='cost'?'엽전 '+Math.ceil(spec.cost-m.coins)+' 부족 · 필요 '+spec.cost:spec.cost+' 엽전');
   button.setAttribute('aria-label',button.title);if(UNITS[name])button.querySelector('.unit-count').textContent=m.countAllies(name)+'/'+ALLY_TYPE_LIMIT;

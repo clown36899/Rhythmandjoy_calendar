@@ -1,15 +1,23 @@
-import {Journey} from './game/model.js?v=189-motion-cache';
-import {makeGame} from './game/scene.js?v=189-motion-cache';
-import {HEALER_VIDEO} from './game/healer-motion.js?v=189-motion-cache';
-import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=189-motion-cache';
-import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=189-motion-cache';
+import {Journey} from './game/model.js?v=218-integrated';
+import {makeGame} from './game/scene.js?v=218-integrated';
+import {HEALER_VIDEO} from './game/healer-motion.js?v=218-integrated';
+import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=218-integrated';
+import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=218-integrated';
+import {VIDEO_DELIVERY} from './game/video-delivery.js?v=218-integrated';
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
+// An editor keeps its immutable source identity even after a game confirmation.
+// Mutate the existing imported records before Scene registers any files.
+if(new URLSearchParams(location.search).get('editor')==='1'){
+ try{const who=new URLSearchParams(location.search).get('character'),response=await fetch('/api/game-edit/sources?character='+encodeURIComponent(who),{cache:'no-store'});if(response.ok){const source=await response.json();for(const [name,spec]of Object.entries(source.clips))if(VIDEO_MOTION[who]?.[name]){for(const key of Object.keys(VIDEO_MOTION[who][name]))delete VIDEO_MOTION[who][name][key];Object.assign(VIDEO_MOTION[who][name],spec);}Object.assign(VIDEO_DELIVERY,source.delivery);}}catch{}
+}
 const $=id=>document.getElementById(id),model=new Journey(),keys=new Set();let scene,ready=false,totalDamage=0,totalHealed=0,lastUI=-Infinity,pausedByHidden=false,healerConfig=null,fieldPreview=null;
 
 // Production registries and Scene own pixels, streaming, scale and floor. No master atlases.
 async function prepareHealerMotions(){healerConfig={clips:HEALER_VIDEO,labels:{castHeal:'약초',castHealLight:'치유빛',castHealBless:'축복'}};}
 let previewSerial=0;
 const motionLabels={ritual:'지원 의식',projectile:'책에서 분리한 원혼',idle:'기본 대기',dance:'감정 대기',annoyed:'다른 대기',sit:'앉아 쉬기',walk:'걷기',run:'달리기',runUrgent:'치료하러 달리기',castHeal:'힐 · 약초',castHealLight:'힐 · 치유빛',castHealBless:'힐 · 축복',attack:'공격',anticipation:'적 발견 · 예비',anger:'분노 전환',rageRun:'분노 달리기',rageHold:'화난 대기',combatCalm:'전투 후 복귀',angerHold:'화난 대기',emotionHold:'감정 유지',emotion:'혼자 화내기',calm:'평상시 복귀',receiveHeal:'치료받기',hurt:'피격',death:'사망'};
+motionLabels.keeper={idle:'평소 대기',walk:'사람 걷기',run:'삽살개 달리기',transform:'사람 → 삽살개',returnHuman:'삽살개 → 사람',attack:'돌팔매 · 준비/던짐/복귀'};
+motionLabels.archer={idle:'대기 1',dance:'대기 2',walk:'걷기',run:'적 발견 · 달리기',attack:'장전 → 발사'};
 motionLabels.reaper={idle:'부유 대기',walk:'느린 부유',run:'빠른 비행',attack:'명부 소환 공격',ritual:'지원 의식',receiveHeal:'기운 회복 받기',hurt:'공중 피격',death:'형체 소멸 · 빈 옷 낙하',projectile:'원혼 공격 · 완전 소멸'};
 function motionButtons(){
  const kind=$('motion-character').value;
@@ -17,15 +25,21 @@ function motionButtons(){
  $('motion-buttons').replaceChildren(...Object.entries(VIDEO_MOTION[kind]).filter(([,spec])=>{if(seen.has(spec.asset))return false;seen.add(spec.asset);return true;}).map(([name])=>{const b=document.createElement('button');b.type='button';b.dataset.motion=name;b.textContent=motionLabels[kind]?.[name]||motionLabels[name]||name;b.setAttribute('aria-pressed','false');b.disabled=!ready;b.onclick=()=>previewMotion(name);return b;}));
 }
 async function previewMotion(name){
- if(!ready)return;
- const kind=$('motion-character').value,spec=VIDEO_MOTION[kind]?.[name];if(!spec)return;
+ if(!ready)return false;
+ const kind=$('motion-character').value,spec=VIDEO_MOTION[kind]?.[name];if(!spec)return false;
  const ticket=++previewSerial;fieldPreview=null;
  $('motion-progress').textContent=(motionLabels[kind]?.[name]||motionLabels[name]||name)+' 준비 중…';
  // Source time/ranges come from the same deployed clip, not a separate timing model.
  const range=['walk','run','runUrgent','attack'].includes(name)?spec.cycles?.[0]:null,start=range?.start||0,end=range?.end??spec.frames-1;
  try{
-  const [key]=scene.videoFiles([spec.asset+':'+Math.floor(start/24)]);await scene.loadFiles([key],p=>{if(ticket===previewSerial)$('motion-progress').textContent='동작 준비 · '+(p.phase==='prepare'?'그림 처리':Math.round(p.percent||0)+'%');});await scene.decodeVideo(key);
-  if(ticket!==previewSerial)return;
+  const edit=localEdits.get(kind+':'+name),refs=edit?edit.sequence.filter(f=>!f.upload).map(f=>VIDEO_MOTION[kind][f.clip].prefix+f.frame):Array.from({length:end-start+1},(_,i)=>spec.prefix+(start+i));
+  const pages=[...new Set(refs.map(key=>scene.videoPage(scene.videoFrameIndex.get(key)).sourceKey))];
+  if(model.status==='playing')model.pause();
+  await scene.loadFiles(pages,p=>{if(ticket===previewSerial)$('motion-progress').textContent='동작 준비 · '+(p.phase==='prepare'?'그림 처리':Math.round(p.percent||0)+'%');});
+  for(const key of pages){await scene.decodeVideo(key);if(ticket!==previewSerial)return false;}
+  // Warm the first visible pages before starting the clock; retain bounded streaming thereafter.
+  for(const key of refs.slice(0,24))nativeVideoCel(key,null,false,true);
+  if(ticket!==previewSerial)return false;
   restart();model.enemies=[];model.projectiles=[];model.wave=model.waves.length;model.auto=false;model.heroAttack=Infinity;$('auto').checked=false;
   model.x=model.furthest=model.roadEnd-90;
   let actor=null;
@@ -37,24 +51,68 @@ async function previewMotion(name){
   $('status').textContent='모션 확인 · 제자리 재생 · 게임 진행과 재화는 저장하지 않습니다';
   $('motion-progress').textContent=motionLabels[kind]?.[name]||motionLabels[name]||name;
   for(const b of $('motion-buttons').children)b.setAttribute('aria-pressed',String(b.dataset.motion===name));
- }catch(error){if(ticket===previewSerial)$('motion-progress').textContent='동작 준비 실패 · 같은 버튼을 눌러 다시 시도하세요.';}
+  return true;
+ }catch(error){if(ticket===previewSerial)$('motion-progress').textContent='동작 준비 실패 · 같은 버튼을 눌러 다시 시도하세요.';return false;}
+}
+// Editor changes are local presentation overrides. Journey remains the only combat owner.
+const localEdits=new Map();let nativeVideoCel=null;
+let workspaceActive=true,workspaceWasPlaying=false;let frameWindowStart=0,frameLast=0,frameCount=0,frameLag=0,frameReport="화면 준비 중";
+function setWorkspaceActive(active){
+ workspaceActive=active;frameWindowStart=frameLast=frameCount=frameLag=0;$('game').dataset.rendererSleeping=String(!active);if(!scene?.game?.loop)return;
+ if(!active){workspaceWasPlaying=workspaceWasPlaying||model.status==='playing';if(model.status==='playing')model.pause();keys.clear();scene.game.loop.sleep();}
+ else if(!document.hidden){scene.game.loop.wake();if(workspaceWasPlaying&&model.status==='paused')model.pause();workspaceWasPlaying=false;}
+}
+window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===parent&&event.data?.type==='workbench:active')setWorkspaceActive(Boolean(event.data.active));});
+
+function editedCel(edit,index,fallback){
+ const ref=edit.sequence[Math.min(edit.sequence.length-1,Math.max(0,index))];
+ if(ref.upload)return edit.keys[ref.upload];
+ const spec=VIDEO_MOTION[edit.character][ref.clip];return nativeVideoCel(spec.prefix+ref.frame,fallback);
+}
+window.addEventListener('message',async event=>{
+ if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='motion-editor:apply')return;
+ let preparedEdit=null;const reply=(ok,message)=>parent.postMessage({type:'motion-editor:result',ok,message},location.origin);
+ try{
+  if(!ready)throw Error('그림 준비 후 다시 적용하세요.');
+  const edit=event.data,clips=VIDEO_MOTION[edit.character];
+  if(!clips?.[edit.clip]||!Array.isArray(edit.sequence)||!edit.sequence.length||edit.sequence.length>2000||!Number.isFinite(edit.fps)||edit.fps<1||edit.fps>120)throw Error('편집 정보를 확인하세요.');
+  for(const f of edit.sequence)if(!clips[f.clip]||!Number.isInteger(f.frame)||f.frame<0||f.frame>=clips[f.clip].frames)throw Error('원본 버전이 달라졌습니다. 편집실을 새로고침하세요.');
+  edit.keys={};preparedEdit=edit;
+  for(const id of new Set(edit.sequence.map(f=>f.upload).filter(Boolean))){
+   const url=edit.uploads?.[id];if(typeof url!=='string'||!url.startsWith('data:image/png;base64,')||url.length>12*1024*1024)throw Error('수정 PNG를 확인하세요.');
+   const ref=edit.sequence.find(f=>f.upload===id),geometry=edit.specs?.[ref.clip];if(!geometry||!Number.isFinite(geometry.displaySize)||!Number.isFinite(geometry.ground)||!Number.isFinite(geometry.originX))throw Error('프레임 기준점이 없습니다.');
+   const im=new Image();im.src=url;await im.decode();if(im.width!==geometry.size||im.height!==geometry.size)throw Error('수정 PNG 크기가 원본과 다릅니다.');
+   const key='localEdited-'+crypto.randomUUID();scene.textures.addImage(key,im);scene.celScale.set(key,clips[ref.clip].scale*geometry.size/VIDEO_DELIVERY[clips[ref.clip].asset].cellHeight);scene.grounding.set(key,geometry.ground);scene.registrationX.set(key,geometry.originX);edit.keys[id]=key;
+  }
+  const previous=localEdits.get(edit.character+':'+edit.clip);
+  localEdits.set(edit.character+':'+edit.clip,edit);
+  $('field-character').value=$('motion-character').value=edit.character;motionButtons();if(!await previewMotion(edit.clip)){if(previous)localEdits.set(edit.character+':'+edit.clip,previous);else localEdits.delete(edit.character+':'+edit.clip);throw Error('동작 준비가 완료되지 않았습니다. 다시 적용하세요.');}
+  if(previous)for(const key of Object.values(previous.keys)){for(const sprite of scene.sprites.values())if((sprite.celKey||sprite.texture?.key)===key)scene.setCel(sprite,nativeVideoCel(clips[edit.clip].prefix+'0'));scene.textures.remove(key);scene.celScale.delete(key);scene.grounding.delete(key);scene.registrationX.delete(key);}
+  $('game').dataset.editorApplied=edit.clip;$('game').dataset.editorFrames=String(edit.sequence.length);reply(true,'적용 완료 · '+edit.sequence.length+'장 / '+edit.fps+'fps');
+ }catch(error){if(preparedEdit)for(const key of Object.values(preparedEdit.keys)){scene.textures.remove(key);scene.celScale.delete(key);scene.grounding.delete(key);scene.registrationX.delete(key);}reply(false,error.message);}
+});
+function previewCel(p,fallback){
+ const edit=localEdits.get(p.kind+':'+p.motion),elapsed=Math.max(0,model.time-p.at),count=edit?edit.sequence.length:p.end-p.start+1,n=Math.floor(elapsed*(edit?.fps||p.spec.fps)),frame=(edit?0:p.start)+(p.motion==='death'||p.spec.loop===false?Math.min(count-1,n):n%count);
+ const key=edit?editedCel(edit,frame,fallback):nativeVideoCel(p.spec.prefix+frame,fallback);
+ return {edit,elapsed,count,frame,key};
 }
 function drawMotionPreview(){
  const p=fieldPreview;if(!p)return;
  const image=p.actor==='hero'?scene.hero:p.actor==='girl'?scene.girl:scene.sprites.get(p.actor);if(!image)return;
- const elapsed=Math.max(0,model.time-p.at),count=p.end-p.start+1,n=Math.floor(elapsed*p.spec.fps),frame=p.start+(p.motion==='death'?Math.min(count-1,n):n%count);
- const key=scene.videoCel(p.spec.prefix+frame,image.celKey||image.texture.key);scene.setCel(image,key);
- scene.placeOnGround(image,p.x-scene.offset,BODY_HEIGHT[p.kind],scene.actorGround(p.actor));image.setFlipX(false).setVisible(scene.textures.exists(scene.videoPage(scene.videoFrameIndex.get(key)||scene.videoFrameIndex.get(p.spec.prefix+frame)).key));
+ const {edit,elapsed,count,frame,key}=previewCel(p,image.celKey||image.texture.key);scene.setCel(image,key);
+ scene.placeOnGround(image,p.x-scene.offset,BODY_HEIGHT[p.kind],scene.actorGround(p.actor));image.setFlipX(false).setVisible(edit&&scene.textures.exists(key)||scene.textures.exists(scene.videoPage(scene.videoFrameIndex.get(key)||scene.videoFrameIndex.get(p.spec.prefix+Math.min(p.spec.frames-1,frame))).key));
  if(p.motion==='projectile'){const page=scene.videoPage(scene.videoFrameIndex.get(p.spec.prefix+frame)),height=scene.actorHeight(BODY_HEIGHT[p.kind])*p.spec.scale;image.setOrigin(.5,.5).setDisplaySize(height*page.w/page.h,height).setPosition(p.x-scene.offset,scene.actorGround(p.actor)-scene.actorHeight(BODY_HEIGHT[p.kind])*.55);}
  else image.y-=(MOTION[p.kind]?.hover||0)*scene.actorHeight(BODY_HEIGHT[p.kind])*(p.motion==='death'&&p.spec.cue?.grounded?Math.max(0,1-elapsed/(p.spec.cue.grounded/p.spec.fps)):p.motion==='death'?0:1);
  image.setAlpha(p.motion==='death'?Math.max(0,1-Math.max(0,elapsed-count/p.spec.fps)/.5):1);scene.root.bringToTop(image);
  if(p.kind==='healer'&&p.motion.startsWith('castHeal')){const cue=p.spec.cycles?.find(c=>frame>=c.start&&frame<=c.end);if(cue){const clock=frame<=cue.impact?(frame-cue.start)/Math.max(1,cue.impact-cue.start)*MOTION.healer.impact:MOTION.healer.impact+(frame-cue.impact)/Math.max(1,cue.end-cue.impact)*(MOTION.healer.duration-MOTION.healer.impact);scene.drawHealerCastLight(image,{phase:'treat',elapsed:clock});}}
  if(p.actor!=='hero')scene.hero.setVisible(false);if(p.actor!=='girl')scene.girl.setVisible(false);
- $('game').dataset.previewMotion=p.motion;$('game').dataset.previewCharacter=p.kind;$('game').dataset.previewFrame=String(frame);$('game').dataset.previewVisible=String(image.visible);
- $('motion-progress').textContent=(motionLabels[p.kind]?.[p.motion]||motionLabels[p.motion]||p.motion)+' · '+(frame+1)+' / '+p.spec.frames+' · '+p.spec.fps+'fps';
+ $('game').dataset.previewMotion=p.motion;$('game').dataset.previewCharacter=p.kind;$('game').dataset.previewSource=p.spec.file;$('game').dataset.previewFrame=String(frame);$('game').dataset.previewVisible=String(image.visible);
+ $('motion-progress').textContent=(motionLabels[p.kind]?.[p.motion]||motionLabels[p.motion]||p.motion)+' · '+(frame+1)+' / '+count+' · '+(edit?.fps||p.spec.fps)+'fps'+(edit?' · 편집본':'');
 }
 const initialCharacter=new URLSearchParams(location.search).get('character');
-if(VIDEO_MOTION[initialCharacter]&&[...$('motion-character').options].some(o=>o.value===initialCharacter)){$('motion-character').value=initialCharacter;if(UNITS[initialCharacter])$('field-character').value=initialCharacter;}
+if(new URLSearchParams(location.search).get('editor')==='1')document.body.classList.add('editor-preview');
+document.addEventListener('dragstart',event=>event.preventDefault());
+if(initialCharacter&&[...$('field-character').options].some(o=>o.value===initialCharacter)){$('field-character').value=initialCharacter;$('motion-character').value=initialCharacter;}
 $('motion-character').disabled=true;
 $('motion-character').onchange=()=>{if(!ENEMIES[$('motion-character').value])$('field-character').value=$('motion-character').value;motionButtons();previewMotion('idle');};
 $('motion-battle').onclick=()=>{previewSerial++;selectFieldCharacter();$('motion-progress').textContent='실전 전투 · 준비 완료';for(const b of $('motion-buttons').children)b.setAttribute('aria-pressed','false');};
@@ -92,22 +150,23 @@ refreshFoes();
 async function addEnemy(){if(!ready||!['playing','paused'].includes(model.status))return;const type=$('foe').value;await scene.ensurePreview(type);model.spawn(type,Math.min(model.gateX,model.x+700));$('events').textContent=ENEMIES[type].name+' 수동 추가';}
 function selectedUnit(){const kind=$('field-character').value;return UNITS[kind]?kind:'cow';}
 function summon(){if(!ready||model.status!=='playing')return;model.summon(selectedUnit());}
-function restart(){for(const k of ['previewCharacter','previewMotion','previewFrame','previewVisible'])delete $('game').dataset[k];$('top').querySelector('b').textContent='실전 전투 필드 · '+STAGES[Number($('field-stage').value)].name;fieldPreview=null;const selected=selectedUnit(),party=DEFAULT_PARTY.includes(selected)?DEFAULT_PARTY:[DEFAULT_PARTY[0],selected,...DEFAULT_PARTY.filter(k=>!['cow','keeper'].includes(k))];model.start(Number($('field-stage').value),party,scene.vw);if(!DEFAULT_PARTY.includes(selected))model.addAlly(selected,model.x+210);model.coins=MAX_COINS;model.auto=$('auto').checked;model.drainEvents();totalDamage=0;totalHealed=0;keys.clear();scene.resetPresentation();refreshFoes();model.pause();$('pause').textContent='전투 시작';$('motion-progress').textContent='위에서 동작 선택 · 아래에서 실전 전투 시작';$('status').textContent=UNITS[selected].name+' 모션 연결 완료 · 전투 시작을 누르세요. 게임과 같은 사거리·피해 판정입니다.';lastUI=-Infinity;}
+function restart(){for(const k of ['previewCharacter','previewMotion','previewFrame','previewVisible'])delete $('game').dataset[k];$('top').querySelector('b').textContent='실전 전투 필드 · '+STAGES[Number($('field-stage').value)].name;fieldPreview=null;const selected=selectedUnit(),party=DEFAULT_PARTY.includes(selected)?DEFAULT_PARTY:[DEFAULT_PARTY[0],selected,...DEFAULT_PARTY.filter(k=>!['cow','keeper'].includes(k))];model.start(Number($('field-stage').value),party,scene.vw);if(!model.allies.some(a=>a.type===selected))model.addAlly(selected,model.x+210);model.coins=MAX_COINS;model.auto=$('auto').checked;model.drainEvents();totalDamage=0;totalHealed=0;keys.clear();scene.resetPresentation();refreshFoes();model.pause();$('pause').textContent='전투 시작';$('motion-progress').textContent='위에서 동작 선택 · 아래에서 실전 전투 시작';$('status').textContent=UNITS[selected].name+' 모션 연결 완료 · 전투 시작을 누르세요. 게임과 같은 사거리·피해 판정입니다.';lastUI=-Infinity;}
 // Local scenario setup only; Journey owns treatment, damage and timing.
 function summonHealer(){if(ready&&model.status==='playing')model.summon('healer');}
 function damageCow(){if(!ready||model.status!=='playing')return;const cow=model.allies.find(a=>a.type==='cow'&&a.hp>0);if(cow)model.hurtAlly(cow,120,cow.x+100);}
 function healingTrial(kind='heal'){
  if(!ready)return;restart();model.enemies=[];model.projectiles=[];model.wave=model.waves.length;model.auto=false;$('auto').checked=false;
  const cow=model.allies.find(a=>a.type==='cow');cow.x=model.x+UNITS.cow.formation;
- const healerIdle=kind==='idle'&&$('field-character').value==='healer';
- if(healerIdle||kind==='approach'||kind==='heal'){
+ const companionIdle=kind==='idle'&&UNITS[$('field-character').value];
+ if(companionIdle||kind==='approach'||kind==='heal'){
   // The normal road-end destination already stops the independent party.
   // Reuse it for a stationary patient/rest test, without adding movement flags,
   // fake actions, a second animation clock or changing the production model.
-  cow.x=model.roadEnd-90;model.x=model.furthest=Math.max(model.x,cow.x-scene.vw*.5);
+  cow.x=model.roadEnd-90;model.x=model.furthest=Math.max(model.x,cow.x-scene.vw*(companionIdle ? .15 : .5));
  }
- if(kind!=='idle'||healerIdle)model.addAlly('healer',cow.x-UNITS.healer.spacing-(kind==='approach'?120:0));model.pause();if(kind==='heal')model.hurtAlly(cow,120,cow.x+100);
- if(kind==='idle'){$('pause').textContent='일시정지';$('status').textContent=healerIdle?'의원 제자리 대기 시험 · 쪼그려 앉아 쉬기 등 새 대기 모션을 아래 버튼으로 확인합니다.':'새 기본 대기 반복 중 · 방향키로 이동하면 걷기·달리기로 이어집니다. 정지하면 새 대기로 돌아오며 기존 랜덤 동작도 유지합니다.';return;}
+ if(companionIdle){for(const a of model.allies){a.x=model.roadEnd-90-(a.type==='healer'?UNITS.healer.spacing:0);a.entering=false;a.action=null;a.moving=0;}model.allies=model.allies.filter(a=>a.type===$('field-character').value||$('field-character').value==='healer'&&a.type==='cow');}
+ if(kind!=='idle')model.addAlly('healer',cow.x-UNITS.healer.spacing-(kind==='approach'?120:0));model.pause();if(kind==='heal')model.hurtAlly(cow,120,cow.x+100);
+ if(kind==='idle'){$('pause').textContent='일시정지';$('status').textContent=companionIdle?companionIdle.name+' 제자리 대기 · 게임과 같은 무작위 동작 연결을 재생합니다. 다시 시작으로 전투에 복귀합니다.':'새 기본 대기 반복 중 · 방향키로 이동하면 걷기·달리기로 이어집니다. 정지하면 새 대기로 돌아오며 기존 랜덤 동작도 유지합니다.';return;}
  $('pause').textContent='일시정지';$('status').textContent='회복 모션 시험 · 소에게 시험 피해를 주고 의원의 실제 치료를 재생합니다. 전투 시험은 다시 시작으로 돌아갑니다.';
 }
 function pause(){if(!ready)return;model.pause();keys.clear();model.setDirection(0,{cancel:true});$('pause').textContent=model.status==='paused'?'전투 계속':'일시정지';$('status').textContent=model.status==='paused'?'전투 일시정지 · 체력과 공격 진행도 함께 멈춥니다.':'전투 중 · 실제 피해·방어·사거리 적용 · 무적 해제';}
@@ -120,7 +179,7 @@ window.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(
 window.addEventListener('keyup',e=>{keys.delete(e.key);model.setDirection(keys.has('ArrowRight')?1:keys.has('ArrowLeft')?-1:0);});
 window.addEventListener('blur',()=>{keys.clear();model.setDirection(0,{cancel:true});});
 document.addEventListener('dragstart',e=>e.preventDefault());
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&model.status==='playing'){pause();pausedByHidden=true;}else if(!document.hidden&&pausedByHidden){$('status').textContent='다른 탭을 보는 동안 전투를 멈췄습니다. 계속 버튼으로 재개하세요.';pausedByHidden=false;}});
-function render(){if(!ready)return;drawMotionPreview();const reaper=model.enemies.find(e=>e.type==='reaper'),reaperImage=reaper&&scene.sprites.get('e'+reaper.id);Object.assign($('game').dataset,{reaperMotion:reaperImage?.travellerVideo?.state??'',reaperCel:reaperImage?.celKey??'',reaperVisible:String(!!reaperImage?.visible),reaperWindup:String(reaper?.windup??0),reaperHp:String(reaper?.hp??0),reaperProjectiles:String(scene.effects.filter(e=>e.type==='projectile'&&e.sourceKind==='reaper').length),reaperDepartures:String(scene.effects.filter(e=>e.type==='depart'&&e.kind==='reaper').length)});Object.assign($('game').dataset,{motionVersion:'144',worldEnd:String(model.roadEnd),monsterQuota:String(model.waves.reduce((n,w)=>n+w.types.length,0)),spawned:String(model.waves.slice(0,model.wave).reduce((n,w)=>n+w.types.length,0)),offscreenAllies:String(model.allies.filter(a=>a.hp>0&&(a.x<scene.offset||a.x>scene.offset+scene.vw)).length),offscreenEnemies:String(model.enemies.filter(e=>e.hp>0&&(e.x<scene.offset||e.x>scene.offset+scene.vw)).length),cowBodyHeight:String(BODY_HEIGHT.cow),cowMotion:[...scene.sprites.values()].find(im=>im.texture?.key?.includes('cowVideo'))?.texture.key??'',girlMotion:scene.girl?.texture.key??'',haetaeMotion:scene.hero?.texture.key??''});const now=performance.now();if(now-lastUI<120)return;lastUI=now;const kind=selectedUnit(),unit=UNITS[kind],cows=model.allies.filter(a=>a.type===kind&&a.hp>0),enemies=model.enemies.filter(e=>e.hp>0);$('hero-hp').textContent='주인공 체력 '+Math.ceil(model.hp)+' / '+MAX_HP;$('cow-count').textContent=unit.name+' '+cows.length+' / 10';$('enemy-count').textContent='적 '+enemies.length;$('damage').textContent='받은 피해 '+totalDamage.toFixed(1);$('healed').textContent='회복량 +'+totalHealed.toFixed(1);$('kills').textContent='처치 '+model.kills;if(!fieldPreview){const displayKind=$('field-character').value,actor=UNITS[displayKind]?cows[0]:null,image=actor?scene.sprites.get('a'+actor.id):displayKind==='girl'?scene.girl:displayKind==='haetae'?scene.hero:null,state=image?.travellerVideo||image?.healerVideo,name=state?.state,spec=VIDEO_MOTION[displayKind]?.[name],cel=image?.celKey?.replace(/^injured[12]__/,'');if(spec&&cel?.startsWith(spec.prefix)){const frame=Number(cel.slice(spec.prefix.length));$('motion-progress').textContent='실전 전투 · '+(motionLabels[kind]?.[name]||motionLabels[name]||name)+' · '+(frame+1)+' / '+spec.frames+' · '+spec.fps+'fps';Object.assign($('game').dataset,{battleCharacter:displayKind,battleActor:actor?'a'+actor.id:displayKind,battleMotion:name,battleFrame:String(frame)});}}const cd=Math.max(0,model.cooldowns[kind]);$('summon').disabled=model.status!=='playing'||model.atSummonLimit(kind)||cd>0||model.coins<unit.cost;$('summon').textContent=cd>0?unit.name+' 소환 '+cd.toFixed(1)+'초':unit.name+' 소환 · C';$('pause').disabled=!['playing','paused'].includes(model.status);$('heal-summon').disabled=model.status!=='playing'||model.atSummonLimit('healer')||model.cooldowns.healer>0||model.coins<UNITS.healer.cost;$('hurt-cow').disabled=model.status!=='playing'||!cows.length;if(['won','lost'].includes(model.status)){$('status').textContent=model.status==='lost'?'전투 종료 · 다시 시작으로 재시험하세요.':'전투 승리 · 다시 시작으로 재시험하세요.';}$('roster').replaceChildren(...cows.map(c=>{const card=document.createElement('div'),label=document.createElement('div'),bar=document.createElement('progress');label.textContent=unit.name+' #'+c.id+' · '+Math.ceil(c.hp)+' / '+Math.ceil(c.maxHp);bar.max=c.maxHp;bar.value=Math.max(0,c.hp);card.append(label,bar);return card;}));$('game').dataset.cows=cows.length;$('game').dataset.enemies=enemies.length;$('game').dataset.damage=totalDamage.toFixed(1);$('game').dataset.status=model.status;$('game').dataset.healed=totalHealed.toFixed(1);}
+document.addEventListener('visibilitychange',()=>{if(document.hidden){if(model.status==='playing'){pause();pausedByHidden=true;}scene?.game?.loop.sleep();}else{if(workspaceActive)scene?.game?.loop.wake();frameLast=frameWindowStart=frameCount=frameLag=0;if(pausedByHidden){$('status').textContent='다른 탭을 보는 동안 전투를 멈췄습니다. 계속 버튼으로 재개하세요.';pausedByHidden=false;}}});
+function render(){if(!ready)return;const frameNow=performance.now();if(!frameWindowStart)frameWindowStart=frameNow;if(frameLast&&frameNow-frameLast>50)frameLag++;frameLast=frameNow;frameCount++;if(frameNow-frameWindowStart>=1000){frameReport='화면 '+Math.round(frameCount*1000/(frameNow-frameWindowStart))+'fps · 끊김 '+frameLag;frameWindowStart=frameNow;frameCount=frameLag=0;}drawMotionPreview();const selectedActor=model.allies.find(a=>a.type===$('field-character').value&&a.hp>0),selectedImage=selectedActor&&scene.sprites.get('a'+selectedActor.id);Object.assign($('game').dataset,{selectedActorX:String(selectedActor?.x??''),selectedPhase:selectedActor?.action?.phase??'',selectedPhaseElapsed:String(selectedActor?.action?.phaseElapsed??0),selectedAction:selectedActor?.action?.kind??'',selectedCel:selectedImage?.celKey??'',selectedVisible:String(!!selectedImage?.visible),selectedMotion:selectedImage?.travellerVideo?.state??'',selectedProjectiles:String(model.projectiles.filter(p=>p.sourceActor===selectedActor?.id).length)});const reaper=model.enemies.find(e=>e.type==='reaper'),reaperImage=reaper&&scene.sprites.get('e'+reaper.id);Object.assign($('game').dataset,{reaperMotion:reaperImage?.travellerVideo?.state??'',reaperCel:reaperImage?.celKey??'',reaperVisible:String(!!reaperImage?.visible),reaperWindup:String(reaper?.windup??0),reaperHp:String(reaper?.hp??0),reaperProjectiles:String(scene.effects.filter(e=>e.type==='projectile'&&e.sourceKind==='reaper').length),reaperDepartures:String(scene.effects.filter(e=>e.type==='depart'&&e.kind==='reaper').length)});Object.assign($('game').dataset,{motionVersion:'144',worldEnd:String(model.roadEnd),monsterQuota:String(model.waves.reduce((n,w)=>n+w.types.length,0)),spawned:String(model.waves.slice(0,model.wave).reduce((n,w)=>n+w.types.length,0)),offscreenAllies:String(model.allies.filter(a=>a.hp>0&&(a.x<scene.offset||a.x>scene.offset+scene.vw)).length),offscreenEnemies:String(model.enemies.filter(e=>e.hp>0&&(e.x<scene.offset||e.x>scene.offset+scene.vw)).length),cowBodyHeight:String(BODY_HEIGHT.cow),cowMotion:[...scene.sprites.values()].find(im=>im.texture?.key?.includes('cowVideo'))?.texture.key??'',girlMotion:scene.girl?.texture.key??'',haetaeMotion:scene.hero?.texture.key??''});const now=performance.now();if(now-lastUI<120)return;lastUI=now;if($('render-performance'))$('render-performance').textContent=frameReport;const kind=selectedUnit(),unit=UNITS[kind],cows=model.allies.filter(a=>a.type===kind&&a.hp>0),enemies=model.enemies.filter(e=>e.hp>0);$('hero-hp').textContent='주인공 체력 '+Math.ceil(model.hp)+' / '+MAX_HP;$('cow-count').textContent=unit.name+' '+cows.length+' / 10';$('enemy-count').textContent='적 '+enemies.length;$('damage').textContent='받은 피해 '+totalDamage.toFixed(1);$('healed').textContent='회복량 +'+totalHealed.toFixed(1);$('kills').textContent='처치 '+model.kills;if(!fieldPreview){const displayKind=$('field-character').value,actor=UNITS[displayKind]?cows[0]:null,image=actor?scene.sprites.get('a'+actor.id):displayKind==='girl'?scene.girl:displayKind==='haetae'?scene.hero:null,state=image?.travellerVideo||image?.healerVideo,name=state?.state,spec=VIDEO_MOTION[displayKind]?.[name],cel=image?.celKey?.replace(/^injured[12]__/,'');if(spec&&cel?.startsWith(spec.prefix)){const frame=Number(cel.slice(spec.prefix.length));$('motion-progress').textContent='실전 전투 · '+(motionLabels[kind]?.[name]||motionLabels[name]||name)+' · '+(frame+1)+' / '+spec.frames+' · '+spec.fps+'fps';Object.assign($('game').dataset,{battleCharacter:displayKind,battleActor:actor?'a'+actor.id:displayKind,battleMotion:name,battleFrame:String(frame)});}}const cd=Math.max(0,model.cooldowns[kind]);$('summon').disabled=model.status!=='playing'||model.atSummonLimit(kind)||cd>0||model.coins<unit.cost;$('summon').textContent=cd>0?unit.name+' 소환 '+cd.toFixed(1)+'초':unit.name+' 소환 · C';$('pause').disabled=!['playing','paused'].includes(model.status);$('heal-summon').disabled=model.status!=='playing'||model.atSummonLimit('healer')||model.cooldowns.healer>0||model.coins<UNITS.healer.cost;$('hurt-cow').disabled=model.status!=='playing'||!cows.length;if(['won','lost'].includes(model.status)){$('status').textContent=model.status==='lost'?'전투 종료 · 다시 시작으로 재시험하세요.':'전투 승리 · 다시 시작으로 재시험하세요.';}$('roster').replaceChildren(...cows.map(c=>{const card=document.createElement('div'),label=document.createElement('div'),bar=document.createElement('progress');label.textContent=unit.name+' #'+c.id+' · '+Math.ceil(c.hp)+' / '+Math.ceil(c.maxHp);bar.max=c.maxHp;bar.value=Math.max(0,c.hp);card.append(label,bar);return card;}));$('game').dataset.cows=cows.length;$('game').dataset.enemies=enemies.length;$('game').dataset.damage=totalDamage.toFixed(1);$('game').dataset.status=model.status;$('game').dataset.healed=totalHealed.toFixed(1);}
 function events(list){for(const e of list){if(e.damage&&!e.enemy&&['guard','hit','hurt'].includes(e.type)){totalDamage+=e.damage;$('events').textContent=(e.kind==='cow'?'소':'아군')+' 피격 −'+e.damage.toFixed(1);}if(e.type==='heal'&&!e.enemy&&e.amount>0){totalHealed+=e.amount;$('events').textContent=(e.kind==='cow'?'소':'아군')+' 체력 회복 +'+e.amount.toFixed(1);$('status').textContent='의원 치료 중 · 공격받는 동안에도 빛나는 + + +와 회복량을 표시하며 현재 몸동작을 유지합니다. 안전하게 멈춰 있으면 새 치유 모션을 재생합니다.';}if(e.type==='notice')$('events').textContent=e.message;}}
-makeGame(model,async(_unused,s)=>{scene=s;try{const idle=new Set(['cow','girl','haetae', $('field-character').value].map(k=>VIDEO_MOTION[k].idle.asset)),movement=new Set(['girl','haetae'].flatMap(k=>['walk','run'].map(n=>VIDEO_MOTION[k][n].asset)));scene.commonKeys=scene.commonKeys.filter(k=>{const f=scene.files.get(k);return !f.video||f.part===0&&idle.has(f.video)||movement.has(f.video);});await scene.prepareStage(0,p=>{$('status').textContent='게임 그림 준비 중 · '+(p.phase==='prepare'?'그림 처리 '+p.prepared+'/'+p.prepareTotal:Math.round(p.percent??0)+'%');});await prepareHealerMotions();ready=true;$('motion-character').disabled=false;motionButtons();$('field-stage').disabled=false;$('field-character').disabled=false;for(const id of['pause','spawn','clear','reset','heal-trial','idle-trial'])$(id).disabled=false;restart();}catch(e){$('status').textContent='그림 준비 실패. 페이지를 새로고침해 주세요. '+e.message;}},render,events);
+makeGame(model,async(_unused,s)=>{scene=s;const normalPose=scene.videoPose.bind(scene);scene.videoPose=(image,walk,moving,action,hit,key,...args)=>{if(fieldPreview){if(key===fieldPreview.actor)return previewCel(fieldPreview,image.celKey||image.texture.key).key;if(key==='hero'||key==='girl')return image.celKey||image.texture.key;}return normalPose(image,walk,moving,action,hit,key,...args);};nativeVideoCel=scene.videoCel.bind(scene);scene.videoCel=(key,fallback,...options)=>{const frame=scene.videoFrameIndex?.get(key);if(frame){const name=Object.keys(VIDEO_MOTION[frame.kind]).find(n=>VIDEO_MOTION[frame.kind][n]===frame.spec),edit=localEdits.get(frame.kind+':'+name);if(edit)return editedCel(edit,Math.floor(frame.index/frame.spec.fps*edit.fps),fallback);}return nativeVideoCel(key,fallback,...options);};try{const idle=new Set(['cow','girl','haetae', $('field-character').value].map(k=>VIDEO_MOTION[k].idle.asset)),movement=new Set(['girl','haetae'].flatMap(k=>['walk','run'].map(n=>VIDEO_MOTION[k][n].asset)));scene.commonKeys=scene.commonKeys.filter(k=>{const f=scene.files.get(k);return !f.video||f.part===0&&idle.has(f.video)||movement.has(f.video);});await scene.prepareStage(0,p=>{$('status').textContent='게임 그림 준비 중 · '+(p.phase==='prepare'?'그림 처리 '+p.prepared+'/'+p.prepareTotal:Math.round(p.percent??0)+'%');});await prepareHealerMotions();ready=true;$('motion-character').disabled=false;motionButtons();$('field-stage').disabled=false;$('field-character').disabled=false;for(const id of['pause','spawn','clear','reset','heal-trial','idle-trial'])$(id).disabled=false;restart();if(!workspaceActive)setWorkspaceActive(false);else if(document.hidden)scene.game.loop.sleep();if(parent!==window)parent.postMessage({type:'motion-editor:ready'},location.origin);}catch(e){$('status').textContent='그림 준비 실패. 페이지를 새로고침해 주세요. '+e.message;}},render,events);
