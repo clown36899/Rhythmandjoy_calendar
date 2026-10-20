@@ -1,0 +1,102 @@
+body[data-battle-ui="minimal"]{--deck-bg:#f6edd9;--deck-edge:#b4ad95;--deck-ink:#384b48;--deck-frame:url("./assets/battle-ui-v223/minimal-frame.webp")}
+body[data-battle-ui="scroll"]{--deck-bg:#e5cc9c;--deck-edge:#805c34;--deck-ink:#4f3022;--deck-frame:url("./assets/battle-ui-v223/scroll-frame.webp")}
+body[data-battle-ui="wood"]{--deck-bg:#39251c;--deck-edge:#c09b5f;--deck-ink:#f4e6c2;--deck-frame:url("./assets/battle-ui-v223/wood-frame.webp")}
+body[data-battle-ui="ink"]{--deck-bg:#232724;--deck-edge:#999c8d;--deck-ink:#f4f0e6;--deck-frame:url("./assets/battle-ui-v223/ink-frame.webp")}
+body[data-battle-ui="jade"]{--deck-bg:#285b4a;--deck-edge:#b3b77b;--deck-ink:#f9edc8;--deck-frame:url("./assets/battle-ui-v223/jade-frame.webp")}
+body[data-battle-ui="ribbon"]{--deck-bg:#1f3444;--deck-edge:#b39c60;--deck-ink:#f5e7bc;--deck-frame:url("./assets/battle-ui-v223/ribbon-frame.webp")}
+body[data-battle-ui="talisman"]{--deck-bg:#e7cf9c;--deck-edge:#a54130;--deck-ink:#512c20;--deck-frame:url("./assets/battle-ui-v223/talisman-frame.webp")}
+body[data-battle-ui="fan"]{--deck-bg:#203442;--deck-edge:#c5aa6c;--deck-ink:#fff0d2;--deck-frame:url("./assets/battle-ui-v223/fan-frame.webp")}
+body[data-battle-ui="book"]{--deck-bg:#ede0bd;--deck-edge:#384e61;--deck-ink:#253744;--deck-frame:url("./assets/battle-ui-v223/book-frame.webp")}
+body[data-battle-ui="floating"]{--deck-bg:#35665fdd;--deck-edge:#9ec7b3;--deck-ink:#f5edcc;--deck-frame:url("./assets/battle-ui-v223/floating-frame.webp")}
+body[data-battle-ui="ebony-gold"]{--deck-bg:#181813;--deck-edge:#cda35e;--deck-ink:#ffebba;--deck-frame:url("./assets/battle-ui-v223/ebony-gold-frame.webp")}
+body[data-battle-ui="ebony-silver"]{--deck-bg:#242726;--deck-edge:#bfc2b4;--deck-ink:#f1f1df;--deck-frame:url("./assets/battle-ui-v223/ebony-silver-frame.webp")}
+body[data-battle-ui="nacre"]{--deck-bg:#172927;--deck-edge:#c2d4c1;--deck-ink:#f3e7c7;--deck-frame:url("./assets/battle-ui-v223/nacre-frame.webp")}
+body[data-battle-ui="red-lacquer"]{--deck-bg:#681f19;--deck-edge:#d0a25b;--deck-ink:#fff1cb;--deck-frame:url("./assets/battle-ui-v223/red-lacquer-frame.webp")}
+body[data-battle-ui="bamboo"]{--deck-bg:#d3be85;--deck-edge:#8d8150;--deck-ink:#34483a;--deck-frame:url("./assets/battle-ui-v223/bamboo-frame.webp")}
+body[data-battle-ui="stone"]{--deck-bg:#373c3b;--deck-edge:#9a9f96;--deck-ink:#e8e6d7;--deck-frame:url("./assets/battle-ui-v223/stone-frame.webp")}
+body[data-battle-ui="celadon"]{--deck-bg:#72aca3;--deck-edge:#d1c49a;--deck-ink:#1d4945;--deck-frame:url("./assets/battle-ui-v223/celadon-frame.webp")}
+body[data-battle-ui="textile"]{--deck-bg:#263c51;--deck-edge:#d7b568;--deck-ink:#fff0d1;--deck-frame:url("./assets/battle-ui-v223/textile-frame.webp")}
+body[data-battle-ui="brass-seals"]{--deck-bg:#62502a;--deck-edge:#d6b66a;--deck-ink:#fff0ca;--deck-frame:url("./assets/battle-ui-v223/brass-seals-frame.webp")}
+body[data-battle-ui="white-paper"]{--deck-bg:#f5f0df;--deck-edge:#514f45;--deck-ink:#282f2b;--deck-frame:url("./assets/battle-ui-v223/white-paper-frame.webp")}
+/* Production illustrated assets */
+.control-deck .theme-portrait{display:none}
+body[data-battle-ui="minimal"]{--ui-move:url("./assets/battle-ui-v223/minimal-move.webp");--ui-card:url("./assets/battle-ui-v223/minimal-card.webp");--ui-skill:url("./assets/battle-ui-v223/minimal-skill.webp");--ui-panel:url("./assets/battle-ui-v223/minimal-panel.webp");--ui-card-ratio:0.6788;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="scroll"]{--ui-move:url("./assets/battle-ui-v223/scroll-move.webp");--ui-card:url("./assets/battle-ui-v223/scroll-card.webp");--ui-skill:url("./assets/battle-ui-v223/scroll-skill.webp");--ui-panel:url("./assets/battle-ui-v223/scroll-panel.webp");--ui-card-ratio:0.7604;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="wood"]{--ui-move:url("./assets/battle-ui-v223/wood-move.webp");--ui-card:url("./assets/battle-ui-v223/wood-card.webp");--ui-skill:url("./assets/battle-ui-v223/wood-skill.webp");--ui-panel:url("./assets/battle-ui-v223/wood-panel.webp");--ui-card-ratio:0.6937;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="ink"]{--ui-move:url("./assets/battle-ui-v223/ink-move.webp");--ui-card:url("./assets/battle-ui-v223/ink-card.webp");--ui-skill:url("./assets/battle-ui-v223/ink-skill.webp");--ui-panel:url("./assets/battle-ui-v223/ink-panel.webp");--ui-card-ratio:0.6605;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="jade"]{--ui-move:url("./assets/battle-ui-v223/jade-move.webp");--ui-card:url("./assets/battle-ui-v223/jade-card.webp");--ui-skill:url("./assets/battle-ui-v223/jade-skill.webp");--ui-panel:url("./assets/battle-ui-v223/jade-panel.webp");--ui-card-ratio:0.6461;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="ribbon"]{--ui-move:url("./assets/battle-ui-v223/ribbon-move.webp");--ui-card:url("./assets/battle-ui-v223/ribbon-card.webp");--ui-skill:url("./assets/battle-ui-v223/ribbon-skill.webp");--ui-panel:url("./assets/battle-ui-v223/ribbon-panel.webp");--ui-card-ratio:0.7286;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="talisman"]{--ui-move:url("./assets/battle-ui-v223/talisman-move.webp");--ui-card:url("./assets/battle-ui-v223/talisman-card.webp");--ui-skill:url("./assets/battle-ui-v223/talisman-skill.webp");--ui-panel:url("./assets/battle-ui-v223/talisman-panel.webp");--ui-card-ratio:0.6735;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="fan"]{--ui-move:url("./assets/battle-ui-v223/fan-move.webp");--ui-card:url("./assets/battle-ui-v223/fan-card.webp");--ui-skill:url("./assets/battle-ui-v223/fan-skill.webp");--ui-panel:url("./assets/battle-ui-v223/fan-panel.webp");--ui-card-ratio:0.7235;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="book"]{--ui-move:url("./assets/battle-ui-v223/book-move.webp");--ui-card:url("./assets/battle-ui-v223/book-card.webp");--ui-skill:url("./assets/battle-ui-v223/book-skill.webp");--ui-panel:url("./assets/battle-ui-v223/book-panel.webp");--ui-card-ratio:0.7556;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="floating"]{--ui-move:url("./assets/battle-ui-v223/floating-move.webp");--ui-card:url("./assets/battle-ui-v223/floating-card.webp");--ui-skill:url("./assets/battle-ui-v223/floating-skill.webp");--ui-panel:url("./assets/battle-ui-v223/floating-panel.webp");--ui-card-ratio:0.7124;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="ebony-gold"]{--ui-move:url("./assets/battle-ui-v223/ebony-gold-move.webp");--ui-card:url("./assets/battle-ui-v223/ebony-gold-card.webp");--ui-skill:url("./assets/battle-ui-v223/ebony-gold-skill.webp");--ui-panel:url("./assets/battle-ui-v223/ebony-gold-panel.webp");--ui-card-ratio:0.6802;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="ebony-silver"]{--ui-move:url("./assets/battle-ui-v223/ebony-silver-move.webp");--ui-card:url("./assets/battle-ui-v223/ebony-silver-card.webp");--ui-skill:url("./assets/battle-ui-v223/ebony-silver-skill.webp");--ui-panel:url("./assets/battle-ui-v223/ebony-silver-panel.webp");--ui-card-ratio:0.6802;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="nacre"]{--ui-move:url("./assets/battle-ui-v223/nacre-move.webp");--ui-card:url("./assets/battle-ui-v223/nacre-card.webp");--ui-skill:url("./assets/battle-ui-v223/nacre-skill.webp");--ui-panel:url("./assets/battle-ui-v223/nacre-panel.webp");--ui-card-ratio:0.6992;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="red-lacquer"]{--ui-move:url("./assets/battle-ui-v223/red-lacquer-move.webp");--ui-card:url("./assets/battle-ui-v223/red-lacquer-card.webp");--ui-skill:url("./assets/battle-ui-v223/red-lacquer-skill.webp");--ui-panel:url("./assets/battle-ui-v223/red-lacquer-panel.webp");--ui-card-ratio:0.7082;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="bamboo"]{--ui-move:url("./assets/battle-ui-v223/bamboo-move.webp");--ui-card:url("./assets/battle-ui-v223/bamboo-card.webp");--ui-skill:url("./assets/battle-ui-v223/bamboo-skill.webp");--ui-panel:url("./assets/battle-ui-v223/bamboo-panel.webp");--ui-card-ratio:0.7500;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="stone"]{--ui-move:url("./assets/battle-ui-v223/stone-move.webp");--ui-card:url("./assets/battle-ui-v223/stone-card.webp");--ui-skill:url("./assets/battle-ui-v223/stone-skill.webp");--ui-panel:url("./assets/battle-ui-v223/stone-panel.webp");--ui-card-ratio:0.7876;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="celadon"]{--ui-move:url("./assets/battle-ui-v223/celadon-move.webp");--ui-card:url("./assets/battle-ui-v223/celadon-card.webp");--ui-skill:url("./assets/battle-ui-v223/celadon-skill.webp");--ui-panel:url("./assets/battle-ui-v223/celadon-panel.webp");--ui-card-ratio:0.8174;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="textile"]{--ui-move:url("./assets/battle-ui-v223/textile-move.webp");--ui-card:url("./assets/battle-ui-v223/textile-card.webp");--ui-skill:url("./assets/battle-ui-v223/textile-skill.webp");--ui-panel:url("./assets/battle-ui-v223/textile-panel.webp");--ui-card-ratio:0.8778;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="brass-seals"]{--ui-move:url("./assets/battle-ui-v223/brass-seals-move.webp");--ui-card:url("./assets/battle-ui-v223/brass-seals-card.webp");--ui-skill:url("./assets/battle-ui-v223/brass-seals-skill.webp");--ui-panel:url("./assets/battle-ui-v223/brass-seals-panel.webp");--ui-card-ratio:0.8108;--ui-panel-slice:25% 22% 28% 22%;}
+body[data-battle-ui="white-paper"]{--ui-move:url("./assets/battle-ui-v223/white-paper-move.webp");--ui-card:url("./assets/battle-ui-v223/white-paper-card.webp");--ui-skill:url("./assets/battle-ui-v223/white-paper-skill.webp");--ui-panel:url("./assets/battle-ui-v223/white-paper-panel.webp");--ui-card-ratio:0.8108;--ui-panel-slice:25% 22% 28% 22%;}
+
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck{height:25%;min-height:0;padding:5px 1.8% 4px;grid-template-columns:17% minmax(0,1fr);gap:1.6%;border:0;border-radius:0;background:transparent;box-shadow:none;overflow:visible}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck::before{content:"";position:absolute;inset:9% 0 0;z-index:-1;pointer-events:none;border:0 solid transparent;border-image:var(--ui-panel) var(--ui-panel-slice) fill / 12px 60px 16px 60px / 0 stretch;filter:drop-shadow(0 -1px 2px #0005)}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .movement{height:100%;display:flex;flex-direction:column;gap:1px;justify-content:end;align-self:end}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .movement .move-pair{height:68%;align-items:center;gap:2%;flex:none}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .movement .move-pair button{flex:none;width:49%;height:100%;min-width:0;min-height:0;max-height:none;aspect-ratio:1;border:0;border-radius:0;clip-path:none;background:var(--ui-move) center/contain no-repeat;box-shadow:none;font-size:clamp(18px,3.4cqw,38px);line-height:1;padding:0;color:var(--deck-ink);text-shadow:0 1px 1px #0007;filter:drop-shadow(0 1px 1px #0005)}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .movement-modes{height:20%;gap:3px;flex:none}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .movement .auto-button{min-height:0;height:100%;padding:0 2px;font-size:clamp(6px,.8cqw,10px);background:var(--deck-bg);border:1px solid var(--deck-edge);border-radius:3px;line-height:1;opacity:.95}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .party-count{height:9%;font-size:clamp(5px,.65cqw,8px);line-height:1.2;margin:0;text-align:center;color:var(--deck-ink)}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .actions{grid-template-columns:minmax(0,1fr) 27%;gap:1.5%;height:100%;align-items:end}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .summon-group{grid-template-columns:20px minmax(0,1fr) 20px;gap:4px;height:100%;align-items:end}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots{gap:3px;padding:0 3px;align-items:end;justify-content:center;scrollbar-width:thin;scrollbar-color:var(--deck-edge) transparent}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action{height:100%;max-height:none;aspect-ratio:var(--ui-card-ratio);width:auto;min-width:0;flex:0 0 auto;border:0!important;border-radius:0!important;outline:0!important;background:var(--ui-card) center/contain no-repeat!important;box-shadow:none!important;padding:0;overflow:visible;filter:drop-shadow(0 1px 1px #0005);transform:none}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action .action-art,body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action[data-card=native] .action-art{inset:14% 14% 28%;width:auto;height:auto;overflow:hidden;transform:none;border:0;background:none}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action .action-art img{display:none}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action .action-art img.theme-portrait{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;transform:none;filter:none}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action strong{inset:auto 12% 23%;width:auto;height:10%;padding:0;line-height:1;font-size:clamp(5px,.72cqw,9px);background:#f3e5cdbb!important;color:#33261d!important;text-shadow:none;white-space:nowrap}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action .summon-cost{inset:auto 14% 7%;height:12%;line-height:1;font-size:clamp(6px,.85cqw,11px);padding:0;border-radius:2px;display:grid;place-content:center;background:transparent;color:var(--deck-ink);box-shadow:none;white-space:nowrap}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action .summon-cost::before{border-radius:2px}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action .unit-tier{display:none}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action .unit-count{inset:11% 13% auto auto;line-height:1.1;font-size:clamp(5px,.65cqw,8px);padding:1px 2px;background:#34291fba;color:#fff4d8;border-radius:2px}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action .cooldown{inset:auto 14% 7%;width:72%;max-height:78%;background:#17182048;pointer-events:none;border-radius:0}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action[data-state=ready] .summon-cost{background:#2f6243;color:#fffbd5;box-shadow:inset 0 0 0 1px #c2dd96}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action[data-state=cooldown] .summon-cost{background:#4a3524;color:#ffe5af}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action[data-state=full] .summon-cost{background:#464d47;color:#dfdfd3}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action[data-state=cost] .summon-cost{color:#a13c26;background:#f3e4c5c9}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .summon-group .resource-meter{width:20px;height:86%;align-self:end;min-height:0;margin-bottom:3px;padding:3px 2px;gap:1px;background:var(--deck-bg);border:1px solid var(--deck-edge);box-shadow:inset 0 0 0 1px #ffffff22;border-radius:5px;font-size:7px}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .resource-meter :is(span,b,small){font-size:clamp(5px,.65cqw,8px);line-height:1.1}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck :is(#coin-gauge,#mana-gauge){width:9px;min-height:10px;border-radius:3px}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .skill-group{height:95%;align-self:end;padding:0;background:transparent;border-radius:0}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .skill-group .action-row{height:100%;gap:1px;align-items:center}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .skill-group .action:nth-child(n){width:calc((100% - 2px)/3);height:100%;min-width:0;min-height:0;max-width:none;aspect-ratio:1;border:0!important;border-radius:0!important;outline:0;box-shadow:none!important;background:var(--ui-skill) center/contain no-repeat!important;clip-path:none;filter:drop-shadow(0 1px 1px #0006)}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .skill-group .action .action-art{inset:24% 20% 29%;width:auto;height:auto;transform:none;overflow:hidden}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .skill-group .action .action-art img{height:100%;width:100%;object-fit:contain;filter:drop-shadow(0 1px 1px #0004)}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .skill-group .action strong{inset:auto 7% 10%;font-size:clamp(6px,.74cqw,10px);line-height:1.1;color:var(--deck-ink);text-shadow:0 1px 1px #0008;background:var(--deck-bg);border-radius:3px;padding:1px 0}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck .skill-group .action small{inset:2% 15% auto;height:auto;line-height:1.2;font-size:clamp(5px,.65cqw,9px);padding:1px 0;text-align:center;background:var(--deck-bg);border:1px solid var(--deck-edge);border-radius:8px;color:var(--deck-ink)}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action .summon-cost::after{content:none}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action .countdown{inset:35% 0 auto;font-size:clamp(9px,1.4cqw,18px);line-height:1;color:#fff5d4}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots .action[data-state=full]::after{inset:35% 18% auto;font-size:clamp(6px,.75cqw,9px);line-height:1.2;padding:2px 0;background:#263d30d9;color:#f4edd6;border-radius:3px}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck button:focus-visible{outline:2px solid #fff3bd!important;outline-offset:1px}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck button:hover:not(:disabled){filter:brightness(1.12)}
+body[data-screen="game"][data-battle-ui] #game-shell .control-deck button:active:not(:disabled){filter:brightness(.86)}
+
+body[data-battle-ui="fan"] #game-shell .control-deck #summon-slots{padding:5px 10px 0;overflow-y:hidden;align-items:end}
+body[data-battle-ui="fan"] #game-shell .control-deck #summon-slots .action{height:90%;transform-origin:50% 120%}
+body[data-battle-ui="fan"] #game-shell .control-deck #summon-slots .action:nth-child(1){transform:rotate(-7deg) translateY(2px)}
+body[data-battle-ui="fan"] #game-shell .control-deck #summon-slots .action:nth-child(2){transform:rotate(-3.5deg)}
+body[data-battle-ui="fan"] #game-shell .control-deck #summon-slots .action:nth-child(4){transform:rotate(3.5deg)}
+body[data-battle-ui="fan"] #game-shell .control-deck #summon-slots .action:nth-child(5){transform:rotate(7deg) translateY(2px)}
+body[data-battle-ui="fan"] #game-shell .control-deck .skill-group .action .action-art{inset:28% 25% 35%}
+body[data-battle-ui="minimal"] #game-shell .control-deck::before,body[data-battle-ui="floating"] #game-shell .control-deck::before{opacity:.9}
+body[data-battle-ui="ink"] #game-shell .control-deck{--deck-ink:#222820;--deck-bg:#eae1cc}
+@container battle (max-width:600px){
+ body[data-screen="game"][data-battle-ui] #game-shell .control-deck{height:25%;min-height:0;padding:3px 1.2% 2px;gap:1%;grid-template-columns:18% minmax(0,1fr)}
+ body[data-screen="game"][data-battle-ui] #game-shell .control-deck .summon-group{grid-template-columns:15px minmax(0,1fr) 15px;gap:2px}
+ body[data-screen="game"][data-battle-ui] #game-shell .control-deck .resource-meter{width:15px;padding:2px 1px}
+ body[data-screen="game"][data-battle-ui] #game-shell .control-deck #summon-slots{gap:1px;padding:0 1px}
+ body[data-screen="game"][data-battle-ui] #game-shell .control-deck .movement .move-pair button{height:100%;min-height:0;min-width:0}
+ body[data-screen="game"][data-battle-ui] #game-shell .control-deck::before{border-image-width:8px 35px 10px 35px}
+}

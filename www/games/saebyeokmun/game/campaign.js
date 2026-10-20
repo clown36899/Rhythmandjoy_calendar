@@ -1,4 +1,4 @@
-import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=218-integrated';
+import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=224';
 export const CARD_FRAGMENT_GOAL=5,CARD_CATALOG_SIZE=1000;
 const validCard=id=>typeof id==='string'&&/^C\d{4}$/.test(id)&&Number(id.slice(1))>=1&&Number(id.slice(1))<=CARD_CATALOG_SIZE;
 // Local progression is separate from Journey's capped battle purse. No cash purchases.

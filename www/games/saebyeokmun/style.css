@@ -1968,14 +1968,20 @@ img,svg,canvas{-webkit-user-drag:none}button,img,svg{user-select:none}
 .summon-group .action[data-card=painted] strong{bottom:12px;line-height:12px;font-size:9px;z-index:3;color:#352f2a;text-shadow:0 1px #fff4dd}
 .summon-group .action[data-card=painted] small{inset:auto 4px 2px;background:none;color:#5b4325;line-height:10px;font-size:9px;z-index:3}
 .summon-group .action[data-state=cost] small{background:#6e302ce8;color:#fff0d4;border-radius:3px}
-.summon-group .hud-right{display:block;width:100%;margin:3px 0 0;padding:0 5px;box-sizing:border-box;pointer-events:none}
-.summon-group .coin-bank{min-width:0;display:grid;grid-template-columns:15px 30px 1fr;grid-template-rows:16px;align-items:center;gap:4px;padding:1px 6px;background:#17363ddd;border:1px solid #c5ad725e;border-radius:5px;color:#f5dda5}
-.summon-group .coin-bank b{font:600 11px/16px sans-serif;color:#f4dda4}
-.summon-group .coin-bank small{font:8px/12px sans-serif;color:#e7d8b8}
-.summon-group .coin-bank .coin-symbol{width:12px;height:12px}
-.summon-group .coin-bank #coin-gauge{position:relative;inset:auto;grid-column:3;grid-row:1;height:6px;background:#102d33;border-radius:3px}
-.summon-group .coin-bank small{position:absolute;right:8px;top:1px;transform:translateY(-100%);display:none}
-.summon-group .coin-bank #coin-fill{background:linear-gradient(90deg,#ba8d38,#f7d981);height:100%;border-radius:3px;transition:width .12s linear}
+/* One compact resource pair flanks the summon row, leaving the road clear. */
+.summon-group{display:grid;grid-template-columns:30px minmax(0,1fr) 30px;align-items:end;gap:4px}
+.summon-group .summon-picker{grid-column:2;grid-row:1}
+.summon-group #summon-slots{grid-column:2;grid-row:2;padding:0;align-self:end}
+.summon-group .resource-meter{grid-row:2;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:end;gap:1px;min-width:0;width:30px;height:74px;padding:3px 2px;margin:0;box-sizing:border-box;pointer-events:none;background:#21130ef2;border:1px solid #b38b53;border-radius:5px;color:#f3d390;font:8px/10px sans-serif}
+.summon-group .coin-bank{grid-column:1}.summon-group .mana-bank{grid-column:3;color:#9ad6f3;border-color:#6499ab}
+.summon-group .resource-meter>span{font:7px/8px sans-serif}
+.summon-group .resource-meter b{font:700 10px/11px sans-serif;color:inherit}
+.summon-group .resource-meter small{display:block;position:static;transform:none;font:7px/8px sans-serif;color:inherit}
+.summon-group #coin-gauge,.summon-group #mana-gauge{position:relative;inset:auto;flex:1;min-height:22px;width:10px;margin:0;background:#100e12;border-radius:3px;overflow:hidden}
+.summon-group #coin-fill,.summon-group #mana-fill{position:absolute;inset:auto 0 0;width:100%;height:70%;border-radius:2px;transition:height .12s linear;background:linear-gradient(90deg,#ae771f,#ffe8a4,#c68f35)}
+.summon-group #mana-fill{background:linear-gradient(90deg,#245b99,#a3edff,#318bc4)}
+@container(max-width:760px){.summon-group{grid-template-columns:25px minmax(0,1fr) 25px;gap:3px}.summon-group .resource-meter{height:64px;width:25px}}
+@media(prefers-reduced-motion:reduce){.summon-group #coin-fill,.summon-group #mana-fill{transition:none}}
 .hud .journey--celestial{width:34%;min-width:190px;max-width:310px;height:58px;grid-template-columns:1fr 32px 1.2fr;padding-bottom:15px;left:50%}
 .journey--celestial .sky-dial{width:32px;height:32px}
 .journey-destination span{font-size:8px}
@@ -1996,9 +2002,6 @@ img,svg,canvas{-webkit-user-drag:none}button,img,svg{user-select:none}
  .summon-group .action[data-card=painted] small{font-size:8px;line-height:9px;bottom:2px}
  .summon-group .action[data-card=painted] .unit-tier{font-size:7px;top:2px}
  .summon-group .action[data-card=painted] .unit-count{top:12px;font-size:6px}
- .summon-group .hud-right{margin-top:2px}
- .summon-group .coin-bank{grid-template-rows:13px;padding:0 5px}
- .summon-group .coin-bank b{font-size:9px;line-height:13px}
 }
 
 #download-percent[hidden],#download-bytes[hidden],#download-state[hidden]{display:none}
@@ -2014,3 +2017,65 @@ img,svg,canvas{-webkit-user-drag:none}button,img,svg{user-select:none}
 .stage-tools .sound-toggle[aria-pressed="false"] .sound-off{display:block}
 .stage-tools .sound-toggle[aria-pressed="false"]{color:#baa78b}
 body[data-area="1"][data-screen="game"] .stage-tools .sound-toggle{padding:4px}
+
+/* Shared movement commands: keep both controls beside each other. */
+.movement-modes{display:flex;align-items:center;justify-content:center;gap:3px;width:100%}.movement .movement-modes .auto-button{flex:1;min-width:0;width:auto;padding:2px 3px;white-space:nowrap;font-size:8px}.movement #party-stop[aria-pressed=true]{color:#fff2d7;background:#74452c;border-color:#deb76d}
+
+/* v221: one grounded tray owns battle layout across all stage skins.
+   Existing controls, balances, cooldowns and pointer handlers remain owners. */
+body[data-screen="game"] #game-shell .control-deck{position:absolute;inset:auto 0 0;height:25%;min-height:88px;display:grid;grid-template-columns:15% minmax(0,1fr);gap:1.5%;align-items:end;padding:5px 2% max(4px,env(safe-area-inset-bottom));border-top:2px solid #b08a50;background:repeating-linear-gradient(1deg,#40221b 0 2px,#47261d 3px 5px,#391e18 7px 9px);box-shadow:inset 0 3px #e8bc6930,0 -2px 5px #1b100c55;pointer-events:none}
+body[data-screen="game"] #game-shell .control-deck .movement{position:relative;inset:auto;width:100%;min-width:0;margin:0;gap:4px;pointer-events:auto;align-self:center}
+body[data-screen="game"] #game-shell .movement .move-pair{gap:4px;width:100%;justify-content:center}
+body[data-screen="game"] #game-shell .movement .move-pair button{width:calc(50% - 2px);height:44px;min-height:44px;min-width:36px;border:1px solid #a98144;border-radius:6px;background:#2b1713;color:#f4dfb1;font-size:25px}
+body[data-screen="game"] #game-shell .movement-modes{display:flex;gap:3px;width:100%}
+body[data-screen="game"] #game-shell .movement .auto-button{order:0;flex:1;min-width:0;padding:2px 0;height:24px;min-height:24px;font-size:clamp(7px,.9cqw,10px);border:1px solid #977144;border-radius:3px;background:#2e1a14;color:#ecd6aa;white-space:nowrap}
+body[data-screen="game"] #game-shell .movement .auto-button[aria-pressed="true"]{background:#476b51;color:#fff6d9;border-color:#b8cf9c}
+body[data-screen="game"] #game-shell .party-count{position:static;inset:auto;height:auto;font-size:8px;line-height:10px;color:#c3ac83;pointer-events:none}
+body[data-screen="game"] #game-shell .battle-minimap{display:none}
+body[data-screen="game"] #game-shell .control-deck .actions{position:static;inset:auto;display:grid;grid-template-columns:minmax(0,1fr) 24%;gap:2%;width:100%;height:100%;align-items:end}
+body[data-screen="game"] #game-shell .summon-group{position:static;inset:auto;transform:none;width:100%;height:100%;max-width:none;display:grid;grid-template-columns:26px minmax(0,1fr) 26px;grid-template-rows:1fr;align-items:end;gap:5px}
+body[data-screen="game"] #game-shell .summon-picker{display:none}
+body[data-screen="game"] #game-shell #summon-slots{grid-column:2;grid-row:1;display:flex;align-items:stretch;gap:5px;padding:2px;overflow-x:auto;overflow-y:hidden;height:100%;width:100%}
+body[data-screen="game"] #game-shell #summon-slots .action{flex:0 0 calc((100% - 20px)/5);width:calc((100% - 20px)/5);min-width:44px;height:100%;max-height:140px;margin:0;border:1px solid #a98047;border-radius:4px;box-shadow:none}
+body[data-screen="game"] #game-shell .summon-group .resource-meter{grid-row:1;position:relative;inset:auto;align-self:stretch;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:2px;width:26px;height:100%;min-height:0;max-height:140px;padding:3px;transform:none;border:1px solid #b08a50;border-radius:4px;background:#21140f;color:#efce86;font:8px/10px sans-serif}
+body[data-screen="game"] #game-shell .resource-meter.mana-bank{color:#a2dcf4;border-color:#6191a7}
+body[data-screen="game"] #game-shell .resource-meter :is(span,b,small){position:static;inset:auto;margin:0;padding:0;width:auto;height:auto;background:none;color:inherit;line-height:10px;text-shadow:none;transform:none}
+body[data-screen="game"] #game-shell :is(#coin-gauge,#mana-gauge){position:relative;inset:auto;flex:1;width:11px;height:auto;min-height:20px;max-height:none;margin:0;border:1px solid #887043;background:#100e0e;border-radius:3px}
+body[data-screen="game"] #game-shell :is(#coin-fill,#mana-fill){inset:auto 0 0;width:100%;max-width:none;display:block}
+body[data-screen="game"] #game-shell .skill-group{position:static;inset:auto;width:100%;height:auto;align-self:center;pointer-events:none}
+body[data-screen="game"] #game-shell .skill-group .action-row{display:flex;gap:4px;justify-content:center}
+body[data-screen="game"] #game-shell .skill-group .action:nth-child(n){position:relative;inset:auto;width:calc((100% - 8px)/3);min-width:32px;max-width:72px;height:clamp(44px,6cqw,72px);margin:0;flex:1}
+body[data-screen="game"] #game-shell .skill-group .group-label{display:none}
+body[data-screen="game"] #game-shell #summon-slots .action[data-state="ready"]{border-color:#e8cf83;box-shadow:inset 0 0 0 1px #f7dfa4}
+body[data-screen="game"] #game-shell #summon-slots .action[data-state="ready"] .summon-cost{background:#235541;color:#f2ffe6;text-shadow:0 1px #142f22;box-shadow:inset 0 0 0 1px #b2d693}
+body[data-screen="game"] #game-shell #summon-slots .action[data-state="ready"] .summon-cost::before{background:linear-gradient(#4e885f,#235541)}
+body[data-screen="game"] #game-shell #summon-slots .action[data-state="cooldown"] .summon-cost{color:#e4c995;background:#392619;box-shadow:none}
+body[data-screen="game"] #game-shell #summon-slots .action[data-state="full"] .summon-cost{background:#45413b;color:#d4cabb;box-shadow:none}
+body[data-screen="game"] #game-shell #summon-slots .action[data-state="full"] .summon-cost::before{background:#45413b}
+/* Local maker fills its viewport while keeping the real phone frame. */
+body[data-local-lab="true"]{display:block;width:100vw;height:100dvh;min-height:0;margin:0;overflow:hidden}
+body[data-local-lab="true"] .page{max-width:none;width:100%;height:100%;padding:0;margin:0}
+body[data-local-lab="true"] .phone-preview{width:100%;height:100%;aspect-ratio:2;margin:0;filter:none}
+body[data-local-lab="true"] .phone-screen{position:absolute;inset:13.4% 7.95% 13.4% 8.06%;width:auto;height:auto;padding:0;border-radius:13px}
+body[data-local-lab="true"] .device-frame{display:block}
+body[data-local-lab="true"] :is(.field-notes,footer,.scene-route){display:none}
+
+/* Children may shrink inside the fixed tray; intrinsic card height must not push prices below the phone screen. */
+body[data-screen="game"] #game-shell .control-deck{grid-template-rows:minmax(0,1fr)}
+body[data-screen="game"] #game-shell .control-deck :is(.actions,.summon-group,#summon-slots,#summon-slots .action){min-height:0;box-sizing:border-box}
+body[data-screen="game"] #game-shell .control-deck .actions,body[data-screen="game"] #game-shell .summon-group{grid-template-rows:minmax(0,1fr)}
+
+/* Shared team controls live above the field, outside the bottom theme deck. */
+#game-shell .stage>#team-skills{top:18%;right:2%;bottom:auto;z-index:13;gap:8px;max-width:45%;align-items:start}
+#game-shell .stage>#team-skills .action{width:clamp(42px,5.6cqw,76px);height:clamp(48px,6.4cqw,84px);min-width:0;border:0;border-radius:0;background:transparent url("./assets/battle-ui-v223/wood-skill.webp") center/contain no-repeat;box-shadow:none;touch-action:manipulation}
+#game-shell .stage>#team-skills .action-art{inset:12% 17% 30%;width:auto;height:auto}
+#game-shell .stage>#team-skills .action-art img{width:100%;height:100%;object-fit:contain}
+#game-shell .stage>#team-skills .action strong{inset:auto -12% 3%;font-size:clamp(7px,.8cqw,11px);line-height:1.2;white-space:nowrap;color:#fff1cf;background:#30261be6;border-radius:3px;text-align:center}
+#game-shell .stage>#team-skills .action small{inset:-11px -5% auto;font-size:clamp(6px,.7cqw,9px);line-height:1.2;border-radius:4px;text-align:center}
+#game-shell .stage>#team-skills .action:disabled{filter:saturate(.35);opacity:.7}
+.battle-ui-setting{display:grid;grid-template-columns:1fr;gap:5px;margin:0 0 10px}
+.battle-ui-setting label{font-size:12px;font-weight:700}
+.battle-ui-setting select{width:100%;min-height:32px;background:#f1e9d9;color:#352f24;border:1px solid #b2a58a;border-radius:5px;padding:5px}
+#battle-ui-preview{width:100%;height:55px;object-fit:contain;object-position:center;background:#dfd6c4;border-radius:4px}
+#battle-ui-preview[hidden]{display:none}
+#battle-ui-status{font-size:10px;line-height:1.3;color:#746653}

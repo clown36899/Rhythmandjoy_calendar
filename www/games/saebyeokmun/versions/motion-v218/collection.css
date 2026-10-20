@@ -1,0 +1,99 @@
+/* Selected concept 02: an indigo-bound hanji album. Art pixels remain in the original atlas. */
+.phone-screen>dialog#codex[open]{position:fixed;padding:0;gap:0;overflow:hidden;background:#ede0c2 url('../../assets/collection-hanji-album-v156.png') center/100% 100%;color:#39291e;--album-font:'AppleMyungjo','Nanum Myeongjo',serif}
+.phone-screen>dialog#codex .dialog-head{position:absolute;z-index:5;inset:2% 3.6% auto;display:flex;height:11%;min-height:0;gap:1.2%;padding:0;border:0;background:none}
+#codex [hidden]{display:none!important}
+.phone-screen>dialog#codex .dialog-head h2{display:flex;align-items:center;justify-content:center;flex:none;width:20%;height:100%;margin:0;color:#231c17;letter-spacing:.1em;font:800 clamp(19px,3.9cqw,40px)/1 var(--album-font);text-shadow:0 1px #fff8}
+#codex #codex-return,.phone-screen>dialog#codex .dialog-close{height:100%;min-height:0;width:4.5%;min-width:0;flex:none;padding:0;background:#193348b8;color:#fff0cb;border:1px solid #ba9560;border-radius:2px;font:700 clamp(18px,3.7cqw,34px)/1 var(--game-ui-font);cursor:pointer}
+#codex .collection-state-tabs{display:flex;flex:1;min-width:0;align-items:center;justify-content:center;gap:4%}
+#codex .collection-state-tabs button{min-height:0;height:88%;padding:2px 8px;min-width:0;border:1px solid #b49a70;border-radius:2px;color:#4b3a29;background:#efe4cadd;white-space:nowrap;font:700 clamp(11px,1.75cqw,20px)/1.1 var(--album-font);box-shadow:0 1px 2px #17262e66;cursor:pointer}
+#codex .collection-state-tabs button[aria-pressed=true]{background:#fcf1d8;border-color:#e6be68;color:#173f5c;box-shadow:inset 0 -2px #416484,0 1px 3px #0005}
+#collection-total{flex:none;white-space:nowrap;color:#fff0ce;font:600 clamp(10px,1.65cqw,18px)/1 var(--album-font);padding:0 1%}
+#codex .codex-library{position:relative;flex:none;align-self:stretch;display:flex;align-items:center;color:#f8e7c1;font:11px var(--game-ui-font)}
+#codex .codex-library>summary{display:grid;place-items:center;box-sizing:border-box;min-height:0;height:100%;padding:3px 5px;cursor:pointer;list-style:none;border:1px solid #9f885c;border-radius:2px;background:#1d374bc9}
+#codex .codex-library>summary::-webkit-details-marker{display:none}
+#codex .codex-library .codex-tabs{position:absolute;z-index:15;top:calc(100% + 5px);right:0;display:flex;flex-direction:column;gap:0;width:128px;padding:5px;background:#f8eed8;border:1px solid #ad8b4f;box-shadow:0 4px 12px #11283877}
+#codex .codex-library .codex-tabs button{height:34px;min-height:34px;padding:5px 8px;color:#38536a;background:transparent;border:0;font:13px var(--game-ui-font);text-align:left}
+#codex .codex-library .codex-tabs button[aria-selected=true]{color:#173f5c;box-shadow:inset 3px 0 #416484;background:#e6dabb}
+#codex:not([data-panel=collection]) .collection-state-tabs,#codex:not([data-panel=collection]) #collection-total{visibility:hidden}
+#codex .codex-body{position:absolute;inset:15.5% 4.7% 5.5%;height:auto;min-height:0;overflow:visible;isolation:auto}
+#codex #codex-collection{position:relative;height:100%;padding:0;overflow:visible}
+.collection-book-layout{position:relative;display:grid;grid-template-columns:58.7% 36.5%;column-gap:4.8%;height:100%;min-height:0}
+#collection-browse{display:flex;flex-direction:column;position:relative;min-height:0;padding:0 1.5% 0 1%}
+#collection-grid{display:grid;flex:1;min-height:0;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr));gap:3.5% 3%;padding:0 1%}
+#codex .collection-card{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;margin:0;padding:4% 5% 3%;border:0;border-radius:1px;background:#f9efd9;box-shadow:0 2px 4px #5e442d66;color:#28251d;cursor:pointer;font-family:var(--album-font);touch-action:manipulation}
+.collection-card::after,.collection-selected-card::after{content:'';position:absolute;z-index:3;inset:-3%;background:url('../../assets/collection-hanji-card-frame-v156.png') center/106% 106%;pointer-events:none}
+#codex .collection-card[aria-pressed=true]{outline:2px solid #43738e;outline-offset:1px;box-shadow:0 0 7px #366e8a70}
+.collection-card-face{display:flex;align-items:center;justify-content:center;position:relative;flex:1;min-height:0;container-type:size;background:#faf2df;isolation:isolate}
+.collection-art{display:block;position:relative;isolation:isolate;overflow:hidden;aspect-ratio:var(--sheet-aspect,1);background-size:1000% 1000%;background-repeat:no-repeat;background-color:#fbf5e6;flex:none}
+.collection-card .collection-art{width:min(100%,calc(100cqh * var(--sheet-aspect)));height:auto;max-height:100%}
+.collection-art i{position:absolute;top:0;left:0;width:23%;height:16%;background:#fbf8ee;pointer-events:none}
+.collection-card strong,#collection-name{position:absolute;z-index:2;top:3%;left:1%;margin:0;padding:3px 1px;writing-mode:vertical-rl;text-orientation:upright;color:#292016;background:#fcf1d7eb;border:1px solid #b69c6d;box-shadow:0 1px 2px #83613b33;font:800 clamp(10px,1.65cqw,18px)/1.2 var(--album-font);letter-spacing:.05em}
+.collection-card strong[data-long=true]{writing-mode:horizontal-tb;top:auto;bottom:0;left:0;right:0;padding:1px;font-size:clamp(9px,1.3cqw,13px);line-height:1.2;letter-spacing:0;word-break:keep-all}
+.collection-card-foot{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none;height:22%;min-height:17px;padding-top:2px}
+.fragment-slots{display:flex;justify-content:center;align-items:center;gap:clamp(2px,.5cqw,6px);height:auto}
+.fragment-slots i{display:block;position:relative;width:clamp(5px,1cqw,12px);aspect-ratio:1;border:1px solid #907a51;border-radius:50%;box-sizing:border-box;background:#dfd6bf;box-shadow:inset 0 1px 2px #75552b28}
+.fragment-slots i[data-filled=true]{background:radial-gradient(circle at 35% 30%,#81b3c6,#2e6287 65%,#174467);border-color:#5a784f;box-shadow:inset 0 0 0 1px #d9ebda99}
+.fragment-slots i[data-filled=true]::after{content:'✧';position:absolute;inset:0;display:grid;place-items:center;color:#ecf5df;font:8px/1 sans-serif}
+.collection-card-foot small{color:#403525;font:700 clamp(9px,1.35cqw,14px)/1.1 var(--album-font);margin-top:2px;white-space:nowrap}
+.card-owned-seal{position:absolute;z-index:4;right:3%;bottom:2%;display:flex;align-items:center;justify-content:center;width:28%;aspect-ratio:1;border:2px solid #a93c29;outline:1px solid #a93c29;outline-offset:-5px;transform:rotate(-7deg);border-radius:2px;background:#fcf3dbdd;color:#a83f2b;font:800 clamp(10px,1.8cqw,23px)/1 var(--album-font);letter-spacing:-.05em;box-sizing:border-box;pointer-events:none}
+.collection-card[data-state=ready]{box-shadow:0 0 0 1px #c8943b,0 0 9px #cf963e99}
+.collection-footer{position:relative;z-index:5;display:flex;justify-content:center;align-items:center;gap:8%;flex:none;height:13%;min-height:24px;margin:2% 0 0;padding:0;background:none;color:#3e4d4e;font:11px var(--game-ui-font)}
+.collection-paging{display:flex;align-items:center;justify-content:center;gap:10px}
+#codex .collection-paging button,#codex .collection-find summary,#codex #collection-reset,#codex #collection-back,#codex #collection-retry{display:flex;align-items:center;justify-content:center;min-width:28px;min-height:25px;height:auto;margin:0;padding:2px 7px;border:1px solid #b2986b;border-radius:2px;background:#eee2c7;color:#284b65;font:600 11px var(--game-ui-font);cursor:pointer}
+#codex .collection-paging button:disabled{opacity:.35;cursor:default}
+.collection-find{position:relative}
+#codex .collection-find summary{list-style:none;white-space:nowrap}
+.collection-find summary::-webkit-details-marker{display:none}
+.collection-find-panel{position:absolute;z-index:12;left:auto;right:0;bottom:calc(100% + 7px);width:230px;max-width:48cqw;box-sizing:border-box;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;background:#f8eed8;border:1px solid #b28a4c;box-shadow:0 4px 12px #2b343b66;text-align:left;color:#55432c;font:11px var(--game-ui-font)}
+.collection-find-panel label:first-child,.collection-find-panel>button{grid-column:1/3}
+.collection-find-panel input,.collection-find-panel select{display:block;box-sizing:border-box;width:100%;height:30px;min-width:0;margin-top:3px;border:1px solid #b7a482;border-radius:2px;background:#fff9eb;color:#263f4e;font:12px var(--game-ui-font);padding:3px 5px;user-select:text}
+#collection-empty{position:absolute;inset:10% 0 18%;display:grid;place-items:center;color:#6e654e;text-align:center;font:clamp(11px,1.7cqw,16px)/1.7 var(--album-font)}
+#collection-detail{display:grid;grid-template-rows:minmax(0,1fr) 17% 14%;gap:1.5%;position:relative;height:100%;min-height:0;padding:0 3%;box-sizing:border-box}
+.collection-selected-card{position:relative;min-height:0;background:#fcf1db;box-shadow:0 2px 5px #66523166;isolation:isolate}
+#collection-front,#collection-turn{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:0;padding:0;margin:0;box-sizing:border-box}
+#codex #collection-turn{container-type:size;border:0;border-radius:0;background:#fbf4e4;color:#34291b;cursor:pointer}
+#collection-picture{width:min(100%,calc(100cqh * var(--sheet-aspect)));height:auto;max-height:100%}
+#collection-name{top:4%;left:4%;font-size:clamp(13px,8cqw,27px);line-height:1.2;padding:4px 2px}
+#collection-name[data-long=true]{writing-mode:horizontal-tb;left:5%;right:5%;top:3%;padding:3px;font-size:clamp(11px,6cqw,20px)}
+.collection-flip-hint{position:absolute;bottom:2%;right:3%;padding:1px 3px;border-radius:2px;color:#526e76;background:#faf3e3c9;font:10px var(--game-ui-font)}
+.collection-progress{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding-top:1%;min-height:0}
+.collection-progress .fragment-slots{gap:clamp(5px,1.1cqw,13px)}
+.collection-progress .fragment-slots i{width:clamp(11px,2.3cqw,24px);border-color:#8c7756}
+.collection-progress .fragment-slots i::after{font-size:clamp(9px,1.7cqw,17px)}
+#collection-detail[data-state=ready] .collection-progress .fragment-slots i{background:radial-gradient(circle at 35% 20%,#c95830,#8e2825 75%);border:2px solid #d6ab55;box-shadow:0 0 4px #d6ad54}
+#collection-fragment-count{font:700 clamp(10px,1.7cqw,17px)/1 var(--album-font);color:#4e3b27;white-space:nowrap}
+#codex #collection-claim{position:relative;z-index:3;box-sizing:border-box;min-width:0;min-height:0;width:100%;height:100%;margin:0;padding:0 10%;border:0;border-radius:0;background:transparent url('../../assets/collection-hanji-claim-v156.png') center/106% 193% no-repeat;box-shadow:none;color:#fff0cf;text-shadow:0 1px 2px #0c2539;font:800 clamp(12px,2.15cqw,23px)/1 var(--album-font);white-space:nowrap;cursor:pointer}
+#codex #collection-claim:disabled{filter:saturate(.45);color:#dbd5c3;cursor:default}
+#collection-detail[data-state=ready] .collection-selected-card{box-shadow:0 0 0 1px #bd9346,0 0 12px #d2a149aa}
+#collection-message{position:absolute;bottom:-5%;left:-1%;right:-1%;margin:0;z-index:4;color:#516f68;background:#f9f0dcdd;text-align:center;font:10px/1.25 var(--game-ui-font)}
+#collection-message:empty{display:none}
+#collection-story{position:absolute;z-index:4;inset:0;display:flex;flex-direction:column;min-height:0;padding:5%;box-sizing:border-box;background:#f9efd9}
+#codex #collection-back{align-self:flex-start;min-height:22px;min-width:0;font-size:10px;padding:1px 5px;margin-bottom:4px}
+#collection-reading{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;color:#4a3828;font:clamp(11px,1.5cqw,14px)/1.65 var(--game-ui-font);padding-right:4px;user-select:text}
+#collection-identity{margin:0 0 5px;color:#28241d;font:700 clamp(12px,1.9cqw,19px)/1.35 var(--album-font);word-break:keep-all}
+#collection-reading p{margin:5px 0}#collection-reading h4{margin:8px 0 0;font-size:11px;color:#89764d}
+#collection-meta,#collection-record,#collection-interpretation,#collection-research{font-size:10px;color:#75634c}
+#collection-sources{display:flex;flex-direction:column;gap:6px;margin-top:8px;border-top:1px solid #d5bd92;padding-top:5px}
+#collection-sources a{color:#335f6e;text-underline-offset:2px;font-size:10px;line-height:1.6;padding:3px 0}
+#collection-status{position:absolute;z-index:7;inset:0;display:grid;place-items:center;margin:0;color:#3d566a;background:#faf1dbe8;font:14px var(--album-font)}
+#codex #collection-retry{position:absolute;z-index:8;left:40%;bottom:10%}
+#codex .collection-art,#codex button,#codex a,#codex summary{-webkit-user-drag:none;user-select:none;-webkit-user-select:none}
+#codex button:focus-visible,#codex summary:focus-visible{outline:2px solid #517d98;outline-offset:2px}
+#collection-detail[data-claimed=true] .collection-selected-card{animation:album-complete .65s ease-out both}
+#collection-detail[data-claimed=true] #collection-stamp{animation:album-seal .45s ease-out both}
+@keyframes album-complete{0%{transform:scale(.93);box-shadow:0 0 25px #d7ae4c}65%{transform:scale(1.025)}100%{transform:scale(1)}}
+@keyframes album-seal{0%{opacity:0;transform:scale(1.8) rotate(-12deg)}100%{opacity:1;transform:scale(1) rotate(-7deg)}}
+@media(prefers-reduced-motion:reduce){#collection-detail[data-claimed=true] .collection-selected-card,#collection-detail[data-claimed=true] #collection-stamp{animation:none}}
+@container game-menu (max-width:620px){
+ #codex .collection-state-tabs{gap:4%}#codex .collection-state-tabs button{font-size:10px;padding:1px 4px}
+ #collection-total{font-size:9px;padding:0}.phone-screen>dialog#codex .dialog-head{gap:1%}
+ #codex .codex-library{font-size:9px}#codex .codex-library>summary{padding:1px 3px}
+ .collection-paging{gap:6px}#collection-page{font-size:10px}.collection-footer{gap:6%;min-height:23px}
+ #codex .collection-paging button,#codex .collection-find summary{min-height:22px;min-width:26px;padding:1px 5px;font-size:10px}
+ .collection-card-foot small{font-size:9px}.collection-card strong{font-size:10px}
+ .fragment-slots{gap:3px}.fragment-slots i{width:6px}.fragment-slots i[data-filled=true]::after{font-size:6px}
+ .collection-flip-hint{font-size:8px}#collection-message{font-size:9px;bottom:-5.5%}
+ .collection-find-panel{padding:8px;gap:5px;width:205px;font-size:10px}
+}
+
+#collection-count.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

@@ -1,6 +1,6 @@
-import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=218-integrated';
-import {STAGE2_ART} from './stage2-art.js?v=218-integrated';
-import {EXTRA_MONSTERS} from './expansion-monsters.js?v=218-integrated';
+import {EXTRA_CHAPTERS,GATE_STYLES,BOSS_ATTACKS} from './expansion.js?v=224';
+import {STAGE2_ART} from './stage2-art.js?v=224';
+import {EXTRA_MONSTERS} from './expansion-monsters.js?v=224';
 export {GATE_STYLES};
 // Single source of sample tuning. All folklore-derived combat roles are game inventions.
 export const ROAD=4200;
@@ -12,6 +12,7 @@ export const WALK_SPEED=76;
 export const RUN_SPEED=128;
 export const MAX_HP=200;
 export const MAX_COINS=100;
+export const MAX_MANA=100;
 export const ALLY_HP_SCALE=.7*1.15*1.1;
 export const ALLY_OUTPUT=1.1;
 export const ALLY_TYPE_LIMIT=3;
@@ -23,7 +24,7 @@ const CORE_AREAS=[
 ];
 // v134 viewpoint trial: one broad painted deck, four stable presentation depths.
 // Journey retains its existing horizontal combat and travel coordinates.
-Object.assign(CORE_AREAS[0],{roadAtlas:null,roadFlipX:true,roadTopTrim:15,actorScale:.8775,actorHeightAdd:5,groundOffset:10,actorFloors:[425,455,485,515],cameraAnchor:.5,gateFile:'stage1-gate-isometric-v134.webp',gateOrigin:[.48,.83],gateGround:470,gateHeight:650,gateColor:0xd34e31,gateLipStart:.63,roadTiles:[{file:'stage1-isometric-road-v137.webp',x:0,width:1983,height:396.5,sourceHeight:793,foot:286,top:300}]});
+Object.assign(CORE_AREAS[0],{roadAtlas:null,roadFlipX:true,roadTopTrim:15,actorScale:.8775,actorHeightAdd:5,groundOffset:10,playCameraY:8,actorFloors:[425,455,485,515],cameraAnchor:.5,gateFile:'stage1-gate-isometric-v134.webp',gateOrigin:[.48,.83],gateGround:470,gateHeight:650,gateColor:0xd34e31,gateLipStart:.63,roadTiles:[{file:'stage1-isometric-road-v137.webp',x:0,width:1983,height:396.5,sourceHeight:793,foot:286,top:300}]});
 // These authored foregrounds match their own clean plates, including the sea's
 // near water. Later paintings keep their original no-generic-ground protection.
 for(const [i,scale,foot] of [[1,1.4,550],[2,2.4,469],[3,1.4,497],[4,1.4,566]]){
@@ -111,11 +112,11 @@ export const UNIT_TIERS={beast:{label:"짐승",level:0},bond:{label:"노비",lev
 // Roster presentation from the approved sample; no combat or saved progression.
 export const UNITS=Object.fromEntries(Object.entries({
  cow:{rosterCard:{rarity:"일반",stars:1},cardArt:"summon-card-cow-v139.webp",tier:"beast",price:0,name:'누렁소',role:'방어 · 몸으로 버티기',hp:245,hpScale:.7,speed:74/1.44,range:30,damage:12,period:1.35,cost:30,cooldown:4,formation:305,spacing:0,guard:.6,weapon:'horn'},
- keeper:{rosterCard:{rarity:"일반",stars:2},cardArt:"summon-card-keeper-v139.webp",tier:"bond",price:0,name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,range:275,damage:17,period:1.15,cost:18,cooldown:3.5,formation:125,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:295,weapon:'ink'}}},
+ keeper:{rosterCard:{rarity:"일반",stars:2},cardArt:"summon-card-keeper-v139.webp",tier:"bond",price:0,name:'돌팔매 도령',role:'공격 · 짱돌 던지기',hp:60,speed:80,walkSpeed:70,runSpeed:90,search:600,range:275,damage:17,period:1.15,cost:18,cooldown:3.5,formation:125,spacing:0,guard:0,weapon:'stone',upgrade:{price:45,stats:{name:'먹붓 도령',role:'공격 · 먹붓 날리기',damage:28,range:295,weapon:'ink'}}},
  rabbit:{rosterCard:{rarity:"일반",stars:2},cardArt:"summon-card-rabbit-v139.webp",tier:"beast",price:0,name:'달토끼',role:'공격 · 씨앗 사격',hp:48,speed:72,range:185,damage:24,period:1.35,cost:24,cooldown:4,formation:215,spacing:0,guard:0,weapon:'seed'},
  scholar:{rosterCard:{rarity:"영웅",stars:3},cardArt:"summon-card-scholar-v139.webp",tier:"noble",price:0,name:'선비',role:'지원 · 붓과 부채로 봉인',hp:56,speed:68,range:540,damage:16,period:2.1,cost:34,cooldown:5,formation:-140,spacing:0,guard:0,weapon:'seal'},
  spearman:{rosterCard:{rarity:"일반",stars:2},cardArt:"summon-card-spearman-v141.webp",tier:"common",name:'조선 창병',role:'조력 · 전방 창 찌르기',price:80,hp:130,speed:74,range:75,damage:10,period:1.8,cost:26,cooldown:4.5,formation:270,spacing:0,guard:.15,weapon:'spear'},
- archer:{rosterCard:{rarity:"희귀",stars:3},tier:"common",name:'조선 궁병',role:'조력 · 후열 화살',price:100,hp:72,speed:70,runSpeed:73.5,search:700,range:420,damage:10,period:2.3,cost:24,cooldown:4.5,formation:20,spacing:0,guard:0,weapon:'arrow'},
+ archer:{walkSpeed:80,rosterCard:{rarity:"희귀",stars:3},tier:"common",name:'조선 궁병',role:'조력 · 후열 화살',price:100,hp:72,speed:70,runSpeed:170,search:700,range:420,damage:10,period:1,cost:24,cooldown:4.2,formation:20,spacing:0,guard:0,weapon:'arrow'},
  king:{rosterCard:{rarity:"전설",stars:5},tier:"legendary",name:'조선 왕',role:'지원 · 어보 봉인',price:260,hp:95,speed:65,range:380,damage:20,period:2.4,cost:38,cooldown:5.5,formation:0,spacing:0,guard:.1,weapon:'seal'},
  prince:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'세자',role:'공격 · 활 사격',price:180,hp:65,speed:82,range:330,damage:22,period:1.5,cost:30,cooldown:4.5,formation:90,spacing:0,guard:0,weapon:'arrow'},
  minister:{rosterCard:{rarity:"영웅",stars:4},tier:"noble",name:'영의정',role:'지원 · 교지 봉인',price:220,hp:85,speed:62,range:500,damage:14,period:2.2,cost:32,cooldown:5,formation:-80,spacing:0,guard:.05,weapon:'seal'},
@@ -131,7 +132,7 @@ for(const kind of Object.keys(UNITS))ENEMY_FRONT[kind]=ENEMY_FRONT.hero;
 // The ox uses the supplied video: 48 walk, 48 run and 48 retimed attack cels.
 // Its 74-unit stride / 1.44s cadence stays coupled to actual travel; other bodies stay four cels.
 // Hover is a body-height ratio, so the shared presentation scale also scales the air gap.
-export const MOTION={dokkaebi:{walkFps:5,walkFrames:4},bulgasari:{walkFps:5,walkFrames:4},changgwi:{walkFps:5,walkFrames:4},gumiho:{walkFps:5,walkFrames:4},bandit:{walkFps:5,walkFrames:4},pirate:{walkFps:5,walkFrames:4},king:{duration:.9,impact:.45,walkFps:5,walkFrames:4},prince:{duration:.8,impact:.4,walkFps:6,walkFrames:4},minister:{duration:1,impact:.5,walkFps:5,walkFrames:4},cavalry:{duration:.8,impact:.4,walkFps:6,walkFrames:4},haetae:{duration:.64,impact:.32,walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:.64,impact:.32,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,angerFrames:98,angerFps:48,walkFps:48/1.44,walkFrames:48,runFps:48/1.05,runFrames:48,attackFrames:48,idleFrame:96},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},healer:{duration:3.2,impact:1.45,notice:29/24,walkFps:8,walkFrames:4},warden:{walkFps:4,walkFrames:4},ferryman:{walkFps:4,walkFrames:4},waterghost:{walkFps:4,walkFrames:4},spearman:{duration:35/24,impact:8/24,anticipation:29/24,walkFps:5,walkFrames:4},archer:{duration:97/24,impact:79/24,walkFps:5,walkFrames:4},mangtae:{walkFps:6,walkFrames:4},shadow:{walkFps:7,walkFrames:4},skirt:{walkFps:106/72*4,walkFrames:4},horse:{walkFps:66/94*4,walkFrames:4},reaper:{duration:45/24,impact:28/24,projectileTravel:13/24,hover:12/210,walkFps:58/78*4,walkFrames:4},boss:{walkFps:16/40*6,walkFrames:6,idleFrame:0}};
+export const MOTION={dokkaebi:{walkFps:5,walkFrames:4},bulgasari:{walkFps:5,walkFrames:4},changgwi:{walkFps:5,walkFrames:4},gumiho:{walkFps:5,walkFrames:4},bandit:{walkFps:5,walkFrames:4},pirate:{walkFps:5,walkFrames:4},king:{duration:.9,impact:.45,walkFps:5,walkFrames:4},prince:{duration:.8,impact:.4,walkFps:6,walkFrames:4},minister:{duration:1,impact:.5,walkFps:5,walkFrames:4},cavalry:{duration:.8,impact:.4,walkFps:6,walkFrames:4},haetae:{duration:.64,impact:.32,shelter:{approach:1,mount:4.5,open:2.5,close:2.5,dismount:5.5,return:.7,girlStart:-116,girlEnd:-82,haetaeEnd:-30},claw:{duration:4,impact:2,range:145,damage:10,period:4.2},walkFps:7,walkFrames:4},rabbit:{duration:.64,impact:.32,walkFps:7,walkFrames:4},girl:{walkFps:7,walkFrames:4},keeper:{duration:3,impact:1.5,transform:56/24,returnHuman:56/24,walkFps:7,walkFrames:4},cow:{duration:.72,impact:.36,angerFrames:98,angerFps:48,walkFps:48/1.44,walkFrames:48,runFps:48/1.05,runFrames:48,attackFrames:48,idleFrame:96},scholar:{duration:.8,impact:.4,walkFps:6,walkFrames:4},healer:{duration:3.2,impact:1.45,notice:29/24,walkFps:8,walkFrames:4},warden:{walkFps:4,walkFrames:4},ferryman:{walkFps:4,walkFrames:4},waterghost:{walkFps:4,walkFrames:4},spearman:{duration:35/24,impact:8/24,anticipation:29/24,walkFps:5,walkFrames:4},archer:{duration:97/24,impact:79/24,walkFps:5,walkFrames:4},mangtae:{walkFps:6,walkFrames:4},shadow:{walkFps:7,walkFrames:4},skirt:{walkFps:106/72*4,walkFrames:4},horse:{walkFps:66/94*4,walkFrames:4},reaper:{duration:45/24,impact:28/24,projectileTravel:13/24,hover:12/210,walkFps:58/78*4,walkFrames:4},boss:{walkFps:16/40*6,walkFrames:6,idleFrame:0}};
 export function motionFrame(kind,walk,moving,action){
  const s=MOTION[kind],walkFrames=s.walkFrames||4,attackFrames=s.attackFrames||4;
  return action?walkFrames+Math.min(attackFrames-1,Math.floor(action.elapsed/s.duration*attackFrames)):(moving||walk>0)?Math.floor(walk*s.walkFps)%walkFrames:(s.idleFrame??1);
@@ -178,7 +179,7 @@ export const ENEMIES={...addedEnemies,
  gate:{name:'길을 막는 봉인',hp:360,speed:0,range:0,damage:0,period:Infinity,reward:0,stationary:true},
  skirt:{name:'지하지인',hp:58,speed:106,range:45,damage:7,period:1.15,reward:9},
  horse:{name:'갓 쓴 말',hp:155,speed:66,range:65,damage:12,period:1.5,reward:15,ability:{initial:4.5,cooldown:6,windup:1.7,range:350,damage:23}},
- reaper:{name:'저승사자',hp:120,speed:58,range:290,damage:8,period:2,reward:18,ability:{initial:5,cooldown:8,windup:6,range:570,heal:15}},
+ reaper:{name:'저승사자',hp:144,hpScale:1.2,speed:58,range:290,damage:8,period:2,reward:18,ability:{initial:5,cooldown:8,windup:6,range:570,heal:15}},
  boss:{name:'강철',boss:true,hp:1900,speed:16,stopAt:ROAD-180,range:140,damage:14,period:1.4,reward:40,ability:{kind:'hail',initial:3,cooldown:9,windup:2.6,range:720,damage:24,splash:15,impact:.7,duration:1.15}},
  warden:{name:'성곽 수문장',boss:true,hp:1750,speed:22,stopAt:ROAD-200,range:135,damage:16,period:1.8,reward:44,ability:{kind:'quake',initial:3,cooldown:7,windup:1.8,range:650,damage:19,splash:13,impact:.75,duration:1.25}},
  ferryman:{name:'망각의 나루지기',boss:true,hp:1650,speed:20,stopAt:ROAD-200,range:200,damage:12,period:1.6,reward:48,ability:{kind:'tide',initial:4,cooldown:8,windup:2.1,range:920,damage:22,splash:12,impact:.85,duration:1.45}},
@@ -192,7 +193,7 @@ export const SKILLS={
  charm:{name:'날림부적',cost:12,cooldown:3.2,icon:'iconCharm',role:'봉인',description:'저승사자를 먼저 겨냥해 술법을 끊어요.'},
  stomp:{name:'합동 발구름',cost:20,cooldown:7,icon:'iconStomp',role:'제압',description:'가까운 적을 밀고 돌진 준비를 끊어요.'},
  rush:{name:'해태 타고 돌진',cost:32,cooldown:12,icon:'mount1',role:'돌파',description:'잠깐 해태에 올라타 돌진하며 길을 열어요.'},
- shelter:{name:'비막이',cost:16,cooldown:11,icon:'iconShelter',role:'보호',description:'해태에 올라 우산을 전방 45도로 펼쳐요. 6초 동안 앞쪽 공격과 우박을 막고, 뒤쪽 공격은 막지 못해요.'},
+ shelter:{name:'비막이',cost:16,cooldown:11,icon:'iconShelter',role:'보호',description:'해태에 올라 우산을 펼쳐요. 켜진 동안 걷기만 하며 앞쪽 공격과 우박을 막아요. 다시 누르면 내려오고 재사용 대기가 시작돼요. 뒤쪽 공격은 막지 못해요.'},
  waterWard:{name:'물의 수호막',cost:16,cooldown:11,radius:340,icon:'waterWard',role:'범위 보호',description:'해태가 넓은 물 보호막을 펼쳐 6초 동안 안에 있는 동료를 지켜요. 비막이와 따로 사용할 수 있어요.'},
  mend:{name:'숨 돌리기',cost:30,cooldown:18,icon:'iconSound',role:'회복',description:'행렬의 기운 45, 동료 체력 15를 회복해요.'}
 };
@@ -265,7 +266,7 @@ export function waveBalance(index,stage=0,routeWaves=null){
   const cycle=a.cooldown+a.windup+(a.duration||0),hits=a.impacts?.length??1,output=((a.damage||0)+(a.splash||0)*ref.party.length)*hits+(a.heal||0)*waves[i].types.length;
   return {...s,damage:s.damage*a.cooldown/cycle+output*s.period/cycle};
  });
- const baseEnemy=enemyStats.reduce((n,s)=>n+combatPower(s),0),pressure=STAGES[stage]?.pressure??1,scale=referenceAllies/Math.sqrt(ALLY_HP_SCALE*ALLY_OUTPUT)/baseEnemy/1.03*pressure;
+ const baseEnemy=enemyStats.reduce((n,s)=>n+combatPower({...s,hp:s.hp/(s.hpScale??1)}),0),pressure=STAGES[stage]?.pressure??1,scale=referenceAllies/Math.sqrt(ALLY_HP_SCALE*ALLY_OUTPUT)/baseEnemy/1.03*pressure;
  const enemies=baseEnemy*scale*Math.sqrt(ENEMY_OUTPUT);
  return {budget,allies,enemies,scale,enemyStats,pressure,reference:ref,advantage:allies/enemies-1};
 }

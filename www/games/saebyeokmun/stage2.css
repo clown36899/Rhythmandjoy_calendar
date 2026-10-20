@@ -35,8 +35,6 @@ body[data-area="1"][data-screen="game"] .summon-group .action:not([data-card="pa
 body[data-area="1"][data-screen="game"] .summon-group .action strong{color:#303c2e;text-shadow:0 1px #fff0d5;font-size:clamp(7px,.82cqw,10px)}
 body[data-area="1"][data-screen="game"] .summon-group .unit-tier{display:none}
 body[data-area="1"][data-screen="game"] .summon-group .unit-count{font-size:6px;top:3px;right:3px;line-height:9px;background:#244d41a6;border:0;color:#f4e2ba}
-body[data-area="1"][data-screen="game"] .summon-group .coin-bank{min-height:18px;border:1px solid #82927b;border-radius:6px;background:#24423fed;box-shadow:inset 0 0 0 1px #a7ac835e;color:#ffdfa0}
-body[data-area="1"][data-screen="game"] .coin-bank #coin-fill{background:linear-gradient(90deg,#d4a44b,#ffe09a)}
 body[data-area="1"][data-screen="game"] .skill-group{position:absolute;right:3%;bottom:12%;width:23%;height:auto;pointer-events:none}
 body[data-area="1"][data-screen="game"] .skill-group .action-row{display:flex;justify-content:flex-end;align-items:center;gap:7px}
 body[data-area="1"][data-screen="game"] .skill-group .action,body[data-area="1"][data-screen="game"] .skill-group .action:nth-child(n){position:relative;inset:auto;flex:none;width:clamp(44px,6.6cqw,80px);height:clamp(44px,6.6cqw,80px);min-width:44px;margin:0;padding:0;border:1px solid #d7cda7;border-radius:50%;outline:1px solid #476a5d;outline-offset:1px;background:#1e4949;box-shadow:inset 0 0 0 3px #6d9d8d66}
@@ -79,10 +77,6 @@ body[data-area="1"][data-screen="game"] .summon-group .action[data-state="cost"]
 body[data-area="1"][data-screen="game"] .summon-group .action[data-state="full"]::after{inset:38% 16% auto;background:#2c1a12cc;color:#f8deaa;border:1px solid #ae8148;border-radius:2px;font-size:8px;padding:1px 0}
 body[data-area="1"][data-screen="game"] .summon-group .action .cooldown{inset:auto 12% 8%;width:76%;max-height:80%;border-radius:0;background:#20130d66}
 body[data-area="1"][data-screen="game"] .summon-group .hud-right{margin:2px 0 0;padding:0 3px}
-body[data-area="1"][data-screen="game"] .summon-group .coin-bank{min-height:20px;height:20px;padding:3px 16%;grid-template-columns:11px 25px 1fr;gap:3px;border:0;border-radius:0;background:transparent url("./assets/stage2-coin-v2-v146.webp") center/100% 100% no-repeat;box-shadow:none;color:#f8d694}
-body[data-area="1"][data-screen="game"] .coin-bank #coins{font:700 10px/14px sans-serif;color:#f7dfb1}
-body[data-area="1"][data-screen="game"] .coin-bank #coin-gauge{height:5px;background:#130c07;border:1px solid #a57938;border-radius:2px}
-body[data-area="1"][data-screen="game"] .coin-bank #coin-fill{background:linear-gradient(#ffe3a1,#ca8c28);border-radius:1px}
 body[data-area="1"][data-screen="game"] .skill-group .action,body[data-area="1"][data-screen="game"] .skill-group .action:nth-child(n){border:0;border-radius:0;outline:0;background:transparent url("./assets/stage2-wood-skill-v145.webp") center/100% 100% no-repeat;box-shadow:none}
 body[data-area="1"][data-screen="game"] .skill-group .action-art,body[data-area="1"][data-screen="game"] .skill-group .action:nth-child(n) .action-art{inset:16% 18% 27%;height:auto;width:auto}
 body[data-area="1"][data-screen="game"] .skill-group .action-art img{filter:drop-shadow(0 2px 2px #170d0866)}
@@ -96,12 +90,3 @@ body[data-area="1"][data-screen="game"] .skill-group .action:hover:not(:disabled
 body[data-area="1"][data-screen="game"] .next-map-loading{display:none}
 body[data-area="1"][data-screen="game"] .autoplay-panel{background:#2b1c15ed;border-color:#9c784a;color:#f7deb3;box-shadow:inset 0 0 0 1px #ad75452e;border-radius:3px}
 body[data-area="1"][data-screen="game"] .autoplay-panel button,body[data-area="1"][data-screen="game"] .autoplay-panel select{background:#453022;color:#f7ddb0;border-color:#a47b4d}
-
-/* The regenerated long strip retains its authored proportions. */
-body[data-area="1"][data-screen="game"] .summon-group .coin-bank{height:auto;min-height:24px;aspect-ratio:10/1;padding:0 6% 0 5%;grid-template-columns:16px 27px 1fr;gap:4px;background-image:url("./assets/stage2-coin-v2-v146.webp");background-size:100% auto}
-body[data-area="1"][data-screen="game"] .coin-bank #coin-gauge{height:7px;margin:0 2% 0 5%}
-/* Place live values inside the new artwork's actual recessed channel. */
-body[data-area="1"][data-screen="game"] .summon-group .coin-bank{aspect-ratio:1960/219;padding:0;display:block;background-size:100% 100%}
-body[data-area="1"][data-screen="game"] .coin-bank .coin-symbol{display:none}
-body[data-area="1"][data-screen="game"] .coin-bank #coins{position:absolute;left:3.5%;width:12%;top:50%;transform:translateY(-50%);text-align:center;font-size:clamp(9px,1.3cqw,15px);line-height:1}
-body[data-area="1"][data-screen="game"] .coin-bank #coin-gauge{position:absolute;inset:35% 8% auto 16%;height:30%;margin:0;border:1px solid #221207;background:#130c07}

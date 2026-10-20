@@ -1,11 +1,11 @@
-import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,SPELL_AREAS,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=218-integrated';
+import {ROAD,GATE,stageRoadEnd,stageGateX,START,WALK_SPEED,RUN_SPEED,MAX_HP,MAX_COINS,MAX_MANA,UNITS,ENEMIES,SKILLS,TEAM_SKILLS,ALLY_OUTPUT,MOTION,ENEMY_STRIKE,enemyStrike,ENEMY_OUTPUT,unitStats,SHOT_TIME,SPELL_AREAS,waveBalance,actorLayer,HERO_STANDOFF,ENEMY_FRONT,contactGap,STAGES,ALLY_HIT_TIME,GATE_BREAK_TIME,isBoss,DEFAULT_PARTY,validParty,BODY_HEIGHT,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT,TEST_MODE} from './data.js?v=224';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export class Journey {
  constructor(){this.reset();}
  reset(){
-  this.status='ready';this.party=[...DEFAULT_PARTY];this.time=0;this.x=START;this.furthest=START;this.hp=MAX_HP;this.coins=70;
-  this.auto=false;this.invincible=false;this.tour=false;this.portal=null;this.direction=0;this.pendingMove=0;this.allies=[];this.enemies=[];this.projectiles=[];this.events=[];this.nextId=0;this.stage=0;this.gateBrokenAt=null;
-  this.viewport=null;this.helperArrivals=new Map();this.teamAction=null;this.wave=0;this.waveClearAt=null;this.heroAttack=0;this.shield=0;this.waterWard=0;this.shieldKind=null;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS),...Object.keys(TEAM_SKILLS)].map(k=>[k,0]));
+  this.status='ready';this.party=[...DEFAULT_PARTY];this.time=0;this.x=START;this.furthest=START;this.hp=MAX_HP;this.coins=70;this.mana=70;
+  this.auto=false;this.partyHold=false;this.invincible=false;this.enemyInvincible=false;this.tour=false;this.portal=null;this.direction=0;this.pendingMove=0;this.allies=[];this.enemies=[];this.projectiles=[];this.events=[];this.nextId=0;this.stage=0;this.gateBrokenAt=null;
+  this.viewport=null;this.helperArrivals=new Map();this.teamAction=null;this.wave=0;this.waveClearAt=null;this.heroAttack=0;this.shield=0;this.shelterAt=null;this.waterWard=0;this.shieldKind=null;this.cooldowns=Object.fromEntries([...Object.keys(SKILLS),...Object.keys(UNITS),...Object.keys(TEAM_SKILLS)].map(k=>[k,0]));
   this.keeperRank=0;this.kills=0;this.earnedCoins=0;this.summons=0;this.casts=0;this.bossSpawned=false;this.bossDefeated=false;this.hint='집으로 가는 길을 동료와 함께 열어요.';
   delete this.engagedId;this.lastHintAt=0;this.hintSerial=0;this.action=null;this.walk=0;this.moving=0;this.lane=0;
  }
@@ -72,6 +72,12 @@ export class Journey {
  setViewport(left,width){if(!Number.isFinite(left)||!Number.isFinite(width)||width<=0)return false;this.viewport={left,right:left+width,width};return true;}
  screenPadding(type){return (BODY_HEIGHT[type]||132)+24;}
  get travelStart(){return Math.min(0,(this.viewport?.left??0)+this.screenPadding('girl'));}
+ setPartyHold(value){
+  this.partyHold=!!value;
+  if(!this.partyHold)return;
+  this.auto=false;this.direction=0;this.pendingMove=0;this.moving=0;
+  for(const a of this.allies)a.moving=0;
+ }
  setDirection(direction,{pressed=false,cancel=false}={}){this.direction=Math.sign(direction)||0;if(cancel||this.status!=='playing')this.pendingMove=0;else if(pressed&&this.direction)this.pendingMove=this.direction;}
  advanceEntry(actor,enemy,dt){
   if(enemy&&actor.entering&&Number.isFinite(actor.entryOrigin)){
@@ -158,14 +164,21 @@ export class Journey {
  skill(type){
   if(TEAM_SKILLS[type])return this.teamSkill(type);
   if(this.status!=='playing'||!SKILLS[type])return false;
+  // Shelter is a maintained skill: releasing it must work even with no mana.
+  if(type==='shelter'&&this.shield>0&&this.shieldKind==='umbrella'){
+   if(this.action?.kind==='umbrella')return false;
+   this.shield=0;this.action={kind:'umbrella',phase:'dismount',elapsed:0};return true;
+  }
   if(this.cooldowns[type]>0)return this.reject('기술을 준비하고 있어요.');
-  if(['rush','stomp','shelter'].includes(type)&&(this.action||this.shield>0))return this.reject('합동 동작이 끝나면 사용할 수 있어요.');
+  if(['rush','stomp','shelter'].includes(type)&&((this.action&&!(this.action.kind==='haetae'&&this.action.phase==='claw'))||this.shield>0))return this.reject('합동 동작이 끝나면 사용할 수 있어요.');
   if(type==='charm'&&this.moving)return this.reject('멈춘 뒤 부적을 던질 수 있어요.');
-  if(this.coins<SKILLS[type].cost)return this.reject('엽전이 조금 더 필요해요.');
+  if(this.mana<SKILLS[type].cost)return this.reject('마나가 조금 더 필요해요.');
   const target=type==='charm'?this.targetForCharm():null;
   if(type==='charm'&&!target)return this.reject('아직 부적이 닿을 귀물이 없어요.');
-  this.coins-=SKILLS[type].cost;this.cooldowns[type]=SKILLS[type].cooldown;this.casts++;
-  if(type==='shelter'){this.shield=6;this.shieldKind='umbrella';this.emit('shelter',{x:this.x,kind:'umbrella'});}
+  this.mana-=SKILLS[type].cost;this.cooldowns[type]=type==='shelter'?0:SKILLS[type].cooldown;this.casts++;
+  // Explicit joint skills replace a normal swipe only after all spending guards pass.
+  if(['rush','stomp','shelter'].includes(type)&&this.action?.kind==='haetae'&&this.action.phase==='claw')this.action=null;
+  if(type==='shelter'){this.shield=6;this.shelterAt=this.time;this.shieldKind='umbrella';this.action={kind:'umbrella',phase:'mount',elapsed:0};this.emit('shelter',{x:this.x,kind:'umbrella'});}
   if(type==='waterWard'){this.waterWard=6;this.emit('shelter',{x:this.x,kind:'water'});}
   if(type==='charm'){
    this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target,damage:52,high:true,stun:1.3});
@@ -224,7 +237,7 @@ export class Journey {
   for(const {a}of living)if(a.action?.kind==='team')Object.assign(a.action,{phase:team.phase,elapsed:team.elapsed});
  }
  awardCoins(amount,e,reason){const before=Math.floor(this.coins);this.coins=clamp(this.coins+amount*3,0,MAX_COINS);const received=Math.floor(this.coins)-before;this.earnedCoins+=received;if(received>0)this.emit('coin',{amount:received,total:this.coins,x:e.x,kind:e.type,reason});}
- hurtEnemy(e,damage,sourceX=this.x,weapon='physical'){if(e.hp<=0||this.status!=='playing'||this.time<(e.entryAt??e.bornAt)||!Number.isFinite(damage)||damage<=0)return;e.hp-=damage;e.hit=.26;e.hitDir=Math.sign(e.x-sourceX)||1;this.emit('hit',{actor:e.id,x:e.x,from:sourceX,dir:e.hitDir,kind:e.type,weapon,damage,enemy:true});}
+ hurtEnemy(e,damage,sourceX=this.x,weapon='physical'){if(e.hp<=0||this.status!=='playing'||this.time<(e.entryAt??e.bornAt)||!Number.isFinite(damage)||damage<=0)return;if(this.enemyInvincible)damage=0;e.hp-=damage;e.hit=.26;e.hitDir=Math.sign(e.x-sourceX)||1;this.emit('hit',{actor:e.id,x:e.x,from:sourceX,dir:e.hitDir,kind:e.type,weapon,damage,enemy:true});}
  // The gate is an entrance, never an escape route for displaced living enemies.
  // A not-yet-arrived unit keeps its position; knockback cannot pull it out early.
  pushEnemy(e,to){if(ENEMIES[e.type].stationary||this.viewport&&e.entering)return;const right=this.viewport&&!this.route.deployment&&!e.entering?Math.min(this.gateX-45,this.viewport.right-this.screenPadding(e.type)*.5):this.gateX-45;e.x=Math.max(e.x,Math.min(right,to));}
@@ -256,10 +269,42 @@ export class Journey {
  advanceAction(actor,dt){
   const action=actor.action;if(!action)return;
   if(action.kind==='team')return;
+  if(action.kind==='keeper'&&['transform','approach','returnHuman'].includes(action.phase)){
+   const s=unitStats('keeper',this.keeperRank),target=this.enemies.find(e=>e.id===action.targetId&&e.hp>0&&!e.entering&&this.time>=(e.entryAt??e.bornAt)&&e.x>=actor.x-55);
+   action.elapsed+=dt;
+   if(action.phase==='returnHuman'){
+    if(action.elapsed>=MOTION.keeper.returnHuman)actor.action=null;
+    return;
+   }
+   if(action.phase==='transform'){
+    if(action.elapsed>=MOTION.keeper.transform){action.phase=target&&!this.partyHold&&contactGap(actor,target)>s.range?'approach':'returnHuman';action.elapsed=0;}
+    return;
+   }
+   // Only the ordinary attack owns release/damage. Canine travel uses the
+   // same lane, collision, hold and target-lifetime rules as other allies.
+   if(!target||this.partyHold||contactGap(actor,target)<=s.range&&this.canStrike(actor,target)){
+    action.phase='returnHuman';action.elapsed=0;return;
+   }
+   const speed=s.runSpeed??s.speed,travel=Math.sign(target.x-actor.x)*Math.min(Math.max(0,contactGap(actor,target)-s.range),speed*dt);
+   this.moveBody(actor,travel,dt,speed,target);
+   return;
+  }
+  if(action.kind==='umbrella'){
+   action.elapsed+=dt;
+   if(action.phase==='mount'){if(action.elapsed>=MOTION.haetae.shelter.approach+MOTION.haetae.shelter.mount+MOTION.haetae.shelter.open)this.action=null;}
+   else if(action.elapsed>=MOTION.haetae.shelter.close+MOTION.haetae.shelter.dismount+MOTION.haetae.shelter.return){this.action=null;this.shieldKind=null;this.shelterAt=null;this.cooldowns.shelter=SKILLS.shelter.cooldown;}
+   return;
+  }
   const anticipation=action.kind==='cow'&&action.phase==='anger'?MOTION.cow.angerFrames/MOTION.cow.angerFps:action.phase==='anticipation'?MOTION[action.kind]?.anticipation:0;
   if(anticipation){
    action.elapsed+=dt;
-   if(action.elapsed>=anticipation)actor.action=null;
+   if(action.elapsed>=anticipation){
+    // A close encounter commits the calf's windup, even if an ally finishes
+    // that target. The normal hit guard still rejects dead/out-of-range foes.
+    const gone=action.kind==='cow'&&action.targetId!=null&&!this.enemies.some(e=>e.id===action.targetId&&e.hp>0);
+    if(gone){if(actor.cd<=0){actor.cd=unitStats(actor.type,this.keeperRank).period;actor.action={kind:actor.type,elapsed:0,resolved:false,targetId:action.targetId,x:action.x,dir:action.dir};}}
+    else actor.action=null;
+   }
    return; // Detection reaction never resolves a hit or changes the attack cooldown.
   }
   if(action.kind==='healer'){
@@ -273,7 +318,8 @@ export class Journey {
     // Follow a walking patient toward the preferred slot continuously; waiting
     // for each range crossing alternates walk/cast on successive frames.
     if(inRange&&!(target.moving>0&&gap>0))return true;
-    this.moveBody(actor,Math.sign(gap)*Math.min(Math.abs(gap),s.speed*dt),dt,s.speed,target);return inRange||Math.abs(goal-actor.x)<1;
+    if(this.partyHold)return inRange;
+    this.moveBody(actor,Math.sign(gap)*Math.min(Math.abs(gap),(s.runSpeed??s.speed)*dt),dt,s.runSpeed??s.speed,target);return inRange||Math.abs(goal-actor.x)<1;
    };
    // Lock each wrap to one patient. Reconsider only between wraps or after cancellation.
    if(!target||target.hp<=0||Math.abs(target.x-actor.x)>s.search||(!valid&&!action.resolved))action.phase='return';
@@ -299,7 +345,7 @@ export class Journey {
    // Walking patients keep their treatment clock while the physician follows.
    if(target!==actor)moveTo(target.x-s.spacing);
    if(Math.abs(target.x-actor.x)>s.range)return;
-   action.elapsed+=dt;
+   action.elapsed+=dt*(s.motionSpeed??1);
    if(!action.resolved&&action.elapsed>=spec.impact){
     action.resolved=true;const amount=Math.min(s.heal,(target.maxHp??MAX_HP)-target.hp);
     if(amount>0){target.hp+=amount;this.emit('heal',{actor:actor.id,sourceKind:'healer',targetActor:target.id??null,kind:target.type||'haetae',x:target.x,from:actor.x,amount});}
@@ -339,7 +385,7 @@ export class Journey {
    if(action.elapsed>=1.3)this.action=null;
    return;
   }
-  const spec=action.kind==='enemy'?enemyStrike(actor.type):MOTION[action.kind];action.elapsed+=dt;
+  const spec=action.kind==='enemy'?enemyStrike(actor.type):(MOTION[action.kind]?.[action.phase]||MOTION[action.kind]);action.elapsed+=dt*(UNITS[actor.type]?.motionSpeed??1);
   if(!action.resolved&&action.elapsed>=spec.impact){
    action.resolved=true;
    if(action.kind==='enemy'){
@@ -351,6 +397,12 @@ export class Journey {
      if(actor.type==='reaper'||['ranged','heal'].includes(ENEMIES[actor.type].behavior))this.launchShot({actor:actor.id,sourceKind:actor.type,weapon:'hex',duration:MOTION[actor.type]?.projectileTravel??SHOT_TIME,from:actor.x,target:ally||this,damage:ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,enemy:true});
      else {if(ally)this.hurtAlly(ally,ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);else this.hurtHero(ENEMIES[actor.type].damage*(actor.powerScale??1)*ENEMY_OUTPUT,actor.x,actor.type);
      this.emit('claw',{x:actor.x,to:targetX+(ally?0:37),kind:actor.type,sourceKind:actor.type,targetKind:ally?.type||'haetae',targetActor:ally?.id});}
+    }
+   }else if(action.kind==='haetae'&&action.phase==='claw'){
+    const target=this.enemies.find(e=>e.id===action.targetId&&e.hp>0);
+    if(target&&target.x>=this.x-20&&this.canStrike(this,target)&&contactGap(this,target)<=spec.range+1e-6){
+     this.emit('swipe',{kind:'claw',sourceKind:'haetae',targetKind:target.type,targetActor:target.id,x:this.x,from:this.x,to:target.x});
+     this.hurtEnemy(target,spec.damage,this.x,'claw');
     }
    }else if(action.kind==='haetae'){
     this.emit('stomp',{x:this.x});
@@ -428,20 +480,22 @@ export class Journey {
  }
  step(dt){
   if(this.status!=='playing'||!Number.isFinite(dt)||dt<=0)return;
-  const oldX=this.x;dt=Math.min(dt,.1);this.time+=dt;this.coins=clamp(this.coins+dt*2.2,0,MAX_COINS);
+  const oldX=this.x;dt=Math.min(dt,.1);this.time+=dt;this.coins=clamp(this.coins+dt*2.2,0,MAX_COINS);this.mana=clamp(this.mana+dt*2.2,0,MAX_MANA);
   if(this.portal)this.portal.x=this.portalX;
   this.advanceProjectiles(dt);if(this.status!=='playing')return;
-  this.shield=Math.max(0,this.shield-dt);this.waterWard=Math.max(0,this.waterWard-dt);this.heroAttack-=dt;this.advanceAction(this,dt);
+  if(this.shelterAt===null)this.shield=Math.max(0,this.shield-dt);this.waterWard=Math.max(0,this.waterWard-dt);this.heroAttack-=dt;
   for(const k of Object.keys(this.cooldowns))this.cooldowns[k]=Math.max(0,this.cooldowns[k]-dt);
+  this.advanceAction(this,dt);
   const active=this.enemies.filter(e=>e.hp>0&&this.time>=(e.entryAt??e.bornAt));
   const front=active.reduce((front,e)=>e.x>=this.x-20&&this.sameLane(this,e)&&(!front||e.x-ENEMY_FRONT[e.type]<front.x-ENEMY_FRONT[front.type])?e:front,null);
   const manual=this.direction||this.pendingMove;this.pendingMove=0;
   let direction=manual|| (this.auto?1:0);
-  let movement=direction*(manual?RUN_SPEED:WALK_SPEED)*dt;
+  const sheltered=this.shield>0&&this.shieldKind==='umbrella',speed=manual&&!sheltered?RUN_SPEED:WALK_SPEED;
+  let movement=direction*speed*dt;
   if(this.action||this.teamAction&&!manual)movement=0;
   const stopAt=manual?145:this.allies.some(a=>a.hp>0)?HERO_STANDOFF:145;
   if(movement>0&&front)movement=Math.min(movement,Math.max(0,contactGap(this,front)-stopAt));
-  this.moveBody(this,clamp(this.x+movement,this.travelStart,this.roadEnd)-this.x,dt,manual?RUN_SPEED:WALK_SPEED);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/WALK_SPEED;
+  this.moveBody(this,clamp(this.x+movement,this.travelStart,this.roadEnd)-this.x,dt,speed);this.moving=Math.sign(this.x-oldX);if(this.moving)this.walk+=Math.abs(this.x-oldX)/WALK_SPEED;
   this.furthest=Math.max(this.furthest,this.x);
   this.advanceTeam(dt);
   // A full wave already spends the reference power budget. Distance unlocks the
@@ -459,21 +513,28 @@ export class Journey {
   }else if(this.wave<this.waves.length&&waveEmpty&&(this.furthest>=this.waves[this.wave].x||this.waveClearAt!==null&&this.time-this.waveClearAt>=(this.waves[this.wave].afterClear??Infinity)))this.deployWave();
   // Reached helper waves wait for capacity; the same wave index can arrive only once.
   for(const [i,arrived] of this.helperArrivals){const type=this.waves[i].helper;if(arrived||this.atSummonLimit(type))continue;const a=this.addAlly(type);a.helper=true;this.helperArrivals.set(i,true);this.emit('summon',{actor:a.id,kind:a.type,x:a.x});}
-  const heroTarget=this.selectContact(this,active.filter(e=>e.x>=this.x-20&&e.type!=='skirt'),480);
-  if(!this.moving&&!this.shield&&this.action?.kind!=='rush'&&this.heroAttack<=0&&heroTarget&&contactGap(this,heroTarget)<480){this.heroAttack=1.35;this.launchShot({actor:'girl',sourceKind:'girl',weapon:'charm',from:this.x-60,target:heroTarget,damage:10,high:true});}
+  // The girl casts manual special skills; the guardian owns nearby normal attacks.
+  const claw=MOTION.haetae.claw,heroTarget=this.selectContact(this,active.filter(e=>e.x>=this.x-20),claw.range);
+  if(!this.moving&&!this.shield&&!this.action&&this.heroAttack<=0&&heroTarget&&this.canStrike(this,heroTarget)&&contactGap(this,heroTarget)<=claw.range){
+   this.heroAttack=claw.period;this.action={kind:'haetae',phase:'claw',elapsed:0,resolved:false,targetId:heroTarget.id};
+  }
   for(const a of [...this.allies].sort((a,b)=>a.id-b.id)){
    if(a.hp<=0)continue;
    const s=unitStats(a.type,this.keeperRank),oldAX=a.x,oldLane=a.lane;
    if(a.action?.kind==='team'){a.cd=Math.max(0,a.cd-dt);a.hit=Math.max(0,a.hit-dt);continue;}
-   a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(this.advanceEntry(a,false,dt))continue;
+   a.cd-=dt;a.hit=Math.max(0,a.hit-dt);a.moving=0;if(a.entering&&this.partyHold)continue;if(this.advanceEntry(a,false,dt))continue;
    // Detection and run speed belong to the companion, independent of player input.
-   if(s.runSpeed)a.alerted=this.enemies.some(e=>e.hp>0&&!e.entering&&this.time>=(e.entryAt??e.bornAt)&&e.x>=a.x-55&&contactGap(a,e)<=s.search);
+   if(s.runSpeed&&a.type!=='cow'&&!MOTION[a.type]?.anticipation)a.alerted=this.enemies.some(e=>e.hp>0&&!e.entering&&this.time>=(e.entryAt??e.bornAt)&&e.x>=a.x-55&&contactGap(a,e)<=s.search);
    const reactionPhase=a.type==='cow'?'anger':MOTION[a.type]?.anticipation?'anticipation':null;
    if(reactionPhase){
     const threatened=this.enemies.some(e=>e.hp>0&&!e.entering&&e.bornAt<=this.time&&e.x>=a.x-55&&this.canStrike(a,e)&&contactGap(a,e)<=s.range+30+1e-6);
-    if(!threatened){a.alerted=false;if(a.action?.phase===reactionPhase)a.action=null;}
+    if(!threatened){
+     const committed=a.type==='cow'&&a.action?.phase==='anger'&&a.action.targetId!=null&&!this.enemies.some(e=>e.id===a.action.targetId&&e.hp>0);
+     a.alerted=committed;if(a.action?.phase===reactionPhase&&!committed)a.action=null;
+    }
     else if(!a.alerted&&!a.action){
      a.alerted=true;a.action={kind:a.type,phase:reactionPhase,elapsed:0};
+     if(a.type==='cow'){const close=this.selectContact(a,this.enemies.filter(e=>e.hp>0&&!e.entering&&e.x>=a.x-55&&this.canStrike(a,e)),s.range);if(close&&contactGap(a,close)<=s.range)Object.assign(a.action,{targetId:close.id,x:close.x,dir:Math.sign(close.x-a.x)||1});}
     }
    }
    this.advanceAction(a,dt);
@@ -483,8 +544,8 @@ export class Journey {
     if(patient){
      a.action={kind:'healer',phase:'approach',elapsed:0,resolved:false,targetId:patient.id??null,dir:Math.sign(patient.x-a.x)||1};
     }else{
-     const goal=this.healerHome(a),gap=goal-a.x;
-     this.moveBody(a,Math.max(0,Math.min(gap,WALK_SPEED*dt)),dt,WALK_SPEED);
+     const goal=this.healerHome(a),gap=goal-a.x,speed=s.walkSpeed??WALK_SPEED;
+     this.moveBody(a,this.partyHold?0:Math.max(0,Math.min(gap,speed*dt)),dt,speed);
     }
     this.walkBody(a,oldAX,oldLane,s.speed);continue;
    }
@@ -496,7 +557,9 @@ export class Journey {
    const goal=Math.min(this.roadEnd-90,contactFront?a.x+contactGap(a,contactFront)-s.range:this.roadEnd-90),gap=goal-a.x;
    if(target&&this.canStrike(a,target)&&contactGap(a,target)<=s.range+1e-6&&a.cd<=0&&(a.type!=='cow'||a.alerted)){
     a.cd=s.period;a.action={kind:a.type,elapsed:0,resolved:false,targetId:target.id??null,x:target.x,dir:Math.sign(target.x-a.x)||1};
-   }else{const speed=s.runSpeed?(a.alerted?s.runSpeed:s.speed):WALK_SPEED,travel=this.lanes&&target?(contactGap(a,target)>s.range?Math.sign(target.x-a.x)*Math.min(contactGap(a,target)-s.range,speed*dt):0):Math.max(0,Math.min(gap,speed*dt));this.moveBody(a,travel,dt,speed,target);}
+   }else if(a.type==='keeper'&&!this.keeperRank&&!this.partyHold&&target&&!target.entering&&contactGap(a,target)>s.range&&contactGap(a,target)<=s.search){
+    a.action={kind:'keeper',phase:'transform',elapsed:0,targetId:target.id,dir:Math.sign(target.x-a.x)||1};
+   }else{const speed=s.runSpeed&&a.alerted?s.runSpeed:(s.walkSpeed??(s.runSpeed?s.speed:WALK_SPEED)),travel=this.lanes&&target?(contactGap(a,target)>s.range?Math.sign(target.x-a.x)*Math.min(contactGap(a,target)-s.range,speed*dt):0):Math.max(0,Math.min(gap,speed*dt));this.moveBody(a,this.partyHold?0:travel,dt,speed,target);}
    this.walkBody(a,oldAX,oldLane,s.speed);
   }
   for(const e of this.enemies){

@@ -1,9 +1,9 @@
-import {Journey} from './game/model.js?v=218-integrated';
-import {makeGame} from './game/scene.js?v=218-integrated';
-import {HEALER_VIDEO} from './game/healer-motion.js?v=218-integrated';
-import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=218-integrated';
-import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=218-integrated';
-import {VIDEO_DELIVERY} from './game/video-delivery.js?v=218-integrated';
+import {Journey} from './game/model.js?v=224';
+import {makeGame} from './game/scene.js?v=224';
+import {HEALER_VIDEO} from './game/healer-motion.js?v=224';
+import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=224';
+import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=224';
+import {VIDEO_DELIVERY} from './game/video-delivery.js?v=224';
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 // An editor keeps its immutable source identity even after a game confirmation.
 // Mutate the existing imported records before Scene registers any files.
@@ -16,6 +16,7 @@ const $=id=>document.getElementById(id),model=new Journey(),keys=new Set();let s
 async function prepareHealerMotions(){healerConfig={clips:HEALER_VIDEO,labels:{castHeal:'약초',castHealLight:'치유빛',castHealBless:'축복'}};}
 let previewSerial=0;
 const motionLabels={ritual:'지원 의식',projectile:'책에서 분리한 원혼',idle:'기본 대기',dance:'감정 대기',annoyed:'다른 대기',sit:'앉아 쉬기',walk:'걷기',run:'달리기',runUrgent:'치료하러 달리기',castHeal:'힐 · 약초',castHealLight:'힐 · 치유빛',castHealBless:'힐 · 축복',attack:'공격',anticipation:'적 발견 · 예비',anger:'분노 전환',rageRun:'분노 달리기',rageHold:'화난 대기',combatCalm:'전투 후 복귀',angerHold:'화난 대기',emotionHold:'감정 유지',emotion:'혼자 화내기',calm:'평상시 복귀',receiveHeal:'치료받기',hurt:'피격',death:'사망'};
+motionLabels.haetae={attack:'발구름 · 특수기',claw:'발톱 · 일반 공격'};
 motionLabels.keeper={idle:'평소 대기',walk:'사람 걷기',run:'삽살개 달리기',transform:'사람 → 삽살개',returnHuman:'삽살개 → 사람',attack:'돌팔매 · 준비/던짐/복귀'};
 motionLabels.archer={idle:'대기 1',dance:'대기 2',walk:'걷기',run:'적 발견 · 달리기',attack:'장전 → 발사'};
 motionLabels.reaper={idle:'부유 대기',walk:'느린 부유',run:'빠른 비행',attack:'명부 소환 공격',ritual:'지원 의식',receiveHeal:'기운 회복 받기',hurt:'공중 피격',death:'형체 소멸 · 빈 옷 낙하',projectile:'원혼 공격 · 완전 소멸'};

@@ -1,10 +1,10 @@
-import {ATLAS_SLICES} from './atlas-slices.js?v=218-integrated';
-import {HEALER_VIDEO} from './healer-motion.js?v=218-integrated';
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=218-integrated';
-import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=218-integrated';
-import {AssetDownloads} from './downloads.js?v=218-integrated';
-import {VIDEO_DELIVERY} from './video-delivery.js?v=218-integrated';
-import {ASSET_BYTES} from './asset-sizes.js?v=218-integrated';
+import {ATLAS_SLICES} from './atlas-slices.js?v=224';
+import {HEALER_VIDEO} from './healer-motion.js?v=224';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=224';
+import {ROAD,GATE,stageGateX,START,MOTION,motionFrame,AREAS,skyState,ROAD_SECTIONS,SHOT_TIME,BODY_HEIGHT,PARALLAX,ENEMY_STRIKE,enemyStrike,enemyAttackFrame,bossPose,UNITS,SKILLS,MAX_HP,injuryLevel,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,actorLayer,ALLY_HIT_TIME,GATE_BREAK_TIME,ENEMIES,isBoss,healerPose,travellerIdleFrame,TEAM_SKILLS,STAGES,GATE_STYLES,contactGap} from './data.js?v=224';
+import {AssetDownloads} from './downloads.js?v=224';
+import {VIDEO_DELIVERY} from './video-delivery.js?v=224';
+import {ASSET_BYTES} from './asset-sizes.js?v=224';
 const P=window.Phaser;
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};
 const VIDEO_SHEETS=Object.values(VIDEO_MOTION).flatMap(clips=>Object.values(clips));
@@ -135,9 +135,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // Fast attacks/anticipation must be ready before combat. Long loops stream
    // their next 24 cels through the same loader, without preparing every variant.
    return [...new Set(VIDEO_SHEETS.filter(s=>kinds.some(kind=>Object.entries(VIDEO_MOTION[kind]||{}).some(([name,c])=>c===s&&!['dance','annoyed','sit','receiveHeal','death'].includes(name)))).flatMap(s=>{
-    const complete=Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&['attack','projectile','anticipation','combatCalm','anger','rageRun','rageHold','runUrgent','castHeal','castHealLight','castHealBless'].includes(name)));
+    const complete=Object.values(VIDEO_MOTION).some(clips=>Object.entries(clips).some(([name,c])=>c===s&&['attack','claw','umbrella','shelterMount','shelterDismount','projectile','anticipation','combatCalm','anger','rageRun','rageHold','runUrgent','castHeal','castHealLight','castHealBless'].includes(name)));
     if(complete)return VIDEO_DELIVERY[s.asset].parts.map((_,i)=>s.asset+':'+i);
-    const moving=Object.values(VIDEO_MOTION).some(clips=>clips.walk===s||clips.run===s),streamed=moving||Object.values(VIDEO_MOTION).some(clips=>clips.ritual===s),cycle=s.cycles?.[0],start=moving?cycle?.start??0:0,end=streamed?Math.min(cycle?.end??s.frames-1,start+47):0;
+    const moving=Object.values(VIDEO_MOTION).some(clips=>clips.walk===s||clips.run===s||clips.umbrellaWalk===s),streamed=moving||Object.values(VIDEO_MOTION).some(clips=>clips.ritual===s),cycle=s.cycles?.[0],start=moving?cycle?.start??0:0,end=streamed?Math.min(cycle?.end??s.frames-1,start+47):0;
     return Array.from({length:Math.floor(end/24)-Math.floor(start/24)+1},(_,i)=>s.asset+':'+(Math.floor(start/24)+i));
    }))];
   }
@@ -244,9 +244,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
     // Warm companions first and the two directly controlled bodies last. The
     // bounded LRU must retain their entry pages when controls become available.
     const selected=new Set(this.videoFiles(keys)),warmKinds=Object.entries(VIDEO_MOTION).sort(([a],[b])=>Number(!UNITS[a])-Number(!UNITS[b]));
-   if(this.videoFrameIndex)for(const [kind,clips] of warmKinds)for(const name of ['idle','walk','run','runUrgent',...(ENEMIES[kind]?['attack','ritual','projectile','death']:[])]){
+   if(this.videoFrameIndex)for(const [kind,clips] of warmKinds)for(const name of ['idle','walk','run','runUrgent','rageRun','transform','returnHuman','umbrella','shelterMount','shelterDismount','umbrellaWalk',...(ENEMIES[kind]?['attack','ritual','projectile','death']:[])]){
      const spec=clips[name];if(!spec)continue;
-     const start=name==='idle'?0:spec.cycles?.[0]?.start??0,end=name==='idle'?0:Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+47),entries=name==='runUrgent'?[0,start]:[start];
+     const start=['idle','umbrella'].includes(name)?0:spec.cycles?.[0]?.start??0,end=name==='idle'?0:Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+47),entries=name==='umbrella'?[0,spec.cue.hold]:name==='runUrgent'?[0,start]:[start];
      for(let i=(Math.floor(start/24)+1)*24;i<=end;i+=24)entries.push(i);
      for(let i=(Math.floor(start/VIDEO_PAGE_FRAMES)+1)*VIDEO_PAGE_FRAMES;i<=Math.min(spec.frames-1,start+11);i+=VIDEO_PAGE_FRAMES)entries.push(i);
      for(const i of new Set(entries)){const key=this.videoPage(this.videoFrameIndex.get(spec.prefix+i)).sourceKey;if(selected.has(key)&&this.loadedFiles.has(key))jobs.push({key,cel:spec.prefix+i});}
@@ -495,7 +495,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    // removed companions/party and density changes release obsolete pins.
    if(this.videoFrameIndex)for(const kind of new Set(['girl','haetae',...(model.party||[]),...model.allies.filter(a=>a.hp>0).map(a=>a.type)]))for(const name of (['girl','haetae'].includes(kind)?['idle','walk','run']:['walk'])){
     const spec=VIDEO_MOTION[kind]?.[name];if(!spec)continue;
-    const start=name==='idle'?0:spec.cycles?.[0]?.start??0;
+    const start=['idle','umbrella'].includes(name)?0:spec.cycles?.[0]?.start??0;
     const end=Math.min(spec.cycles?.[0]?.end??spec.frames-1,start+(['girl','haetae'].includes(kind)?11:VIDEO_PAGE_FRAMES-1));
     for(let page=Math.floor(start/VIDEO_PAGE_FRAMES);page<=Math.floor(end/VIDEO_PAGE_FRAMES);page++)pinned.add(this.videoPage(this.videoFrameIndex.get(spec.prefix+Math.max(start,page*VIDEO_PAGE_FRAMES))).key);
    }
@@ -737,7 +737,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const lerp=(a,b)=>a+(b-a)*mix,playUnit=battleHeight*density/viewHeight;
    this.viewHeight=lerp(620,viewHeight);this.unit=lerp(nativeUnit*cover,playUnit);this.vw=width/this.unit;
    this.entryOffsetX=lerp((width-filmWidth*cover)/2,0);
-   const nativeRootY=(height-filmHeight*cover)/2+(entry?entry.travellers.girl[1]*cover-this.actorGround('girl')*nativeUnit*cover:0),playRootY=(viewHeight-620)*playUnit;
+   const nativeRootY=(height-filmHeight*cover)/2+(entry?entry.travellers.girl[1]*cover-this.actorGround('girl')*nativeUnit*cover:0),playRootY=(viewHeight-620)*playUnit+(AREAS[model.stage].playCameraY||0)*density;
    this.entryOffsetY=lerp(nativeRootY,playRootY)-(this.viewHeight-620)*this.unit;this.root.x=this.entryOffsetX;
    // A single affine camera zoom: actors and their ground never translate in world space.
    if(this.entryPreview&&entry){const nativeCamera=model.startX+this.travellerOffset('girl')-entry.travellers.girl[0]/entry.unit;this.offset=lerp(nativeCamera*nativeUnit*cover,this.cameraOffset(AREAS[model.stage],width/playUnit)*playUnit)/this.unit;}
@@ -893,7 +893,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const effect=this.effects.find(e=>e.type==='heal'&&!e.enemy&&e.amount>0&&e.targetActor===targetActor),age=effect?model.time-(effect.at??model.time-effect.t):Infinity;
    if((kind==='cow'||TRAVELLER_VIDEO[kind])&&this.patientUnderAttack(targetActor))return null;
    if(kind==='cow'&&!VIDEO_MOTION.cow?.receiveHeal)return age>=0&&age<COW_HEAL.duration?'cowRecoverVideo'+Math.min(COW_HEAL.frames-1,Math.floor(age*COW_HEAL.fps)):null;
-   if(VIDEO_MOTION[kind]){const spec=VIDEO_MOTION[kind].receiveHeal;return age>=0&&age<spec.frames/spec.fps?spec.prefix+Math.min(spec.frames-1,Math.floor(age*spec.fps)):null;}
+   if(VIDEO_MOTION[kind]){const spec=VIDEO_MOTION[kind].receiveHeal;return spec&&age>=0&&age<spec.frames/spec.fps?spec.prefix+Math.min(spec.frames-1,Math.floor(age*spec.fps)):null;}
    return age>=0&&age<.9?kind+'Recover'+(age<.24?0:1):null;
   }
   healingGraphics(body){
@@ -955,10 +955,11 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   previewMotionKey(kind,mode='idle',elapsed=0){
    if(mode==='idle')return this.previewIdleKey(kind,elapsed);
-   const clips=VIDEO_MOTION[kind],spec=clips?.[mode==='attack'?(clips.attack?'attack':'castHeal'):mode==='depart'?'death':mode];
+   const clips=VIDEO_MOTION[kind],spec=clips?.[mode==='attack'?(clips.claw?'claw':clips.attack?'attack':'castHeal'):mode==='depart'?'death':mode];
    if(!spec)return null; // Static companions keep their existing authored pose path.
-   const t=Math.max(0,elapsed),cycle=mode==='walk'?spec.cycles?.[0]:null;
-   const frame=cycle?cycle.start+Math.floor(t*spec.fps)%(cycle.end-cycle.start+1):mode==='depart'?Math.min(spec.holdFrom??spec.frames-1,Math.floor(t%(spec.frames/spec.fps+1)*spec.fps)):Math.floor(t*spec.fps)%spec.frames;
+   const t=Math.max(0,elapsed),cycle=['walk','umbrellaWalk'].includes(mode)?spec.cycles?.[0]:null;
+   const held=mode==='umbrella'&&spec.cue?.hold!==undefined?spec.cycles?.[0]:null;
+   const frame=spec.loop===false?Math.min(spec.frames-1,Math.floor(t*spec.fps)):held?(t*spec.fps<held.start?Math.floor(t*spec.fps):held.start+Math.floor(t*spec.fps-held.start)%(held.end-held.start+1)):cycle?cycle.start+Math.floor(t*spec.fps)%(cycle.end-cycle.start+1):mode==='depart'?Math.min(spec.holdFrom??spec.frames-1,Math.floor(t%(spec.frames/spec.fps+1)*spec.fps)):Math.floor(t*spec.fps)%spec.frames;
    return spec.prefix+frame;
   }
   previewTexture(key,align){
@@ -1117,7 +1118,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
   }
   travellerOffset(key){
    // One display anchor for body, terrain, contacts and incoming effects.
-   const layout=AREAS[model.stage].entryView,mounted=model.action?.kind==='rush'||model.shield>0&&model.shieldKind!=='water';
+   const layout=AREAS[model.stage].entryView,mounted=model.action?.kind==='rush';
    const base=key==='girl'?-60:key==='hero'?(mounted?37:layout?-60+(layout.travellers.hero[0]-layout.travellers.girl[0])/layout.unit:-38):0;
    return base;
   }
@@ -1293,8 +1294,9 @@ export function makeGame(model,onReady,onFrame,onEvents){
    v.treating=treating;v.elapsed=action?.elapsed??0;
    if(moving||action||hit>0||!idleAllowed)v.idleSince=clock;
    const actor=kind==='cow'||clips.anticipation||UNITS[kind]?.runSpeed?model.allies.find(a=>'a'+a.id===key):null;
-   const running=kind==='healer'?action?.phase==='approach':UNITS[kind]?.runSpeed?actor?.alerted:kind==='cow'?actor?.alerted||model.enemies.some(e=>e.hp>0&&e.x>=(actor?.x??0)-55&&e.x<(actor?.x??0)+550):(kind==='girl'||kind==='haetae'||kind==='archer')&&model.direction!==0;
-   let name=hit>0&&clips.hurt&&!['cow','spearman'].includes(kind)?'hurt':action?.kind===kind&&kind!=='healer'?(clips[action.phase]?action.phase:'attack'):moving?(running?(kind==='healer'&&clips.runUrgent?'runUrgent':'run'):'walk'):treating?v.cast:'idle';
+   const running=kind==='healer'?action?.phase==='approach':UNITS[kind]?.runSpeed?actor?.alerted:kind==='cow'?actor?.alerted||model.enemies.some(e=>e.hp>0&&e.x>=(actor?.x??0)-55&&e.x<(actor?.x??0)+550):(kind==='girl'||kind==='haetae'||kind==='archer')&&model.direction!==0&&!(model.action?.kind==='umbrella'||model.shield>0&&model.shieldKind==='umbrella');
+   let name=hit>0&&clips.hurt&&!['cow','spearman','haetae'].includes(kind)?'hurt':action?.kind===kind&&kind!=='healer'?(clips[action.phase]?action.phase:'attack'):moving?(running?(kind==='healer'&&clips.runUrgent?'runUrgent':'run'):'walk'):treating?v.cast:'idle';
+   if(kind==='keeper')name=action?.phase==='approach'?'run':action?.phase&&clips[action.phase]?action.phase:action?'attack':moving?'walk':'idle';
    if(enemyActor){
     if(hit>(v.hit??0))v.hurtAt=clock;
     if(v.hp!==undefined&&enemyActor.hp>v.hp)v.recoveryAt=clock;
@@ -1322,13 +1324,16 @@ export function makeGame(model,onReady,onFrame,onEvents){
    v.moving=Boolean(moving);
    // Supplied videos keep their source cadence. Travel distance must not slow auto walking.
    const spec=clips[name],elapsed=Math.max(0,clock-v.since);
+   if(kind==='keeper'&&this.videoFrameIndex){const next=clips[name==='transform'?'run':name==='run'?'returnHuman':name==='returnHuman'?'attack':'transform'];if(next)this.videoCel(next.prefix+(next.cycles?.[0]?.start??0),null,false,true);}
+   if(name==='attack'&&clips.projectile&&action?.elapsed<(enemyActor?enemyStrike(kind):MOTION[kind]).impact)this.videoCel(clips.projectile.prefix+'0',null,false,true);
    const cycle=moving&&spec.cycles?.[0],loopStart=cycle?.start??0,loopFrames=cycle?cycle.end-loopStart+1:spec.frames;
    let frame=recoveryFrame??loopStart+Math.floor(elapsed*spec.fps)%loopFrames;
+   if(kind==='keeper'&&['transform','returnHuman'].includes(name))frame=Math.min(spec.frames-1,Math.floor(Math.max(0,action.elapsed)*spec.fps));
    if(kind==='healer'&&name==='runUrgent'&&!moving){const end=(spec.cycles?.[0]?.start??1)-1;frame=Math.min(end,Math.floor(Math.max(0,action.elapsed??0)/MOTION.healer.notice*(end+1)));}
    if(treating&&name===v.cast){const cue=spec.cycles[v.cycle],t=action.elapsed,clock=MOTION.healer;frame=Math.round(t<=clock.impact?cue.start+(cue.impact-cue.start)*Math.min(1,t/clock.impact):cue.impact+(cue.end-cue.impact)*Math.min(1,(t-clock.impact)/(clock.duration-clock.impact)));}
    if(name==='anger')frame=Math.round(Math.min(1,action.elapsed/(MOTION.cow.angerFrames/MOTION.cow.angerFps))*(spec.frames-1));
    if(name==='anticipation')frame=Math.min(spec.frames-1,Math.floor(Math.max(0,action.elapsed)*spec.fps));
-   if(name==='attack'&&spec.cue){const cue=spec.cue,t=action?.elapsed??0,span=enemyActor?enemyStrike(kind):kind==='girl'?{impact:0,duration:.85}:MOTION[kind];frame=Math.round(t<span.impact?cue.start+(cue.impact-cue.start)*t/span.impact:cue.impact+(cue.end-cue.impact)*Math.min(1,(t-span.impact)/(span.duration-span.impact)));}
+   if((name==='attack'||name===action?.phase)&&spec.cue){const cue=spec.cue,t=action?.elapsed??0,span=enemyActor?enemyStrike(kind):kind==='girl'?{impact:0,duration:.85}:(MOTION[kind]?.[action?.phase]||MOTION[kind]);frame=Math.round(t<span.impact?cue.start+(cue.impact-cue.start)*t/span.impact:cue.impact+(cue.end-cue.impact)*Math.min(1,(t-span.impact)/(span.duration-span.impact)));}
    if(enemyActor&&name==='ritual')frame=Math.min(spec.frames-1,Math.floor(Math.max(0,ENEMIES[kind].ability.windup-enemyActor.windup)*spec.fps));
    const soundCycle=Math.floor(elapsed/(loopFrames/spec.fps)),playing=model.status==='playing'&&(name!=='attack'||Boolean(action));
    if(spec.audio&&(v.soundState!==name||v.soundCycle!==soundCycle||v.soundPlaying!==playing)){
@@ -1336,7 +1341,16 @@ export function makeGame(model,onReady,onFrame,onEvents){
     onEvents([{type:'motion-audio',actor:key,sound:playing?kind+'-'+name:null,offset:frame/spec.fps,x:enemyActor?.x??(UNITS[kind]?model.allies.find(a=>'a'+a.id===key)?.x:model.x)}]);
    }
    const fallback=(image.celKey||image.texture?.key)?.replace(/^injured[12]__/,'');
-   return this.videoCel(spec.prefix+Math.max(0,Math.min(spec.frames-1,frame)),fallback);
+   const wanted=spec.prefix+Math.max(0,Math.min(spec.frames-1,frame)),cel=this.videoCel(wanted,fallback);
+   // Travel can begin from a long idle variant whose pixels are still displayed.
+   // Keep feet moving through the prepared walking entry while the requested
+   // travel page decodes. Never pin every running variant or exceed the cache
+   // budget just to retain an invisible pose. The model clock is unchanged.
+   if(moving&&cel!==wanted&&clips.walk&&!(kind==='keeper'&&name==='run')){
+    const stride=clips.walk,start=stride.cycles?.[0]?.start??0,count=Math.min(VIDEO_PAGE_FRAMES,(stride.cycles?.[0]?.end??stride.frames-1)-start+1);
+    return this.videoCel(stride.prefix+(start+Math.floor(elapsed*stride.fps)%count),cel);
+   }
+   return cel;
   }
   renderEntity(key,type,x,walk,hp,maxHp,hit,windup,enemy=false,moving=0,action=null,hitDir=1,groundY=GROUND,bornAt=-Infinity,entryOrigin=null,entering=false){
    let image=this.sprites.get(key);
@@ -1348,7 +1362,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(!image){const idle=VIDEO_MOTION[type]?.idle;image=this.setCel(this.add.image(0,0,'__WHITE'),idle?this.videoCel(idle.prefix+'0'):MODEL_MAP[type]||type).setOrigin(.5,1);this.root.add(image);this.sprites.set(key,image);}
    if(enemy&&model.time<bornAt){image.setVisible(false);return;}image.setVisible(true).setCrop();
    const teamPose=action?.kind==='team',poseAction=teamPose?null:action;
-   if(VIDEO_MOTION[type]&&!teamPose){
+   if(VIDEO_MOTION[type]&&!teamPose&&!(type==='keeper'&&model.keeperRank)){
     this.setCel(image,this.videoPose(image,walk,moving,action,hit,key,type,model.time,true,enemy?{hp,windup,x}:null)).setFlipX(enemy?false:type==='healer'&&action?.kind==='healer'?false:action?false:moving?moving<0:image.flipX);
    }else{
    delete image.celKey;
@@ -1383,7 +1397,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
    if(!enemy&&['king','prince','minister','cavalry'].includes(type)&&!moving&&!action)image.setTexture(type+'Idle0');
    if(!enemy&&type==='scholar'&&!moving&&!action)image.setTexture('scholarIdle'+Math.floor(model.time/2.8)%2);
    if(!enemy&&!moving&&!action&&hit<=0&&!(type==='keeper'&&model.keeperRank)){const recovery=this.recoveryCel(type,Number(key.slice(1)));if(recovery)image.setTexture(recovery);}
-   if(!enemy&&hit>0&&!['cow','spearman','archer'].includes(type))image.setTexture('hurt'+(type==='keeper'&&model.keeperRank?'keeperBrush':type));
+   if(!enemy&&hit>0&&!['cow','spearman','archer','keeper'].includes(type))image.setTexture('hurt'+(type==='keeper'&&model.keeperRank?'keeperBrush':type));
    }
    const baseHeight=BODY_HEIGHT[type]||130,height=this.actorHeight(baseHeight);
    this.placeOnGround(image,x-this.offset,baseHeight,groundY);
@@ -1397,15 +1411,15 @@ export function makeGame(model,onReady,onFrame,onEvents){
     // Whole-body drawings carry the pose; do not distort or hinge individual limbs.
     if(p<impact){this.fx.lineStyle(2,0x9c6958,.35);this.fx.lineBetween(image.x-dir*20,groundY-height*.6,image.x-dir*43,groundY-height*.63);}
    }else if(enemy&&!VIDEO_MOTION[type]&&windup>0){image.setAngle(Math.sin(windup*8)*1.8+(type==='horse'?5:0));}
-   if(hit>0&&(enemy?!VIDEO_MOTION[type]:!['cow','spearman','archer'].includes(type))){
+   if(hit>0&&(enemy?!VIDEO_MOTION[type]:!['cow','spearman','archer','keeper'].includes(type))){
     const total=enemy?.26:ALLY_HIT_TIME,age=total-hit,response=age<.05?1:Math.max(0,1-(age-.05)/(total-.05))**2;
     image.x+=hitDir*response*(type==='boss'?5:10);
     image.setAngle(hitDir*response*(type==='boss'?2:5));
    }
    if(MOTION[type]&&!hover)this.trackContact(key,type,walk,moving,x,groundY);
    // Color-only actors retain their action, position and supporting feet on hit.
-   if(!enemy&&['cow','spearman','archer'].includes(type)&&hit>0){const fade=Math.min(1,hit/.14);image.setTint((255<<16)|(Math.round(255-120*fade)<<8)|Math.round(255-145*fade));}
-   else if(!enemy&&['cow','spearman','archer'].includes(type))image.clearTint();
+   if(!enemy&&['cow','spearman','archer','keeper'].includes(type)&&hit>0){const fade=Math.min(1,hit/.14);image.setTint((255<<16)|(Math.round(255-120*fade)<<8)|Math.round(255-145*fade));}
+   else if(!enemy&&['cow','spearman','archer','keeper'].includes(type))image.clearTint();
    else if(hit>(enemy?.225:ALLY_HIT_TIME-.035))image.setTintFill(0xfff7dd);else if(hit>0)image.setTint(enemy?0xf3c9b9:0xffae99);else image.clearTint();
    if(!enemy&&type==='healer')this.drawHealerCastLight(image,action,action?.targetId==null?this.hero:this.sprites.get('a'+action.targetId));
    const arrival=this.effects.find(e=>e.type==='summon'&&e.actor===Number(key.slice(1))),entry=P.Math.Clamp((model.time-bornAt)/.8,0,1);
@@ -1504,7 +1518,7 @@ export function makeGame(model,onReady,onFrame,onEvents){
       // The same master-to-game scale owns body and effect. Never fit a tail
       // into an arbitrary small box or resize a changing pose frame by frame.
       this.setCel(e.sprite,key);const height=this.actorHeight(BODY_HEIGHT[e.sourceKind])*authored.scale;
-      const point=authored.cue?.point||[.5,.5];e.sprite.setVisible(this.textures.exists(page.key)).setOrigin(dir>0?1-point[0]:point[0],point[1]).setPosition(head.x,head.y).setDisplaySize(height*page.w/page.h,height).setFlipX(dir>0).setAlpha(1);continue;
+      const point=authored.cue?.point||[.5,.5];e.sprite.setVisible(Boolean(e.sprite.celKey&&this.textures.exists(e.sprite.texture.key))).setOrigin(dir>0?1-point[0]:point[0],point[1]).setPosition(head.x,head.y).setDisplaySize(height*page.w/page.h,height).setFlipX(dir>0).setAlpha(1);continue;
      }
      const color=hex?0xc49ae6:stone?0xeac276:seed?0xc3e975:ink?0x53c1b2:0x8fe6d5;
      if(!arrow)ribbon(Array.from({length:5},(_,i)=>at(Math.max(0,travel-.2+i*.05))),stone?3:ink?6:4,color,1);
@@ -1603,12 +1617,14 @@ export function makeGame(model,onReady,onFrame,onEvents){
      e.sprite.setPosition(xx,yy).setScale(1+Math.max(0,.14-p)*1.7).setAlpha(Math.min(1,fade*2.5));this.root.bringToTop(e.sprite);
     }
     if(e.type==='coin'){
-     const count=e.reason==='defeat'?3:1,travel=Math.min(1,e.t/COIN_FLIGHT_TIME);
+     const count=Math.max(0,Math.round(e.amount)),travel=Math.min(1,e.t/COIN_FLIGHT_TIME);
      if(!e.coinOrigin)e.coinOrigin={x:e.x,y:GROUND-(BODY_HEIGHT[e.kind]||132)*.55};
-     if(e.t<.26){const burst=e.t/.26;g.lineStyle(2,0xffe1a0,(1-burst)*.8);g.strokeEllipse(e.coinOrigin.x-this.offset,e.coinOrigin.y,24+75*burst,18+45*burst);flecks(e.coinOrigin.x-this.offset,e.coinOrigin.y,burst,0xffdd85,count===3?8:4,58,30);}
+     if(e.t<.26){const burst=e.t/.26;g.lineStyle(2,0xffe1a0,(1-burst)*.8);g.strokeEllipse(e.coinOrigin.x-this.offset,e.coinOrigin.y,24+75*burst,18+45*burst);flecks(e.coinOrigin.x-this.offset,e.coinOrigin.y,burst,0xffdd85,count>1?12:4,58,30);}
      for(let i=0;i<count&&travel<1;i++){
-      const startX=e.coinOrigin.x-this.offset+(i-(count-1)*.5)*28,startY=e.coinOrigin.y-i*14,q=Math.max(0,Math.min(1,(travel-.18)/.82)),ease=q*q,xx=startX+(coinTarget.x-startX)*ease,yy=startY+(coinTarget.y-startY)*ease-70*Math.sin(travel*Math.PI),size=13.5*(1-.65*q);
-      const past=Math.max(0,travel-.075),back=Math.max(0,(past-.18)/.82)**2,bx=startX+(coinTarget.x-startX)*back,by=startY+(coinTarget.y-startY)*back-70*Math.sin(past*Math.PI);
+      const delay=count>1?i/(count-1)*.24:0,flight=Math.max(0,Math.min(1,(travel-delay)/(1-delay)));
+      if(travel<delay)continue;
+      const startX=e.coinOrigin.x-this.offset+((i%5)-2)*14,startY=e.coinOrigin.y-(i%3)*17,q=Math.max(0,Math.min(1,(flight-.18)/.82)),ease=q*q,xx=startX+(coinTarget.x-startX)*ease,yy=startY+(coinTarget.y-startY)*ease-70*Math.sin(flight*Math.PI),size=(e.reason==='defeat'?18.5:13.5)*(1-.55*q);
+      const past=Math.max(0,flight-.075),back=Math.max(0,(past-.18)/.82)**2,bx=startX+(coinTarget.x-startX)*back,by=startY+(coinTarget.y-startY)*back-70*Math.sin(past*Math.PI);
       g.lineStyle(8,0xf5c264,.18);g.lineBetween(bx,by,xx,yy);g.lineStyle(2,0xffe6a4,.85);g.lineBetween(bx,by,xx,yy);
       g.fillStyle(0xffd780,.13);this.paintCircle(g,xx,yy,size*1.8);
       g.fillStyle(0x76552b,1);this.paintCircle(g,xx,yy,size);g.fillStyle(0xf3cf77,1);this.paintCircle(g,xx,yy-1,size*.78);g.fillStyle(0x695033,1);g.fillRect(xx-size*.22,yy-size*.3,size*.44,size*.44);
@@ -1746,21 +1762,35 @@ export function makeGame(model,onReady,onFrame,onEvents){
    const heroX=intro?vw*.68:model.x-this.offset;
    const walking=intro||model.moving!==0;
    if(playing)this.heroPose=model.moving?0:Math.max(0,this.heroPose-dt);
-   const sheltering=!intro&&model.shield>0&&model.shieldKind!=='water',mounted=!intro&&(model.action?.kind==='rush'||sheltering);
-   const opening=sheltering?6-model.shield:0;
-   const heroFrame=sheltering?(opening<.6?Math.min(3,Math.floor(opening/.15)):walking?4+motionFrame('haetae',model.walk,true,null):7):mounted?(model.action.elapsed<.18?4:Math.floor(model.action.elapsed*14)%4):motionFrame('haetae',intro?t:model.walk,walking,intro?null:model.action);
+   const dismounting=!intro&&model.action?.kind==='umbrella'&&model.action.phase==='dismount';
+   const sheltering=!intro&&model.shield>0&&model.shieldKind!=='water',shelter=MOTION.haetae.shelter;
+   const shelterAge=sheltering?(model.shelterAt==null?shelter.approach+shelter.mount+6-model.shield:model.time-model.shelterAt):0;
+   const approaching=sheltering&&model.action?.kind==='umbrella'&&shelterAge<shelter.approach;
+   const returning=dismounting&&model.action.elapsed>=shelter.close+shelter.dismount;
+   const umbrellaPose=(sheltering||dismounting)&&!approaching&&!returning,mounted=!intro&&(model.action?.kind==='rush'||umbrellaPose);
+   const mounting=sheltering&&model.action?.kind==='umbrella'&&!approaching&&shelterAge<shelter.approach+shelter.mount;
+   const opening=dismounting?Math.max(0,shelter.close-model.action.elapsed):Math.max(0,shelterAge-shelter.approach-shelter.mount);
+   const descending=dismounting&&!returning&&model.action.elapsed>=shelter.close;
+   const heroFrame=umbrellaPose?(opening<.6?Math.min(3,Math.floor(opening/.15)):walking?4+motionFrame('haetae',model.walk,true,null):7):mounted?(model.action.elapsed<.18?4:Math.floor(model.action.elapsed*14)%4):motionFrame('haetae',intro?t:model.walk,walking,intro?null:model.action);
    const heroHurt=!intro&&this.effects.some(e=>e.type==='hurt'&&model.time-(e.at??model.time-e.t)<ALLY_HIT_TIME);
    const idleEligible=!intro&&!walking&&!mounted&&!model.action&&!heroHurt&&this.heroPose<=0&&!model.enemies.some(e=>e.hp>0&&Math.abs(e.x-model.x)<450);
    if(!idleEligible)this.idleSince=null;else if(this.idleSince===null)this.idleSince=t;
    const idleElapsed=this.idleSince===null?0:t-this.idleSince,haetaeIdle=travellerIdleFrame('haetae',idleElapsed,region),girlIdle=travellerIdleFrame('girl',idleElapsed,region);
    const heroRecovery=!walking&&!mounted&&!model.action?this.recoveryCel('haetae',null):null,girlRecovery=!walking&&!mounted&&this.heroPose<=0?this.recoveryCel('girl',null):null;
-   const haetaeBase=mounted?heroHurt?'hurt'+(sheltering?'umbrella':'mount'):(sheltering?'umbrella':'mount')+heroFrame:this.videoPose(this.hero,intro?t:model.walk,walking,intro?null:model.action,heroHurt?1:0,'hero','haetae',t,idleEligible);
+   const umbrellaMode=mounting?'shelterMount':descending?'shelterDismount':sheltering&&walking&&opening>=MOTION.haetae.shelter.open?'umbrellaWalk':'umbrella';
+   const umbrellaTime=mounting?shelterAge-shelter.approach:descending?model.action.elapsed-MOTION.haetae.shelter.close:umbrellaMode==='umbrellaWalk'?model.walk:opening;
+   const umbrellaCel=umbrellaPose?this.previewMotionKey('haetae',umbrellaMode,umbrellaTime):null;
+   const haetaeBase=umbrellaCel?this.videoCel(umbrellaCel,this.hero.celKey||'umbrella0'):mounted?heroHurt?'hurt'+(umbrellaPose?'umbrella':'mount'):(umbrellaPose?'umbrella':'mount')+heroFrame:this.videoPose(this.hero,intro?t:model.walk,walking||returning,intro?null:model.action,heroHurt?1:0,'hero','haetae',t,idleEligible);
    const girlCast=this.heroPose>0?{kind:'girl',elapsed:.85-this.heroPose}:null;
-   const girlBase=this.videoPose(this.girl,intro?t:model.walk,walking,girlCast,heroHurt?1:0,'girl','girl',t,idleEligible);
-   this.setCel(this.hero,haetaeBase).setFlipX(sheltering||intro||model.action?false:model.moving?model.moving<0:this.hero.flipX);
-   this.placeOnGround(this.hero,heroX+this.travellerOffset('hero'),sheltering?BODY_HEIGHT.umbrella:mounted?BODY_HEIGHT.mount:intro?150:BODY_HEIGHT.haetae,this.actorGround('hero'));
-   this.setCel(this.girl,girlBase).setFlipX(intro||this.heroPose>0?false:model.moving?model.moving<0:this.girl.flipX);
-   this.placeOnGround(this.girl,heroX+this.travellerOffset('girl'),intro?145:BODY_HEIGHT.girl,this.actorGround('girl'));
+   const girlJoining=approaching||returning,joinAge=approaching?shelterAge:returning?model.action.elapsed-shelter.close-shelter.dismount:0;
+   const joinOffset=(approaching?shelter.girlStart:shelter.girlEnd)*(this.hero.flipX?-1:1)*this.actorHeight(BODY_HEIGHT.umbrella)/BODY_HEIGHT.umbrella+this.travellerOffset('hero');
+   const normalGirlOffset=this.travellerOffset('girl'),joinProgress=Math.max(0,Math.min(1,joinAge/(approaching?shelter.approach:shelter.return)));
+   const girlOffset=approaching?normalGirlOffset+(joinOffset-normalGirlOffset)*joinProgress:returning?joinOffset+(normalGirlOffset-joinOffset)*joinProgress:normalGirlOffset;
+   const girlBase=girlJoining?this.videoCel(this.previewMotionKey('girl','walk',joinAge),this.girl.celKey):this.videoPose(this.girl,intro?t:model.walk,walking,girlCast,heroHurt?1:0,'girl','girl',t,idleEligible);
+   this.setCel(this.hero,haetaeBase).setFlipX(intro||model.action&&model.action.kind!=='umbrella'&&!umbrellaPose?false:model.moving?model.moving<0:this.hero.flipX);
+   this.placeOnGround(this.hero,heroX+this.travellerOffset('hero')+(returning?shelter.haetaeEnd*(1-joinProgress)*(this.hero.flipX?-1:1)*this.actorHeight(BODY_HEIGHT.umbrella)/BODY_HEIGHT.umbrella:0),umbrellaPose?BODY_HEIGHT.umbrella:mounted?BODY_HEIGHT.mount:intro?150:BODY_HEIGHT.haetae,this.actorGround('hero'));
+   this.setCel(this.girl,girlBase).setFlipX(girlJoining?(approaching?joinOffset<normalGirlOffset:normalGirlOffset<joinOffset):intro||this.heroPose>0?false:model.moving?model.moving<0:this.girl.flipX);
+   this.placeOnGround(this.girl,heroX+girlOffset,intro?145:BODY_HEIGHT.girl,this.actorGround('girl',model.x+girlOffset-normalGirlOffset));
    this.hero.setVisible(model.hp>0&&this.hero.texture.key!=='__WHITE');this.girl.setVisible(!mounted&&model.hp>0&&this.girl.texture.key!=='__WHITE');
    if(heroHurt){this.hero.setTint(0xffb39c);this.girl.setTint(0xffb39c);}else{this.hero.clearTint();this.girl.clearTint();}
    if(!intro){this.trackContact('haetae','haetae',model.walk,model.moving,model.x+this.travellerOffset('hero'),this.actorGround('hero'));if(!mounted)this.trackContact('girl','girl',model.walk,model.moving,model.x+this.travellerOffset('girl'),this.actorGround('girl'));}

@@ -1,4 +1,4 @@
-import {DEFAULT_PARTY,UNITS,STAGES,isBoss} from './data.js?v=218-integrated';
+import {UNITS,STAGES,isBoss} from './data.js?v=224';
 
 // A disposable observer session: decisions call the ordinary combat API.
 // The app owns stage entry and saved rewards; this owner never writes a save.
@@ -21,12 +21,16 @@ export class Autoplay {
   if(m.status!=='playing')return null;
   m.auto=true;m.direction=0;
   if(m.time<this.nextOrder)return null;this.nextOrder=m.time+.6;
-  // The same normal-action policy already used to verify the short chapters.
-  if(m.countAllies('cow')<3)m.summon('cow');
-  else for(const type of DEFAULT_PARTY.filter(k=>k!=='cow'))if(!m.atSummonLimit(type)&&m.coins>=UNITS[type].cost&&m.cooldowns[type]===0){m.summon(type);break;}
-  if(m.enemies.some(e=>isBoss(e.type)&&e.windup>0))m.skill('shelter');
+  // Use the actual party (or tour roster), filling underrepresented kinds first.
+  // Journey still owns eligibility, currency, limits, cooldowns and the summon.
+  const candidates=m.summonTypes.filter(type=>UNITS[type]&&!m.atSummonLimit(type)&&m.cooldowns[type]<=0);
+  candidates.sort((a,b)=>m.countAllies(a)-m.countAllies(b));
+  const type=candidates[0];
+  // Save for the next missing kind instead of endlessly spending on cheaper repeats.
+  if(type&&m.coins>=UNITS[type].cost)m.summon(type);
+  if(!m.shield&&m.action?.kind!=='umbrella'&&m.enemies.some(e=>isBoss(e.type)&&e.windup>0))m.skill('shelter');
   if(m.enemies.some(e=>e.hp>0&&Math.abs(e.x-m.x)<370))m.skill('stomp');
-  if(m.coins>35)m.skill('charm');
+  if(m.mana>35)m.skill('charm');
   return null;
  }
 }

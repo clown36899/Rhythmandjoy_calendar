@@ -1,5 +1,5 @@
 // Album presentation only. Campaign owns fragments, claims, parties and saved progress.
-import {CARD_FRAGMENT_GOAL} from "./campaign.js?v=218-integrated";
+import {CARD_FRAGMENT_GOAL} from "./campaign.js?v=224";
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const normalize=value=>String(value??'').normalize('NFKC').toLocaleLowerCase('ko').replace(/\s+/g,'');
 export function collectionPage(candidates,{query='',category='',era='',page=0,pageSize=30,status='',stateFor=()=>({fragments:0,owned:false})}={}){
@@ -23,7 +23,7 @@ export function fragmentSlots(state){
  const filled=state.owned?CARD_FRAGMENT_GOAL:Math.min(CARD_FRAGMENT_GOAL,state.fragments);
  return `<span class="fragment-slots" role="img" aria-label="${state.owned?'확보 완료':`조각 ${state.fragments}/${CARD_FRAGMENT_GOAL}`}" data-ready="${!!state.ready}">${Array.from({length:CARD_FRAGMENT_GOAL},(_,i)=>`<i data-filled="${i<filled}" aria-hidden="true"></i>`).join('')}</span>`;
 }
-export function mountCollection(doc,{load=()=>import('./collection-catalog.js?v=218-integrated').then(m=>m.default),stateFor=()=>({fragments:0,owned:false,ready:false}),claim=()=>false}={}){
+export function mountCollection(doc,{load=()=>import('./collection-catalog.js?v=224').then(m=>m.default),stateFor=()=>({fragments:0,owned:false,ready:false}),claim=()=>false}={}){
  const $=id=>doc.getElementById(id),panel=$('codex-collection'),grid=$('collection-grid');
  const pageSize=12,search=$('collection-search'),category=$('collection-category'),era=$('collection-era');
  let catalog=null,pending=null,page=0,selected=null,status='',claiming=false;

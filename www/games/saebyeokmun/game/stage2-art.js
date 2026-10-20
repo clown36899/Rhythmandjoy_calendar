@@ -5,7 +5,7 @@ const tile=(n,x,walkLine,fade=0,foot=542)=>({file:`stage2-ink-ground-${n}-v145.w
 export const STAGE2_ART={
  file:'stage2-entry-field-far-v147.webp',detailFiles:[],skyInPainting:false,sunFile:'stage2-sun-v1-v146.webp',paintingFoot:540/821,
  roadAtlas:null,roadFinite:true,actorScale:1.02,actorHeightAdd:-15,actorFloors:[-12,12,36,60],shadowOpacity:.65,
- roadEnd:7600,
+ roadEnd:7600,playCameraY:-22,
  // Trimmed film's last frame, in its native 1456×624 coordinates.
  // Presentation only: the existing paused entry eases into the normal play camera.
  entryView:{width:1456,height:624,unit:1.16,duration:1400,travellers:{girl:[214,500],hero:[372,502]}},

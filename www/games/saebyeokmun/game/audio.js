@@ -1,5 +1,5 @@
 // One audio owner. User-provided music + credited effects; see assets/audio/LICENSES-v167.txt.
-import {TRAVELLER_VIDEO} from './traveller-motion.js?v=218-integrated';
+import {TRAVELLER_VIDEO} from './traveller-motion.js?v=224';
 const MOTION_AUDIO=Object.fromEntries(Object.entries(TRAVELLER_VIDEO).flatMap(([kind,clips])=>Object.entries(clips).filter(([,c])=>c.audio).map(([name,c])=>[kind+'-'+name,c.audio])));
 const NAMES=['step-heavy','step-light','stomp','seed','charm','guard','swipe','hurt','summon','heal','shelter','hail','warning','charge','hex','win','lose','coin','stone','ink','seal','horn','ascend','ambience',...Object.keys(MOTION_AUDIO)];
 const LEVELS={'step-heavy':.18,'step-light':.13,coin:.32,swipe:.38,guard:.62,warning:.8,summon:.65,heal:.55,seal:.68,charm:.68,hex:.7,ascend:.6};
@@ -8,7 +8,7 @@ export class Soundscape {
  constructor({contextFactory=()=>new (window.AudioContext||window.webkitAudioContext)(),fetcher=(url)=>fetch(url),onState=()=>{}}={}){
   this.contextFactory=contextFactory;this.fetcher=fetcher;this.onState=onState;this.enabled=true;this.musicEnabled=true;this.effectsEnabled=true;this.playing=false;this.volume=.55;this.buffers=new Map();this.voices=new Set();this.lastPlayed=new Map();this.ambient=null;this.ambientOffset=0;this.loaded=null;this.missing=[];
  }
- assetFiles(){return NAMES.filter(name=>!this.buffers.has(name)).map(name=>({url:'./assets/audio/'+(MOTION_AUDIO[name]||(name==='ambience'?MUSIC_TRACK:name+(name==='coin'?'.wav?v=67':'.wav?v=31')))}));}
+ assetFiles(){return NAMES.filter(name=>!this.buffers.has(name)).map(name=>({url:'./assets/audio/'+(MOTION_AUDIO[name]||(name==='ambience'?MUSIC_TRACK:(name==='coin'?'coin-v219.wav':name+'.wav?v=31')))}));}
  async prepare(onProgress=()=>{}){
   if(!this.context){this.context=this.contextFactory();this.master=this.context.createGain();this.master.gain.value=this.enabled?this.volume:0;
    if(this.context.createDynamicsCompressor){this.limiter=this.context.createDynamicsCompressor();this.limiter.threshold.value=-5;this.limiter.knee.value=6;this.limiter.ratio.value=12;this.limiter.attack.value=.003;this.limiter.release.value=.16;this.master.connect(this.limiter);this.limiter.connect(this.context.destination);}else this.master.connect(this.context.destination);
@@ -18,7 +18,7 @@ export class Soundscape {
   if(!this.loaded&&pending.length){
    this.onState('loading');this.missing=[];
    let prepared=0;this.loaded=Promise.all(pending.map(async name=>{
-    try{const response=await this.fetcher('./assets/audio/'+(MOTION_AUDIO[name]||(name==='ambience'?MUSIC_TRACK:name+(name==='coin'?'.wav?v=67':'.wav?v=31'))));if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));if(name==='ambience')this.syncAmbience();}
+    try{const response=await this.fetcher('./assets/audio/'+(MOTION_AUDIO[name]||(name==='ambience'?MUSIC_TRACK:(name==='coin'?'coin-v219.wav':name+'.wav?v=31'))));if(!response.ok)throw new Error(name);this.buffers.set(name,await this.context.decodeAudioData(await response.arrayBuffer()));if(name==='ambience')this.syncAmbience();}
     catch{this.missing.push(name);}finally{onProgress({prepared:++prepared,prepareTotal:pending.length});}
    })).then(()=>{this.onState(this.missing.length?'partial':'ready');this.syncAmbience();}).finally(()=>{this.loaded=null;});
   }
