@@ -1,3 +1,15 @@
+# v170 · 2026-10-20 길 마스킹과 실제 준비 시간 기반 로딩
+
+원본 크기와 모션69개를 유지하고, 나무의 닫힌 하늘 틈과 전경 전체 높이의 겹침 비침을 수정했다. 동일한 이미지 준비 큐를 사용해 디코딩 지연을 줄이고 음악·효과음을 진입 전에 준비한다. 로딩은 실제 전송/준비 속도에 따른 예상 진행률과 남은 시간을 표시하며 완료 전100%를 표시하지 않는다. 기존104검사 통과, 실제 스테이지2 서버 검수. v169도 공개 보존한다. 실물폰 속도 보장은 아니며 다른 채팅 원화·궁병v187과 운영 변경은 포함하지 않는다.
+
+소스 `d357754ff025fa891fbe7df17881efbcecf829b3`. 카페24 결과 원장: 관리/카페24_배포-v170-road-loading.json
+
+# 2026-10-19 Close healer care and title music v167
+
+Approved native hand glow follows smooth authored paths with unchanged timing and upright blessing return. Patient crosses are rounded and thicker with short glints, sorted with their recipient. Healer range150/preferred spacing120 share the existing approach and treatment logic. User-provided Sweeping String Game Theme (Ver.2) starts with the title at0 and continues through entry; skip/no intro starts the same music owner at game entry. Existing mute/pause/background protections and prior19releases are retained. The shared legacy LICENSES file stays byte-identical; new credits are versioned. Selected103checks pass; local/public browser evidence is recorded in the game management audit. Only these changes are copied from the v153 production base.
+
+Source `54d4eed1d8bb80eea13b152d90b0c1eab57bbe5a`. Cafe24 game directory only; DB, calendar/services and other chats’ pending entry/collection work are excluded.
+
 # 2026-10-19 Road opacity v153
 
 길 이음의 걷는 대역까지 outgoing 도로를 불투명하게 유지해 source-over 이중 페이드를 제거했다. 기존 Scene/제작기를 재사용하고 native 5장 전달본·자산 크기·모듈 캐시를 맞췄다. 원본 RGB, 뒤 윤곽, 좌표/발 높이, 전투/저장, 이전19공개버전은 보존한다. 기존 검사63개 통과,87,264위치 비침0,실제 Canvas48조건 알파255,잘못된 입력4개 거절. 소스0cc4e09를 먼저 푸시하고 이 미러도 푸시한 뒤 기존 카페24 게임 폴더만 교체한다. 다른 채팅의 미완성 카드 작업과 운영 문서는 제외한다. 서버 화면 검수는 배포 후 별도 기록한다. 상세: 관리/카페24_배포-v153-road-opacity.json.
@@ -522,3 +534,17 @@ Chrome 실제 Scene의 비교 도구에서 +14와 상한+1, 찡그린 전신, �
 ## v37 — 선명한 근경과 이동 치료
 
 소스 `49d44c99d26695d4cb2a15e28df3295d3cdaa6cd`. 실행81파일 약97.7MB. 세 단계의 근경을 두 원화 구간으로 분리하고 안개를 그 뒤로 배치하여 기준 화면 원본 확대 약1.95배→1.01배. 원경/지면/카메라/입력/DPR 소유 유지, 구간은 반전 없이 원본 픽셀을 겹쳐 합성. 의녀는 움직이는 환자를 따라 치료하고 환자가 없을 때만 복귀, 돌아오다 환자가 생기면 즉시 재추적. 회복14/간격3.4초/HP상한/생존자/1회 명중 보호 유지. 이동 치료 전신4셀 추가, 발542/높이165 유지. 새 대상 선택 책임은 Journey의 기존 정렬을 한 메서드로 재사용한다. 자동74검사 및 Chrome844×300/667×280 일반 이동·교전·소환, 실제 Scene 이동회복/복귀중재출동 검증. 전체화면은 검증환경에서 안내 대체 복구까지만 확인; 실물 Android GPU/발열/전체화면 제외. 운영DB/캘린더 설정 변경 없음. 원화·미채택시안·프롬프트·비교자료는 로컬보존, 커밋/푸시된 실행파일만 이전해시 확인 후 복구가능 배포.
+
+
+## 2026-10-19: v168 sound and companion limit
+
+Source commit: 3ff936731f4a3e960c8cf1747ec13c9e583e5b38. This scoped runtime delta includes the v167 approved healer light, closer range150/spacing120 and supplied music; v168 adds independent music/effects HUD controls and persisted settings, a3-per-type/15-total summon limit including free helpers,3-member existing formations, and shared same-cel motion lookahead within a synchronous render. Five arrow volleys, action clocks, damage/heal events, missing-page fallback and next-render retry stay authoritative. No new loader/player/store is introduced.
+
+Validation:133 runtime tests and24 preserved-release/observer tests passed. Desktop mobile viewport844x390 confirms44px sound buttons to the left of pause and independent settings. Physical-device GPU/thermal FPS has not been measured. Deployment uses the existing Cafe24 destination, with a verified local backup, exact pushed-file hashes, and preserved19 public releases. Other chats' local work and site services/DB are excluded.
+
+Stage2-only follow-up: reuse transport foreground promotion and protect current-playback lookahead from next-map cleanup; prepare one immediate GPU page per draw and pin it with the current page. Keep original fps, source resolution and action clocks. Use the existing high-performance renderer preference.73 effects/download/app checks plus5 final boundary checks and4 legacy checks passed. The same30s local stage2 comparison observed83->61 unavailable-cel lookups at up to8 allies/12 enemies; this is not an FPS gain claim. Profiling instrumentation is excluded.
+
+
+## v169 — 영상 연결 복구와 현재 동작 우선 준비
+
+소스 `95d1d9fc3630efb38609bc9e668811d7f3a4505c`. v160 스테이지2 영상·1.4초 단일 줌/실제 출발점과 해태 보행12..86·달리기12..39 연결을 복구했다. 기존69개 영상 동작·24fps·출력 밀도·전투/저장·3명/총15명 상한 유지. Scene 기존 단일 준비 대기열의 현재 프레임 우선순위/승격과 LRU 캔버스 픽셀 즉시 해제를 연결했다. 2셀 묶음 실험은 제외하고6셀·GPU48MiB/CPU96MiB 유지. 자동130개/공개 이력21개 통과, Stage2 정상영상48화면·줌→조작과 동시 아군15/적12, 실제 공격/걷기/치유 재생 확인. 150초 누적 사용불가 cel 조회8496→5133은 FPS 수치가 아니며 실물폰 검증 제외. 이전 v168 실행본을 기존 versions 비교에 보존했고 다른19개 공개본과 공유 자산은 유지했다. 다른 채팅의 collection/마법/원화 WIP는 덮어쓰지 않았다. 이 소스·미러를 푸시한 뒤 Cafe24 기존 게임 디렉터리에만 이전 해시·백업·전체 후보/보호 파일 검증 후 교체한다.

@@ -1,0 +1,48 @@
+새벽문 v38 음악·효과음 출처
+
+1. Kenney — Impact Sounds (130 recordings), RPG Audio (50 recordings)
+https://kenney.nl/assets/impact-sounds
+https://kenney.nl/assets/rpg-audio
+License: CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+Selected footsteps, impacts, cloth, paper, coins and bells were trimmed, layered,
+pitch shifted and levelled into the game's 23 effects. Original packs are archived locally.
+
+2. Yokai Battle Theme
+User-provided MP3, supplied on 2026-10-11 for this game's background music.
+Used as ambience.mp3 without re-encoding. Full source remains local. Existing
+single-loop music player uses gain .32 and the user's saved master volume.
+No CC0 or CC BY license is asserted for this user-provided track.
+Previously used Pixel Rain & Side-Scroll Cafe is archived locally, not published.
+
+3. 한국저작권위원회 — 147.청명한 18현가야금 효과음 027
+Contributor: 양현정
+https://gongu.copyright.or.kr/gongu/wrt/wrt/view.do?menuNo=200020&wrtSn=13290188
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+Used in charm, seal, hex, summon, heal, shelter, ascend, win and lose.
+Trimmed, layered, pitch shifted and levelled; these edits are game-specific.
+No endorsement by the original creators is implied.
+
+4. v65 coin.wav — Kenney RPG Audio (CC0): handleCoins + handleCoins2.
+Layered into a 0.76-second cascading coin rattle, with pitch/level and tail edits.
+
+5. v66 coin.wav — Kenney RPG Audio + Impact Sounds (CC0).
+Coin handling and light metal strikes, high-passed, pitch-shifted, shortened,
+and layered into bright coin collisions and a settling roll.
+
+6. Current v67 coin.wav — "3.4) Coins clinking.WAV"
+by 16FPanskaLipovska_Katerina, December 17, 2019.
+https://freesound.org/people/16FPanskaLipovska_Katerina/sounds/497941/
+License: Creative Commons Zero (CC0 1.0 Universal).
+https://creativecommons.org/publicdomain/zero/1.0/
+Actual coins clinking in a palm. Excerpt 7.02–7.78 seconds from the public
+high-quality preview, native pitch, mono conversion, 22.05 kHz, gentle rumble
+filter, level normalization and a 120ms tail fade. No added metal/bell sounds.
+The previous v65/v66 coin mixes above are historical and no longer shipped.
+
+7. Current v167 background music — Sweeping String Game Theme (Ver.2)
+User-provided MP3, supplied on 2026-10-19 for this game.
+Used as sweeping-string-theme-v167.mp3 without re-encoding.
+No third-party open license is asserted. The original file and SHA256 are retained locally.
+The same music instance starts with the title film and continues into gameplay.

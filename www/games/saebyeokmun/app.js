@@ -1,10 +1,12 @@
-import {Campaign} from './game/campaign.js?v=146-entry';
-import {Journey} from './game/model.js?v=153-road-opacity';
-import {Autoplay} from './game/autoplay.js?v=146-entry';
-import {makeGame} from './game/scene.js?v=153-road-opacity';
-import {Soundscape} from './game/audio.js?v=153-road-opacity';
-import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=153-road-opacity';
+import {Campaign} from './game/campaign.js?v=218-integrated';
+import {mountCollection} from './game/collection.js?v=218-integrated';
+import {Journey} from './game/model.js?v=218-integrated';
+import {Autoplay} from './game/autoplay.js?v=218-integrated';
+import {makeGame} from './game/scene.js?v=218-integrated';
+import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=218-integrated';
+import {ROAD,MAX_HP,MAX_COINS,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=218-integrated';
 const $=id=>document.getElementById(id);
+const collection=mountCollection(document,{stateFor:id=>campaign.cardState(id),claim:claimCollectionCard});
 const model=new Journey();
 const autoplay=new Autoplay(model);
 const requestedAutoplay=/(?:^|[?&])autoplay=1(?:&|$)/.test(window.location?.search||'');
@@ -41,6 +43,7 @@ const campaign=new Campaign(savedCampaign);
 clearedStages=0;while(campaign.cleared.includes(clearedStages))clearedStages++;
 let activeRun=0,draftParty=[],rosterFocus=campaign.party[0],rosterMotion=null;
 function saveCampaign(){try{localStorage.setItem('saebyeokmun-campaign',JSON.stringify(campaign.snapshot()));return true;}catch{showNotice('이 브라우저에서 저장할 수 없어요. 현재 화면에서만 유지됩니다.');return false;}}
+function claimCollectionCard(id){const before=campaign.snapshot().cards;if(!campaign.claimCard(id))return false;if(saveCampaign())return true;campaign.cards=before;return false;}
 let selectedStage=STAGES.findIndex((_,i)=>!campaign.cleared.includes(i));if(selectedStage<0)selectedStage=0;
 // View-only country browsing never writes Campaign or unlocks a stage.
 const STAGES_PER_COUNTRY=15,PREVIEW_STAGE_COUNT=5;
@@ -119,16 +122,17 @@ for(const id of ['result-map','pause-map','settings-map'])$(id).addEventListener
 try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-loadout'));if(validLoadout(saved))loadout=saved;}catch{}
 try{best=Number(localStorage.getItem('saebyeokmun-best')||0)||0;}catch{}
 $('best').textContent=best?best+'%':'아직 걷지 않은 길';
-const soundscape=new Soundscape({onState:state=>{
+const soundscape=new Soundscape({fetcher:async url=>{await scene.downloads.request({url});const blob=scene.downloads.take(url);return {ok:!!blob,arrayBuffer:()=>blob.arrayBuffer()};},onState:state=>{
  $('settings-open').dataset.audioState=state;
+ $('opening-narrate').hidden=state!=='locked'||!$('opening').open||!soundscape.musicEnabled;
  $('audio-status').textContent=state==='locked'?'설정에서 효과음을 켜 주세요.':state==='loading'?'밤길의 소리를 준비하고 있어요.':state==='partial'?'일부 소리를 불러오지 못했어요. 새로고침하면 다시 준비합니다.':'소의 뿔 · 돌팔매 · 먹붓 · 씨앗탄 · 선비의 봉인 · 승천';
 }});
 function unlockSound(){return soundscape.unlock().catch(()=>{showNotice('소리를 시작하지 못했어요. 설정에서 소리를 다시 켜 주세요.');});}
-try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-audio'));for(const channel of ['music','effects'])if(typeof saved?.[channel]==='boolean')soundscape.setChannelEnabled(channel,saved[channel]);if(typeof saved?.volume==='number'&&Number.isFinite(saved.volume))soundscape.setVolume(saved.volume);}catch{}
-function updateSound(){for(const channel of ['music','effects']){const on=soundscape[channel+'Enabled'],b=$(channel+'-toggle');b.setAttribute('aria-pressed',String(on));b.querySelector('.switch-state').textContent=on?'켬':'끔';}$('sound-volume').value=Math.round(soundscape.volume*100);$('volume-value').textContent=Math.round(soundscape.volume*100)+'%';}
-function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify({music:soundscape.musicEnabled,effects:soundscape.effectsEnabled,volume:soundscape.volume}));}catch{}}
-// Current art/motion review starts silent, including older saved on settings.
-for(const channel of ['music','effects'])soundscape.setChannelEnabled(channel,false);
+soundscape.setChannelEnabled('effects',false);
+try{const saved=JSON.parse(localStorage.getItem('saebyeokmun-audio'));for(const channel of ['music','effects'])if(typeof saved?.[channel]==='boolean'&&saved.musicTrack===MUSIC_TRACK)soundscape.setChannelEnabled(channel,saved[channel]);if(typeof saved?.volume==='number'&&Number.isFinite(saved.volume))soundscape.setVolume(saved.volume);}catch{}
+function updateSound(){for(const channel of ['music','effects']){const on=soundscape[channel+'Enabled'],b=$(channel+'-toggle');b.setAttribute('aria-pressed',String(on));b.querySelector('.switch-state').textContent=on?'켬':'끔';const hud=$('hud-'+channel);hud.setAttribute('aria-pressed',String(on));hud.setAttribute('aria-label',(channel==='music'?'음악':'효과음')+(on?' 끄기':' 켜기'));hud.title=(channel==='music'?'음악':'효과음')+' '+(on?'켬':'끔');}$('sound-volume').value=Math.round(soundscape.volume*100);$('volume-value').textContent=Math.round(soundscape.volume*100)+'%';}
+function saveSound(){try{localStorage.setItem('saebyeokmun-audio',JSON.stringify({music:soundscape.musicEnabled,effects:soundscape.effectsEnabled,volume:soundscape.volume,musicTrack:MUSIC_TRACK}));}catch{}}
+// Current-track preferences persist; old review settings migrate only once.
 saveSound();updateSound();
 // Opening preferences are separate from campaign rewards; the existing modal owns pause/resume.
 let openingEnabled=true;try{openingEnabled=localStorage.getItem('saebyeokmun-opening')!=='false';}catch{}
@@ -142,7 +146,7 @@ function coverOpening(){
  $('opening').dataset.phase='preparing';document.body.dataset.entryPhase='loading';
  $('download-title').textContent='로딩 중';$('download-retry').hidden=true;updateDownload({phase:'waiting'});fitPhoneDialogs();$('asset-loading').showModal();
 }
-function openingFile(stage){return stage===1?'./assets/entry-stage2-v151.mp4':'./assets/entry-stage1-v146.mp4';}
+function openingFile(stage){return stage===1?'./assets/entry-stage2-v160.mp4':'./assets/entry-stage1-v146.mp4';}
 async function prepareOpeningFilm(stage){
  const epoch=entryEpoch,video=$('opening-video'),file=openingFile(stage);
  if(video.dataset.nextFile!==file){
@@ -159,7 +163,10 @@ function playOpening(stage,automatic=false){
  // This film already contains the generated title and the camera move into the
  // native field. Play it once, from zero, only after that field is prepared.
  const token=++openingEpoch;video.dataset.clip='transition';const src=video.dataset.nextFile===openingFile(stage)?video.dataset.nextSrc:openingFile(stage);if(video.src!==src)video.src=src;video.currentTime=0;
- video.play().then(()=>{if(token===openingEpoch&&$('opening').open&&['preparing','loading'].includes($('opening').dataset.phase))$('opening').dataset.phase='playing';}).catch(()=>{if(token===openingEpoch)finishOpeningFilm();});
+ $('opening-narrate').hidden=!soundscape.musicEnabled||soundscape.context?.state==='running';
+ // Decode behind the existing cover, then start the title and the one music
+ // loop together. A browser gesture resumes this same pending preparation.
+ unlockSound().then(()=>{if(token!==openingEpoch||!$('opening').open)return;return video.play().then(()=>{if(token===openingEpoch&&$('opening').open&&['preparing','loading'].includes($('opening').dataset.phase)){$('opening').dataset.phase='playing';$('opening-narrate').hidden=true;soundscape.setPlaying(!document.hidden);}});}).catch(()=>{if(token===openingEpoch)finishOpeningFilm();});
 }
 function showOpening(){
  if(fullscreenPending||preparing)return;
@@ -182,6 +189,8 @@ $('opening-toggle').addEventListener('click',()=>{openingEnabled=!openingEnabled
 $('opening-replay').addEventListener('click',showOpening);
 $('opening-video').addEventListener('ended',finishOpeningFilm);
 $('opening-video').addEventListener('error',finishOpeningFilm);
+$('opening-skip').addEventListener('click',finishOpeningFilm);
+$('opening-narrate').addEventListener('click',unlockSound);
 document.querySelector('.control-deck').addEventListener('animationend',e=>{if(e.target===document.querySelector('.control-deck')&&e.animationName==='entry-hud')finishOpeningUI();});
 $('opening').addEventListener('cancel',e=>{if(openingAutomatic)e.preventDefault();});
 function releaseOpeningFilm(){
@@ -201,7 +210,23 @@ async function start(testStage=null,cinematic=false){
  const stage=selectedStage;
  if(cinematic)coverOpening();
  if(!await prepareFor(cinematic?'로딩 중':'불러오는 중',async p=>{
-  const results=await Promise.allSettled([scene.prepareStage(stage,p,testing,testing?Object.keys(UNITS):campaign.party),cinematic?prepareOpeningFilm(stage):Promise.resolve()]);
+  const party=testing?Object.keys(UNITS):campaign.party,keys=scene.videoFiles([...scene.commonKeys,...scene.stageFiles(stage,testing,party)],false,stage),files=keys.filter(k=>!scene.loadedFiles.has(k)).map(k=>scene.files.get(k));
+  const started=performance.now();let transfer=null,audioPrepared=0,audioTotal=soundscape.assetFiles().length,fieldReady=false,filmReady=!cinematic;
+  let fieldPhase='download',fieldRemaining=files.filter(f=>!f.video).length*60+2150;
+  files.push(...soundscape.assetFiles());if(cinematic&&$('opening-video').dataset.nextFile!==openingFile(stage))files.push({url:openingFile(stage)});
+  const report=()=>{
+   const elapsed=Math.max(1,performance.now()-started),rate=transfer?.loaded?transfer.loaded/elapsed:2*1048576/1000;
+   const network=transfer?.total?Math.max(0,transfer.total-transfer.loaded)/rate:files.reduce((n,f)=>n+(scene.downloads.sizes?.[f.url.split('?')[0]]||0),0)/rate;
+   const audio=audioPrepared<audioTotal?Math.max(250,(audioTotal-audioPrepared)*12):0;
+   p({...transfer,phase:'entry',remainingMs:Math.max(network+(fieldReady?0:fieldRemaining),network+audio,filmReady?0:network+250),state:fieldReady?(audio?'소리 준비 중':'시작 화면 준비 중'):fieldPhase==='warm'?'첫 동작 준비 중':fieldPhase==='world'?'화면 준비 중':fieldPhase==='prepare'?'그림 준비 중':'그림과 소리 불러오는 중'});
+  };
+  const transferTask=scene.downloads.batch(files,progress=>{transfer=progress;report();});
+  const fieldTask=scene.prepareStage(stage,progress=>{
+   if(['prepare','world','warm'].includes(progress.phase)){fieldPhase=progress.phase;fieldRemaining=(progress.remainingMs??Math.max(0,progress.prepareTotal-progress.prepared)*60)+(fieldPhase==='prepare'?2150:fieldPhase==='world'?1800:0);}report();
+  },testing,party).then(()=>{fieldReady=true;report();});
+  const audioTask=soundscape.prepare(progress=>{audioPrepared=progress.prepared;audioTotal=progress.prepareTotal;report();}).then(()=>{if(soundscape.missing.length)throw new Error('소리 준비가 끝나지 않았어요. 다시 시도해 주세요.');audioPrepared=audioTotal;report();});
+  const filmTask=cinematic?prepareOpeningFilm(stage).then(()=>{filmReady=true;report();}):Promise.resolve();
+  const results=await Promise.allSettled([transferTask,fieldTask,audioTask,filmTask]);
   // A failed film must not unlock a retry while the existing scene is still preparing.
   const failed=results.find(result=>result.status==='rejected');if(failed)throw failed.reason;
  },()=>start(testing?stage:null,cinematic),cinematic))return;
@@ -212,9 +237,10 @@ async function start(testStage=null,cinematic=false){
  if(testing){autoplay.enter();scene.playbackRate=autoplay.rate;}
  renderSummonSlots();renderSkillSlots();renderAutoplay();keys.clear();model.setDirection(0,{cancel:true});lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
  if(scene)scene.resetPresentation();updateAuto();soundscape.stopVoices(true);
- if(cinematic){scene.entryPreview=true;scene.entryBlend=0;delete scene.entryViewStarted;scene.resize();model.drainEvents();model.pause();infoPaused=!document.hidden;soundscape.setPlaying(false);playOpening(stage,true);}
+ if(cinematic){document.body.style.setProperty('--entry-zoom-ms',(AREAS[stage].entryView?.duration??700)+'ms');scene.entryPreview=true;scene.entryBlend=0;delete scene.entryViewStarted;scene.resize();model.drainEvents();model.pause();infoPaused=!document.hidden;soundscape.setPlaying(false);playOpening(stage,true);}
  else{scene.entryPreview=false;delete scene.entryViewStarted;scene.resize();delete document.body.dataset.entryPhase;soundscape.setPlaying(true);unlockSound().then(()=>{if(model.status==='playing')soundscape.play('summon');});}
- prefetchNext(stage);
+ // A focused stage link stays scoped to that stage. Background next-map
+ // downloads also compete with combat decoding, so entry does not start them.
 }
 function pause(){if(!ready||fullscreenPending)return;if(autoplay.active){if(autoplay.complete)return;autoplay.paused=model.status==='paused'?false:!autoplay.paused;}model.pause();keys.clear();model.setDirection(0,{cancel:true});renderAutoplay();soundscape.setPlaying(model.status==='playing');if(model.status==='playing')unlockSound();}
 function stopAutoplay(){autoplay.stop();if(scene)scene.playbackRate=1;renderAutoplay();renderSkillSlots();}
@@ -277,7 +303,7 @@ function blurPause(){keys.clear();model.setDirection(0,{cancel:true});infoPaused
 window.addEventListener('blur',blurPause);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)blurPause();});
 window.matchMedia('(max-width:600px) and (orientation:portrait)').addEventListener('change',e=>{if(e.matches)blurPause();});
-for(const channel of ['music','effects'])$(channel+'-toggle').addEventListener('click',()=>{soundscape.setChannelEnabled(channel,!soundscape[channel+'Enabled']);updateSound();saveSound();if(soundscape[channel+'Enabled'])unlockSound().then(()=>{if(channel==='effects')soundscape.play('guard',{allowIdle:true});});});
+for(const channel of ['music','effects'])for(const id of [channel+'-toggle','hud-'+channel])$(id).addEventListener('click',()=>{soundscape.setChannelEnabled(channel,!soundscape[channel+'Enabled']);updateSound();saveSound();if(soundscape[channel+'Enabled'])unlockSound().then(()=>{if(channel==='effects')soundscape.play('guard',{allowIdle:true});});});
 $('sound-volume').addEventListener('input',e=>{soundscape.setVolume(e.target.value/100);updateSound();saveSound();});
 document.querySelectorAll('[data-sound]').forEach(button=>button.addEventListener('click',async()=>{
  if(!soundscape.effectsEnabled){$('audio-status').textContent='설정에서 효과음을 켜면 미리 들을 수 있어요.';return;}await unlockSound();soundscape.play(button.dataset.sound,{allowIdle:true});
@@ -306,24 +332,30 @@ $('install').addEventListener('click',()=>openInfo($('app-help')));
 $('app-help').querySelector('.dialog-close').addEventListener('click',()=>$('app-help').close());
 $('install-confirm').addEventListener('click',async()=>{if(!installPrompt)return;const prompt=installPrompt;installPrompt=null;$('install-confirm').hidden=true;await prompt.prompt();await prompt.userChoice;});
 // Every combat gesture can recover mobile audio after an OS interruption.
-document.addEventListener('pointerdown',()=>{if(model.status==='playing'&&soundscape.enabled&&soundscape.context?.state!=='running')unlockSound();},{passive:true});
+document.addEventListener('pointerdown',()=>{if((model.status==='playing'||$('opening').open)&&soundscape.enabled&&soundscape.context?.state!=='running')unlockSound();},{passive:true});
 function showNotice(message){$('callout').textContent=message;$('callout').hidden=false;noticeUntil=performance.now()+2400;}
 function loadDialogImages(dialog){dialog.querySelectorAll('img[data-src]').forEach(img=>{img.src=img.dataset.src;delete img.dataset.src;});}
 function openInfo(dialog){loadDialogImages(dialog);if(!fullscreenPending&&!infoDialogs.some(d=>d.open)){infoPaused=model.status==='playing';if(infoPaused)model.pause();}keys.clear();model.setDirection(0,{cancel:true});soundscape.setPlaying(false);fitPhoneDialogs();dialog.showModal();}
-function completeInfo(){if(fullscreenPending||document.body.dataset.entryPhase||infoDialogs.some(d=>d.open))return;soundscape.stopVoices();if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
+function completeInfo(){if(fullscreenPending||document.body.dataset.entryPhase||infoDialogs.some(d=>d.open))return;soundscape.stopVoices(false,'effects');if(infoPaused&&model.status==='paused')model.pause();soundscape.setPlaying(model.status==='playing');infoPaused=false;}
 $('settings-open').addEventListener('click',()=>openInfo($('settings')));
 $('settings-return').addEventListener('click',()=>$('settings').close());
 $('settings').querySelector('.dialog-close').addEventListener('click',()=>$('settings').close());
-// Tabs change only the existing notes' visibility; pause and storage keep their owners.
-for(const kind of ['companions','enemies','sources'])$('codex-tab-'+kind).addEventListener('click',()=>{
- for(const key of ['companions','enemies','sources']){
+// Static collection cards join the same modal; pause, native previews and storage keep their owners.
+const codexTabs=['collection','companions','enemies','sources'];let codexTab='collection';
+function selectCodexTab(kind){
+ codexTab=kind;
+ $('codex').dataset.panel=kind;$('codex-library').open=false;$('codex-title').textContent=kind==='collection'?'인연첩':'도감';
+ for(const key of codexTabs){
   $('codex-'+key).hidden=key!==kind;$('codex-tab-'+key).setAttribute('aria-selected',String(key===kind));
  }
  $('codex').querySelector('.codex-body').scrollTop=0;
-});
-async function openCodex(){if(!ready||preparing)return;if(!scene.commonReady&&!await prepareFor('동료와 귀물 도감',p=>scene.ensureCommon(p),openCodex))return;openInfo($('codex'));}
+ if(kind==='collection')collection.open();
+}
+for(const kind of codexTabs)$('codex-tab-'+kind).addEventListener('click',()=>selectCodexTab(kind));
+async function openCodex(){if(!ready||preparing)return;if(!scene.commonReady&&!await prepareFor('동료와 귀물 도감',p=>scene.ensureCommon(p),openCodex))return;openInfo($('codex'));selectCodexTab(codexTab);}
 $('codex-open').addEventListener('click',openCodex);$('result-codex').addEventListener('click',openCodex);$('sources-open').addEventListener('click',openCodex);
 $('codex').querySelector('.dialog-close').addEventListener('click',()=>$('codex').close());
+$('codex-return').addEventListener('click',()=>$('codex').close());
 $('codex').addEventListener('close',()=>{for(const p of motionPreviews){p.variants.clear();p.frame=-1;p.img.removeAttribute('src');}if(scene?.commonReady)scene.retainFiles([...scene.stageKeys]);});
 $('codex').addEventListener('click',e=>{if(e.target===$('codex')){const r=$('codex').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)$('codex').close();}});
 for(const dialog of infoDialogs)dialog.addEventListener('close',completeInfo);
@@ -353,7 +385,7 @@ function hydrateIcons(root=document){
  }
 }
 function renderSummonSlots(){
- $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}" data-card="${s.cardArt?"painted":"native"}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-tier">${UNIT_TIERS[s.tier].level?['Ⅰ','Ⅱ','Ⅲ','Ⅳ'][UNIT_TIERS[s.tier].level-1]+' ':''}${UNIT_TIERS[s.tier].label}</span><span class="unit-count">0/${ALLY_TYPE_LIMIT}</span><span class="action-art"><img ${s.cardArt?'src="./assets/'+s.cardArt+'"':'data-icon="'+icon+'" src="'+(scene?.previewTexture(icon)||'')+'"'} alt="" draggable="false"></span><strong>${s.name}</strong><small>◎ ${s.cost}</small><span class="cooldown"></span></button>`;}).join('');
+ $('summon-slots').innerHTML=(autoplay.active?Object.keys(UNITS):campaign.party).map((key,i)=>{const s=UNITS[key],icon=key==='keeper'&&model.keeperRank?'keeperBrush1':key+'1';return `<button class="action" id="action-${key}" data-action="${key}" data-tier="${s.tier}" data-card="${s.cardArt?"painted":"native"}"><kbd>${i<5?i+1:'↔'}</kbd><span class="unit-tier">${UNIT_TIERS[s.tier].level?['Ⅰ','Ⅱ','Ⅲ','Ⅳ'][UNIT_TIERS[s.tier].level-1]+' ':''}${UNIT_TIERS[s.tier].label}</span><span class="unit-count">0/${ALLY_TYPE_LIMIT}</span><span class="action-art"><img ${s.cardArt?'src="./assets/'+s.cardArt+'"':'data-icon="'+icon+'" src="'+(scene?.previewTexture(icon)||'')+'"'} alt="" draggable="false"></span><strong>${s.name}</strong><small class="summon-cost"><span>◎ ${s.cost}</span></small><span class="cooldown"></span></button>`;}).join('');
  lastKeeperRank=-1;hydrateIcons($('summon-slots'));
 }
 function rosterStars(count){
@@ -465,10 +497,10 @@ function onEvents(events){
  }
 }
 function onFrame(m,s){
- soundscape.setPlaying(m.status==='playing');
+ soundscape.setPlaying(!document.hidden&&(m.status==='playing'||$('opening').open&&$('opening').dataset.phase==='playing'&&!$('opening-video').paused||document.body.dataset.entryPhase==='ui'&&infoPaused));
  const now=performance.now();
  const next=autoplay.update(lastAutoplayFrame?Math.max(0,(now-lastAutoplayFrame)/1000):0,preparing||fullscreenPending||document.hidden||infoDialogs.some(d=>d.open));lastAutoplayFrame=now;
- if(next!==null)start(next);
+ if(next!==null){if(requestedStage!==null){autoplay.complete=true;model.invincible=false;renderAutoplay();}else start(next);}
  if($('codex').open||$('roster').open)for(const p of [...($('codex').open?motionPreviews:[]),...($('roster').open&&rosterMotion?[rosterMotion]:[])]){
   if(previewObserver&&p!==rosterMotion&&!visiblePreviews.has(p.img)){if(p.variants.size){p.variants.clear();p.frame=-1;p.img.removeAttribute('src');}continue;}
   if(ENEMIES[p.kind]&&!scene.previewReady(p.kind)){
@@ -518,6 +550,8 @@ function onFrame(m,s){
   const spec=UNITS[name]?unitStats(name,m.keeperRank):baseSpec;
   const button=$('action-'+name),cd=m.cooldowns[name],full=!!UNITS[name]&&m.atSummonLimit(name);if(!button)continue;button.disabled=m.status!=='playing'||cd>0||m.coins<spec.cost||full||(name==='charm'&&!!m.moving)||(['rush','stomp'].includes(name)&&!!m.action);
   button.dataset.state=m.status!=='playing'?'idle':full?'full':cd>0?'cooldown':m.coins<spec.cost?'cost':button.disabled?'idle':'ready';
+  // The price strip mirrors the visible shared purse; only Journey owns spending/readiness.
+  if(UNITS[name])button.style.setProperty('--cost-fill',(Math.min(1,shownCoins/spec.cost)*100)+'%');
   button.querySelector('.cooldown').style.height=(cd/spec.cooldown*100)+'%';button.style.setProperty('--cooldown-turn',Math.max(0,Math.min(1,cd/spec.cooldown))+'turn');
   button.title=(UNITS[name]?UNIT_TIERS[spec.tier].label+' · ':'')+spec.name+(spec.role?' · '+spec.role:'')+' · '+(name==='charm'&&m.moving?'멈춘 뒤 사용 가능':button.dataset.state==='full'?'동료가 가득해요':cd>0?cd.toFixed(1)+'초 뒤':button.dataset.state==='cost'?'엽전 '+Math.ceil(spec.cost-m.coins)+' 부족 · 필요 '+spec.cost:spec.cost+' 엽전');
   button.setAttribute('aria-label',button.title);if(UNITS[name])button.querySelector('.unit-count').textContent=m.countAllies(name)+'/'+ALLY_TYPE_LIMIT;
@@ -526,7 +560,7 @@ function onFrame(m,s){
   else badge?.remove();
  }
  const boss=m.enemies.find(e=>isBoss(e.type))||m.enemies.find(e=>e.type==='gate');$('boss-bar').hidden=!boss||m.status!=='playing';if(boss){$('boss-fill').style.width=(boss.hp/boss.maxHp*100)+'%';$('boss-label').textContent=boss.type==='gate'?'문':ENEMIES[boss.type].name;}
- $('pause').hidden=!['playing','paused'].includes(m.status);
+ $('pause').hidden=!['playing','paused'].includes(m.status);for(const channel of ['music','effects'])$('hud-'+channel).hidden=$('pause').hidden;
  $('pause-overlay').hidden=autoplay.active||m.status!=='paused'||fullscreenPending||infoDialogs.some(d=>d.open);
  if(m.status!==lastStatus){
   lastStatus=m.status;
@@ -549,23 +583,32 @@ function onFrame(m,s){
 }
 function stopLoadingDisplay(complete=false){
  loadingDisplay.active=false;window.cancelAnimationFrame(loadingDisplay.frame);
+ $('download-progress').dataset.elapsedMs=String(Math.round(performance.now()-loadingDisplay.started));
  if(complete){loadingDisplay.value=100;$('download-progress').value=100;$('download-percent').textContent='100%';}
 }
 function paintLoading(now){
- if(!loadingDisplay.active)return;
- const dt=Math.max(0,(now-loadingDisplay.last)/1000);loadingDisplay.last=now;
- // Readiness callbacks set the target. The remaining preparation keeps making
- // visible progress, approaching 100 without ever announcing readiness early.
- const v=loadingDisplay.value,target=loadingDisplay.target;
- loadingDisplay.value=Math.min(99.999,Math.max(100-(100-v)*Math.exp(-dt*.09),target-(target-v)*Math.exp(-dt*3)));
- const places=2,scale=100;
- $('download-progress').value=loadingDisplay.value;$('download-percent').textContent=(Math.floor(loadingDisplay.value*scale)/scale).toFixed(places)+'%';
- loadingDisplay.frame=window.requestAnimationFrame(paintLoading);
+ const s=loadingDisplay;if(!s.active)return;
+ const dt=Math.min(100,Math.max(0,now-s.last));s.last=now;
+ // Predict between measured work callbacks. Re-estimate from this connection's
+ // throughput and this device's decode times, rather than a fixed byte weight.
+ // An overdue operation slows the forecast instead of freezing at its last byte.
+ const age=Math.max(0,now-s.updated),remaining=Math.max(250,s.remaining-age,s.remaining*.35/(1+age/Math.max(1,s.remaining)));
+ s.value=Math.min(99.9,s.value+(100-s.value)*(1-Math.exp(-dt/Math.max(500,remaining))));
+ $('download-progress').value=s.value;$('download-percent').textContent=s.value.toFixed(2)+'%';
+ $('download-progress').dataset.elapsedMs=String(Math.max(0,Math.round(now-s.started)));
+ $('download-state').textContent=s.state+' · '+(age>5000?Math.floor((now-s.started)/1000)+'초 경과':'약 '+Math.max(1,Math.ceil(remaining/1000))+'초 남음');
+ s.frame=window.requestAnimationFrame(paintLoading);
 }
 function updateDownload(p){
- $('download-percent').hidden=false;$('download-bytes').hidden=true;$('download-state').hidden=true;
- if(!loadingDisplay.active){loadingDisplay={active:true,value:0,target:0,last:performance.now(),frame:0};$('download-progress').value=0;$('download-percent').textContent='0.00%';loadingDisplay.frame=window.requestAnimationFrame(paintLoading);}
- if(p.phase!=='waiting')loadingDisplay.target=Math.max(loadingDisplay.target,Math.min(95,p.phase==='prepare'?75+20*p.prepared/Math.max(1,p.prepareTotal):p.percent*.75));
+ const now=performance.now();
+ $('download-percent').hidden=false;$('download-bytes').hidden=!p.total;$('download-state').hidden=false;
+ if(p.total)$('download-bytes').textContent=`${(p.loaded/1048576).toFixed(1)} / ${(p.total/1048576).toFixed(1)} MB`;
+ if(!loadingDisplay.active){loadingDisplay={active:true,value:0,started:now,last:now,updated:now,remaining:10000,frame:0};$('download-progress').value=0;$('download-progress').setAttribute('aria-label','예상 게임 준비 진행률');$('download-percent').textContent='0.00%';loadingDisplay.frame=window.requestAnimationFrame(paintLoading);}
+ const s=loadingDisplay;s.state=p.state||(p.phase==='prepare'?'그림 준비 중':p.phase==='waiting'?'준비할 파일 확인 중':'파일 받는 중');$('download-state').textContent=s.state;
+ if(p.phase!=='waiting'){
+  const elapsed=Math.max(1,now-s.started),rate=p.loaded?p.loaded/elapsed:2*1048576/1000;
+  s.remaining=Math.max(250,p.remainingMs??(p.phase==='prepare'?Math.max(0,p.prepareTotal-p.prepared)*60:Math.max(0,(p.total||0)-(p.loaded||0))/rate+2000));s.updated=now;
+ }
 }
 async function prepareFor(title,work,retry,covered=false){
  if(preparing)return false;preparing=true;const epoch=++entryEpoch;retryAssets=retry;
@@ -575,11 +618,6 @@ async function prepareFor(title,work,retry,covered=false){
  try{await work(p=>{if(epoch===entryEpoch)updateDownload(p);});if(epoch!==entryEpoch)return false;stopLoadingDisplay(true);$('asset-loading').close();hydrateIcons();return true;}
  catch(error){if(epoch===entryEpoch){stopLoadingDisplay();$('download-state').textContent=error.message;$('download-state').hidden=false;$('download-retry').hidden=false;if(covered)$('asset-loading').showModal();}return false;}
  finally{preparing=false;}
-}
-function prefetchNext(stage){
- const next=stage+1,badge=$('next-map-loading');if(!STAGES[next]){badge.hidden=true;return;}
- badge.hidden=false;badge.textContent=`${next+1}장 미리 준비 중`;
- scene.prefetchStage(next,p=>{if(model.stage!==stage)return;badge.textContent=p.percent===100?`${next+1}장 다운로드 완료`:`${next+1}장 미리 받는 중 · ${p.percent}%`;}).catch(()=>{if(model.stage===stage)badge.textContent=`${next+1}장은 이동할 때 다시 받습니다`;});
 }
 $('download-retry').addEventListener('click',()=>{if(!preparing)retryAssets?.();});
 $('download-back').addEventListener('click',showMap);

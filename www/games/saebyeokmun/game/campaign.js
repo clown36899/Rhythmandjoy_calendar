@@ -1,4 +1,6 @@
-import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=146-entry';
+import {DEFAULT_PARTY,UNITS,validParty,STAGES,STARTER_PARTY,STAGE_REWARDS} from './data.js?v=218-integrated';
+export const CARD_FRAGMENT_GOAL=5,CARD_CATALOG_SIZE=1000;
+const validCard=id=>typeof id==='string'&&/^C\d{4}$/.test(id)&&Number(id.slice(1))>=1&&Number(id.slice(1))<=CARD_CATALOG_SIZE;
 // Local progression is separate from Journey's capped battle purse. No cash purchases.
 export class Campaign {
  constructor(saved={}){
@@ -10,6 +12,8 @@ export class Campaign {
   this.party=validParty(party)?[...party]:this.owned.slice(0,5);
   this.run=Number.isSafeInteger(saved?.run)&&saved.run>=0?saved.run:0;
   this.settled=Number.isSafeInteger(saved?.settled)&&saved.settled>=0&&saved.settled<=this.run?saved.settled:this.run;
+  // Catalog cards are not battle unit keys: acquiring a painting never alters a selected party.
+  this.cards={owned:[...new Set((Array.isArray(saved?.cards?.owned)?saved.cards.owned:[]).filter(validCard))],fragments:Object.fromEntries(Object.entries(saved?.cards?.fragments&&typeof saved.cards.fragments==='object'&&!Array.isArray(saved.cards.fragments)?saved.cards.fragments:{}).filter(([id,n])=>validCard(id)&&Number.isSafeInteger(n)&&n>=0))};
  }
  begin(){return ++this.run;}
  clear(run,earned,stage){
@@ -27,5 +31,8 @@ export class Campaign {
   this.balance-=s.price;this.owned.push(kind);return true;
  }
  select(party){if(!validParty(party)||party.some(k=>!this.owned.includes(k)))return false;this.party=[...party];return true;}
- snapshot(){return {collectionVersion:1,routeVersion:2,cleared:[...this.cleared],balance:this.balance,owned:[...this.owned],party:[...this.party],run:this.run,settled:this.settled};}
+ cardState(id){const fragments=this.cards.fragments[id]||0,owned=this.cards.owned.includes(id);return {fragments,goal:CARD_FRAGMENT_GOAL,owned,ready:validCard(id)&&!owned&&fragments>=CARD_FRAGMENT_GOAL};}
+ addCardFragments(id,amount){if(!validCard(id)||!Number.isSafeInteger(amount)||amount<=0||!Number.isSafeInteger((this.cards.fragments[id]||0)+amount))return false;this.cards.fragments[id]=(this.cards.fragments[id]||0)+amount;return true;}
+ claimCard(id){if(!this.cardState(id).ready)return false;this.cards.fragments[id]-=CARD_FRAGMENT_GOAL;this.cards.owned.push(id);return true;}
+ snapshot(){return {collectionVersion:1,routeVersion:2,cleared:[...this.cleared],balance:this.balance,owned:[...this.owned],party:[...this.party],run:this.run,settled:this.settled,cards:{owned:[...this.cards.owned],fragments:{...this.cards.fragments}}};}
 }
