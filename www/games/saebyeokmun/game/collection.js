@@ -1,5 +1,5 @@
 // Album presentation only. Campaign owns fragments, claims, parties and saved progress.
-import {CARD_FRAGMENT_GOAL} from "./campaign.js?v=224";
+import {CARD_FRAGMENT_GOAL,cardUnit} from "./campaign.js?v=226";
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const normalize=value=>String(value??'').normalize('NFKC').toLocaleLowerCase('ko').replace(/\s+/g,'');
 export function collectionPage(candidates,{query='',category='',era='',page=0,pageSize=30,status='',stateFor=()=>({fragments:0,owned:false})}={}){
@@ -9,6 +9,7 @@ export function collectionPage(candidates,{query='',category='',era='',page=0,pa
  return {total:matches.length,pages,page:current,items:matches.slice(current*pageSize,(current+1)*pageSize)};
 }
 export function collectionArt(c,sheets){
+ if(cardUnit(c.id)&&/^data:image\/(?:png|webp);base64,[A-Za-z0-9+/=]+$/.test(c.art||''))return `background-image:url('${c.art}');background-size:contain;background-position:center;--sheet-aspect:1`;
  const sheet=sheets.find(s=>s.sheet===c.sheet);
  if(!sheet||!/^\.\/assets\/collection-sheet-\d{2}-v155\.png$/.test(sheet.url))throw new Error('Unknown collection sheet');
  const rect=sheet.cells.find(r=>r.cell===c.cell);
@@ -26,7 +27,18 @@ export function fragmentSlots(state){
 export function mountCollection(doc,{load=()=>import('./collection-catalog.js?v=224').then(m=>m.default),stateFor=()=>({fragments:0,owned:false,ready:false}),claim=()=>false}={}){
  const $=id=>doc.getElementById(id),panel=$('codex-collection'),grid=$('collection-grid');
  const pageSize=12,search=$('collection-search'),category=$('collection-category'),era=$('collection-era');
- let catalog=null,pending=null,page=0,selected=null,status='',claiming=false;
+ let catalog=null,pending=null,page=0,selected=null,status='',claiming=false,puzzle=null;
+ const shapes=['polygon(0 0,50% 0,50% 27%,34% 27%,34% 50%,0 50%)','polygon(50% 0,100% 0,100% 50%,66% 50%,66% 27%,50% 27%)','polygon(0 50%,34% 50%,34% 73%,50% 73%,50% 100%,0 100%)','polygon(66% 50%,100% 50%,100% 100%,50% 100%,50% 73%,66% 73%)','polygon(34% 27%,66% 27%,66% 73%,34% 73%)'];
+ function puzzleView(){
+  const host=$('collection-puzzle');if(!host)return;
+  host.hidden=!puzzle;if(!puzzle)return;
+  const c=catalog.candidates.find(c=>c.id===puzzle.id),art=collectionArt(c,catalog.sheets),complete=puzzle.placed.every((v,i)=>v===i);
+  $('puzzle-title').textContent=c.baseName+' · 그림 맞추기';
+  $('puzzle-board').innerHTML=shapes.map((shape,i)=>`<button type="button" data-puzzle-slot="${i}" aria-label="${['왼쪽 위','오른쪽 위','왼쪽 아래','오른쪽 아래','가운데'][i]} 그림 자리" style="clip-path:${shape}" ${puzzle.placed[i]===i?'disabled':''}><span style="${art};clip-path:${shape}" ${puzzle.placed[i]===i?'':'hidden'}></span></button>`).join('');
+  $('puzzle-tray').innerHTML=[2,4,1,0,3].map(i=>`<button type="button" data-puzzle-piece="${i}" aria-label="${i+1}번째 그림 조각 선택" aria-pressed="${puzzle.selected===i}" ${puzzle.placed[i]===i?'disabled':''}><span style="${art};clip-path:${shapes[i]}"></span></button>`).join('');
+  $('puzzle-progress').textContent=complete?'그림 완성! 아래 버튼으로 인연을 맺으세요.':`조각을 고른 뒤 맞는 자리를 누르세요 · ${puzzle.placed.filter(v=>v!==null).length}/5`;
+  $('puzzle-confirm').disabled=!complete||claiming;$('puzzle-confirm').textContent=c.id.startsWith('U-')?'그림 완성 · 동료 해금':'그림 완성 · 인연 맺기';
+ }
  function story(open){$('collection-story').hidden=!open;$('collection-front').hidden=open;if(open)$('collection-reading').focus();}
  function selectedCard(){
   const c=catalog?.candidates.find(c=>c.id===selected);if(!c)return;
@@ -40,13 +52,13 @@ export function mountCollection(doc,{load=()=>import('./collection-catalog.js?v=
   $('collection-sources').innerHTML=c.sources.map(sourceLink).join('');
   $('collection-pieces').innerHTML=fragmentSlots(s);
   $('collection-fragment-count').textContent=s.owned?'확보 완료':`조각 ${s.fragments}/${CARD_FRAGMENT_GOAL}`;
-  $('collection-claim').disabled=claiming||!s.ready;$('collection-claim').textContent=s.owned?'확보 완료':s.ready?'캐릭터 확보':'조각 모으는 중';
+  $('collection-claim').disabled=claiming||!s.ready;$('collection-claim').textContent=s.owned?'확보 완료':s.ready?'그림 퍼즐 맞추기':'조각 모으는 중';
   $('collection-stamp').hidden=!s.owned;
  }
  function render(){
   if(!catalog)return;
   const result=collectionPage(catalog.candidates,{query:search.value,category:category.value,era:era.value,page,pageSize,status,stateFor});page=result.page;
-  if(!selected)selected='C0014';
+  if(!selected)selected=catalog.candidates.some(c=>cardUnit(c.id))?'U-keeper':'C0014';
   grid.innerHTML=result.items.map(c=>{const s=stateFor(c.id);return `<button class="collection-card" data-card="${c.id}" data-state="${s.owned?'owned':s.ready?'ready':s.fragments?'collecting':'empty'}" aria-label="${esc(c.displayName)} · ${s.owned?'확보':`조각 ${s.fragments}/${CARD_FRAGMENT_GOAL}`}" aria-pressed="${c.id===selected}" draggable="false"><span class="collection-card-face"><span class="collection-art" role="img" aria-label="${esc(c.baseName)} 원화" style="${collectionArt(c,catalog.sheets)}"><i aria-hidden="true"></i></span><strong data-long="${[...c.baseName].length>5}">${esc(c.baseName)}</strong>${s.owned?'<span class="card-owned-seal" aria-hidden="true">확보</span>':''}</span><span class="collection-card-foot">${fragmentSlots(s)}<small>${s.owned?'확보':`조각 ${s.fragments}/${CARD_FRAGMENT_GOAL}`}</small></span></button>`;}).join('');
   $('collection-empty').hidden=result.total!==0;
   $('collection-count').textContent=result.total?`${page*pageSize+1}–${page*pageSize+result.items.length} / ${result.total.toLocaleString('ko-KR')}장`:'찾는 카드가 없습니다';
@@ -56,7 +68,7 @@ export function mountCollection(doc,{load=()=>import('./collection-catalog.js?v=
   for(const key of ['all','collecting','owned'])$('collection-filter-'+key).setAttribute('aria-pressed',String(status===(key==='all'?'':key)));
   selectedCard();
  }
- function select(id){if(!catalog?.candidates.some(c=>c.id===id))return;selected=id;$('collection-detail').dataset.claimed='false';$('collection-message').textContent='';story(false);render();}
+ function select(id){if(!catalog?.candidates.some(c=>c.id===id))return;selected=id;puzzle=null;puzzleView();$('collection-detail').dataset.claimed='false';$('collection-message').textContent='';story(false);render();}
  async function open(){
   if(catalog){render();return;}
   if(pending)return pending;
@@ -75,14 +87,28 @@ export function mountCollection(doc,{load=()=>import('./collection-catalog.js?v=
  $('collection-turn').addEventListener('click',()=>story(true));$('collection-back').addEventListener('click',()=>{story(false);$('collection-turn').focus();});
  $('collection-retry').addEventListener('click',open);
  grid.addEventListener('click',event=>{const button=event.target.closest('[data-card]');if(button&&grid.contains(button))select(button.dataset.card);});
- $('collection-claim').addEventListener('click',async()=>{
+ $('collection-claim').addEventListener('click',()=>{
   if(claiming||!selected||!stateFor(selected).ready)return;
+  puzzle={id:selected,placed:Array(5).fill(null),selected:null};puzzleView();$('puzzle-close')?.focus();
+ });
+ $('puzzle-close')?.addEventListener('click',()=>{puzzle=null;puzzleView();$('collection-claim').focus();});
+ $('puzzle-tray')?.addEventListener('click',e=>{const b=e.target.closest('[data-puzzle-piece]');if(!b||b.disabled||!puzzle)return;puzzle.selected=Number(b.dataset.puzzlePiece);puzzleView();});
+ $('puzzle-board')?.addEventListener('click',e=>{
+  const b=e.target.closest('[data-puzzle-slot]');if(!b||b.disabled||!puzzle)return;
+  const slot=Number(b.dataset.puzzleSlot);
+  if(puzzle.selected===slot){puzzle.placed[slot]=slot;puzzle.selected=null;puzzleView();}
+  else $('puzzle-progress').textContent=puzzle.selected===null?'아래에서 그림 조각을 먼저 골라 주세요.':'그림이 이어지지 않아요. 다른 자리를 찾아보세요.';
+ });
+ $('puzzle-confirm')?.addEventListener('click',async()=>{
+  if(claiming||!selected||!stateFor(selected).ready)return;
+  if(!puzzle||puzzle.id!==selected||!puzzle.placed.every((v,i)=>v===i))return;
   const id=selected;claiming=true;$('collection-message').textContent='';selectedCard();
-  try{const ok=await claim(id);if(ok){render();if(id===selected)$('collection-detail').dataset.claimed='true';$('collection-message').textContent='새로운 인연을 맺었습니다.';}
-   else $('collection-message').textContent='확보 내용을 저장하지 못했습니다. 다시 시도해 주세요.';
-  }catch{$('collection-message').textContent='확보 내용을 저장하지 못했습니다. 다시 시도해 주세요.';}
-  finally{claiming=false;selectedCard();}
+  puzzleView();
+  try{const ok=await claim(id,[...puzzle.placed]);if(ok){puzzle=null;puzzleView();render();if(id===selected)$('collection-detail').dataset.claimed='true';$('collection-message').textContent=cardUnit(id)?'인연 완성! 동료 편성에서 사용할 수 있습니다.':'새로운 인연을 맺었습니다.';}
+   else $('puzzle-progress').textContent='저장하지 못했습니다. 조각은 유지됩니다. 다시 눌러 주세요.';
+  }catch{$('puzzle-progress').textContent='저장하지 못했습니다. 조각은 유지됩니다. 다시 눌러 주세요.';}
+  finally{claiming=false;selectedCard();if(puzzle)$('puzzle-confirm').disabled=false;}
  });
  panel.addEventListener('dragstart',event=>event.preventDefault());
- return {open};
+ return {open,select};
 }

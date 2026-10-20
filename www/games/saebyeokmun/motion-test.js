@@ -1,7 +1,7 @@
-import {Journey} from './game/model.js?v=224';
+import {Journey} from './game/model.js?v=226';
 import {makeGame} from './game/scene.js?v=224';
 import {HEALER_VIDEO} from './game/healer-motion.js?v=224';
-import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=224';
+import {STAGES,ENEMIES,MAX_HP,MAX_COINS,DEFAULT_PARTY,UNITS,BODY_HEIGHT,MOTION} from './game/data.js?v=226';
 import {TRAVELLER_VIDEO} from './game/traveller-motion.js?v=224';
 import {VIDEO_DELIVERY} from './game/video-delivery.js?v=224';
 const VIDEO_MOTION={healer:HEALER_VIDEO,...TRAVELLER_VIDEO};

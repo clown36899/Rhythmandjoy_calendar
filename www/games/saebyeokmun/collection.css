@@ -97,3 +97,30 @@
 }
 
 #collection-count.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+/* The existing album owns the five-piece puzzle. Tap controls never drag images. */
+#collection-puzzle{position:absolute;z-index:20;inset:0;display:flex;flex-direction:column;align-items:center;gap:1.5%;padding:2% 3%;background:#f2e7cf url('./assets/collection-hanji-album-v156.png') center/cover;border:2px solid #866335;box-shadow:0 5px 22px #23170e88}
+#collection-puzzle header{display:flex;align-items:center;justify-content:space-between;width:100%;height:9%;font:700 clamp(13px,2cqw,23px) var(--album-font)}
+#collection-puzzle button{min-height:0;cursor:pointer;font:700 clamp(11px,1.6cqw,18px) var(--album-font);touch-action:manipulation}
+#puzzle-close{background:none;border:0;font-size:24px!important}
+.puzzle-workspace{display:flex;align-items:center;justify-content:center;gap:4%;height:62%;width:100%;min-height:0}
+#puzzle-board{position:relative;height:100%;aspect-ratio:1;background:#302a21;border:2px solid #987340;box-shadow:inset 0 0 20px #0007}
+#puzzle-board button{position:absolute;inset:0;padding:0;border:0;background:#d5c6a7}
+#puzzle-board button:not(:disabled):hover{background:#efdfb9}
+#puzzle-board button:nth-child(2n){background:#b9aa8e}
+#puzzle-board button span{position:absolute;inset:0;background-color:#f6ecd6;background-repeat:no-repeat}
+#puzzle-tray{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7%;width:46%;height:88%}
+#puzzle-tray button{position:relative;aspect-ratio:1;padding:0;border:1px solid #9e7947;border-radius:5px;background:#423c31;overflow:hidden}
+#puzzle-tray button span{position:absolute;inset:0;background-color:#f6ecd6;background-repeat:no-repeat}
+#puzzle-tray button[aria-pressed=true]{outline:3px solid #b17728;box-shadow:0 0 12px #eac26d}
+#puzzle-tray button:disabled{opacity:.18}
+#puzzle-progress{margin:0;min-height:1.3em;font-size:clamp(10px,1.5cqw,17px);color:#48321e}
+#puzzle-confirm{padding:1% 4%;border:1px solid #c5a366;background:#214d50;color:#fff4d8;border-radius:4px}
+#puzzle-confirm:disabled{opacity:.5}
+#collection-puzzle>small{font-size:clamp(9px,1.2cqw,13px)}
+#fragment-reward{position:absolute;z-index:8;top:15%;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:9px;max-width:43%;padding:7px 14px;background:#302b21ed;color:#f8df9c;border:1px solid #d5b16c;border-radius:5px;box-shadow:0 3px 9px #0005;cursor:pointer;text-align:left;font-family:var(--game-ui-font)}
+#fragment-reward[hidden]{display:none}
+#fragment-reward>span:first-child{font-size:26px;color:#f4ce67}
+#fragment-reward strong,#fragment-reward small{display:block;white-space:nowrap;font-size:clamp(10px,1.5cqw,17px)}
+#fragment-reward small{opacity:.85;font-size:clamp(9px,1.2cqw,14px)}
+@media(prefers-reduced-motion:reduce){#fragment-reward{animation:none}}

@@ -1,7 +1,7 @@
 // Local controller for the real game. Journey, UNITS and Scene retain ownership.
 export function connectCombatLab(api){
  const {model,units,enemies={},autoplay}=api,origin=location.origin;
- let readySent=false,busy=false,active=true,endedAt=0,lastSample=performance.now(),previous=0,samples=[];
+ let readySent=false,busy=false,active=true,endedAt=0,lastSample=performance.now(),previous=0,samples=[],lastVideoWaits=0;
  const send=data=>parent.postMessage({type:'combat-lab:state',...data},origin);
  const wake=()=>api.scene()?.game?.loop?.wake(),sleep=()=>api.scene()?.game?.loop?.sleep();
  function play(value,rate=1){
@@ -61,8 +61,8 @@ export function connectCombatLab(api){
    const sorted=samples.slice().sort((a,b)=>a-b),count=samples.length,total=samples.reduce((a,b)=>a+b,0);
    send({ready:api.ready(),status:m.status,seconds:m.time,allies:m.allies.filter(a=>a.hp>0).length,enemies:m.enemies.filter(a=>a.hp>0).length,
     fps:total?1000*count/total:null,p95:sorted[Math.min(sorted.length-1,Math.floor(sorted.length*.95))]??null,
-    stalls:samples.filter(t=>t>50).length,frames:count,busy,autoplay:autoplay?.active??false,rate:autoplay?.rate??1,invincible:m.invincible,enemyInvincible:m.enemyInvincible});
-   samples=[];lastSample=now;
+    stalls:samples.filter(t=>t>50).length,frames:count,waitingCels:Math.max(0,(s?.videoWaits||0)-lastVideoWaits),pendingVideo:s?.videoRequests?.size||0,busy,autoplay:autoplay?.active??false,rate:autoplay?.rate??1,invincible:m.invincible,enemyInvincible:m.enemyInvincible});
+   lastVideoWaits=s?.videoWaits||0;samples=[];lastSample=now;
   }
   if(!busy&&['won','lost'].includes(m.status)){endedAt||=now;if(now-endedAt>3000)sleep();}else endedAt=0;
  }};

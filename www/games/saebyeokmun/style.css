@@ -2079,3 +2079,10 @@ body[data-screen="game"] #game-shell .control-deck .actions,body[data-screen="ga
 #battle-ui-preview{width:100%;height:55px;object-fit:contain;object-position:center;background:#dfd6c4;border-radius:4px}
 #battle-ui-preview[hidden]{display:none}
 #battle-ui-status{font-size:10px;line-height:1.3;color:#746653}
+
+/* The same pause/resume dialogs are reachable without covering the road. */
+#battle-library{display:none;position:absolute;left:2.5%;top:18%;z-index:14;gap:5px;pointer-events:auto}
+body[data-screen="game"] #battle-library{display:flex}
+body[data-entry-phase] #battle-library{display:none}
+#battle-library button{font:700 clamp(10px,1cqw,14px) system-ui;color:#f8e7bf;background:#34261def;border:1px solid #b58b4b;border-radius:5px;padding:5px 9px;min-height:30px;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-drag:none}
+#battle-library button:focus-visible{outline:2px solid #fff2bf;outline-offset:2px}

@@ -1,11 +1,11 @@
 import {BATTLE_UI_THEMES,applyBattleUITheme} from './game/battle-ui-themes.js?v=223';
-import {Campaign} from './game/campaign.js?v=224';
-import {mountCollection} from './game/collection.js?v=224';
-import {Journey} from './game/model.js?v=224';
-import {Autoplay} from './game/autoplay.js?v=224';
-import {makeGame} from './game/scene.js?v=224';
-import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=224';
-import {ROAD,MAX_HP,MAX_COINS,MAX_MANA,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=224';
+import {Campaign,companionCardId} from './game/campaign.js?v=226';
+import {mountCollection} from './game/collection.js?v=226';
+import {Journey} from './game/model.js?v=226';
+import {Autoplay} from './game/autoplay.js?v=226';
+import {makeGame} from './game/scene.js?v=226';
+import {Soundscape,MUSIC_TRACK} from './game/audio.js?v=226';
+import {ROAD,MAX_HP,MAX_COINS,MAX_MANA,UNITS,UNIT_TIERS,SKILLS,TEAM_SKILLS,CODEX,COMPANIONS,MOTION,motionFrame,AREAS,STAGES,skyState,ENEMY_STRIKE,enemyAttackFrame,bossPose,unitStats,DEFAULT_LOADOUT,validLoadout,REAPER_DEPARTURE_TIME,reaperDepartureFrame,enemyDepartureFrame,isBoss,ENEMIES,healerPose,TEST_MODE,DEFAULT_PARTY,STAGE_REWARDS,validParty,GATE,ALLY_TYPE_LIMIT,ALLY_TOTAL_LIMIT} from './game/data.js?v=226';
 const localLab=['127.0.0.1','localhost'].includes(window.location?.hostname)&&new URLSearchParams(window.location.search).get('lab')==='1';
 const storage={getItem:key=>localLab?null:localStorage.getItem(key),setItem:(key,value)=>{if(!localLab)localStorage.setItem(key,value);}};
 let lab=null;
@@ -25,7 +25,16 @@ let savedBattleUI='default';try{const value=storage.getItem('saebyeokmun-battle-
 setBattleUI(savedBattleUI);
 $('battle-ui-choice').addEventListener('change',e=>setBattleUI(e.target.value,true));
 
-const collection=mountCollection(document,{stateFor:id=>campaign.cardState(id),claim:claimCollectionCard});
+const collection=mountCollection(document,{load:async()=>{
+ const catalog=(await import('./game/collection-catalog.js?v=224')).default;
+ const companions=[];
+ for(const [kind,unit]of Object.entries(UNITS)){
+  await scene.ensurePreview(kind);
+  const art=scene.previewTexture(scene.previewIdleKey(kind),'roster');
+  companions.push({id:companionCardId(kind),unit:kind,art,baseName:unit.name,name:unit.name,displayName:unit.name,category:'동료',countryEra:'다섯개의 나라',classification:unit.role,summary:'전투 중 조각 5장을 모으고 그림 퍼즐을 완성하면 동료로 편성할 수 있습니다.',record:'게임 동료',artBrief:'기존 승인 원화와 대기 프레임을 사용합니다.',researchStatus:'동료 해금 카드',sources:[]});
+ }
+ return {...catalog,total:catalog.total+companions.length,candidates:[...companions,...catalog.candidates]};
+},stateFor:id=>campaign.cardState(id),claim:claimCollectionCard});
 const model=new Journey();
 const autoplay=new Autoplay(model);
 const requestedAutoplay=/(?:^|[?&])autoplay=1(?:&|$)/.test(window.location?.search||'');
@@ -62,7 +71,24 @@ const campaign=new Campaign(savedCampaign);
 clearedStages=0;while(campaign.cleared.includes(clearedStages))clearedStages++;
 let activeRun=0,draftParty=[],rosterFocus=campaign.party[0],rosterMotion=null;
 function saveCampaign(){try{storage.setItem('saebyeokmun-campaign',JSON.stringify(campaign.snapshot()));return true;}catch{showNotice('이 브라우저에서 저장할 수 없어요. 현재 화면에서만 유지됩니다.');return false;}}
-function claimCollectionCard(id){const before=campaign.snapshot().cards;if(!campaign.claimCard(id))return false;if(saveCampaign())return true;campaign.cards=before;return false;}
+function claimCollectionCard(id,placement){
+ const before=campaign.snapshot();if(!campaign.claimCard(id,placement))return false;
+ if(saveCampaign()){renderMap();return true;}
+ campaign.cards=before.cards;campaign.owned=before.owned;return false;
+}
+let fragmentNoticeUntil=0,fragmentNoticeCard=null;
+function collectBattleCards(){
+ if(model.tour||activeRun<=0)return;
+ const before=campaign.snapshot(),awards=campaign.collectBattleFragments(activeRun,model.kills,model.stage);
+ if(!awards.length)return;
+ if(!saveCampaign()){campaign.cards=before.cards;campaign.fragmentCheckpoint=before.fragmentCheckpoint;return;}
+ const last=awards.at(-1);fragmentNoticeCard=last.id;
+ $('fragment-reward-name').textContent=UNITS[last.kind].name+' 그림 조각';
+ $('fragment-reward-count').textContent=last.fragments+'/5'+(last.fragments>=5?' · 퍼즐 완성 가능':' · 인연첩에 보관');
+ $('fragment-reward').hidden=false;fragmentNoticeUntil=performance.now()+5000;
+ $('fragment-reward').animate([{opacity:0,transform:'translate(-50%,-8px)'},{opacity:1,transform:'translate(-50%,0)'}],{duration:240});
+}
+$('fragment-reward').addEventListener('click',async()=>{codexTab='collection';await openCodex();await collection.open();collection.select(fragmentNoticeCard);});
 let selectedStage=STAGES.findIndex((_,i)=>!campaign.cleared.includes(i));if(selectedStage<0)selectedStage=0;
 // View-only country browsing never writes Campaign or unlocks a stage.
 const STAGES_PER_COUNTRY=15,PREVIEW_STAGE_COUNT=5;
@@ -125,7 +151,7 @@ $('map-next').addEventListener('click',()=>browseCountry(1));
 function setMapExpanded(expanded){$('map-atlas').hidden=!expanded;$('journey-map').dataset.expanded=String(expanded);$('map-expand').setAttribute('aria-expanded',String(expanded));$('map-expand').querySelector('span').textContent=expanded?'닫기':'전체 지도';if(expanded&&!$('stage-'+selectedStage).hidden)$('stage-'+selectedStage).focus?.();if(!expanded)$('map-expand').focus?.();}
 for(const id of ['map-expand','map-fold'])$(id).addEventListener('click',()=>setMapExpanded(id==='map-expand'&&$('map-atlas').hidden));
 for(const id of ['map-settings','home-settings'])$(id).addEventListener('click',()=>openInfo($('settings')));
-$('home-codex').addEventListener('click',openCodex);
+for(const id of ['home-codex','battle-codex'])$(id).addEventListener('click',openCodex);
 function showMap(){
  if(fullscreenPending)return;openingAutomatic=false;openingEpoch++;delete document.body.dataset.entryPhase;if(scene){scene.entryPreview=false;delete scene.entryViewStarted;scene.resize();}entryEpoch++;stopLoadingDisplay();$('asset-loading').close();if(!$('opening').open)releaseOpeningFilm();infoPaused=false;for(const dialog of infoDialogs)if(dialog.open)dialog.close();
  stopAutoplay();
@@ -252,7 +278,8 @@ async function start(testStage=null,cinematic=false){
  },()=>start(testing?stage:null,cinematic),cinematic))return;
  infoPaused=false;for(const dialog of infoDialogs)if(dialog.open&&(!cinematic||dialog!==$('opening')))dialog.close();
  if(cinematic)openInfo($('opening'));
- if(!testing){activeRun=campaign.begin();saveCampaign();}
+ if(!testing){activeRun=campaign.begin();saveCampaign();}else activeRun=0;
+ $('fragment-reward').hidden=true;fragmentNoticeUntil=0;
  model.start(selectedStage,testing?DEFAULT_PARTY:campaign.party,scene?.vw,{tour:testing&&requestedStage===null});
  if(testing){autoplay.enter();scene.playbackRate=autoplay.rate;}
  renderSummonSlots();renderSkillSlots();renderAutoplay();keys.clear();model.setDirection(0,{cancel:true});lastStatus='';resultReadyAt=Infinity;document.body.dataset.screen='game';$('intro').hidden=true;$('result').hidden=true;$('pause-overlay').hidden=true;$('hud').hidden=false;$('callout').hidden=false;
@@ -427,12 +454,12 @@ function renderRoster(status='닫으면 저장'){
  for(const button of $('roster-motions').querySelectorAll('[data-roster-motion]')){button.setAttribute('aria-pressed',String(button.dataset.rosterMotion==='idle'));if(button.dataset.rosterMotion==='attack')button.textContent=rosterFocus==='healer'?'치료':'공격';}
  hydrateIcons($('roster'));
 }
-async function openRoster(){if(!ready||preparing||['playing','paused'].includes(model.status))return;if(!scene.commonReady&&!await prepareFor('동료 편성',p=>scene.ensureCommon(p),openRoster))return;draftParty=[...campaign.party];$('roster-motion-menu').open=false;renderRoster();openInfo($('roster'));}
-for(const id of ['roster-open','result-roster'])$(id).addEventListener('click',openRoster);
+async function openRoster(){if(!ready||preparing)return;if(!scene.commonReady&&!await prepareFor('동료 편성',p=>scene.ensureCommon(p),openRoster))return;draftParty=[...campaign.party];$('roster-motion-menu').open=false;renderRoster(['playing','paused'].includes(model.status)?'전투 중 · 캐릭터 살펴보기':'닫으면 저장');openInfo($('roster'));}
+for(const id of ['roster-open','result-roster','battle-roster'])$(id).addEventListener('click',openRoster);
 for(const id of ['roster-choices','roster-slots'])$(id).addEventListener('click',e=>{
  const b=e.target.closest('[data-character],[data-party-remove]');if(!b||b.disabled)return;
  const kind=b.dataset.character??draftParty[Number(b.dataset.partyRemove)];if(!UNITS[kind])return;
- rosterFocus=kind;const index=draftParty.indexOf(kind);let status='닫으면 저장';
+ rosterFocus=kind;if(['playing','paused'].includes(model.status)){renderRoster('전투 중 · 편성은 전투가 끝난 뒤 변경');return;}const index=draftParty.indexOf(kind);let status='닫으면 저장';
  if(index>=0){if(draftParty.length>1)draftParty.splice(index,1);else status='최소 1명 필요';}
  else if(!campaign.owned.includes(kind))status='획득 후 편성';
  else if(draftParty.length>=5)status='최대 5명 편성';
@@ -440,7 +467,7 @@ for(const id of ['roster-choices','roster-slots'])$(id).addEventListener('click'
  renderRoster(status);
 });
 // The existing Campaign owns validation and persistence; closing commits only a changed draft.
-$('roster').addEventListener('close',()=>{if(draftParty.length===campaign.party.length&&draftParty.every((key,i)=>key===campaign.party[i]))return;if(campaign.select(draftParty)){saveCampaign();renderSummonSlots();renderMap();}});
+$('roster').addEventListener('close',()=>{if(['playing','paused'].includes(model.status))return;if(draftParty.length===campaign.party.length&&draftParty.every((key,i)=>key===campaign.party[i]))return;if(campaign.select(draftParty)){saveCampaign();renderSummonSlots();renderMap();}});
 $('roster').querySelector('.dialog-close').addEventListener('click',()=>$('roster').close());
 $('roster-motions').addEventListener('click',e=>{
  const b=e.target.closest('[data-roster-motion]');if(!b||!rosterMotion)return;
@@ -511,6 +538,7 @@ function onReady(error,s){
  else if(openingEnabled&&requestedStage===null){selectStage(1);start(null,true);}
 }
 function onEvents(events){
+ if(events.some(e=>e.type==='vanish'&&e.enemy))collectBattleCards();
  if(events.some(e=>e.type==='coin')){coinAnimation?.cancel();coinAnimation=$('coins').animate([{transform:'scale(1)'},{transform:'scale(1.16)',color:'#be8f36'},{transform:'scale(1)'}],{duration:260});}
  for(const e of events){
   if(e.type==='notice')showNotice(e.message);
@@ -521,6 +549,7 @@ function onFrame(m,s){
  lab?.tick(m,s);
  soundscape.setPlaying(!document.hidden&&(m.status==='playing'||$('opening').open&&$('opening').dataset.phase==='playing'&&!$('opening-video').paused||document.body.dataset.entryPhase==='ui'&&infoPaused));
  const now=performance.now();
+ if(fragmentNoticeUntil&&now>fragmentNoticeUntil){$('fragment-reward').hidden=true;fragmentNoticeUntil=0;}
  const next=autoplay.update(lastAutoplayFrame?Math.max(0,(now-lastAutoplayFrame)/1000):0,preparing||fullscreenPending||document.hidden||infoDialogs.some(d=>d.open));lastAutoplayFrame=now;
  if(next!==null){if(requestedStage!==null){autoplay.complete=true;model.invincible=false;renderAutoplay();}else start(next);}
  if($('codex').open||$('roster').open)for(const p of [...($('codex').open?motionPreviews:[]),...($('roster').open&&rosterMotion?[rosterMotion]:[])]){
@@ -591,7 +620,7 @@ function onFrame(m,s){
   lastStatus=m.status;
   if(['won','lost'].includes(m.status)&&!autoplay.active){
    updateBest();resultReadyAt=now+(m.status==='lost'?1800:350);$('result').hidden=true;
-   const rewardKind=STAGES[m.stage].reward,newCharacter=m.status==='won'&&rewardKind&&!campaign.owned.includes(rewardKind);
+   const rewardKind=STAGES[m.stage].reward,newCharacter=false; // Companion ownership is granted by the completed puzzle.
    if(m.status==='won'){const reward=campaign.clear(activeRun,m.earnedCoins,m.stage);saveCampaign();clearedStages=0;while(campaign.cleared.includes(clearedStages))clearedStages++;try{storage.setItem('saebyeokmun-cleared',String(clearedStages));}catch{}$('result-earned').textContent='◎ +'+reward;}else $('result-earned').textContent='';
    $('result-character').hidden=!newCharacter;
    if(newCharacter){$('result-character-image').src=scene.previewTexture(rewardKind+'1');$('result-character-image').alt=UNITS[rewardKind].name;$('result-character-name').textContent=UNITS[rewardKind].name;}
@@ -651,7 +680,7 @@ document.querySelector('.phone-screen').append($('asset-loading'));
 renderMap();renderSummonSlots();
 if(localLab){
  document.body.dataset.localLab='true';
- import('./game/combat-lab.js?v=224').then(({connectCombatLab})=>{lab=connectCombatLab({model,units:UNITS,enemies:ENEMIES,autoplay,uiThemes:BATTLE_UI_THEMES,applyUITheme:setBattleUI,ready:()=>ready,scene:()=>scene,pause,
+ import('./game/combat-lab.js?v=226').then(({connectCombatLab})=>{lab=connectCombatLab({model,units:UNITS,enemies:ENEMIES,autoplay,uiThemes:BATTLE_UI_THEMES,applyUITheme:setBattleUI,ready:()=>ready,scene:()=>scene,pause,
   start:async(who,stage)=>{
    selectedStage=stage;mapPage=Math.floor(stage/STAGES_PER_COUNTRY);
    campaign.party=[...new Set([who,'spearman','cow','healer','keeper'])].slice(0,5);

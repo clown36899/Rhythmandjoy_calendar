@@ -1,4 +1,4 @@
-import {UNITS,STAGES,isBoss} from './data.js?v=224';
+import {UNITS,STAGES,isBoss} from './data.js?v=226';
 
 // A disposable observer session: decisions call the ordinary combat API.
 // The app owns stage entry and saved rewards; this owner never writes a save.
