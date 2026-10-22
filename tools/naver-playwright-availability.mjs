@@ -1,3 +1,5 @@
+import { normalizeCancellationRefund, verifyCancellationRefund, readCancellationRefundText, waitForCancellationRefund } from './cancellation-refund.mjs';
+
 const NAVER_BOOKING_BUSINESS_ID = '1257912';
 
 export const NAVER_ROOMS = {
@@ -1186,6 +1188,12 @@ export async function inspectNaverReservationStatus(context, task, {
     source: booking.source,
     apiStatus: booking.apiStatus,
     bookingStatusCode,
+    refundAmounts: {
+      paidAmount: booking.detail?.totalPrice,
+      refundAmount: booking.detail?.refundPrice,
+      retainedAmount: Number.isSafeInteger(booking.detail?.totalPrice) && Number.isSafeInteger(booking.detail?.refundPrice)
+        ? booking.detail.totalPrice - booking.detail.refundPrice : null,
+    },
   };
 }
 
@@ -1634,9 +1642,30 @@ export async function fetchNaverReservationPhone(context, task, {
   };
 }
 
+export async function prepareNaverCancellationRefund(page, value) {
+  const refund = normalizeCancellationRefund(value);
+  const panel = page.locator('[class*="SideLayer__visible"]').filter({ visible: true });
+  if (await panel.count() !== 1) throw new Error('네이버 취소 화면을 하나로 식별하지 못했습니다.');
+  const selector = refund.mode === 'full' ? '#refundTypeAll' : refund.mode === 'policy' ? '#refundTypeStandard' : '#refundTypePrice';
+  const radio = panel.locator(selector).filter({ visible: true });
+  if (await radio.count() !== 1) throw new Error('네이버 환불 방식 선택란을 확인하지 못했습니다.');
+  await radio.check({ timeout: 8000 });
+  if (!await radio.isChecked()) throw new Error('네이버 환불 방식이 적용되지 않았습니다.');
+  if (['none', 'custom'].includes(refund.mode)) {
+    const field = radio.locator('xpath=ancestor::*[.//input[@type="tel"]][1]').locator('input[type="tel"]').filter({ visible: true });
+    if (await field.count() !== 1) throw new Error('네이버 정액 환불 입력란을 하나로 식별하지 못했습니다.');
+    await field.fill(String(refund.amount), { timeout: 8000 });
+    await field.blur();
+    const input = (await field.inputValue()).replaceAll(',', '');
+    if (!/^\d+$/.test(input) || Number(input) !== refund.amount) throw new Error('네이버 환불 입력금액이 다릅니다.');
+  }
+  return waitForCancellationRefund(async () => readCancellationRefundText(await panel.innerText()), refund);
+}
+
 export async function cancelNaverConfirmedReservation(context, task, {
   businessId = NAVER_BOOKING_BUSINESS_ID,
   refundType = 'ALL',
+  refund = null,
   beforeConfirm = null,
 } = {}) {
   const page = await pageForContext(context);
@@ -1702,7 +1731,10 @@ export async function cancelNaverConfirmedReservation(context, task, {
       return row;
     }
 
-    if (refundType === 'ALL') {
+    if (refund) {
+      row.refundVerification = await prepareNaverCancellationRefund(page, refund);
+      row.refundType = refund.mode;
+    } else if (refundType === 'ALL') {
       const refundAll = page.locator('#refundTypeAll').filter({ visible: true });
       if (await refundAll.count() !== 1) throw new Error('Naver full-refund radio not visible');
       await refundAll.first().check({ timeout: 8000 });
@@ -1730,6 +1762,7 @@ export async function cancelNaverConfirmedReservation(context, task, {
           date: row.date,
           startTime: row.startTime,
           endTime: row.endTime,
+          refundVerification: row.refundVerification || null,
         });
         row.cancelGuard = guard?.summary || guard || {};
         if (guard?.approved !== true) {
@@ -1739,6 +1772,12 @@ export async function cancelNaverConfirmedReservation(context, task, {
           return row;
         }
       }
+      if (refund) {
+        const latest = verifyCancellationRefund(refund,
+          readCancellationRefundText(await page.locator('[class*="SideLayer__visible"]').filter({ visible: true }).innerText()),
+          row.refundVerification.refundAmount);
+        if (!latest.ok) throw new Error(latest.reason);
+      }
       row.submissionAttempted = true;
       await cancelButton.first().click({ timeout: 10000 });
       row.cancelStatusVerification = await waitForNaverCancellationResult(context, page, task, {
@@ -1746,6 +1785,7 @@ export async function cancelNaverConfirmedReservation(context, task, {
         timeoutMs: 20000,
       });
       row.modalConfirmClicked = row.cancelStatusVerification.modalConfirmClicked === true;
+      if (refund) row.refundAmounts = row.cancelStatusVerification.lastInspection?.refundAmounts || null;
       if (row.cancelStatusVerification.confirmed) row.afterStatus = '취소';
     } finally {
       page.off('dialog', onDialog);

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { normalizeCancellationRefund, verifyCancellationRefund, readCancellationRefundText, waitForCancellationRefund } from './cancellation-refund.mjs';
 
 const require = createRequire(import.meta.url);
 const SPACECLOUD_PAGE_LOAD_TIMEOUT_MS = 20000;
@@ -2309,6 +2310,7 @@ export async function inspectSpacecloudConfirmedReservation(context, task) {
       status: statusCode === 'RSCMP' ? 'confirmed' : statusCode === 'RCCMP' ? 'canceled' : 'needs-review',
       confirmed: statusCode === 'RSCMP',
       statusCode,
+      refundAmounts: spacecloudCancellationRefundAmounts(detail.body),
       verification: {
         ...verification,
         acceptedForCanceledStatus: verification.ok !== true,
@@ -2335,9 +2337,36 @@ export async function inspectSpacecloudConfirmedReservation(context, task) {
   }
 }
 
+function spacecloudCancellationRefundAmounts(detail) {
+  const paidAmount = detail?.paid_price;
+  const refundAmount = detail?.cancellation?.cancel_amount;
+  return {
+    paidAmount, refundAmount,
+    retainedAmount: Number.isSafeInteger(paidAmount) && Number.isSafeInteger(refundAmount) ? paidAmount - refundAmount : null,
+  };
+}
+
+export async function prepareSpacecloudCancellationRefund(page, value, policyAmount) {
+  const refund = normalizeCancellationRefund(value);
+  if (refund.mode === 'custom') throw new Error('스페이스클라우드는 환불금액 직접 입력을 지원하지 않습니다.');
+  const checkbox = page.locator('#repay_all').filter({ visible: true });
+  if (await checkbox.count() !== 1) throw new Error('스페이스클라우드 전액환불 선택란을 확인하지 못했습니다.');
+  const modal = page.locator('.layer_popup').filter({ has: page.locator('#repay_all'), visible: true });
+  if (await modal.count() !== 1) throw new Error('스페이스클라우드 취소 화면을 하나로 식별하지 못했습니다.');
+  // The native checkbox is positioned offscreen; its visible label owns the click.
+  if (await checkbox.isChecked() !== (refund.mode === 'full')) {
+    await modal.locator('label[for="repay_all"]').click({ timeout: 8000 });
+  }
+  if (await checkbox.isChecked() !== (refund.mode === 'full')) throw new Error('스페이스클라우드 환불 방식이 적용되지 않았습니다.');
+  if (refund.mode === 'policy' && !Number.isSafeInteger(policyAmount)) throw new Error('스페이스클라우드 환불규정 금액을 확인하지 못했습니다.');
+  return waitForCancellationRefund(async () => readCancellationRefundText(await modal.innerText()), refund,
+    refund.mode === 'policy' ? policyAmount : null);
+}
+
 export async function cancelSpacecloudConfirmedReservation(context, task, {
   reasonCode = 'PRSCH',
   reasonText = '',
+  refund = null,
   beforeConfirm = null,
 } = {}) {
   const page = await pageForContext(context);
@@ -2473,6 +2502,8 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
       await reasonInput.fill(reasonText.slice(0, 100), { timeout: 5000 });
     }
 
+    if (refund) row.refundVerification = await prepareSpacecloudCancellationRefund(page, refund, detailBefore.body?.cancel_stipulation?.refund_amount);
+
     const confirmButton = page.locator('a.btn.btn_full.btn_default').filter({ hasText: '확인', visible: true });
     if (await confirmButton.count() !== 1) throw new Error('SpaceCloud cancel confirm button not visible');
     if (typeof beforeConfirm === 'function') {
@@ -2483,6 +2514,7 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
         date: row.date,
         startTime: row.startTime,
         endTime: row.endTime,
+        refundVerification: row.refundVerification || null,
       });
       row.cancelGuard = guard?.summary || guard || {};
       if (guard?.approved !== true) {
@@ -2493,6 +2525,11 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
         return row;
       }
     }
+    if (refund) {
+      const modal = page.locator('.layer_popup').filter({ has: page.locator('#repay_all'), visible: true });
+      const latest = verifyCancellationRefund(refund, readCancellationRefundText(await modal.innerText()), row.refundVerification.refundAmount);
+      if (!latest.ok) throw new Error(latest.reason);
+    }
     row.submissionAttempted = true;
     await confirmButton.first().click({ timeout: 8000 });
 
@@ -2501,6 +2538,7 @@ export async function cancelSpacecloudConfirmedReservation(context, task, {
       await page.waitForTimeout(1000);
       const detailAfter = await fetchSpacecloudReservationDetail(page, reservationId).catch(() => null);
       afterStatus = spacecloudReservationStatus(detailAfter);
+      if (refund && afterStatus === 'RCCMP') row.refundAmounts = spacecloudCancellationRefundAmounts(detailAfter?.body);
       if (afterStatus && afterStatus !== 'RSCMP') break;
     }
     row.afterStatusCode = afterStatus;

@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { normalizeCancellationRefund, verifyCancellationRefund } from './cancellation-refund.mjs';
 import {
   cancelSpacecloudConfirmedReservation,
   checkSpacecloudLogin,
@@ -3635,6 +3636,7 @@ def task_row(row, include_payload=False):
             'source_mode': payload.get('source_mode') or '',
             'action': payload.get('action') or '',
             'manualCustomerCancellation': payload.get('manualCustomerCancellation') is True,
+            'refund': payload.get('refund'),
             'cancellationIdentityMode': payload.get('cancellationIdentityMode') or '',
             'ledgerId': payload.get('ledgerId'),
             'ledger_key': payload.get('ledger_key') or payload.get('ledgerKey') or '',
@@ -3659,6 +3661,7 @@ def ledger_row(row):
         'sourcePlatform': row.get('source_platform') or '',
         'sourceMode': row.get('source_mode') or '',
         'currentStatus': row.get('current_status') or '',
+        'grossAmount': row.get('gross_amount'),
         'roomKey': row.get('room_key') or '',
         'date': date_text(row.get('reservation_date')),
         'startTime': time_text(row.get('start_time')),
@@ -3782,6 +3785,15 @@ function assessManualCustomerCancellationGuard(snapshot = {}) {
     return { approved: false, decision: 'manual-ledger-missing', reason: 'customer booking ledger is missing' };
   }
   const sourcePlatform = String(ledger.sourcePlatform || '');
+  try {
+    const refund = normalizeCancellationRefund(payload.refund);
+    if (refund && (refund.expectedPaidAmount !== Number(ledger.grossAmount)
+      || (sourcePlatform === 'spacecloud' && refund.mode === 'custom'))) {
+      return { approved: false, decision: 'manual-refund-mismatch', reason: '환불 설정과 현재 결제금액 또는 플랫폼이 맞지 않습니다.', ledger, sourcePlatform };
+    }
+  } catch (error) {
+    return { approved: false, decision: 'manual-refund-invalid', reason: error.message, ledger, sourcePlatform };
+  }
   const expectedTaskType = sourcePlatform === 'naver'
     ? 'naver_cancel'
     : sourcePlatform === 'spacecloud'
@@ -4221,6 +4233,8 @@ function taskResultTextForDb(resultText, maxBytes = TASK_RESULT_TEXT_MAX_BYTES) 
     losingBooking: compacted.losingBooking,
     cancellationTask: compacted.cancellationTask,
     cancellationGuard: compacted.cancellationGuard || compacted.preflightCancellationGuard,
+    refundVerification: compacted.refundVerification || compacted.priorRefundVerification,
+    refundResult: compacted.refundResult,
     liveWinner: compacted.liveWinner,
     resultSummary: 'result compacted to keep valid JSON in DB',
     preflightVerification: compacted.preflightVerification,
@@ -4256,6 +4270,8 @@ function taskResultTextForDb(resultText, maxBytes = TASK_RESULT_TEXT_MAX_BYTES) 
     authoritativeAbsence: summary.authoritativeAbsence,
     mirrorTaskId: summary.mirrorTaskId,
     submissionConfirmed: summary.submissionConfirmed,
+    refundVerification: summary.refundVerification,
+    refundResult: summary.refundResult,
     resubmitBlocked: summary.resubmitBlocked,
     retryMode: summary.retryMode,
     error: summary.error,
@@ -4332,6 +4348,29 @@ try:
         next_status = payload['status'] if release_claim else 'running'
         next_claim_token = '' if release_claim else payload['claimToken']
         final_side_effect_state = payload.get('sideEffectState') or ''
+        # Cancellation proof is monotonic, including when a checkpoint write
+        # succeeded but its SSH response was lost. Recovery must never re-click.
+        if payload.get('taskType') in ('naver_cancel', 'spacecloud_cancel'):
+            cur.execute(
+                "SELECT result_text FROM rhythmjoy_spacecloud_tasks WHERE id=%s AND status='running' AND claim_token=%s FOR UPDATE",
+                (payload['taskId'], payload['claimToken']),
+            )
+            previous_row = cur.fetchone() or {}
+            try:
+                previous = json.loads(previous_row.get('result_text') or '{}')
+                next_result = json.loads(payload.get('resultText') or '{}')
+            except (ValueError, TypeError):
+                raise RuntimeError('cancellation proof cannot be safely preserved')
+            if not isinstance(previous, dict) or not isinstance(next_result, dict):
+                raise RuntimeError('cancellation result must be an object')
+            if previous.get('submissionAttempted') is True or previous.get('status') in (
+                'cancel-submit-checkpoint', 'manual-cancel-submit-checkpoint',
+            ):
+                next_result['submissionAttempted'] = True
+                before_refund = previous.get('refundVerification') or previous.get('priorRefundVerification')
+                if before_refund:
+                    next_result['refundVerification'] = before_refund
+                payload['resultText'] = json.dumps(next_result, ensure_ascii=False, separators=(',', ':'))
         cur.execute(
             f"""
             UPDATE rhythmjoy_spacecloud_tasks
@@ -6023,6 +6062,9 @@ async function finalizeRemoteManualCustomerCancellationSuccess(args, task, guard
     ledgerId: Number(guard?.ledger?.id || 0),
     sourcePlatform: String(guard?.sourcePlatform || guard?.ledger?.sourcePlatform || ''),
     platformStatus: String(platformResult?.status || ''),
+    refund: payloadForTask(task).refund || null,
+    refundVerification: platformResult?.refundVerification || platformResult?.priorRefundVerification || null,
+    refundResult: platformResult?.refundResult || null,
   }), 'utf8').toString('base64');
   const script = `
 set -e
@@ -6162,6 +6204,35 @@ try:
             'platformStatus': request.get('platformStatus') or '',
             'cancellationIdentityMode': identity_mode,
         }
+        if child_payload.get('refund') != request.get('refund'):
+            raise RuntimeError('refund request changed before finalization')
+        if child_payload.get('refund') is not None:
+            refund = child_payload['refund']
+            refund_result = request.get('refundResult') or {}
+            before = request.get('refundVerification') or {}
+            paid = refund_result.get('paidAmount')
+            amount = refund_result.get('refundAmount')
+            retained = refund_result.get('retainedAmount')
+            mode = refund.get('mode')
+            if not (
+                refund == request.get('refund')
+                and mode in ('full', 'none', 'custom', 'policy')
+                and refund.get('currency') == 'KRW'
+                and refund_result.get('ok') is True
+                and refund_result.get('mode') == mode
+                and all(type(value) is int for value in (paid, amount, retained))
+                and paid > 0 and amount >= 0 and retained >= 0 and paid == amount + retained
+                and paid == refund.get('expectedPaidAmount') == ledger.get('gross_amount')
+                and (mode != 'full' or amount == paid)
+                and (mode != 'none' or amount == 0)
+                and (mode != 'custom' or source_platform == 'naver')
+                and (amount == refund.get('amount') if mode != 'policy' else
+                     refund.get('amount') is None and before.get('ok') is True
+                     and amount == before.get('refundAmount') and paid == before.get('paidAmount'))
+            ):
+                raise RuntimeError('actual refund result is not verified before finalization')
+            cancel_audit['refund'] = child_payload['refund']
+            cancel_audit['refundResult'] = refund_result
         if previous_cancel_payload and previous_cancel_payload.get('source') != 'sync-admin-customer-request':
             cancel_audit['priorCancelPayload'] = previous_cancel_payload
         cur.execute(
@@ -10959,6 +11030,7 @@ async function inspectCancellationTargetLive(context, task, platform, args) {
       canceled: result.status === '취소',
       status: result.status || 'unknown',
       reservationNo: result.reservationNo || '',
+      refundAmounts: result.refundAmounts || null,
       source: result.source || '',
       reason: result.reason || '',
     };
@@ -10971,6 +11043,7 @@ async function inspectCancellationTargetLive(context, task, platform, args) {
     status: result.status || 'unknown',
     statusCode: result.statusCode || '',
     reservationId: result.reservationId || '',
+    refundAmounts: result.refundAmounts || null,
     verification: result.verification || null,
     reason: result.reason || '',
   };
@@ -11119,6 +11192,18 @@ async function recoverPreviouslySubmittedCancellation(args, context, task, platf
 
 async function finalizeProvenManualCustomerCancellation(args, task, row, platform, guard) {
   try {
+    const refund = normalizeCancellationRefund(payloadForTask(task).refund);
+    if (refund) {
+      const prior = JSON.parse(task.resultText || task.result_text || '{}');
+      const before = row.refundVerification || prior.refundVerification || prior.priorRefundVerification;
+      if (before) row.priorRefundVerification = before;
+      if (refund.mode === 'policy' && before?.ok !== true) {
+        throw new Error('취소 직전의 환불규정 금액 기록을 확인할 수 없습니다.');
+      }
+      row.refundResult = verifyCancellationRefund(refund, row.refundAmounts || row.liveTarget?.refundAmounts,
+        refund.mode === 'policy' ? before.refundAmount : null);
+      if (!row.refundResult?.ok) throw new Error(row.refundResult?.reason || '실제 환불 결과를 확인하지 못했습니다.');
+    }
     const finalization = await finalizeRemoteManualCustomerCancellationSuccess(args, task, guard, row);
     if (
       finalization.ledgerStatus !== 'canceled'
@@ -11219,7 +11304,7 @@ async function runManualCustomerCancellation(args, context, task, platform) {
   }
 
   let finalGuard = guard;
-  const beforeConfirm = async () => {
+  const beforeConfirm = async (proof) => {
     try {
       finalGuard = await verifyRemoteCancellationGuard(args, task);
       const summary = manualCancellationGuardSummary(finalGuard);
@@ -11231,12 +11316,22 @@ async function runManualCustomerCancellation(args, context, task, platform) {
           summary,
         };
       }
+      const refund = normalizeCancellationRefund(payloadForTask(task).refund);
+      const currentRefund = normalizeCancellationRefund(finalGuard.snapshot?.child?.payload?.refund);
+      if (JSON.stringify(refund) !== JSON.stringify(currentRefund)) {
+        return { approved: false, retryable: false, reason: '접수된 환불 설정이 변경되어 취소를 중단했습니다.', summary };
+      }
+      if (refund) {
+        const money = verifyCancellationRefund(refund, proof?.refundVerification);
+        if (!money?.ok) return { approved: false, retryable: false, reason: money?.reason || '취소 직전 환불금액 확인 실패', summary };
+      }
       await updateRemoteTask(args, task, 'running', JSON.stringify({
         ...basicTaskSummary(task),
         status: 'manual-cancel-submit-checkpoint',
         submissionAttempted: true,
         manualCustomerCancellation: true,
         cancellationGuard: summary,
+        refundVerification: proof?.refundVerification || null,
         checkpointAt: new Date().toISOString(),
       }, null, 2), { releaseClaim: false });
       return { approved: true, summary };
@@ -11254,10 +11349,15 @@ async function runManualCustomerCancellation(args, context, task, platform) {
   if (platform === 'naver') {
     row = await cancelNaverConfirmedReservation(context, task, {
       businessId: args.naverBusinessId,
+      refund: payloadForTask(task).refund || null,
       beforeConfirm,
     });
   } else {
-    row = await cancelSpacecloudConfirmedReservation(context, task, { beforeConfirm });
+    row = await cancelSpacecloudConfirmedReservation(context, task, {
+      beforeConfirm,
+      refund: payloadForTask(task).refund || null,
+      ...(payloadForTask(task).refund ? { reasonCode: 'ETC', reasonText: '고객 요청에 따른 예약 취소' } : {}),
+    });
   }
   row.manualCustomerCancellation = true;
   row.preflightCancellationGuard = guardSummary;
@@ -12450,6 +12550,19 @@ async function runNowModeSelfTest() {
   const approvedManualGuard = assessManualCustomerCancellationGuard(manualGuardSnapshot);
   assert.equal(approvedManualGuard.approved, true);
   assert.equal(approvedManualGuard.decision, 'manual-customer-cancel-approved');
+  const manualRefund = { mode: 'none', amount: 0, expectedPaidAmount: 12000, currency: 'KRW' };
+  const refundSnapshot = {
+    ...manualGuardSnapshot,
+    child: { ...manualGuardSnapshot.child, payload: { ...manualCancellationPayload, refund: manualRefund } },
+    manualLedger: { ...manualGuardSnapshot.manualLedger, grossAmount: 12000 },
+  };
+  assert.equal(assessManualCustomerCancellationGuard(refundSnapshot).approved, true);
+  assert.equal(assessManualCustomerCancellationGuard({ ...refundSnapshot,
+    manualLedger: { ...refundSnapshot.manualLedger, grossAmount: 6000 },
+  }).decision, 'manual-refund-mismatch');
+  assert.equal(assessManualCustomerCancellationGuard({ ...refundSnapshot,
+    child: { ...refundSnapshot.child, payload: { ...manualCancellationPayload, refund: { ...manualRefund, amount: 12000 } } },
+  }).decision, 'manual-refund-invalid');
   const canceledManualGuard = assessManualCustomerCancellationGuard({
     ...manualGuardSnapshot,
     manualLedger: { ...manualGuardSnapshot.manualLedger, currentStatus: 'canceled' },

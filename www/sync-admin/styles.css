@@ -3828,6 +3828,14 @@ body.alert-drawer-open {
   justify-content: flex-end;
 }
 
+.cancellation-refund { margin: 18px 0; padding: 14px; border: 1px solid var(--border, #dbe3df); border-radius: 12px; min-width: 0; }
+.cancellation-refund[hidden], .cancellation-refund [hidden] { display: none !important; }
+.cancellation-refund legend { font-weight: 700; padding: 0 5px; }
+.cancellation-refund label { display: block; margin-bottom: 8px; }
+.cancellation-refund select, .cancellation-refund input { width: 100%; box-sizing: border-box; margin: 6px 0 12px; padding: 10px; font: inherit; border: 1px solid #bac8c2; border-radius: 8px; background: #fff; color: #20372d; }
+.cancellation-refund p { margin: 8px 0 0; line-height: 1.6; overflow-wrap: anywhere; }
+.cancellation-refund-note { font-size: 13px; color: #51665b; }
+
 .detail-list {
   display: grid;
   gap: 12px;

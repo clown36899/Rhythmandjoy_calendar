@@ -3342,6 +3342,34 @@ function customer_cancellation_identity_for_ledger($ledger) {
     return array();
 }
 
+function customer_cancellation_refund_request($payload, $ledger) {
+    // New requests must choose explicitly. Existing queued tasks are unchanged.
+    if (!array_key_exists('refundMode', $payload)) {
+        throw new InvalidArgumentException('환불 방식을 선택해주세요. 화면을 새로고침한 뒤 다시 시도해주세요.');
+    }
+    $mode = is_string($payload['refundMode']) ? $payload['refundMode'] : '';
+    if (!in_array($mode, array('full', 'none', 'custom', 'policy'), true)) {
+        throw new InvalidArgumentException('환불 방식을 선택해주세요.');
+    }
+    $paid = isset($ledger['gross_amount']) ? intval($ledger['gross_amount']) : 0;
+    if ($paid <= 0) throw new InvalidArgumentException('확인된 결제금액이 없어 환불 취소를 진행할 수 없습니다.');
+    if ($mode === 'custom' && (string) $ledger['source_platform'] !== 'naver') {
+        throw new InvalidArgumentException('스페이스클라우드는 전액 환불 또는 기존 환불규정만 지원합니다.');
+    }
+    $amount = $mode === 'full' ? $paid : ($mode === 'none' ? 0 : null);
+    if ($mode === 'custom') {
+        $raw = isset($payload['refundAmount']) ? $payload['refundAmount'] : null;
+        if ((!is_int($raw) && !is_string($raw)) || !preg_match('/^\d+$/D', (string) $raw)) {
+            throw new InvalidArgumentException('환불금액은 0원 이상의 정수로 입력해주세요.');
+        }
+        $amount = intval($raw);
+        if ($amount < 0 || $amount > $paid || (float) $raw > $paid) {
+            throw new InvalidArgumentException('환불금액은 결제금액을 초과할 수 없습니다.');
+        }
+    }
+    return array('mode' => $mode, 'amount' => $amount, 'expectedPaidAmount' => $paid, 'currency' => 'KRW');
+}
+
 function request_customer_cancellation($pdo, $payload, $env) {
     if (!sync_admin_live_enabled($env)) {
         throw new InvalidArgumentException('실제 플랫폼 작업 큐가 꺼져 있어 고객 예약을 안전하게 취소할 수 없습니다.');
@@ -3360,7 +3388,7 @@ function request_customer_cancellation($pdo, $payload, $env) {
                    TIME_FORMAT(start_time, '%H:%i') AS start_time_text,
                    TIME_FORMAT(end_time, '%H:%i') AS end_time_text,
                    confirmed_email_event_id, canceled_email_event_id,
-                   automation_cancel_task_id, payload_json, cancel_payload_json
+                   automation_cancel_task_id, gross_amount, payload_json, cancel_payload_json
             FROM rhythmjoy_booking_ledger
             WHERE id=?
             LIMIT 1
@@ -3416,6 +3444,7 @@ function request_customer_cancellation($pdo, $payload, $env) {
 
         $calendar_key = (string) $ledger['target_calendar'];
         $room_key = strtolower((string) $ledger['room_key']);
+        $refund = customer_cancellation_refund_request($payload, $ledger);
         $task_payload = array(
             'source' => 'sync-admin-customer-request',
             'source_mode' => 'sync-admin-customer-request',
@@ -3445,6 +3474,7 @@ function request_customer_cancellation($pdo, $payload, $env) {
             'suppress_confirmation_sms' => true,
             'suppress_prior_cancellation_sms' => true,
         );
+        if ($refund !== null) $task_payload['refund'] = $refund;
         $dedupe_key = customer_cancellation_dedupe_key($ledger_id, $email_event_id, $source_platform);
         $stmt = $pdo->prepare("
             INSERT INTO rhythmjoy_spacecloud_tasks (
@@ -3475,11 +3505,16 @@ function request_customer_cancellation($pdo, $payload, $env) {
             json_encode($task_payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ));
         $created = $stmt->rowCount() === 1;
-        $stmt = $pdo->prepare("SELECT id, status FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT id, status, payload_json FROM rhythmjoy_spacecloud_tasks WHERE dedupe_key=? LIMIT 1");
         $stmt->execute(array($dedupe_key));
         $task = $stmt->fetch();
         if (!$task) {
             throw new RuntimeException('고객 요청 취소 작업을 저장하지 못했습니다.');
+        }
+        $existing_payload = customer_cancellation_json_object($task['payload_json']);
+        $existing_refund = isset($existing_payload['refund']) ? $existing_payload['refund'] : null;
+        if (!$created && $existing_refund !== $refund) {
+            throw new InvalidArgumentException('이미 다른 환불 방식으로 취소가 접수되어 있습니다. 기존 작업을 먼저 확인해주세요.');
         }
         $pdo->commit();
         return array(
@@ -3602,6 +3637,8 @@ function customer_cancellation_operation_payload($pdo, $ledger_id, $root_task_id
     }
 
     $root_task = customer_cancellation_operation_task($root_row, $ledger);
+    $root_payload = customer_cancellation_json_object($root_row['payload_json']);
+    $root_result = customer_cancellation_json_object($root_row['result_text']);
     $mirror_task = null;
     foreach ($task_rows as $row) {
         $task_payload = customer_cancellation_task_payload($row['payload_json']);
@@ -3633,6 +3670,8 @@ function customer_cancellation_operation_payload($pdo, $ledger_id, $root_task_id
         'ledgerId' => intval($ledger['id']),
         'rootTaskId' => intval($root_row['id']),
         'sourcePlatform' => $source_platform,
+        'refund' => isset($root_payload['refund']) ? $root_payload['refund'] : null,
+        'refundResult' => isset($root_result['refundResult']) ? $root_result['refundResult'] : null,
         'reservation' => array(
             'id' => intval($ledger['id']),
             'date' => (string) $ledger['reservation_date'],
@@ -4666,6 +4705,23 @@ function sync_admin_selftest_assert($condition, $message) {
 function run_sync_admin_selftest() {
     sync_admin_selftest_assert(clean_date_value('2026-02-29') === '', 'invalid calendar dates are rejected');
     sync_admin_selftest_assert(clean_date_value('2028-02-29') === '2028-02-29', 'valid leap dates are accepted');
+    $refund_ledger = array('source_platform' => 'naver', 'gross_amount' => 12000);
+    foreach (array('full' => 12000, 'none' => 0, 'custom' => 3500, 'policy' => null) as $mode => $amount) {
+        $refund = customer_cancellation_refund_request(array('refundMode' => $mode, 'refundAmount' => $amount), $refund_ledger);
+        sync_admin_selftest_assert($refund['amount'] === $amount && $refund['expectedPaidAmount'] === 12000, 'explicit refund mode preserves exact amount');
+    }
+    foreach (array(array(), array('refundMode' => 'bad'), array('refundMode' => 'custom', 'refundAmount' => -1),
+        array('refundMode' => 'custom', 'refundAmount' => 12001), array('refundMode' => 'custom', 'refundAmount' => 0.5),
+        array('refundMode' => 'custom', 'refundAmount' => true), array('refundMode' => 'custom', 'refundAmount' => '1e3')) as $bad_refund) {
+        $rejected = false;
+        try { customer_cancellation_refund_request($bad_refund, $refund_ledger); } catch (InvalidArgumentException $error) { $rejected = true; }
+        sync_admin_selftest_assert($rejected, 'invalid or missing refund choice is rejected before queueing');
+    }
+    foreach (array(array('source_platform' => 'spacecloud', 'gross_amount' => 12000), array('source_platform' => 'naver', 'gross_amount' => 0)) as $unsupported_ledger) {
+        $rejected = false;
+        try { customer_cancellation_refund_request(array('refundMode' => 'custom', 'refundAmount' => 0), $unsupported_ledger); } catch (InvalidArgumentException $error) { $rejected = true; }
+        sync_admin_selftest_assert($rejected, 'unsupported platform or unknown payment cannot queue a custom refund');
+    }
     $naver_amount = array(
         'source_platform' => 'naver',
         'gross_amount' => 100000,

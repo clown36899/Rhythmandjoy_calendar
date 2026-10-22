@@ -746,3 +746,69 @@ test('SMS canceled generation is suppressed even after its upload was finalized'
   assert.equal(spacecloud.deleteClicks, 1);
   assert.equal(smsProvider.calls.length, 0);
 });
+
+test('cancellation checkpoints survive failed verification and lost responses without enabling another click', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const start = WATCH_SOURCE.indexOf("        if payload.get('taskType') in ('naver_cancel', 'spacecloud_cancel'):", WATCH_SOURCE.indexOf('async function updateRemoteTask'));
+  const end = WATCH_SOURCE.indexOf('\n        cur.execute(\n            f"""', start);
+  assert.ok(start > 0 && end > start);
+  const script = `import json,sys,textwrap
+v=json.load(sys.stdin)
+payload=v['payload']
+class Cursor:
+ def execute(self,query,args):
+  assert 'FOR UPDATE' in query and "status='running'" in query and 'claim_token=%s' in query
+ def fetchone(self): return {'result_text': json.dumps(v['previous'])}
+cur=Cursor()
+exec(textwrap.dedent(v['code']))
+print(payload['resultText'])
+`;
+  const proof = { ok: true, mode: 'none', paidAmount: 12000, refundAmount: 0, retainedAmount: 12000 };
+  for (const taskType of ['naver_cancel', 'spacecloud_cancel']) {
+    let previous = { status: 'manual-cancel-submit-checkpoint', submissionAttempted: true, refundVerification: proof };
+    for (const status of ['guard-retry-pending', 'cancellation-verification-pending', 'needs-review']) {
+      const result = spawnSync('python3', ['-c', script], { encoding: 'utf8', input: JSON.stringify({
+        code: WATCH_SOURCE.slice(start, end), previous,
+        payload: { taskType, taskId: 1, claimToken: 'test', resultText: JSON.stringify({ status, submissionAttempted: false }) },
+      }) });
+      assert.equal(result.status, 0, result.stderr);
+      previous = JSON.parse(result.stdout);
+      assert.equal(previous.submissionAttempted, true);
+      assert.deepEqual(previous.refundVerification, proof);
+    }
+  }
+});
+
+test('manual finalization validates locked ledger payment and persisted refund selection before any ledger mutation', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const start = WATCH_SOURCE.indexOf("        if child_payload.get('refund') != request.get('refund'):");
+  const end = WATCH_SOURCE.indexOf('\n        if previous_cancel_payload', start);
+  assert.ok(start > 0 && end > start);
+  const request = {
+    refund: { mode: 'none', amount: 0, expectedPaidAmount: 12000, currency: 'KRW' },
+    refundResult: { ok: true, mode: 'none', paidAmount: 12000, refundAmount: 0, retainedAmount: 12000 },
+  };
+  const script = `import json,sys,textwrap
+v=json.load(sys.stdin)
+request=v['request'];child_payload=v['child'];ledger=v['ledger'];source_platform=v['platform'];cancel_audit={}
+try:
+ exec(textwrap.dedent(v['code']))
+ print(json.dumps({'ok':True,'audit':cancel_audit}))
+except RuntimeError:
+ print(json.dumps({'ok':False}))
+`;
+  const base = { request, child: { refund: request.refund }, ledger: { gross_amount: 12000 }, platform: 'naver' };
+  const cases = [
+    [base, true],
+    [{ ...base, request: { ...request, refundResult: { ...request.refundResult, refundAmount: 12000, retainedAmount: 0 } } }, false],
+    [{ ...base, ledger: { gross_amount: 6000 } }, false],
+    [{ ...base, child: {} }, false],
+    [{ ...base, request: { ...request, refundResult: null } }, false],
+    [{ request: { refund: null }, child: {}, ledger: {}, platform: 'naver' }, true],
+  ];
+  for (const [value, expected] of cases) {
+    const result = spawnSync('python3', ['-c', script], { encoding: 'utf8', input: JSON.stringify({ ...value, code: WATCH_SOURCE.slice(start, end) }) });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).ok, expected);
+  }
+});

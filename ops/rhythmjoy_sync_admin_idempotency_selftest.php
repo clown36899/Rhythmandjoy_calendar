@@ -190,13 +190,14 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute(array($platform_export_snapshot));
 $platform_export_ledger_id = intval($pdo->lastInsertId());
+$pdo->prepare('UPDATE rhythmjoy_booking_ledger SET gross_amount=12000 WHERE id=?')->execute(array($platform_export_ledger_id));
 $live_test_env = $test_env;
 $live_test_env['SYNC_ADMIN_ENQUEUE_LIVE_TASKS'] = '1';
 $platform_export_cancel = request_customer_cancellation($pdo, array(
-    'ledgerId' => $platform_export_ledger_id,
+    'ledgerId' => $platform_export_ledger_id, 'refundMode' => 'none',
 ), $live_test_env);
 $platform_export_cancel_retry = request_customer_cancellation($pdo, array(
-    'ledgerId' => $platform_export_ledger_id,
+    'ledgerId' => $platform_export_ledger_id, 'refundMode' => 'none',
 ), $live_test_env);
 idempotency_test_assert(
     $platform_export_cancel['taskType'] === 'naver_cancel'
@@ -208,6 +209,17 @@ $stmt = $pdo->prepare('SELECT * FROM rhythmjoy_spacecloud_tasks WHERE id=?');
 $stmt->execute(array(intval($platform_export_cancel['taskId'])));
 $platform_export_task = $stmt->fetch(PDO::FETCH_ASSOC);
 $platform_export_task_payload = json_decode((string) $platform_export_task['payload_json'], true);
+idempotency_test_assert($platform_export_task_payload['refund']['amount'] === 0
+    && $platform_export_task_payload['refund']['expectedPaidAmount'] === 12000,
+    'zero refund is saved as zero instead of omitted or replaced by full refund');
+$refund_change_rejected = false;
+try {
+    request_customer_cancellation($pdo, array('ledgerId' => $platform_export_ledger_id, 'refundMode' => 'full'), $live_test_env);
+} catch (InvalidArgumentException $error) { $refund_change_rejected = true; }
+idempotency_test_assert($refund_change_rejected, 'a duplicate request cannot overwrite the original refund choice');
+$stmt->execute(array(intval($platform_export_cancel['taskId'])));
+idempotency_test_assert($stmt->fetch(PDO::FETCH_ASSOC)['payload_json'] === $platform_export_task['payload_json'],
+    'conflicting refund retry rolls back without replacing the original task');
 idempotency_test_assert(
     intval($platform_export_task['booking_ledger_id']) === $platform_export_ledger_id
         && $platform_export_task['email_event_id'] === null
@@ -237,6 +249,7 @@ idempotency_test_assert(
         && count($customer_cancel_operation['tasks']) === 1,
     'accepted customer cancellation exposes a pending panel-locking operation'
 );
+idempotency_test_assert($customer_cancel_operation['refund']['amount'] === 0, 'operation status exposes the requested refund without losing zero');
 $active_panel_operation = active_customer_cancellation_operation($pdo);
 idempotency_test_assert(
     intval($active_panel_operation['ledgerId']) === $platform_export_ledger_id

@@ -623,6 +623,7 @@ test('waits for the exact SpaceCloud cancel modal identity and controls without 
 });
 
 test('confirmed SpaceCloud inspection uses the exact detail identity wait instead of elapsed time', async () => {
+  let detailBody = { RSV_STAT_CD: 'RSCMP' };
   const navigationCalls = [];
   const page = {
     goto: async (url, options) => {
@@ -631,7 +632,7 @@ test('confirmed SpaceCloud inspection uses the exact detail identity wait instea
     evaluate: async () => ({
       ok: true,
       status: 200,
-      body: { RSV_STAT_CD: 'RSCMP' },
+      body: detailBody,
     }),
     waitForFunction: async () => {},
     locator: (selector) => {
@@ -666,6 +667,15 @@ test('confirmed SpaceCloud inspection uses the exact detail identity wait instea
   });
   assert.equal(navigationCalls.length, 1);
   assert.match(navigationCalls[0].url, /\/reservation\/SC-123$/);
+  for (const amount of [0, 12000]) {
+    detailBody = { RSV_STAT_CD: 'RCCMP', paid_price: 12000, cancellation: { cancel_amount: amount } };
+    const canceled = await inspectSpacecloudConfirmedReservation({ pages: () => [page] }, {
+      roomKey: 'e', date: '2026-09-03', startTime: '13:00', endTime: '15:00', reserverName: '홍길동',
+      payload: { spacecloud_reservation_id: 'SC-123' },
+    });
+    assert.equal(canceled.status, 'canceled');
+    assert.deepEqual(canceled.refundAmounts, { paidAmount: 12000, refundAmount: amount, retainedAmount: 12000 - amount });
+  }
 });
 
 test('SpaceCloud cancellation waits for exact detail identity before any cancel click', async () => {

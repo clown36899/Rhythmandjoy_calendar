@@ -95,6 +95,12 @@
     eventCancelWarningTitle: document.getElementById("eventCancelWarningTitle"),
     eventCancelWarningSlot: document.getElementById("eventCancelWarningSlot"),
     eventCancelWarningMessage: document.getElementById("eventCancelWarningMessage"),
+    eventCancellationRefund: document.getElementById("eventCancellationRefund"),
+    eventCancellationRefundMode: document.getElementById("eventCancellationRefundMode"),
+    eventCancellationRefundAmountLabel: document.getElementById("eventCancellationRefundAmountLabel"),
+    eventCancellationRefundAmount: document.getElementById("eventCancellationRefundAmount"),
+    eventCancellationRefundSummary: document.getElementById("eventCancellationRefundSummary"),
+    eventCancellationRefundNote: document.getElementById("eventCancellationRefundNote"),
     dismissEventCancellation: document.getElementById("dismissEventCancellation"),
     confirmEventCancellation: document.getElementById("confirmEventCancellation"),
     reservationModal: document.getElementById("reservationModal"),
@@ -291,6 +297,8 @@
     el.cancelAdminReservation.addEventListener("click", () => openEventCancellationWarning("admin"));
     el.dismissEventCancellation.addEventListener("click", closeEventCancellationWarning);
     el.confirmEventCancellation.addEventListener("click", confirmDetailedEventCancellation);
+    el.eventCancellationRefundMode.addEventListener("change", updateCancellationRefund);
+    el.eventCancellationRefundAmount.addEventListener("input", updateCancellationRefund);
     el.eventCancelWarningModal.addEventListener("click", (event) => {
       if (event.target === el.eventCancelWarningModal) closeEventCancellationWarning();
     });
@@ -1106,6 +1114,8 @@
         ledgerId: Number(operation.ledgerId || reservationId),
         rootTaskId: Number(operation.rootTaskId || 0),
         sourcePlatform: String(operation.sourcePlatform || ""),
+        refund: operation.refund || null,
+        refundResult: operation.refundResult || null,
         date: reservation.date || operation.date || "",
         room: reservation.room || operation.room || "",
         start: Number(reservation.startHour ?? reservation.start ?? operation.start),
@@ -1394,6 +1404,12 @@
     }
     const slot = `${operationDateText(operation.date)} ${operation.room}홀 ${formatHour(operation.start)}-${formatHour(operation.end)}`;
     const lastChecked = operation.updatedAt ? `DB 확인 ${formatDateTime(operation.updatedAt)}` : "DB 상태 확인 중";
+    const refund = operation.refund;
+    const actualRefund = operation.refundResult?.ok === true ? operation.refundResult : null;
+    const refundText = actualRefund
+      ? `실제 환불 ${Number(actualRefund.refundAmount).toLocaleString()}원 · 위약금 ${Number(actualRefund.retainedAmount).toLocaleString()}원`
+      : refund ? (refund.mode === "policy" ? "요청한 환불 방식: 플랫폼 환불규정 적용"
+        : `요청 환불 ${Number(refund.amount).toLocaleString()}원 · 위약금 ${(Number(refund.expectedPaidAmount) - Number(refund.amount)).toLocaleString()}원`) : "";
     const operationLabel = operationType === "customer-cancellation"
       ? "고객 예약 취소"
       : (operationType === "cancellation" ? "관리자 일정 취소" : "관리자 예약");
@@ -1410,6 +1426,7 @@
         <span class="reservation-operation-badge">${escapeHtml(phase === "done" ? "완료" : (phase === "attention" ? "확인 필요" : (phase === "running" ? "처리 중" : "접수")))}</span>
       </div>
       <p class="reservation-operation-description">${escapeHtml(copy.description)}</p>
+      ${refundText ? `<p class="reservation-operation-description">${escapeHtml(refundText)}</p>` : ""}
       ${panelOperationLocked(operation) ? '<p class="reservation-operation-lock"><strong>다른 입력 잠금</strong> 완료 또는 확인 필요 상태가 될 때까지 새 예약·정기대관·다른 취소 입력을 막습니다.</p>' : ""}
       <div class="reservation-operation-steps">
         ${steps.map(operationStepHtml).join("")}
@@ -3102,19 +3119,52 @@
     const adminRequest = kind === "admin" && event?.source === "admin";
     if (!event?.dbId || (!customerRequest && !adminRequest)) return;
     state.eventCancellationIntent = { kind, event };
+    el.eventCancellationRefund.disabled = false;
+    el.eventCancellationRefund.hidden = !customerRequest;
+    el.eventCancellationRefundMode.value = "";
+    el.eventCancellationRefundAmount.value = "";
+    el.eventCancellationRefundAmount.max = String(eventGrossAmount(event));
+    el.eventCancellationRefundMode.querySelector('[value="custom"]').disabled = event.source === "spacecloud";
+    el.eventCancellationRefundNote.textContent = event.source === "spacecloud"
+      ? "스페이스클라우드는 전액 환불 또는 기존 환불규정만 지원합니다. 환불 없음은 실제 환불액이 0원일 때만 진행됩니다."
+      : "지정한 환불금액과 네이버의 최종 금액이 일치할 때만 취소합니다.";
     el.eventCancelWarningSlot.textContent = `${event.date} ${event.room}홀 ${formatHour(event.start)}-${formatHour(event.end)} · ${event.name || "예약"}`;
     if (customerRequest) {
       el.eventCancelWarningTitle.textContent = "고객 예약을 취소할까요?";
-      el.eventCancelWarningMessage.textContent = "고객 예약건입니다. 확인하면 네이버와 스페이스클라우드 양쪽에서도 예약이 취소되고, 원천 예약의 환불 절차가 진행됩니다.\n플랫폼 확인이 끝날 때까지 취소 처리 중으로 표시됩니다.";
+      el.eventCancelWarningMessage.textContent = "선택한 환불 방식으로 원천 예약을 취소하고, 반대 플랫폼의 일정도 정리합니다.\n플랫폼 확인이 끝날 때까지 취소 처리 중으로 표시됩니다.";
     } else {
       el.eventCancelWarningTitle.textContent = "관리자 일정을 취소할까요?";
       el.eventCancelWarningMessage.textContent = "관리자가 예약한 건이라 바로 취소됩니다.\n스페이스클라우드 일정을 삭제하고 네이버 예약 가능 시간을 복구합니다.";
     }
-    el.confirmEventCancellation.disabled = false;
+    updateCancellationRefund();
     el.dismissEventCancellation.disabled = false;
     el.eventCancelWarningModal.hidden = false;
     document.body.classList.add("modal-open");
     window.setTimeout(() => el.dismissEventCancellation.focus(), 0);
+  }
+
+  function updateCancellationRefund() {
+    const intent = state.eventCancellationIntent;
+    if (!intent || intent.kind !== "customer") {
+      el.confirmEventCancellation.disabled = false;
+      return;
+    }
+    const mode = el.eventCancellationRefundMode.value;
+    const paid = eventGrossAmount(intent.event);
+    const raw = el.eventCancellationRefundAmount.value.trim();
+    const amount = mode === "full" ? paid : mode === "none" ? 0 : Number(raw);
+    const valid = Number.isSafeInteger(paid) && paid > 0
+      && ["full", "none", "custom", "policy"].includes(mode)
+      && (mode !== "custom" || (intent.event.source === "naver" && /^\d+$/.test(raw)))
+      && (mode === "policy" || (Number.isSafeInteger(amount) && amount >= 0 && amount <= paid));
+    el.eventCancellationRefundAmountLabel.hidden = mode !== "custom";
+    el.eventCancellationRefundSummary.textContent = !paid ? "결제금액을 확인할 수 없어 취소할 수 없습니다."
+      : !mode ? `결제금액 ${paid.toLocaleString()}원 · 환불 방식을 선택하세요.`
+      : !valid ? `환불금액은 0원부터 ${paid.toLocaleString()}원까지 정수로 입력하세요.`
+      : mode === "policy" ? `결제금액 ${paid.toLocaleString()}원 · 플랫폼 환불규정에 따라 계산합니다.`
+      : `결제 ${paid.toLocaleString()}원 · 환불 ${amount.toLocaleString()}원 · 위약금 ${(paid - amount).toLocaleString()}원`;
+    intent.refundRequest = valid ? { refundMode: mode, ...(mode === "custom" ? { refundAmount: amount } : {}) } : null;
+    el.confirmEventCancellation.disabled = !valid || Boolean(confirmDetailedEventCancellation.pending);
   }
 
   function closeEventCancellationWarning(options = {}) {
@@ -3708,6 +3758,7 @@
     const intent = state.eventCancellationIntent;
     if (!intent?.event?.dbId) return;
     confirmDetailedEventCancellation.pending = true;
+    el.eventCancellationRefund.disabled = true;
     el.confirmEventCancellation.disabled = true;
     el.dismissEventCancellation.disabled = true;
     el.confirmEventCancellation.textContent = "취소 접수 중…";
@@ -3721,9 +3772,10 @@
       showToast(error.message || "일정 취소 요청 실패");
     } finally {
       confirmDetailedEventCancellation.pending = false;
+      el.eventCancellationRefund.disabled = false;
       el.confirmEventCancellation.textContent = "확인";
       if (!el.eventCancelWarningModal.hidden) {
-        el.confirmEventCancellation.disabled = false;
+        updateCancellationRefund();
         el.dismissEventCancellation.disabled = false;
       }
     }
@@ -3731,9 +3783,12 @@
 
   async function cancelDetailedCustomerReservation(event) {
     if (!event?.dbId || !["naver", "spacecloud"].includes(event.source)) return;
+    const refundRequest = state.eventCancellationIntent?.refundRequest;
+    if (!refundRequest) throw new Error("환불 방식을 선택하고 금액을 확인해주세요.");
     const data = await apiRequest("cancel_customer_reservation", {
       ledgerId: event.dbId,
       date: state.activeDate,
+      ...refundRequest,
     });
     applyApiData(data);
     closeEventCancellationWarning({ force: true });

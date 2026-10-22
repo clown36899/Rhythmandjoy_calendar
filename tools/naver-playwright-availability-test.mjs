@@ -331,6 +331,7 @@ test('confirms a Naver cancellation from the exact booking API without waiting f
         businessId: 1257912,
         startDate: '2026-09-01',
         bookingStatusCode: 'RC04',
+        totalPrice: 12000, refundPrice: 0,
       }),
     },
   };
@@ -357,6 +358,7 @@ test('confirms a Naver cancellation from the exact booking API without waiting f
   assert.equal(result.confirmed, true);
   assert.equal(result.afterStatus, '취소');
   assert.equal(result.apiAttempts, 1);
+  assert.deepEqual(result.lastInspection.refundAmounts, { paidAmount: 12000, refundAmount: 0, retainedAmount: 12000 });
   assert.equal(result.modalConfirmClicked, false);
   assert.equal(uiReads, 0);
   assert.equal(locatorCalls, 0);

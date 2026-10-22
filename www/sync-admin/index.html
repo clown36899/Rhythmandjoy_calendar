@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>리듬앤조이 동기화 관리자</title>
-  <link rel="stylesheet" href="./styles.css?v=2026090302">
+  <link rel="stylesheet" href="./styles.css?v=2026102301">
 </head>
 <body>
   <div class="app-shell">
@@ -324,6 +324,22 @@
       <div class="modal-body">
         <p class="cancellation-warning-slot" id="eventCancelWarningSlot"></p>
         <p class="cancellation-warning-message" id="eventCancelWarningMessage"></p>
+        <fieldset id="eventCancellationRefund" class="cancellation-refund" hidden draggable="false">
+          <legend>환불 방식</legend>
+          <label for="eventCancellationRefundMode">취소할 때 돌려줄 금액</label>
+          <select id="eventCancellationRefundMode" draggable="false">
+            <option value="">환불 방식을 선택하세요</option>
+            <option value="full">전액 환불</option>
+            <option value="none">환불 없음 · 위약금 100%</option>
+            <option value="custom">환불금액 직접 입력</option>
+            <option value="policy">예약 당시 플랫폼 환불규정 적용</option>
+          </select>
+          <label id="eventCancellationRefundAmountLabel" for="eventCancellationRefundAmount" hidden>환불금액 (원)
+            <input id="eventCancellationRefundAmount" type="number" min="0" step="1" inputmode="numeric" draggable="false">
+          </label>
+          <p id="eventCancellationRefundSummary" aria-live="polite"></p>
+          <p id="eventCancellationRefundNote" class="cancellation-refund-note"></p>
+        </fieldset>
         <div class="form-actions cancellation-warning-actions">
           <button type="button" class="secondary-button" id="dismissEventCancellation" draggable="false">진행 안 하기</button>
           <button type="button" class="danger-button" id="confirmEventCancellation" draggable="false">확인</button>
@@ -518,6 +534,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="../calendar_set/calendar_v10/revenue-policy.js?v=db-only-v1-20260810"></script>
-  <script src="./app.js?v=2026093001"></script>
+  <script src="./app.js?v=2026102301"></script>
 </body>
 </html>
