@@ -1215,6 +1215,11 @@
     if (current) {
       if (current.operationType === "customer-cancellation") {
         state.reservationOperation = current;
+        // Recent general tasks cannot replace the exact customer cancellation.
+        // Reconcile a cached failure on bootstrap and its existing minute refresh.
+        if (reservationOperationPhase(current) === "attention" || current.pollError) {
+          pollReservationOperation();
+        }
         return;
       }
       const relatedTasks = state.tasks.filter((task) => Number(task.reservationId) === current.reservationId);
@@ -1467,21 +1472,27 @@
   }
 
   async function pollReservationOperation(options = {}) {
-    const reservationId = Number(state.reservationOperation?.reservationId || 0);
+    const requestedOperation = state.reservationOperation;
+    const reservationId = Number(requestedOperation?.reservationId || 0);
     if (reservationId < 1 || state.reservationOperationPolling || !adminToken()) return;
+    const isCurrentOperation = () => state.reservationOperation
+      && Number(state.reservationOperation.reservationId) === reservationId
+      && state.reservationOperation.operationType === requestedOperation.operationType
+      && Number(state.reservationOperation.rootTaskId || 0) === Number(requestedOperation.rootTaskId || 0);
     window.clearTimeout(reservationOperationTimer);
     reservationOperationTimer = null;
     const previousPhase = reservationOperationPhase();
     state.reservationOperationPolling = true;
     renderReservationOperation();
     try {
-      const customerCancellation = state.reservationOperation?.operationType === "customer-cancellation";
+      const customerCancellation = requestedOperation.operationType === "customer-cancellation";
       const data = customerCancellation
         ? await apiRequest("customer_cancellation_status", {
-          ledgerId: Number(state.reservationOperation?.ledgerId || reservationId),
-          taskId: Number(state.reservationOperation?.rootTaskId || 0),
+          ledgerId: Number(requestedOperation.ledgerId || reservationId),
+          taskId: Number(requestedOperation.rootTaskId || 0),
         })
         : await apiRequest("reservation_status", { reservationId });
+      if (!isCurrentOperation()) return;
       state.reservationOperationPollCount += 1;
       const next = normalizeReservationOperation(
         customerCancellation ? data.customerCancellationOperation : data.reservationOperation,
@@ -1508,6 +1519,7 @@
         showToast("최신 작업 상태를 확인했습니다.");
       }
     } catch (error) {
+      if (!isCurrentOperation()) return;
       state.reservationOperation.pollError = "상태 조회가 지연되고 있습니다. 예약은 DB에 보존되어 있으며 자동으로 다시 확인합니다.";
       if (options.manual) showToast(error.message || "작업 상태 조회 실패");
     } finally {
