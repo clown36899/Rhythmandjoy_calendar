@@ -347,6 +347,65 @@ class EmailPipelineSelfTest(unittest.TestCase):
         self.assertEqual(ambiguous_echo['spacecloud_match_status'], 'ambiguous-prior-generation')
         self.assertNotIn('matched_booking_ledger_id', ambiguous_echo)
 
+        manual_command = {
+            'source': 'sync-admin-customer-request',
+            'action': 'cancel-spacecloud-confirmed-reservation',
+            'manualCustomerCancellation': True,
+            'ledgerId': 77, 'confirmedEmailEventId': 701,
+            'spacecloud_reservation_id': '12345678',
+        }
+        manual_proof = {**proof, 'manualCustomerCancellation': True}
+        manual = {
+            **canceled,
+            'auto_cancel_payload': json.dumps(manual_command),
+            'auto_cancel_result': json.dumps(manual_proof),
+        }
+        manual_echo = email_import.match_spacecloud_cancellation_generation(
+            MatchCursor([manual]), cancellation, 'Bhall', cancel_order,
+        )
+        self.assertEqual(manual_echo['spacecloud_match_status'], 'matched-canceled-generation')
+        self.assertEqual(manual_echo['matched_booking_ledger_id'], 77)
+        self.assertEqual(manual_echo['matched_automation_cancel_task_id'], 901)
+        replay = email_import.match_spacecloud_cancellation_generation(
+            MatchCursor([manual]), manual_echo, 'Bhall', cancel_order,
+        )
+        self.assertEqual(replay, manual_echo)
+        invalid_manual = [
+            {**manual, 'auto_cancel_payload': json.dumps({**manual_command, key: value})}
+            for key, value in (
+                ('source', 'unknown'), ('action', 'unknown'),
+                ('manualCustomerCancellation', False), ('ledgerId', 78),
+                ('confirmedEmailEventId', 702), ('spacecloud_reservation_id', '99999999'),
+            )
+        ] + [
+            {**manual, 'auto_cancel_status': 'running'},
+            {**manual, 'auto_cancel_ledger_id': 78},
+        ] + [
+            {**manual, 'auto_cancel_result': json.dumps({**manual_proof, key: value})}
+            for key, value in (
+                ('manualCustomerCancellation', False), ('submissionConfirmed', False),
+                ('reservationId', '99999999'), ('beforeStatusCode', 'RCCMP'),
+                ('afterStatusCode', 'RSCMP'),
+                ('finishedAt', '2026-08-20T01:02:00Z'),
+                ('finishedAt', '2026-08-20T01:03:00Z'),
+            )
+        ]
+        for invalid in invalid_manual:
+            rejected = email_import.match_spacecloud_cancellation_generation(
+                MatchCursor([invalid]), manual_echo, 'Bhall', cancel_order,
+            )
+            self.assertEqual(rejected['spacecloud_match_status'], 'candidate-order-unverifiable')
+            self.assertNotIn('matched_booking_ledger_id', rejected)
+            self.assertNotIn('matched_automation_cancel_task_id', rejected)
+        for other in [candidate, {**manual, 'id': 78,
+                'auto_cancel_ledger_id': 78,
+                'auto_cancel_payload': json.dumps({**manual_command, 'ledgerId': 78})}]:
+            ambiguous_manual = email_import.match_spacecloud_cancellation_generation(
+                MatchCursor([manual, other]), cancellation, 'Bhall', cancel_order,
+            )
+            self.assertEqual(ambiguous_manual['spacecloud_match_status'], 'ambiguous-prior-generation')
+            self.assertNotIn('matched_booking_ledger_id', ambiguous_manual)
+
     def test_spacecloud_cancellation_without_active_ledger_is_diagnostic_only(self):
         class EventOnlyCursor:
             def __init__(self):

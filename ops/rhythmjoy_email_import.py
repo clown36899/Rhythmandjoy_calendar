@@ -3243,6 +3243,15 @@ def upsert_booking_ledger_canceled(
         preserve_legacy_spacecloud_identity,
     )
     row.setdefault('event_order_key', normalized_event_order_key('', row.get('event_at')))
+    # A completion email links evidence to a cancellation already performed by
+    # this system. Keep the original operator/refund proof on the ledger; the
+    # email itself remains in the immutable email-event record.
+    row['preserve_completed_cancel_payload'] = bool(
+        source_platform == 'spacecloud'
+        and event_data.get('spacecloud_match_status') == 'matched-canceled-generation'
+        and spacecloud_task_event_identity(event_data.get('matched_automation_cancel_task_id'))
+        and spacecloud_task_event_identity(event_data.get('matched_booking_ledger_id'))
+    )
     canceled_event_guard = """(
         (
             VALUES(last_event_order_key) IS NOT NULL
@@ -3315,7 +3324,7 @@ def upsert_booking_ledger_canceled(
                     payment_method=IF({canceled_event_guard}, IF(amount_source LIKE '%%platform-export%%', payment_method, IF(VALUES(payment_method) <> '', VALUES(payment_method), payment_method)), payment_method),
                     canceled_email_event_id=IF({canceled_event_guard}, VALUES(canceled_email_event_id), canceled_email_event_id),
                     canceled_email_received_at=IF({canceled_event_guard}, VALUES(canceled_email_received_at), canceled_email_received_at),
-                    cancel_payload_json=IF({canceled_event_guard}, VALUES(cancel_payload_json), cancel_payload_json),
+                    cancel_payload_json=IF({canceled_event_guard} AND NOT %(preserve_completed_cancel_payload)s, VALUES(cancel_payload_json), cancel_payload_json),
                     updated_at=IF({canceled_event_guard}, NOW(), updated_at),
                     last_event_id=IF({canceled_event_guard}, VALUES(canceled_email_event_id), last_event_id),
                     last_event_order_key=IF(
@@ -3481,7 +3490,7 @@ def spacecloud_candidate_event_order(candidate):
 def match_spacecloud_cancellation_generation(
         cursor, event_data, calendar_key, cancellation_event_order_key,
         cancellation_received_at=None):
-    """Match one prior generation, retaining proven automatic-cancel echoes."""
+    """Match one prior generation, retaining proven completed-cancel echoes."""
     enriched = dict(event_data or {})
     for key in (
             'matched_booking_ledger_id', 'matched_booking_ledger_key',
@@ -3574,7 +3583,19 @@ def match_spacecloud_cancellation_generation(
             if not (
                     candidate.get('auto_cancel_status') == 'done'
                     and candidate.get('auto_cancel_ledger_id') == candidate.get('id')
-                    and command.get('source') == 'spacecloud-later-reservation-conflict'
+                    and (
+                        command.get('source') == 'spacecloud-later-reservation-conflict'
+                        or (
+                            command.get('source') == 'sync-admin-customer-request'
+                            and command.get('manualCustomerCancellation') is True
+                            and command.get('action') == 'cancel-spacecloud-confirmed-reservation'
+                            and spacecloud_task_event_identity(command.get('ledgerId')) == candidate.get('id')
+                            and spacecloud_task_event_identity(command.get('confirmedEmailEventId'))
+                                == candidate.get('confirmed_email_event_id')
+                            and spacecloud_internal_reservation_id(command) == original_id
+                            and proof.get('manualCustomerCancellation') is True
+                        )
+                    )
                     and original_id
                     and str(proof.get('reservationId') or '') == original_id
                     and proof.get('status') == 'canceled'
