@@ -50,3 +50,11 @@ PC에서는 제거된 v10 사이드바의 빈 폭을 캘린더에 돌려주고, 
 - 라이브러리 기준: [FullCalendar v4 높이](https://legacy.fullcalendar.io/v4/height), [월별 실제 주 수](https://legacy.fullcalendar.io/v4/fixedWeekCount). 기존 CSS가 라이브러리 높이를 덮고 있으므로 단순 `overflow:hidden`만으로 마지막 주를 잘라 숨기는 방식은 사용하지 않았다.
 - 배포/롤백 경계: v11 `index.html`, `style.css`, `embed.js`, `calendar-v11-server-cache.js` 4개만 함께 배포/복원한다. 부모 사이트 및 원본 v10은 변경하지 않는다.
 - 운영 반영: `ceabdcc` 커밋·푸시 후 4개 파일만 반영했다. HTTP 200 응답과 커밋 파일 바이트 일치, 원본 v10/부모 site.js/동기화 로더 등 보호 파일 6개 SHA-256 동일. 실제 운영 모바일 월간 5주/35일, 높이 562px, 내부 scrollHeight/clientHeight 400px 동일, 마지막 주 끝 463.5px < 하단 시작 466px로 전체 노출 확인. 증빙 `output/calendar-month-fit-live-20261008.png`. 백업 `/home/clown313python/rhythmjoy_ops/deploy-backups/calendar-month-ceabdcc/content-before.tgz`.
+
+## 2026-11-03 상세 팝업 바깥 클릭 재열림 수정
+
+- 경로: 바깥 pointerdown → 팝업 제거 → 뒤 일정 click/eventClick → 같은 상세 재생성. 기준은 activeDailyPopup, popup.contains(target), 실제 브라우저 입력 대상이다. 공개 캐시 조회만 사용하며 원장/외부 쓰기는 없다.
+- 기존 구현 일부 있음: closeActiveDailyPopup/registerActiveDailyPopup을 재사용한다. 원본 도입 a6d34d3a와 v11 복사 383f88b2를 확인했다. 단일 팝업·외부/ESC 닫기·지연 등록 및 리스너 정리가 기존 보호 목적이다. pointer-events:none과 pointerdown 제거 조합에 입력 차단이 빠졌다.
+- 배경이 입력을 받도록 복원하고 완료된 click을 캡처 단계에서 소비한 뒤 기존 함수로 닫는다. 내부 클릭/스크롤, 주간 이동, 단일 팝업, ESC, 정리와 지연 등록 안전장치를 유지한다. 새 함수/DB/큐/데이터 소유자 및 일정별 예외는 없다.
+- 기존 site_preview_swipe_selftest 확장: 내부/외부 클릭, 반복 열기/닫기, ESC, 등록 전 닫기 경계 포함 91개 통과. 실제 운영 데이터에 후보 JS만 브라우저에서 대체하여 기존 재열림을 재현하고 PC 뒤 일정/빈 배경/내부/ESC/주간 이동/월간 더보기를 확인했다. 390px 직접 iframe의 내부/배경 닫기도 확인했다. 부모 페이지 모바일 첫 일정 클릭은 화면 밖 요소 선택으로 자동화가 완료되지 않아 성공으로 집계하지 않는다.
+- v10은 독립 레거시 UI이고 이번 요청의 /schedule/은 v11만 사용하므로 원본은 변경하지 않는다. 예약 생성/취소/동기화/문자와 DB는 변경 밖이라 쓰기 검사를 제외한다. JS와 캐시 버전 index.html 두 정적 파일만 커밋·푸시 후 백업/교체하며 롤백은 두 파일 복원이다.

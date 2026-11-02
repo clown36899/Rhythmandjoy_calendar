@@ -425,6 +425,37 @@ async function swipe(route, from, to, options = {}) {
     assert.ok(posts[0].visible_ms>=2500);
     checks++;
   }
+  // Daily popup dismissal must consume only outside clicks and clean up listeners.
+  {
+    const runtime = fs.readFileSync(path.join(root, 'calendar-v11/calendar-v11-server-cache.js'), 'utf8');
+    const listeners = new Map(), pending = [];
+    const context = {document: {
+      addEventListener(type, fn) { listeners.set(type, fn); },
+      removeEventListener(type, fn) { if (listeners.get(type) === fn) listeners.delete(type); },
+    }, setTimeout(fn) { pending.push(fn); }};
+    vm.runInNewContext('let activeDailyPopup = null;\n' + runtime.slice(runtime.indexOf('function closeActiveDailyPopup()'), runtime.indexOf('function openDailyEventPopup(')), context);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const inside = {}, popup = element(), backdrop = element();
+      popup.contains = target => target === inside;
+      context.registerActiveDailyPopup(popup, backdrop); pending.shift()();
+      const click = target => ({target, preventDefault(){this.prevented=true;}, stopImmediatePropagation(){this.stopped=true;}});
+      const interior = click(inside); listeners.get('click')(interior);
+      assert.equal(popup.removed, false); assert.equal(interior.stopped, undefined);
+      assert.equal(listeners.has('pointerdown'), false, 'Keep backdrop until completed click');
+      if (attempt === 2) listeners.get('keydown')({key:'Escape'});
+      else {
+        const outside = click(backdrop); listeners.get('click')(outside);
+        assert.equal(outside.prevented, true); assert.equal(outside.stopped, true);
+      }
+      assert.equal(popup.removed, true); assert.equal(backdrop.removed, true);
+      assert.equal(listeners.size, 0); checks++;
+    }
+    const popup = element(), backdrop = element();
+    context.registerActiveDailyPopup(popup, backdrop);
+    context.closeActiveDailyPopup(); pending.shift()();
+    assert.equal(listeners.size, 0, 'Closing before delayed registration leaves no stale handler'); checks++;
+    assert.match(runtime, /backdrop\.style\.pointerEvents = 'auto'/); checks++;
+  }
   // Exercise the embed's lifecycle independently from calendar data fetching:
   // view changes, repeated renders, resize feedback, and CSS-height restoration.
   const embedSource = fs.readFileSync(path.join(root,'calendar-v11/embed.js'),'utf8');

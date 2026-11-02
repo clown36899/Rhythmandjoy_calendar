@@ -853,8 +853,8 @@ document.addEventListener("DOMContentLoaded", () => {
 function closeActiveDailyPopup() {
   if (!activeDailyPopup) return;
 
-  const { popup, backdrop, closeOnPointerDown, closeOnKeydown } = activeDailyPopup;
-  document.removeEventListener('pointerdown', closeOnPointerDown, true);
+  const { popup, backdrop, closeOnClick, closeOnKeydown } = activeDailyPopup;
+  document.removeEventListener('click', closeOnClick, true);
   document.removeEventListener('keydown', closeOnKeydown, true);
   popup.remove();
   backdrop.remove();
@@ -862,19 +862,22 @@ function closeActiveDailyPopup() {
 }
 
 function registerActiveDailyPopup(popup, backdrop) {
-  const closeOnPointerDown = (event) => {
+  const closeOnClick = (event) => {
     if (!activeDailyPopup || activeDailyPopup.popup !== popup) return;
     if (popup.contains(event.target)) return;
+    // Consume the completed click before removing the input-blocking backdrop.
+    event.preventDefault();
+    event.stopImmediatePropagation();
     closeActiveDailyPopup();
   };
   const closeOnKeydown = (event) => {
     if (event.key === 'Escape') closeActiveDailyPopup();
   };
 
-  activeDailyPopup = { popup, backdrop, closeOnPointerDown, closeOnKeydown };
+  activeDailyPopup = { popup, backdrop, closeOnClick, closeOnKeydown };
   setTimeout(() => {
     if (!activeDailyPopup || activeDailyPopup.popup !== popup) return;
-    document.addEventListener('pointerdown', closeOnPointerDown, true);
+    document.addEventListener('click', closeOnClick, true);
     document.addEventListener('keydown', closeOnKeydown, true);
   }, 0);
 }
@@ -909,7 +912,7 @@ function openDailyEventPopup(dateInput) {
   backdrop.style.height = '100vh';
   backdrop.style.backgroundColor = 'rgba(0, 0, 0, 0.56)';
   backdrop.style.zIndex = 9998;
-  backdrop.style.pointerEvents = 'none';
+  backdrop.style.pointerEvents = 'auto';
 
   const getColor = (roomKey) => {
     return roomConfigs[roomKey]?.color || '#ccc';
