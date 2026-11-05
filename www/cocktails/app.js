@@ -16,6 +16,8 @@ $('copy').addEventListener('click',async()=>{
  const ok=await copyAccount();
  $('status').textContent=ok?`계좌와 ${amountText}이 함께 복사됐어요.`:'자동 복사가 안 되면 아래 문구를 길게 눌러 복사해 주세요.';
  $('copy-label').textContent=ok?'복사 완료 · 다시 복사':'계좌 · 금액 다시 복사';
+ $('status').hidden=false;
+ document.querySelector('.copy-preview').hidden=ok;
  $('copy').disabled=false;
 });
 document.addEventListener('dragstart',event=>event.preventDefault());
