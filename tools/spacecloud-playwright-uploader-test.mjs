@@ -355,6 +355,88 @@ test('a login routing URL stays inconclusive unless the loaded site proves sign-
     assert.equal(result.status, signedOut ? 'login_required' : 'needs_check');
     assert.equal(result.refreshAttempted, true);
     assert.equal(result.refreshOutcome, signedOut ? 'auth-page' : 'inconclusive');
+    assert.equal(result.naverRecoveryAttempted, false, 'no OAuth without verified Naver business access');
+    if (signedOut) {
+      assert.equal(result.apiStatus, null, 'a rendered login page is not an HTTP response');
+      assert.doesNotMatch(result.reason, /HTTP 401/);
+    }
+  }
+});
+
+test('saved Naver recovery stays bounded and requires the configured SpaceCloud calendar response', async () => {
+  const target = 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056';
+  for (const scenario of [
+    'ready', 'home-landing', 'naver-unverified', 'ambiguous-button', 'hidden-button', 'unknown-space',
+    'manual-naver', 'callback-timeout', 'calendar-denied', 'wrong-product', 'invalid-body',
+    'network-failure',
+  ]) {
+    let currentUrl = 'https://partner.spacecloud.kr/auth/login';
+    let clicks = 0;
+    let responseWaits = 0;
+    let closed = false;
+    const response = {
+      url: () => 'https://api.spacecloud.kr/partner/reservations/calendar?product_id='
+        + (scenario === 'wrong-product' ? '999' : '108674'),
+      status: () => scenario === 'calendar-denied' ? 403 : 200,
+      finished: async () => scenario === 'network-failure' ? new Error('network lost') : null,
+      json: async () => scenario === 'invalid-body' ? { error: 'not a calendar' } : [],
+    };
+    const page = {
+      route: async () => {}, unroute: async () => {},
+      goto: async url => { if (clicks) currentUrl = url; },
+      url: () => currentUrl,
+      evaluate: async () => true, // the existing SPA sign-out observation
+      getByText: (label, options) => {
+        assert.equal(label, '네이버로 호스트 로그인');
+        assert.equal(options.exact, true);
+        return {
+          count: async () => scenario === 'ambiguous-button' ? 2 : 1,
+          isVisible: async () => scenario !== 'hidden-button',
+          click: async () => { clicks += 1; },
+        };
+      },
+      waitForResponse: async predicate => {
+        responseWaits += 1;
+        if (responseWaits === 1 || !predicate(response)) throw new Error('response timeout');
+        return response;
+      },
+      waitForURL: async predicate => {
+        if (!clicks) throw new Error('SPA did not restore account');
+        if (scenario === 'manual-naver') {
+          currentUrl = 'https://nid.naver.com/oauth2.0/authorize?state=do-not-log';
+          throw new Error('user login or consent required');
+        }
+        if (scenario === 'callback-timeout') {
+          currentUrl = 'https://partner.spacecloud.kr/auth/callback?code=do-not-log';
+          throw new Error('callback timeout');
+        }
+        assert.equal(predicate(new URL('https://example.org/auth/mypage')), false);
+        assert.equal(predicate(new URL('https://partner.spacecloud.kr/auth/callback?code=secret')), false);
+        currentUrl = scenario === 'home-landing' && responseWaits === 1
+          ? 'https://partner.spacecloud.kr/' : 'https://partner.spacecloud.kr/auth/mypage';
+        assert.equal(predicate(new URL(currentUrl)), true);
+      },
+      title: async () => 'SpaceCloud', close: async () => { closed = true; },
+    };
+    const result = await checkSpacecloudLogin({ newPage: async () => page }, {
+      url: scenario === 'unknown-space' ? target.replace('66056', '999') : target,
+      naverSessionReady: scenario !== 'naver-unverified',
+      timeoutMs: 100,
+    });
+    const noClick = ['naver-unverified', 'ambiguous-button', 'hidden-button', 'unknown-space'].includes(scenario);
+    assert.equal(clicks, noClick ? 0 : 1, scenario + ': never retry clicks within a probe');
+    assert.equal(closed, true, scenario);
+    assert.equal(result.status, ['ready', 'home-landing'].includes(scenario) ? 'ready'
+      : noClick || scenario === 'manual-naver' ? 'login_required' : 'needs_check', scenario);
+    assert.equal(result.naverRecoveryAttempted, scenario !== 'naver-unverified', scenario);
+    if (['ready', 'home-landing'].includes(scenario)) {
+      assert.equal(result.apiStatus, 200);
+      assert.equal(result.probe, 'calendar-api+naver-sign-in');
+    } else {
+      assert.notEqual(result.apiStatus, 401, 'no invented HTTP rejection: ' + scenario);
+      assert.doesNotMatch(result.reason, /HTTP 401|do-not-log/, scenario);
+      assert.doesNotMatch(result.url, /do-not-log/, scenario);
+    }
   }
 });
 

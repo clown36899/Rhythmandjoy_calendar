@@ -3021,7 +3021,7 @@ async function recoverSpacecloudSessionThroughSpa(page, {
     }).catch(() => false);
     if (signedOut) outcome = {
       status: 'auth-page',
-      apiStatus: 401,
+      apiStatus: null,
       error: 'SpaceCloud sign-in screen remained visible after session recovery',
     };
   }
@@ -3035,15 +3035,58 @@ async function recoverSpacecloudSessionThroughSpa(page, {
   };
 }
 
+// Only invoked after the existing SPA recovery proves sign-out and the caller
+// has just verified access to the configured Naver business. Never enter
+// credentials, accept consent, or treat an OAuth landing page as ready.
+async function recoverSpacecloudSessionThroughNaver(page, { url, productId, timeoutMs }) {
+  const target = new URL(url);
+  const location = new URL(page.url());
+  const knownRoom = Object.values(SPACECLOUD_ROOMS).some((room) =>
+    room.productId === productId && room.spaceId === target.searchParams.get('space'));
+  if (target.origin !== 'https://partner.spacecloud.kr'
+    || target.pathname !== '/reservation-calendar' || !knownRoom
+    || location.origin !== target.origin || location.pathname !== '/auth/login') {
+    return { status: 'auth-page', apiStatus: null, error: 'SpaceCloud saved Naver sign-in requires the verified host login page and configured space' };
+  }
+  try {
+    const button = page.getByText('네이버로 호스트 로그인', { exact: true });
+    if (await button.count() !== 1 || !await button.isVisible()) {
+      return { status: 'auth-page', apiStatus: null, error: 'SpaceCloud saved Naver sign-in button could not be identified uniquely' };
+    }
+    await button.click({ timeout: Math.min(timeoutMs, 5000) });
+    // Do not interrupt the callback or interact with Naver login/consent/MFA.
+    // Match the existing manual-login flow: the site can land on its home or
+    // account page. Neither proves readiness, but both end the OAuth callback.
+    await page.waitForURL((candidate) => candidate.origin === target.origin
+      && !isSpacecloudAuthenticationUrl(candidate.toString()),
+    { timeout: timeoutMs });
+    // Reuse the authoritative, product-specific calendar verification.
+    return await recoverSpacecloudSessionThroughSpa(page, { url, productId, timeoutMs });
+  } catch {
+    const location = new URL(page.url());
+    const manualRequired = location.hostname === 'nid.naver.com'
+      || (location.origin === target.origin && location.pathname === '/auth/login');
+    return {
+      status: manualRequired ? 'auth-page' : 'inconclusive',
+      apiStatus: null,
+      error: manualRequired
+        ? 'Saved Naver sign-in requires user authentication or consent; no credentials or consent were submitted'
+        : 'Saved Naver sign-in did not complete; booking access remains unverified',
+    };
+  }
+}
+
 export async function checkSpacecloudLogin(context, {
   url = 'https://partner.spacecloud.kr/reservation-calendar?product=108674&space=66056',
   timeoutMs = 20000,
+  naverSessionReady = false,
 } = {}) {
   const page = await context.newPage();
   let navigationError = '';
   let apiResult = null;
   let currentUrl = '';
   let refreshAttempt = null;
+  let naverRecovery = null;
   let maintenanceCheck = null;
   try {
     let productId = '108674';
@@ -3100,14 +3143,18 @@ export async function checkSpacecloudLogin(context, {
           productId,
           timeoutMs,
         });
+        if (refreshAttempt.status === 'auth-page' && naverSessionReady === true) {
+          naverRecovery = await recoverSpacecloudSessionThroughNaver(page, { url, productId, timeoutMs });
+          refreshAttempt = naverRecovery;
+        }
         currentUrl = page.url();
         if (refreshAttempt.status === 'ready') {
           apiResult = refreshAttempt.apiResult;
         } else if (['auth-page', 'refresh-rejected'].includes(refreshAttempt.status)) {
           apiResult = {
             ok: false,
-            status: refreshAttempt.apiStatus || 401,
-            tokenPresent: true,
+            status: refreshAttempt.apiStatus ?? null,
+            tokenPresent: refreshAttempt.status === 'auth-page' ? null : true,
             error: refreshAttempt.error,
           };
         } else {
@@ -3139,16 +3186,23 @@ export async function checkSpacecloudLogin(context, {
       accessTokenPresent: apiResult?.tokenPresent ?? null,
       apiError: apiResult?.error || '',
       probeAttempted: true,
+      confirmedSignOut: refreshAttempt?.status === 'auth-page',
     });
+    // OAuth query parameters must not enter diagnostics or CLI output.
+    if (naverRecovery && !classification.ok) {
+      const location = new URL(currentUrl || page.url());
+      currentUrl = location.origin + location.pathname;
+    }
     return {
       ...classification,
       url: currentUrl || page.url(),
       title: await page.title().catch(() => ''),
       navigationError,
-      probe: maintenanceCheck ? 'maintenance-page' : refreshAttempt ? 'calendar-api+spa-refresh' : 'calendar-api',
+      probe: maintenanceCheck ? 'maintenance-page' : naverRecovery ? 'calendar-api+naver-sign-in' : refreshAttempt ? 'calendar-api+spa-refresh' : 'calendar-api',
       apiStatus: apiResult?.status ?? null,
       refreshAttempted: Boolean(refreshAttempt),
       refreshOutcome: refreshAttempt?.status || '',
+      naverRecoveryAttempted: Boolean(naverRecovery),
     };
   } finally {
     await page.close().catch(() => {});
@@ -3166,6 +3220,7 @@ export function classifySpacecloudSessionCheck({
   probeAttempted = false,
   documentStatus = null,
   documentText = '',
+  confirmedSignOut = false,
 } = {}) {
   const currentUrl = String(url || '');
   let location = null;
@@ -3200,6 +3255,12 @@ export function classifySpacecloudSessionCheck({
       reason: '스페이스클라우드 공식 서버 점검 중 · 종료 후 자동 재확인',
     };
   }
+  if (confirmedSignOut) {
+    return {
+      ok: false, status: 'login_required', loginRequired: true,
+      reason: apiError || 'SpaceCloud sign-in screen remained visible after session recovery',
+    };
+  }
   if (accessTokenPresent === false || [401, 403].includes(Number(apiStatus))) {
     return {
       ok: false,
@@ -3207,7 +3268,7 @@ export function classifySpacecloudSessionCheck({
       loginRequired: true,
       reason: accessTokenPresent === false
         ? 'SpaceCloud access token is missing'
-        : `SpaceCloud calendar API rejected authentication with HTTP ${apiStatus}`,
+        : apiError || `SpaceCloud calendar API rejected authentication with HTTP ${apiStatus}`,
     };
   }
   if (expectedUrl && apiReady) {

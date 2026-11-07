@@ -12100,10 +12100,10 @@ async function runCheckSessions(args) {
     headless: args.headless,
   });
   try {
-    const spacecloud = await checkSpacecloudLogin(context);
     const naver = await checkNaverSmartplaceLogin(context, {
       businessId: args.naverBusinessId,
     });
+    const spacecloud = await checkSpacecloudLogin(context, { naverSessionReady: naver.ok === true });
     return {
       ok: Boolean(spacecloud.ok && naver.ok),
       sessions: [
@@ -12122,7 +12122,9 @@ async function runCheckLogin(args) {
     headless: args.headless,
   });
   try {
-    return await checkSpacecloudLogin(context);
+    const naver = await checkNaverSmartplaceLogin(context, { businessId: args.naverBusinessId })
+      .catch(() => ({ ok: false }));
+    return await checkSpacecloudLogin(context, { naverSessionReady: naver.ok === true });
   } finally {
     await context.close();
   }
@@ -14107,6 +14109,7 @@ async function checkAutomationSessionStatuses(args, context) {
 
   await checkPlatform('spacecloud', () => checkSpacecloudLogin(context, {
     timeoutMs: 15000,
+    naverSessionReady: statuses.some((row) => row.platform === 'naver' && row.status === 'ready'),
   }));
 
   try {

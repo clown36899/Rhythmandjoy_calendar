@@ -142,6 +142,18 @@ Naver and SpaceCloud login sessions are not stored in Git. They live in the Ubun
 /home/kiosk-j/.spacecloud-automation
 ```
 
+SpaceCloud checks first allow the site's own token/session refresh. If its loaded
+sign-in page still proves sign-out, automatic and CLI checks may click the
+existing “네이버로 호스트 로그인” button once per check, but only after the same
+profile has just passed the configured Naver business authentication check.
+The fallback is limited to the configured SpaceCloud space/product and proves
+readiness through that product's actual calendar API response. It never enters
+credentials or accepts consent/MFA. A Naver sign-in/consent screen requires human
+attention; a callback/network/API failure remains unverified. Normal checks use
+the existing session-check interval and no new worker or queue is created.
+A rendered login screen is reported as such, not as an invented HTTP 401; actual
+token-refresh rejection keeps its endpoint-specific HTTP evidence.
+
 If a session expires:
 
 1. Cafe24 email ingestion and DB ledger continue to record reservation/cancellation emails.
