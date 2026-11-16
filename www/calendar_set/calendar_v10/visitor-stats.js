@@ -282,10 +282,15 @@
     function renderHistory(history) {
       publishStats(history.stats);
       var max = Math.max.apply(null, history.daily.map(function (row) { return row.visitors || 0; }).concat([1]));
-      document.getElementById('visitor-chart').innerHTML = history.daily.map(function (row) {
+      var chart = document.getElementById('visitor-chart');
+      var showValues = history.days === 7;
+      chart.classList.toggle('has-values', showValues);
+      chart.innerHTML = history.daily.map(function (row) {
         var height = row.visitors ? Math.max(2, row.visitors / max * 100) : 0;
+        var count = countText(row.visitors);
+        var label = showValues ? '<b class="visitor-chart-value">' + (row.visitors === null ? '—' : count) + '</b>' : '';
         return '<div class="visitor-chart-column' + (row.date === history.endDate ? ' is-today' : '') + '" title="' +
-          row.date + ' · ' + countText(row.visitors) + '"><span style="height:' + height + '%"></span></div>';
+          row.date + ' · ' + count + '"><span style="height:' + height + '%">' + label + '</span></div>';
       }).join('');
       document.getElementById('visitor-chart-start').textContent = history.startDate;
       document.getElementById('visitor-chart-end').textContent = history.endDate + ' 오늘';

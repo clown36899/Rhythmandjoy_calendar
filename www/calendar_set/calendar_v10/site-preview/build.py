@@ -223,7 +223,7 @@ VISITOR_PANEL = '''
 <p id="visitor-status" class="visitor-status" role="status" aria-live="polite"></p>
 <div id="visitor-report" hidden><p id="visitor-range" class="visitor-range"></p><div id="visitor-chart" class="visitor-chart" aria-hidden="true"></div><div class="visitor-chart-labels" aria-hidden="true"><span id="visitor-chart-start"></span><span id="visitor-chart-end"></span></div>
 <p id="visitor-period-summary" class="visitor-period-summary"></p>
-<details class="visitor-daily"><summary>날짜별 상세 보기</summary><table><caption class="visitor-sr-only">날짜별 방문자 수와 조회 수</caption><thead><tr><th scope="col">날짜</th><th scope="col">방문자</th><th scope="col">조회 수</th></tr></thead><tbody id="visitor-daily-rows"></tbody></table></details></div>
+<div class="visitor-daily"><table><caption>날짜별 방문자 수와 조회 수</caption><thead><tr><th scope="col">날짜</th><th scope="col">방문자</th><th scope="col">조회 수</th></tr></thead><tbody id="visitor-daily-rows"></tbody></table></div></div>
 <p id="visitor-as-of" class="visitor-caption"></p><p id="visitor-collection" class="visitor-caption"></p>
 <p class="visitor-note">누적 조회는 기존 Google Analytics 기록에 현재 사이트 조회를 이어 더한 횟수이며, 사람 수가 아닙니다. 과거 기록은 공식 도메인의 테스트·정산 페이지를 제외했습니다.<br>현재 조회는 화면을 2.5초 이상 본 페이지 열기를 집계합니다. 메뉴 이동·일정 자동 갱신·통계 열기로는 늘어나지 않습니다. 오늘 방문자는 같은 브라우저를 중복 제외하며, 쿠키 삭제·다른 기기는 별도로 집계될 수 있습니다.</p></div></dialog>
 '''
@@ -258,7 +258,7 @@ def write(path, title, desc, body, active='home', crumb=None):
                 f'<meta property="og:image" content="{share_image}">\n'
                 f'<meta property="og:image:alt" content="리듬앤조이 {html.escape(photo_descriptions[image_room][rooms[image_room][2]])}">\n'
                 f'{verification}\n{tracking}\n'
-                '<script src="/calendar_set/calendar_v10/visitor-stats.js?v=text-brand-20261008" defer></script>\n')
+                '<script src="/calendar_set/calendar_v10/visitor-stats.js?v=visitor-counts-20261117" defer></script>\n')
         structured = []
         if not path:
             business['image'] = ORIGIN + ASSETS + '/roomA/image2.webp'
@@ -284,7 +284,7 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=faq-tv-size-20261008')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=visitor-counts-20261117')
         public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=faq-details-20261008')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)
