@@ -136,7 +136,7 @@ for title, question, filename, alt, caption in [
 tap_width, tap_height, tap_variants = responsive_image('equipment/tap-board-actual-v1.png')
 tap_srcset = ', '.join(f'{url} {size}w' for size, url in tap_variants)
 tap_board_photo = f'<figure class="equipment-photo tap-board-photo"><img src="{tap_variants[0][1]}" srcset="{tap_srcset}" sizes="(max-width:560px) calc(100vw - 82px), 260px" width="{tap_width}" height="{tap_height}" alt="벽에 세워 보관 중인 실제 비치 나무 탭판" draggable="false" loading="lazy" decoding="async"><figcaption>실제 비치 탭판 · 보관 중인 모습</figcaption></figure>'
-practice_equipment += f'<article class="equipment-tapboard" id="tap-boards">{tap_board_photo}<div><b>탭판 {tap_count}개 · 선착순 사용 가능</b><p>{html.escape(tap_rule)}</p></div></article>'
+practice_equipment += f'<article class="equipment-wide" id="tap-boards">{tap_board_photo}<div><b>탭판 {tap_count}개 · 선착순 사용 가능</b><p>{html.escape(tap_rule)}</p></div></article>'
 
 facility_question = '음향·냉난방과 편의시설은 무엇이 있나요?'
 water_dispenser_rule = '정수기 온수 사용 불가 · 라면 취사 금지'
@@ -145,6 +145,8 @@ facility_answer['text'] += '\n' + water_dispenser_rule
 dispenser_width, dispenser_height, dispenser_variants = responsive_image('equipment/water-dispenser-reference-v1.png')
 dispenser_srcset = ', '.join(f'{url} {size}w' for size, url in dispenser_variants)
 dispenser_photo = f'<figure class="equipment-photo" style="max-width:210px;margin-top:12px"><img src="{dispenser_variants[0][1]}" srcset="{dispenser_srcset}" sizes="210px" width="{dispenser_width}" height="{dispenser_height}" alt="흰색 스탠드형 정수기" draggable="false" loading="lazy" decoding="async"><figcaption>정수기 제품 참고 이미지</figcaption></figure>'
+
+practice_equipment += f'<article class="equipment-wide" id="practice-water-dispenser" data-directory-label="정수기 이용 안내">{dispenser_photo}<div><b>정수기 사용 가능</b><p>{water_dispenser_rule}</p></div></article>'
 
 # The existing answers remain the source of both visible steps/paragraphs and JSON-LD.
 shoe_width, shoe_height, shoe_variants = responsive_image('equipment/tap-shoe-rule-v1.png')
@@ -216,10 +218,10 @@ def shell(title, desc, body, active='home', crumb=None):
 </head><body><a class="skip" href="#main">본문 바로가기</a>
 <div class="site-header"><header class="header">
 <a class="header-brand" href="/" aria-label="사당연습실 리듬앤조이 홈" draggable="false">사당연습실 <strong>리듬앤조이</strong></a>
-<nav class="nav" aria-label="주 메뉴">{nav}</nav><a href="/schedule/" id="booking-menu" class="header-book" {"aria-current=page" if active=="schedule" else ""} draggable="false">예약하기 <span>↗</span><span class="booking-location-hint" aria-hidden="true">이 버튼에서 시작하세요</span></a></header></div>
+<nav class="nav" aria-label="주 메뉴">{nav}</nav><div class="header-actions"><a class="header-sitemap" href="/sitemap/" draggable="false">사이트맵</a><a href="/schedule/" id="booking-menu" class="header-book" {"aria-current=page" if active=="schedule" else ""} draggable="false">예약하기 <span>↗</span><span class="booking-location-hint" aria-hidden="true">이 버튼에서 시작하세요</span></a></div></header></div>
 <div class="page-viewport"><div class="page-surface">
 <main id="main" tabindex="-1">{breadcrumb}{body}</main>
-<footer><div class="footer-top"><a href="/" class="footer-brand">리듬앤조이<span>RHYTHM & JOY STUDIO</span></a><p>서울 동작구 남부순환로 2077 지하 2층<br>사당역 7번 출구, 대로변 도보 3분 거리 · <a href="tel:01048017180">010-4801-7180</a></p></div><div class="footer-bottom"><span>© RHYTHM & JOY</span><a href="/sitemap/" draggable="false">사이트맵 · 페이지 검색</a><span>홈페이지 미리보기 · 실제 예약현황 연결</span></div></footer>
+<footer><div class="footer-top"><a href="/" class="footer-brand">리듬앤조이<span>RHYTHM & JOY STUDIO</span></a><p>서울 동작구 남부순환로 2077 지하 2층<br>사당역 7번 출구, 대로변 도보 3분 거리 · <a href="tel:01048017180">010-4801-7180</a></p></div><div class="footer-bottom"><span>© RHYTHM & JOY</span><span>홈페이지 미리보기 · 실제 예약현황 연결</span></div></footer>
 </div></div>
 </body></html>'''
 
@@ -352,7 +354,7 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=site-directory-20261117')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=site-header-20261117')
         public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=site-directory-20261117')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)

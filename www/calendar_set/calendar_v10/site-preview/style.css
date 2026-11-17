@@ -52,18 +52,24 @@ main{scroll-margin-top:140px;outline:none}
 .header-brand{order:0;flex-shrink:0;white-space:nowrap;font-size:18px;font-weight:550;letter-spacing:-.055em;line-height:1.3;user-select:none}
 .header-brand strong{font-weight:800}.header-brand:hover{color:var(--accent)}
 .nav{order:1;flex:1;justify-content:center}
+.header-actions{order:2;display:flex;align-items:stretch;gap:8px}
+.header-sitemap{display:flex;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-weight:650;white-space:nowrap}
+.header-sitemap:hover{background:var(--pale)}
 .header-book{order:2}
 main{scroll-margin-top:85px}
 @media(max-width:800px){
   .header{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand booking" "nav nav";min-height:96px;padding-top:10px;padding-bottom:6px;gap:5px 12px}
   .header-brand{grid-area:brand;font-size:18px}
-  .header-book{grid-area:booking;margin-left:0}
+  .header-actions,.header>.header-book{grid-area:booking}
+  .header-book{margin-left:0}
   .nav{grid-area:nav;justify-content:space-between;gap:8px;padding:0;font-size:13px}
   .nav a{display:flex;align-items:center;min-height:36px}
   main{scroll-margin-top:116px}
 }
 @media(max-width:560px){
-  .header{padding-left:16px;padding-right:16px}
+  .header{padding-left:16px;padding-right:16px;column-gap:8px}
+  .header-actions{gap:5px}
+  .header-sitemap{font-size:12px;padding-inline:8px}
   .header-brand{font-size:16px}
   .nav{font-size:12px}
   .header-book{font-size:12px;gap:6px;padding:9px 10px}
@@ -112,8 +118,8 @@ main{scroll-margin-top:85px}
 .equipment-photo{margin:0 0 20px}.equipment-photo img{display:block;width:100%;height:210px;object-fit:contain;background:var(--paper);border-radius:8px}.equipment-photo figcaption{margin-top:8px;font-size:11px;line-height:1.6;color:var(--muted);word-break:keep-all}.equipment-photo a{text-decoration:underline;text-underline-offset:3px}.practice-equipment>.equipment-text-only{grid-column:1/-1;padding:20px 24px}.equipment-text-only p{margin-top:6px}@media(max-width:560px){.equipment-photo img{height:180px}.equipment-photo{margin-bottom:16px}.practice-equipment>.equipment-text-only{padding:20px}}
 
 /* Native FAQ answers stay readable; guidance focuses the one persistent booking menu. */
-.practice-equipment>.equipment-tapboard{grid-column:1/-1;display:grid;grid-template-columns:240px 1fr;align-items:center;gap:24px}.equipment-tapboard .equipment-photo{margin:0}.equipment-tapboard .equipment-photo img{height:170px}.shoe-rule-visuals{display:grid;gap:12px}.shoe-rule-visuals .tap-board-photo{margin:0;padding:14px;background:var(--pale);border-radius:12px}.shoe-rule-visuals .tap-board-photo img{height:155px}
-@media(max-width:560px){.practice-equipment>.equipment-tapboard{grid-template-columns:1fr;gap:16px}.shoe-rule-visuals{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.shoe-rule-visuals .shoe-rule-image,.shoe-rule-visuals .tap-board-photo{padding:10px}.shoe-rule-visuals .shoe-rule-image img,.shoe-rule-visuals .tap-board-photo img{height:110px}.shoe-rule-visuals figcaption{font-size:10px}.shoe-rule-visuals .shoe-floor-warning{font-size:12px;align-items:start}.shoe-rule-visuals .shoe-board-rule{font-size:11px}}
+.practice-equipment>:is(.equipment-tapboard,.equipment-wide){grid-column:1/-1;display:grid;grid-template-columns:240px 1fr;align-items:center;gap:24px}:is(.equipment-tapboard,.equipment-wide) .equipment-photo{margin:0}:is(.equipment-tapboard,.equipment-wide) .equipment-photo img{height:170px}.shoe-rule-visuals{display:grid;gap:12px}.shoe-rule-visuals .tap-board-photo{margin:0;padding:14px;background:var(--pale);border-radius:12px}.shoe-rule-visuals .tap-board-photo img{height:155px}
+@media(max-width:560px){.practice-equipment>:is(.equipment-tapboard,.equipment-wide){grid-template-columns:1fr;gap:16px}.shoe-rule-visuals{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.shoe-rule-visuals .shoe-rule-image,.shoe-rule-visuals .tap-board-photo{padding:10px}.shoe-rule-visuals .shoe-rule-image img,.shoe-rule-visuals .tap-board-photo img{height:110px}.shoe-rule-visuals figcaption{font-size:10px}.shoe-rule-visuals .shoe-floor-warning{font-size:12px;align-items:start}.shoe-rule-visuals .shoe-board-rule{font-size:11px}}
 .faq-number{flex:0 0 30px;color:var(--accent);font-size:14px;font-variant-numeric:tabular-nums}.faq-question{flex:1}.faq-actions{display:flex;flex-wrap:wrap;gap:10px;padding:0 4px 26px}.faq-actions .faq-menu-guide{margin:0}.faq-action{display:inline-flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 16px;border:1px solid var(--ink);border-radius:7px;font-size:14px;font-weight:650;line-height:1.6;cursor:pointer}.faq-action:hover,.faq-action:focus-visible{background:var(--pale);outline:2px solid var(--accent);outline-offset:2px}.faq-map-link{background:var(--green);border-color:var(--green);color:white}.faq-map-link:hover,.faq-map-link:focus-visible{background:var(--ink)}
 .faq-detail-dialog{width:min(960px,calc(100vw - 32px));max-width:none;max-height:calc(100dvh - 32px);padding:0;margin:auto;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--ink);overflow:hidden;box-shadow:0 16px 70px #0004}.faq-detail-dialog[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto}.faq-detail-dialog::backdrop{background:#15231ecc;backdrop-filter:blur(3px)}body:has(.faq-detail-dialog[open]){overflow:hidden}.faq-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 24px;border-bottom:1px solid var(--line)}.faq-detail-heading h2{font-size:20px;line-height:1.5;margin:0}.faq-detail-heading button{flex:0 0 40px;width:40px;height:40px;border:1px solid var(--line);border-radius:50%;background:var(--paper);color:var(--ink);font-size:28px;cursor:pointer}.faq-detail-heading button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}.faq-detail-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:24px;line-height:1.85}.faq-detail-body>section,.faq-detail-body>article,.faq-detail-body>figure{margin:0;padding:0;border:0}.faq-detail-body>div+div,.faq-detail-body>figure+div{margin-top:24px}.faq-detail-body h2{font-size:24px;line-height:1.5}.faq-detail-body p{font-size:15px;color:var(--muted);margin:10px 0;word-break:keep-all}.faq-detail-body .floor-figure{max-width:100%}.faq-detail-body img{max-width:100%;height:auto;max-height:340px;object-fit:contain}.faq-detail-body .equipment-photo img{width:100%;height:230px}.faq-detail-body .room-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.faq-detail-body .room-image img{height:180px;object-fit:cover}.faq-detail-body .night-banner{display:block;background:transparent;color:var(--ink)}.faq-detail-body .night-banner .actions{margin-top:20px}.faq-detail-body .night-banner p{color:var(--muted)}.faq-detail-body .night-banner .button{color:var(--ink);border-color:var(--ink)}.faq-detail-body .night-banner .sms-example{background:var(--pale)}.faq-detail-body .facility-extra{border-top:1px solid var(--line);padding-top:20px}.faq-detail-body article+article{margin-top:18px}.faq-detail-footer{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:0;padding:16px 24px;border-top:1px solid var(--line);background:var(--paper)}.faq-detail-footer>div{display:flex;gap:10px}.faq-detail-footer .faq-action{font-size:13px;padding:10px 13px}
 #rooms,#directions,#parking,#floor-structure,#facility-basics,#rolling-mat,#camera-tripod,#tv-guide,#house-rules,#tap-boards,#refund-policy,#rates,#night-booking{scroll-margin-top:145px}
@@ -125,7 +131,6 @@ main{scroll-margin-top:85px}
 .price-table .room-size{display:block;margin-top:7px;font-size:12px;line-height:1.5;letter-spacing:-.03em;white-space:nowrap;color:var(--ink)}
 @media(max-width:560px){.price-table .room-column{width:21%}.price-table .room-size{font-size:10px;margin-top:5px}}
 
-.footer-bottom a{text-decoration:underline;text-underline-offset:3px;color:inherit}
 .site-directory{padding-bottom:72px}
 .directory-search{max-width:580px;margin-bottom:26px}
 .directory-search label{display:block;margin-bottom:8px;font-weight:650}

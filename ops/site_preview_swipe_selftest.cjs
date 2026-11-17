@@ -27,7 +27,9 @@ function page(route, options = {}) {
   const base = options.public ? 'http://localhost/' : 'http://localhost/calendar_set/calendar_v10/site-preview/';
   const html = fs.readFileSync(path.join(contentRoot, route, 'index.html'), 'utf8');
   const header = html.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)[1];
-  const links = [...header.matchAll(/<a\b([^>]*)>/g)].filter(([, a]) => !a.includes('aria-label='))
+  const menu = header.match(/<nav class="nav"[^>]*>([\s\S]*?)<\/nav>/)[1];
+  const booking = header.match(/<a\b([^>]*class="header-book"[^>]*)>/);
+  const links = [...menu.matchAll(/<a\b([^>]*)>/g), booking]
     .map(([, a]) => Object.assign(element(), { href: new URL(a.match(/href="([^"]+)"/)[1], base).href, getAttribute: key => key === 'aria-current' && a.includes('aria-current=page') ? 'page' : null }));
   const listeners = new Map(), windows = new Map(), timers = new Map(), navigated = [];
   const surface = element(), viewport = element(), body = {};
@@ -385,7 +387,11 @@ async function swipe(route, from, to, options = {}) {
     assert.ok(page.includes('id="' + target.hash.slice(1) + '"'), 'Directory search target must exist for ' + href);
   }
   assert.match(directory,/href="\/spaces\/#water-dispenser"/);
-  assert.match(fs.readFileSync(path.resolve(root,'../site/index.html'),'utf8'),/href="\/sitemap\/" draggable="false">사이트맵/);
+  assert.match(fs.readFileSync(path.resolve(root,'../site/index.html'),'utf8'),/<div class="header-actions"><a class="header-sitemap" href="\/sitemap\/" draggable="false">사이트맵<\/a><a href="\/schedule\/" id="booking-menu"/);
+  for (const route of ['guide', 'spaces']) {
+    const page = fs.readFileSync(path.resolve(root,'../site',route,'index.html'),'utf8');
+    assert.match(page, /<article class="equipment-wide" id="practice-water-dispenser"[^>]*>.*?alt="흰색 스탠드형 정수기" draggable="false".*?정수기 온수 사용 불가 · 라면 취사 금지<\/p><\/div><\/article>/);
+  }
   assert.doesNotMatch(sitemap,/site-preview|calendar_10|\/structure\//);
   checks++;
   const origin = new URL([...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)][0][1]).origin;
