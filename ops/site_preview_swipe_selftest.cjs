@@ -372,8 +372,20 @@ async function swipe(route, from, to, options = {}) {
   cleanupDetail();
   checks++;
   const sitemap = fs.readFileSync(path.resolve(root,'../site/sitemap.xml'),'utf8');
-  assert.equal((sitemap.match(/<loc>/g)||[]).length,11);
-  assert.equal((sitemap.match(/<lastmod>2026-10-08<\/lastmod>/g)||[]).length,11);
+  const sitemapUrls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(result => result[1]);
+  assert.equal(sitemapUrls.length,12);
+  assert.equal((sitemap.match(/<lastmod>2026-10-08<\/lastmod>/g)||[]).length,9);
+  const directory = fs.readFileSync(path.resolve(root,'../site/sitemap/index.html'),'utf8');
+  const links = [...directory.matchAll(/<li><a href="([^"]+)"/g)].map(result => result[1]);
+  assert.deepEqual(links, sitemapUrls.slice(0, -1).map(url => new URL(url).pathname));
+  assert.equal(new URL(sitemapUrls.at(-1)).pathname,'/sitemap/');
+  for (const [, href] of directory.matchAll(/<li data-search-text="[^"]+" hidden><a href="([^"]+)"/g)) {
+    const target = new URL(href, sitemapUrls[0]);
+    const page = fs.readFileSync(path.resolve(root,'../site',target.pathname.slice(1),'index.html'),'utf8');
+    assert.ok(page.includes('id="' + target.hash.slice(1) + '"'), 'Directory search target must exist for ' + href);
+  }
+  assert.match(directory,/href="\/spaces\/#water-dispenser"/);
+  assert.match(fs.readFileSync(path.resolve(root,'../site/index.html'),'utf8'),/href="\/sitemap\/" draggable="false">사이트맵/);
   assert.doesNotMatch(sitemap,/site-preview|calendar_10|\/structure\//);
   checks++;
   const origin = new URL([...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)][0][1]).origin;

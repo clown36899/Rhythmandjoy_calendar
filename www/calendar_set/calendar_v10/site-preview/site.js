@@ -316,6 +316,39 @@ if (menuIndex >= 0 && surface && viewport) {
 function initPage(root, href, loadPage) {
   root.querySelector('main')?.setAttribute('id', 'main');
   const timers = new Set();
+  const fragment = href.match(/#[a-z0-9-]+$/i);
+  if (fragment) {
+    const target = root.querySelector(fragment[0] + '[data-directory-target]');
+    if (target?.tagName === 'DETAILS') target.open = true;
+  }
+  const directory = root.querySelector('[data-directory-search]');
+  if (directory) {
+    const query = directory.querySelector('input');
+    const status = directory.querySelector('[role="status"]');
+    const normalize = value => value.normalize('NFKC').toLocaleLowerCase('ko-KR');
+    const allPages = root.querySelector('#directory-links');
+    const searchResults = root.querySelector('#directory-results');
+    const entries = [...searchResults.querySelectorAll('li')].map(item => ({
+      item, text: normalize(item.textContent + ' ' + item.dataset.searchText)
+    }));
+    query.oninput = () => {
+      const terms = normalize(query.value).trim().split(/\s+/).filter(Boolean);
+      allPages.hidden = terms.length > 0;
+      searchResults.hidden = terms.length === 0;
+      if (!terms.length) {
+        status.textContent = '전체 페이지 ' + allPages.childElementCount + '개';
+        return;
+      }
+      let matches = 0;
+      for (const { item, text } of entries) {
+        item.hidden = !terms.every(term => text.includes(term));
+        if (!item.hidden) matches++;
+      }
+      status.textContent = matches ? '검색 결과 ' + matches + '개' : '검색 결과가 없습니다.';
+    };
+    directory.hidden = false;
+    query.oninput();
+  }
   // Guide to the single sticky menu instead of duplicating booking channels in Q&A.
   root.querySelectorAll('[data-guide-menu]').forEach(link => {
     link.onclick = event => {

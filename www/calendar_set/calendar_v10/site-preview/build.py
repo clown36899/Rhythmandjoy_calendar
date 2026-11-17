@@ -8,6 +8,7 @@ import json
 import shutil
 import hashlib
 from functools import lru_cache
+from html.parser import HTMLParser
 from PIL import Image, ImageOps
 
 HERE = Path(__file__).resolve().parent
@@ -17,12 +18,13 @@ SITE_PATH = '/calendar_set/calendar_v10/site/'
 SITE = V10 / 'site'
 # Significant public-content revision, not the build date or live booking update time.
 CONTENT_UPDATED = '2026-10-08'
+ROUTE_UPDATED = {'guide': '2026-11-17', 'spaces': '2026-11-17', 'sitemap': '2026-11-17'}
 # Public IndexNow ownership proof, not a login/API secret. Keep stable between builds.
 INDEXNOW_KEY = 'e88c4a3764564b24a5afccb136387b70'
 public_routes = []
 legacy_home = (V10 / 'calendar_10.html').read_text()
 verification = re.search(r'<meta name="naver-site-verification"[^>]+>', legacy_home).group(0)
-tracking = legacy_home.split('<!-- Google tag (gtag.js) -->', 1)[1].split('<!-- End Google Tag Manager -->', 1)[0]
+tracking = legacy_home.split('<!-- Google tag (gtag.js) -->', 1)[1].split('<!-- End Google Tag Manager -->', 1)[0].rstrip()
 business = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', legacy_home, re.S).group(1))
 # Reuse the existing FAQ owner; visible answers and structured data must stay identical.
 faq = next(item for item in (json.loads(raw) for raw in re.findall(
@@ -136,6 +138,14 @@ tap_srcset = ', '.join(f'{url} {size}w' for size, url in tap_variants)
 tap_board_photo = f'<figure class="equipment-photo tap-board-photo"><img src="{tap_variants[0][1]}" srcset="{tap_srcset}" sizes="(max-width:560px) calc(100vw - 82px), 260px" width="{tap_width}" height="{tap_height}" alt="벽에 세워 보관 중인 실제 비치 나무 탭판" draggable="false" loading="lazy" decoding="async"><figcaption>실제 비치 탭판 · 보관 중인 모습</figcaption></figure>'
 practice_equipment += f'<article class="equipment-tapboard" id="tap-boards">{tap_board_photo}<div><b>탭판 {tap_count}개 · 선착순 사용 가능</b><p>{html.escape(tap_rule)}</p></div></article>'
 
+facility_question = '음향·냉난방과 편의시설은 무엇이 있나요?'
+water_dispenser_rule = '정수기 온수 사용 불가 · 라면 취사 금지'
+facility_answer = next(item['acceptedAnswer'] for item in faq['mainEntity'] if item['name'] == facility_question)
+facility_answer['text'] += '\n' + water_dispenser_rule
+dispenser_width, dispenser_height, dispenser_variants = responsive_image('equipment/water-dispenser-reference-v1.png')
+dispenser_srcset = ', '.join(f'{url} {size}w' for size, url in dispenser_variants)
+dispenser_photo = f'<figure class="equipment-photo" style="max-width:210px;margin-top:12px"><img src="{dispenser_variants[0][1]}" srcset="{dispenser_srcset}" sizes="210px" width="{dispenser_width}" height="{dispenser_height}" alt="흰색 스탠드형 정수기" draggable="false" loading="lazy" decoding="async"><figcaption>정수기 제품 참고 이미지</figcaption></figure>'
+
 # The existing answers remain the source of both visible steps/paragraphs and JSON-LD.
 shoe_width, shoe_height, shoe_variants = responsive_image('equipment/tap-shoe-rule-v1.png')
 shoe_srcset = ', '.join(f'{url} {size}w' for size, url in shoe_variants)
@@ -148,7 +158,7 @@ faq_details = {
     '어떤 연습을 할 수 있나요?': ('홀 사진·크기 비교', '/spaces/#rooms', '#rooms'),
     '바닥은 어떤 마루인가요?': ('마루 구조·마감 보기', '/spaces/#floor-structure', '#floor-structure, #floor-materials'),
     'TV와 연결 케이블이 있나요?': ('TV 연결 안내 보기', '/guide/#tv-guide', '#tv-guide'),
-    '음향·냉난방과 편의시설은 무엇이 있나요?': ('시설 안내 자세히', '/spaces/#facility-basics', '#facility-basics, #facility-extra'),
+    facility_question: ('시설 안내 자세히', '/spaces/#facility-basics', '#facility-basics, #facility-extra'),
     '구르기 매트는 각 홀에 있나요?': ('매트 사진·사용 안내', '/guide/#rolling-mat', '#rolling-mat'),
     '촬영용 삼각대가 있나요?': ('삼각대 사진·사용 안내', '/guide/#camera-tripod', '#camera-tripod'),
     '인원이 늘어나면 추가요금이 있나요?': ('룸별 이용요금 보기', '/pricing/#rates', '#rates'),
@@ -165,7 +175,9 @@ for i, item in enumerate(faq['mainEntity']):
     else:
         answer = ''.join(f'<p>{html.escape(part)}</p>' for part in paragraphs)
     answer = f'<div class="faq-answer">{answer}</div>'
-    if name == '연습화는 따로 준비해야 하나요?':
+    if name == facility_question:
+        answer += dispenser_photo
+    elif name == '연습화는 따로 준비해야 하나요?':
         illustration = f'''<figure class="shoe-rule-image"><img src="{shoe_variants[0][1]}" srcset="{shoe_srcset}" sizes="(max-width:560px) calc(100vw - 82px), 260px" width="{shoe_width}" height="{shoe_height}" alt="탭신발 밑창의 앞부분과 뒤꿈치에 달린 금속 징을 보여주는 안내 이미지" draggable="false" loading="lazy" decoding="async"><figcaption>금속 징이 달린 탭신발 예시 · 연출 이미지</figcaption><strong class="shoe-floor-warning"><span aria-hidden="true">×</span> 마루에서 직접 사용 불가</strong><span class="shoe-board-rule">탭판·개인 탭보드 위에서 사용<br>탭판 {tap_count}개 비치 · 선착순 사용 가능</span></figure>'''
         answer = f'<div class="faq-shoe-rule"><div class="shoe-rule-visuals">{illustration}{tap_board_photo}</div>{answer}</div>'
     actions = ''
@@ -176,7 +188,7 @@ for i, item in enumerate(faq['mainEntity']):
         actions += f'<a class="faq-action" href="{destination}" data-faq-detail="{selector}" data-faq-title="{i+1:02d} · {label}" aria-haspopup="dialog" aria-controls="faq-detail-dialog" draggable="false">{label} <span aria-hidden="true">＋</span></a>'
     if name in ('리듬앤조이 연습실 위치는 어디인가요?', '주차가 가능한가요?'):
         actions += f'<a class="faq-action faq-map-link" href="{NAVER_MAP}" target="_blank" rel="noopener" data-dialog-extra draggable="false">네이버 지도 바로가기 <span aria-hidden="true">↗</span></a>'
-    faq_html += f'<details class="faq-item" {"open" if i == 0 else ""}><summary draggable="false"><span class="faq-number" aria-hidden="true">{i+1:02d}</span><span class="faq-question">{html.escape(name)}</span></summary>{answer}<div class="faq-actions">{actions}</div></details>'
+    faq_html += f'<details class="faq-item" id="directory-faq-{i + 1}" data-directory-label="{html.escape(name)}" {"open" if i == 0 else ""}><summary draggable="false"><span class="faq-number" aria-hidden="true">{i+1:02d}</span><span class="faq-question">{html.escape(name)}</span></summary>{answer}<div class="faq-actions">{actions}</div></details>'
 
 FAQ_DIALOG = '<dialog id="faq-detail-dialog" class="faq-detail-dialog" aria-labelledby="faq-detail-title"><header class="faq-detail-heading"><h2 id="faq-detail-title">자세한 안내</h2><button type="button" data-faq-close aria-label="상세 안내 닫기" draggable="false" autofocus>×</button></header><div class="faq-detail-body" aria-live="polite"></div><footer class="faq-detail-footer"><a class="faq-action" data-faq-source draggable="false">페이지에서 보기 <span aria-hidden="true">↗</span></a><div data-faq-extra></div></footer></dialog>'
 
@@ -207,7 +219,7 @@ def shell(title, desc, body, active='home', crumb=None):
 <nav class="nav" aria-label="주 메뉴">{nav}</nav><a href="/schedule/" id="booking-menu" class="header-book" {"aria-current=page" if active=="schedule" else ""} draggable="false">예약하기 <span>↗</span><span class="booking-location-hint" aria-hidden="true">이 버튼에서 시작하세요</span></a></header></div>
 <div class="page-viewport"><div class="page-surface">
 <main id="main" tabindex="-1">{breadcrumb}{body}</main>
-<footer><div class="footer-top"><a href="/" class="footer-brand">리듬앤조이<span>RHYTHM & JOY STUDIO</span></a><p>서울 동작구 남부순환로 2077 지하 2층<br>사당역 7번 출구, 대로변 도보 3분 거리 · <a href="tel:01048017180">010-4801-7180</a></p></div><div class="footer-bottom"><span>© RHYTHM & JOY</span><span>홈페이지 미리보기 · 실제 예약현황 연결</span></div></footer>
+<footer><div class="footer-top"><a href="/" class="footer-brand">리듬앤조이<span>RHYTHM & JOY STUDIO</span></a><p>서울 동작구 남부순환로 2077 지하 2층<br>사당역 7번 출구, 대로변 도보 3분 거리 · <a href="tel:01048017180">010-4801-7180</a></p></div><div class="footer-bottom"><span>© RHYTHM & JOY</span><a href="/sitemap/" draggable="false">사이트맵 · 페이지 검색</a><span>홈페이지 미리보기 · 실제 예약현황 연결</span></div></footer>
 </div></div>
 </body></html>'''
 
@@ -228,13 +240,69 @@ VISITOR_PANEL = '''
 <p class="visitor-note">누적 조회는 기존 Google Analytics 기록에 현재 사이트 조회를 이어 더한 횟수이며, 사람 수가 아닙니다. 과거 기록은 공식 도메인의 테스트·정산 페이지를 제외했습니다.<br>현재 조회는 화면을 2.5초 이상 본 페이지 열기를 집계합니다. 메뉴 이동·일정 자동 갱신·통계 열기로는 늘어나지 않습니다. 오늘 방문자는 같은 브라우저를 중복 제외하며, 쿠키 삭제·다른 기기는 별도로 집계될 수 있습니다.</p></div></dialog>
 '''
 
+class DirectorySections(HTMLParser):
+    void_tags = set('area base br col embed hr img input link meta param source track wbr'.split())
+
+    def __init__(self):
+        super().__init__()
+        self.sections = []
+        self.stack = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.void_tags:
+            return
+        attrs = dict(attrs)
+        current, heading = self.stack[-1][1:] if self.stack else (None, False)
+        if 'data-directory-target' in attrs:
+            current = (attrs['id'], attrs.get('data-directory-label', ''), [], [])
+            self.sections.append(current)
+            heading = False
+        self.stack.append((tag, current, heading or tag in ('h1', 'h2', 'h3', 'h4')))
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                break
+
+    def handle_data(self, data):
+        if self.stack:
+            _, current, heading = self.stack[-1]
+            if current:
+                current[3].append(data)
+                if heading:
+                    current[2].append(data)
+
+
+def directory_sections(body):
+    section_number = 0
+
+    def add_target(match):
+        nonlocal section_number
+        tag, attrs = match.groups()
+        if ' id="' not in attrs:
+            if tag != 'section':
+                return match[0]
+            section_number += 1
+            attrs += f' id="directory-section-{section_number}"'
+        return f'<{tag}{attrs} data-directory-target>'
+
+    body = re.sub(r'<(section|article|details|figure|div)\b([^>]*)>', add_target, body)
+    parser = DirectorySections()
+    parser.feed(body)
+    return body, parser.sections
+
+
 def write(path, title, desc, body, active='home', crumb=None):
+    sections = []
+    if path not in ('structure', 'sitemap'):
+        body, sections = directory_sections(body)
     folder=HERE/path
     folder.mkdir(parents=True,exist_ok=True)
     source = shell(title,desc,body,active,crumb)
     source = source.replace('/preview-assets/', PREVIEW_PATH)
     # One route owner for local and deployed previews; existing facility assets stay shared.
-    source = re.sub(r'href="(/(?:spaces|pricing|location|guide|schedule|structure)/[^" ]*|/)"',
+    source = re.sub(r'href="(/(?:spaces|pricing|location|guide|schedule|structure|sitemap)/[^" ]*|/(?:#[^" ]*)?)"',
                     lambda m: 'href="' + PREVIEW_PATH + m[1].lstrip('/') + '"', source)
     source = source.replace('로컬 검토용 샘플입니다. 검색 노출은 비활성화되어 있으며 운영 사이트에는 반영되지 않았습니다.',
                             '별도 주소로 공개한 검토용 샘플입니다. 검색 노출은 비활성화되어 있습니다.')
@@ -284,12 +352,13 @@ def write(path, title, desc, body, active='home', crumb=None):
         public = public.replace('</head>', meta + '</head>')
         # Persistent outside the sliding page surface: one dialog and counter per tab.
         public = public.replace('</body>', VISITOR_PANEL + '</body>')
-        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=visitor-counts-20261117')
-        public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=faq-details-20261008')
+        public = public.replace(SITE_PATH + 'style.css', SITE_PATH + 'style.css?v=site-directory-20261117')
+        public = public.replace(SITE_PATH + 'site.js', SITE_PATH + 'site.js?v=site-directory-20261117')
         target = SITE / path
         target.mkdir(parents=True, exist_ok=True)
         (target / 'index.html').write_text(public)
-        public_routes.append(canonical)
+        label = html.unescape(re.sub(r'<[^>]+>', '', (crumb or '소개').rsplit('<span>/</span>', 1)[-1]))
+        public_routes.append((path, canonical, label, desc, sections))
 
 write('', '사당연습실 리듬앤조이 | 24시간 댄스 연습실', '사당연습실 리듬앤조이. 사당역 7번 출구 대로변 도보 3분, 24시간 A–E홀. 전 홀 댄스 전용 쿠션 마루·인원 추가금 없음.', f'''
 <section class="hero"><div class="hero-copy"><span class="eyebrow coral">SADANG · RHYTHM & JOY</span><p class="hero-location"><span class="tiny-dot"></span>사당역 7번 출구, 대로변 도보 3분</p><h1><span>사당연습실</span><br>리듬앤조이<span class="title-dot">.</span></h1><p class="hero-lead">오늘의 연습이<br> 내일의 무대가 되는 곳.</p><p class="hero-desc">혼자 몰입하는 순간부터 함께 맞추는 안무까지.<br> 4평형부터 25평형까지, 나에게 맞는 공간에서 연습하세요.</p><div class="actions">{button('공간 둘러보기','/spaces/',True)}</div><div class="hero-stats"><span><strong>5</strong>개의 연습룸</span><span><strong>24</strong>시간 운영</span><span><strong>3</strong>분 도보 거리</span></div></div>
@@ -309,7 +378,7 @@ write('spaces','사당연습실 리듬앤조이 | 공간 안내·룸 사진','�
 <figure class="floorplan-figure"><a href="{plan_variants[-1][1]}" target="_blank" rel="noopener" draggable="false" aria-label="연습실 입체 도면 크게 보기 (새 창)"><img src="{plan_variants[-1][1]}" srcset="{plan_srcset}" sizes="(max-width:560px) calc(100vw - 42px), (max-width:900px) calc(100vw - 64px), min(840px, max(480px, calc(150vh - 420px)))" width="{plan_width}" height="{plan_height}" alt="기존 평면도와 실제 홀 사진을 참고한 입체 배치도. 왼쪽 A홀, 중앙 B홀, 오른쪽 아래 C·D홀, 오른쪽 위 E홀. 복도 왼쪽 끝과 D홀 옆에는 계단이 있고, 출구 표기 위쪽은 엘리베이터입니다. 거울은 A·C홀 오른쪽 벽, B·D·E홀 왼쪽 벽에 수직으로 밀착되어 있으며 E홀 오른쪽 아래 끝에는 에어컨이 있습니다." loading="lazy" decoding="async" draggable="false"></a><figcaption>기존 평면도와 실제 홀 사진을 참고한 공간 안내용 입체 이미지입니다. 마감·높이·비품 위치는 실제와 차이가 있을 수 있으며, 크기는 각 홀의 m 치수를 확인해주세요.</figcaption></figure>
 <div class="plan-notes"><p><strong>5개의 독립 연습룸</strong><span>A·B·E홀부터 개인 연습에 맞는 C·D홀까지.</span></p><p><strong>함께 쓰는 편의시설</strong><span>탈의실 2곳 · 내부 공용 화장실 · 엘리베이터</span></p></div></section>
 <section class="facilities"><span class="eyebrow">STUDIO FACILITIES</span><h2>연습에 집중할 수 있도록.</h2><div id="facility-basics"><article><b>댄스 전용 쿠션 마루</b><p>전 홀에 적용 · A·E홀은 틈이 없는 강화마루</p></article><article><b>전면 거울</b><p>동작과 동선을 바로 확인</p></article><article><b>A·B홀 TV</b><p>A홀 55인치 · B홀 65인치<br>HDMI·C타입·8핀 커넥터 제공</p></article></div>
-<div class="facility-extra" id="facility-extra"><article><b>음악과 영상 준비</b><p>블루투스 스피커와 Wi-Fi를 이용할 수 있습니다. TV가 필요한 연습은 A·B홀을 선택해주세요.</p></article><article><b>사계절 연습 공간</b><p>냉난방 시설을 갖추고 있습니다. 전 홀 24시간 운영하며, 인원 추가금 없이 룸 단위로 대관합니다.</p></article><article><b>공용 편의시설</b><p>탈의실 2곳, 내부 공용 화장실과 정수기를 이용할 수 있습니다. 시설 안전을 위해 CCTV를 운영합니다.</p></article></div>
+<div class="facility-extra" id="facility-extra"><article><b>음악과 영상 준비</b><p>블루투스 스피커와 Wi-Fi를 이용할 수 있습니다. TV가 필요한 연습은 A·B홀을 선택해주세요.</p></article><article><b>사계절 연습 공간</b><p>냉난방 시설을 갖추고 있습니다. 전 홀 24시간 운영하며, 인원 추가금 없이 룸 단위로 대관합니다.</p></article><article id="water-dispenser" data-directory-label="공용 편의시설 · 정수기"><b>공용 편의시설</b><p>탈의실 2곳, 내부 공용 화장실과 정수기를 이용할 수 있습니다. 시설 안전을 위해 CCTV를 운영합니다.</p><p><strong>{water_dispenser_rule}</strong></p>{dispenser_photo}</article></div>
 <div class="practice-equipment">{practice_equipment}</div>
 <figure class="floor-figure" id="floor-structure"><img src="{floor_variants[-1][1]}" srcset="{floor_srcset}" sizes="(max-width:560px) calc(100vw - 42px), (max-width:900px) calc(100vw - 64px), min(720px, max(480px, calc(150vh - 420px)))" width="{floor_width}" height="{floor_height}" alt="외줄장선식 쿠션 마루 구조: 마루 아래 합판, 장선목, 방진고무, 쐐기가 있는 구조 설명" loading="lazy" decoding="async" draggable="false"><figcaption>외줄장선식 쿠션 마루의 구조를 설명한 이미지입니다. 홀별 표면 마감은 아래 안내를 확인해주세요.</figcaption></figure>
 <div id="floor-materials"><article><b>마루 아래의 쿠션 구조</b><p>장선은 마루 아래를 받치는 목재입니다. 마루와 합판 아래에 장선목과 방진고무 등을 배치하는 구조로, 일반 댄스홀처럼 쿠션감이 있는 마루에서 연습할 수 있습니다.</p></article><article><b>A·E홀: 틈 없는 강화마루</b><p>장선 구조 위에 틈이 없는 강화마루로 표면을 마감했습니다. 사진에서 바닥의 마감과 연습 공간을 함께 확인해보세요.</p></article><article><b>B·C·D홀: 장선마루</b><p>나무 마루 표면 아래에 장선 구조가 있는 댄스 전용 쿠션 마루입니다. 모든 홀에서 개인 실내 연습화를 사용해주세요.</p></article></div></section>''','spaces','공간 안내')
@@ -371,6 +440,39 @@ write('structure','사이트 구조 미리보기 | 리듬앤조이','독립 주�
 <section class="page-heading"><span class="eyebrow coral">SITE PREVIEW / 01</span><h1>내용마다 주소 하나.<br>예약은 익숙한 그대로.</h1><p>각 항목을 누르면 실제 샘플 페이지로 이동합니다.<br>검색으로 처음 들어온 사람도 공간을 이해하고, 예약현황 확인과 예약으로 이어지도록 구성했습니다.</p></section>
 <section class="site-tree"><a class="tree-root" href="/"><span>HOME /</span><h2>사당연습실 리듬앤조이</h2><p>위치·공간 소개 + 주요 안내의 출발점</p><b>소개 페이지 열기 ↗</b></a><div class="tree-branches"><article><a href="/spaces/"><span>/spaces/</span><h3>공간 안내 ↗</h3></a><div class="tree-rooms">{''.join(f'<a href="/spaces/{r.lower()}/">{r}홀 <small>{prices[r]["area"]}</small> ↗</a>' for r in 'ABCDE')}</div></article><a href="/pricing/"><span>/pricing/</span><h3>이용요금 ↗</h3><p>룸별·시간대별 요금<br>새벽 통대관 안내</p></a><a href="/location/"><span>/location/</span><h3>오시는 길 ↗</h3><p>주소·지하철·주차<br>네이버 지도 연결</p></a><a href="/guide/"><span>/guide/</span><h3>이용 안내 ↗</h3><p>이용 수칙<br>변경·환불 안내</p></a><a href="/schedule/"><span>/schedule/</span><h3>예약하기 ↗</h3><p>일정표·예약 채널<br>예약 방법·새벽 대관 문의</p></a></div></section>
 <section class="structure-notes"><h2>이 샘플에서 달라진 점</h2><div><article><b>검색 후 바로 읽는 소개</b><p>제목뿐 아니라 첫 HTML 본문에 위치, 시설, 이용 목적을 담았습니다.</p></article><article><b>보내고 다시 찾을 수 있는 주소</b><p>A홀 사진이나 이용요금 페이지를 각각 직접 열고 공유할 수 있습니다.</p></article><article><b>일정 확인에서 예약까지</b><p>일정표는 예약현황을 보여주고, 네이버·스페이스클라우드 버튼이 예약으로 연결합니다.</p></article></div><p class="subtle">로컬 검토용 샘플입니다. 검색 노출은 비활성화되어 있으며 운영 사이트에는 반영되지 않았습니다.</p></section>''','structure','전체 페이지 구조')
+directory_links = ''.join(
+    f'<li><a href="/{route + "/" if route else ""}" draggable="false">'
+    f'<strong>{html.escape(label)}</strong><p>{html.escape(description)}</p>'
+    f'<span aria-hidden="true">↗</span></a></li>'
+    for route, _, label, description, _ in public_routes
+)
+directory_results = []
+for route, _, page_label, _, sections in public_routes:
+    href = '/' + (route + '/' if route else '')
+    for anchor, explicit_label, headings, paragraphs in sections:
+        search_text = ' '.join(' '.join(paragraphs).split())
+        if not search_text:
+            continue
+        label = explicit_label or (' '.join(headings[0].split()) if headings else '') or page_label
+        directory_results.append(
+            f'<li data-search-text="{html.escape(search_text, quote=True)}" hidden>'
+            f'<a href="{href}#{anchor}" draggable="false">'
+            f'<strong>{html.escape(label)}</strong><p>{html.escape(page_label)}</p>'
+            f'<span aria-hidden="true">↗</span></a></li>'
+        )
+write('sitemap', '사이트맵 · 페이지 검색 | 사당연습실 리듬앤조이',
+      '리듬앤조이 공간, 이용요금, 위치, 이용 안내와 예약 페이지를 찾으세요.', f'''
+<section class="page-heading compact"><h1>사이트맵</h1></section>
+<section class="site-directory" aria-label="사이트 페이지">
+<div class="directory-search" role="search" data-directory-search hidden>
+<label for="directory-query">페이지 검색</label>
+<input type="search" id="directory-query" placeholder="예: 정수기, A홀, 주차" aria-controls="directory-links directory-results">
+<p role="status" aria-live="polite"></p>
+</div>
+<ul class="directory-links" id="directory-links">{directory_links}</ul>
+<ul class="directory-links" id="directory-results" hidden>{"".join(directory_results)}</ul>
+</section>''', 'sitemap', '사이트맵')
+
 # calendar-v11 is an independent snapshot; rebuilding pages never overwrites it.
 SITE.mkdir(parents=True, exist_ok=True)
 for asset in ('style.css', 'site.js'):
@@ -378,7 +480,8 @@ for asset in ('style.css', 'site.js'):
 (SITE / 'sitemap.xml').write_text(
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-    ''.join(f'  <url><loc>{url}</loc><lastmod>{CONTENT_UPDATED}</lastmod></url>\n' for url in public_routes) + '</urlset>\n')
+    ''.join(f'  <url><loc>{url}</loc><lastmod>{ROUTE_UPDATED.get(route, CONTENT_UPDATED)}</lastmod></url>\n'
+            for route, url, _, _, _ in public_routes) + '</urlset>\n')
 (SITE / 'robots.txt').write_text(f'User-agent: *\nAllow: /\n\nSitemap: {ORIGIN}/sitemap.xml\n')
 (SITE / f'{INDEXNOW_KEY}.txt').write_text(INDEXNOW_KEY + '\n')
-print(f'Built 12 preview and {len(public_routes)} public pages; independent calendar-v11 is preserved.')
+print(f'Built {len(public_routes) + 1} preview and {len(public_routes)} public pages; independent calendar-v11 is preserved.')
