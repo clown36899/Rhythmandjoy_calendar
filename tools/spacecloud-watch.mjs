@@ -11356,7 +11356,7 @@ async function runManualCustomerCancellation(args, context, task, platform) {
     row = await cancelSpacecloudConfirmedReservation(context, task, {
       beforeConfirm,
       refund: payloadForTask(task).refund || null,
-      ...(payloadForTask(task).refund ? { reasonCode: 'ETC', reasonText: '고객 요청에 따른 예약 취소' } : {}),
+      ...(payloadForTask(task).refund ? { reasonCode: 'ETC', reasonText: '호스트 사정에 의한 예약 취소' } : {}),
     });
   }
   row.manualCustomerCancellation = true;
